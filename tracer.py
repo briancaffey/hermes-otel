@@ -43,10 +43,17 @@ try:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
+    from opentelemetry import metrics
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+
     _OTEL_AVAILABLE = True
-except ImportError:
+    _METRICS_AVAILABLE = True
+except ImportError as e:
     _OTEL_AVAILABLE = False
-    print("[hermes-otel] OpenTelemetry packages not installed. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
+    _METRICS_AVAILABLE = False
+    print(f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
 
 
 class NoopSpan:
@@ -161,6 +168,16 @@ class HermesOTelPlugin:
         self._langsmith_endpoint = None
         self._langsmith_project = None
         self._langsmith_workspace = None
+        # Metrics
+        self._meter = None
+        self._meter_provider = None
+        self._metric_reader = None
+        self._session_count = None
+        self._token_usage = None
+        self._cost_usage = None
+        self._tool_duration = None
+        self._message_count = None
+        self._model_usage = None
 
     def init(self, endpoint: str = None) -> bool:
         """Initialize OTel tracer with the configured endpoint.
@@ -300,6 +317,10 @@ class HermesOTelPlugin:
 
             # Get tracer
             self.tracer = trace.get_tracer("hermes-otel-plugin")
+
+            # Initialize metrics
+            self._init_metrics(endpoint, resource, headers)
+
             self._initialized = True
 
             print(f"[hermes-otel] ✓ Connected to Langfuse at {endpoint}")
@@ -341,16 +362,90 @@ class HermesOTelPlugin:
 
             # Get tracer
             self.tracer = trace.get_tracer("hermes-otel-plugin")
+
+            # Initialize metrics
+            self._init_metrics(endpoint, resource)
+
             self._initialized = True
 
             print(f"[hermes-otel] ✓ Connected to {endpoint}")
             return True
 
         except Exception as e:
-            print(f"[hermes-otel] ✗ Initialization failed: {e}")
+            print("[hermes-otel] Initialization failed: {e}")
             import traceback
             traceback.print_exc()
             return False
+
+    def _init_metrics(self, endpoint: str, resource: Resource, headers: dict = None) -> bool:
+        """Initialize metrics (MeterProvider) alongside tracer."""
+        if not _METRICS_AVAILABLE:
+            return True
+
+        try:
+            exporter = OTLPMetricExporter(endpoint=endpoint, headers=headers)
+            self._metric_reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
+            self._meter_provider = MeterProvider(
+                resource=resource,
+                metric_readers=[self._metric_reader],
+            )
+            metrics.set_meter_provider(self._meter_provider)
+            self._meter = metrics.get_meter("hermes-otel-plugin")
+
+            self._session_count = self._meter.create_counter(
+                "hermes.session.count",
+                description="Sessions created",
+            )
+            self._token_usage = self._meter.create_counter(
+                "hermes.token.usage",
+                description="Tokens consumed by type",
+            )
+            self._cost_usage = self._meter.create_counter(
+                "hermes.cost.usage",
+                description="USD cost per message",
+            )
+            self._tool_duration = self._meter.create_histogram(
+                "hermes.tool.duration",
+                unit="ms",
+                description="Tool execution time",
+            )
+            self._message_count = self._meter.create_counter(
+                "hermes.message.count",
+                description="Completed assistant messages",
+            )
+            self._model_usage = self._meter.create_counter(
+                "hermes.model.usage",
+                description="Messages per model and provider",
+            )
+
+            print("[hermes-otel] ✓ Metrics initialized")
+            return True
+
+        except Exception as e:
+            print(f"[hermes-otel] Metrics init failed: {e}")
+            import traceback
+            traceback.print_exc()
+            return False
+
+    def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
+        """Record a metric value."""
+        if not self._meter:
+            return
+
+        attrs = dict(attributes or {})
+
+        if name == "session_count":
+            self._session_count.add(1, attrs)
+        elif name == "token_usage":
+            self._token_usage.add(int(value), attrs)
+        elif name == "cost_usage":
+            self._cost_usage.add(value, attrs)
+        elif name == "tool_duration":
+            self._tool_duration.record(value, attrs)
+        elif name == "message_count":
+            self._message_count.add(1, attrs)
+        elif name == "model_usage":
+            self._model_usage.add(1, attrs)
 
     def start_span(self, name: str, key: str, kind: str = "general", attributes: dict = None):
         """Create and track a new span."""
@@ -619,10 +714,15 @@ class HermesOTelPlugin:
             traceback.print_exc()
 
     def _force_flush(self):
-        """Force export of all buffered spans."""
+        """Force export of all buffered spans and metrics."""
         if self._span_processor:
             try:
                 self._span_processor.force_flush(timeout_millis=2000)
+            except Exception:
+                pass
+        if self._meter_provider:
+            try:
+                self._meter_provider.force_flush(timeout_millis=2000)
             except Exception:
                 pass
 

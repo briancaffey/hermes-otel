@@ -6,6 +6,7 @@ Each hook starts or ends a span, passing data through to OTel attributes.
 from __future__ import annotations
 
 import json
+import time
 from typing import Any
 
 try:
@@ -22,6 +23,9 @@ _SESSION_USAGE: dict[str, dict[str, int]] = {}
 
 # Per-session I/O for top-level agent span in Phoenix.
 _SESSION_IO: dict[str, dict[str, str]] = {}
+
+# Track tool start times for duration calculation.
+_TOOL_START_TIMES: dict[str, float] = {}
 
 
 def _safe_str(value: Any, max_len: int = 1000) -> str:
@@ -94,6 +98,8 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         "llm.provider": _safe_str(platform, 120),
     }
 
+    tracer.record_metric("session_count", 1, {"session_id": session_id})
+
     cron_job_id = kwargs.get("job_id") or kwargs.get("cron_job_id")
     if cron_job_id:
         attributes["hermes.cron.job_id"] = _safe_str(cron_job_id, 200)
@@ -164,6 +170,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         return
 
     key = f"{tool_name}:{task_id}"
+    _TOOL_START_TIMES[key] = time.perf_counter()
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
@@ -190,6 +197,11 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
 
     key = f"{tool_name}:{task_id}"
     debug_log(f"  ending span: key={key}")
+
+    start_time = _TOOL_START_TIMES.pop(key, None)
+    if start_time:
+        duration_ms = (time.perf_counter() - start_time) * 1000
+        tracer.record_metric("tool_duration", duration_ms, {"tool_name": tool_name})
 
     # Build final attributes — OpenInference conventions for Phoenix Info
     attributes = {}
@@ -272,6 +284,8 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
     # Capture last LLM output for top-level session span
     if session_id in _SESSION_IO:
         _SESSION_IO[session_id]["output"] = _safe_str(assistant_response, 500)
+
+    tracer.record_metric("message_count", 1, {"session_id": session_id, "model": model, "provider": platform})
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
@@ -386,6 +400,29 @@ def on_post_api_request(task_id: str, session_id: str, platform: str, model: str
             totals["total_tokens"] += total_tokens
             totals["cache_read_tokens"] += cache_read
             totals["cache_write_tokens"] += cache_write
+
+        # Record metrics
+        metric_attrs = {"model": model, "provider": provider}
+        if session_id:
+            metric_attrs["session_id"] = session_id
+
+        if prompt_tokens:
+            tracer.record_metric("token_usage", prompt_tokens, {**metric_attrs, "token_type": "input"})
+        if completion_tokens:
+            tracer.record_metric("token_usage", completion_tokens, {**metric_attrs, "token_type": "output"})
+        if cache_read:
+            tracer.record_metric("token_usage", cache_read, {**metric_attrs, "token_type": "cacheRead"})
+        if cache_write:
+            tracer.record_metric("token_usage", cache_write, {**metric_attrs, "token_type": "cacheCreation"})
+
+        cost = usage.get("cost") if usage else None
+        if cost:
+            try:
+                tracer.record_metric("cost_usage", float(cost), metric_attrs)
+            except (ValueError, TypeError):
+                pass
+
+        tracer.record_metric("model_usage", 1, {"model": model, "provider": provider})
 
     # Performance metrics
     if api_duration:
