@@ -46,13 +46,18 @@ export OTEL_PROJECT_NAME=hermes-agent
 
 ### Langfuse
 ```bash
-# these keys are scoped to a project, no need to specify project name
+# Option A (plugin-specific vars):
 export OTEL_LANGFUSE_PUBLIC_API_KEY="pk-lf-..."
 export OTEL_LANGFUSE_SECRET_API_KEY="sk-lf-..."
 # Optional — defaults to EU cloud endpoint
 export OTEL_LANGFUSE_ENDPOINT="https://cloud.langfuse.com/api/public/otel"
 # For US region:
 # export OTEL_LANGFUSE_ENDPOINT="https://us.cloud.langfuse.com/api/public/otel"
+
+# Option B (Langfuse-standard vars from docs):
+# export LANGFUSE_PUBLIC_KEY="pk-lf-..."
+# export LANGFUSE_SECRET_KEY="sk-lf-..."
+# export LANGFUSE_BASE_URL="https://cloud.langfuse.com"  # or us.cloud/langfuse/self-hosted base URL
 ```
 
 ### LangSmith
@@ -81,16 +86,18 @@ Hermes fires lifecycle hooks. This plugin maps them to OTel spans:
 
 ```
 Turn 1:
-  LLM span (root)
-  └── API span (first call → stop or tool_calls)
-      └── Tool span(s) (if tools called)
-  └── API span (second call → final response)
+  session.{platform} / cron (root, when session hooks are available)
+  └── LLM span
+      └── API span (first call → stop or tool_calls)
+          └── Tool span(s) (if tools called)
+      └── API span (second call → final response)
 ```
 
 ### Span hierarchy
 
 | Span | Kind | Contains |
 |------|------|----------|
+| `session.{platform}` / `cron` | GENERAL | Session metadata, completion/interruption status |
 | `llm.{model}` | LLM | Model name, provider, user message (input), assistant response (output) |
 | `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens |
 | `tool.{name}` | TOOL | Tool name, arguments (input), result (output), error status |
@@ -114,7 +121,7 @@ Langfuse uses `gen_ai.content.prompt` and `gen_ai.content.completion` for text. 
 | File | Role |
 |------|------|
 | `plugin.yaml` | Plugin manifest — declares hooks to Hermes |
-| `__init__.py` | Entry point — initializes tracer, registers 6 hook callbacks |
+| `__init__.py` | Entry point — initializes tracer, registers core hooks (+ session hooks when supported) |
 | `tracer.py` | OTel TracerProvider setup, span lifecycle management, parent/child tracking |
 | `hooks.py` | Hook implementations — maps Hermes events to OTel spans with attributes |
 

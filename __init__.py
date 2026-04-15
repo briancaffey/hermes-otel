@@ -23,8 +23,18 @@ def register(ctx):
     """Initialize OTel tracer and register all hooks."""
     otel_endpoint = os.environ.get("OTEL_ENDPOINT", "").strip()
     langfuse_endpoint = os.environ.get("OTEL_LANGFUSE_ENDPOINT", "").strip()
-    langfuse_pub = os.environ.get("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
-    langfuse_sec = os.environ.get("OTEL_LANGFUSE_SECRET_API_KEY", "").strip()
+    langfuse_pub = (
+        os.environ.get("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
+        or os.environ.get("LANGFUSE_PUBLIC_KEY", "").strip()
+    )
+    langfuse_sec = (
+        os.environ.get("OTEL_LANGFUSE_SECRET_API_KEY", "").strip()
+        or os.environ.get("LANGFUSE_SECRET_KEY", "").strip()
+    )
+    if not langfuse_endpoint:
+        base_url = os.environ.get("LANGFUSE_BASE_URL", "").strip().rstrip("/")
+        if base_url:
+            langfuse_endpoint = f"{base_url}/api/public/otel"
     langsmith_tracing = os.environ.get("LANGSMITH_TRACING", "").strip()
     langsmith_key = os.environ.get("LANGSMITH_API_KEY", "").strip()
     langsmith_project = os.environ.get("LANGSMITH_PROJECT", "").strip()
@@ -64,5 +74,21 @@ def register(ctx):
     ctx.register_hook("post_llm_call", hooks.on_post_llm_call)
     ctx.register_hook("pre_api_request", hooks.on_pre_api_request)
     ctx.register_hook("post_api_request", hooks.on_post_api_request)
-    debug_log("All 6 hooks registered")
-    print("[hermes-otel] All 6 hooks registered")
+
+    # Session hooks are available on newer Hermes versions.
+    session_hooks_registered = 0
+    try:
+        ctx.register_hook("on_session_start", hooks.on_session_start)
+        session_hooks_registered += 1
+    except Exception as e:
+        print(f"[hermes-otel] on_session_start hook unavailable: {e}")
+
+    try:
+        ctx.register_hook("on_session_end", hooks.on_session_end)
+        session_hooks_registered += 1
+    except Exception as e:
+        print(f"[hermes-otel] on_session_end hook unavailable: {e}")
+
+    total_hooks = 6 + session_hooks_registered
+    debug_log(f"{total_hooks} hooks registered")
+    print(f"[hermes-otel] Registered {total_hooks} hooks")

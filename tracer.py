@@ -37,7 +37,7 @@ def _uuid_to_str(run_id) -> str:
 
 try:
     from opentelemetry import trace
-    from opentelemetry.trace import StatusCode, set_span_in_context
+    from opentelemetry.trace import Status, StatusCode, set_span_in_context
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.resources import Resource
@@ -115,9 +115,10 @@ class SpanTracker:
 
             # Set status
             if status == "error":
-                span.set_status(StatusCode.ERROR, error_message or "")
+                span.set_status(Status(status_code=StatusCode.ERROR, description=error_message or ""))
             elif status == "ok":
-                span.set_status(StatusCode.OK)
+                # Set an explicit empty description so backends don't render "None".
+                span.set_status(Status(status_code=StatusCode.OK, description=""))
 
             span.end()
 
@@ -147,6 +148,7 @@ class HermesOTelPlugin:
         "tool": "TOOL",
         "llm": "LLM",
         "general": "GENERAL",
+        "agent": "AGENT",
     }
 
     def __init__(self):
@@ -165,7 +167,7 @@ class HermesOTelPlugin:
 
         Supports three configurations:
           - Phoenix (default): OTEL_ENDPOINT env var
-          - Langfuse: OTEL_LANGFUSE_ENDPOINT + OTEL_LANGFUSE_PUBLIC_API_KEY + OTEL_LANGFUSE_SECRET_API_KEY
+          - Langfuse: OTEL_LANGFUSE_* or standard LANGFUSE_* env vars
           - LangSmith: LANGSMITH_TRACING=true + LANGSMITH_API_KEY
 
         Args:
@@ -187,10 +189,21 @@ class HermesOTelPlugin:
         if use_langsmith:
             return self._init_langsmith()
 
-        # Detect Langfuse configuration
+        # Detect Langfuse configuration.
+        # Supports both plugin-specific OTEL_LANGFUSE_* variables and
+        # Langfuse-standard LANGFUSE_* variables from the official docs.
         langfuse_endpoint = os.getenv("OTEL_LANGFUSE_ENDPOINT", "").strip()
         langfuse_public_key = os.getenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
         langfuse_secret_key = os.getenv("OTEL_LANGFUSE_SECRET_API_KEY", "").strip()
+
+        if not langfuse_public_key:
+            langfuse_public_key = os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
+        if not langfuse_secret_key:
+            langfuse_secret_key = os.getenv("LANGFUSE_SECRET_KEY", "").strip()
+        if not langfuse_endpoint:
+            base_url = os.getenv("LANGFUSE_BASE_URL", "").strip().rstrip("/")
+            if base_url:
+                langfuse_endpoint = f"{base_url}/api/public/otel"
 
         use_langfuse = bool(langfuse_public_key and langfuse_secret_key)
 
@@ -354,6 +367,7 @@ class HermesOTelPlugin:
             print(f"[hermes-otel] Cannot start span: tracer not available (name={name})")
             return NoopSpan()
 
+        print(f"[hermes-otel] start_span: name={name}, key={key}, kind={kind}")
         try:
             attrs = dict(attributes or {})
 
@@ -364,8 +378,10 @@ class HermesOTelPlugin:
 
             # Check for active parent — enables nesting
             parent = self.spans.get_current_parent()
+            print(f"[hermes-otel] start_span parent check: name={name}, parent={type(parent).__name__ if parent else None}")
             span_ctx = None
             if parent is not None and hasattr(parent, "get_span_context"):
+                print(f"[hermes-otel] Setting parent context for {name}")
                 span_ctx = set_span_in_context(parent)
 
             span = self.tracer.start_span(name, attributes=attrs, context=span_ctx)
@@ -416,6 +432,9 @@ class HermesOTelPlugin:
             # Add parent if exists
             if parent_run and isinstance(parent_run, dict) and "id" in parent_run:
                 payload["parent_run_id"] = parent_run["id"]
+                print(f"[hermes-otel] LangSmith nesting: {name} -> parent_run_id={parent_run['id'][:8]}...")
+            else:
+                print(f"[hermes-otel] LangSmith: no parent for {name} (parent_run={parent_run})")
 
             # Build headers
             headers = {
@@ -443,10 +462,12 @@ class HermesOTelPlugin:
                 print(f"[hermes-otel] ✗ LangSmith run creation failed: {e.code} {e.reason} — {body[:200]}")
                 return NoopSpan()
 
-            # Store run info for later update
+            # Store run info for later update, including parent ID for nesting
+            parent_id = parent_run.get("id") if parent_run else None
             run_obj = {
                 "id": run_id_str,
                 "run_type": kind,
+                "parent_id": parent_id,
             }
             self.spans.start_span(key, run_obj)
             print(f"[hermes-otel] Started LangSmith span: {name} (key={key}, run_id={run_id_str[:8]}...)")

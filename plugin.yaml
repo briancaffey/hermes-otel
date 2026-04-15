@@ -11,6 +11,8 @@ description: OpenTelemetry integration - automatically export traces to OTLP end
 #   Langfuse:      OTEL_LANGFUSE_ENDPOINT + OTEL_LANGFUSE_PUBLIC_API_KEY + OTEL_LANGFUSE_SECRET_API_KEY
 #   LangSmith:     LANGSMITH_TRACING=true + LANGSMITH_API_KEY + LANGSMITH_ENDPOINT + LANGSMITH_PROJECT
 provides_hooks:
+  - on_session_start
+  - on_session_end
   - pre_tool_call
   - post_tool_call
   - pre_llm_call
