@@ -11,7 +11,15 @@ Tested with:
 
 Any OTLP HTTP endpoint should work.
 
+- For Pheonix see [docker-compose/pheonix.yaml](docker-compose/pheonix.yaml)
+- For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
+- For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
+
 ## Installation
+
+```
+hermes plugins install briancaffey/hermes-otel
+```
 
 ```bash
 pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
