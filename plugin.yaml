@@ -1,0 +1,19 @@
+name: hermes_otel
+version: "1.0"
+description: OpenTelemetry integration - automatically export traces to OTLP endpoints (Phoenix, Langfuse, LangSmith, etc.)
+# Required Python packages:
+#   pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+#   pip install langsmith  # Optional: for uuid7 time-ordered run IDs
+# Note: plugin.yaml does not support automatic dependency installation.
+#
+# Configuration (pick one):
+#   Phoenix:       OTEL_ENDPOINT
+#   Langfuse:      OTEL_LANGFUSE_ENDPOINT + OTEL_LANGFUSE_PUBLIC_API_KEY + OTEL_LANGFUSE_SECRET_API_KEY
+#   LangSmith:     LANGSMITH_TRACING=true + LANGSMITH_API_KEY + LANGSMITH_ENDPOINT + LANGSMITH_PROJECT
+provides_hooks:
+  - pre_tool_call
+  - post_tool_call
+  - pre_llm_call
+  - post_llm_call
+  - pre_api_request
+  - post_api_request

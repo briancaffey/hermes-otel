@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-otel"
+version = "1.0.0"
+description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, etc."
+readme = "README.md"
+requires-python = ">=3.9"
+dependencies = [
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-http",
+]
+
+[project.optional-dependencies]
+langsmith = [
+    "langsmith",
+]
+
+[project.entry-points."hermes.plugin"]
+hermes_otel = "hermes_otel:register"
+
+[tool.setuptools]
+py-modules = ["__init__", "hooks", "tracer", "debug_utils", "hermes_otel"]
