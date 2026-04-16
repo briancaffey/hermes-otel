@@ -5,13 +5,17 @@ Wires hook callbacks to the Hermes plugin system.
 
 from __future__ import annotations
 
-from .debug_utils import debug_log
-from .tracer import get_tracer
-from . import hooks
-
 
 def register(ctx):
     """Initialize OTel tracer and register all hooks."""
+    # Imports are deferred so that loading this file outside a package
+    # context (e.g. pytest's Package.setup on a rootdir-with-__init__.py
+    # project whose directory name is not a valid Python identifier)
+    # does not trigger the relative imports.
+    from .debug_utils import debug_log
+    from .tracer import get_tracer
+    from . import hooks
+
     tracer = get_tracer()
     tracer.init()
 
