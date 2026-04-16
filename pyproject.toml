@@ -45,4 +45,7 @@ markers = [
 addopts = "-m 'not e2e and not smoke' -v"
 
 [tool.setuptools]
-py-modules = ["__init__", "hooks", "tracer", "langsmith_backend", "debug_utils"]
+packages = ["hermes_otel"]
+
+[tool.setuptools.package-dir]
+hermes_otel = "."

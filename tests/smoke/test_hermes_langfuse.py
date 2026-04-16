@@ -11,7 +11,9 @@ These tests are skipped automatically if either service is not reachable.
 import time
 
 import pytest
-import requests
+
+requests = pytest.importorskip("requests")
+openai = pytest.importorskip("openai")
 from openai import OpenAI
 
 

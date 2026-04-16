@@ -5,7 +5,8 @@ import os
 import time
 
 import pytest
-import requests
+
+requests = pytest.importorskip("requests")
 
 import hermes_otel.tracer as tracer_mod
 from hermes_otel.tracer import HermesOTelPlugin

@@ -11,7 +11,8 @@ import os
 import time
 
 import pytest
-import requests
+
+requests = pytest.importorskip("requests")
 
 
 def _load_dotenv(path):

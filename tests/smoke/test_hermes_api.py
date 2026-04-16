@@ -12,7 +12,9 @@ The server runs on http://127.0.0.1:8642 by default.
 """
 
 import pytest
-import requests
+
+requests = pytest.importorskip("requests")
+openai = pytest.importorskip("openai")
 from openai import OpenAI
 
 
