@@ -7,11 +7,22 @@ pre/post hook calls.
 from __future__ import annotations
 
 import base64
+import contextvars
 import os
-import threading
 from typing import Any, Dict, Optional
 
 from .debug_utils import debug_log
+
+
+# Per-context parent span stack.  Using ContextVar (not threading.local)
+# ensures isolation across both threads AND asyncio coroutines: each
+# async task and each thread gets its own independent stack because
+# contextvars copy-on-write at task/thread boundaries.
+#
+# Default is None (not []) to avoid sharing a single list across contexts.
+_PARENT_STACK: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
+    "hermes_otel_parent_stack", default=None
+)
 
 try:
     from opentelemetry import trace
@@ -57,23 +68,24 @@ class SpanTracker:
     the active span when the post_* hook fires. Also tracks the
     current "parent" span so child spans nest correctly.
 
-    The parent stack is **thread-local**: each thread (e.g. a cron job
-    running in its own thread pool vs. a chat request on the main thread)
-    has its own independent parent stack. This prevents concurrent
-    sessions from corrupting each other's span hierarchy.
+    The parent stack is stored in a ``ContextVar`` so it is isolated
+    per task/thread: each async task, each thread-pool worker, and
+    each thread gets its own independent stack. This prevents
+    concurrent sessions (e.g. a cron job and a chat running at the
+    same time) from corrupting each other's span hierarchy.
     """
 
     def __init__(self):
         # key = f"{tool_name}:{task_id}" or f"llm:{session_id}"
         self._active_spans: Dict[str, Any] = {}
-        # Thread-local parent stack — see class docstring
-        self._local = threading.local()
 
     def _parent_stack(self) -> list:
-        """Return this thread's parent span stack, creating it if needed."""
-        if not hasattr(self._local, "stack"):
-            self._local.stack = []
-        return self._local.stack
+        """Return this context's parent span stack, creating it if needed."""
+        stack = _PARENT_STACK.get()
+        if stack is None:
+            stack = []
+            _PARENT_STACK.set(stack)
+        return stack
 
     def start_span(self, key: str, span, parent=None) -> None:
         """Store an active span by key."""
@@ -127,14 +139,15 @@ class SpanTracker:
     def end_all(self) -> None:
         """End all remaining spans (cleanup).
 
-        Only clears this thread's parent stack — other threads' stacks
+        Only clears this context's parent stack — other tasks/threads
         are untouched.
         """
         for key in list(self._active_spans.keys()):
             self.end_span(key)
         self._active_spans.clear()
-        if hasattr(self._local, "stack"):
-            self._local.stack.clear()
+        stack = _PARENT_STACK.get()
+        if stack is not None:
+            stack.clear()
 
 
 class HermesOTelPlugin:

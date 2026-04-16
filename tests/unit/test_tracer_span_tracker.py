@@ -121,14 +121,14 @@ class TestSpanTrackerEndAll:
         assert tracker.get_current_parent() is None
 
 
-class TestSpanTrackerThreadIsolation:
-    """Verify parent stack is isolated per thread.
+class TestSpanTrackerConcurrencyIsolation:
+    """Verify parent stack is isolated per task/thread.
 
-    Concurrent sessions (e.g. cron + chat) must not corrupt each other's
-    span hierarchy via a shared parent stack.
+    Concurrent sessions (e.g. cron + chat, or two chats) must not
+    corrupt each other's span hierarchy via a shared parent stack.
     """
 
-    def test_parent_stack_is_thread_local(self):
+    def test_parent_stack_isolated_across_threads(self):
         import threading
 
         tracker = SpanTracker()
@@ -142,7 +142,6 @@ class TestSpanTrackerThreadIsolation:
             tracker.push_parent(other_parent)
             seen_in_other_thread.append(("after_push", tracker.get_current_parent()))
 
-        # Main thread pushes its parent
         tracker.push_parent(main_parent)
         assert tracker.get_current_parent() is main_parent
 
@@ -150,9 +149,44 @@ class TestSpanTrackerThreadIsolation:
         t.start()
         t.join()
 
-        # Other thread saw its own isolated stack, not main's
         assert seen_in_other_thread[0] == ("initial", None)
         assert seen_in_other_thread[1][1] is other_parent
-
         # Main thread's stack is untouched by the other thread
         assert tracker.get_current_parent() is main_parent
+
+    def test_parent_stack_isolated_across_asyncio_tasks(self):
+        """Two asyncio tasks interleaving on the same thread stay isolated.
+
+        This is the scenario the old threading.local fix couldn't cover:
+        multiple coroutines on the same event loop thread.
+        """
+        import asyncio
+
+        tracker = SpanTracker()
+        task_a_parent = MagicMock(name="task_a")
+        task_b_parent = MagicMock(name="task_b")
+        observations = {"a": [], "b": []}
+
+        async def _task_a():
+            tracker.push_parent(task_a_parent)
+            # Yield control so task_b interleaves
+            await asyncio.sleep(0)
+            observations["a"].append(tracker.get_current_parent())
+            await asyncio.sleep(0)
+            observations["a"].append(tracker.get_current_parent())
+
+        async def _task_b():
+            # Task B starts with empty stack, not task A's
+            observations["b"].append(tracker.get_current_parent())
+            tracker.push_parent(task_b_parent)
+            await asyncio.sleep(0)
+            observations["b"].append(tracker.get_current_parent())
+
+        async def _run():
+            await asyncio.gather(_task_a(), _task_b())
+
+        asyncio.run(_run())
+
+        # Each task sees only its own parent — no cross-contamination
+        assert observations["a"] == [task_a_parent, task_a_parent]
+        assert observations["b"] == [None, task_b_parent]

@@ -15,26 +15,25 @@ if str(PLUGIN_ROOT) not in sys.path:
 def _reset_otel_state():
     """Reset plugin singletons and module-level state between tests.
 
-    The tracer module uses a global _tracer singleton, and the hooks module
-    uses module-level dicts for per-session aggregation. Both must be cleared
-    to prevent cross-test contamination.
+    The tracer module uses a global _tracer singleton, module-level dicts
+    for per-session aggregation, and a ContextVar for the parent span
+    stack. All must be cleared to prevent cross-test contamination.
     """
     import hermes_otel.tracer as tracer_mod
     import hermes_otel.hooks as hooks_mod
 
-    # Reset before test
-    tracer_mod._tracer = None
-    hooks_mod._SESSION_USAGE.clear()
-    hooks_mod._SESSION_IO.clear()
-    hooks_mod._TOOL_START_TIMES.clear()
+    def _reset():
+        tracer_mod._tracer = None
+        hooks_mod._SESSION_USAGE.clear()
+        hooks_mod._SESSION_IO.clear()
+        hooks_mod._TOOL_START_TIMES.clear()
+        # Reset the parent stack ContextVar — pytest runs tests in the
+        # same context, so the stack would otherwise bleed between tests.
+        tracer_mod._PARENT_STACK.set(None)
 
+    _reset()
     yield
-
-    # Reset after test
-    tracer_mod._tracer = None
-    hooks_mod._SESSION_USAGE.clear()
-    hooks_mod._SESSION_IO.clear()
-    hooks_mod._TOOL_START_TIMES.clear()
+    _reset()
 
 
 @pytest.fixture()
