@@ -42,7 +42,7 @@ markers = [
     "langfuse: requires Langfuse containers",
     "smoke: full-stack tests requiring hermes-agent + observability backend running",
 ]
-addopts = "-m 'not e2e and not smoke' -v"
+addopts = "-m 'not e2e and not smoke' -v --import-mode=importlib"
 
 [tool.setuptools]
 packages = ["hermes_otel"]
