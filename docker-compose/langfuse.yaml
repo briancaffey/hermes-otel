@@ -1,0 +1,111 @@
+# Langfuse self-hosted stack for E2E testing.
+#
+# Usage:
+#   docker compose -f docker-compose/langfuse.yaml up -d
+#   # wait ~60s for all services to be ready
+#   docker compose -f docker-compose/langfuse.yaml down -v
+#
+# Pre-seeded API keys (via headless initialization):
+#   Public key:  lf_pk_test_hermes_otel
+#   Secret key:  lf_sk_test_hermes_otel
+#
+# OTEL endpoint:  http://localhost:3000/api/public/otel
+# REST API:       http://localhost:3000/api/public/...
+# UI:             http://localhost:3000
+
+services:
+  langfuse-web:
+    image: docker.io/langfuse/langfuse:3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+      minio:
+        condition: service_started
+    ports:
+      - "3000:3000"
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      NEXTAUTH_URL: http://localhost:3000
+      NEXTAUTH_SECRET: test-secret-for-e2e-only
+      SALT: test-salt-for-e2e-only
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      REDIS_CONNECTION_STRING: redis://redis:6379
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "false"
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
+      # Headless initialization — pre-seeds org, project, and API keys
+      LANGFUSE_INIT_ORG_ID: test-org
+      LANGFUSE_INIT_ORG_NAME: Test Org
+      LANGFUSE_INIT_PROJECT_ID: test-project
+      LANGFUSE_INIT_PROJECT_NAME: hermes-otel-e2e
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_test_hermes_otel
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_test_hermes_otel
+      LANGFUSE_INIT_USER_EMAIL: test@test.com
+      LANGFUSE_INIT_USER_PASSWORD: testpassword123
+      LANGFUSE_INIT_USER_NAME: Test User
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/public/health"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+      start_period: 30s
+
+  langfuse-worker:
+    image: docker.io/langfuse/langfuse-worker:3
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+    environment:
+      DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
+      CLICKHOUSE_URL: http://clickhouse:8123
+      CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      REDIS_CONNECTION_STRING: redis://redis:6379
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "false"
+      LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
+      SALT: test-salt-for-e2e-only
+      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+
+  postgres:
+    image: docker.io/postgres:17
+    environment:
+      POSTGRES_DB: langfuse
+      POSTGRES_USER: langfuse
+      POSTGRES_PASSWORD: langfuse
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U langfuse"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /var/lib/postgresql/data
+
+  redis:
+    image: docker.io/redis:7
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 3s
+      timeout: 3s
+      retries: 10
+    tmpfs:
+      - /data
+
+  clickhouse:
+    image: docker.io/clickhouse/clickhouse-server
+    tmpfs:
+      - /var/lib/clickhouse
+      - /var/log/clickhouse-server
+
+  minio:
+    image: docker.io/minio/minio
+    command: server /data --console-address ":9001"
+    tmpfs:
+      - /data

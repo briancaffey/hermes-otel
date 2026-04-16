@@ -47,7 +47,7 @@ The plugin supports three modes with automatic detection:
 
 1. **LangSmith** (highest priority when enabled)
 2. **Langfuse** (if keys are provided)
-3. **Phoenix / generic OTLP** (fallback via `OTEL_ENDPOINT`)
+3. **Phoenix / generic OTLP** (fallback via `OTEL_PHOENIX_ENDPOINT`)
 
 That means one tracing implementation can target different observability stacks depending on environment variables.
 
@@ -114,7 +114,7 @@ Debug file logging is behind `HERMES_OTEL_DEBUG=true`, so normal runs stay clean
 ### Phoenix
 
 ```bash
-export OTEL_ENDPOINT="http://localhost:6006/v1/traces"
+export OTEL_PHOENIX_ENDPOINT="http://localhost:6006/v1/traces"
 export OTEL_PROJECT_NAME="hermes-agent"
 ```
 

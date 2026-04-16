@@ -21,18 +21,123 @@ Any OTLP HTTP endpoint should work.
 hermes plugins install briancaffey/hermes-otel
 ```
 
+The plugin lives in `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. However, the OTel dependencies must be installed into the **hermes-agent virtual environment** (where `hermes` itself runs):
+
 ```bash
-pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+# Install OTel runtime dependencies into the hermes-agent venv
+~/git/hermes-agent/venv/bin/pip install \
+  opentelemetry-api \
+  opentelemetry-sdk \
+  opentelemetry-exporter-otlp-proto-http
+
+# Optional: for LangSmith time-ordered run IDs
+~/git/hermes-agent/venv/bin/pip install langsmith
 ```
 
-Then place this repo in `~/.hermes/plugins/hermes_otel/`. Hermes auto-discovers it via `plugin.yaml`.
+You can also install the plugin package itself in editable mode (this pulls in the same OTel deps automatically):
 
-Or install via pip:
 ```bash
-pip install -e /path/to/hermes_otel   # dev mode
-# or
-pip install hermes-otel               # from PyPI (when published)
+~/git/hermes-agent/venv/bin/pip install -e ~/.hermes/plugins/hermes_otel
 ```
+
+### Running tests
+
+The test suite uses its own isolated environment via `uv` and does **not** require the hermes-agent venv:
+
+```bash
+cd ~/.hermes/plugins/hermes_otel
+
+# Unit + integration tests (no Docker needed, <1s)
+uv run --extra dev pytest
+
+# All E2E tests (requires Docker)
+uv run --extra dev --extra e2e pytest -m e2e
+
+# Phoenix E2E only (starts a single container)
+uv run --extra dev --extra e2e pytest -m phoenix
+
+# Langfuse E2E only (starts full stack via docker compose)
+uv run --extra dev --extra e2e pytest -m langfuse
+
+# Smoke tests — full pipeline: hermes API server -> plugin -> Langfuse
+uv run --extra dev --extra e2e pytest -m smoke
+```
+
+The default `pytest` run excludes E2E and smoke tests and completes in under a second.
+
+#### Test tiers
+
+The test suite is organized into four tiers, from fastest/simplest to slowest/most comprehensive:
+
+| Tier | Marker | Tests | What it tests | Requirements |
+|------|--------|-------|---------------|--------------|
+| Unit | (default) | 109 | Hook logic, tracer init, helpers, SpanTracker | None |
+| Integration | (default) | 19 | Full span export pipeline with InMemorySpanExporter, parent-child hierarchy, token roll-up, metrics | None |
+| E2E | `-m e2e` | 6 | OTLP export to real Phoenix/Langfuse, queried via GraphQL/REST API | Docker |
+| Smoke | `-m smoke` | 6 | Send real chats to hermes via OpenAI SDK, verify traces in Langfuse | hermes gateway + Langfuse |
+
+**Unit tests** (`tests/unit/`) cover:
+- `_safe_str`, `_to_int`, `_detect_session_kind` helper functions
+- `SpanTracker` class: span lifecycle, parent stack, end_all
+- `HermesOTelPlugin.init()` environment detection (Phoenix vs Langfuse vs LangSmith priority)
+- `NoopSpan` graceful degradation when OTel is unavailable
+- All 8 hook callbacks with mocked tracer (span names, attributes, metric recording, module-state management)
+
+**Integration tests** (`tests/integration/`) use a real OTel SDK with `InMemorySpanExporter` — no network needed:
+- Individual hook pairs produce correctly attributed spans
+- Parent-child nesting: Session > LLM > API > Tool (verified via span context)
+- Full session lifecycle with token aggregation and session I/O roll-up
+- Metric counters and histograms via `InMemoryMetricReader`
+
+**E2E tests** (`tests/e2e/`) invoke hooks directly against real backends and query their APIs:
+- **Phoenix**: fires hooks, queries Phoenix GraphQL API at `/graphql` to verify spans
+- **Langfuse**: fires hooks, queries Langfuse REST API at `GET /api/public/observations` to verify observations
+
+**Smoke tests** (`tests/smoke/`) exercise the complete production pipeline:
+- **test_hermes_api**: verifies the hermes API server is functional (health, models, chat completion)
+- **test_hermes_langfuse**: sends real chats via OpenAI SDK to hermes, then queries Langfuse to confirm traces arrived with correct span names, tool spans, and token data
+
+#### E2E backends
+
+**Phoenix** — single container, starts in seconds:
+```bash
+docker compose -f docker-compose/pheonix.yaml up -d
+# or let the test fixture start it automatically
+```
+
+**Langfuse** — full stack (Langfuse + Postgres + Redis + ClickHouse + MinIO), starts in ~60s:
+```bash
+docker compose -f docker-compose/langfuse.yaml up -d
+# Pre-seeded API keys: lf_pk_test_hermes_otel / lf_sk_test_hermes_otel
+# UI at http://localhost:3000, OTEL endpoint at http://localhost:3000/api/public/otel
+```
+
+The E2E fixtures will start/stop Docker services automatically if they aren't already running. If a service is already running on the expected port, it is reused.
+
+#### Smoke tests
+
+Smoke tests exercise the full pipeline end-to-end:
+
+```
+OpenAI SDK  -->  hermes API server  -->  LLM  -->  OTEL plugin  -->  Langfuse
+                 (port 8642)                       (hooks.py)        (port 3000)
+     \                                                                   /
+      `--- pytest sends chat here                 pytest queries here ---`
+```
+
+They require:
+
+1. **hermes-agent API server** running with the OTEL plugin loaded. Add to `~/.hermes/.env`:
+   ```
+   API_SERVER_ENABLED=true
+   ```
+   Then start the gateway:
+   ```bash
+   hermes gateway
+   ```
+2. **Langfuse** running with credentials configured in `~/.hermes/.env` (`OTEL_LANGFUSE_*` variables)
+
+Tests skip automatically with a helpful message if either service is not reachable. The smoke tests poll the Langfuse observations API (up to 60-90s) to account for async trace ingestion.
 
 ## Configuration
 
@@ -40,7 +145,7 @@ pip install hermes-otel               # from PyPI (when published)
 
 ### Phoenix
 ```bash
-export OTEL_ENDPOINT="http://localhost:6006/v1/traces"
+export OTEL_PHOENIX_ENDPOINT="http://localhost:6006/v1/traces"
 export OTEL_PROJECT_NAME=hermes-agent
 ```
 
@@ -78,7 +183,7 @@ export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
 export HERMES_OTEL_DEBUG=true             # Optional local debug log
 ```
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > Phoenix (`OTEL_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ## How it works
 
@@ -124,6 +229,12 @@ Langfuse uses `gen_ai.content.prompt` and `gen_ai.content.completion` for text. 
 | `__init__.py` | Entry point — initializes tracer, registers core hooks (+ session hooks when supported) |
 | `tracer.py` | OTel TracerProvider setup, span lifecycle management, parent/child tracking |
 | `hooks.py` | Hook implementations — maps Hermes events to OTel spans with attributes |
+| `debug_utils.py` | Optional debug logging and secret masking |
+| `docker-compose/` | Docker Compose files for Phoenix and Langfuse backends |
+| `tests/unit/` | Unit tests — helpers, SpanTracker, tracer init, hook callbacks |
+| `tests/integration/` | Integration tests — InMemorySpanExporter, span hierarchy, metrics |
+| `tests/e2e/` | E2E tests — real Phoenix/Langfuse via Docker |
+| `tests/smoke/` | Smoke tests — full pipeline through hermes API server to Langfuse |
 
 ## Current limitations
 

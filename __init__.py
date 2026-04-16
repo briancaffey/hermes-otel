@@ -21,7 +21,7 @@ debug_log("__init__.py loaded - starting plugin registration")
 
 def register(ctx):
     """Initialize OTel tracer and register all hooks."""
-    otel_endpoint = os.environ.get("OTEL_ENDPOINT", "").strip()
+    otel_endpoint = os.environ.get("OTEL_PHOENIX_ENDPOINT", "").strip()
     langfuse_endpoint = os.environ.get("OTEL_LANGFUSE_ENDPOINT", "").strip()
     langfuse_pub = (
         os.environ.get("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
@@ -39,7 +39,7 @@ def register(ctx):
     langsmith_key = os.environ.get("LANGSMITH_API_KEY", "").strip()
     langsmith_project = os.environ.get("LANGSMITH_PROJECT", "").strip()
 
-    debug_log(f"register() called, OTEL_ENDPOINT={otel_endpoint or 'NOT SET'}")
+    debug_log(f"register() called, OTEL_PHOENIX_ENDPOINT={otel_endpoint or 'NOT SET'}")
     debug_log(f"  OTEL_LANGFUSE_ENDPOINT={langfuse_endpoint or 'NOT SET'}")
     debug_log(f"  OTEL_LANGFUSE_PUBLIC_API_KEY={mask_secret(langfuse_pub)}")
     debug_log(f"  OTEL_LANGFUSE_SECRET_API_KEY={mask_secret(langfuse_sec)}")
@@ -48,7 +48,7 @@ def register(ctx):
     debug_log(f"  LANGSMITH_PROJECT={langsmith_project or 'NOT SET'}")
 
     print(f"[hermes-otel] register() called")
-    print(f"[hermes-otel]   OTEL_ENDPOINT={'set' if otel_endpoint else 'not set'}")
+    print(f"[hermes-otel]   OTEL_PHOENIX_ENDPOINT={'set' if otel_endpoint else 'not set'}")
     print(f"[hermes-otel]   OTEL_LANGFUSE_ENDPOINT={langfuse_endpoint or 'default'}")
     print(f"[hermes-otel]   OTEL_LANGFUSE_PUBLIC_API_KEY={'set' if langfuse_pub else 'not set'}")
     print(f"[hermes-otel]   OTEL_LANGFUSE_SECRET_API_KEY={'set' if langfuse_sec else 'not set'}")

@@ -92,6 +92,7 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     key = f"session:{session_id}"
 
     attributes = {
+        "session_id": _safe_str(session_id, 200),
         "hermes.session_id": _safe_str(session_id, 120),
         "hermes.session.kind": kind,
         "llm.model_name": _safe_str(model, 200),
@@ -251,6 +252,7 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session_id": _safe_str(session_id, 200),
         "llm.model_name": model,
         "llm.provider": platform,
         "input.value": _safe_str(user_message, 500),
@@ -289,6 +291,7 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session_id": _safe_str(session_id, 200),
         "output.value": _safe_str(assistant_response, 500),
     }
 
@@ -315,6 +318,7 @@ def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session_id": _safe_str(session_id, 200),
         "llm.model_name": model,
         "llm.provider": provider,
         "llm.api_mode": api_mode,

@@ -18,9 +18,31 @@ dependencies = [
 langsmith = [
     "langsmith",
 ]
+dev = [
+    "pytest>=8.0",
+    "opentelemetry-api",
+    "opentelemetry-sdk",
+    "opentelemetry-exporter-otlp-proto-http",
+]
+e2e = [
+    "requests",
+    "openai",
+]
 
 [project.entry-points."hermes.plugin"]
 hermes_otel = "hermes_otel:register"
 
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+markers = [
+    "unit: fast tests with no external dependencies",
+    "integration: tests using InMemorySpanExporter",
+    "e2e: end-to-end tests requiring Docker services",
+    "phoenix: requires Phoenix container",
+    "langfuse: requires Langfuse containers",
+    "smoke: full-stack tests requiring hermes-agent + observability backend running",
+]
+addopts = "-m 'not e2e and not smoke' -v"
+
 [tool.setuptools]
-py-modules = ["__init__", "hooks", "tracer", "debug_utils", "hermes_otel"]
+py-modules = ["__init__", "hooks", "tracer", "langsmith_backend", "debug_utils", "hermes_otel"]
