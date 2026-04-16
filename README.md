@@ -11,7 +11,7 @@ Tested with:
 
 Any OTLP HTTP endpoint should work.
 
-- For Pheonix see [docker-compose/pheonix.yaml](docker-compose/pheonix.yaml)
+- For Phoenix see [docker-compose/phoenix.yaml](docker-compose/phoenix.yaml)
 - For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
 - For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
 
@@ -101,7 +101,7 @@ The test suite is organized into four tiers, from fastest/simplest to slowest/mo
 
 **Phoenix** — single container, starts in seconds:
 ```bash
-docker compose -f docker-compose/pheonix.yaml up -d
+docker compose -f docker-compose/phoenix.yaml up -d
 # or let the test fixture start it automatically
 ```
 

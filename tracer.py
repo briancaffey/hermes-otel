@@ -267,7 +267,7 @@ class HermesOTelPlugin:
             trace.set_tracer_provider(provider)
             self.tracer = trace.get_tracer("hermes-otel-plugin")
 
-            self._init_metrics(endpoint, resource, headers)
+            self._init_metrics(endpoint, resource, backend_name)
             self._initialized = True
 
             print(f"[hermes-otel] ✓ Connected to {backend_name} at {endpoint}")
@@ -278,13 +278,30 @@ class HermesOTelPlugin:
             traceback.print_exc()
             return False
 
-    def _init_metrics(self, endpoint: str, resource: Resource, headers: dict = None) -> bool:
-        """Initialize metrics (MeterProvider) alongside tracer."""
+    def _init_metrics(self, traces_endpoint: str, resource: Resource,
+                      backend_name: str = "Phoenix") -> bool:
+        """Initialize metrics (MeterProvider) alongside tracer.
+
+        Langfuse does not support OTLP metrics ingestion, so metrics are
+        skipped for that backend.  For Phoenix, the metrics endpoint is
+        derived from the traces endpoint (e.g. /v1/traces -> /v1/metrics).
+        """
         if not _METRICS_AVAILABLE:
             return True
 
+        if backend_name == "Langfuse":
+            print("[hermes-otel]   Metrics skipped (Langfuse does not support OTLP metrics)")
+            return True
+
+        # Derive the metrics endpoint from the traces endpoint.
+        # e.g. http://localhost:6006/v1/traces -> http://localhost:6006/v1/metrics
+        if traces_endpoint.endswith("/v1/traces"):
+            metrics_endpoint = traces_endpoint[:-len("/v1/traces")] + "/v1/metrics"
+        else:
+            metrics_endpoint = traces_endpoint
+
         try:
-            exporter = OTLPMetricExporter(endpoint=endpoint, headers=headers)
+            exporter = OTLPMetricExporter(endpoint=metrics_endpoint)
             self._metric_reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
             self._meter_provider = MeterProvider(
                 resource=resource,

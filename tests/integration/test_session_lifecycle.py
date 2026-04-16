@@ -105,7 +105,7 @@ class TestFullSessionLifecycle:
         assert attrs["gen_ai.usage.output_tokens"] == 110
 
         # Cache roll-up: 50+100=150 cache read
-        assert attrs["llm.token_count.cache_read"] == 150
+        assert attrs["llm.token_count.prompt_details.cache_read"] == 150
         assert attrs["gen_ai.usage.cache_read_input_tokens"] == 150
 
         # Session I/O: first input and last output

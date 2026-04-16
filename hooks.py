@@ -92,6 +92,7 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     key = f"session:{session_id}"
 
     attributes = {
+        "session.id": _safe_str(session_id, 200),
         "session_id": _safe_str(session_id, 200),
         "hermes.session_id": _safe_str(session_id, 120),
         "hermes.session.kind": kind,
@@ -149,10 +150,10 @@ def on_session_end(session_id: str, completed: bool, interrupted: bool, model: s
         attributes["gen_ai.usage.output_tokens"] = usage_totals.get("completion_tokens", 0)
         attributes["gen_ai.usage.total_tokens"] = usage_totals.get("total_tokens", 0)
         if usage_totals.get("cache_read_tokens", 0):
-            attributes["llm.token_count.cache_read"] = usage_totals["cache_read_tokens"]
+            attributes["llm.token_count.prompt_details.cache_read"] = usage_totals["cache_read_tokens"]
             attributes["gen_ai.usage.cache_read_input_tokens"] = usage_totals["cache_read_tokens"]
         if usage_totals.get("cache_write_tokens", 0):
-            attributes["llm.token_count.cache_write"] = usage_totals["cache_write_tokens"]
+            attributes["llm.token_count.prompt_details.cache_write"] = usage_totals["cache_write_tokens"]
             attributes["gen_ai.usage.cache_creation_input_tokens"] = usage_totals["cache_write_tokens"]
 
     status = "ok" if completed or interrupted else "error"
@@ -252,6 +253,7 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session.id": _safe_str(session_id, 200),
         "session_id": _safe_str(session_id, 200),
         "llm.model_name": model,
         "llm.provider": platform,
@@ -291,6 +293,7 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session.id": _safe_str(session_id, 200),
         "session_id": _safe_str(session_id, 200),
         "output.value": _safe_str(assistant_response, 500),
     }
@@ -318,6 +321,7 @@ def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
+        "session.id": _safe_str(session_id, 200),
         "session_id": _safe_str(session_id, 200),
         "llm.model_name": model,
         "llm.provider": provider,
@@ -381,10 +385,10 @@ def on_post_api_request(task_id: str, session_id: str, platform: str, model: str
         cache_read = _to_int(usage.get("cache_read_tokens"))
         cache_write = _to_int(usage.get("cache_write_tokens"))
         if cache_read:
-            attributes["llm.token_count.cache_read"] = cache_read
+            attributes["llm.token_count.prompt_details.cache_read"] = cache_read
             attributes["gen_ai.usage.cache_read_input_tokens"] = cache_read
         if cache_write:
-            attributes["llm.token_count.cache_write"] = cache_write
+            attributes["llm.token_count.prompt_details.cache_write"] = cache_write
             attributes["gen_ai.usage.cache_creation_input_tokens"] = cache_write
 
         # Roll up usage to the top-level session/cron span.

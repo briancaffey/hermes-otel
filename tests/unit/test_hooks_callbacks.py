@@ -121,7 +121,7 @@ class TestOnSessionEnd:
         assert attrs["llm.token_count.completion"] == 50
         assert attrs["gen_ai.usage.input_tokens"] == 100
         assert attrs["gen_ai.usage.output_tokens"] == 50
-        assert attrs["llm.token_count.cache_read"] == 20
+        assert attrs["llm.token_count.prompt_details.cache_read"] == 20
         assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 10
         # Verify cleanup
         assert "s1" not in hooks_mod._SESSION_USAGE
@@ -379,9 +379,9 @@ class TestOnPostApiRequest:
         }
         self._call_post_api(mock_tracer, usage=usage)
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert attrs["llm.token_count.cache_read"] == 30
+        assert attrs["llm.token_count.prompt_details.cache_read"] == 30
         assert attrs["gen_ai.usage.cache_read_input_tokens"] == 30
-        assert attrs["llm.token_count.cache_write"] == 15
+        assert attrs["llm.token_count.prompt_details.cache_write"] == 15
         assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 15
 
     def test_session_usage_rollup(self, mock_tracer):
