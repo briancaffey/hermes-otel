@@ -9,14 +9,8 @@ import json
 import time
 from typing import Any
 
-try:
-    from .debug_utils import debug_log
-    from .tracer import get_tracer
-except ImportError:  # pragma: no cover - flat-module fallback for packaging
-    from debug_utils import debug_log
-    from tracer import get_tracer
-
-debug_log("hooks.py module loaded")
+from .debug_utils import debug_log
+from .tracer import get_tracer
 
 # Per-session token aggregation for top-level session/cron spans.
 _SESSION_USAGE: dict[str, dict[str, int]] = {}

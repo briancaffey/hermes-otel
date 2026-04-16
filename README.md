@@ -180,8 +180,18 @@ export LANGSMITH_PROJECT="hermes-langsmith-otel"
 ### Optional
 ```bash
 export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
-export HERMES_OTEL_DEBUG=true             # Optional local debug log
+export HERMES_OTEL_DEBUG=true             # Enable debug logging (see below)
 ```
+
+### Debug logging
+
+The plugin prints only essential startup messages (backend connected/failed, hook count) to stdout. For detailed per-span logging (span start/end, parent nesting, token counts, HTTP payloads), enable debug mode:
+
+```bash
+export HERMES_OTEL_DEBUG=true
+```
+
+Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
 **Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 

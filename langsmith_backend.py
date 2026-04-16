@@ -18,10 +18,7 @@ import uuid
 from datetime import datetime, timezone
 from typing import Any, Dict, Optional
 
-try:
-    from .debug_utils import debug_log
-except ImportError:  # pragma: no cover
-    from debug_utils import debug_log
+from .debug_utils import debug_log
 
 # Prefer langsmith uuid7 for time-ordered run IDs
 try:
@@ -79,9 +76,7 @@ class LangSmithBackend:
         project = os.getenv("LANGSMITH_PROJECT", "hermes-langsmith-otel").strip()
         workspace = os.getenv("LANGSMITH_WORKSPACE_ID", "").strip() or None
 
-        print(f"[hermes-otel] Initializing LangSmith at {endpoint}...")
-        print(f"[hermes-otel]   Project: {project}")
-        print(f"[hermes-otel]   uuid7 available: {UUID7_AVAILABLE}")
+        debug_log(f"LangSmith: endpoint={endpoint}, project={project}, uuid7={UUID7_AVAILABLE}")
 
         return cls(api_key=api_key, endpoint=endpoint, project=project,
                    workspace=workspace)
@@ -110,8 +105,7 @@ class LangSmithBackend:
             return True
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"[hermes-otel] ✗ LangSmith POST {path} failed: "
-                  f"{e.code} {e.reason} — {body[:200]}")
+            debug_log(f"LangSmith POST {path} failed: {e.code} {e.reason} — {body[:200]}")
             return False
 
     def _patch(self, path: str, payload: dict) -> bool:
@@ -126,8 +120,7 @@ class LangSmithBackend:
             return True
         except urllib.error.HTTPError as e:
             body = e.read().decode("utf-8", errors="replace")
-            print(f"[hermes-otel] ✗ LangSmith PATCH {path} failed: "
-                  f"{e.code} {e.reason} — {body[:200]}")
+            debug_log(f"LangSmith PATCH {path} failed: {e.code} {e.reason} — {body[:200]}")
             return False
 
     # ── Span lifecycle ───────────────────────────────────────────────────
@@ -167,10 +160,6 @@ class LangSmithBackend:
 
             if parent_run and isinstance(parent_run, dict) and "id" in parent_run:
                 payload["parent_run_id"] = parent_run["id"]
-                print(f"[hermes-otel] LangSmith nesting: {name} -> "
-                      f"parent_run_id={parent_run['id'][:8]}...")
-            else:
-                print(f"[hermes-otel] LangSmith: no parent for {name}")
 
             if not self._post("/runs", payload):
                 return None
@@ -180,14 +169,11 @@ class LangSmithBackend:
                 "run_type": kind,
                 "parent_id": parent_run.get("id") if parent_run else None,
             }
-            print(f"[hermes-otel] Started LangSmith span: {name} "
-                  f"(key={key}, run_id={run_id_str[:8]}...)")
+            debug_log(f"LangSmith start_span: {name} (key={key}, run_id={run_id_str[:8]}...)")
             return run_obj
 
         except Exception as e:
-            print(f"[hermes-otel] Error starting LangSmith span '{name}': {e}")
-            import traceback
-            traceback.print_exc()
+            debug_log(f"Error starting LangSmith span '{name}': {e}")
             return None
 
     def end_span(self, run: dict, attributes: dict = None,
@@ -257,7 +243,4 @@ class LangSmithBackend:
             self._patch(f"/runs/{run_id}", payload)
 
         except Exception as e:
-            print(f"[hermes-otel] Error ending LangSmith span "
-                  f"(run_id={run_id[:8]}...): {e}")
-            import traceback
-            traceback.print_exc()
+            debug_log(f"Error ending LangSmith span (run_id={run_id[:8]}...): {e}")

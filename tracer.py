@@ -10,12 +10,7 @@ import base64
 import os
 from typing import Any, Dict, Optional
 
-try:
-    from .debug_utils import debug_log
-except ImportError:  # pragma: no cover - flat-module fallback for packaging
-    from debug_utils import debug_log
-
-debug_log("tracer.py module loaded")
+from .debug_utils import debug_log
 
 try:
     from opentelemetry import trace
@@ -218,24 +213,18 @@ class HermesOTelPlugin:
 
     def _init_langsmith(self) -> bool:
         """Initialize LangSmith backend from environment variables."""
-        try:
-            from .langsmith_backend import LangSmithBackend
-        except ImportError:  # pragma: no cover
-            from langsmith_backend import LangSmithBackend
+        from .langsmith_backend import LangSmithBackend
 
         try:
             backend = LangSmithBackend.from_env()
             if backend is None:
-                print("[hermes-otel] ✗ LangSmith env vars not configured")
                 return False
             self._langsmith = backend
             self._initialized = True
-            print("[hermes-otel] ✓ LangSmith initialized")
+            print(f"[hermes-otel] ✓ LangSmith at {backend.endpoint}")
             return True
         except Exception as e:
-            print(f"[hermes-otel] ✗ LangSmith initialization failed: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[hermes-otel] ✗ LangSmith init failed: {e}")
             return False
 
     def _init_otlp(self, endpoint: str, headers: dict = None,
@@ -248,13 +237,10 @@ class HermesOTelPlugin:
             backend_name: Display name for log messages.
         """
         try:
-            print(f"[hermes-otel] Connecting to {backend_name} at {endpoint}...")
-
             resource_attrs = {"service.name": "hermes-agent"}
             project_name = os.getenv("OTEL_PROJECT_NAME", "").strip()
             if project_name:
                 resource_attrs["openinference.project.name"] = project_name
-                print(f"[hermes-otel]   Project: {project_name}")
 
             resource = Resource.create(resource_attrs)
             provider = TracerProvider(resource=resource)
@@ -270,12 +256,10 @@ class HermesOTelPlugin:
             self._init_metrics(endpoint, resource, backend_name)
             self._initialized = True
 
-            print(f"[hermes-otel] ✓ Connected to {backend_name} at {endpoint}")
+            print(f"[hermes-otel] ✓ {backend_name} at {endpoint}")
             return True
         except Exception as e:
-            print(f"[hermes-otel] ✗ {backend_name} initialization failed: {e}")
-            import traceback
-            traceback.print_exc()
+            print(f"[hermes-otel] ✗ {backend_name} init failed: {e}")
             return False
 
     def _init_metrics(self, traces_endpoint: str, resource: Resource,
@@ -290,7 +274,7 @@ class HermesOTelPlugin:
             return True
 
         if backend_name == "Langfuse":
-            print("[hermes-otel]   Metrics skipped (Langfuse does not support OTLP metrics)")
+            debug_log("Metrics skipped (Langfuse does not support OTLP metrics)")
             return True
 
         # Derive the metrics endpoint from the traces endpoint.
@@ -336,13 +320,11 @@ class HermesOTelPlugin:
                 description="Messages per model and provider",
             )
 
-            print("[hermes-otel] ✓ Metrics initialized")
+            debug_log("Metrics initialized")
             return True
 
         except Exception as e:
-            print(f"[hermes-otel] Metrics init failed: {e}")
-            import traceback
-            traceback.print_exc()
+            debug_log(f"Metrics init failed: {e}")
             return False
 
     def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
@@ -368,7 +350,6 @@ class HermesOTelPlugin:
     def start_span(self, name: str, key: str, kind: str = "general", attributes: dict = None):
         """Create and track a new span."""
         if not self._initialized:
-            print(f"[hermes-otel] Cannot start span: not initialized (name={name})")
             return NoopSpan()
 
         # LangSmith mode — HTTP only
@@ -384,10 +365,8 @@ class HermesOTelPlugin:
 
         # OTLP mode (Phoenix/Langfuse)
         if not self.tracer:
-            print(f"[hermes-otel] Cannot start span: tracer not available (name={name})")
             return NoopSpan()
 
-        print(f"[hermes-otel] start_span: name={name}, key={key}, kind={kind}")
         try:
             attrs = dict(attributes or {})
 
@@ -398,20 +377,16 @@ class HermesOTelPlugin:
 
             # Check for active parent — enables nesting
             parent = self.spans.get_current_parent()
-            print(f"[hermes-otel] start_span parent check: name={name}, parent={type(parent).__name__ if parent else None}")
             span_ctx = None
             if parent is not None and hasattr(parent, "get_span_context"):
-                print(f"[hermes-otel] Setting parent context for {name}")
                 span_ctx = set_span_in_context(parent)
 
             span = self.tracer.start_span(name, attributes=attrs, context=span_ctx)
             self.spans.start_span(key, span)
-            print(f"[hermes-otel] Started span: {name} (key={key}, kind={kind_value})")
+            debug_log(f"start_span: {name} (key={key}, kind={kind_value})")
             return span
         except Exception as e:
-            print(f"[hermes-otel] Error starting span '{name}': {e}")
-            import traceback
-            traceback.print_exc()
+            debug_log(f"Error starting span '{name}': {e}")
             return NoopSpan()
 
     def end_span(self, key: str, attributes: dict = None, status: str = None, error_message: str = None):
@@ -426,17 +401,13 @@ class HermesOTelPlugin:
                     # Remove from active spans directly (bypass SpanTracker.end_span
                     # which tries to call .end() — but LangSmith runs are dicts)
                     self.spans._active_spans.pop(key, None)
-                else:
-                    print(f"[hermes-otel] LangSmith span not found: key={key}")
             else:
                 # OTLP mode
                 self.spans.end_span(key, attributes=attributes, status=status, error_message=error_message)
                 self._force_flush()
-            print(f"[hermes-otel] Ended span: key={key}")
+            debug_log(f"end_span: key={key}")
         except Exception as e:
-            print(f"[hermes-otel] Error ending span (key={key}): {e}")
-            import traceback
-            traceback.print_exc()
+            debug_log(f"Error ending span (key={key}): {e}")
 
     def _force_flush(self):
         """Force export of all buffered spans and metrics."""
