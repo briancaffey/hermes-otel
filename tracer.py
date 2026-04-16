@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import base64
 import os
+import threading
 from typing import Any, Dict, Optional
 
 from .debug_utils import debug_log
@@ -55,13 +56,24 @@ class SpanTracker:
     Since hooks fire independently, we need a registry to look up
     the active span when the post_* hook fires. Also tracks the
     current "parent" span so child spans nest correctly.
+
+    The parent stack is **thread-local**: each thread (e.g. a cron job
+    running in its own thread pool vs. a chat request on the main thread)
+    has its own independent parent stack. This prevents concurrent
+    sessions from corrupting each other's span hierarchy.
     """
 
     def __init__(self):
         # key = f"{tool_name}:{task_id}" or f"llm:{session_id}"
         self._active_spans: Dict[str, Any] = {}
-        # Stack of parent span contexts (LLM spans push here)
-        self._parent_stack: list = []
+        # Thread-local parent stack — see class docstring
+        self._local = threading.local()
+
+    def _parent_stack(self) -> list:
+        """Return this thread's parent span stack, creating it if needed."""
+        if not hasattr(self._local, "stack"):
+            self._local.stack = []
+        return self._local.stack
 
     def start_span(self, key: str, span, parent=None) -> None:
         """Store an active span by key."""
@@ -70,17 +82,19 @@ class SpanTracker:
             span._otel_parent = parent
 
     def push_parent(self, span) -> None:
-        """Mark a span as the current parent (e.g., LLM call)."""
-        self._parent_stack.append(span)
+        """Mark a span as the current parent on this thread."""
+        self._parent_stack().append(span)
 
     def pop_parent(self) -> None:
-        """Remove the current parent span."""
-        if self._parent_stack:
-            self._parent_stack.pop()
+        """Remove the current parent span on this thread."""
+        stack = self._parent_stack()
+        if stack:
+            stack.pop()
 
     def get_current_parent(self):
-        """Get the active parent span, or None."""
-        return self._parent_stack[-1] if self._parent_stack else None
+        """Get the active parent span on this thread, or None."""
+        stack = self._parent_stack()
+        return stack[-1] if stack else None
 
     def end_span(self, key: str, attributes: dict = None, status: str = None, error_message: str = None) -> None:
         """End and remove a tracked span.
@@ -111,11 +125,16 @@ class SpanTracker:
         return self._active_spans.get(key)
 
     def end_all(self) -> None:
-        """End all remaining spans (cleanup)."""
+        """End all remaining spans (cleanup).
+
+        Only clears this thread's parent stack — other threads' stacks
+        are untouched.
+        """
         for key in list(self._active_spans.keys()):
             self.end_span(key)
         self._active_spans.clear()
-        self._parent_stack.clear()
+        if hasattr(self._local, "stack"):
+            self._local.stack.clear()
 
 
 class HermesOTelPlugin:

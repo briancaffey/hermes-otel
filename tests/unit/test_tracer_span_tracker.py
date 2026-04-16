@@ -119,3 +119,40 @@ class TestSpanTrackerEndAll:
         assert tracker.get_span("k1") is None
         assert tracker.get_span("k2") is None
         assert tracker.get_current_parent() is None
+
+
+class TestSpanTrackerThreadIsolation:
+    """Verify parent stack is isolated per thread.
+
+    Concurrent sessions (e.g. cron + chat) must not corrupt each other's
+    span hierarchy via a shared parent stack.
+    """
+
+    def test_parent_stack_is_thread_local(self):
+        import threading
+
+        tracker = SpanTracker()
+        main_parent = MagicMock(name="main")
+        other_parent = MagicMock(name="other")
+        seen_in_other_thread = []
+
+        def _other_thread():
+            # Other thread starts with empty stack (no leakage from main)
+            seen_in_other_thread.append(("initial", tracker.get_current_parent()))
+            tracker.push_parent(other_parent)
+            seen_in_other_thread.append(("after_push", tracker.get_current_parent()))
+
+        # Main thread pushes its parent
+        tracker.push_parent(main_parent)
+        assert tracker.get_current_parent() is main_parent
+
+        t = threading.Thread(target=_other_thread)
+        t.start()
+        t.join()
+
+        # Other thread saw its own isolated stack, not main's
+        assert seen_in_other_thread[0] == ("initial", None)
+        assert seen_in_other_thread[1][1] is other_parent
+
+        # Main thread's stack is untouched by the other thread
+        assert tracker.get_current_parent() is main_parent
