@@ -8,12 +8,14 @@ Tested with:
 - **[Phoenix](https://github.com/Arize-ai/phoenix)** (local or cloud)
 - **[Langfuse](https://langfuse.com/docs)** (cloud or self-hosted)
 - **[LangSmith](https://smith.langchain.com/)** (LangChain's tracing platform)
+- **[SigNoz](https://signoz.io)** (cloud or self-hosted)
 
 Any OTLP HTTP endpoint should work.
 
 - For Phoenix see [docker-compose/phoenix.yaml](docker-compose/phoenix.yaml)
 - For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
 - For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
+- For SigNoz see [docker-compose/signoz/](docker-compose/signoz/) (includes the upstream stack + port-remap notes)
 
 ## Installation
 
@@ -177,6 +179,22 @@ export LANGSMITH_PROJECT="hermes-langsmith-otel"
 
 > **Note:** Install `langsmith` for better time-ordered run IDs: `pip install langsmith`. The plugin uses `langsmith.uuid7()` for run IDs when available, otherwise falls back to `uuid.uuid4()`.
 
+### SigNoz
+```bash
+# Self-hosted (see docker-compose/signoz/ — OTLP HTTP is remapped to 4328
+# to avoid colliding with Phoenix on 4318)
+export OTEL_SIGNOZ_ENDPOINT="http://localhost:4328/v1/traces"
+export OTEL_PROJECT_NAME=hermes-agent
+
+# SigNoz Cloud — use the regional ingest URL + your ingestion key
+# export OTEL_SIGNOZ_ENDPOINT="https://ingest.us.signoz.cloud:443/v1/traces"
+# export OTEL_SIGNOZ_INGESTION_KEY="sz-..."
+```
+
+The plugin sends both traces and metrics over OTLP/HTTP. When
+`OTEL_SIGNOZ_INGESTION_KEY` is set, the `signoz-ingestion-key` header is
+attached to both exporters.
+
 ### Optional
 ```bash
 export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
@@ -193,7 +211,7 @@ export HERMES_OTEL_DEBUG=true
 
 Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ## How it works
 
@@ -245,6 +263,39 @@ Langfuse uses `gen_ai.content.prompt` and `gen_ai.content.completion` for text. 
 | `tests/integration/` | Integration tests — InMemorySpanExporter, span hierarchy, metrics |
 | `tests/e2e/` | E2E tests — real Phoenix/Langfuse via Docker |
 | `tests/smoke/` | Smoke tests — full pipeline through hermes API server to Langfuse |
+
+## Roadmap: additional backends
+
+This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work today with no code changes — just point `OTEL_EXPORTER_OTLP_ENDPOINT` at it. The list below tracks backends I plan to formally test, add a `docker-compose/` file for, and (where applicable) cover with a smoke test.
+
+**Status legend:** ✅ supported & tested · 🟡 should work, not yet tested/documented · 🔲 planned
+
+| Backend | Signals | Deployment | Account / cost | Status |
+|---------|---------|------------|----------------|--------|
+| [Phoenix](https://github.com/Arize-ai/phoenix) | traces | Local (docker) · Arize AX cloud | OSS, no account · commercial cloud | ✅ |
+| [Langfuse](https://langfuse.com) | traces | Local (docker compose) · Cloud | OSS, no account · free tier + paid | ✅ |
+| [LangSmith](https://smith.langchain.com) | traces | Cloud only (self-host = enterprise) | Free personal tier · paid tiers | ✅ |
+| [Jaeger](https://www.jaegertracing.io) | traces | Local (single container) | OSS, no account needed | 🔲 |
+| [SigNoz](https://signoz.io) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
+| [Grafana Tempo + Mimir](https://grafana.com/oss/tempo/) | traces + metrics | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud | 🔲 |
+| [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
+| [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
+| [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
+| [New Relic](https://newrelic.com) | traces + metrics + logs | Cloud only | Free tier (100 GB/mo) + paid | 🔲 |
+| [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) | traces + metrics + logs | Local (docker) · Elastic Cloud | OSS self-host · trial + paid cloud | 🔲 |
+| [Datadog](https://www.datadoghq.com) | traces + metrics + logs | Cloud only | Trial only, paid thereafter | 🔲 |
+
+### Quick picks
+
+- **Fully offline / no account ever:** Phoenix, Langfuse (self-hosted), Jaeger, SigNoz, Grafana Tempo+Mimir, OpenObserve, Uptrace, Elastic APM self-host. All runnable via `docker compose up`.
+- **Free SaaS (personal / hobby tier, no credit card):** Langfuse Cloud, LangSmith, SigNoz Cloud, Grafana Cloud, Honeycomb, New Relic. Best if you don't want to run infrastructure.
+- **Paid only (credit card required after trial):** Datadog, Dynatrace, LangSmith self-hosted (enterprise plan).
+
+> Free-tier limits change frequently — check each vendor's pricing page before committing. The table reflects what's advertised as of this writing.
+
+### Signals note
+
+Jaeger is **traces only**. If you want both spans and the token/tool/cost metrics this plugin emits (via `PeriodicExportingMetricReader`), pair Jaeger with Prometheus, or pick one of the traces+metrics backends above.
 
 ## Current limitations
 

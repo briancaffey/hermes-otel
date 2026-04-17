@@ -191,7 +191,8 @@ class HermesOTelPlugin:
         Detection order (first match wins):
           1. LangSmith  — LANGSMITH_TRACING=true + LANGSMITH_API_KEY
           2. Langfuse   — OTEL_LANGFUSE_* or standard LANGFUSE_* credentials
-          3. Phoenix    — OTEL_PHOENIX_ENDPOINT (or explicit *endpoint* arg)
+          3. SigNoz     — OTEL_SIGNOZ_ENDPOINT (+ optional OTEL_SIGNOZ_INGESTION_KEY)
+          4. Phoenix    — OTEL_PHOENIX_ENDPOINT (or explicit *endpoint* arg)
 
         Returns True if a backend was initialized.
         """
@@ -232,13 +233,24 @@ class HermesOTelPlugin:
             return self._init_otlp(langfuse_endpoint, headers=headers,
                                    backend_name="Langfuse")
 
-        # ── 3. Phoenix / generic OTLP (no auth) ─────────────────────────
+        # ── 3. SigNoz (OTLP, optional ingestion-key header) ─────────────
+        signoz_endpoint = os.getenv("OTEL_SIGNOZ_ENDPOINT", "").strip()
+        if signoz_endpoint:
+            signoz_key = os.getenv("OTEL_SIGNOZ_INGESTION_KEY", "").strip()
+            # signoz-ingestion-key is required for SigNoz Cloud and ignored
+            # by self-hosted collectors, so it's safe to omit for localhost.
+            headers = {"signoz-ingestion-key": signoz_key} if signoz_key else None
+            return self._init_otlp(signoz_endpoint, headers=headers,
+                                   backend_name="SigNoz")
+
+        # ── 4. Phoenix / generic OTLP (no auth) ─────────────────────────
         endpoint = endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "").strip()
         if endpoint:
             return self._init_otlp(endpoint, backend_name="Phoenix")
 
         print("[hermes-otel] ✗ No backend configured "
-              "(set OTEL_PHOENIX_ENDPOINT, Langfuse credentials, or LANGSMITH_TRACING)")
+              "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
+              "Langfuse credentials, or LANGSMITH_TRACING)")
         return False
 
     # ── Backend initializers ─────────────────────────────────────────────
@@ -261,11 +273,12 @@ class HermesOTelPlugin:
 
     def _init_otlp(self, endpoint: str, headers: dict = None,
                    backend_name: str = "OTLP") -> bool:
-        """Initialize an OTLP tracer (shared by Phoenix and Langfuse).
+        """Initialize an OTLP tracer (shared by Phoenix, Langfuse, SigNoz).
 
         Args:
             endpoint:     OTLP HTTP trace endpoint URL.
-            headers:      Optional HTTP headers (e.g. Langfuse Basic Auth).
+            headers:      Optional HTTP headers (e.g. Langfuse Basic Auth,
+                          SigNoz ingestion key).
             backend_name: Display name for log messages.
         """
         try:
@@ -285,7 +298,7 @@ class HermesOTelPlugin:
             trace.set_tracer_provider(provider)
             self.tracer = trace.get_tracer("hermes-otel-plugin")
 
-            self._init_metrics(endpoint, resource, backend_name)
+            self._init_metrics(endpoint, resource, backend_name, headers=headers)
             self._initialized = True
 
             print(f"[hermes-otel] ✓ {backend_name} at {endpoint}")
@@ -295,12 +308,14 @@ class HermesOTelPlugin:
             return False
 
     def _init_metrics(self, traces_endpoint: str, resource: Resource,
-                      backend_name: str = "Phoenix") -> bool:
+                      backend_name: str = "Phoenix",
+                      headers: dict = None) -> bool:
         """Initialize metrics (MeterProvider) alongside tracer.
 
         Langfuse does not support OTLP metrics ingestion, so metrics are
-        skipped for that backend.  For Phoenix, the metrics endpoint is
-        derived from the traces endpoint (e.g. /v1/traces -> /v1/metrics).
+        skipped for that backend.  For Phoenix and SigNoz, the metrics
+        endpoint is derived from the traces endpoint (e.g. /v1/traces ->
+        /v1/metrics).  Headers (e.g. SigNoz ingestion key) are reused.
         """
         if not _METRICS_AVAILABLE:
             return True
@@ -317,7 +332,7 @@ class HermesOTelPlugin:
             metrics_endpoint = traces_endpoint
 
         try:
-            exporter = OTLPMetricExporter(endpoint=metrics_endpoint)
+            exporter = OTLPMetricExporter(endpoint=metrics_endpoint, headers=headers)
             self._metric_reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
             self._meter_provider = MeterProvider(
                 resource=resource,

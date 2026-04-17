@@ -16,6 +16,7 @@ def _clear_backend_env(monkeypatch):
         "OTEL_LANGFUSE_PUBLIC_API_KEY", "OTEL_LANGFUSE_SECRET_API_KEY",
         "OTEL_LANGFUSE_ENDPOINT",
         "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL",
+        "OTEL_SIGNOZ_ENDPOINT", "OTEL_SIGNOZ_INGESTION_KEY",
     ]:
         monkeypatch.delenv(var, raising=False)
 
@@ -127,6 +128,45 @@ class TestInitLangSmith:
 
         plugin = HermesOTelPlugin()
         assert plugin.init() is False
+
+
+class TestInitSigNoz:
+    def test_init_self_hosted(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "http://localhost:4328/v1/traces")
+
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp", return_value=True) as mock_otlp:
+            assert plugin.init() is True
+            mock_otlp.assert_called_once_with(
+                "http://localhost:4328/v1/traces",
+                headers=None,
+                backend_name="SigNoz",
+            )
+
+    def test_init_cloud_with_ingestion_key(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT",
+                           "https://ingest.us.signoz.cloud:443/v1/traces")
+        monkeypatch.setenv("OTEL_SIGNOZ_INGESTION_KEY", "sz-key-abc123")
+
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp", return_value=True) as mock_otlp:
+            assert plugin.init() is True
+            call_kwargs = mock_otlp.call_args[1]
+            assert call_kwargs["headers"] == {"signoz-ingestion-key": "sz-key-abc123"}
+            assert call_kwargs["backend_name"] == "SigNoz"
+
+    def test_langfuse_takes_priority_over_signoz(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        monkeypatch.setenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "pk")
+        monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk")
+        monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "http://localhost:4328/v1/traces")
+
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp", return_value=True) as mock_otlp:
+            assert plugin.init() is True
+            assert mock_otlp.call_args[1]["backend_name"] == "Langfuse"
 
 
 class TestInitOtelUnavailable:
