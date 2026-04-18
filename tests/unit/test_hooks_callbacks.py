@@ -20,9 +20,11 @@ from hermes_otel.hooks import (
 @pytest.fixture()
 def mock_tracer():
     """Create a mock tracer and patch get_tracer() to return it."""
+    from hermes_otel.plugin_config import HermesOtelConfig
     tracer = MagicMock()
     tracer.is_enabled = True
     tracer.spans = MagicMock()
+    tracer.config = HermesOtelConfig()
     with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
         yield tracer
 
@@ -30,8 +32,10 @@ def mock_tracer():
 @pytest.fixture()
 def disabled_tracer():
     """Create a disabled mock tracer."""
+    from hermes_otel.plugin_config import HermesOtelConfig
     tracer = MagicMock()
     tracer.is_enabled = False
+    tracer.config = HermesOtelConfig()
     with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
         yield tracer
 

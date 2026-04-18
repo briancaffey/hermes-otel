@@ -6,12 +6,15 @@ pre/post hook calls.
 
 from __future__ import annotations
 
+import atexit
 import base64
 import contextvars
 import os
+import time
 from typing import Any, Dict, Optional
 
 from .debug_utils import debug_log
+from .plugin_config import HermesOtelConfig, load_config
 
 
 # Per-context parent span stack.  Using ContextVar (not threading.local)
@@ -28,7 +31,7 @@ try:
     from opentelemetry import trace
     from opentelemetry.trace import Status, StatusCode, set_span_in_context
     from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
 
@@ -167,7 +170,7 @@ class HermesOTelPlugin:
         "agent": "AGENT",
     }
 
-    def __init__(self):
+    def __init__(self, config: Optional[HermesOtelConfig] = None):
         self.tracer = None
         self.spans = SpanTracker()
         self._initialized = False
@@ -184,6 +187,17 @@ class HermesOTelPlugin:
         self._tool_duration = None
         self._message_count = None
         self._model_usage = None
+        self._skill_inferred_counter = None
+        # Config
+        self.config: HermesOtelConfig = config if config is not None else load_config()
+        # Turn registry for orphan sweep (session_id -> perf_counter start time)
+        self._turn_started_at: Dict[str, float] = {}
+        # Map session_id -> set of active span keys, so the orphan sweep
+        # can finalize sub-spans (api:/tool:) whose keys don't embed session_id.
+        self._session_keys: Dict[str, set] = {}
+        # Guards against double-registering the atexit flush handler when
+        # init() is called multiple times (e.g. in tests / plugin reload).
+        self._atexit_registered: bool = False
 
     def init(self, endpoint: str = None) -> bool:
         """Initialize the tracer from environment variables.
@@ -192,12 +206,18 @@ class HermesOTelPlugin:
           1. LangSmith  — LANGSMITH_TRACING=true + LANGSMITH_API_KEY
           2. Langfuse   — OTEL_LANGFUSE_* or standard LANGFUSE_* credentials
           3. SigNoz     — OTEL_SIGNOZ_ENDPOINT (+ optional OTEL_SIGNOZ_INGESTION_KEY)
-          4. Phoenix    — OTEL_PHOENIX_ENDPOINT (or explicit *endpoint* arg)
+          4. Jaeger     — OTEL_JAEGER_ENDPOINT (traces only, no metrics)
+          5. Tempo      — OTEL_TEMPO_ENDPOINT (traces only, no metrics)
+          6. Phoenix    — OTEL_PHOENIX_ENDPOINT (or explicit *endpoint* arg)
 
         Returns True if a backend was initialized.
         """
         if not _OTEL_AVAILABLE:
             print("[hermes-otel] ✗ OpenTelemetry packages not available")
+            return False
+
+        if not self.config.enabled:
+            print("[hermes-otel] ✗ Disabled via config (enabled=false)")
             return False
 
         # ── 1. LangSmith (HTTP API, not OTLP) ───────────────────────────
@@ -243,13 +263,24 @@ class HermesOTelPlugin:
             return self._init_otlp(signoz_endpoint, headers=headers,
                                    backend_name="SigNoz")
 
-        # ── 4. Phoenix / generic OTLP (no auth) ─────────────────────────
+        # ── 4. Jaeger (OTLP HTTP, traces only — no auth) ────────────────
+        jaeger_endpoint = os.getenv("OTEL_JAEGER_ENDPOINT", "").strip()
+        if jaeger_endpoint:
+            return self._init_otlp(jaeger_endpoint, backend_name="Jaeger")
+
+        # ── 5. Tempo (OTLP HTTP, traces only — no auth) ─────────────────
+        tempo_endpoint = os.getenv("OTEL_TEMPO_ENDPOINT", "").strip()
+        if tempo_endpoint:
+            return self._init_otlp(tempo_endpoint, backend_name="Tempo")
+
+        # ── 6. Phoenix / generic OTLP (no auth) ─────────────────────────
         endpoint = endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "").strip()
         if endpoint:
             return self._init_otlp(endpoint, backend_name="Phoenix")
 
         print("[hermes-otel] ✗ No backend configured "
               "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
+              "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
               "Langfuse credentials, or LANGSMITH_TRACING)")
         return False
 
@@ -282,25 +313,62 @@ class HermesOTelPlugin:
             backend_name: Display name for log messages.
         """
         try:
-            resource_attrs = {"service.name": "hermes-agent"}
-            project_name = os.getenv("OTEL_PROJECT_NAME", "").strip()
+            resource_attrs: Dict[str, Any] = {"service.name": "hermes-agent"}
+            if self.config.global_tags:
+                resource_attrs.update(self.config.global_tags)
+            if self.config.resource_attributes:
+                resource_attrs.update(self.config.resource_attributes)
+            project_name = (
+                self.config.project_name
+                or os.getenv("OTEL_PROJECT_NAME", "").strip()
+            )
             if project_name:
                 resource_attrs["openinference.project.name"] = project_name
 
             resource = Resource.create(resource_attrs)
-            provider = TracerProvider(resource=resource)
 
-            exporter = OTLPSpanExporter(endpoint=endpoint, headers=headers)
-            processor = SimpleSpanProcessor(exporter)
+            provider_kwargs: Dict[str, Any] = {"resource": resource}
+            if self.config.sample_rate is not None:
+                from opentelemetry.sdk.trace.sampling import (
+                    ParentBased,
+                    TraceIdRatioBased,
+                )
+                provider_kwargs["sampler"] = ParentBased(
+                    TraceIdRatioBased(self.config.sample_rate)
+                )
+            provider = TracerProvider(**provider_kwargs)
+
+            merged_headers = dict(headers or {})
+            if self.config.headers:
+                merged_headers.update(self.config.headers)
+            exporter_headers = merged_headers or None
+
+            exporter = OTLPSpanExporter(endpoint=endpoint, headers=exporter_headers)
+            # BatchSpanProcessor: runs a background worker that drains the
+            # queue in batches. span.end() becomes a non-blocking enqueue,
+            # so tool-call / api-request hooks don't stall on slow backends.
+            # Trade-off: up to `schedule_delay_millis` of spans stay in
+            # memory until exported; we flush explicitly on session end
+            # and via atexit so users don't lose data on graceful shutdown.
+            processor = BatchSpanProcessor(
+                exporter,
+                max_queue_size=self.config.span_batch_max_queue_size,
+                schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
+                max_export_batch_size=self.config.span_batch_max_export_batch_size,
+                export_timeout_millis=self.config.span_batch_export_timeout_ms,
+            )
             provider.add_span_processor(processor)
             self._span_processor = processor
 
             trace.set_tracer_provider(provider)
             self.tracer = trace.get_tracer("hermes-otel-plugin")
 
-            self._init_metrics(endpoint, resource, backend_name, headers=headers)
+            self._init_metrics(endpoint, resource, backend_name, headers=exporter_headers)
             self._initialized = True
+            self._register_atexit_flush()
 
+            if not self.config.capture_previews:
+                print("[hermes-otel] ⚠ capture_previews=false — input/output values suppressed")
             print(f"[hermes-otel] ✓ {backend_name} at {endpoint}")
             return True
         except Exception as e:
@@ -320,8 +388,8 @@ class HermesOTelPlugin:
         if not _METRICS_AVAILABLE:
             return True
 
-        if backend_name == "Langfuse":
-            debug_log("Metrics skipped (Langfuse does not support OTLP metrics)")
+        if backend_name in ("Langfuse", "Jaeger", "Tempo"):
+            debug_log(f"Metrics skipped ({backend_name} does not support OTLP metrics)")
             return True
 
         # Derive the metrics endpoint from the traces endpoint.
@@ -333,7 +401,10 @@ class HermesOTelPlugin:
 
         try:
             exporter = OTLPMetricExporter(endpoint=metrics_endpoint, headers=headers)
-            self._metric_reader = PeriodicExportingMetricReader(exporter, export_interval_millis=60000)
+            self._metric_reader = PeriodicExportingMetricReader(
+                exporter,
+                export_interval_millis=self.config.flush_interval_ms,
+            )
             self._meter_provider = MeterProvider(
                 resource=resource,
                 metric_readers=[self._metric_reader],
@@ -366,6 +437,10 @@ class HermesOTelPlugin:
                 "hermes.model.usage",
                 description="Messages per model and provider",
             )
+            self._skill_inferred_counter = self._meter.create_counter(
+                "hermes.skill.inferred",
+                description="Skill-name inference hits on tool spans",
+            )
 
             debug_log("Metrics initialized")
             return True
@@ -393,11 +468,24 @@ class HermesOTelPlugin:
             self._message_count.add(1, attrs)
         elif name == "model_usage":
             self._model_usage.add(1, attrs)
+        elif name == "skill_inferred":
+            if self._skill_inferred_counter is not None:
+                self._skill_inferred_counter.add(1, attrs)
 
-    def start_span(self, name: str, key: str, kind: str = "general", attributes: dict = None):
-        """Create and track a new span."""
+    def start_span(self, name: str, key: str, kind: str = "general",
+                   attributes: dict = None, session_id: Optional[str] = None):
+        """Create and track a new span.
+
+        Args:
+            session_id: When provided, the span key is linked to this session
+                        so the orphan sweep can finalize it if the session
+                        exceeds root_span_ttl_ms.
+        """
         if not self._initialized:
             return NoopSpan()
+
+        if session_id:
+            self._session_keys.setdefault(session_id, set()).add(key)
 
         # LangSmith mode — HTTP only
         if self._langsmith:
@@ -449,15 +537,85 @@ class HermesOTelPlugin:
                     # which tries to call .end() — but LangSmith runs are dicts)
                     self.spans._active_spans.pop(key, None)
             else:
-                # OTLP mode
+                # OTLP mode — just enqueue. BatchSpanProcessor handles
+                # export asynchronously. on_session_end / atexit flush
+                # when data actually needs to be visible.
                 self.spans.end_span(key, attributes=attributes, status=status, error_message=error_message)
-                self._force_flush()
+            # Remove this key from any session's active-key set.
+            for sid, keys in list(self._session_keys.items()):
+                keys.discard(key)
+                if not keys:
+                    self._session_keys.pop(sid, None)
             debug_log(f"end_span: key={key}")
         except Exception as e:
             debug_log(f"Error ending span (key={key}): {e}")
 
+    # ── Turn registry (orphan sweep) ─────────────────────────────────────
+
+    def register_turn(self, session_id: str) -> None:
+        """Record the start time of a session for TTL tracking."""
+        if not session_id:
+            return
+        self._turn_started_at[session_id] = time.perf_counter()
+
+    def unregister_turn(self, session_id: str) -> None:
+        """Remove a session from the turn registry (normal end)."""
+        self._turn_started_at.pop(session_id, None)
+
+    def sweep_expired_turns(self) -> list:
+        """Finalize any sessions whose start time exceeds root_span_ttl_ms.
+
+        Returns the list of finalized session_ids (useful for tests).
+        """
+        if not self._turn_started_at:
+            return []
+        threshold_seconds = self.config.root_span_ttl_ms / 1000.0
+        now = time.perf_counter()
+        expired = [
+            sid for sid, started_at in self._turn_started_at.items()
+            if now - started_at > threshold_seconds
+        ]
+        for sid in expired:
+            self._finalize_orphan(sid)
+        return expired
+
+    def _finalize_orphan(self, session_id: str) -> None:
+        """End any still-active spans for a timed-out session.
+
+        Marks the session span (if present) with `hermes.turn.final_status=timed_out`
+        and status OK (per PRD: timeouts must not inflate error rates).
+        """
+        self._turn_started_at.pop(session_id, None)
+
+        # End non-session active spans first (api.*, tool.*, llm.*) so the
+        # session span ends last and contains them in the hierarchy.
+        session_key = f"session:{session_id}"
+        keys = self._session_keys.pop(session_id, set())
+        non_session_keys = [k for k in keys if k != session_key]
+        for key in non_session_keys:
+            self.end_span(key, status="ok")
+
+        if session_key in self.spans._active_spans:
+            self.end_span(
+                session_key,
+                attributes={"hermes.turn.final_status": "timed_out"},
+                status="ok",
+            )
+        # Drop any parent stack references — the sweep is a safety net and
+        # subsequent hooks will rebuild state correctly.
+        stack = _PARENT_STACK.get()
+        if stack is not None:
+            stack.clear()
+
     def _force_flush(self):
-        """Force export of all buffered spans and metrics."""
+        """Force export of all buffered spans and metrics.
+
+        Called:
+          - at the end of each session (so UI sees traces promptly)
+          - on process shutdown via atexit (so graceful exit loses nothing)
+        Per-span flushing is deliberately NOT done — it would defeat the
+        whole purpose of the BatchSpanProcessor queue.
+        """
         if self._span_processor:
             try:
                 self._span_processor.force_flush(timeout_millis=2000)
@@ -468,6 +626,16 @@ class HermesOTelPlugin:
                 self._meter_provider.force_flush(timeout_millis=2000)
             except Exception:
                 pass
+
+    def _register_atexit_flush(self) -> None:
+        """Register a single atexit hook that flushes buffered spans/metrics.
+
+        Idempotent across multiple init() calls (plugin reload, tests).
+        """
+        if self._atexit_registered:
+            return
+        atexit.register(self._force_flush)
+        self._atexit_registered = True
 
     @property
     def is_enabled(self) -> bool:

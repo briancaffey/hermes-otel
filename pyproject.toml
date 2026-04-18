@@ -18,8 +18,12 @@ dependencies = [
 langsmith = [
     "langsmith",
 ]
+yaml = [
+    "pyyaml",
+]
 dev = [
     "pytest>=8.0",
+    "pyyaml",
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",

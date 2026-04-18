@@ -9,6 +9,8 @@ Tested with:
 - **[Langfuse](https://langfuse.com/docs)** (cloud or self-hosted)
 - **[LangSmith](https://smith.langchain.com/)** (LangChain's tracing platform)
 - **[SigNoz](https://signoz.io)** (cloud or self-hosted)
+- **[Jaeger](https://www.jaegertracing.io)** (local)
+- **[Grafana Tempo](https://grafana.com/oss/tempo/)** (local or Grafana Cloud)
 
 Any OTLP HTTP endpoint should work.
 
@@ -195,6 +197,33 @@ The plugin sends both traces and metrics over OTLP/HTTP. When
 `OTEL_SIGNOZ_INGESTION_KEY` is set, the `signoz-ingestion-key` header is
 attached to both exporters.
 
+### Jaeger
+```bash
+# Jaeger ≥ 1.35 accepts OTLP/HTTP natively on port 4318
+export OTEL_JAEGER_ENDPOINT="http://localhost:4318/v1/traces"
+export OTEL_PROJECT_NAME=hermes-otel-jaeger
+```
+
+Jaeger is **traces-only** — the plugin skips metric export when this backend is selected. If you need token/tool/cost metrics alongside Jaeger traces, pair it with a Prometheus-compatible metrics sink or use a unified backend (Phoenix, SigNoz).
+
+### Grafana Tempo
+```bash
+# Tempo accepts OTLP/HTTP natively on port 4318
+export OTEL_TEMPO_ENDPOINT="http://localhost:4318/v1/traces"
+export OTEL_PROJECT_NAME=hermes-otel-tempo
+```
+
+Run the upstream single-binary example (Tempo + MinIO + Grafana + Prometheus):
+
+```bash
+cd ~/git/grafana/tempo/example/docker-compose/single-binary
+docker compose up -d
+# UI:   http://localhost:3000   (Grafana, anonymous admin)
+# OTLP: http://localhost:4318   (HTTP)  /  localhost:4317 (gRPC)
+```
+
+Tempo is **traces-only** — the plugin skips metric export when this backend is selected. The upstream example already bundles Prometheus + Grafana, so token/tool/cost metrics can be routed there via a separate Prometheus remote-write or OTel collector if needed.
+
 ### Optional
 ```bash
 export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
@@ -211,7 +240,99 @@ export HERMES_OTEL_DEBUG=true
 
 Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+
+### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
+
+Backend selection stays env-var-driven (above). For telemetry **shaping** — sampling, preview size, resource attributes, TTL, extra headers — you can also use a YAML file at `~/.hermes/plugins/hermes_otel/config.yaml`.
+
+**Precedence (per-field):** `HERMES_OTEL_*` env var > `config.yaml` value > default.
+
+Example `config.yaml`:
+
+```yaml
+enabled: true
+sample_rate: 0.25               # ParentBased(TraceIdRatioBased) — null/omit = sample everything
+root_span_ttl_ms: 600000        # orphan-sweep threshold (10 min default)
+flush_interval_ms: 60000        # metrics export cadence
+preview_max_chars: 1200         # clip_preview truncation limit
+capture_previews: true          # false = suppress all input.value / output.value
+project_name: hermes-prod       # supersedes OTEL_PROJECT_NAME
+global_tags:
+  team: platform
+resource_attributes:            # merged into Resource; overrides global_tags on key conflict
+  env: prod
+  region: us-east-1
+headers:                        # merged onto outgoing OTLP requests
+  X-Scope-OrgID: tenant-a
+```
+
+Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars only):
+
+| Field | Env var |
+|---|---|
+| `enabled` | `HERMES_OTEL_ENABLED` (`true`/`false`) |
+| `sample_rate` | `HERMES_OTEL_SAMPLE_RATE` (float 0..1, or `0` to disable) |
+| `root_span_ttl_ms` | `HERMES_OTEL_ROOT_SPAN_TTL_MS` |
+| `flush_interval_ms` | `HERMES_OTEL_FLUSH_INTERVAL_MS` |
+| `preview_max_chars` | `HERMES_OTEL_PREVIEW_MAX_CHARS` |
+| `capture_previews` | `HERMES_OTEL_CAPTURE_PREVIEWS` |
+| `project_name` | `HERMES_OTEL_PROJECT_NAME` |
+| `span_batch_max_queue_size` | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` |
+| `span_batch_schedule_delay_ms` | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` |
+| `span_batch_max_export_batch_size` | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` |
+| `span_batch_export_timeout_ms` | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` |
+| `force_flush_on_session_end` | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` |
+
+`pyyaml` is optional — if not installed, the YAML file is silently skipped and only env vars + defaults apply. Malformed YAML logs a single warning and falls back to defaults.
+
+#### Privacy mode
+
+Set `capture_previews: false` (or `HERMES_OTEL_CAPTURE_PREVIEWS=false`) to suppress every `input.value` / `output.value` attribute. Useful for shared deployments where message content can't leave the process. A one-line startup banner confirms the mode is active.
+
+### Per-turn summary attributes
+
+On `on_session_end`, the root session/agent span is enriched with a summary of what happened in the turn — so dashboards don't need to JOIN across spans.
+
+| Attribute | Type | Meaning |
+|---|---|---|
+| `hermes.turn.tool_count` | int | distinct tool names invoked |
+| `hermes.turn.tools` | string | sorted CSV of distinct tool names (≤500 chars) |
+| `hermes.turn.tool_targets` | string | `\|`-joined distinct file paths / URLs |
+| `hermes.turn.tool_commands` | string | `\|`-joined distinct shell commands |
+| `hermes.turn.tool_outcomes` | string | sorted CSV of distinct outcome statuses |
+| `hermes.turn.skill_count` | int | distinct skill names inferred |
+| `hermes.turn.skills` | string | sorted CSV of distinct skill names |
+| `hermes.turn.api_call_count` | int | `pre_api_request` hook invocations |
+| `hermes.turn.final_status` | string | `completed` \| `interrupted` \| `incomplete` \| `timed_out` |
+
+Zero/empty aggregators are omitted rather than emitted as empty strings.
+
+### Tool identity, outcome, skill inference
+
+Each `tool.*` span now also carries:
+
+- `hermes.tool.target` — first non-empty value under args.`path` / `file_path` / `target` / `url` / `uri`.
+- `hermes.tool.command` — first non-empty value under args.`command` / `cmd`.
+- `hermes.tool.outcome` — one of `completed` · `error` · `timeout` · `blocked` · (explicit `status` field from the result, lowercased). Only `error` maps the span `StatusCode` to `ERROR`; timeouts/blocked stay `OK` so dashboards don't count them as failures.
+- `hermes.skill.name` — inferred from args paths matching `/skills/<name>/`. Does **not** match `/optional-skills/<name>/references/`. Also increments a `hermes.skill.inferred{skill_name, source}` counter so ops can audit hit rates.
+
+### Orphan-span sweep
+
+If a session never fires `on_session_end` (e.g. host crash mid-turn), it would otherwise leak active-span state. A TTL-based sweeper (default 10 min, configurable via `root_span_ttl_ms`) runs at the top of every `pre_*` hook; sessions older than the TTL are finalized with `hermes.turn.final_status=timed_out` and span status `OK` (not `ERROR` — timeouts should not pollute error rates).
+
+### Non-blocking span export
+
+Spans are exported via OpenTelemetry's `BatchSpanProcessor`: `span.end()` enqueues the span to a bounded in-memory queue, and a background worker drains that queue in batches on a timer. This means a slow or unreachable OTLP backend no longer adds latency to every tool call / API request.
+
+**Export cadence:**
+- Background worker flushes every `span_batch_schedule_delay_ms` (default 1s).
+- At the end of each session (`on_session_end`), the plugin force-flushes so traces appear in the UI immediately rather than after the worker's next cycle. Disable with `force_flush_on_session_end: false` if you prefer to let the worker handle it.
+- On graceful process shutdown, an `atexit` handler flushes the queue once so nothing is lost.
+
+**Backpressure:** the queue is bounded by `span_batch_max_queue_size` (default 2048). If the agent outruns the exporter, the oldest enqueued spans are dropped — hermes keeps running rather than stalling.
+
+**Crash vs. graceful exit:** up to `schedule_delay_millis` worth of spans may be lost on a hard crash (SIGKILL, OOM). This is the standard OTel trade-off and mirrors every production tracing stack. Graceful shutdown (`hermes gateway stop`, SIGTERM) triggers the atexit flush.
 
 ## How it works
 
@@ -275,9 +396,9 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 | [Phoenix](https://github.com/Arize-ai/phoenix) | traces | Local (docker) · Arize AX cloud | OSS, no account · commercial cloud | ✅ |
 | [Langfuse](https://langfuse.com) | traces | Local (docker compose) · Cloud | OSS, no account · free tier + paid | ✅ |
 | [LangSmith](https://smith.langchain.com) | traces | Cloud only (self-host = enterprise) | Free personal tier · paid tiers | ✅ |
-| [Jaeger](https://www.jaegertracing.io) | traces | Local (single container) | OSS, no account needed | 🔲 |
+| [Jaeger](https://www.jaegertracing.io) | traces | Local (single container) | OSS, no account needed | ✅ |
 | [SigNoz](https://signoz.io) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
-| [Grafana Tempo + Mimir](https://grafana.com/oss/tempo/) | traces + metrics | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud | 🔲 |
+| [Grafana Tempo](https://grafana.com/oss/tempo/) | traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
 | [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
 | [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
@@ -295,7 +416,7 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 
 ### Signals note
 
-Jaeger is **traces only**. If you want both spans and the token/tool/cost metrics this plugin emits (via `PeriodicExportingMetricReader`), pair Jaeger with Prometheus, or pick one of the traces+metrics backends above.
+Jaeger and Tempo are both **traces only**. If you want both spans and the token/tool/cost metrics this plugin emits (via `PeriodicExportingMetricReader`), pair them with Prometheus, or pick one of the traces+metrics backends above.
 
 ## Current limitations
 

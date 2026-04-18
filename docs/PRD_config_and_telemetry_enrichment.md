@@ -203,6 +203,73 @@ Port `resolve_tool_identity`, `extract_tool_result_status`, `infer_skill_name` f
 ### Phase 5 — docs + smoke-test verification
 Update README: new config section, list of `hermes.turn.*` attributes, skill inference rules, privacy-mode note. Re-run E2E + smoke tests against Phoenix and Langfuse to confirm no regression in existing dashboards.
 
+## Acceptance criteria
+
+Each criterion must be met and covered by a test. This is the definition of "done".
+
+### AC1 — Config loader (`plugin_config.py`)
+- `HermesOtelConfig` is a `@dataclass(frozen=True)` with exactly the fields listed in the Design section, and the defaults shown there.
+- `load_config()` returns defaults when no file and no env vars are present.
+- Precedence is **env var > `config.yaml` > default**, per-field (not whole-object).
+- `config.yaml` at `~/.hermes/plugins/hermes_otel/config.yaml` is loaded when `pyyaml` is importable.
+- Missing `pyyaml` does NOT raise — file-based config is skipped silently and defaults/env still apply.
+- Malformed YAML logs a single warning via `print` (prefix `[hermes-otel]`) and falls back to defaults (does NOT silently return `{}`).
+- Env vars recognized: `HERMES_OTEL_ENABLED`, `HERMES_OTEL_SAMPLE_RATE`, `HERMES_OTEL_ROOT_SPAN_TTL_MS`, `HERMES_OTEL_FLUSH_INTERVAL_MS`, `HERMES_OTEL_PREVIEW_MAX_CHARS`, `HERMES_OTEL_CAPTURE_PREVIEWS`, `HERMES_OTEL_PROJECT_NAME`.
+
+### AC2 — `clip_preview` helper (`helpers.py`)
+- ANSI escape sequences stripped (CSI `\x1b[...m`, OSC `\x1b]...\x07`, ESC single-byte).
+- Newlines and tabs normalized to spaces; runs of whitespace collapsed to single space; leading/trailing stripped.
+- Returns `None` for `None`, empty string, or whitespace-only/ANSI-only input.
+- Strings ≤ `max_chars` returned verbatim; longer strings truncated with trailing `"..."` and total length exactly `max_chars`.
+- `capture_previews=False` short-circuits `input.value` / `output.value` emission in hooks.
+
+### AC3 — Sampling
+- `config.sample_rate is None` → no sampler passed (default `AlwaysOn` behavior, unchanged).
+- `config.sample_rate = X` (0.0 ≤ X ≤ 1.0) → `TracerProvider` constructed with `ParentBased(TraceIdRatioBased(X))`.
+- Metrics unaffected by sampling (still exported).
+
+### AC4 — Resource attributes
+- `service.name` defaults to `hermes-agent` when not overridden.
+- `config.global_tags` merged into resource; keys overridable by `config.resource_attributes`.
+- `config.project_name` sets `openinference.project.name`; falls back to env `OTEL_PROJECT_NAME`.
+- User-supplied `service.name` via `resource_attributes` wins over the default.
+
+### AC5 — Orphan sweep
+- `TurnRegistry.record_start(session_id)` stores `time.perf_counter()` value.
+- `_sweep_expired()` is invoked at the top of each `pre_*` hook (pre_tool_call, pre_llm_call, pre_api_request).
+- Sessions older than `config.root_span_ttl_ms / 1000` seconds are finalized:
+  - all still-active spans for that session end cleanly
+  - the session span (if present) gets `hermes.turn.final_status = "timed_out"`
+  - span status is `OK` (NOT `ERROR`)
+- Registry entries removed on `on_session_end` for the normal path.
+
+### AC6 — Per-turn summary attributes
+- `_SESSION_TURN_SUMMARY[session_id]` is a `TurnSummary` updated by each relevant hook.
+- On `on_session_end`, the following attributes flush onto the session span when non-empty / non-zero:
+  - `hermes.turn.tool_count` (int)
+  - `hermes.turn.tools` (CSV, sorted, distinct, capped at 500 chars)
+  - `hermes.turn.tool_targets` (pipe-joined, distinct, capped at 500 chars)
+  - `hermes.turn.tool_commands` (pipe-joined, distinct, capped at 500 chars)
+  - `hermes.turn.tool_outcomes` (CSV, sorted, distinct)
+  - `hermes.turn.skill_count` (int)
+  - `hermes.turn.skills` (CSV, sorted, distinct)
+  - `hermes.turn.api_call_count` (int)
+  - `hermes.turn.final_status` ∈ `{"completed", "interrupted", "incomplete", "timed_out"}`
+- Attributes are skipped entirely (not set to empty string) when the aggregator is empty.
+
+### AC7 — Tool identity, outcome, skill inference
+- `hermes.tool.target`: set when args contain any of `path`, `file_path`, `target`, `url` (first match, path preferred).
+- `hermes.tool.command`: set when args contain `command` or `cmd`.
+- `hermes.tool.outcome`: emitted on every post_tool_call, value in `{"completed", "error", "timeout", "blocked", ...}`. Explicit `status` field in result wins; `error` field → `"error"`; otherwise `"completed"`.
+- Span status is `"error"` iff outcome is `"error"`; other outcomes map to `"ok"` (per "what NOT to copy" — timeouts must not inflate error rates).
+- `hermes.skill.name`: attached to tool span when `args.path` matches `/skills/<name>/`, NOT when it matches `/optional-skills/<name>/references/`.
+- Metric `hermes.skill.inferred` incremented with `{skill_name, source}` labels on each successful inference.
+
+### AC8 — Backward compatibility
+- All 168 existing tests pass unchanged.
+- No pre-existing attribute renamed or removed.
+- Behavior with zero config (no yaml, no new env vars) is functionally equivalent to the pre-PRD behavior except for the additive attributes listed above.
+
 ## Verification
 
 ### Unit tests

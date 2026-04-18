@@ -27,6 +27,7 @@ def _reset_otel_state():
         hooks_mod._SESSION_USAGE.clear()
         hooks_mod._SESSION_IO.clear()
         hooks_mod._TOOL_START_TIMES.clear()
+        hooks_mod._SESSION_TURN_SUMMARY.clear()
         # Reset the parent stack ContextVar — pytest runs tests in the
         # same context, so the stack would otherwise bleed between tests.
         tracer_mod._PARENT_STACK.set(None)
@@ -115,6 +116,7 @@ def inmemory_otel_with_metrics():
     plugin._tool_duration = meter.create_histogram("hermes.tool.duration", unit="ms")
     plugin._message_count = meter.create_counter("hermes.message.count")
     plugin._model_usage = meter.create_counter("hermes.model.usage")
+    plugin._skill_inferred_counter = meter.create_counter("hermes.skill.inferred")
 
     tracer_mod._tracer = plugin
 
