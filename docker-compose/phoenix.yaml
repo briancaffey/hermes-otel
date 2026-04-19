@@ -3,4 +3,6 @@ services:
     image: arizephoenix/phoenix:latest
     ports:
       - "6006:6006"  # UI and OTLP HTTP collector
-      - "4317:4317"  # OTLP gRPC collector
+      # 4317 (gRPC) intentionally omitted so Phoenix can coexist with other
+      # OTLP collectors (Jaeger, Tempo) on the same host. The plugin talks
+      # to Phoenix over HTTP at :6006/v1/traces.

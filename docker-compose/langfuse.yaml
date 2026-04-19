@@ -1,9 +1,9 @@
-# Langfuse self-hosted stack for E2E testing.
+# Langfuse self-hosted stack for local demo + E2E testing.
 #
 # Usage:
-#   docker compose -f docker-compose/langfuse.yaml up -d
+#   docker compose -p langfuse -f docker-compose/langfuse.yaml up -d
 #   # wait ~60s for all services to be ready
-#   docker compose -f docker-compose/langfuse.yaml down -v
+#   docker compose -p langfuse -f docker-compose/langfuse.yaml down -v
 #
 # Pre-seeded API keys (via headless initialization):
 #   Public key:  lf_pk_test_hermes_otel
@@ -12,6 +12,10 @@
 # OTEL endpoint:  http://localhost:3000/api/public/otel
 # REST API:       http://localhost:3000/api/public/...
 # UI:             http://localhost:3000
+#
+# Langfuse v3 requires a blob store for async event upload. We use the
+# bundled MinIO with a one-shot init container (minio-init) that creates
+# the bucket before langfuse-web starts.
 
 services:
   langfuse-web:
@@ -23,8 +27,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_started
-      minio:
-        condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     ports:
       - "3000:3000"
     environment:
@@ -32,11 +36,21 @@ services:
       NEXTAUTH_URL: http://localhost:3000
       NEXTAUTH_SECRET: test-secret-for-e2e-only
       SALT: test-salt-for-e2e-only
-      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      ENCRYPTION_KEY: "aa160eadd7cecc6731bd08b554dfbd4110866bd08eb748b67fad728ef974ad51"
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse-test-password
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
       REDIS_CONNECTION_STRING: redis://redis:6379
-      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "false"
+      # S3 event upload (required by Langfuse v3) — points at the bundled MinIO.
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
       # Headless initialization — pre-seeds org, project, and API keys
       LANGFUSE_INIT_ORG_ID: test-org
@@ -52,8 +66,8 @@ services:
       test: ["CMD", "wget", "--spider", "-q", "http://localhost:3000/api/public/health"]
       interval: 5s
       timeout: 5s
-      retries: 20
-      start_period: 30s
+      retries: 40
+      start_period: 60s
 
   langfuse-worker:
     image: docker.io/langfuse/langfuse-worker:3
@@ -64,15 +78,26 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_started
+      minio-init:
+        condition: service_completed_successfully
     environment:
       DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
       CLICKHOUSE_URL: http://clickhouse:8123
       CLICKHOUSE_MIGRATION_URL: clickhouse://clickhouse:9000
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse-test-password
+      CLICKHOUSE_CLUSTER_ENABLED: "false"
       REDIS_CONNECTION_STRING: redis://redis:6379
-      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "false"
+      LANGFUSE_S3_EVENT_UPLOAD_ENABLED: "true"
+      LANGFUSE_S3_EVENT_UPLOAD_BUCKET: langfuse
+      LANGFUSE_S3_EVENT_UPLOAD_REGION: auto
+      LANGFUSE_S3_EVENT_UPLOAD_ACCESS_KEY_ID: minio
+      LANGFUSE_S3_EVENT_UPLOAD_SECRET_ACCESS_KEY: miniosecret
+      LANGFUSE_S3_EVENT_UPLOAD_ENDPOINT: http://minio:9000
+      LANGFUSE_S3_EVENT_UPLOAD_FORCE_PATH_STYLE: "true"
       LANGFUSE_S3_MEDIA_UPLOAD_ENABLED: "false"
       SALT: test-salt-for-e2e-only
-      ENCRYPTION_KEY: 0000000000000000000000000000000000000000000000000000000000000000
+      ENCRYPTION_KEY: "aa160eadd7cecc6731bd08b554dfbd4110866bd08eb748b67fad728ef974ad51"
 
   postgres:
     image: docker.io/postgres:17
@@ -100,6 +125,10 @@ services:
 
   clickhouse:
     image: docker.io/clickhouse/clickhouse-server
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: clickhouse-test-password
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
     tmpfs:
       - /var/lib/clickhouse
       - /var/log/clickhouse-server
@@ -107,5 +136,28 @@ services:
   minio:
     image: docker.io/minio/minio
     command: server /data --console-address ":9001"
+    environment:
+      MINIO_ROOT_USER: minio
+      MINIO_ROOT_PASSWORD: miniosecret
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      interval: 3s
+      timeout: 3s
+      retries: 20
     tmpfs:
       - /data
+
+  # One-shot: create the Langfuse event bucket so langfuse-web/worker can
+  # start cleanly. Exits successfully once the bucket exists.
+  minio-init:
+    image: docker.io/minio/mc
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      mc alias set local http://minio:9000 minio miniosecret &&
+      (mc mb --ignore-existing local/langfuse) &&
+      echo 'bucket ready'
+      "
+    restart: "no"

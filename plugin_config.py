@@ -2,17 +2,22 @@
 
 Loader precedence per field: env var > ~/.hermes/plugins/hermes_otel/config.yaml > default.
 
-Backend selection (Phoenix / Langfuse / LangSmith / SigNoz) stays env-var-driven
-to preserve existing deployments. This config only controls telemetry shaping:
-sampling, previews, resource attributes, TTL, headers.
+Two ways to pick backends:
+  * **Multi-backend** (preferred): set ``backends:`` in config.yaml. Every entry
+    fans out via its own ``BatchSpanProcessor`` so traces land in all
+    configured collectors in parallel without blocking the agent thread.
+  * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
+    or LangSmith/Langfuse credentials. When ``backends:`` is empty, env-var
+    detection is used and at most one backend is selected (priority is
+    LangSmith > Langfuse > SigNoz > Jaeger > Tempo > Phoenix).
 """
 
 from __future__ import annotations
 
 import os
-from dataclasses import dataclass, field, fields, replace
+from dataclasses import dataclass, fields, replace
 from pathlib import Path
-from typing import Any, Dict, Optional, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 Scalar = Union[str, int, float, bool]
 
@@ -21,6 +26,32 @@ DEFAULT_CONFIG_PATH = Path.home() / ".hermes" / "plugins" / "hermes_otel" / "con
 _ENV_PREFIX = "HERMES_OTEL_"
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _FALSE_STRINGS = {"0", "false", "no", "off"}
+
+
+@dataclass(frozen=True)
+class BackendConfig:
+    """One collector destination declared in ``config.yaml``.
+
+    Secrets (api keys, ingestion keys, langfuse credentials) should normally
+    live in env vars rather than yaml — use the ``*_env`` fields to point at
+    the env var name. Inline fields are accepted for convenience but are
+    discouraged because the file is plaintext.
+    """
+
+    type: str                                  # phoenix | langfuse | signoz | jaeger | tempo | otlp
+    name: Optional[str] = None                 # display name (defaults to type)
+    endpoint: Optional[str] = None             # OTLP HTTP traces URL
+    headers: Optional[Dict[str, str]] = None   # extra/override HTTP headers
+    metrics: Optional[bool] = None             # None = auto (off for langfuse/jaeger/tempo)
+    # Langfuse credentials
+    public_key: Optional[str] = None
+    secret_key: Optional[str] = None
+    public_key_env: Optional[str] = None
+    secret_key_env: Optional[str] = None
+    base_url: Optional[str] = None             # langfuse alt to endpoint
+    # SigNoz cloud credential
+    ingestion_key: Optional[str] = None
+    ingestion_key_env: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -33,7 +64,7 @@ class HermesOtelConfig:
     flush_interval_ms: int = 60_000            # metrics export interval
     preview_max_chars: int = 1200              # clip_preview truncation
     capture_previews: bool = True              # global privacy kill switch
-    headers: Optional[Dict[str, str]] = None   # extra OTLP headers
+    headers: Optional[Dict[str, str]] = None   # extra OTLP headers (all backends)
     global_tags: Optional[Dict[str, Scalar]] = None
     resource_attributes: Optional[Dict[str, Scalar]] = None
     project_name: Optional[str] = None         # supersedes OTEL_PROJECT_NAME
@@ -43,6 +74,15 @@ class HermesOtelConfig:
     span_batch_max_export_batch_size: int = 512  # spans per HTTP POST
     span_batch_export_timeout_ms: int = 30_000 # per-export HTTP timeout
     force_flush_on_session_end: bool = True    # flush so UI sees traces promptly
+    # ── LLM span input fidelity ─────────────────────────────────────────
+    # Opt-in: serialise the full conversation_history onto the llm span's
+    # input.value so the UI shows every message instead of just the last
+    # user turn. The api.* spans don't carry message-level detail, so
+    # flipping this on is the easiest way to see what the model actually saw.
+    capture_conversation_history: bool = False
+    conversation_history_max_chars: int = 20_000
+    # ── Multi-backend fan-out ───────────────────────────────────────────
+    backends: Optional[Tuple[BackendConfig, ...]] = None
 
 
 # ── Env-var parsers ────────────────────────────────────────────────────────
@@ -107,6 +147,50 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 
 _ALLOWED_KEYS = {f.name for f in fields(HermesOtelConfig)}
+_BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)}
+
+
+def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
+    """Coerce a yaml ``backends:`` list into a tuple of BackendConfig."""
+    if value is None:
+        return None
+    if not isinstance(value, list):
+        print(f"[hermes-otel] config.yaml 'backends' must be a list, got {type(value).__name__}; ignoring")
+        return None
+
+    out: List[BackendConfig] = []
+    for idx, raw in enumerate(value):
+        if not isinstance(raw, dict):
+            print(f"[hermes-otel] config.yaml backends[{idx}] must be a mapping; skipping")
+            continue
+        if "type" not in raw or not isinstance(raw["type"], str) or not raw["type"].strip():
+            print(f"[hermes-otel] config.yaml backends[{idx}] missing 'type'; skipping")
+            continue
+        kwargs: Dict[str, Any] = {}
+        for k, v in raw.items():
+            if k not in _BACKEND_ALLOWED_KEYS:
+                continue
+            if k == "headers":
+                if isinstance(v, dict):
+                    kwargs[k] = {str(kk): str(vv) for kk, vv in v.items()}
+                continue
+            if k == "metrics":
+                if isinstance(v, bool):
+                    kwargs[k] = v
+                elif isinstance(v, str):
+                    parsed = _parse_bool(v)
+                    if parsed is not None:
+                        kwargs[k] = parsed
+                continue
+            if v is None:
+                continue
+            kwargs[k] = str(v) if not isinstance(v, str) else v
+        try:
+            out.append(BackendConfig(**kwargs))
+        except TypeError as e:
+            print(f"[hermes-otel] config.yaml backends[{idx}] invalid: {e}; skipping")
+
+    return tuple(out) if out else None
 
 
 def _coerce_from_yaml(key: str, value: Any) -> Any:
@@ -117,7 +201,14 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
     """
     if value is None:
         return None
-    if key in ("enabled", "capture_previews", "force_flush_on_session_end"):
+    if key == "backends":
+        return _coerce_backends(value)
+    if key in (
+        "enabled",
+        "capture_previews",
+        "force_flush_on_session_end",
+        "capture_conversation_history",
+    ):
         if isinstance(value, bool):
             return value
         if isinstance(value, str):
@@ -139,6 +230,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "span_batch_schedule_delay_ms",
         "span_batch_max_export_batch_size",
         "span_batch_export_timeout_ms",
+        "conversation_history_max_chars",
     ):
         if isinstance(value, bool):
             return None  # bools are ints in python; reject explicitly
@@ -179,6 +271,8 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("span_batch_max_export_batch_size", _parse_int)
     take("span_batch_export_timeout_ms", _parse_int)
     take("force_flush_on_session_end", _parse_bool)
+    take("capture_conversation_history", _parse_bool)
+    take("conversation_history_max_chars", _parse_int)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

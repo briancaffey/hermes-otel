@@ -68,7 +68,10 @@ def real_init_plugin():
     )
     plugin = HermesOTelPlugin(config=cfg)
 
-    with patch.object(plugin, "_init_metrics", return_value=True):
+    # Stub the metric exporter so init doesn't spin up a background reader
+    # that floods the test logs with retry messages aimed at fake-collector.
+    with patch("hermes_otel.tracer.OTLPMetricExporter") as mock_metrics:
+        mock_metrics.return_value.export.return_value = None
         assert plugin.init() is True
 
     yield plugin

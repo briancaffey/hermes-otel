@@ -12,15 +12,24 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 
 @pytest.fixture(autouse=True)
-def _reset_otel_state():
+def _reset_otel_state(monkeypatch, tmp_path_factory):
     """Reset plugin singletons and module-level state between tests.
 
     The tracer module uses a global _tracer singleton, module-level dicts
     for per-session aggregation, and a ContextVar for the parent span
     stack. All must be cleared to prevent cross-test contamination.
+
+    Also redirects ``DEFAULT_CONFIG_PATH`` to a nonexistent temp location
+    so tests never pick up the user's real ``~/.hermes/plugins/
+    hermes_otel/config.yaml`` (which can define backends and change the
+    init() code path unexpectedly).
     """
     import hermes_otel.tracer as tracer_mod
     import hermes_otel.hooks as hooks_mod
+    import hermes_otel.plugin_config as plugin_config_mod
+
+    fake_path = tmp_path_factory.mktemp("isolated-config") / "nonexistent.yaml"
+    monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", fake_path)
 
     def _reset():
         tracer_mod._tracer = None

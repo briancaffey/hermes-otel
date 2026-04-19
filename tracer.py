@@ -1,7 +1,15 @@
 """OpenTelemetry tracer for Hermes plugin.
 
-Provides singleton tracer manager with span tracking between
-pre/post hook calls.
+Provides a singleton tracer manager that fans out spans/metrics to one or more
+collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, generic OTLP).
+LangSmith remains a separate, env-var-only single-backend path because it uses
+its own HTTP API rather than OTLP.
+
+When multiple backends are configured the SDK's TracerProvider holds one
+``BatchSpanProcessor`` per backend — each processor owns its own background
+worker thread, so no single slow collector can block the agent's hot path or
+delay export to the others. A shared ``MeterProvider`` similarly fans metrics
+out via one ``PeriodicExportingMetricReader`` per backend that supports them.
 """
 
 from __future__ import annotations
@@ -11,10 +19,11 @@ import base64
 import contextvars
 import os
 import time
-from typing import Any, Dict, Optional
+from dataclasses import dataclass
+from typing import Any, Dict, List, Optional
 
 from .debug_utils import debug_log
-from .plugin_config import HermesOtelConfig, load_config
+from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 
 
 # Per-context parent span stack.  Using ContextVar (not threading.local)
@@ -48,6 +57,26 @@ except ImportError as e:
     print(f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
 
 
+# Backend types whose collectors do not accept OTLP metrics. Pure trace-only.
+_TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
+
+
+@dataclass
+class _ResolvedBackend:
+    """A backend ready to wire into the OTLP pipeline.
+
+    Headers may already include backend-specific auth (e.g. Langfuse Basic
+    Auth, SigNoz ingestion key); the pipeline merges the global
+    ``config.headers`` on top before constructing the exporter.
+    """
+
+    type: str
+    endpoint: str
+    display_name: str = "OTLP"
+    headers: Optional[Dict[str, str]] = None
+    supports_metrics: bool = True
+
+
 class NoopSpan:
     """No-op span fallback."""
 
@@ -71,16 +100,34 @@ class SpanTracker:
     the active span when the post_* hook fires. Also tracks the
     current "parent" span so child spans nest correctly.
 
-    The parent stack is stored in a ``ContextVar`` so it is isolated
-    per task/thread: each async task, each thread-pool worker, and
-    each thread gets its own independent stack. This prevents
-    concurrent sessions (e.g. a cron job and a chat running at the
-    same time) from corrupting each other's span hierarchy.
+    Two parent stacks run in parallel:
+
+    * ``_session_parent_stacks`` — a plain dict keyed by session_id.
+      Primary source of parent context. hermes-agent executes hooks
+      across threads/async tasks; a ContextVar alone cannot carry the
+      session span from ``on_session_start`` into subsequent hooks when
+      those hooks fire on different workers. The session-keyed stack is
+      shared state (Python GIL makes dict/list ops atomic), so any hook
+      with a session_id can recover the current parent regardless of
+      which thread it runs on.
+
+    * ``_PARENT_STACK`` ContextVar — fallback for hooks that fire
+      without a session_id (e.g. synthetic test calls) and for keeping
+      nesting correct inside a single task when multiple sessions share
+      a worker thread. Isolated per-task/thread so concurrent sessions
+      don't cross-contaminate.
+
+    ``get_current_parent(session_id)`` prefers the session-keyed stack
+    and falls back to the ContextVar.
     """
 
     def __init__(self):
         # key = f"{tool_name}:{task_id}" or f"llm:{session_id}"
         self._active_spans: Dict[str, Any] = {}
+        # session_id -> [parent, ...]. Lives in plain memory so every
+        # thread/task that handles a hook for this session sees the same
+        # stack. See class docstring for rationale.
+        self._session_parent_stacks: Dict[str, list] = {}
 
     def _parent_stack(self) -> list:
         """Return this context's parent span stack, creating it if needed."""
@@ -96,18 +143,45 @@ class SpanTracker:
         if parent:
             span._otel_parent = parent
 
-    def push_parent(self, span) -> None:
-        """Mark a span as the current parent on this thread."""
-        self._parent_stack().append(span)
+    def push_parent(self, span, session_id: Optional[str] = None) -> None:
+        """Mark ``span`` as the current parent.
 
-    def pop_parent(self) -> None:
-        """Remove the current parent span on this thread."""
+        When ``session_id`` is provided the span is also pushed onto the
+        session-keyed stack so hooks on a different thread/task for the
+        same session still see it.
+        """
+        self._parent_stack().append(span)
+        if session_id:
+            self._session_parent_stacks.setdefault(session_id, []).append(span)
+
+    def pop_parent(self, session_id: Optional[str] = None) -> None:
+        """Remove the current parent span.
+
+        Pops both the ContextVar stack (best-effort — may be empty if
+        the pop lands on a different thread than the push) and the
+        session-keyed stack when a session_id is given.
+        """
         stack = self._parent_stack()
         if stack:
             stack.pop()
+        if session_id:
+            s = self._session_parent_stacks.get(session_id)
+            if s:
+                s.pop()
+                if not s:
+                    self._session_parent_stacks.pop(session_id, None)
 
-    def get_current_parent(self):
-        """Get the active parent span on this thread, or None."""
+    def get_current_parent(self, session_id: Optional[str] = None):
+        """Return the current parent span, or None.
+
+        Prefers the session-keyed stack (survives thread boundaries).
+        Falls back to the ContextVar stack for callers that don't know
+        the session_id.
+        """
+        if session_id:
+            s = self._session_parent_stacks.get(session_id)
+            if s:
+                return s[-1]
         stack = self._parent_stack()
         return stack[-1] if stack else None
 
@@ -148,6 +222,7 @@ class SpanTracker:
         for key in list(self._active_spans.keys()):
             self.end_span(key)
         self._active_spans.clear()
+        self._session_parent_stacks.clear()
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()
@@ -174,13 +249,20 @@ class HermesOTelPlugin:
         self.tracer = None
         self.spans = SpanTracker()
         self._initialized = False
+        # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
+        # per backend. The singular ``_span_processor`` / ``_metric_reader``
+        # attributes are kept as aliases pointing at the first entry so legacy
+        # tests and external callers that introspect them keep working.
+        self._span_processors: List[Any] = []
+        self._metric_readers: List[Any] = []
         self._span_processor = None
-        # LangSmith backend (None when using OTLP)
+        self._metric_reader = None
+        self._backend_summaries: List[str] = []
+        # LangSmith backend (None when using OTLP). Set when LANGSMITH_TRACING=true.
         self._langsmith = None
         # Metrics
         self._meter = None
         self._meter_provider = None
-        self._metric_reader = None
         self._session_count = None
         self._token_usage = None
         self._cost_usage = None
@@ -199,18 +281,22 @@ class HermesOTelPlugin:
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
 
+    # ── Initialization entry point ───────────────────────────────────────
+
     def init(self, endpoint: str = None) -> bool:
-        """Initialize the tracer from environment variables.
+        """Initialize one or more backends.
 
-        Detection order (first match wins):
-          1. LangSmith  — LANGSMITH_TRACING=true + LANGSMITH_API_KEY
-          2. Langfuse   — OTEL_LANGFUSE_* or standard LANGFUSE_* credentials
-          3. SigNoz     — OTEL_SIGNOZ_ENDPOINT (+ optional OTEL_SIGNOZ_INGESTION_KEY)
-          4. Jaeger     — OTEL_JAEGER_ENDPOINT (traces only, no metrics)
-          5. Tempo      — OTEL_TEMPO_ENDPOINT (traces only, no metrics)
-          6. Phoenix    — OTEL_PHOENIX_ENDPOINT (or explicit *endpoint* arg)
+        Resolution order:
+          1. ``LANGSMITH_TRACING=true`` → LangSmith (HTTP API, single backend).
+          2. ``config.backends`` non-empty → fan out to every entry via
+             ``_init_otlp_pipeline``.
+          3. Explicit ``endpoint`` arg → single Phoenix backend (via
+             ``_init_otlp`` for back-compat).
+          4. Legacy env-var detection (single backend, first match wins):
+             Langfuse → SigNoz → Jaeger → Tempo → Phoenix. Each branch calls
+             ``_init_otlp`` so existing tests that mock it keep working.
 
-        Returns True if a backend was initialized.
+        Returns True if at least one backend was initialized.
         """
         if not _OTEL_AVAILABLE:
             print("[hermes-otel] ✗ OpenTelemetry packages not available")
@@ -220,13 +306,49 @@ class HermesOTelPlugin:
             print("[hermes-otel] ✗ Disabled via config (enabled=false)")
             return False
 
-        # ── 1. LangSmith (HTTP API, not OTLP) ───────────────────────────
-        langsmith_tracing = os.getenv("LANGSMITH_TRACING", "").strip().lower()
-        langsmith_api_key = os.getenv("LANGSMITH_API_KEY", "").strip()
-        if langsmith_tracing == "true" and langsmith_api_key:
+        # 1. LangSmith short-circuit (legacy compat).
+        if self._wants_langsmith():
             return self._init_langsmith()
 
-        # ── 2. Langfuse (OTLP + Basic Auth) ──────────────────────────────
+        # 2. Multi-backend fan-out from yaml config.
+        if self.config.backends:
+            backends: List[_ResolvedBackend] = []
+            for bc in self.config.backends:
+                try:
+                    rb = self._resolve_backend_config(bc)
+                except Exception as e:
+                    print(f"[hermes-otel] ✗ backend {bc.type!r} skipped: {e}")
+                    continue
+                if rb is not None:
+                    backends.append(rb)
+            if not backends:
+                print("[hermes-otel] ✗ config.backends had no valid entries")
+                return False
+            return self._init_otlp_pipeline(backends)
+
+        # 3. Explicit endpoint arg → single Phoenix backend.
+        if endpoint:
+            return self._init_otlp(endpoint, backend_name="Phoenix")
+
+        # 4. Legacy env-var detection (single backend).
+        return self._init_otlp_from_env()
+
+    # ── Backend resolution ───────────────────────────────────────────────
+
+    @staticmethod
+    def _wants_langsmith() -> bool:
+        return (
+            os.getenv("LANGSMITH_TRACING", "").strip().lower() == "true"
+            and bool(os.getenv("LANGSMITH_API_KEY", "").strip())
+        )
+
+    def _init_otlp_from_env(self) -> bool:
+        """First-match-wins single-backend init from environment variables.
+
+        Each branch routes through ``_init_otlp`` so the existing unit-test
+        suite (which patches ``_init_otlp``) keeps verifying the routing.
+        """
+        # Langfuse
         langfuse_pub = (
             os.getenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
             or os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
@@ -239,10 +361,8 @@ class HermesOTelPlugin:
             langfuse_endpoint = os.getenv("OTEL_LANGFUSE_ENDPOINT", "").strip()
             if not langfuse_endpoint:
                 base_url = os.getenv("LANGFUSE_BASE_URL", "").strip().rstrip("/")
-                langfuse_endpoint = (
-                    f"{base_url}/api/public/otel" if base_url
-                    else "https://cloud.langfuse.com/api/public/otel"
-                )
+                root = base_url if base_url else "https://cloud.langfuse.com"
+                langfuse_endpoint = f"{root}/api/public/otel/v1/traces"
             auth_b64 = base64.b64encode(
                 f"{langfuse_pub}:{langfuse_sec}".encode()
             ).decode()
@@ -253,38 +373,177 @@ class HermesOTelPlugin:
             return self._init_otlp(langfuse_endpoint, headers=headers,
                                    backend_name="Langfuse")
 
-        # ── 3. SigNoz (OTLP, optional ingestion-key header) ─────────────
+        # SigNoz
         signoz_endpoint = os.getenv("OTEL_SIGNOZ_ENDPOINT", "").strip()
         if signoz_endpoint:
             signoz_key = os.getenv("OTEL_SIGNOZ_INGESTION_KEY", "").strip()
-            # signoz-ingestion-key is required for SigNoz Cloud and ignored
-            # by self-hosted collectors, so it's safe to omit for localhost.
             headers = {"signoz-ingestion-key": signoz_key} if signoz_key else None
             return self._init_otlp(signoz_endpoint, headers=headers,
                                    backend_name="SigNoz")
 
-        # ── 4. Jaeger (OTLP HTTP, traces only — no auth) ────────────────
+        # Jaeger
         jaeger_endpoint = os.getenv("OTEL_JAEGER_ENDPOINT", "").strip()
         if jaeger_endpoint:
             return self._init_otlp(jaeger_endpoint, backend_name="Jaeger")
 
-        # ── 5. Tempo (OTLP HTTP, traces only — no auth) ─────────────────
+        # Tempo
         tempo_endpoint = os.getenv("OTEL_TEMPO_ENDPOINT", "").strip()
         if tempo_endpoint:
             return self._init_otlp(tempo_endpoint, backend_name="Tempo")
 
-        # ── 6. Phoenix / generic OTLP (no auth) ─────────────────────────
-        endpoint = endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "").strip()
-        if endpoint:
-            return self._init_otlp(endpoint, backend_name="Phoenix")
+        # Phoenix
+        phoenix_endpoint = os.getenv("OTEL_PHOENIX_ENDPOINT", "").strip()
+        if phoenix_endpoint:
+            return self._init_otlp(phoenix_endpoint, backend_name="Phoenix")
 
         print("[hermes-otel] ✗ No backend configured "
               "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
               "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
-              "Langfuse credentials, or LANGSMITH_TRACING)")
+              "Langfuse credentials, or LANGSMITH_TRACING; or define "
+              "'backends:' in config.yaml)")
         return False
 
+    def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
+        """Turn a yaml ``BackendConfig`` into a ready-to-wire backend."""
+        t = (bc.type or "").strip().lower()
+        display = bc.name or t.capitalize() or "OTLP"
+        extra_headers = dict(bc.headers or {})
+
+        if t == "phoenix":
+            ep = (bc.endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "")).strip()
+            if not ep:
+                raise ValueError("phoenix requires endpoint")
+            return _ResolvedBackend(
+                type="phoenix", endpoint=ep, display_name=display,
+                headers=extra_headers or None,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        if t == "langfuse":
+            pub = self._resolve_secret(
+                bc.public_key, bc.public_key_env,
+                ["OTEL_LANGFUSE_PUBLIC_API_KEY", "LANGFUSE_PUBLIC_KEY"],
+            )
+            sec = self._resolve_secret(
+                bc.secret_key, bc.secret_key_env,
+                ["OTEL_LANGFUSE_SECRET_API_KEY", "LANGFUSE_SECRET_KEY"],
+            )
+            if not (pub and sec):
+                raise ValueError("langfuse requires public_key and secret_key")
+            ep = (bc.endpoint or os.getenv("OTEL_LANGFUSE_ENDPOINT", "")).strip()
+            if not ep:
+                base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
+                root = base if base else "https://cloud.langfuse.com"
+                ep = f"{root}/api/public/otel/v1/traces"
+            auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
+            headers = {
+                "Authorization": f"Basic {auth}",
+                "x-langfuse-ingestion-version": "4",
+            }
+            headers.update(extra_headers)
+            return _ResolvedBackend(
+                type="langfuse", endpoint=ep, display_name=display,
+                headers=headers,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        if t == "signoz":
+            ep = (bc.endpoint or os.getenv("OTEL_SIGNOZ_ENDPOINT", "")).strip()
+            if not ep:
+                raise ValueError("signoz requires endpoint")
+            key = self._resolve_secret(
+                bc.ingestion_key, bc.ingestion_key_env,
+                ["OTEL_SIGNOZ_INGESTION_KEY"],
+            )
+            headers: Dict[str, str] = {}
+            if key:
+                headers["signoz-ingestion-key"] = key
+            headers.update(extra_headers)
+            return _ResolvedBackend(
+                type="signoz", endpoint=ep, display_name=display,
+                headers=headers or None,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        if t == "jaeger":
+            ep = (bc.endpoint or os.getenv("OTEL_JAEGER_ENDPOINT", "")).strip()
+            if not ep:
+                raise ValueError("jaeger requires endpoint")
+            return _ResolvedBackend(
+                type="jaeger", endpoint=ep, display_name=display,
+                headers=extra_headers or None,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        if t == "tempo":
+            ep = (bc.endpoint or os.getenv("OTEL_TEMPO_ENDPOINT", "")).strip()
+            if not ep:
+                raise ValueError("tempo requires endpoint")
+            return _ResolvedBackend(
+                type="tempo", endpoint=ep, display_name=display,
+                headers=extra_headers or None,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        if t in ("otlp", "generic"):
+            ep = (bc.endpoint or "").strip()
+            if not ep:
+                raise ValueError("otlp requires endpoint")
+            return _ResolvedBackend(
+                type="otlp", endpoint=ep,
+                display_name=bc.name or "OTLP",
+                headers=extra_headers or None,
+                supports_metrics=self._metrics_for(t, bc.metrics),
+            )
+
+        raise ValueError(f"unknown backend type {bc.type!r}")
+
+    @staticmethod
+    def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
+        if override is not None:
+            return override
+        return backend_type not in _TRACES_ONLY
+
+    @staticmethod
+    def _resolve_secret(
+        inline: Optional[str],
+        env_name: Optional[str],
+        fallback_envs: List[str],
+    ) -> Optional[str]:
+        """Pick the first available secret value. Inline > named env > fallback envs."""
+        if inline:
+            v = inline.strip()
+            if v:
+                return v
+        if env_name:
+            v = os.getenv(env_name, "").strip()
+            if v:
+                return v
+        for name in fallback_envs:
+            v = os.getenv(name, "").strip()
+            if v:
+                return v
+        return None
+
     # ── Backend initializers ─────────────────────────────────────────────
+
+    def _init_otlp(self, endpoint: str, headers: Optional[Dict[str, str]] = None,
+                   backend_name: str = "OTLP") -> bool:
+        """Single-backend wrapper around ``_init_otlp_pipeline``.
+
+        Preserves the original API for tests and external callers that
+        bypass ``init()`` (e.g. e2e harnesses) and want to wire one
+        backend directly. Internally it just calls the multi-backend
+        pipeline with a list of one.
+        """
+        backend = _ResolvedBackend(
+            type=backend_name.lower(),
+            endpoint=endpoint,
+            display_name=backend_name,
+            headers=headers,
+            supports_metrics=backend_name.lower() not in _TRACES_ONLY,
+        )
+        return self._init_otlp_pipeline([backend])
 
     def _init_langsmith(self) -> bool:
         """Initialize LangSmith backend from environment variables."""
@@ -302,30 +561,45 @@ class HermesOTelPlugin:
             print(f"[hermes-otel] ✗ LangSmith init failed: {e}")
             return False
 
-    def _init_otlp(self, endpoint: str, headers: dict = None,
-                   backend_name: str = "OTLP") -> bool:
-        """Initialize an OTLP tracer (shared by Phoenix, Langfuse, SigNoz).
+    def _build_resource(self) -> "Resource":
+        attrs: Dict[str, Any] = {"service.name": "hermes-agent"}
+        if self.config.global_tags:
+            attrs.update(self.config.global_tags)
+        if self.config.resource_attributes:
+            attrs.update(self.config.resource_attributes)
+        project_name = (
+            self.config.project_name
+            or os.getenv("OTEL_PROJECT_NAME", "").strip()
+        )
+        if project_name:
+            attrs["openinference.project.name"] = project_name
+        return Resource.create(attrs)
 
-        Args:
-            endpoint:     OTLP HTTP trace endpoint URL.
-            headers:      Optional HTTP headers (e.g. Langfuse Basic Auth,
-                          SigNoz ingestion key).
-            backend_name: Display name for log messages.
+    @staticmethod
+    def _derive_metrics_endpoint(traces_endpoint: str) -> str:
+        """Phoenix/SigNoz use /v1/traces and /v1/metrics on the same host."""
+        if traces_endpoint.endswith("/v1/traces"):
+            return traces_endpoint[:-len("/v1/traces")] + "/v1/metrics"
+        return traces_endpoint
+
+    def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
+        """Layer config.headers on top of per-backend headers."""
+        merged: Dict[str, str] = dict(backend_headers or {})
+        if self.config.headers:
+            merged.update(self.config.headers)
+        return merged or None
+
+    def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
+        """Wire one TracerProvider to all backends + a shared MeterProvider.
+
+        Each backend gets its own ``BatchSpanProcessor`` (independent worker
+        thread, independent queue) so a slow or unreachable collector cannot
+        delay span enqueue or starve the others. Metrics fan out the same
+        way: one ``PeriodicExportingMetricReader`` per backend that supports
+        metrics, attached to a single shared ``MeterProvider``.
         """
         try:
-            resource_attrs: Dict[str, Any] = {"service.name": "hermes-agent"}
-            if self.config.global_tags:
-                resource_attrs.update(self.config.global_tags)
-            if self.config.resource_attributes:
-                resource_attrs.update(self.config.resource_attributes)
-            project_name = (
-                self.config.project_name
-                or os.getenv("OTEL_PROJECT_NAME", "").strip()
-            )
-            if project_name:
-                resource_attrs["openinference.project.name"] = project_name
-
-            resource = Resource.create(resource_attrs)
+            resource = self._build_resource()
 
             provider_kwargs: Dict[str, Any] = {"resource": resource}
             if self.config.sample_rate is not None:
@@ -338,116 +612,110 @@ class HermesOTelPlugin:
                 )
             provider = TracerProvider(**provider_kwargs)
 
-            merged_headers = dict(headers or {})
-            if self.config.headers:
-                merged_headers.update(self.config.headers)
-            exporter_headers = merged_headers or None
+            metric_readers: List[Any] = []
 
-            exporter = OTLPSpanExporter(endpoint=endpoint, headers=exporter_headers)
-            # BatchSpanProcessor: runs a background worker that drains the
-            # queue in batches. span.end() becomes a non-blocking enqueue,
-            # so tool-call / api-request hooks don't stall on slow backends.
-            # Trade-off: up to `schedule_delay_millis` of spans stay in
-            # memory until exported; we flush explicitly on session end
-            # and via atexit so users don't lose data on graceful shutdown.
-            processor = BatchSpanProcessor(
-                exporter,
-                max_queue_size=self.config.span_batch_max_queue_size,
-                schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
-                max_export_batch_size=self.config.span_batch_max_export_batch_size,
-                export_timeout_millis=self.config.span_batch_export_timeout_ms,
-            )
-            provider.add_span_processor(processor)
-            self._span_processor = processor
+            for b in backends:
+                hdrs = self._merge_headers(b.headers)
+                try:
+                    exporter = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
+                    processor = BatchSpanProcessor(
+                        exporter,
+                        max_queue_size=self.config.span_batch_max_queue_size,
+                        schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
+                        max_export_batch_size=self.config.span_batch_max_export_batch_size,
+                        export_timeout_millis=self.config.span_batch_export_timeout_ms,
+                    )
+                    provider.add_span_processor(processor)
+                    self._span_processors.append(processor)
+                except Exception as e:
+                    print(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
+                    continue
+
+                if b.supports_metrics and _METRICS_AVAILABLE:
+                    metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
+                    try:
+                        m_exporter = OTLPMetricExporter(endpoint=metrics_endpoint, headers=hdrs)
+                        reader = PeriodicExportingMetricReader(
+                            m_exporter,
+                            export_interval_millis=self.config.flush_interval_ms,
+                        )
+                        metric_readers.append(reader)
+                        self._metric_readers.append(reader)
+                    except Exception as e:
+                        debug_log(f"{b.display_name} metrics init failed: {e}")
+
+                self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
+                print(f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
+                      + (" (traces only)" if not b.supports_metrics else ""))
+
+            if not self._span_processors:
+                return False
+
+            # Back-compat singular aliases — first entry wins.
+            self._span_processor = self._span_processors[0]
+            if self._metric_readers:
+                self._metric_reader = self._metric_readers[0]
 
             trace.set_tracer_provider(provider)
             self.tracer = trace.get_tracer("hermes-otel-plugin")
 
-            self._init_metrics(endpoint, resource, backend_name, headers=exporter_headers)
+            if metric_readers and _METRICS_AVAILABLE:
+                self._meter_provider = MeterProvider(
+                    resource=resource,
+                    metric_readers=metric_readers,
+                )
+                metrics.set_meter_provider(self._meter_provider)
+                self._meter = metrics.get_meter("hermes-otel-plugin")
+                self._create_metric_instruments()
+                debug_log(f"Metrics initialized for {len(metric_readers)} backend(s)")
+
             self._initialized = True
             self._register_atexit_flush()
 
             if not self.config.capture_previews:
                 print("[hermes-otel] ⚠ capture_previews=false — input/output values suppressed")
-            print(f"[hermes-otel] ✓ {backend_name} at {endpoint}")
+            if len(self._span_processors) > 1:
+                print(f"[hermes-otel] ✓ Multi-backend fan-out active "
+                      f"({len(self._span_processors)} collectors, "
+                      f"{len(self._metric_readers)} with metrics)")
             return True
         except Exception as e:
-            print(f"[hermes-otel] ✗ {backend_name} init failed: {e}")
+            print(f"[hermes-otel] ✗ pipeline init failed: {e}")
             return False
 
-    def _init_metrics(self, traces_endpoint: str, resource: Resource,
-                      backend_name: str = "Phoenix",
-                      headers: dict = None) -> bool:
-        """Initialize metrics (MeterProvider) alongside tracer.
-
-        Langfuse does not support OTLP metrics ingestion, so metrics are
-        skipped for that backend.  For Phoenix and SigNoz, the metrics
-        endpoint is derived from the traces endpoint (e.g. /v1/traces ->
-        /v1/metrics).  Headers (e.g. SigNoz ingestion key) are reused.
-        """
-        if not _METRICS_AVAILABLE:
-            return True
-
-        if backend_name in ("Langfuse", "Jaeger", "Tempo"):
-            debug_log(f"Metrics skipped ({backend_name} does not support OTLP metrics)")
-            return True
-
-        # Derive the metrics endpoint from the traces endpoint.
-        # e.g. http://localhost:6006/v1/traces -> http://localhost:6006/v1/metrics
-        if traces_endpoint.endswith("/v1/traces"):
-            metrics_endpoint = traces_endpoint[:-len("/v1/traces")] + "/v1/metrics"
-        else:
-            metrics_endpoint = traces_endpoint
-
-        try:
-            exporter = OTLPMetricExporter(endpoint=metrics_endpoint, headers=headers)
-            self._metric_reader = PeriodicExportingMetricReader(
-                exporter,
-                export_interval_millis=self.config.flush_interval_ms,
-            )
-            self._meter_provider = MeterProvider(
-                resource=resource,
-                metric_readers=[self._metric_reader],
-            )
-            metrics.set_meter_provider(self._meter_provider)
-            self._meter = metrics.get_meter("hermes-otel-plugin")
-
-            self._session_count = self._meter.create_counter(
-                "hermes.session.count",
-                description="Sessions created",
-            )
-            self._token_usage = self._meter.create_counter(
-                "hermes.token.usage",
-                description="Tokens consumed by type",
-            )
-            self._cost_usage = self._meter.create_counter(
-                "hermes.cost.usage",
-                description="USD cost per message",
-            )
-            self._tool_duration = self._meter.create_histogram(
-                "hermes.tool.duration",
-                unit="ms",
-                description="Tool execution time",
-            )
-            self._message_count = self._meter.create_counter(
-                "hermes.message.count",
-                description="Completed assistant messages",
-            )
-            self._model_usage = self._meter.create_counter(
-                "hermes.model.usage",
-                description="Messages per model and provider",
-            )
-            self._skill_inferred_counter = self._meter.create_counter(
-                "hermes.skill.inferred",
-                description="Skill-name inference hits on tool spans",
-            )
-
-            debug_log("Metrics initialized")
-            return True
-
-        except Exception as e:
-            debug_log(f"Metrics init failed: {e}")
-            return False
+    def _create_metric_instruments(self) -> None:
+        """Create the shared metric instruments on ``self._meter``."""
+        if self._meter is None:
+            return
+        self._session_count = self._meter.create_counter(
+            "hermes.session.count",
+            description="Sessions created",
+        )
+        self._token_usage = self._meter.create_counter(
+            "hermes.token.usage",
+            description="Tokens consumed by type",
+        )
+        self._cost_usage = self._meter.create_counter(
+            "hermes.cost.usage",
+            description="USD cost per message",
+        )
+        self._tool_duration = self._meter.create_histogram(
+            "hermes.tool.duration",
+            unit="ms",
+            description="Tool execution time",
+        )
+        self._message_count = self._meter.create_counter(
+            "hermes.message.count",
+            description="Completed assistant messages",
+        )
+        self._model_usage = self._meter.create_counter(
+            "hermes.model.usage",
+            description="Messages per model and provider",
+        )
+        self._skill_inferred_counter = self._meter.create_counter(
+            "hermes.skill.inferred",
+            description="Skill-name inference hits on tool spans",
+        )
 
     def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
         """Record a metric value."""
@@ -489,7 +757,7 @@ class HermesOTelPlugin:
 
         # LangSmith mode — HTTP only
         if self._langsmith:
-            parent_run = self.spans.get_current_parent()
+            parent_run = self.spans.get_current_parent(session_id)
             run_obj = self._langsmith.start_span(
                 name, key, kind, attributes, parent_run=parent_run,
             )
@@ -498,7 +766,7 @@ class HermesOTelPlugin:
             self.spans.start_span(key, run_obj)
             return run_obj
 
-        # OTLP mode (Phoenix/Langfuse)
+        # OTLP mode (Phoenix/Langfuse/etc.)
         if not self.tracer:
             return NoopSpan()
 
@@ -510,8 +778,9 @@ class HermesOTelPlugin:
             attrs["traceloop.span.kind"] = kind_value
             attrs["openinference.span.kind"] = kind_value
 
-            # Check for active parent — enables nesting
-            parent = self.spans.get_current_parent()
+            # Check for active parent — prefers the session-keyed stack so
+            # nesting survives hermes' cross-thread hook dispatch.
+            parent = self.spans.get_current_parent(session_id)
             span_ctx = None
             if parent is not None and hasattr(parent, "get_span_context"):
                 span_ctx = set_span_in_context(parent)
@@ -603,12 +872,13 @@ class HermesOTelPlugin:
             )
         # Drop any parent stack references — the sweep is a safety net and
         # subsequent hooks will rebuild state correctly.
+        self.spans._session_parent_stacks.pop(session_id, None)
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()
 
     def _force_flush(self):
-        """Force export of all buffered spans and metrics.
+        """Force export of all buffered spans and metrics across every backend.
 
         Called:
           - at the end of each session (so UI sees traces promptly)
@@ -616,9 +886,15 @@ class HermesOTelPlugin:
         Per-span flushing is deliberately NOT done — it would defeat the
         whole purpose of the BatchSpanProcessor queue.
         """
-        if self._span_processor:
+        # Iterate over the multi-backend list when present, otherwise fall
+        # back to the singular alias (set up by test fixtures that bypass
+        # ``_init_otlp_pipeline``).
+        processors = self._span_processors or (
+            [self._span_processor] if self._span_processor else []
+        )
+        for processor in processors:
             try:
-                self._span_processor.force_flush(timeout_millis=2000)
+                processor.force_flush(timeout_millis=2000)
             except Exception:
                 pass
         if self._meter_provider:

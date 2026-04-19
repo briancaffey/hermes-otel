@@ -1,3 +1,10 @@
+# Claude Code local settings
+.claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# macOS
+.DS_Store
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
@@ -214,3 +221,7 @@ __marimo__/
 
 # Streamlit
 .streamlit/secrets.toml
+
+# hermes-otel: user-local plugin config. May contain endpoints or secrets.
+# Check in config.yaml.example only.
+config.yaml

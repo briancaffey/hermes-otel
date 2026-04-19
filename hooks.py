@@ -187,17 +187,46 @@ def _preview(value: Any, max_len: int) -> Optional[str]:
     return clip_preview(value, cap)
 
 
-def on_session_start(session_id: str, model: str, platform: str, **kwargs):
-    """Start a top-level session span (or cron span) for the entire run."""
+def _serialize_conversation_history(history: Any, max_chars: int) -> Optional[str]:
+    """Render ``conversation_history`` as a JSON string, clipped to ``max_chars``.
+
+    Returns None when the history is empty or cannot be serialised so the
+    caller can fall back to the simple ``user_message`` input.
+    """
+    if not history:
+        return None
+    try:
+        text = json.dumps(history, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        try:
+            text = str(history)
+        except Exception:
+            return None
+    if len(text) <= max_chars:
+        return text
+    if max_chars <= 3:
+        return "." * max_chars
+    return text[: max_chars - 3] + "..."
+
+
+def _start_session_span(
+    session_id: str,
+    model: str,
+    platform: str,
+    extra_kwargs: dict,
+    *,
+    synthesized: bool,
+) -> None:
+    """Create + push the top-level session/agent/cron span.
+
+    Shared between ``on_session_start`` (first turn of a session) and
+    ``on_pre_llm_call`` (lazy fallback for continuation turns, since
+    hermes fires on_session_start only on turn 1 but on_session_end
+    fires per turn). When ``synthesized=True`` we tag the span so the
+    origin is visible in the backend UI.
+    """
     tracer = get_tracer()
-    debug_log(f"on_session_start fired: session={session_id}, platform={platform}")
-    if not tracer.is_enabled:
-        return
-
-    tracer.sweep_expired_turns()
-    tracer.register_turn(session_id)
-
-    kind = _detect_session_kind(platform, kwargs)
+    kind = _detect_session_kind(platform, extra_kwargs)
     span_name = "agent" if kind != "cron" else "cron"
     key = f"session:{session_id}"
 
@@ -209,10 +238,10 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         "llm.model_name": _safe_str(model, 200),
         "llm.provider": _safe_str(platform, 120),
     }
+    if synthesized:
+        attributes["hermes.session.synthesized"] = True
 
-    tracer.record_metric("session_count", 1, {"session_id": session_id})
-
-    cron_job_id = kwargs.get("job_id") or kwargs.get("cron_job_id")
+    cron_job_id = extra_kwargs.get("job_id") or extra_kwargs.get("cron_job_id")
     if cron_job_id:
         attributes["hermes.cron.job_id"] = _safe_str(cron_job_id, 200)
 
@@ -223,8 +252,25 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         attributes=attributes,
         session_id=session_id,
     )
-    tracer.spans.push_parent(span)
-    debug_log(f"  session span started: key={key}, name={span_name}")
+    tracer.spans.push_parent(span, session_id=session_id)
+    tracer.register_turn(session_id)
+    debug_log(
+        f"  session span started: key={key}, name={span_name}, synthesized={synthesized}"
+    )
+
+
+def on_session_start(session_id: str, model: str, platform: str, **kwargs):
+    """Start a top-level session span (or cron span) for the entire run."""
+    tracer = get_tracer()
+    debug_log(f"on_session_start fired: session={session_id}, platform={platform}")
+    if not tracer.is_enabled:
+        return
+
+    tracer.sweep_expired_turns()
+    tracer.record_metric("session_count", 1, {"session_id": session_id})
+    _start_session_span(
+        session_id, model, platform, kwargs, synthesized=False,
+    )
 
 
 def on_session_end(session_id: str, completed: bool, interrupted: bool, model: str, platform: str, **kwargs):
@@ -288,7 +334,7 @@ def on_session_end(session_id: str, completed: bool, interrupted: bool, model: s
 
     status = "ok" if completed or interrupted else "error"
 
-    tracer.spans.pop_parent()
+    tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
     tracer.unregister_turn(session_id)
 
@@ -426,6 +472,16 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
 
     tracer.sweep_expired_turns()
 
+    # hermes fires on_session_start only on the very first turn, but
+    # on_session_end fires per turn. On continuation turns (2+) we arrive
+    # here with no active session span → llm.* would become the trace
+    # root. Synthesize one so every turn is rooted under agent/cron.
+    session_key = f"session:{session_id}"
+    if session_id and session_key not in tracer.spans._active_spans:
+        _start_session_span(
+            session_id, model, platform, kwargs, synthesized=True,
+        )
+
     key = f"llm:{session_id}"
 
     # Capture first LLM input for top-level session span
@@ -440,9 +496,26 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
         "llm.model_name": model,
         "llm.provider": platform,
     }
-    preview = _preview(user_message, 500)
-    if preview is not None:
-        attributes["input.value"] = preview
+
+    # Opt-in: put the entire conversation the model is about to see on
+    # input.value. Falls back to just the latest user_message otherwise —
+    # that's the historical default and what small backends handle best.
+    if tracer.config.capture_conversation_history and tracer.config.capture_previews:
+        full = _serialize_conversation_history(
+            conversation_history, tracer.config.conversation_history_max_chars,
+        )
+        if full is not None:
+            attributes["input.value"] = full
+            attributes["input.mime_type"] = "application/json"
+            attributes["hermes.conversation.message_count"] = len(conversation_history)
+        else:
+            preview = _preview(user_message, 500)
+            if preview is not None:
+                attributes["input.value"] = preview
+    else:
+        preview = _preview(user_message, 500)
+        if preview is not None:
+            attributes["input.value"] = preview
 
     span = tracer.start_span(
         name=f"llm.{model}",
@@ -453,7 +526,7 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
     )
 
     # Push as parent — tool spans during this LLM call will nest under it
-    tracer.spans.push_parent(span)
+    tracer.spans.push_parent(span, session_id=session_id)
     debug_log(f"  LLM span started: key={key}")
     return None  # Don't inject context, just observe
 
@@ -486,7 +559,7 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
         attributes["output.value"] = preview
 
     # Pop parent — tool spans after this won't nest under this LLM call
-    tracer.spans.pop_parent()
+    tracer.spans.pop_parent(session_id=session_id)
 
     # Mark as OK — LLM call completed successfully
     tracer.end_span(key, attributes=attributes, status="ok")
@@ -535,7 +608,7 @@ def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,
     )
 
     # Push as parent — tool spans during this API call will nest under it
-    tracer.spans.push_parent(span)
+    tracer.spans.push_parent(span, session_id=session_id)
     debug_log(f"  API span started: key={key}")
 
 
@@ -638,7 +711,7 @@ def on_post_api_request(task_id: str, session_id: str, platform: str, model: str
         attributes["llm.response.tool_calls"] = assistant_tool_call_count
 
     # Pop parent
-    tracer.spans.pop_parent()
+    tracer.spans.pop_parent(session_id=session_id)
 
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")

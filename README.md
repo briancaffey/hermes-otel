@@ -145,6 +145,83 @@ Tests skip automatically with a helpful message if either service is not reachab
 
 ## Configuration
 
+You can either pick **one** backend via environment variables (legacy mode,
+shown below), or fan **multiple** backends out in parallel via
+`config.yaml`. The two are mutually exclusive — when `backends:` is set in
+the yaml file, env-var detection is skipped.
+
+### Multi-backend (`config.yaml`)
+
+A fully annotated template lives at [`config.yaml.example`](config.yaml.example)
+in the plugin root. Copy it to `config.yaml` and edit in place:
+
+```bash
+cp ~/.hermes/plugins/hermes_otel/config.yaml.example \
+   ~/.hermes/plugins/hermes_otel/config.yaml
+```
+
+`config.yaml` is gitignored so local endpoints and (avoidable) secrets
+never get committed. Only `config.yaml.example` is tracked. A minimal
+multi-backend config looks like:
+
+```yaml
+backends:
+  - type: phoenix
+    endpoint: http://localhost:6006/v1/traces
+  - type: jaeger
+    endpoint: http://localhost:4318/v1/traces
+  - type: tempo
+    endpoint: http://localhost:3200/v1/traces
+  - type: signoz
+    endpoint: http://localhost:4328/v1/traces
+    ingestion_key_env: OTEL_SIGNOZ_INGESTION_KEY   # secret from env
+  - type: langfuse
+    public_key_env: LANGFUSE_PUBLIC_KEY
+    secret_key_env: LANGFUSE_SECRET_KEY
+    base_url: https://cloud.langfuse.com
+  - type: otlp                                     # any other OTLP/HTTP collector
+    name: my-collector
+    endpoint: http://collector:4318/v1/traces
+    headers:
+      X-Auth: secret
+```
+
+Every entry gets its own `BatchSpanProcessor` and (where supported) its own
+`PeriodicExportingMetricReader`. Each processor owns a background worker
+thread, so a slow or unreachable collector cannot block the agent's hot
+path or starve the others — span end is just a non-blocking enqueue. Both
+trace and metrics export run in parallel across all configured backends.
+
+Supported `type` values: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`,
+`otlp` (generic). Backends marked traces-only (`langfuse`, `jaeger`,
+`tempo`) are auto-detected and skip the metrics reader. Override with
+`metrics: true|false` per entry if needed.
+
+### Full-conversation capture
+
+By default the `llm.*` span's `input.value` is just the latest user turn.
+The underlying `api.*` spans don't expose per-message detail. To see the
+entire message list the model actually saw, flip on
+`capture_conversation_history`:
+
+```yaml
+capture_conversation_history: true
+conversation_history_max_chars: 40000   # safety cap; JSON is clipped with "..."
+```
+
+Or via env: `HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY=true`. When enabled
+the LLM span gets `input.value` = JSON-serialized history, `input.mime_type
+= application/json`, and `hermes.conversation.message_count`. Phoenix
+pretty-prints the JSON in its Input panel; Langfuse / Jaeger / SigNoz show
+it as a large string. Respects the global `capture_previews` kill switch.
+
+Secrets should live in env vars (use the `*_env:` keys to reference them
+by name) rather than inline in yaml. LangSmith remains an env-var-only
+single-backend path; setting `LANGSMITH_TRACING=true` short-circuits the
+yaml backend list.
+
+### Single backend (env vars)
+
 **Pick one backend:**
 
 ### Phoenix

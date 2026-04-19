@@ -84,7 +84,7 @@ class TestInitLangfuse:
         with patch.object(plugin, "_init_otlp", return_value=True) as mock_otlp:
             assert plugin.init() is True
             endpoint = mock_otlp.call_args[0][0]
-            assert endpoint == "https://cloud.langfuse.com/api/public/otel"
+            assert endpoint == "https://cloud.langfuse.com/api/public/otel/v1/traces"
 
     def test_langfuse_defaults_to_eu_cloud(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -95,7 +95,7 @@ class TestInitLangfuse:
         with patch.object(plugin, "_init_otlp", return_value=True) as mock_otlp:
             assert plugin.init() is True
             endpoint = mock_otlp.call_args[0][0]
-            assert endpoint == "https://cloud.langfuse.com/api/public/otel"
+            assert endpoint == "https://cloud.langfuse.com/api/public/otel/v1/traces"
 
 
 class TestInitLangSmith:

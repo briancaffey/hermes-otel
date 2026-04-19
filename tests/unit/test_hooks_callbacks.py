@@ -19,11 +19,17 @@ from hermes_otel.hooks import (
 
 @pytest.fixture()
 def mock_tracer():
-    """Create a mock tracer and patch get_tracer() to return it."""
+    """Create a mock tracer and patch get_tracer() to return it.
+
+    ``spans._active_spans`` is a real dict so ``"session:..." in tracer``
+    checks in hooks.py behave correctly (MagicMock's __contains__ always
+    returns False).
+    """
     from hermes_otel.plugin_config import HermesOtelConfig
     tracer = MagicMock()
     tracer.is_enabled = True
     tracer.spans = MagicMock()
+    tracer.spans._active_spans = {}
     tracer.config = HermesOtelConfig()
     with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
         yield tracer
@@ -58,7 +64,7 @@ class TestOnSessionStart:
         span = MagicMock()
         mock_tracer.start_span.return_value = span
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.spans.push_parent.assert_called_once_with(span)
+        mock_tracer.spans.push_parent.assert_called_once_with(span, session_id="s1")
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
@@ -215,6 +221,10 @@ class TestOnPostToolCall:
 
 class TestOnPreLlmCall:
     def test_creates_llm_span(self, mock_tracer):
+        # Pre-populate the session span so lazy-create is skipped (normal
+        # first-turn flow: on_session_start runs before on_pre_llm_call).
+        mock_tracer.spans._active_spans["session:s1"] = MagicMock()
+
         on_pre_llm_call(session_id="s1", user_message="hello",
                         conversation_history=[], is_first_turn=True,
                         model="gpt-4", platform="cli")
@@ -225,12 +235,27 @@ class TestOnPreLlmCall:
         assert kw["kind"] == "llm"
 
     def test_pushes_parent(self, mock_tracer):
+        mock_tracer.spans._active_spans["session:s1"] = MagicMock()
+
         span = MagicMock()
         mock_tracer.start_span.return_value = span
         on_pre_llm_call(session_id="s1", user_message="hello",
                         conversation_history=[], is_first_turn=True,
                         model="gpt-4", platform="cli")
-        mock_tracer.spans.push_parent.assert_called_once_with(span)
+        mock_tracer.spans.push_parent.assert_called_once_with(span, session_id="s1")
+
+    def test_lazy_creates_session_span_on_continuation_turn(self, mock_tracer):
+        """Turn 2+ has no active session span — hooks.py synthesizes one."""
+        # No session span in _active_spans → lazy-create path fires.
+        on_pre_llm_call(session_id="s1", user_message="hi",
+                        conversation_history=[], is_first_turn=False,
+                        model="gpt-4", platform="cli")
+        # Two start_span calls: agent (synthesized) + llm.gpt-4
+        assert mock_tracer.start_span.call_count == 2
+        first_kw = mock_tracer.start_span.call_args_list[0][1]
+        assert first_kw["name"] == "agent"
+        assert first_kw["key"] == "session:s1"
+        assert first_kw["attributes"].get("hermes.session.synthesized") is True
 
     def test_captures_first_input_in_session_io(self, mock_tracer):
         on_pre_llm_call(session_id="s1", user_message="hello",
@@ -313,7 +338,7 @@ class TestOnPreApiRequest:
             api_call_count=1, message_count=5, tool_count=0,
             approx_input_tokens=500, request_char_count=2000, max_tokens=0,
         )
-        mock_tracer.spans.push_parent.assert_called_once_with(span)
+        mock_tracer.spans.push_parent.assert_called_once_with(span, session_id="s1")
 
     def test_includes_metadata_attributes(self, mock_tracer):
         on_pre_api_request(

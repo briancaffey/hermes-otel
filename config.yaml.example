@@ -1,0 +1,163 @@
+# hermes-otel plugin configuration
+# ==============================================================================
+#
+# Copy this file to `config.yaml` in the same directory
+# (~/.hermes/plugins/hermes_otel/config.yaml) and edit to taste.
+#
+#   cp config.yaml.example config.yaml
+#
+# Everything here is optional — the plugin ships with sensible defaults and
+# will fall back to environment-variable-driven single-backend detection when
+# no config.yaml is present.
+#
+# Precedence per field:
+#   env var (HERMES_OTEL_*)  >  config.yaml  >  built-in default
+#
+# Secrets should live in env vars, not in this file. Use the `*_env:` keys on
+# each backend entry to point at the env var name.
+
+# ── Project / resource attributes ─────────────────────────────────────────────
+
+# Shows up in the Phoenix "Project" dropdown and as `openinference.project.name`
+# on every span. Also settable via OTEL_PROJECT_NAME / HERMES_OTEL_PROJECT_NAME.
+# project_name: hermes-agent
+
+# Free-form key/value pairs merged into the OTel Resource of every span.
+# Good for deployment tags (env, region, team).
+# resource_attributes:
+#   deployment: prod
+#   region: us-east-1
+#   team: platform
+
+# global_tags is an alias for resource_attributes retained for back-compat.
+# global_tags:
+#   team: platform
+
+# Extra HTTP headers added to every OTLP exporter call across ALL backends.
+# Per-backend headers (under `backends:` below) are merged on top.
+# headers:
+#   X-Company-Auth: shared-secret
+
+# ── Telemetry shaping ─────────────────────────────────────────────────────────
+
+# Master kill switch. Set to false to disable the plugin without uninstalling.
+# enabled: true
+
+# Sampling ratio (0.0 - 1.0). Leave unset or null for AlwaysOn (100%).
+# Set e.g. 0.1 to sample 10% of traces; ParentBased sampler preserves trace
+# consistency — if the root span is sampled, its descendants are too.
+# sample_rate: null
+
+# Preview truncation cap applied to tool input/output, user_message, and
+# assistant_response. Keep reasonable — huge previews bloat every span.
+# preview_max_chars: 1200
+
+# Global privacy kill switch. When false, ALL input/output previews are
+# suppressed (tool args, tool results, user messages, assistant responses).
+# Metadata (tool names, durations, token counts) is still recorded.
+# capture_previews: true
+
+# Put the entire conversation_history the model is about to see on the
+# llm.* span's input.value. The api.* spans don't carry message-level
+# detail, so flipping this on is the easiest way to see what the model saw.
+# Output is JSON (input.mime_type=application/json) — Phoenix pretty-prints it.
+# Respects `capture_previews` above.
+# capture_conversation_history: false
+
+# Max serialized size for the conversation history (JSON, UTF-8 bytes ~ chars).
+# Clipped with a trailing "..." if the conversation is bigger.
+# conversation_history_max_chars: 20000
+
+# ── Lifecycle / cleanup ───────────────────────────────────────────────────────
+
+# Orphan-turn sweep TTL. If a session's root span has been open longer than
+# this, subsequent hooks finalize it with `hermes.turn.final_status=timed_out`
+# so long-abandoned sessions don't stay open forever in the backend UI.
+# root_span_ttl_ms: 600000   # 10 minutes
+
+# Metrics export interval (how often the PeriodicExportingMetricReader flushes).
+# flush_interval_ms: 60000
+
+# Flush every BatchSpanProcessor synchronously at end-of-session so the
+# backend UI sees the full trace immediately instead of waiting for the
+# next scheduled export cycle. Set false to rely entirely on the background
+# batcher (better throughput, slightly higher UI latency).
+# force_flush_on_session_end: true
+
+# ── BatchSpanProcessor tunables (non-blocking export) ─────────────────────────
+# Each backend gets its own processor with these settings. Defaults are fine
+# for most workloads; tune only if you're losing spans under heavy load.
+
+# span_batch_max_queue_size: 2048          # spans buffered before drops
+# span_batch_schedule_delay_ms: 1000       # worker wake-up cadence
+# span_batch_max_export_batch_size: 512    # spans per HTTP POST
+# span_batch_export_timeout_ms: 30000      # per-export HTTP timeout
+
+# ── Multi-backend fan-out ─────────────────────────────────────────────────────
+#
+# When the `backends:` list below is set and non-empty, the plugin fans out
+# every span and metric to each entry in parallel — each backend runs on its
+# own BatchSpanProcessor (independent worker thread + queue), so a slow or
+# unreachable collector never blocks the agent or starves the others.
+#
+# Supported `type` values:
+#   phoenix    — Arize Phoenix (local or cloud). Traces + metrics.
+#   langfuse   — Langfuse. Traces only (no OTLP metrics support upstream).
+#   signoz     — SigNoz (self-hosted or cloud). Traces + metrics.
+#   jaeger     — Jaeger. Traces only.
+#   tempo      — Grafana Tempo. Traces only.
+#   otlp       — Any other OTLP/HTTP collector. Traces + metrics.
+#
+# `metrics: true|false` per entry overrides the auto default if needed.
+#
+# When `backends:` is absent or empty, the plugin falls back to single-backend
+# env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
+# OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, OTEL_PHOENIX_ENDPOINT — first
+# match wins). Setting `backends:` takes full control away from env detection.
+#
+# LangSmith remains env-var-only because it doesn't speak OTLP; setting
+# LANGSMITH_TRACING=true will short-circuit the `backends:` list entirely.
+#
+# Example: fan out to all five local collectors (assumes they're running via
+# docker-compose/all.sh). Uncomment to use.
+
+# backends:
+#   - type: phoenix
+#     endpoint: http://localhost:6006/v1/traces
+#
+#   - type: langfuse
+#     # Credentials via env vars (recommended). Plaintext `public_key` /
+#     # `secret_key` also accepted but discouraged.
+#     public_key_env: LANGFUSE_PUBLIC_KEY
+#     secret_key_env: LANGFUSE_SECRET_KEY
+#     base_url: https://cloud.langfuse.com
+#     # Or override the full OTLP endpoint directly:
+#     # endpoint: https://cloud.langfuse.com/api/public/otel/v1/traces
+#
+#   - type: signoz
+#     endpoint: http://localhost:4328/v1/traces
+#     # SigNoz Cloud requires an ingestion key; self-hosted ignores the header.
+#     ingestion_key_env: OTEL_SIGNOZ_INGESTION_KEY
+#
+#   - type: jaeger
+#     endpoint: http://localhost:4318/v1/traces
+#
+#   - type: tempo
+#     endpoint: http://localhost:3200/v1/traces
+#
+#   - type: otlp
+#     name: my-custom-collector
+#     endpoint: http://collector.internal:4318/v1/traces
+#     headers:
+#       X-Tenant: acme
+#     metrics: true
+
+# ── LangSmith (env-var only, alternative to the above) ────────────────────────
+#
+# LangSmith uses its own HTTP Run API, not OTLP. To enable, set:
+#   LANGSMITH_TRACING=true
+#   LANGSMITH_API_KEY=lsv2_...
+#   LANGSMITH_PROJECT=hermes-langsmith-otel               # optional
+#   LANGSMITH_ENDPOINT=https://api.smith.langchain.com    # optional override
+# No config.yaml entry is needed — env is enough, and it short-circuits the
+# `backends:` list above.

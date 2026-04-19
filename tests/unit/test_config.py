@@ -6,6 +6,7 @@ from pathlib import Path
 import pytest
 
 from hermes_otel.plugin_config import (
+    BackendConfig,
     HermesOtelConfig,
     load_config,
 )
@@ -247,6 +248,132 @@ class TestYaml:
         path.write_text("wobble: 42\nsample_rate: 0.5\n")
         cfg = load_config(path=path)
         assert cfg.sample_rate == 0.5
+
+
+class TestCaptureConversationHistory:
+    def test_defaults_off(self, tmp_path):
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_conversation_history is False
+        assert cfg.conversation_history_max_chars == 20_000
+
+    def test_env_toggle(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY", "true")
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_conversation_history is True
+
+    def test_env_max_chars(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_CONVERSATION_HISTORY_MAX_CHARS", "5000")
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.conversation_history_max_chars == 5000
+
+    def test_yaml_values(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "capture_conversation_history: true\n"
+            "conversation_history_max_chars: 4096\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.capture_conversation_history is True
+        assert cfg.conversation_history_max_chars == 4096
+
+
+class TestBackendsYaml:
+    """Yaml ``backends:`` list parses into a tuple of BackendConfig."""
+
+    def test_default_is_none(self, tmp_path):
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.backends is None
+
+    def test_loads_multiple_backends(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: phoenix\n"
+            "    endpoint: http://localhost:6006/v1/traces\n"
+            "  - type: jaeger\n"
+            "    endpoint: http://localhost:4318/v1/traces\n"
+            "  - type: signoz\n"
+            "    endpoint: http://localhost:4328/v1/traces\n"
+            "    ingestion_key_env: OTEL_SIGNOZ_INGESTION_KEY\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.backends is not None
+        assert len(cfg.backends) == 3
+        assert cfg.backends[0].type == "phoenix"
+        assert cfg.backends[0].endpoint == "http://localhost:6006/v1/traces"
+        assert cfg.backends[1].type == "jaeger"
+        assert cfg.backends[2].type == "signoz"
+        assert cfg.backends[2].ingestion_key_env == "OTEL_SIGNOZ_INGESTION_KEY"
+
+    def test_loads_langfuse_credentials(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: langfuse\n"
+            "    public_key_env: LANGFUSE_PUBLIC_KEY\n"
+            "    secret_key_env: LANGFUSE_SECRET_KEY\n"
+            "    base_url: https://cloud.langfuse.com\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.backends is not None
+        b = cfg.backends[0]
+        assert b.type == "langfuse"
+        assert b.public_key_env == "LANGFUSE_PUBLIC_KEY"
+        assert b.secret_key_env == "LANGFUSE_SECRET_KEY"
+        assert b.base_url == "https://cloud.langfuse.com"
+
+    def test_loads_per_backend_headers(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: otlp\n"
+            "    name: my-collector\n"
+            "    endpoint: http://collector:4318/v1/traces\n"
+            "    headers:\n"
+            "      X-Auth: secret\n"
+            "      X-Tenant: acme\n"
+        )
+        cfg = load_config(path=path)
+        b = cfg.backends[0]
+        assert b.type == "otlp"
+        assert b.name == "my-collector"
+        assert b.headers == {"X-Auth": "secret", "X-Tenant": "acme"}
+
+    def test_skips_entry_without_type(self, tmp_path, capsys):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - endpoint: http://no-type/v1/traces\n"
+            "  - type: jaeger\n"
+            "    endpoint: http://jaeger/v1/traces\n"
+        )
+        cfg = load_config(path=path)
+        out = capsys.readouterr().out
+        assert "missing 'type'" in out
+        # Only the jaeger entry survives.
+        assert cfg.backends is not None
+        assert len(cfg.backends) == 1
+        assert cfg.backends[0].type == "jaeger"
+
+    def test_non_list_backends_ignored(self, tmp_path, capsys):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text("backends: not-a-list\n")
+        cfg = load_config(path=path)
+        captured = capsys.readouterr()
+        assert "must be a list" in captured.out
+        assert cfg.backends is None
 
 
 class TestMissingPyYaml:

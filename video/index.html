@@ -1,0 +1,748 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=1920, height=1080" />
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <style>
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0a0a0c;
+        font-family: "IBM Plex Sans", system-ui, sans-serif;
+        color: #f5f5f7;
+      }
+
+      /* ----- scene shells ----- */
+      .scene {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        overflow: hidden;
+        background: #0a0a0c;
+      }
+      #scene1 { z-index: 1; }
+      #scene2 { z-index: 2; opacity: 0; }
+      #scene3 { z-index: 3; opacity: 0; }
+      #scene4 { z-index: 4; opacity: 0; }
+      #scene5 { z-index: 5; opacity: 0; }
+
+      /* ----- transition overlays ----- */
+      .wipe {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 1920px;
+        height: 1080px;
+        background: #f5f5f7;
+        z-index: 20;
+        pointer-events: none;
+        transform: translateX(-100%);
+      }
+      #wipe-2 { background: #f5f5f7; }
+      #wipe-3 { background: #0a0a0c; }
+      #wipe-4 { background: #3d8bff; }
+      #wipe-5 { background: #f5f5f7; }
+
+      /* =====================================================
+         SCENE 1 — Problem
+         ===================================================== */
+      .s1-content {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 64px;
+        padding: 120px;
+      }
+      .s1-subtitle {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 28px;
+        font-weight: 500;
+        color: #8a8a92;
+        letter-spacing: 0.12em;
+      }
+      .s1-label {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 180px;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+        color: #f5f5f7;
+        display: flex;
+        gap: 8px;
+      }
+      .s1-label .char { display: inline-block; }
+      .s1-ticks {
+        display: flex;
+        gap: 14px;
+        align-items: flex-end;
+        height: 80px;
+      }
+      .s1-ticks .tick {
+        width: 8px;
+        height: 40px;
+        background: #ffb300;
+        transform-origin: bottom center;
+        border-radius: 1px;
+      }
+      .s1-status {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 24px;
+        color: #8a8a92;
+        letter-spacing: 0.1em;
+        margin-top: 12px;
+      }
+
+      /* =====================================================
+         SCENE 2 — Title
+         ===================================================== */
+      .s2-content {
+        position: absolute;
+        inset: 0;
+        padding: 160px 200px;
+        display: flex;
+        flex-direction: column;
+        justify-content: center;
+        gap: 28px;
+      }
+      .s2-title {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 200px;
+        font-weight: 700;
+        color: #3d8bff;
+        letter-spacing: -0.02em;
+        line-height: 0.95;
+      }
+      .s2-rule {
+        width: 820px;
+        height: 3px;
+        background: #f5f5f7;
+        transform-origin: left center;
+      }
+      .s2-tagline {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 64px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #f5f5f7;
+      }
+      .s2-version {
+        position: absolute;
+        bottom: 120px;
+        right: 200px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 26px;
+        color: #8a8a92;
+        letter-spacing: 0.08em;
+      }
+      .s2-dot {
+        color: #3d8bff;
+        margin: 0 10px;
+      }
+
+      /* =====================================================
+         SCENE 3 — Hooks → Spans
+         ===================================================== */
+      .s3-content {
+        position: absolute;
+        inset: 0;
+        padding: 100px 120px;
+        display: flex;
+        flex-direction: column;
+        gap: 50px;
+      }
+      .s3-heading {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #f5f5f7;
+      }
+      .s3-heading .arrow {
+        color: #3d8bff;
+        margin: 0 14px;
+      }
+      .s3-diagram {
+        position: relative;
+        flex: 1;
+        display: grid;
+        grid-template-columns: 640px 80px 1fr;
+        align-items: center;
+        gap: 0;
+      }
+      .s3-hooks {
+        display: flex;
+        flex-direction: column;
+        gap: 34px;
+      }
+      .s3-hook {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 34px;
+        color: #f5f5f7;
+        padding: 14px 24px;
+        border-left: 3px solid #3d8bff;
+        background: rgba(61, 139, 255, 0.06);
+      }
+      .s3-arrow {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 72px;
+        color: #3d8bff;
+        font-weight: 700;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .s3-tree {
+        display: flex;
+        flex-direction: column;
+        gap: 24px;
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 34px;
+        color: #f5f5f7;
+      }
+      .s3-node {
+        display: flex;
+        align-items: center;
+        gap: 24px;
+      }
+      .s3-node .indent {
+        color: #8a8a92;
+        font-size: 28px;
+      }
+      .s3-node .name {
+        color: #f5f5f7;
+      }
+      .s3-node .kind {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 18px;
+        font-weight: 700;
+        color: #ffb300;
+        letter-spacing: 0.15em;
+        padding: 3px 10px;
+        border: 1px solid #ffb300;
+        border-radius: 2px;
+      }
+      .s3-caption {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 22px;
+        color: #8a8a92;
+        letter-spacing: 0.1em;
+        margin-top: 20px;
+      }
+
+      /* =====================================================
+         SCENE 4 — Backend fan-out
+         ===================================================== */
+      .s4-content {
+        position: absolute;
+        inset: 0;
+        padding: 120px 120px;
+        display: flex;
+        flex-direction: column;
+      }
+      .s4-heading {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 46px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #f5f5f7;
+      }
+      .s4-stage {
+        position: relative;
+        flex: 1;
+        margin-top: 60px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+      }
+      .s4-center {
+        width: 260px;
+        height: 260px;
+        border-radius: 50%;
+        border: 3px solid #3d8bff;
+        background: #0a0a0c;
+        box-shadow: 0 0 60px rgba(61, 139, 255, 0.25);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        font-family: "IBM Plex Mono", monospace;
+        font-weight: 700;
+        font-size: 28px;
+        color: #3d8bff;
+        z-index: 3;
+        position: relative;
+      }
+      .s4-chips {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 2;
+      }
+      .s4-chip {
+        position: absolute;
+        width: 260px;
+        height: 108px;
+        border: 2px solid #f5f5f7;
+        background: #0a0a0c;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: 6px;
+        transform-origin: center center;
+      }
+      .s4-chip .name {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 34px;
+        font-weight: 700;
+        color: #f5f5f7;
+      }
+      .s4-chip .kind {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 14px;
+        color: #8a8a92;
+        letter-spacing: 0.15em;
+      }
+      .s4-chip.metrics { border-color: #3d8bff; }
+      .s4-chip.metrics .kind { color: #3d8bff; }
+      .s4-lines {
+        position: absolute;
+        top: 0;
+        left: 0;
+        width: 100%;
+        height: 100%;
+        pointer-events: none;
+        z-index: 1;
+      }
+      .s4-caption {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 22px;
+        color: #8a8a92;
+        letter-spacing: 0.12em;
+        text-align: center;
+        margin-top: 28px;
+      }
+
+      /* =====================================================
+         SCENE 5 — Schema + CTA
+         ===================================================== */
+      .s5-content {
+        position: absolute;
+        inset: 0;
+        padding: 100px 120px;
+        display: flex;
+        flex-direction: column;
+        gap: 36px;
+      }
+      .s5-heading {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 44px;
+        font-weight: 700;
+        letter-spacing: 0.08em;
+        color: #f5f5f7;
+      }
+      .s5-subhead {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 22px;
+        color: #8a8a92;
+        letter-spacing: 0.1em;
+      }
+      .s5-table {
+        display: grid;
+        grid-template-columns: 1fr 1.3fr 1.3fr;
+        row-gap: 0;
+        column-gap: 32px;
+        margin-top: 12px;
+      }
+      .s5-table .th {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-weight: 700;
+        font-size: 26px;
+        color: #f5f5f7;
+        padding: 18px 0;
+        letter-spacing: 0.08em;
+        border-bottom: 2px solid #f5f5f7;
+      }
+      .s5-table .th.accent {
+        color: #3d8bff;
+      }
+      .s5-table .td {
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 24px;
+        color: #f5f5f7;
+        padding: 20px 0;
+        border-bottom: 1px solid rgba(245, 245, 247, 0.15);
+        font-variant-numeric: tabular-nums;
+      }
+      .s5-table .td.label {
+        color: #f5f5f7;
+        font-family: "IBM Plex Sans", sans-serif;
+      }
+      .s5-cta {
+        margin-top: 14px;
+        padding: 22px 32px;
+        border: 2px solid #3d8bff;
+        border-radius: 4px;
+        background: rgba(61, 139, 255, 0.1);
+        font-family: "IBM Plex Mono", monospace;
+        font-size: 34px;
+        color: #f5f5f7;
+        letter-spacing: 0.01em;
+        box-shadow: 0 0 0 rgba(61, 139, 255, 0);
+      }
+      .s5-cta .prompt {
+        color: #3d8bff;
+        margin-right: 14px;
+      }
+      .s5-tag {
+        font-family: "IBM Plex Sans", sans-serif;
+        font-size: 44px;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        color: #f5f5f7;
+        margin-top: 8px;
+      }
+      .s5-tag .accent {
+        color: #3d8bff;
+      }
+    </style>
+  </head>
+  <body>
+    <div
+      id="root"
+      data-composition-id="main"
+      data-start="0"
+      data-duration="28"
+      data-width="1920"
+      data-height="1080"
+    >
+      <!-- ============ SCENE 1 — Problem ============ -->
+      <div id="scene1" class="scene">
+        <div class="s1-content">
+          <div class="s1-subtitle">HERMES AGENT&nbsp;·&nbsp;TURN IN PROGRESS</div>
+          <div class="s1-label" aria-label="BLACK BOX">
+            <span class="char">B</span><span class="char">L</span><span class="char">A</span><span class="char">C</span><span class="char">K</span><span class="char">&nbsp;</span><span class="char">B</span><span class="char">O</span><span class="char">X</span>
+          </div>
+          <div class="s1-ticks">
+            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+            <div class="tick"></div><div class="tick"></div><div class="tick"></div><div class="tick"></div>
+          </div>
+          <div class="s1-status">SPANS&nbsp;·&nbsp;TOKENS&nbsp;·&nbsp;TOOL CALLS&nbsp;·&nbsp;UNSEEN</div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 2 — Title ============ -->
+      <div id="scene2" class="scene">
+        <div class="s2-content">
+          <div class="s2-title">hermes-otel</div>
+          <div class="s2-rule"></div>
+          <div class="s2-tagline">OPEN&#8209;TELEMETRY FOR HERMES AGENT</div>
+        </div>
+        <div class="s2-version">v0.1<span class="s2-dot">·</span>OTLP/HTTP</div>
+      </div>
+
+      <!-- ============ SCENE 3 — Hooks → Spans ============ -->
+      <div id="scene3" class="scene">
+        <div class="s3-content">
+          <div class="s3-heading">LIFECYCLE HOOKS<span class="arrow">&rarr;</span>OTEL SPANS</div>
+          <div class="s3-diagram">
+            <div class="s3-hooks">
+              <div class="s3-hook" id="s3-h1">on_session_start</div>
+              <div class="s3-hook" id="s3-h2">pre_api_request</div>
+              <div class="s3-hook" id="s3-h3">pre_tool_use</div>
+              <div class="s3-hook" id="s3-h4">on_session_end</div>
+            </div>
+
+            <div class="s3-arrow" id="s3-arrow">&rarr;</div>
+
+            <div class="s3-tree">
+              <div class="s3-node" id="s3-t1"><span class="name">session.agent</span><span class="kind">GENERAL</span></div>
+              <div class="s3-node" id="s3-t2"><span class="indent">&#9492;&#9472;</span><span class="name">llm.claude&#8209;opus</span><span class="kind">LLM</span></div>
+              <div class="s3-node" id="s3-t3"><span class="indent">&nbsp;&nbsp;&nbsp;&#9492;&#9472;</span><span class="name">api.claude&#8209;opus</span><span class="kind">LLM</span></div>
+              <div class="s3-node" id="s3-t4"><span class="indent">&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&nbsp;&#9492;&#9472;</span><span class="name">tool.Bash</span><span class="kind">TOOL</span></div>
+            </div>
+          </div>
+          <div class="s3-caption">TOKEN COUNTS&nbsp;·&nbsp;TOOL ARGUMENTS&nbsp;·&nbsp;OUTCOMES&nbsp;·&nbsp;ALL CAPTURED</div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 4 — Backend fan-out ============ -->
+      <div id="scene4" class="scene">
+        <div class="s4-content">
+          <div class="s4-heading">ONE PLUGIN&nbsp;·&nbsp;MANY BACKENDS</div>
+          <div class="s4-stage">
+            <svg class="s4-lines" viewBox="0 0 1680 720" preserveAspectRatio="none">
+              <line id="s4-l1" x1="840" y1="360" x2="170"  y2="180" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l2" x1="840" y1="360" x2="170"  y2="540" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l3" x1="840" y1="360" x2="505"  y2="100" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l4" x1="840" y1="360" x2="505"  y2="620" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l5" x1="840" y1="360" x2="1175" y2="100" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l6" x1="840" y1="360" x2="1175" y2="620" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l7" x1="840" y1="360" x2="1510" y2="180" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+              <line id="s4-l8" x1="840" y1="360" x2="1510" y2="540" stroke="#3d8bff" stroke-width="2" stroke-dasharray="900" stroke-dashoffset="900"/>
+            </svg>
+
+            <div class="s4-chips">
+              <div class="s4-chip metrics" id="s4-c1" style="top: 150px;  left: 40px;">
+                <div class="name">Phoenix</div><div class="kind">TRACES + METRICS</div>
+              </div>
+              <div class="s4-chip metrics" id="s4-c2" style="top: 510px;  left: 40px;">
+                <div class="name">SigNoz</div><div class="kind">TRACES + METRICS</div>
+              </div>
+              <div class="s4-chip" id="s4-c3" style="top: 70px;   left: 375px;">
+                <div class="name">Langfuse</div><div class="kind">TRACES</div>
+              </div>
+              <div class="s4-chip" id="s4-c4" style="top: 590px;  left: 375px;">
+                <div class="name">Jaeger</div><div class="kind">TRACES</div>
+              </div>
+              <div class="s4-chip" id="s4-c5" style="top: 70px;   left: 1045px;">
+                <div class="name">LangSmith</div><div class="kind">TRACES</div>
+              </div>
+              <div class="s4-chip" id="s4-c6" style="top: 590px;  left: 1045px;">
+                <div class="name">Tempo</div><div class="kind">TRACES</div>
+              </div>
+              <div class="s4-chip" id="s4-c7" style="top: 150px;  left: 1380px;">
+                <div class="name">OTLP/HTTP</div><div class="kind">ANY COLLECTOR</div>
+              </div>
+              <div class="s4-chip" id="s4-c8" style="top: 510px;  left: 1380px;">
+                <div class="name">Grafana</div><div class="kind">TRACES</div>
+              </div>
+            </div>
+
+            <div class="s4-center" id="s4-center">hermes&#8209;otel</div>
+          </div>
+          <div class="s4-caption">PARALLEL FAN&#8209;OUT&nbsp;·&nbsp;NON&#8209;BLOCKING EXPORT</div>
+        </div>
+      </div>
+
+      <!-- ============ SCENE 5 — Schema + CTA ============ -->
+      <div id="scene5" class="scene">
+        <div class="s5-content">
+          <div class="s5-heading">DUAL&#8209;CONVENTION ATTRIBUTES</div>
+          <div class="s5-subhead">EVERY SPAN SPEAKS BOTH SCHEMAS&nbsp;·&nbsp;EVERY DASHBOARD WORKS</div>
+
+          <div class="s5-table" id="s5-table">
+            <div class="th">METRIC</div>
+            <div class="th accent">gen_ai&nbsp;·&nbsp;Langfuse</div>
+            <div class="th accent">OpenInference&nbsp;·&nbsp;Phoenix</div>
+
+            <div class="td label s5-row">prompt tokens</div>
+            <div class="td s5-row">gen_ai.usage.input_tokens</div>
+            <div class="td s5-row">llm.token_count.prompt</div>
+
+            <div class="td label s5-row">completion tokens</div>
+            <div class="td s5-row">gen_ai.usage.output_tokens</div>
+            <div class="td s5-row">llm.token_count.completion</div>
+
+            <div class="td label s5-row">cache read</div>
+            <div class="td s5-row">gen_ai.usage.cache_read_input_tokens</div>
+            <div class="td s5-row">llm.token_count.cache_read</div>
+
+            <div class="td label s5-row">prompt content</div>
+            <div class="td s5-row">gen_ai.content.prompt</div>
+            <div class="td s5-row">input.value</div>
+          </div>
+
+          <div class="s5-cta" id="s5-cta">
+            <span class="prompt">$</span>hermes plugins install briancaffey/hermes&#8209;otel
+          </div>
+          <div class="s5-tag">SEE EVERY <span class="accent">SPAN.</span></div>
+        </div>
+      </div>
+
+      <!-- ============ transition overlays ============ -->
+      <div class="wipe" id="wipe-2"></div>
+      <div class="wipe" id="wipe-3"></div>
+      <div class="wipe" id="wipe-4"></div>
+      <div class="wipe" id="wipe-5"></div>
+    </div>
+
+    <script>
+      window.__timelines = window.__timelines || {};
+      const tl = gsap.timeline({ paused: true });
+
+      /* =========================================================
+         SCENE 1 — 0.0 → 4.5s
+         ========================================================= */
+      tl.from("#scene1 .s1-subtitle", { opacity: 0, duration: 0.5, ease: "power2.out" }, 0.2);
+
+      tl.from("#scene1 .s1-label .char", {
+        opacity: 0,
+        y: 24,
+        duration: 0.45,
+        stagger: 0.06,
+        ease: "expo.out",
+      }, 0.5);
+
+      // amber tick pulse — finite repeats only (4.5s / 0.6s cycle ≈ 7 reps)
+      tl.fromTo("#scene1 .s1-ticks .tick",
+        { scaleY: 0.3 },
+        { scaleY: 1.4, duration: 0.3, ease: "sine.inOut", stagger: { each: 0.04, yoyo: true, repeat: 13 } },
+        0.9
+      );
+
+      tl.from("#scene1 .s1-status", { opacity: 0, duration: 0.5, ease: "power2.out" }, 1.6);
+
+      /* --------- Transition 1 → 2 (white L→R wipe, 4.3 → 4.7s) --------- */
+      tl.to("#wipe-2", { x: "0%", duration: 0.2, ease: "power4.inOut" }, 4.3);
+      tl.set("#scene1", { opacity: 0, visibility: "hidden" }, 4.5);
+      tl.set("#scene2", { opacity: 1 }, 4.5);
+      tl.to("#wipe-2", { x: "100%", duration: 0.2, ease: "power4.inOut" }, 4.5);
+
+      /* =========================================================
+         SCENE 2 — 4.5 → 9.0s
+         ========================================================= */
+      tl.from("#scene2 .s2-title", { x: -120, opacity: 0, duration: 0.7, ease: "expo.out" }, 4.7);
+      tl.from("#scene2 .s2-rule",  { scaleX: 0, duration: 0.5, ease: "power4.out", transformOrigin: "left center" }, 5.1);
+      tl.from("#scene2 .s2-tagline", { y: 20, opacity: 0, duration: 0.5, ease: "power3.out" }, 5.35);
+      tl.from("#scene2 .s2-version", { opacity: 0, duration: 0.5, ease: "power2.out" }, 6.0);
+
+      /* --------- Transition 2 → 3 (dark L→R wipe, 8.8 → 9.2s) --------- */
+      tl.to("#wipe-3", { x: "0%", duration: 0.2, ease: "power4.inOut" }, 8.8);
+      tl.set("#scene2", { opacity: 0, visibility: "hidden" }, 9.0);
+      tl.set("#scene3", { opacity: 1 }, 9.0);
+      tl.to("#wipe-3", { x: "100%", duration: 0.2, ease: "power4.inOut" }, 9.0);
+
+      /* =========================================================
+         SCENE 3 — 9.0 → 16.5s
+         ========================================================= */
+      tl.from("#scene3 .s3-heading", { y: -20, opacity: 0, duration: 0.5, ease: "expo.out" }, 9.15);
+
+      // hooks stagger in from left
+      tl.from("#scene3 .s3-hook", {
+        x: -60,
+        opacity: 0,
+        duration: 0.5,
+        stagger: 0.1,
+        ease: "expo.out",
+      }, 9.5);
+
+      // tree nodes reveal top-down
+      tl.from("#scene3 #s3-t1", { opacity: 0, y: 12, duration: 0.45, ease: "power3.out" }, 10.3);
+      tl.from("#scene3 #s3-t2", { opacity: 0, y: 12, duration: 0.45, ease: "power3.out" }, 10.55);
+      tl.from("#scene3 #s3-t3", { opacity: 0, y: 12, duration: 0.45, ease: "power3.out" }, 10.8);
+      tl.from("#scene3 #s3-t4", { opacity: 0, y: 12, duration: 0.45, ease: "power3.out" }, 11.05);
+
+      // arrow reveal between hooks and spans
+      tl.from("#scene3 #s3-arrow", {
+        opacity: 0,
+        scale: 0.6,
+        duration: 0.5,
+        ease: "back.out(1.6)",
+      }, 10.3);
+
+      // kind badges pop in after nodes land
+      tl.from("#scene3 .s3-node .kind", {
+        opacity: 0,
+        scale: 0.7,
+        duration: 0.35,
+        stagger: 0.18,
+        ease: "back.out(1.5)",
+      }, 11.6);
+
+      tl.from("#scene3 .s3-caption", { opacity: 0, y: 10, duration: 0.5, ease: "power2.out" }, 12.8);
+
+      /* --------- Transition 3 → 4 (blue L→R wipe, 16.3 → 16.7s) --------- */
+      tl.to("#wipe-4", { x: "0%", duration: 0.2, ease: "power4.inOut" }, 16.3);
+      tl.set("#scene3", { opacity: 0, visibility: "hidden" }, 16.5);
+      tl.set("#scene4", { opacity: 1 }, 16.5);
+      tl.to("#wipe-4", { x: "100%", duration: 0.2, ease: "power4.inOut" }, 16.5);
+
+      /* =========================================================
+         SCENE 4 — 16.5 → 21.5s
+         ========================================================= */
+      tl.from("#scene4 .s4-heading", { y: -20, opacity: 0, duration: 0.5, ease: "expo.out" }, 16.65);
+
+      tl.from("#scene4 #s4-center", {
+        scale: 0,
+        opacity: 0,
+        duration: 0.5,
+        ease: "back.out(1.6)",
+      }, 17.0);
+
+      // draw 8 lines outward from center
+      tl.to("#scene4 #s4-l1", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.35);
+      tl.to("#scene4 #s4-l2", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.43);
+      tl.to("#scene4 #s4-l3", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.51);
+      tl.to("#scene4 #s4-l4", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.59);
+      tl.to("#scene4 #s4-l5", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.67);
+      tl.to("#scene4 #s4-l6", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.75);
+      tl.to("#scene4 #s4-l7", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.83);
+      tl.to("#scene4 #s4-l8", { strokeDashoffset: 0, duration: 0.45, ease: "power2.out" }, 17.91);
+
+      // chips pop in staggered with the lines landing
+      tl.from("#scene4 #s4-c1", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 17.65);
+      tl.from("#scene4 #s4-c2", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 17.73);
+      tl.from("#scene4 #s4-c3", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 17.81);
+      tl.from("#scene4 #s4-c4", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 17.89);
+      tl.from("#scene4 #s4-c5", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 17.97);
+      tl.from("#scene4 #s4-c6", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 18.05);
+      tl.from("#scene4 #s4-c7", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 18.13);
+      tl.from("#scene4 #s4-c8", { scale: 0.85, opacity: 0, duration: 0.4, ease: "back.out(1.6)" }, 18.21);
+
+      tl.from("#scene4 .s4-caption", { opacity: 0, y: 10, duration: 0.5, ease: "power2.out" }, 19.2);
+
+      /* --------- Transition 4 → 5 (white R→L wipe, 21.3 → 21.7s) --------- */
+      tl.fromTo("#wipe-5", { x: "100%" }, { x: "0%", duration: 0.2, ease: "power4.inOut" }, 21.3);
+      tl.set("#scene4", { opacity: 0, visibility: "hidden" }, 21.5);
+      tl.set("#scene5", { opacity: 1 }, 21.5);
+      tl.to("#wipe-5", { x: "-100%", duration: 0.2, ease: "power4.inOut" }, 21.5);
+
+      /* =========================================================
+         SCENE 5 — 21.5 → 28.0s
+         ========================================================= */
+      tl.from("#scene5 .s5-heading", { y: -16, opacity: 0, duration: 0.5, ease: "expo.out" }, 21.65);
+      tl.from("#scene5 .s5-subhead", { opacity: 0, duration: 0.5, ease: "power2.out" }, 21.95);
+
+      // table rows: 4 header cells + 12 body cells — stagger row-by-row
+      tl.from("#scene5 .s5-table .th", {
+        y: 14,
+        opacity: 0,
+        duration: 0.4,
+        stagger: 0.08,
+        ease: "power3.out",
+      }, 22.2);
+
+      tl.from("#scene5 .s5-table .td", {
+        y: 14,
+        opacity: 0,
+        duration: 0.4,
+        stagger: 0.04,
+        ease: "power3.out",
+      }, 22.55);
+
+      // CTA block — scale in + blue glow pulse (finite)
+      tl.from("#scene5 #s5-cta", { scale: 0.94, opacity: 0, duration: 0.5, ease: "back.out(1.4)" }, 24.6);
+      tl.to("#scene5 #s5-cta", {
+        boxShadow: "0 0 42px rgba(61, 139, 255, 0.45)",
+        duration: 0.5,
+        ease: "sine.inOut",
+        yoyo: true,
+        repeat: 3,
+      }, 25.1);
+
+      tl.from("#scene5 .s5-tag", { opacity: 0, y: 12, duration: 0.5, ease: "power3.out" }, 25.8);
+
+      // FINAL EXIT — only allowed exit in the whole piece
+      tl.to("#scene5", { opacity: 0, duration: 0.8, ease: "power2.in" }, 27.2);
+      tl.set("#scene5", { visibility: "hidden" }, 28.0);
+
+      window.__timelines["main"] = tl;
+    </script>
+  </body>
+</html>

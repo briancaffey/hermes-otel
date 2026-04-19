@@ -3,7 +3,8 @@ services:
     image: jaegertracing/all-in-one:latest
     ports:
       - "16686:16686"  # UI
-      - "4318:4318"    # OTLP HTTP collector
-      - "4317:4317"    # OTLP gRPC collector
+      - "4318:4318"    # OTLP HTTP collector — plugin target
+      # 4317 (gRPC) intentionally omitted so Jaeger can coexist with Phoenix
+      # and other OTLP collectors on the same host. The plugin uses HTTP.
     environment:
       - COLLECTOR_OTLP_ENABLED=true

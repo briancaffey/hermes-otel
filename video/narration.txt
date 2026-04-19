@@ -1,0 +1,1 @@
+Hermes Agent runs, and every turn is a black box. Hermes O-Tel fixes that. Every lifecycle hook becomes an Open-Telemetry span. Session. L-L-M. A-P-I. Tool. Token counts, tool arguments, outcomes — all captured. Fan out to Phoenix, Langfuse, Jaeger, SigNoz, Tempo — any O-T-L-P backend. Dual-convention attributes, so every dashboard just works. Install the plugin. See your agent.

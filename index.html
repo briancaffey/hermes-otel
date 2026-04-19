@@ -1,0 +1,385 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Hermes-Otel Introduction</title>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Inter', system-ui, sans-serif;
+      background: #0d1117;
+      overflow: hidden;
+    }
+
+    [data-composition-id="hermes-otel-intro"] {
+      position: relative;
+      width: 1920px;
+      height: 1080px;
+      background: #0d1117;
+      overflow: hidden;
+    }
+
+    /* Scene containers */
+    .scene {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      opacity: 0;
+      pointer-events: none;
+    }
+
+    .scene.active {
+      opacity: 1;
+      pointer-events: auto;
+    }
+
+    .scene-content {
+      display: flex;
+      flex-direction: column;
+      justify-content: center;
+      align-items: center;
+      width: 100%;
+      height: 100%;
+      padding: 120px 160px;
+      gap: 32px;
+      box-sizing: border-box;
+    }
+
+    /* Typography */
+    .title {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 96px;
+      font-weight: 700;
+      color: #c9d1d9;
+      text-align: center;
+      line-height: 1.2;
+    }
+
+    .subtitle {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 36px;
+      color: #58a6ff;
+      text-align: center;
+    }
+
+    .description {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 32px;
+      color: #8b949e;
+      text-align: center;
+      max-width: 1200px;
+      line-height: 1.6;
+    }
+
+    .feature-list {
+      display: flex;
+      flex-direction: column;
+      gap: 24px;
+      width: 100%;
+      max-width: 1200px;
+    }
+
+    .feature-item {
+      display: flex;
+      align-items: center;
+      gap: 20px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      color: #c9d1d9;
+      padding: 16px 24px;
+      background: #161b22;
+      border-left: 4px solid #58a6ff;
+    }
+
+    .feature-icon {
+      font-size: 32px;
+      color: #3fb950;
+      flex-shrink: 0;
+    }
+
+    .cta-box {
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      gap: 24px;
+    }
+
+    .cta-text {
+      font-family: 'Inter', system-ui, sans-serif;
+      font-size: 36px;
+      color: #c9d1d9;
+      text-align: center;
+    }
+
+    .code-block {
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 28px;
+      color: #58a6ff;
+      background: #161b22;
+      padding: 24px 32px;
+      border-radius: 4px;
+      border: 1px solid #30363d;
+    }
+
+    /* Cat image */
+    .cat-image {
+      position: absolute;
+      bottom: 80px;
+      right: 80px;
+      width: 280px;
+      height: 210px;
+      background-size: cover;
+      background-position: center;
+      border-radius: 8px;
+      box-shadow: 0 4px 20px rgba(0, 0, 0, 0.5);
+      opacity: 0;
+    }
+
+    .cat-caption {
+      position: absolute;
+      bottom: 36px;
+      right: 80px;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 18px;
+      color: #58a6ff;
+      opacity: 0;
+    }
+
+    /* Transition overlay - removed */
+
+    /* Decorative grid */
+    .grid-bg {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 100%;
+      height: 100%;
+      background-image: 
+        linear-gradient(rgba(88, 166, 255, 0.03) 1px, transparent 1px),
+        linear-gradient(90deg, rgba(88, 166, 255, 0.03) 1px, transparent 1px);
+      background-size: 60px 60px;
+      pointer-events: none;
+    }
+  </style>
+</head>
+<body>
+  <div data-composition-id="hermes-otel-intro" 
+       data-start="0" 
+       data-duration="18" 
+       data-width="1920" 
+       data-height="1080">
+    
+    <!-- Decorative background -->
+    <div class="grid-bg"></div>
+
+    <!-- Scene 1: Title (0-4s) -->
+    <div id="scene-1" class="scene">
+      <div class="scene-content">
+        <h1 class="title" id="s1-title">hermes-otel</h1>
+        <p class="subtitle" id="s1-subtitle">OpenTelemetry for AI Agents</p>
+      </div>
+    </div>
+
+    <!-- Scene 2: What it is (4-9s) -->
+    <div id="scene-2" class="scene">
+      <div class="scene-content">
+        <h2 class="title" id="s2-title">Full Observability</h2>
+        <p class="description" id="s2-desc">
+          Trace every step of your AI agent's reasoning — from tool calls to LLM responses, 
+          with distributed tracing that connects the dots.
+        </p>
+      </div>
+    </div>
+
+    <!-- Scene 3: Key features (9-14s) -->
+    <div id="scene-3" class="scene">
+      <div class="scene-content">
+        <h2 class="subtitle" id="s3-heading" style="margin-bottom: 16px;">Key Features</h2>
+        <div class="feature-list">
+          <div class="feature-item" id="s3-f1">
+            <span class="feature-icon">▸</span>
+            <span>Automatic span creation for agent workflows</span>
+          </div>
+          <div class="feature-item" id="s3-f2">
+            <span class="feature-icon">▸</span>
+            <span>Context propagation across tool calls</span>
+          </div>
+          <div class="feature-item" id="s3-f3">
+            <span class="feature-icon">▸</span>
+            <span>Integrates with Jaeger, Zipkin, and more</span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Scene 4: CTA (14-18s) -->
+    <div id="scene-4" class="scene">
+      <div class="scene-content">
+        <div class="cta-box">
+          <p class="cta-text" id="s4-text">Get started in seconds</p>
+          <div class="code-block" id="s4-code">
+            npm install hermes-otel
+          </div>
+        </div>
+      </div>
+      <!-- Cat image -->
+      <div class="cat-image" id="cat-img" style="background-image: url('cat.jpg');"></div>
+      <p class="cat-caption" id="cat-caption">🐱 Powered by cats</p>
+    </div>
+
+    <!-- Transition overlay removed -->
+
+    <script src="https://cdn.jsdelivr.net/npm/gsap@3.14.2/dist/gsap.min.js"></script>
+    <script>
+      window.__timelines = window.__timelines || {};
+      
+      const tl = gsap.timeline({ paused: true });
+
+      // Scene 1: Title entrance (0-4s)
+      tl.set("#scene-1", { autoAlpha: 1 }, 0);
+      
+      tl.from("#s1-title", { 
+        y: 60, 
+        opacity: 0, 
+        duration: 0.8, 
+        ease: "power3.out" 
+      }, 0.2);
+      
+      tl.from("#s1-subtitle", { 
+        y: 40, 
+        opacity: 0, 
+        duration: 0.6, 
+        ease: "power2.out" 
+      }, 0.5);
+
+      // Transition to Scene 2 (4s)
+      tl.set("#scene-1", { autoAlpha: 0 }, 4);
+      tl.set("#scene-2", { autoAlpha: 1 }, 4);
+
+      // Scene 2: What it is entrance (4-9s)
+      tl.from("#s2-title", { 
+        y: 50, 
+        opacity: 0, 
+        duration: 0.7, 
+        ease: "power3.out" 
+      }, 4.2);
+      
+      tl.from("#s2-desc", { 
+        y: 30, 
+        opacity: 0, 
+        duration: 0.6, 
+        ease: "power2.out" 
+      }, 4.6);
+
+      // Transition to Scene 3 (9s)
+      tl.set("#scene-2", { autoAlpha: 0 }, 9);
+      tl.set("#scene-3", { autoAlpha: 1 }, 9);
+
+      // Scene 3: Features entrance (9-14s)
+      tl.from("#s3-heading", { 
+        y: 30, 
+        opacity: 0, 
+        duration: 0.5, 
+        ease: "power2.out" 
+      }, 9.2);
+      
+      tl.from("#s3-f1", { 
+        x: -40, 
+        opacity: 0, 
+        duration: 0.4, 
+        ease: "power2.out" 
+      }, 9.6);
+      
+      tl.from("#s3-f2", { 
+        x: -40, 
+        opacity: 0, 
+        duration: 0.4, 
+        ease: "power2.out" 
+      }, 9.8);
+      
+      tl.from("#s3-f3", { 
+        x: -40, 
+        opacity: 0, 
+        duration: 0.4, 
+        ease: "power2.out" 
+      }, 10);
+
+      // Transition to Scene 4 (14s)
+      tl.set("#scene-3", { autoAlpha: 0 }, 14);
+      tl.set("#scene-4", { autoAlpha: 1 }, 14);
+
+      // Scene 4: CTA entrance (14-18s)
+      tl.from("#s4-text", { 
+        y: 40, 
+        opacity: 0, 
+        duration: 0.6, 
+        ease: "power2.out" 
+      }, 14.2);
+      
+      tl.from("#s4-code", { 
+        scale: 0.9, 
+        opacity: 0, 
+        duration: 0.5, 
+        ease: "power2.out" 
+      }, 14.6);
+
+      // Cat image entrance (15-16s)
+      tl.from("#cat-img", { 
+        scale: 0.8, 
+        opacity: 0, 
+        duration: 0.5, 
+        ease: "back.out(1.7)" 
+      }, 15);
+      
+      tl.from("#cat-caption", { 
+        y: 20, 
+        opacity: 0, 
+        duration: 0.4, 
+        ease: "power2.out" 
+      }, 15.3);
+
+      // Final fade out (17-18s)
+      tl.to("#s4-text", { 
+        opacity: 0, 
+        y: -20, 
+        duration: 0.5, 
+        ease: "power2.in" 
+      }, 17);
+      
+      tl.to("#s4-code", { 
+        opacity: 0, 
+        scale: 0.95, 
+        duration: 0.5, 
+        ease: "power2.in" 
+      }, 17.2);
+      
+      tl.to("#cat-img", { 
+        opacity: 0, 
+        scale: 0.95, 
+        duration: 0.5, 
+        ease: "power2.in" 
+      }, 17.2);
+      
+      tl.to("#cat-caption", { 
+        opacity: 0, 
+        y: -10, 
+        duration: 0.5, 
+        ease: "power2.in" 
+      }, 17.4);
+
+      window.__timelines["hermes-otel-intro"] = tl;
+    </script>
+  </div>
+</body>
+</html>
