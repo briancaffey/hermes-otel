@@ -13,8 +13,13 @@ def register(ctx):
     # project whose directory name is not a valid Python identifier)
     # does not trigger the relative imports.
     from . import hooks
-    from .debug_utils import debug_log
+    from .debug_utils import configure_default_handler, debug_log, logger
     from .tracer import get_tracer
+
+    # Install stderr handler on the hermes_otel logger unless the host app
+    # has already wired up its own. Keeps the "✓ backend connected" banner
+    # visible without forcing downstream apps to configure logging.
+    configure_default_handler()
 
     tracer = get_tracer()
     tracer.init()
@@ -42,4 +47,4 @@ def register(ctx):
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    print(f"[hermes-otel] Registered {6 + session_hooks} hooks")
+    logger.info(f"[hermes-otel] Registered {6 + session_hooks} hooks")

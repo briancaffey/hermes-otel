@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import json
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log
 from .helpers import (
@@ -25,6 +25,35 @@ from .helpers import (
 )
 from .session_state import TurnSummary
 from .tracer import get_tracer
+
+
+class HookContext(TypedDict, total=False):
+    """Optional extras Hermes may pass through a hook's ``**kwargs``.
+
+    All fields are optional (``total=False``); hooks guard with
+    ``kwargs.get(...)``. Documented here so new contributors can see
+    what's available without reading hermes-agent internals.
+
+    ``session_id`` is passed to the tool / api hooks (whose fixed
+    signatures don't already take one) so per-session state lands in
+    the right bucket. The remaining fields feed
+    :func:`_detect_session_kind` to classify a run as ``"session"``,
+    ``"cron"``, or a custom value from the host app.
+    """
+
+    # Bucketing for per-session aggregation.
+    session_id: str
+
+    # Session-kind classification — first non-empty field wins, so listing
+    # them here matches the precedence in _detect_session_kind.
+    session_type: str
+    origin: str
+    run_type: str
+    source: str
+    trigger: str
+    job_id: str
+    cron_job_id: str
+
 
 _MAX_SUMMARY_CHARS = 500
 
@@ -78,6 +107,85 @@ def _to_int(value: Any) -> int:
         except ValueError:
             return 0
     return 0
+
+
+# Canonical token-total field order. Used when iterating or copying.
+_USAGE_FIELDS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+)
+
+
+def _normalize_usage(usage: dict) -> Dict[str, int]:
+    """Parse a raw hermes ``usage`` dict into canonical token totals.
+
+    Hermes exposes ``output_tokens``; some providers use ``completion_tokens``.
+    Similarly ``input_tokens`` vs ``prompt_tokens``. Total is derived from
+    the reported value or sum(prompt, completion) when absent. Returns all
+    five canonical fields, zero-filled.
+    """
+    completion = _to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
+    prompt = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
+    total = _to_int(usage.get("total_tokens", 0)) or (prompt + completion)
+    return {
+        "prompt_tokens": prompt,
+        "completion_tokens": completion,
+        "total_tokens": total,
+        "cache_read_tokens": _to_int(usage.get("cache_read_tokens")),
+        "cache_write_tokens": _to_int(usage.get("cache_write_tokens")),
+    }
+
+
+def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
+    """Build dual-convention OTel attributes from canonical token totals.
+
+    Emits both the OTel GenAI convention (``gen_ai.usage.*`` — recognised
+    by Langfuse) and the OpenInference convention (``llm.token_count.*``
+    — recognised by Phoenix). Cache attrs are included only when non-zero
+    so low-traffic spans don't get cluttered with zero fields.
+    """
+    prompt = totals["prompt_tokens"]
+    completion = totals["completion_tokens"]
+    total = totals["total_tokens"]
+    cache_read = totals["cache_read_tokens"]
+    cache_write = totals["cache_write_tokens"]
+
+    attrs: Dict[str, Any] = {
+        # OpenInference (Phoenix)
+        "llm.token_count.prompt": prompt,
+        "llm.token_count.completion": completion,
+        "llm.token_count.total": total,
+        # OTel GenAI (Langfuse)
+        "gen_ai.usage.input_tokens": prompt,
+        "gen_ai.usage.output_tokens": completion,
+        "gen_ai.usage.total_tokens": total,
+    }
+    if cache_read:
+        attrs["llm.token_count.prompt_details.cache_read"] = cache_read
+        attrs["gen_ai.usage.cache_read_input_tokens"] = cache_read
+    if cache_write:
+        attrs["llm.token_count.prompt_details.cache_write"] = cache_write
+        attrs["gen_ai.usage.cache_creation_input_tokens"] = cache_write
+    return attrs
+
+
+_USAGE_METRIC_LABELS = (
+    ("prompt_tokens", "input"),
+    ("completion_tokens", "output"),
+    ("cache_read_tokens", "cacheRead"),
+    ("cache_write_tokens", "cacheCreation"),
+)
+
+
+def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, Any]) -> None:
+    """Record one ``token_usage`` metric per non-zero canonical field."""
+    for key, label in _USAGE_METRIC_LABELS:
+        v = totals.get(key, 0)
+        if v:
+            tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
 
 
 def _detect_session_kind(platform: str, kwargs: dict) -> str:
@@ -231,19 +339,7 @@ def on_session_end(
             attributes["output.value"] = ps.io["output"]
 
     if ps is not None and ps.usage_updated:
-        usage = ps.usage
-        attributes["llm.token_count.prompt"] = usage["prompt_tokens"]
-        attributes["llm.token_count.completion"] = usage["completion_tokens"]
-        attributes["llm.token_count.total"] = usage["total_tokens"]
-        attributes["gen_ai.usage.input_tokens"] = usage["prompt_tokens"]
-        attributes["gen_ai.usage.output_tokens"] = usage["completion_tokens"]
-        attributes["gen_ai.usage.total_tokens"] = usage["total_tokens"]
-        if usage["cache_read_tokens"]:
-            attributes["llm.token_count.prompt_details.cache_read"] = usage["cache_read_tokens"]
-            attributes["gen_ai.usage.cache_read_input_tokens"] = usage["cache_read_tokens"]
-        if usage["cache_write_tokens"]:
-            attributes["llm.token_count.prompt_details.cache_write"] = usage["cache_write_tokens"]
-            attributes["gen_ai.usage.cache_creation_input_tokens"] = usage["cache_write_tokens"]
+        attributes.update(_usage_attributes(ps.usage))
 
     # Per-turn summary roll-up
     if ps is not None:
@@ -616,68 +712,26 @@ def on_post_api_request(
     # Build final attributes
     attributes: Dict[str, Any] = {}
 
-    # Token usage — dual convention:
-    #   gen_ai.usage.*  → OTel standard, Langfuse recognizes these
-    #   llm.token_count.* → OpenInference, Phoenix recognizes these
+    # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
+    # See _usage_attributes for the full attribute list.
     if usage:
-        # Hermes uses 'output_tokens', some providers use 'completion_tokens'
-        completion_tokens = _to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
-        prompt_tokens = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
-        total_tokens = _to_int(usage.get("total_tokens", 0)) or (prompt_tokens + completion_tokens)
-
-        # Langfuse / OTel GenAI semantic conventions
-        attributes["gen_ai.usage.input_tokens"] = prompt_tokens
-        attributes["gen_ai.usage.output_tokens"] = completion_tokens
-        attributes["gen_ai.usage.total_tokens"] = total_tokens
-
-        # Phoenix / OpenInference conventions
-        attributes["llm.token_count.prompt"] = prompt_tokens
-        attributes["llm.token_count.completion"] = completion_tokens
-        attributes["llm.token_count.total"] = total_tokens
-
-        # Cache tokens if available
-        cache_read = _to_int(usage.get("cache_read_tokens"))
-        cache_write = _to_int(usage.get("cache_write_tokens"))
-        if cache_read:
-            attributes["llm.token_count.prompt_details.cache_read"] = cache_read
-            attributes["gen_ai.usage.cache_read_input_tokens"] = cache_read
-        if cache_write:
-            attributes["llm.token_count.prompt_details.cache_write"] = cache_write
-            attributes["gen_ai.usage.cache_creation_input_tokens"] = cache_write
+        totals = _normalize_usage(usage)
+        attributes.update(_usage_attributes(totals))
 
         # Roll up usage to the top-level session/cron span.
         if session_id:
             ps = tracer.sessions.get_or_create(session_id)
-            ps.usage["prompt_tokens"] += prompt_tokens
-            ps.usage["completion_tokens"] += completion_tokens
-            ps.usage["total_tokens"] += total_tokens
-            ps.usage["cache_read_tokens"] += cache_read
-            ps.usage["cache_write_tokens"] += cache_write
+            for field in _USAGE_FIELDS:
+                ps.usage[field] += totals[field]
             ps.usage_updated = True
 
         # Record metrics
-        metric_attrs = {"model": model, "provider": provider}
+        metric_attrs: Dict[str, Any] = {"model": model, "provider": provider}
         if session_id:
             metric_attrs["session_id"] = session_id
+        _record_usage_metrics(tracer, totals, metric_attrs)
 
-        if prompt_tokens:
-            tracer.record_metric(
-                "token_usage", prompt_tokens, {**metric_attrs, "token_type": "input"}
-            )
-        if completion_tokens:
-            tracer.record_metric(
-                "token_usage", completion_tokens, {**metric_attrs, "token_type": "output"}
-            )
-        if cache_read:
-            tracer.record_metric(
-                "token_usage", cache_read, {**metric_attrs, "token_type": "cacheRead"}
-            )
-        if cache_write:
-            tracer.record_metric(
-                "token_usage", cache_write, {**metric_attrs, "token_type": "cacheCreation"}
-            )
-
-        cost = usage.get("cost") if usage else None
+        cost = usage.get("cost")
         if cost:
             try:
                 tracer.record_metric("cost_usage", float(cost), metric_attrs)

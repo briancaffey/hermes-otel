@@ -219,25 +219,25 @@ class TestYaml:
         cfg = load_config(path=tmp_path / "missing.yaml")
         assert cfg == HermesOtelConfig()
 
-    def test_malformed_yaml_warns_and_uses_defaults(self, tmp_path, capsys):
+    def test_malformed_yaml_warns_and_uses_defaults(self, tmp_path, caplog):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")
         path = tmp_path / "config.yaml"
         # Unterminated mapping → yaml parse error
         path.write_text("enabled: [broken\nsample_rate: 0.5")
-        cfg = load_config(path=path)
-        captured = capsys.readouterr()
-        assert "[hermes-otel]" in captured.out
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert "[hermes-otel]" in caplog.text
         assert cfg == HermesOtelConfig()
 
-    def test_non_mapping_yaml_warns(self, tmp_path, capsys):
+    def test_non_mapping_yaml_warns(self, tmp_path, caplog):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")
         path = tmp_path / "config.yaml"
         path.write_text("- item1\n- item2\n")
-        cfg = load_config(path=path)
-        captured = capsys.readouterr()
-        assert "[hermes-otel]" in captured.out
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert "[hermes-otel]" in caplog.text
         assert cfg == HermesOtelConfig()
 
     def test_unknown_keys_ignored(self, tmp_path):
@@ -345,7 +345,7 @@ class TestBackendsYaml:
         assert b.name == "my-collector"
         assert b.headers == {"X-Auth": "secret", "X-Tenant": "acme"}
 
-    def test_skips_entry_without_type(self, tmp_path, capsys):
+    def test_skips_entry_without_type(self, tmp_path, caplog):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")
         path = tmp_path / "config.yaml"
@@ -355,27 +355,27 @@ class TestBackendsYaml:
             "  - type: jaeger\n"
             "    endpoint: http://jaeger/v1/traces\n"
         )
-        cfg = load_config(path=path)
-        out = capsys.readouterr().out
-        assert "missing 'type'" in out
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert "missing 'type'" in caplog.text
         # Only the jaeger entry survives.
         assert cfg.backends is not None
         assert len(cfg.backends) == 1
         assert cfg.backends[0].type == "jaeger"
 
-    def test_non_list_backends_ignored(self, tmp_path, capsys):
+    def test_non_list_backends_ignored(self, tmp_path, caplog):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")
         path = tmp_path / "config.yaml"
         path.write_text("backends: not-a-list\n")
-        cfg = load_config(path=path)
-        captured = capsys.readouterr()
-        assert "must be a list" in captured.out
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert "must be a list" in caplog.text
         assert cfg.backends is None
 
 
 class TestMissingPyYaml:
-    def test_missing_pyyaml_silent_fallback(self, tmp_path, monkeypatch, capsys):
+    def test_missing_pyyaml_silent_fallback(self, tmp_path, monkeypatch, caplog):
         """When pyyaml isn't importable, loading a real yaml file is skipped silently."""
         path = tmp_path / "config.yaml"
         path.write_text("sample_rate: 0.5\n")
@@ -387,10 +387,10 @@ class TestMissingPyYaml:
         monkeypatch.setitem(sys.modules, "yaml", None)
 
         try:
-            cfg = load_config(path=path)
-            captured = capsys.readouterr()
-            # Must NOT print a warning for missing pyyaml
-            assert "pyyaml" not in captured.out.lower()
+            with caplog.at_level("WARNING", logger="hermes_otel"):
+                cfg = load_config(path=path)
+            # Must NOT warn about missing pyyaml
+            assert "pyyaml" not in caplog.text.lower()
             assert cfg == HermesOtelConfig()
         finally:
             if original_yaml is not None:

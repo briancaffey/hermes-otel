@@ -76,11 +76,10 @@ Phase 5 disappear naturally.
 
 ## Phase 4 — Hook layer cleanup (low risk)
 
-- [ ] **Extract `build_usage_attributes(usage: dict) -> dict`** from `on_post_api_request` (`hooks.py:636-660`). The same dual-convention logic is duplicated in `on_session_end` (`hooks.py:302-314`). One function, two callers.
-- [ ] **Extract `record_usage_metrics(tracer, usage, metric_attrs)`** from `on_post_api_request` (`hooks.py:681-701`).
-- [ ] **Replace `print("[hermes-otel] ...")`** across `tracer.py` with `logging.getLogger("hermes_otel")` and a default `NullHandler`. Consumers control verbosity. Keep one startup banner for UX.
-- [ ] **`HookContext` TypedDict** documenting what's actually in `**kwargs` for each hook. New contributors shouldn't have to read Hermes internals to know what they can `.get()`.
-- [ ] **Audit `debug_utils.mask_secret`** — looks unused. `Grep` to confirm, then remove (or wire it into the LangSmith backend's startup log).
+- [x] **Extract `_normalize_usage` / `_usage_attributes` / `_record_usage_metrics`** from `on_post_api_request`. Dual-convention attribute logic is now defined once and reused in both `on_post_api_request` (parses raw hermes usage) and `on_session_end` (emits pre-normalized PerSession.usage).
+- [x] **Replace `print("[hermes-otel] ...")`** with `logger = logging.getLogger("hermes_otel")` in `debug_utils.py`. `NullHandler` attached at import; `configure_default_handler()` adds a stderr handler with INFO level when `register()` runs and nothing else has claimed the logger. Every existing startup line still prints; consumers can override by installing their own handler. tracer.py + plugin_config.py + __init__.py all migrated; 5 tests moved from `capsys` to `caplog`.
+- [x] **`HookContext` TypedDict** added at the top of `hooks.py` documenting the 8 optional `**kwargs` fields Hermes may pass (session_id + the 7 session-kind classifiers).
+- [x] **Audit `debug_utils.mask_secret`** — confirmed unused via grep; removed.
 
 ---
 

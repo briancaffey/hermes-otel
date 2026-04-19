@@ -21,7 +21,7 @@ from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
-from .debug_utils import debug_log
+from .debug_utils import debug_log, logger
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 
@@ -128,11 +128,11 @@ class HermesOTelPlugin:
         Returns True if at least one backend was initialized.
         """
         if not _OTEL_AVAILABLE:
-            print("[hermes-otel] ✗ OpenTelemetry packages not available")
+            logger.error("[hermes-otel] ✗ OpenTelemetry packages not available")
             return False
 
         if not self.config.enabled:
-            print("[hermes-otel] ✗ Disabled via config (enabled=false)")
+            logger.warning("[hermes-otel] ✗ Disabled via config (enabled=false)")
             return False
 
         # 1. LangSmith short-circuit (legacy compat).
@@ -146,12 +146,12 @@ class HermesOTelPlugin:
                 try:
                     rb = self._resolve_backend_config(bc)
                 except Exception as e:
-                    print(f"[hermes-otel] ✗ backend {bc.type!r} skipped: {e}")
+                    logger.warning(f"[hermes-otel] ✗ backend {bc.type!r} skipped: {e}")
                     continue
                 if rb is not None:
                     backends.append(rb)
             if not backends:
-                print("[hermes-otel] ✗ config.backends had no valid entries")
+                logger.warning("[hermes-otel] ✗ config.backends had no valid entries")
                 return False
             return self._init_otlp_pipeline(backends)
 
@@ -179,7 +179,7 @@ class HermesOTelPlugin:
         """
         rb = _backends.resolve_from_env()
         if rb is None:
-            print(
+            logger.warning(
                 "[hermes-otel] ✗ No backend configured "
                 "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
                 "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
@@ -228,10 +228,10 @@ class HermesOTelPlugin:
                 return False
             self._langsmith = backend
             self._initialized = True
-            print(f"[hermes-otel] ✓ LangSmith at {backend.endpoint}")
+            logger.info(f"[hermes-otel] ✓ LangSmith at {backend.endpoint}")
             return True
         except Exception as e:
-            print(f"[hermes-otel] ✗ LangSmith init failed: {e}")
+            logger.error(f"[hermes-otel] ✗ LangSmith init failed: {e}")
             return False
 
     def _build_resource(self) -> "Resource":
@@ -297,7 +297,7 @@ class HermesOTelPlugin:
                     provider.add_span_processor(processor)
                     self._span_processors.append(processor)
                 except Exception as e:
-                    print(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
+                    logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
                     continue
 
                 if b.supports_metrics and _METRICS_AVAILABLE:
@@ -314,7 +314,7 @@ class HermesOTelPlugin:
                         debug_log(f"{b.display_name} metrics init failed: {e}")
 
                 self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
-                print(
+                logger.info(
                     f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
                     + (" (traces only)" if not b.supports_metrics else "")
                 )
@@ -344,16 +344,18 @@ class HermesOTelPlugin:
             self._register_atexit_flush()
 
             if not self.config.capture_previews:
-                print("[hermes-otel] ⚠ capture_previews=false — input/output values suppressed")
+                logger.warning(
+                    "[hermes-otel] ⚠ capture_previews=false — input/output values suppressed"
+                )
             if len(self._span_processors) > 1:
-                print(
+                logger.info(
                     f"[hermes-otel] ✓ Multi-backend fan-out active "
                     f"({len(self._span_processors)} collectors, "
                     f"{len(self._metric_readers)} with metrics)"
                 )
             return True
         except Exception as e:
-            print(f"[hermes-otel] ✗ pipeline init failed: {e}")
+            logger.error(f"[hermes-otel] ✗ pipeline init failed: {e}")
             return False
 
     def _create_metric_instruments(self) -> None:

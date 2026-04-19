@@ -19,6 +19,8 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .debug_utils import logger
+
 Scalar = Union[str, int, float, bool]
 
 DEFAULT_CONFIG_PATH = Path.home() / ".hermes" / "plugins" / "hermes_otel" / "config.yaml"
@@ -132,13 +134,13 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
         with path.open("r", encoding="utf-8") as f:
             data = yaml.safe_load(f)
     except Exception as e:
-        print(f"[hermes-otel] config.yaml malformed, using defaults: {e}")
+        logger.warning(f"[hermes-otel] config.yaml malformed, using defaults: {e}")
         return {}
 
     if data is None:
         return {}
     if not isinstance(data, dict):
-        print(
+        logger.warning(
             f"[hermes-otel] config.yaml root must be a mapping, got {type(data).__name__}; using defaults"
         )
         return {}
@@ -157,7 +159,7 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     if value is None:
         return None
     if not isinstance(value, list):
-        print(
+        logger.warning(
             f"[hermes-otel] config.yaml 'backends' must be a list, got {type(value).__name__}; ignoring"
         )
         return None
@@ -165,10 +167,10 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     out: List[BackendConfig] = []
     for idx, raw in enumerate(value):
         if not isinstance(raw, dict):
-            print(f"[hermes-otel] config.yaml backends[{idx}] must be a mapping; skipping")
+            logger.warning(f"[hermes-otel] config.yaml backends[{idx}] must be a mapping; skipping")
             continue
         if "type" not in raw or not isinstance(raw["type"], str) or not raw["type"].strip():
-            print(f"[hermes-otel] config.yaml backends[{idx}] missing 'type'; skipping")
+            logger.warning(f"[hermes-otel] config.yaml backends[{idx}] missing 'type'; skipping")
             continue
         kwargs: Dict[str, Any] = {}
         for k, v in raw.items():
@@ -192,7 +194,7 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
         try:
             out.append(BackendConfig(**kwargs))
         except TypeError as e:
-            print(f"[hermes-otel] config.yaml backends[{idx}] invalid: {e}; skipping")
+            logger.warning(f"[hermes-otel] config.yaml backends[{idx}] invalid: {e}; skipping")
 
     return tuple(out) if out else None
 
