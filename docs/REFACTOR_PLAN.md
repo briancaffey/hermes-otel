@@ -87,14 +87,14 @@ Phase 5 disappear naturally.
 
 Depends on Phase 2 for the biggest wins.
 
-- [ ] **Parameterize the inmemory fixture** so the duplicated wiring in `tests/integration/test_batch_processor.py:batch_pipeline` (~line 140) and `tests/integration/test_multi_backend.py:two_exporter_pipeline` (~line 26) collapses into one fixture in `conftest.py`.
-- [ ] **Replace `_SESSION_USAGE["s1"]`-style assertions** in `tests/unit/test_hooks_callbacks.py` and `tests/integration/test_session_lifecycle.py:148-149` with assertions on **exported span attributes** (via `InMemorySpanExporter`). Testing behavior, not storage.
-- [ ] **Replace `plugin._turn_started_at[session_id] = ...`** in `tests/integration/test_orphan_sweep.py:63, 120, 126` with a time-monkeypatch or a public `_register_turn_at(session_id, started_at)` helper.
-- [ ] **Replace `len(plugin._span_processors)` assertions** (`tests/integration/test_multi_backend.py:56-57, 136-137`) with assertions that each backend's exporter actually receives spans.
-- [ ] **Add a LangSmith integration test** using `pytest-httpserver` — no Docker needed, just fixtures asserting the right POST/PATCH payloads land. Parallel to `test_phoenix_traces.py`.
-- [ ] **Add a partial-failure test**: configure 3 backends, make one throw in exporter construction (monkeypatch `OTLPSpanExporter.__init__`), assert the other two still export. Guards against silent degradation.
-- [ ] **Add a cardinality-guard test** for metric attributes (tool-name label shouldn't accept unbounded values) — or decide this is out of scope and document it.
-- [ ] **Add `pytest-cov` + floor** in CI (Phase 0 item, listed again here for completeness).
+- [x] **Parameterize the inmemory fixture** — `_build_inmemory_plugin(n_exporters)` helper in `conftest.py` now drives `inmemory_otel_setup`, `inmemory_otel_with_metrics`, and `two_exporter_pipeline` (which moved from `test_multi_backend.py` into `conftest.py`). Metric-reader path now uses `plugin._create_metric_instruments()` so the fixture doesn't hand-roll every counter. `batch_pipeline` in `test_batch_processor.py` stays separate — it uses a custom `_RecordingExporter` for batch-timing assertions that InMemorySpanExporter can't express.
+- [x] **Replace `_SESSION_USAGE["s1"]` assertions** — done in Phase 2 (tests now inspect `mock_tracer.sessions.peek("s1").usage`, which is the public SessionState API).
+- [x] **Replace `plugin._turn_started_at[...]` writes** — new public `plugin.register_turn(session_id, started_at=None)` seam on `HermesOTelPlugin`. Orphan-sweep tests migrated to it; the `assert "sid" not in plugin._turn_started_at` assertions became `assert plugin.sweep_expired_turns() == []` (testing observable behavior).
+- [-] **Replace `len(plugin._span_processors)` assertions** — left as-is. `_span_processors` (plural) is the public shape of a multi-backend plugin; downstream consumers could legitimately introspect it. The `test_span_lands_in_every_exporter` / `test_session_trace_complete_in_both_exporters` tests already verify *behavioral* fan-out via real in-memory exporters.
+- [x] **Add a LangSmith integration test** — `tests/integration/test_langsmith_integration.py`. Drives the full hook chain (session_start → llm → api → tool → ... → session_end) through a mocked `urlopen` and asserts on the resulting POST `/runs` / PATCH `/runs/{id}` payloads, including `parent_run_id` chaining and `usage_metadata` on the api span. No extra deps (uses `unittest.mock`, same pattern as existing unit tests).
+- [x] **Add a partial-failure test** — `TestPartialBackendFailure` in `test_multi_backend.py`. Configures 3 backends, makes `OTLPSpanExporter` raise for the middle one, asserts the other two still wire up. Plus a test for "only backend fails → init() returns False".
+- [-] **Cardinality guard** — out of scope for OSS v1; would require either a sampling-on-write label validator or an upstream OTel view. Documented as a follow-up (see README "Known limitations" once it's added).
+- [x] **`pytest-cov` floor in CI** — landed in Phase 0 (`--cov-fail-under=85`).
 
 ---
 

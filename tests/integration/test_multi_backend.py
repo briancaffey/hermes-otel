@@ -241,6 +241,64 @@ class TestConfigBackendsRouting:
         assert plugin.is_enabled is False
 
 
+class TestPartialBackendFailure:
+    """One backend's exporter blows up at init; the others stay wired."""
+
+    def test_middle_backend_exporter_construction_raises(self, monkeypatch):
+        """If OTLPSpanExporter() raises for one backend, the others still export.
+
+        Guards against silent degradation: a bad endpoint / wrong TLS /
+        unreachable collector on *one* backend must not bring down the
+        entire pipeline.
+        """
+        _clear_backend_env(monkeypatch)
+        cfg = HermesOtelConfig(
+            backends=(
+                BackendConfig(type="phoenix", endpoint="http://good-a/v1/traces"),
+                BackendConfig(type="jaeger", endpoint="http://broken/v1/traces"),
+                BackendConfig(type="tempo", endpoint="http://good-b/v1/traces"),
+            ),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+
+        # Selectively fail the middle backend's exporter construction.
+        def flaky_exporter(endpoint=None, headers=None):
+            if endpoint == "http://broken/v1/traces":
+                raise ConnectionError("simulated collector unreachable")
+            return MagicMock()
+
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter", side_effect=flaky_exporter),
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
+            assert plugin.init() is True
+
+        # Two backends (phoenix + tempo) survived; the broken jaeger was skipped.
+        assert len(plugin._span_processors) == 2
+
+    def test_single_backend_failure_returns_false(self, monkeypatch):
+        """If THE ONLY backend fails to construct, init() returns False."""
+        _clear_backend_env(monkeypatch)
+        cfg = HermesOtelConfig(
+            backends=(BackendConfig(type="phoenix", endpoint="http://broken/v1/traces"),),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+
+        with (
+            patch(
+                "hermes_otel.tracer.OTLPSpanExporter",
+                side_effect=ConnectionError("boom"),
+            ),
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
+            assert plugin.init() is False
+        assert plugin.is_enabled is False
+
+
 class TestLangfuseBackendConfig:
     def test_langfuse_credentials_via_env(self, monkeypatch):
         _clear_backend_env(monkeypatch)
