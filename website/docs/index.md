@@ -34,7 +34,7 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
 <div className="feature-grid">
   <div className="feature-card">
     <h3>Dual-convention attributes</h3>
-    <p>Emits both <code>gen_ai.*</code> (Langfuse / SigNoz) and <code>llm.token_count.*</code> (Phoenix / OpenInference) so the UI in your chosen backend just <em>works</em>.</p>
+    <p>Emits both <code>{'gen_ai.*'}</code> (Langfuse / SigNoz) and <code>{'llm.token_count.*'}</code> (Phoenix / OpenInference) so the UI in your chosen backend just <em>works</em>.</p>
   </div>
   <div className="feature-card">
     <h3>Multi-backend fan-out</h3>
