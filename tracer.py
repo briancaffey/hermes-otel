@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from .debug_utils import debug_log
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
+from .session_state import SessionState
 
 # Per-context parent span stack.  Using ContextVar (not threading.local)
 # ensures isolation across both threads AND asyncio coroutines: each
@@ -251,6 +252,10 @@ class HermesOTelPlugin:
     def __init__(self, config: Optional[HermesOtelConfig] = None):
         self.tracer = None
         self.spans = SpanTracker()
+        # Per-session aggregators for hook callbacks (token totals, I/O,
+        # turn summary, tool start times). Owned here so tests that
+        # re-create the tracer singleton automatically get a fresh set.
+        self.sessions = SessionState()
         self._initialized = False
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
         # per backend. The singular ``_span_processor`` / ``_metric_reader``

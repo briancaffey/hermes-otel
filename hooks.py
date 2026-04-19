@@ -1,14 +1,19 @@
 """Hermes OTel plugin — hook callbacks.
 
 Each hook starts or ends a span, passing data through to OTel attributes.
+
+Per-session buffering (token totals, first input / last output, per-turn
+summary, tool start times) lives on ``tracer.sessions`` — see
+``session_state.py``. Nothing in this module holds state; everything is
+routed through the tracer singleton so test reset is just
+``get_tracer()`` re-creation.
 """
 
 from __future__ import annotations
 
 import json
 import time
-from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional
 
 from .debug_utils import debug_log
 from .helpers import (
@@ -16,64 +21,10 @@ from .helpers import (
     extract_tool_result_status,
     infer_skill_name,
     resolve_tool_identity,
+    truncate_string,
 )
+from .session_state import TurnSummary
 from .tracer import get_tracer
-
-# Per-session token aggregation for top-level session/cron spans.
-_SESSION_USAGE: dict[str, dict[str, int]] = {}
-
-# Per-session I/O for top-level agent span in Phoenix.
-_SESSION_IO: dict[str, dict[str, str]] = {}
-
-# Track tool start times for duration calculation.
-_TOOL_START_TIMES: dict[str, float] = {}
-
-
-@dataclass
-class TurnSummary:
-    """Per-session aggregator of per-turn telemetry.
-
-    Flushed onto the session/agent span in on_session_end. Also usable as a
-    fallback on on_post_llm_call when no session hook is available.
-    """
-
-    tool_names: Set[str] = field(default_factory=set)
-    tool_targets: List[str] = field(default_factory=list)  # preserves order for "first N chars"
-    tool_commands: List[str] = field(default_factory=list)
-    tool_outcomes: Set[str] = field(default_factory=set)
-    skill_names: Set[str] = field(default_factory=set)
-    api_call_count: int = 0
-    final_status: Optional[str] = None
-
-    _seen_targets: Set[str] = field(default_factory=set)
-    _seen_commands: Set[str] = field(default_factory=set)
-
-    def add_tool(self, name: str) -> None:
-        if name:
-            self.tool_names.add(name)
-
-    def add_target(self, target: Optional[str]) -> None:
-        if target and target not in self._seen_targets:
-            self._seen_targets.add(target)
-            self.tool_targets.append(target)
-
-    def add_command(self, command: Optional[str]) -> None:
-        if command and command not in self._seen_commands:
-            self._seen_commands.add(command)
-            self.tool_commands.append(command)
-
-    def add_outcome(self, outcome: Optional[str]) -> None:
-        if outcome:
-            self.tool_outcomes.add(outcome)
-
-    def add_skill(self, skill: Optional[str]) -> None:
-        if skill:
-            self.skill_names.add(skill)
-
-
-# Per-session turn summaries.
-_SESSION_TURN_SUMMARY: dict[str, TurnSummary] = {}
-
 
 _MAX_SUMMARY_CHARS = 500
 
@@ -88,14 +39,6 @@ def _clip_joined(items: List[str], sep: str, limit: int = _MAX_SUMMARY_CHARS) ->
     if limit <= 3:
         return "." * limit
     return joined[: limit - 3] + "..."
-
-
-def _get_or_create_summary(session_id: str) -> TurnSummary:
-    summary = _SESSION_TURN_SUMMARY.get(session_id)
-    if summary is None:
-        summary = TurnSummary()
-        _SESSION_TURN_SUMMARY[session_id] = summary
-    return summary
 
 
 def _summary_attributes(summary: TurnSummary) -> Dict[str, Any]:
@@ -118,23 +61,6 @@ def _summary_attributes(summary: TurnSummary) -> Dict[str, Any]:
     if summary.final_status:
         attrs["hermes.turn.final_status"] = summary.final_status
     return attrs
-
-
-# ── Legacy helpers kept for backward compatibility ─────────────────────────
-# (Existing tests import _safe_str from hooks; we delegate to clip_preview for
-# preview emission but keep _safe_str for non-preview string fields and for
-# callers that depend on its exact semantics.)
-
-
-def _safe_str(value: Any, max_len: int = 1000) -> str:
-    """Safely convert to string, truncating if needed."""
-    try:
-        text = str(value)
-    except Exception:
-        text = "<unserializable>"
-    if len(text) > max_len:
-        return text[:max_len] + "..."
-    return text
 
 
 def _to_int(value: Any) -> int:
@@ -231,19 +157,19 @@ def _start_session_span(
     key = f"session:{session_id}"
 
     attributes = {
-        "session.id": _safe_str(session_id, 200),
-        "session_id": _safe_str(session_id, 200),
-        "hermes.session_id": _safe_str(session_id, 120),
+        "session.id": truncate_string(session_id, 200),
+        "session_id": truncate_string(session_id, 200),
+        "hermes.session_id": truncate_string(session_id, 120),
         "hermes.session.kind": kind,
-        "llm.model_name": _safe_str(model, 200),
-        "llm.provider": _safe_str(platform, 120),
+        "llm.model_name": truncate_string(model, 200),
+        "llm.provider": truncate_string(platform, 120),
     }
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
     cron_job_id = extra_kwargs.get("job_id") or extra_kwargs.get("cron_job_id")
     if cron_job_id:
-        attributes["hermes.cron.job_id"] = _safe_str(cron_job_id, 200)
+        attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, 200)
 
     span = tracer.start_span(
         name=span_name,
@@ -287,45 +213,41 @@ def on_session_end(
         return
 
     key = f"session:{session_id}"
-    attributes = {
+    attributes: Dict[str, Any] = {
         "hermes.session.completed": bool(completed),
         "hermes.session.interrupted": bool(interrupted),
-        "llm.model_name": _safe_str(model, 200),
-        "llm.provider": _safe_str(platform, 120),
+        "llm.model_name": truncate_string(model, 200),
+        "llm.provider": truncate_string(platform, 120),
     }
 
-    # Add first input / last output for Phoenix top-level span display
-    session_io = _SESSION_IO.pop(session_id, None)
-    if session_io:
-        if session_io.get("input"):
-            attributes["input.value"] = session_io["input"]
-        if session_io.get("output"):
-            attributes["output.value"] = session_io["output"]
+    # Drain the aggregators in one shot. Everything this session buffered
+    # — I/O, usage totals, turn summary — comes back in a single PerSession.
+    ps = tracer.sessions.pop(session_id)
 
-    usage_totals = _SESSION_USAGE.pop(session_id, None)
-    if usage_totals:
-        attributes["llm.token_count.prompt"] = usage_totals.get("prompt_tokens", 0)
-        attributes["llm.token_count.completion"] = usage_totals.get("completion_tokens", 0)
-        attributes["llm.token_count.total"] = usage_totals.get("total_tokens", 0)
-        attributes["gen_ai.usage.input_tokens"] = usage_totals.get("prompt_tokens", 0)
-        attributes["gen_ai.usage.output_tokens"] = usage_totals.get("completion_tokens", 0)
-        attributes["gen_ai.usage.total_tokens"] = usage_totals.get("total_tokens", 0)
-        if usage_totals.get("cache_read_tokens", 0):
-            attributes["llm.token_count.prompt_details.cache_read"] = usage_totals[
-                "cache_read_tokens"
-            ]
-            attributes["gen_ai.usage.cache_read_input_tokens"] = usage_totals["cache_read_tokens"]
-        if usage_totals.get("cache_write_tokens", 0):
-            attributes["llm.token_count.prompt_details.cache_write"] = usage_totals[
-                "cache_write_tokens"
-            ]
-            attributes["gen_ai.usage.cache_creation_input_tokens"] = usage_totals[
-                "cache_write_tokens"
-            ]
+    if ps is not None and ps.io_captured:
+        if ps.io.get("input"):
+            attributes["input.value"] = ps.io["input"]
+        if ps.io.get("output"):
+            attributes["output.value"] = ps.io["output"]
+
+    if ps is not None and ps.usage_updated:
+        usage = ps.usage
+        attributes["llm.token_count.prompt"] = usage["prompt_tokens"]
+        attributes["llm.token_count.completion"] = usage["completion_tokens"]
+        attributes["llm.token_count.total"] = usage["total_tokens"]
+        attributes["gen_ai.usage.input_tokens"] = usage["prompt_tokens"]
+        attributes["gen_ai.usage.output_tokens"] = usage["completion_tokens"]
+        attributes["gen_ai.usage.total_tokens"] = usage["total_tokens"]
+        if usage["cache_read_tokens"]:
+            attributes["llm.token_count.prompt_details.cache_read"] = usage["cache_read_tokens"]
+            attributes["gen_ai.usage.cache_read_input_tokens"] = usage["cache_read_tokens"]
+        if usage["cache_write_tokens"]:
+            attributes["llm.token_count.prompt_details.cache_write"] = usage["cache_write_tokens"]
+            attributes["gen_ai.usage.cache_creation_input_tokens"] = usage["cache_write_tokens"]
 
     # Per-turn summary roll-up
-    summary = _SESSION_TURN_SUMMARY.pop(session_id, None)
-    if summary is not None:
+    if ps is not None:
+        summary = ps.turn_summary
         if summary.final_status is None:
             if completed:
                 summary.final_status = "completed"
@@ -369,7 +291,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     tracer.sweep_expired_turns()
 
     key = f"{tool_name}:{task_id}"
-    _TOOL_START_TIMES[key] = time.perf_counter()
+    tracer.sessions.record_tool_start(key, time.perf_counter())
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
@@ -382,9 +304,9 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Richer identity — hermes.tool.* (opt-in namespace)
     target, command = resolve_tool_identity(args)
     if target:
-        attributes["hermes.tool.target"] = _safe_str(target, 500)
+        attributes["hermes.tool.target"] = truncate_string(target, 500)
     if command:
-        attributes["hermes.tool.command"] = _safe_str(command, 500)
+        attributes["hermes.tool.command"] = truncate_string(command, 500)
     skill = infer_skill_name(args)
     if skill:
         attributes["hermes.skill.name"] = skill
@@ -397,7 +319,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
     if session_id:
-        summary = _get_or_create_summary(session_id)
+        summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
         summary.add_target(target)
         summary.add_command(command)
@@ -424,7 +346,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     key = f"{tool_name}:{task_id}"
     debug_log(f"  ending span: key={key}")
 
-    start_time = _TOOL_START_TIMES.pop(key, None)
+    start_time = tracer.sessions.pop_tool_start(key)
     if start_time:
         duration_ms = (time.perf_counter() - start_time) * 1000
         tracer.record_metric("tool_duration", duration_ms, {"tool_name": tool_name})
@@ -451,7 +373,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     if has_error and isinstance(result_json, dict):
         err_val = result_json.get("error")
         if err_val:
-            error_msg = _safe_str(err_val, 500)
+            error_msg = truncate_string(err_val, 500)
             attributes["error.message"] = error_msg
 
     # OpenInference output value — Phoenix shows this in Info
@@ -462,7 +384,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Summary roll-up
     session_id = kwargs.get("session_id")
     if session_id:
-        summary = _get_or_create_summary(session_id)
+        summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
@@ -509,14 +431,16 @@ def on_pre_llm_call(
     key = f"llm:{session_id}"
 
     # Capture first LLM input for top-level session span
-    if session_id not in _SESSION_IO:
-        preview = _preview(user_message, 500)
-        _SESSION_IO[session_id] = {"input": preview or "", "output": ""}
+    if session_id:
+        ps = tracer.sessions.get_or_create(session_id)
+        if not ps.io_captured:
+            ps.io["input"] = _preview(user_message, 500) or ""
+            ps.io_captured = True
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
-        "session.id": _safe_str(session_id, 200),
-        "session_id": _safe_str(session_id, 200),
+        "session.id": truncate_string(session_id, 200),
+        "session_id": truncate_string(session_id, 200),
         "llm.model_name": model,
         "llm.provider": platform,
     }
@@ -575,9 +499,13 @@ def on_post_llm_call(
     key = f"llm:{session_id}"
     debug_log(f"  ending span: key={key}")
 
-    # Capture last LLM output for top-level session span
-    if session_id in _SESSION_IO:
-        _SESSION_IO[session_id]["output"] = _preview(assistant_response, 500) or ""
+    # Capture last LLM output for top-level session span. Only if the
+    # session already has I/O buffered (i.e. pre_llm_call ran) — mirrors
+    # prior behaviour where we never wrote output without a matching input.
+    if session_id:
+        ps = tracer.sessions.peek(session_id)
+        if ps is not None and ps.io_captured:
+            ps.io["output"] = _preview(assistant_response, 500) or ""
 
     tracer.record_metric(
         "message_count", 1, {"session_id": session_id, "model": model, "provider": platform}
@@ -585,8 +513,8 @@ def on_post_llm_call(
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
-        "session.id": _safe_str(session_id, 200),
-        "session_id": _safe_str(session_id, 200),
+        "session.id": truncate_string(session_id, 200),
+        "session_id": truncate_string(session_id, 200),
     }
     preview = _preview(assistant_response, 500)
     if preview is not None:
@@ -629,13 +557,12 @@ def on_pre_api_request(
 
     # Per-turn summary: count api requests
     if session_id:
-        summary = _get_or_create_summary(session_id)
-        summary.api_call_count += 1
+        tracer.sessions.get_or_create(session_id).turn_summary.api_call_count += 1
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
-        "session.id": _safe_str(session_id, 200),
-        "session_id": _safe_str(session_id, 200),
+        "session.id": truncate_string(session_id, 200),
+        "session_id": truncate_string(session_id, 200),
         "llm.model_name": model,
         "llm.provider": provider,
         "llm.api_mode": api_mode,
@@ -687,7 +614,7 @@ def on_post_api_request(
     debug_log(f"  ending span: key={key}, usage={usage}")
 
     # Build final attributes
-    attributes = {}
+    attributes: Dict[str, Any] = {}
 
     # Token usage — dual convention:
     #   gen_ai.usage.*  → OTel standard, Langfuse recognizes these
@@ -720,21 +647,13 @@ def on_post_api_request(
 
         # Roll up usage to the top-level session/cron span.
         if session_id:
-            totals = _SESSION_USAGE.setdefault(
-                session_id,
-                {
-                    "prompt_tokens": 0,
-                    "completion_tokens": 0,
-                    "total_tokens": 0,
-                    "cache_read_tokens": 0,
-                    "cache_write_tokens": 0,
-                },
-            )
-            totals["prompt_tokens"] += prompt_tokens
-            totals["completion_tokens"] += completion_tokens
-            totals["total_tokens"] += total_tokens
-            totals["cache_read_tokens"] += cache_read
-            totals["cache_write_tokens"] += cache_write
+            ps = tracer.sessions.get_or_create(session_id)
+            ps.usage["prompt_tokens"] += prompt_tokens
+            ps.usage["completion_tokens"] += completion_tokens
+            ps.usage["total_tokens"] += total_tokens
+            ps.usage["cache_read_tokens"] += cache_read
+            ps.usage["cache_write_tokens"] += cache_write
+            ps.usage_updated = True
 
         # Record metrics
         metric_attrs = {"model": model, "provider": provider}

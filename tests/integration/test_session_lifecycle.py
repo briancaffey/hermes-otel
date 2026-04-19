@@ -1,7 +1,6 @@
 """Integration tests for a complete session lifecycle with token aggregation
 and session I/O roll-up."""
 
-import hermes_otel.hooks as hooks_mod
 import pytest
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -167,8 +166,8 @@ class TestFullSessionLifecycle:
         assert "file.txt" in attrs["output.value"]
 
     def test_module_state_cleaned_after_session_end(self, inmemory_otel_setup):
-        """Verify that _SESSION_USAGE and _SESSION_IO are cleaned up."""
-        exporter, _ = inmemory_otel_setup
+        """Verify that per-session aggregators are popped at session end."""
+        exporter, plugin = inmemory_otel_setup
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_llm_call(
@@ -227,9 +226,8 @@ class TestFullSessionLifecycle:
             platform="cli",
         )
 
-        # Module state should be clean
-        assert "s1" not in hooks_mod._SESSION_USAGE
-        assert "s1" not in hooks_mod._SESSION_IO
+        # PerSession aggregator popped — no lingering state.
+        assert plugin.sessions.peek("s1") is None
 
     def test_interrupted_session(self, inmemory_otel_setup):
         """An interrupted session should still export with status ok."""

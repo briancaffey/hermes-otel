@@ -1,31 +1,32 @@
-"""Tests for pure helper functions in hooks.py."""
+"""Tests for pure helper functions in hooks.py and helpers.py."""
 
 import pytest
-from hermes_otel.hooks import _detect_session_kind, _safe_str, _to_int
+from hermes_otel.helpers import truncate_string
+from hermes_otel.hooks import _detect_session_kind, _to_int
 
 
-class TestSafeStr:
+class TestTruncateString:
     def test_normal_string(self):
-        assert _safe_str("hello") == "hello"
+        assert truncate_string("hello") == "hello"
 
     def test_integer_input(self):
-        assert _safe_str(42) == "42"
+        assert truncate_string(42) == "42"
 
     def test_none_input(self):
-        assert _safe_str(None) == "None"
+        assert truncate_string(None) == "None"
 
     def test_truncates_at_default_max(self):
         long = "x" * 1500
-        result = _safe_str(long)
+        result = truncate_string(long)
         assert len(result) == 1003  # 1000 + "..."
         assert result.endswith("...")
 
     def test_truncates_at_custom_max(self):
-        result = _safe_str("abcdefghij", max_len=5)
+        result = truncate_string("abcdefghij", max_len=5)
         assert result == "abcde..."
 
     def test_exact_max_len_not_truncated(self):
-        result = _safe_str("abcde", max_len=5)
+        result = truncate_string("abcde", max_len=5)
         assert result == "abcde"
 
     def test_unserializable_object(self):
@@ -33,11 +34,11 @@ class TestSafeStr:
             def __str__(self):
                 raise RuntimeError("nope")
 
-        result = _safe_str(BadStr())
+        result = truncate_string(BadStr())
         assert result == "<unserializable>"
 
     def test_empty_string(self):
-        assert _safe_str("") == ""
+        assert truncate_string("") == ""
 
 
 class TestToInt:

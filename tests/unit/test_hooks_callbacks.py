@@ -2,7 +2,6 @@
 
 from unittest.mock import MagicMock, patch
 
-import hermes_otel.hooks as hooks_mod
 import pytest
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -20,16 +19,20 @@ from hermes_otel.hooks import (
 def mock_tracer():
     """Create a mock tracer and patch get_tracer() to return it.
 
-    ``spans._active_spans`` is a real dict so ``"session:..." in tracer``
-    checks in hooks.py behave correctly (MagicMock's __contains__ always
-    returns False).
+    ``spans._active_spans`` and ``sessions`` are real so hooks that
+    reach into them (e.g. continuation-turn lazy session-span creation,
+    per-session I/O / usage / tool-time buffering) behave as they would
+    in production — and tests can inspect the resulting state rather
+    than mocking every method chain.
     """
     from hermes_otel.plugin_config import HermesOtelConfig
+    from hermes_otel.session_state import SessionState
 
     tracer = MagicMock()
     tracer.is_enabled = True
     tracer.spans = MagicMock()
     tracer.spans._active_spans = {}
+    tracer.sessions = SessionState()
     tracer.config = HermesOtelConfig()
     with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
         yield tracer
@@ -120,13 +123,17 @@ class TestOnSessionEnd:
         assert call_kwargs["status"] == "error"
 
     def test_rolls_up_session_usage(self, mock_tracer):
-        hooks_mod._SESSION_USAGE["s1"] = {
-            "prompt_tokens": 100,
-            "completion_tokens": 50,
-            "total_tokens": 150,
-            "cache_read_tokens": 20,
-            "cache_write_tokens": 10,
-        }
+        ps = mock_tracer.sessions.get_or_create("s1")
+        ps.usage.update(
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "cache_read_tokens": 20,
+                "cache_write_tokens": 10,
+            }
+        )
+        ps.usage_updated = True
         on_session_end(
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
@@ -137,18 +144,20 @@ class TestOnSessionEnd:
         assert attrs["gen_ai.usage.output_tokens"] == 50
         assert attrs["llm.token_count.prompt_details.cache_read"] == 20
         assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 10
-        # Verify cleanup
-        assert "s1" not in hooks_mod._SESSION_USAGE
+        # Verify cleanup — PerSession popped from registry.
+        assert mock_tracer.sessions.peek("s1") is None
 
     def test_rolls_up_session_io(self, mock_tracer):
-        hooks_mod._SESSION_IO["s1"] = {"input": "hello", "output": "world"}
+        ps = mock_tracer.sessions.get_or_create("s1")
+        ps.io = {"input": "hello", "output": "world"}
+        ps.io_captured = True
         on_session_end(
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["input.value"] == "hello"
         assert attrs["output.value"] == "world"
-        assert "s1" not in hooks_mod._SESSION_IO
+        assert mock_tracer.sessions.peek("s1") is None
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_end(
@@ -174,7 +183,7 @@ class TestOnPreToolCall:
 
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
-        assert "bash:t1" in hooks_mod._TOOL_START_TIMES
+        assert mock_tracer.sessions.has_tool_start("bash:t1")
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
@@ -183,32 +192,32 @@ class TestOnPreToolCall:
 
 class TestOnPostToolCall:
     def test_ends_tool_span(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="output", task_id="t1")
         mock_tracer.end_span.assert_called_once()
         assert mock_tracer.end_span.call_args[0][0] == "bash:t1"
 
     def test_sets_output_attribute(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="file.txt", task_id="t1")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == "file.txt"
 
     def test_status_ok_on_success(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "ok"
 
     def test_status_error_on_error_result(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result='{"error": "boom"}', task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "error"
         assert "boom" in (kw.get("error_message") or "")
 
     def test_records_tool_duration_metric(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         mock_tracer.record_metric.assert_called_once()
         name, value, attrs = mock_tracer.record_metric.call_args[0]
@@ -216,9 +225,9 @@ class TestOnPostToolCall:
         assert attrs["tool_name"] == "bash"
 
     def test_cleans_up_start_time(self, mock_tracer):
-        hooks_mod._TOOL_START_TIMES["bash:t1"] = 1000.0
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
-        assert "bash:t1" not in hooks_mod._TOOL_START_TIMES
+        assert not mock_tracer.sessions.has_tool_start("bash:t1")
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
@@ -287,10 +296,12 @@ class TestOnPreLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        assert hooks_mod._SESSION_IO["s1"]["input"] == "hello"
+        assert mock_tracer.sessions.peek("s1").io["input"] == "hello"
 
     def test_does_not_overwrite_existing_session_io(self, mock_tracer):
-        hooks_mod._SESSION_IO["s1"] = {"input": "first", "output": ""}
+        ps = mock_tracer.sessions.get_or_create("s1")
+        ps.io = {"input": "first", "output": ""}
+        ps.io_captured = True
         on_pre_llm_call(
             session_id="s1",
             user_message="second",
@@ -299,7 +310,7 @@ class TestOnPreLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        assert hooks_mod._SESSION_IO["s1"]["input"] == "first"
+        assert mock_tracer.sessions.peek("s1").io["input"] == "first"
 
     def test_returns_none(self, mock_tracer):
         result = on_pre_llm_call(
@@ -339,7 +350,9 @@ class TestOnPostLlmCall:
         assert mock_tracer.end_span.call_args[0][0] == "llm:s1"
 
     def test_captures_last_output_in_session_io(self, mock_tracer):
-        hooks_mod._SESSION_IO["s1"] = {"input": "hello", "output": ""}
+        ps = mock_tracer.sessions.get_or_create("s1")
+        ps.io = {"input": "hello", "output": ""}
+        ps.io_captured = True
         on_post_llm_call(
             session_id="s1",
             user_message="hello",
@@ -348,7 +361,7 @@ class TestOnPostLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        assert hooks_mod._SESSION_IO["s1"]["output"] == "goodbye"
+        assert mock_tracer.sessions.peek("s1").io["output"] == "goodbye"
 
     def test_records_message_count_metric(self, mock_tracer):
         on_post_llm_call(
@@ -522,15 +535,17 @@ class TestOnPostApiRequest:
     def test_session_usage_rollup(self, mock_tracer):
         usage = {"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150}
         self._call_post_api(mock_tracer, usage=usage)
-        assert hooks_mod._SESSION_USAGE["s1"]["prompt_tokens"] == 100
-        assert hooks_mod._SESSION_USAGE["s1"]["completion_tokens"] == 50
-        assert hooks_mod._SESSION_USAGE["s1"]["total_tokens"] == 150
+        ps = mock_tracer.sessions.peek("s1")
+        assert ps.usage["prompt_tokens"] == 100
+        assert ps.usage["completion_tokens"] == 50
+        assert ps.usage["total_tokens"] == 150
+        assert ps.usage_updated is True
 
     def test_session_usage_accumulates(self, mock_tracer):
         usage = {"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150}
         self._call_post_api(mock_tracer, usage=usage)
         self._call_post_api(mock_tracer, usage=usage, task_id="t2")
-        assert hooks_mod._SESSION_USAGE["s1"]["prompt_tokens"] == 200
+        assert mock_tracer.sessions.peek("s1").usage["prompt_tokens"] == 200
 
     def test_records_duration_attribute(self, mock_tracer):
         self._call_post_api(mock_tracer, api_duration=1.234)

@@ -18,6 +18,25 @@ _ANSI_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-
 _WHITESPACE_RE = re.compile(r"\s+")
 
 
+def truncate_string(value: Any, max_len: int = 1000) -> str:
+    """Safely stringify ``value`` and truncate with ``"..."`` suffix.
+
+    Unlike :func:`clip_preview` this does **not** strip ANSI escapes or
+    collapse whitespace — use it for identifiers (session_id, model,
+    provider), error messages, and other non-display string fields
+    where the raw content matters.
+
+    Returns ``"<unserializable>"`` if ``str(value)`` raises.
+    """
+    try:
+        text = str(value)
+    except Exception:
+        text = "<unserializable>"
+    if len(text) > max_len:
+        return text[:max_len] + "..."
+    return text
+
+
 def clip_preview(text: Any, max_chars: int) -> Optional[str]:
     """Strip ANSI, collapse whitespace, and truncate a preview string.
 
@@ -79,8 +98,6 @@ def resolve_tool_identity(args: Optional[Dict[str, Any]]) -> Tuple[Optional[str]
 
 
 # ── Tool outcome ───────────────────────────────────────────────────────────
-
-_KNOWN_OUTCOMES = {"completed", "error", "timeout", "blocked", "cancelled", "skipped"}
 
 
 def extract_tool_result_status(result: Any) -> Optional[str]:

@@ -48,15 +48,11 @@ Turns docs from a 500-line wall of text into a scannable surface.
 module internals. When this lands, most of the test-coupling problems in
 Phase 5 disappear naturally.
 
-- [ ] **New class `SessionState`** wrapping the four module dicts in `hooks.py:23-75`:
-      `_SESSION_USAGE`, `_SESSION_IO`, `_TOOL_START_TIMES`, `_SESSION_TURN_SUMMARY`.
-      Owns a single `dict[session_id, PerSession]` instead of four parallel dicts.
-- [ ] **Attach `SessionState` to `HermesOTelPlugin`** (e.g. `self.sessions = SessionState()`).
-- [ ] **Rewrite hooks** to go through `tracer.sessions.get(session_id)` instead of module globals.
-- [ ] **Rewrite `conftest.py`** — reset becomes `tracer_mod._tracer = None`; no more reaching into `hooks_mod`.
-- [ ] **Collapse `_safe_str` and `clip_preview`**:
-      - `_safe_str` in `hooks.py:129-137` is a subset of `clip_preview` in `helpers.py:23-48`, kept "for back-compat with tests" (`hooks.py:123-126`).
-      - Pick one. If `_safe_str`'s semantics (truncate without ANSI-stripping) are still wanted, move it to `helpers.py` as `truncate_string` with a clear name.
+- [x] **New class `SessionState`** (`session_state.py`) wrapping the four former module dicts. `PerSession` holds usage/io/turn_summary; tool timings live in a flat task-scoped registry.
+- [x] **Attach `SessionState` to `HermesOTelPlugin`** via `self.sessions = SessionState()` in `__init__`.
+- [x] **Rewrite hooks** to go through `tracer.sessions.*` — all four module globals and `_get_or_create_summary` deleted.
+- [x] **Rewrite `conftest.py`** — reset is now just `tracer_mod._tracer = None` + `_PARENT_STACK.set(None)`; no more reaching into `hooks_mod`.
+- [x] **Collapse `_safe_str` and `clip_preview`** — `_safe_str` moved to `helpers.py` as `truncate_string` with a clear docstring; all call sites updated; test imports updated.
 
 ---
 
