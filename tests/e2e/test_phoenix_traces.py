@@ -90,34 +90,59 @@ class TestPhoenixTraceExport:
             # Simulate a session
             on_session_start(session_id=session_id, model="gpt-4", platform="e2e-test")
             on_pre_llm_call(
-                session_id=session_id, user_message="What is 2+2?",
-                conversation_history=[], is_first_turn=True,
-                model="gpt-4", platform="e2e-test",
+                session_id=session_id,
+                user_message="What is 2+2?",
+                conversation_history=[],
+                is_first_turn=True,
+                model="gpt-4",
+                platform="e2e-test",
             )
             on_pre_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, message_count=2, tool_count=0,
-                approx_input_tokens=50, request_char_count=200, max_tokens=256,
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                message_count=2,
+                tool_count=0,
+                approx_input_tokens=50,
+                request_char_count=200,
+                max_tokens=256,
             )
             on_post_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, api_duration=0.3, finish_reason="stop",
-                message_count=2, response_model="gpt-4",
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                api_duration=0.3,
+                finish_reason="stop",
+                message_count=2,
+                response_model="gpt-4",
                 usage={"prompt_tokens": 50, "output_tokens": 10, "total_tokens": 60},
-                assistant_content_chars=20, assistant_tool_call_count=0,
+                assistant_content_chars=20,
+                assistant_tool_call_count=0,
             )
             on_post_llm_call(
-                session_id=session_id, user_message="What is 2+2?",
+                session_id=session_id,
+                user_message="What is 2+2?",
                 assistant_response="4",
-                conversation_history=[], model="gpt-4", platform="e2e-test",
+                conversation_history=[],
+                model="gpt-4",
+                platform="e2e-test",
             )
             on_session_end(
-                session_id=session_id, completed=True, interrupted=False,
-                model="gpt-4", platform="e2e-test",
+                session_id=session_id,
+                completed=True,
+                interrupted=False,
+                model="gpt-4",
+                platform="e2e-test",
             )
 
             # Force flush
@@ -154,42 +179,69 @@ class TestPhoenixTraceExport:
 
             on_session_start(session_id=session_id, model="gpt-4", platform="e2e-test")
             on_pre_llm_call(
-                session_id=session_id, user_message="List files",
-                conversation_history=[], is_first_turn=True,
-                model="gpt-4", platform="e2e-test",
+                session_id=session_id,
+                user_message="List files",
+                conversation_history=[],
+                is_first_turn=True,
+                model="gpt-4",
+                platform="e2e-test",
             )
             on_pre_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, message_count=2, tool_count=1,
-                approx_input_tokens=100, request_char_count=500, max_tokens=512,
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                message_count=2,
+                tool_count=1,
+                approx_input_tokens=100,
+                request_char_count=500,
+                max_tokens=512,
             )
 
             # Tool call
             on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id=f"tool-{session_id}")
             on_post_tool_call(
-                tool_name="bash", args={"cmd": "ls"},
-                result="file.txt\nREADME.md", task_id=f"tool-{session_id}",
+                tool_name="bash",
+                args={"cmd": "ls"},
+                result="file.txt\nREADME.md",
+                task_id=f"tool-{session_id}",
             )
 
             on_post_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, api_duration=0.5, finish_reason="stop",
-                message_count=2, response_model="gpt-4",
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                api_duration=0.5,
+                finish_reason="stop",
+                message_count=2,
+                response_model="gpt-4",
                 usage={"prompt_tokens": 100, "output_tokens": 30, "total_tokens": 130},
-                assistant_content_chars=50, assistant_tool_call_count=1,
+                assistant_content_chars=50,
+                assistant_tool_call_count=1,
             )
             on_post_llm_call(
-                session_id=session_id, user_message="List files",
+                session_id=session_id,
+                user_message="List files",
                 assistant_response="Found file.txt and README.md",
-                conversation_history=[], model="gpt-4", platform="e2e-test",
+                conversation_history=[],
+                model="gpt-4",
+                platform="e2e-test",
             )
             on_session_end(
-                session_id=session_id, completed=True, interrupted=False,
-                model="gpt-4", platform="e2e-test",
+                session_id=session_id,
+                completed=True,
+                interrupted=False,
+                model="gpt-4",
+                platform="e2e-test",
             )
 
             plugin._force_flush()
@@ -217,23 +269,41 @@ class TestPhoenixTraceExport:
             session_id = f"e2e-tokens-{int(time.time())}"
 
             on_pre_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, message_count=3, tool_count=0,
-                approx_input_tokens=200, request_char_count=1000, max_tokens=1024,
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                message_count=3,
+                tool_count=0,
+                approx_input_tokens=200,
+                request_char_count=1000,
+                max_tokens=1024,
             )
             on_post_api_request(
-                task_id=f"api-{session_id}", session_id=session_id,
-                platform="e2e-test", model="gpt-4",
-                provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, api_duration=0.7, finish_reason="stop",
-                message_count=3, response_model="gpt-4",
+                task_id=f"api-{session_id}",
+                session_id=session_id,
+                platform="e2e-test",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                api_duration=0.7,
+                finish_reason="stop",
+                message_count=3,
+                response_model="gpt-4",
                 usage={
-                    "prompt_tokens": 200, "output_tokens": 80, "total_tokens": 280,
+                    "prompt_tokens": 200,
+                    "output_tokens": 80,
+                    "total_tokens": 280,
                     "cache_read_tokens": 50,
                 },
-                assistant_content_chars=300, assistant_tool_call_count=0,
+                assistant_content_chars=300,
+                assistant_tool_call_count=0,
             )
 
             plugin._force_flush()

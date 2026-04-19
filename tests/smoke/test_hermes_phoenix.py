@@ -19,6 +19,7 @@ from openai import OpenAI
 
 # ── Phoenix GraphQL helpers ──────────────────────────────────────────────────
 
+
 def _phoenix_graphql(base_url, query, variables=None):
     """POST a GraphQL query to Phoenix and return the data dict."""
     resp = requests.post(
@@ -36,9 +37,12 @@ def _phoenix_graphql(base_url, query, variables=None):
 
 def _find_project_id(base_url, project_name="hermes-agent"):
     """Find a Phoenix project ID by name, or None."""
-    data = _phoenix_graphql(base_url, """
+    data = _phoenix_graphql(
+        base_url,
+        """
         { projects { edges { node { id name } } } }
-    """)
+    """,
+    )
     for edge in data["projects"]["edges"]:
         if edge["node"]["name"] == project_name:
             return edge["node"]["id"]
@@ -47,7 +51,9 @@ def _find_project_id(base_url, project_name="hermes-agent"):
 
 def _query_spans_since(base_url, project_id, since, limit=20):
     """Query spans from a Phoenix project that started after *since* (ISO 8601)."""
-    data = _phoenix_graphql(base_url, """
+    data = _phoenix_graphql(
+        base_url,
+        """
         query ($projectId: ID!, $first: Int!, $start: DateTime!) {
           node(id: $projectId) {
             ... on Project {
@@ -69,13 +75,14 @@ def _query_spans_since(base_url, project_id, since, limit=20):
             }
           }
         }
-    """, variables={"projectId": project_id, "first": limit, "start": since})
+    """,
+        variables={"projectId": project_id, "first": limit, "start": since},
+    )
     edges = data.get("node", {}).get("spans", {}).get("edges", [])
     return [e["node"] for e in edges]
 
 
-def _wait_for_spans(base_url, project_id, since, expected_min=1,
-                    timeout=30, interval=3):
+def _wait_for_spans(base_url, project_id, since, expected_min=1, timeout=30, interval=3):
     """Poll Phoenix until at least expected_min spans appear after *since*."""
     deadline = time.time() + timeout
     spans = []
@@ -88,6 +95,7 @@ def _wait_for_spans(base_url, project_id, since, expected_min=1,
 
 
 # ── Fixtures ─────────────────────────────────────────────────────────────────
+
 
 @pytest.fixture(scope="module")
 def phoenix_api():
@@ -134,14 +142,13 @@ def hermes_client():
         return result
 
     hermes_env = _load_dotenv(os.path.expanduser("~/.hermes/.env"))
-    api_key = (os.environ.get("API_SERVER_KEY")
-               or hermes_env.get("API_SERVER_KEY")
-               or "not-required")
+    api_key = os.environ.get("API_SERVER_KEY") or hermes_env.get("API_SERVER_KEY") or "not-required"
 
     return OpenAI(base_url=f"{base_url}/v1", api_key=api_key)
 
 
 # ── Tests ────────────────────────────────────────────────────────────────────
+
 
 @pytest.mark.smoke
 class TestHermesPhoenixSmoke:
@@ -164,15 +171,18 @@ class TestHermesPhoenixSmoke:
         # Phoenix exports synchronously (SimpleSpanProcessor), so spans
         # should appear quickly — but give a small buffer.
         spans = _wait_for_spans(
-            phoenix_api["base_url"], phoenix_api["project_id"],
-            since=before_time, expected_min=1, timeout=30,
+            phoenix_api["base_url"],
+            phoenix_api["project_id"],
+            since=before_time,
+            expected_min=1,
+            timeout=30,
         )
 
         span_names = [s["name"] for s in spans]
         has_api_or_llm = any("api." in n or "llm." in n for n in span_names)
-        assert has_api_or_llm, (
-            f"Expected api.* or llm.* spans in Phoenix after chat, got: {span_names}"
-        )
+        assert (
+            has_api_or_llm
+        ), f"Expected api.* or llm.* spans in Phoenix after chat, got: {span_names}"
 
     def test_tool_use_produces_tool_span(self, hermes_client, phoenix_api):
         """Send a prompt that triggers tool use and verify tool spans in Phoenix."""
@@ -181,7 +191,10 @@ class TestHermesPhoenixSmoke:
         response = hermes_client.chat.completions.create(
             model="hermes-agent",
             messages=[
-                {"role": "user", "content": "Run the command `echo hello_phoenix_test` in the terminal and tell me the output."},
+                {
+                    "role": "user",
+                    "content": "Run the command `echo hello_phoenix_test` in the terminal and tell me the output.",
+                },
             ],
             max_tokens=200,
         )
@@ -190,15 +203,16 @@ class TestHermesPhoenixSmoke:
         assert reply is not None and len(reply) > 0
 
         spans = _wait_for_spans(
-            phoenix_api["base_url"], phoenix_api["project_id"],
-            since=before_time, expected_min=2, timeout=45,
+            phoenix_api["base_url"],
+            phoenix_api["project_id"],
+            since=before_time,
+            expected_min=2,
+            timeout=45,
         )
 
         span_names = [s["name"] for s in spans]
         has_tool = any("tool." in n for n in span_names)
-        assert has_tool, (
-            f"Expected tool.* spans in Phoenix from tool use, got: {span_names}"
-        )
+        assert has_tool, f"Expected tool.* spans in Phoenix from tool use, got: {span_names}"
 
     def test_spans_have_parent_hierarchy(self, hermes_client, phoenix_api):
         """Verify that spans from a chat have correct parent-child nesting."""
@@ -213,8 +227,11 @@ class TestHermesPhoenixSmoke:
         )
 
         spans = _wait_for_spans(
-            phoenix_api["base_url"], phoenix_api["project_id"],
-            since=before_time, expected_min=1, timeout=30,
+            phoenix_api["base_url"],
+            phoenix_api["project_id"],
+            since=before_time,
+            expected_min=1,
+            timeout=30,
         )
 
         # At least one span should have a parent (child span under session or LLM)

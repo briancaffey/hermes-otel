@@ -13,9 +13,7 @@ from typing import Any, Dict, Optional, Tuple
 #   ESC [ ... letter             → CSI sequences (colors, cursor)
 #   ESC ] ... BEL | ESC \        → OSC sequences (titles)
 #   ESC <single byte>            → 7-bit C1 escapes
-_ANSI_RE = re.compile(
-    r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])"
-)
+_ANSI_RE = re.compile(r"\x1b(?:\][^\x07]*(?:\x07|\x1b\\)|\[[0-?]*[ -/]*[@-~]|[@-_])")
 
 _WHITESPACE_RE = re.compile(r"\s+")
 

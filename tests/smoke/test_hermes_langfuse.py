@@ -30,8 +30,7 @@ def _query_observations(langfuse_api, **params):
     return resp.json().get("data", [])
 
 
-def _wait_for_observations(langfuse_api, expected_min=1, timeout=60,
-                           interval=5, **query_params):
+def _wait_for_observations(langfuse_api, expected_min=1, timeout=60, interval=5, **query_params):
     """Poll until at least expected_min observations appear."""
     deadline = time.time() + timeout
     observations = []
@@ -91,9 +90,9 @@ class TestHermesLangfuseSmoke:
         has_api_span = any("api." in n for n in obs_names)
         has_llm_span = any("llm." in n for n in obs_names)
 
-        assert has_api_span or has_llm_span, (
-            f"Expected api.* or llm.* observations, got: {obs_names}"
-        )
+        assert (
+            has_api_span or has_llm_span
+        ), f"Expected api.* or llm.* observations, got: {obs_names}"
 
     def test_chat_with_tool_use_produces_tool_span(self, hermes_api, langfuse_api):
         """Send a prompt that triggers tool use and verify tool spans appear.
@@ -111,7 +110,10 @@ class TestHermesLangfuseSmoke:
         response = client.chat.completions.create(
             model="hermes-agent",
             messages=[
-                {"role": "user", "content": "What is the current date and time? Use terminal to run the `date` command to find out."},
+                {
+                    "role": "user",
+                    "content": "What is the current date and time? Use terminal to run the `date` command to find out.",
+                },
             ],
             max_tokens=200,
         )

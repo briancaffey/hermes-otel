@@ -167,6 +167,7 @@ class TestBatchProcessorTunables:
 def _has_yaml() -> bool:
     try:
         import yaml  # noqa: F401
+
         return True
     except ImportError:
         return False
@@ -269,8 +270,7 @@ class TestCaptureConversationHistory:
             pytest.skip("pyyaml not installed")
         path = tmp_path / "config.yaml"
         path.write_text(
-            "capture_conversation_history: true\n"
-            "conversation_history_max_chars: 4096\n"
+            "capture_conversation_history: true\n" "conversation_history_max_chars: 4096\n"
         )
         cfg = load_config(path=path)
         assert cfg.capture_conversation_history is True

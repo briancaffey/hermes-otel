@@ -65,6 +65,8 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
     "pyyaml",
+    "black",
+    "ruff",
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",
@@ -104,6 +106,19 @@ exclude_lines = [
     "if __name__ == .__main__.:",
     "if TYPE_CHECKING:",
 ]
+
+[tool.black]
+line-length = 100
+target-version = ["py39", "py310", "py311", "py312", "py313"]
+# Exclude vendored / generated dirs. Black's default exclude already
+# covers .venv, .git, build, dist, etc.
+extend-exclude = '''
+/(
+    video
+  | renders
+  | hermes_otel\.egg-info
+)/
+'''
 
 [tool.ruff]
 line-length = 100

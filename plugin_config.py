@@ -38,17 +38,17 @@ class BackendConfig:
     discouraged because the file is plaintext.
     """
 
-    type: str                                  # phoenix | langfuse | signoz | jaeger | tempo | otlp
-    name: Optional[str] = None                 # display name (defaults to type)
-    endpoint: Optional[str] = None             # OTLP HTTP traces URL
-    headers: Optional[Dict[str, str]] = None   # extra/override HTTP headers
-    metrics: Optional[bool] = None             # None = auto (off for langfuse/jaeger/tempo)
+    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp
+    name: Optional[str] = None  # display name (defaults to type)
+    endpoint: Optional[str] = None  # OTLP HTTP traces URL
+    headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
+    metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
     # Langfuse credentials
     public_key: Optional[str] = None
     secret_key: Optional[str] = None
     public_key_env: Optional[str] = None
     secret_key_env: Optional[str] = None
-    base_url: Optional[str] = None             # langfuse alt to endpoint
+    base_url: Optional[str] = None  # langfuse alt to endpoint
     # SigNoz cloud credential
     ingestion_key: Optional[str] = None
     ingestion_key_env: Optional[str] = None
@@ -59,21 +59,21 @@ class HermesOtelConfig:
     """Frozen configuration object passed through the plugin."""
 
     enabled: bool = True
-    sample_rate: Optional[float] = None        # None = AlwaysOn. 0..1 = ratio.
-    root_span_ttl_ms: int = 600_000            # 10 min orphan sweep threshold
-    flush_interval_ms: int = 60_000            # metrics export interval
-    preview_max_chars: int = 1200              # clip_preview truncation
-    capture_previews: bool = True              # global privacy kill switch
-    headers: Optional[Dict[str, str]] = None   # extra OTLP headers (all backends)
+    sample_rate: Optional[float] = None  # None = AlwaysOn. 0..1 = ratio.
+    root_span_ttl_ms: int = 600_000  # 10 min orphan sweep threshold
+    flush_interval_ms: int = 60_000  # metrics export interval
+    preview_max_chars: int = 1200  # clip_preview truncation
+    capture_previews: bool = True  # global privacy kill switch
+    headers: Optional[Dict[str, str]] = None  # extra OTLP headers (all backends)
     global_tags: Optional[Dict[str, Scalar]] = None
     resource_attributes: Optional[Dict[str, Scalar]] = None
-    project_name: Optional[str] = None         # supersedes OTEL_PROJECT_NAME
+    project_name: Optional[str] = None  # supersedes OTEL_PROJECT_NAME
     # ── BatchSpanProcessor tunables (Phase 2: non-blocking export) ──────
-    span_batch_max_queue_size: int = 2048      # spans buffered before drops
-    span_batch_schedule_delay_ms: int = 1000   # worker wake-up cadence
+    span_batch_max_queue_size: int = 2048  # spans buffered before drops
+    span_batch_schedule_delay_ms: int = 1000  # worker wake-up cadence
     span_batch_max_export_batch_size: int = 512  # spans per HTTP POST
-    span_batch_export_timeout_ms: int = 30_000 # per-export HTTP timeout
-    force_flush_on_session_end: bool = True    # flush so UI sees traces promptly
+    span_batch_export_timeout_ms: int = 30_000  # per-export HTTP timeout
+    force_flush_on_session_end: bool = True  # flush so UI sees traces promptly
     # ── LLM span input fidelity ─────────────────────────────────────────
     # Opt-in: serialise the full conversation_history onto the llm span's
     # input.value so the UI shows every message instead of just the last
@@ -138,7 +138,9 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     if data is None:
         return {}
     if not isinstance(data, dict):
-        print(f"[hermes-otel] config.yaml root must be a mapping, got {type(data).__name__}; using defaults")
+        print(
+            f"[hermes-otel] config.yaml root must be a mapping, got {type(data).__name__}; using defaults"
+        )
         return {}
     return data
 
@@ -155,7 +157,9 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     if value is None:
         return None
     if not isinstance(value, list):
-        print(f"[hermes-otel] config.yaml 'backends' must be a list, got {type(value).__name__}; ignoring")
+        print(
+            f"[hermes-otel] config.yaml 'backends' must be a list, got {type(value).__name__}; ignoring"
+        )
         return None
 
     out: List[BackendConfig] = []

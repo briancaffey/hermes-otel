@@ -23,6 +23,7 @@ from .debug_utils import debug_log
 # Prefer langsmith uuid7 for time-ordered run IDs
 try:
     from langsmith import uuid7 as _ls_uuid7
+
     UUID7_AVAILABLE = True
 except ImportError:
     UUID7_AVAILABLE = False
@@ -56,8 +57,7 @@ def _coerce_int(value) -> Optional[int]:
 class LangSmithBackend:
     """Manages span export to LangSmith via its HTTP Run API."""
 
-    def __init__(self, api_key: str, endpoint: str, project: str,
-                 workspace: Optional[str] = None):
+    def __init__(self, api_key: str, endpoint: str, project: str, workspace: Optional[str] = None):
         self.api_key = api_key
         self.endpoint = endpoint.rstrip("/")
         self.project = project
@@ -78,8 +78,7 @@ class LangSmithBackend:
 
         debug_log(f"LangSmith: endpoint={endpoint}, project={project}, uuid7={UUID7_AVAILABLE}")
 
-        return cls(api_key=api_key, endpoint=endpoint, project=project,
-                   workspace=workspace)
+        return cls(api_key=api_key, endpoint=endpoint, project=project, workspace=workspace)
 
     # ── HTTP helpers ─────────────────────────────────────────────────────
 
@@ -97,8 +96,7 @@ class LangSmithBackend:
         """POST JSON to LangSmith. Returns True on success."""
         url = f"{self.endpoint}{path}"
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers=self._headers(),
-                                     method="POST")
+        req = urllib.request.Request(url, data=data, headers=self._headers(), method="POST")
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 resp.read()
@@ -112,8 +110,7 @@ class LangSmithBackend:
         """PATCH JSON to LangSmith. Returns True on success."""
         url = f"{self.endpoint}{path}"
         data = json.dumps(payload).encode("utf-8")
-        req = urllib.request.Request(url, data=data, headers=self._headers(),
-                                     method="PATCH")
+        req = urllib.request.Request(url, data=data, headers=self._headers(), method="PATCH")
         try:
             with urllib.request.urlopen(req, timeout=10) as resp:
                 resp.read()
@@ -125,9 +122,14 @@ class LangSmithBackend:
 
     # ── Span lifecycle ───────────────────────────────────────────────────
 
-    def start_span(self, name: str, key: str, kind: str = "general",
-                   attributes: dict = None,
-                   parent_run: Optional[dict] = None) -> Optional[dict]:
+    def start_span(
+        self,
+        name: str,
+        key: str,
+        kind: str = "general",
+        attributes: dict = None,
+        parent_run: Optional[dict] = None,
+    ) -> Optional[dict]:
         """Create a LangSmith run. Returns run dict or None on failure.
 
         The caller is responsible for storing the returned dict in SpanTracker
@@ -176,8 +178,9 @@ class LangSmithBackend:
             debug_log(f"Error starting LangSmith span '{name}': {e}")
             return None
 
-    def end_span(self, run: dict, attributes: dict = None,
-                 status: str = None, error_message: str = None) -> None:
+    def end_span(
+        self, run: dict, attributes: dict = None, status: str = None, error_message: str = None
+    ) -> None:
         """Update (close) a LangSmith run via PATCH.
 
         The caller is responsible for removing the run from SpanTracker.
@@ -233,12 +236,15 @@ class LangSmithBackend:
             if usage_metadata:
                 payload["usage_metadata"] = usage_metadata
 
-            debug_log(f"LangSmith PATCH run_id={run_id[:8]}... "
-                      f"payload_keys={list(payload.keys())}")
+            debug_log(
+                f"LangSmith PATCH run_id={run_id[:8]}... " f"payload_keys={list(payload.keys())}"
+            )
             if "prompt_tokens" in payload:
-                debug_log(f"  tokens: prompt={payload['prompt_tokens']}, "
-                          f"completion={payload.get('completion_tokens')}, "
-                          f"total={payload.get('total_tokens')}")
+                debug_log(
+                    f"  tokens: prompt={payload['prompt_tokens']}, "
+                    f"completion={payload.get('completion_tokens')}, "
+                    f"total={payload.get('total_tokens')}"
+                )
 
             self._patch(f"/runs/{run_id}", payload)
 

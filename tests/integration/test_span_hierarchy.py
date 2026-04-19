@@ -36,16 +36,27 @@ class TestSessionContainsLlm:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_llm_call(
-            session_id="s1", user_message="hello", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_post_llm_call(
-            session_id="s1", user_message="hello", assistant_response="hi",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
         on_session_end(
-            session_id="s1", completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -62,26 +73,52 @@ class TestLlmContainsApi:
         exporter, _ = inmemory_otel_setup
 
         on_pre_llm_call(
-            session_id="s1", user_message="hello", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=200, assistant_tool_call_count=0,
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
         )
         on_post_llm_call(
-            session_id="s1", user_message="hello", assistant_response="hi",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -99,28 +136,54 @@ class TestApiContainsTool:
 
         # LLM turn starts, then API call, then tool, then API ends, then LLM ends
         on_pre_llm_call(
-            session_id="s1", user_message="run ls", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="run ls",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=1,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=1,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id="tool1")
         on_post_tool_call(tool_name="bash", args={"cmd": "ls"}, result="file.txt", task_id="tool1")
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=1.0, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=1.0,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=200, assistant_tool_call_count=1,
+            assistant_content_chars=200,
+            assistant_tool_call_count=1,
         )
         on_post_llm_call(
-            session_id="s1", user_message="run ls", assistant_response="here are files",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="run ls",
+            assistant_response="here are files",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -139,32 +202,61 @@ class TestFullHierarchy:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_llm_call(
-            session_id="s1", user_message="hello", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=1,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=1,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_pre_tool_call(tool_name="bash", args={}, task_id="tool1")
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="tool1")
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=100, assistant_tool_call_count=1,
+            assistant_content_chars=100,
+            assistant_tool_call_count=1,
         )
         on_post_llm_call(
-            session_id="s1", user_message="hello", assistant_response="done",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            assistant_response="done",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
         on_session_end(
-            session_id="s1", completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -187,30 +279,56 @@ class TestMultipleToolsUnderApi:
         exporter, _ = inmemory_otel_setup
 
         on_pre_llm_call(
-            session_id="s1", user_message="run both", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="run both",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=2,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=2,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_pre_tool_call(tool_name="bash", args={}, task_id="tool1")
         on_post_tool_call(tool_name="bash", args={}, result="ok1", task_id="tool1")
         on_pre_tool_call(tool_name="file_read", args={}, task_id="tool2")
         on_post_tool_call(tool_name="file_read", args={}, result="ok2", task_id="tool2")
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=1.0, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=1.0,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 200, "output_tokens": 100, "total_tokens": 300},
-            assistant_content_chars=200, assistant_tool_call_count=2,
+            assistant_content_chars=200,
+            assistant_tool_call_count=2,
         )
         on_post_llm_call(
-            session_id="s1", user_message="run both", assistant_response="done",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="run both",
+            assistant_response="done",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -233,21 +351,32 @@ class TestCaptureConversationHistory:
 
     def _drive_llm_call(self, session_id, conversation_history, user_message="hi"):
         on_session_start(
-            session_id=session_id, model="gpt-4", platform="cli",
+            session_id=session_id,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_llm_call(
-            session_id=session_id, user_message=user_message,
-            conversation_history=conversation_history, is_first_turn=True,
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            user_message=user_message,
+            conversation_history=conversation_history,
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_post_llm_call(
-            session_id=session_id, user_message=user_message,
-            assistant_response="done", conversation_history=conversation_history,
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            user_message=user_message,
+            assistant_response="done",
+            conversation_history=conversation_history,
+            model="gpt-4",
+            platform="cli",
         )
         on_session_end(
-            session_id=session_id, completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="cli",
         )
 
     def test_default_off_uses_user_message(self, inmemory_otel_setup):
@@ -268,6 +397,7 @@ class TestCaptureConversationHistory:
     def test_enabled_captures_full_history(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
         from hermes_otel.plugin_config import HermesOtelConfig
+
         plugin.config = HermesOtelConfig(capture_conversation_history=True)
 
         history = [
@@ -289,6 +419,7 @@ class TestCaptureConversationHistory:
     def test_respects_max_chars_clip(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
         from hermes_otel.plugin_config import HermesOtelConfig
+
         plugin.config = HermesOtelConfig(
             capture_conversation_history=True,
             conversation_history_max_chars=200,
@@ -305,6 +436,7 @@ class TestCaptureConversationHistory:
     def test_empty_history_falls_back_to_user_message(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
         from hermes_otel.plugin_config import HermesOtelConfig
+
         plugin.config = HermesOtelConfig(capture_conversation_history=True)
 
         self._drive_llm_call("s4", [], user_message="solo turn")
@@ -327,32 +459,59 @@ class TestContinuationTurnSynthesizesAgent:
 
         # No on_session_start — this is turn 2+.
         on_pre_llm_call(
-            session_id=session_id, user_message="follow up",
-            conversation_history=[], is_first_turn=False,
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            user_message="follow up",
+            conversation_history=[],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="api-c1", session_id=session_id, platform="cli",
-            model="gpt-4", provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=1, tool_count=0,
-            approx_input_tokens=10, request_char_count=20, max_tokens=100,
+            task_id="api-c1",
+            session_id=session_id,
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=10,
+            request_char_count=20,
+            max_tokens=100,
         )
         on_post_api_request(
-            task_id="api-c1", session_id=session_id, platform="cli",
-            model="gpt-4", provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.01, finish_reason="stop",
-            message_count=1, response_model="gpt-4",
+            task_id="api-c1",
+            session_id=session_id,
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.01,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
             usage={"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-            assistant_content_chars=1, assistant_tool_call_count=0,
+            assistant_content_chars=1,
+            assistant_tool_call_count=0,
         )
         on_post_llm_call(
-            session_id=session_id, user_message="follow up",
-            assistant_response="done", conversation_history=[],
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            user_message="follow up",
+            assistant_response="done",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
         on_session_end(
-            session_id=session_id, completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
+            session_id=session_id,
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -389,51 +548,104 @@ class TestCrossThreadNesting:
         exporter, _ = inmemory_otel_setup
         session_id = "cross-thread"
 
-        self._run_on_thread(lambda: on_session_start(
-            session_id=session_id, model="gpt-4", platform="cli",
-        ))
-        self._run_on_thread(lambda: on_pre_llm_call(
-            session_id=session_id, user_message="hi", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
-        ))
-        self._run_on_thread(lambda: on_pre_api_request(
-            task_id="api1", session_id=session_id, platform="cli",
-            model="gpt-4", provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=1, tool_count=1,
-            approx_input_tokens=10, request_char_count=20, max_tokens=100,
-        ))
-        self._run_on_thread(lambda: on_pre_tool_call(
-            tool_name="bash", args={}, task_id="t1", session_id=session_id,
-        ))
-        self._run_on_thread(lambda: on_post_tool_call(
-            tool_name="bash", args={}, result="ok",
-            task_id="t1", session_id=session_id,
-        ))
-        self._run_on_thread(lambda: on_post_api_request(
-            task_id="api1", session_id=session_id, platform="cli",
-            model="gpt-4", provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.01, finish_reason="stop",
-            message_count=1, response_model="gpt-4",
-            usage={"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-            assistant_content_chars=1, assistant_tool_call_count=1,
-        ))
-        self._run_on_thread(lambda: on_post_llm_call(
-            session_id=session_id, user_message="hi", assistant_response="ok",
-            conversation_history=[], model="gpt-4", platform="cli",
-        ))
-        self._run_on_thread(lambda: on_session_end(
-            session_id=session_id, completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
-        ))
+        self._run_on_thread(
+            lambda: on_session_start(
+                session_id=session_id,
+                model="gpt-4",
+                platform="cli",
+            )
+        )
+        self._run_on_thread(
+            lambda: on_pre_llm_call(
+                session_id=session_id,
+                user_message="hi",
+                conversation_history=[],
+                is_first_turn=True,
+                model="gpt-4",
+                platform="cli",
+            )
+        )
+        self._run_on_thread(
+            lambda: on_pre_api_request(
+                task_id="api1",
+                session_id=session_id,
+                platform="cli",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                message_count=1,
+                tool_count=1,
+                approx_input_tokens=10,
+                request_char_count=20,
+                max_tokens=100,
+            )
+        )
+        self._run_on_thread(
+            lambda: on_pre_tool_call(
+                tool_name="bash",
+                args={},
+                task_id="t1",
+                session_id=session_id,
+            )
+        )
+        self._run_on_thread(
+            lambda: on_post_tool_call(
+                tool_name="bash",
+                args={},
+                result="ok",
+                task_id="t1",
+                session_id=session_id,
+            )
+        )
+        self._run_on_thread(
+            lambda: on_post_api_request(
+                task_id="api1",
+                session_id=session_id,
+                platform="cli",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                api_duration=0.01,
+                finish_reason="stop",
+                message_count=1,
+                response_model="gpt-4",
+                usage={"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+                assistant_content_chars=1,
+                assistant_tool_call_count=1,
+            )
+        )
+        self._run_on_thread(
+            lambda: on_post_llm_call(
+                session_id=session_id,
+                user_message="hi",
+                assistant_response="ok",
+                conversation_history=[],
+                model="gpt-4",
+                platform="cli",
+            )
+        )
+        self._run_on_thread(
+            lambda: on_session_end(
+                session_id=session_id,
+                completed=True,
+                interrupted=False,
+                model="gpt-4",
+                platform="cli",
+            )
+        )
 
         spans = exporter.get_finished_spans()
         assert len(spans) == 4
 
         # One single trace (all spans share a trace_id).
         trace_ids = {s.context.trace_id for s in spans}
-        assert len(trace_ids) == 1, (
-            f"expected 1 trace, got {len(trace_ids)}: {[s.name for s in spans]}"
-        )
+        assert (
+            len(trace_ids) == 1
+        ), f"expected 1 trace, got {len(trace_ids)}: {[s.name for s in spans]}"
 
         agent = _span_by_name(spans, "agent")
         llm = _span_by_name(spans, "llm.gpt-4")

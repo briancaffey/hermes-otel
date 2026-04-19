@@ -34,6 +34,7 @@ def _load_dotenv(path):
 
 # ── Hermes API server ────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def hermes_api():
     """Connect to a running hermes-agent API server.
@@ -69,6 +70,7 @@ def hermes_api():
 
 # ── Langfuse REST API ────────────────────────────────────────────────────────
 
+
 @pytest.fixture(scope="session")
 def langfuse_api():
     """Connect to a running Langfuse instance for trace verification.
@@ -98,9 +100,7 @@ def langfuse_api():
 
     # Derive base URL from the OTEL endpoint or default to localhost:3000
     otel_endpoint = (
-        os.environ.get("OTEL_LANGFUSE_ENDPOINT")
-        or hermes_env.get("OTEL_LANGFUSE_ENDPOINT")
-        or ""
+        os.environ.get("OTEL_LANGFUSE_ENDPOINT") or hermes_env.get("OTEL_LANGFUSE_ENDPOINT") or ""
     )
     if otel_endpoint:
         # e.g. http://localhost:3000/api/public/otel/v1/traces -> http://localhost:3000

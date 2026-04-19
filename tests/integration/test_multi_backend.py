@@ -96,24 +96,42 @@ class TestSpanFanOut:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_api_request(
-            task_id="api1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=1, tool_count=1,
-            approx_input_tokens=10, request_char_count=20, max_tokens=100,
+            task_id="api1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=1,
+            approx_input_tokens=10,
+            request_char_count=20,
+            max_tokens=100,
         )
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1", session_id="s1")
-        on_post_tool_call(tool_name="bash", args={}, result="ok",
-                          task_id="t1", session_id="s1")
+        on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1", session_id="s1")
         on_post_api_request(
-            task_id="api1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.01, finish_reason="stop",
-            message_count=1, response_model="gpt-4",
+            task_id="api1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.01,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
             usage={"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2},
-            assistant_content_chars=1, assistant_tool_call_count=1,
+            assistant_content_chars=1,
+            assistant_tool_call_count=1,
         )
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
 
         names_a = sorted(s.name for s in exp_a.get_finished_spans())
         names_b = sorted(s.name for s in exp_b.get_finished_spans())
@@ -155,13 +173,20 @@ class TestForceFlushFansOut:
 
 def _clear_backend_env(monkeypatch):
     for var in [
-        "OTEL_PHOENIX_ENDPOINT", "OTEL_PROJECT_NAME",
-        "LANGSMITH_TRACING", "LANGSMITH_API_KEY",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY", "OTEL_LANGFUSE_SECRET_API_KEY",
+        "OTEL_PHOENIX_ENDPOINT",
+        "OTEL_PROJECT_NAME",
+        "LANGSMITH_TRACING",
+        "LANGSMITH_API_KEY",
+        "OTEL_LANGFUSE_PUBLIC_API_KEY",
+        "OTEL_LANGFUSE_SECRET_API_KEY",
         "OTEL_LANGFUSE_ENDPOINT",
-        "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL",
-        "OTEL_SIGNOZ_ENDPOINT", "OTEL_SIGNOZ_INGESTION_KEY",
-        "OTEL_JAEGER_ENDPOINT", "OTEL_TEMPO_ENDPOINT",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_BASE_URL",
+        "OTEL_SIGNOZ_ENDPOINT",
+        "OTEL_SIGNOZ_INGESTION_KEY",
+        "OTEL_JAEGER_ENDPOINT",
+        "OTEL_TEMPO_ENDPOINT",
     ]:
         monkeypatch.delenv(var, raising=False)
 
@@ -178,10 +203,12 @@ class TestConfigBackendsRouting:
         )
         plugin = HermesOTelPlugin(config=cfg)
 
-        with patch("hermes_otel.tracer.OTLPSpanExporter"), \
-             patch("hermes_otel.tracer.OTLPMetricExporter"), \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"), \
-             patch("hermes_otel.tracer.metrics.set_meter_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter"),
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
             assert plugin.init() is True
 
         assert len(plugin._span_processors) == 2
@@ -200,10 +227,12 @@ class TestConfigBackendsRouting:
             ),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        with patch("hermes_otel.tracer.OTLPSpanExporter"), \
-             patch("hermes_otel.tracer.OTLPMetricExporter"), \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"), \
-             patch("hermes_otel.tracer.metrics.set_meter_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter"),
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
             assert plugin.init() is True
         assert len(plugin._span_processors) == 3
         assert len(plugin._metric_readers) == 3
@@ -213,15 +242,15 @@ class TestConfigBackendsRouting:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://env-phoenix/v1/traces")
         cfg = HermesOtelConfig(
-            backends=(
-                BackendConfig(type="jaeger", endpoint="http://yaml-jaeger/v1/traces"),
-            ),
+            backends=(BackendConfig(type="jaeger", endpoint="http://yaml-jaeger/v1/traces"),),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        with patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp, \
-             patch("hermes_otel.tracer.OTLPMetricExporter"), \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"), \
-             patch("hermes_otel.tracer.metrics.set_meter_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp,
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
             assert plugin.init() is True
         # Exactly one trace exporter (jaeger) — env phoenix ignored.
         endpoints = [call.kwargs.get("endpoint") for call in mock_exp.call_args_list]
@@ -237,10 +266,12 @@ class TestConfigBackendsRouting:
             ),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        with patch("hermes_otel.tracer.OTLPSpanExporter"), \
-             patch("hermes_otel.tracer.OTLPMetricExporter"), \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"), \
-             patch("hermes_otel.tracer.metrics.set_meter_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter"),
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
             assert plugin.init() is True
         # Only jaeger survived.
         assert len(plugin._span_processors) == 1
@@ -261,17 +292,19 @@ class TestLangfuseBackendConfig:
         monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-test")
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-test")
         cfg = HermesOtelConfig(
-            backends=(
-                BackendConfig(type="langfuse", base_url="https://langfuse.example.com"),
-            ),
+            backends=(BackendConfig(type="langfuse", base_url="https://langfuse.example.com"),),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        with patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp, \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp,
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+        ):
             assert plugin.init() is True
         # Endpoint derived from base_url
-        assert mock_exp.call_args.kwargs["endpoint"] == \
-            "https://langfuse.example.com/api/public/otel/v1/traces"
+        assert (
+            mock_exp.call_args.kwargs["endpoint"]
+            == "https://langfuse.example.com/api/public/otel/v1/traces"
+        )
         # Auth header present
         headers = mock_exp.call_args.kwargs["headers"]
         assert headers is not None and "Authorization" in headers
@@ -293,10 +326,12 @@ class TestSecretResolution:
             ),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        with patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp, \
-             patch("hermes_otel.tracer.OTLPMetricExporter"), \
-             patch("hermes_otel.tracer.trace.set_tracer_provider"), \
-             patch("hermes_otel.tracer.metrics.set_meter_provider"):
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter") as mock_exp,
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
             assert plugin.init() is True
         headers = mock_exp.call_args_list[0].kwargs["headers"]
         assert headers["signoz-ingestion-key"] == "sz-secret"

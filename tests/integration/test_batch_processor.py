@@ -34,6 +34,7 @@ class _RecordingExporter:
         self.export_count += 1
         self.export_event.set()
         from opentelemetry.sdk.trace.export import SpanExportResult
+
         return SpanExportResult.SUCCESS
 
     def shutdown(self):
@@ -50,12 +51,15 @@ class _RecordingExporter:
 def real_init_plugin():
     """One real init() per test module — verifies the _init_otlp wiring."""
     import os
+
     # Clear env so Phoenix branch wins deterministically.
     for var in [
         "OTEL_PHOENIX_ENDPOINT",
         "LANGSMITH_TRACING",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY", "OTEL_LANGFUSE_SECRET_API_KEY",
-        "OTEL_SIGNOZ_ENDPOINT", "OTEL_JAEGER_ENDPOINT",
+        "OTEL_LANGFUSE_PUBLIC_API_KEY",
+        "OTEL_LANGFUSE_SECRET_API_KEY",
+        "OTEL_SIGNOZ_ENDPOINT",
+        "OTEL_JAEGER_ENDPOINT",
     ]:
         os.environ.pop(var, None)
     os.environ["OTEL_PHOENIX_ENDPOINT"] = "http://fake-collector/v1/traces"
@@ -85,6 +89,7 @@ def real_init_plugin():
 class TestBatchProcessorInstalled:
     def test_processor_is_batch_instance(self, real_init_plugin):
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
+
         assert isinstance(real_init_plugin._span_processor, BatchSpanProcessor)
 
     def test_config_plumbed_through(self, real_init_plugin):
@@ -142,6 +147,7 @@ def batch_pipeline():
 
     # Swap singleton so hook callbacks use our plugin.
     import hermes_otel.tracer as tracer_mod
+
     tracer_mod._tracer = plugin
 
     yield exporter, plugin
@@ -188,9 +194,9 @@ class TestBatchingBehavior:
         plugin.start_span(name="test", key="k1", kind="general")
         plugin.end_span("k1", status="ok")
 
-        assert exporter.export_event.wait(timeout=2.0), (
-            "BatchSpanProcessor worker did not export within 2s"
-        )
+        assert exporter.export_event.wait(
+            timeout=2.0
+        ), "BatchSpanProcessor worker did not export within 2s"
         assert len(exporter.exported) == 1
 
 
@@ -201,13 +207,14 @@ class TestSessionEndFlushes:
 
         exporter, _ = batch_pipeline
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
 
         # Flush was synchronous — no sleep.
-        assert any(s.name == "agent" for s in exporter.exported), (
-            f"agent span missing: {[s.name for s in exporter.exported]}"
-        )
+        assert any(
+            s.name == "agent" for s in exporter.exported
+        ), f"agent span missing: {[s.name for s in exporter.exported]}"
 
     def test_session_end_flush_opt_out(self, batch_pipeline):
         """With force_flush_on_session_end=False the worker handles it async."""
@@ -218,8 +225,9 @@ class TestSessionEndFlushes:
         object.__setattr__(plugin.config, "force_flush_on_session_end", False)
 
         on_session_start(session_id="s_noflush", model="gpt-4", platform="cli")
-        on_session_end(session_id="s_noflush", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s_noflush", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
 
         deadline = time.time() + 2.0
         while time.time() < deadline:
@@ -247,25 +255,54 @@ class TestConcurrentSessions:
         def _run(session_id, tool_name):
             on_session_start(session_id=session_id, model="gpt-4", platform="cli")
             on_pre_api_request(
-                task_id=f"api_{session_id}", session_id=session_id, platform="cli",
-                model="gpt-4", provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, message_count=1, tool_count=1,
-                approx_input_tokens=100, request_char_count=500, max_tokens=512,
+                task_id=f"api_{session_id}",
+                session_id=session_id,
+                platform="cli",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                message_count=1,
+                tool_count=1,
+                approx_input_tokens=100,
+                request_char_count=500,
+                max_tokens=512,
             )
-            on_pre_tool_call(tool_name=tool_name, args={}, task_id=f"t_{session_id}",
-                             session_id=session_id)
-            on_post_tool_call(tool_name=tool_name, args={}, result="ok",
-                              task_id=f"t_{session_id}", session_id=session_id)
+            on_pre_tool_call(
+                tool_name=tool_name, args={}, task_id=f"t_{session_id}", session_id=session_id
+            )
+            on_post_tool_call(
+                tool_name=tool_name,
+                args={},
+                result="ok",
+                task_id=f"t_{session_id}",
+                session_id=session_id,
+            )
             on_post_api_request(
-                task_id=f"api_{session_id}", session_id=session_id, platform="cli",
-                model="gpt-4", provider="openai", base_url="", api_mode="chat",
-                api_call_count=1, api_duration=0.1, finish_reason="stop",
-                message_count=1, response_model="gpt-4",
+                task_id=f"api_{session_id}",
+                session_id=session_id,
+                platform="cli",
+                model="gpt-4",
+                provider="openai",
+                base_url="",
+                api_mode="chat",
+                api_call_count=1,
+                api_duration=0.1,
+                finish_reason="stop",
+                message_count=1,
+                response_model="gpt-4",
                 usage={"prompt_tokens": 10, "output_tokens": 5, "total_tokens": 15},
-                assistant_content_chars=20, assistant_tool_call_count=1,
+                assistant_content_chars=20,
+                assistant_tool_call_count=1,
             )
-            on_session_end(session_id=session_id, completed=True, interrupted=False,
-                           model="gpt-4", platform="cli")
+            on_session_end(
+                session_id=session_id,
+                completed=True,
+                interrupted=False,
+                model="gpt-4",
+                platform="cli",
+            )
 
         threads = [
             threading.Thread(target=_run, args=("A", "bash")),

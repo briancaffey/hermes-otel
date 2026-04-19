@@ -35,10 +35,13 @@ class TestOrphanSweep:
 
         spans = exporter.get_finished_spans()
         # The dead session must be finalized (exported).
-        timed_out_spans = [s for s in spans if s.attributes.get("hermes.turn.final_status") == "timed_out"]
+        timed_out_spans = [
+            s for s in spans if s.attributes.get("hermes.turn.final_status") == "timed_out"
+        ]
         assert len(timed_out_spans) == 1
         # Must be status OK, not ERROR, so error dashboards aren't polluted.
         from opentelemetry.trace import StatusCode
+
         assert timed_out_spans[0].status.status_code == StatusCode.OK
 
     def test_sweep_finalizes_sub_spans_for_same_session(self, inmemory_otel_setup):
@@ -52,10 +55,19 @@ class TestOrphanSweep:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=0,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=0,
         )
 
         # Backdate the registry — simulate 10s passed without a post hook.
@@ -94,8 +106,9 @@ class TestOrphanSweep:
         plugin.config = HermesOtelConfig(root_span_ttl_ms=1)
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
 
         assert "s1" not in plugin._turn_started_at
         # A subsequent sweep is a no-op.
@@ -115,6 +128,7 @@ class TestSweepSessionIsolation:
         # Now swap in a tiny TTL and manipulate the timestamp via the
         # registry so only "old" is past it.
         import time
+
         plugin.config = HermesOtelConfig(root_span_ttl_ms=100)
         plugin._turn_started_at["old"] = time.perf_counter() - 10.0  # 10s ago
 
@@ -127,5 +141,7 @@ class TestSweepSessionIsolation:
         assert "new" in plugin._turn_started_at
 
         spans = exporter.get_finished_spans()
-        timed_out = [s for s in spans if s.attributes.get("hermes.turn.final_status") == "timed_out"]
+        timed_out = [
+            s for s in spans if s.attributes.get("hermes.turn.final_status") == "timed_out"
+        ]
         assert len(timed_out) == 1

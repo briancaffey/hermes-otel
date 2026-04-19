@@ -33,60 +33,115 @@ class TestFullSessionLifecycle:
 
         # First LLM turn
         on_pre_llm_call(
-            session_id="s1", user_message="What files are here?",
-            conversation_history=[], is_first_turn=True,
-            model="gpt-4", platform="api_server",
+            session_id="s1",
+            user_message="What files are here?",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="api_server",
         )
 
         # API request 1 (triggers tool call)
         on_pre_api_request(
-            task_id="api1", session_id="s1", platform="api_server", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=3, tool_count=0,
-            approx_input_tokens=200, request_char_count=1000, max_tokens=1024,
+            task_id="api1",
+            session_id="s1",
+            platform="api_server",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=3,
+            tool_count=0,
+            approx_input_tokens=200,
+            request_char_count=1000,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="api1", session_id="s1", platform="api_server", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.8, finish_reason="tool_calls",
-            message_count=3, response_model="gpt-4",
-            usage={"prompt_tokens": 200, "output_tokens": 30, "total_tokens": 230,
-                   "cache_read_tokens": 50},
-            assistant_content_chars=100, assistant_tool_call_count=1,
+            task_id="api1",
+            session_id="s1",
+            platform="api_server",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.8,
+            finish_reason="tool_calls",
+            message_count=3,
+            response_model="gpt-4",
+            usage={
+                "prompt_tokens": 200,
+                "output_tokens": 30,
+                "total_tokens": 230,
+                "cache_read_tokens": 50,
+            },
+            assistant_content_chars=100,
+            assistant_tool_call_count=1,
         )
 
         # Tool executes
         on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id="tool1")
-        on_post_tool_call(tool_name="bash", args={"cmd": "ls"}, result="file.txt\nREADME.md", task_id="tool1")
+        on_post_tool_call(
+            tool_name="bash", args={"cmd": "ls"}, result="file.txt\nREADME.md", task_id="tool1"
+        )
 
         # API request 2 (final response)
         on_pre_api_request(
-            task_id="api2", session_id="s1", platform="api_server", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=2, message_count=5, tool_count=0,
-            approx_input_tokens=300, request_char_count=1500, max_tokens=1024,
+            task_id="api2",
+            session_id="s1",
+            platform="api_server",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=2,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=300,
+            request_char_count=1500,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="api2", session_id="s1", platform="api_server", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=2, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
-            usage={"prompt_tokens": 300, "output_tokens": 80, "total_tokens": 380,
-                   "cache_read_tokens": 100},
-            assistant_content_chars=300, assistant_tool_call_count=0,
+            task_id="api2",
+            session_id="s1",
+            platform="api_server",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=2,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
+            usage={
+                "prompt_tokens": 300,
+                "output_tokens": 80,
+                "total_tokens": 380,
+                "cache_read_tokens": 100,
+            },
+            assistant_content_chars=300,
+            assistant_tool_call_count=0,
         )
 
         # LLM turn ends
         on_post_llm_call(
-            session_id="s1", user_message="What files are here?",
+            session_id="s1",
+            user_message="What files are here?",
             assistant_response="I found file.txt and README.md",
-            conversation_history=[], model="gpt-4", platform="api_server",
+            conversation_history=[],
+            model="gpt-4",
+            platform="api_server",
         )
 
         # Session ends
         on_session_end(
-            session_id="s1", completed=True, interrupted=False,
-            model="gpt-4", platform="api_server",
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="api_server",
         )
 
         spans = exporter.get_finished_spans()
@@ -117,30 +172,59 @@ class TestFullSessionLifecycle:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_pre_llm_call(
-            session_id="s1", user_message="test", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="test",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=1, tool_count=0,
-            approx_input_tokens=100, request_char_count=500, max_tokens=512,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=100,
+            request_char_count=500,
+            max_tokens=512,
         )
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.3, finish_reason="stop",
-            message_count=1, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.3,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 20, "total_tokens": 120},
-            assistant_content_chars=50, assistant_tool_call_count=0,
+            assistant_content_chars=50,
+            assistant_tool_call_count=0,
         )
         on_post_llm_call(
-            session_id="s1", user_message="test", assistant_response="ok",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="test",
+            assistant_response="ok",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
         on_session_end(
-            session_id="s1", completed=True, interrupted=False,
-            model="gpt-4", platform="cli",
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="cli",
         )
 
         # Module state should be clean
@@ -153,11 +237,15 @@ class TestFullSessionLifecycle:
 
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         on_session_end(
-            session_id="s1", completed=False, interrupted=True,
-            model="gpt-4", platform="cli",
+            session_id="s1",
+            completed=False,
+            interrupted=True,
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         from opentelemetry.trace import StatusCode
+
         assert spans[0].status.status_code == StatusCode.OK

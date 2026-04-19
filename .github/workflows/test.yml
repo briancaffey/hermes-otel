@@ -15,7 +15,9 @@ jobs:
         with:
           enable-cache: true
       - name: Ruff check
-        run: uv run --with ruff ruff check .
+        run: uv run --extra dev ruff check .
+      - name: Black format check
+        run: uv run --extra dev black --check .
 
   test:
     runs-on: ubuntu-latest

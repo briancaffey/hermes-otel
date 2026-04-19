@@ -13,6 +13,7 @@ COMPOSE_DIR = Path(__file__).parent.parent.parent / "docker-compose"
 def _is_port_open(host, port, timeout=2):
     """Check if a TCP port is accepting connections."""
     import socket
+
     try:
         with socket.create_connection((host, port), timeout=timeout):
             return True
@@ -50,9 +51,13 @@ def phoenix_service():
     try:
         subprocess.run(
             [
-                "docker", "run", "-d",
-                "--name", container_name,
-                "-p", f"{port}:{port}",
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                container_name,
+                "-p",
+                f"{port}:{port}",
                 "arizephoenix/phoenix:latest",
             ],
             check=True,
@@ -69,9 +74,13 @@ def phoenix_service():
         )
         subprocess.run(
             [
-                "docker", "run", "-d",
-                "--name", container_name,
-                "-p", f"{port}:{port}",
+                "docker",
+                "run",
+                "-d",
+                "--name",
+                container_name,
+                "-p",
+                f"{port}:{port}",
                 "arizephoenix/phoenix:latest",
             ],
             check=True,

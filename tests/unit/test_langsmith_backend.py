@@ -17,6 +17,7 @@ from hermes_otel.langsmith_backend import (
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 
+
 class TestCoerceInt:
     def test_int(self):
         assert _coerce_int(42) == 42
@@ -43,14 +44,19 @@ class TestCoerceInt:
 class TestUuidToStr:
     def test_uuid_with_hex(self):
         import uuid
+
         u = uuid.uuid4()
         assert _uuid_to_str(u) == u.hex
 
     def test_string_with_dashes(self):
-        assert _uuid_to_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890") == "a1b2c3d4e5f67890abcdef1234567890"
+        assert (
+            _uuid_to_str("a1b2c3d4-e5f6-7890-abcd-ef1234567890")
+            == "a1b2c3d4e5f67890abcdef1234567890"
+        )
 
 
 # ── from_env ─────────────────────────────────────────────────────────────────
+
 
 class TestFromEnv:
     def test_returns_backend_when_configured(self, monkeypatch):
@@ -92,23 +98,25 @@ class TestFromEnv:
 
 # ── Headers ──────────────────────────────────────────────────────────────────
 
+
 class TestHeaders:
     def test_basic_headers(self):
-        backend = LangSmithBackend(api_key="key123", endpoint="https://x.com",
-                                   project="proj")
+        backend = LangSmithBackend(api_key="key123", endpoint="https://x.com", project="proj")
         headers = backend._headers()
         assert headers["x-api-key"] == "key123"
         assert headers["Content-Type"] == "application/json"
         assert "x-tenant-id" not in headers
 
     def test_workspace_header(self):
-        backend = LangSmithBackend(api_key="key", endpoint="https://x.com",
-                                   project="proj", workspace="ws-1")
+        backend = LangSmithBackend(
+            api_key="key", endpoint="https://x.com", project="proj", workspace="ws-1"
+        )
         headers = backend._headers()
         assert headers["x-tenant-id"] == "ws-1"
 
 
 # ── HTTP helpers ─────────────────────────────────────────────────────────────
+
 
 def _mock_urlopen_success():
     """Return a mock urlopen that returns a 200 response."""
@@ -116,8 +124,7 @@ def _mock_urlopen_success():
     mock_resp.read.return_value = b""
     mock_resp.__enter__ = lambda s: s
     mock_resp.__exit__ = MagicMock(return_value=False)
-    return patch("hermes_otel.langsmith_backend.urllib.request.urlopen",
-                 return_value=mock_resp)
+    return patch("hermes_otel.langsmith_backend.urllib.request.urlopen", return_value=mock_resp)
 
 
 def _mock_urlopen_error(code=400, reason="Bad Request", body=b"error"):
@@ -129,8 +136,7 @@ def _mock_urlopen_error(code=400, reason="Bad Request", body=b"error"):
         hdrs={},
         fp=io.BytesIO(body),
     )
-    return patch("hermes_otel.langsmith_backend.urllib.request.urlopen",
-                 side_effect=error)
+    return patch("hermes_otel.langsmith_backend.urllib.request.urlopen", side_effect=error)
 
 
 def _captured_payload(mock_urlopen) -> dict:
@@ -141,8 +147,7 @@ def _captured_payload(mock_urlopen) -> dict:
 
 class TestPost:
     def test_success(self):
-        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com",
-                                   project="p")
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
         with _mock_urlopen_success() as mock:
             assert backend._post("/runs", {"id": "abc"}) is True
             req = mock.call_args[0][0]
@@ -150,16 +155,14 @@ class TestPost:
             assert req.method == "POST"
 
     def test_http_error_returns_false(self):
-        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com",
-                                   project="p")
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
         with _mock_urlopen_error(400):
             assert backend._post("/runs", {"id": "abc"}) is False
 
 
 class TestPatch:
     def test_success(self):
-        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com",
-                                   project="p")
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
         with _mock_urlopen_success() as mock:
             assert backend._patch("/runs/abc", {"end_time": "t"}) is True
             req = mock.call_args[0][0]
@@ -167,24 +170,26 @@ class TestPatch:
             assert req.method == "PATCH"
 
     def test_http_error_returns_false(self):
-        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com",
-                                   project="p")
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
         with _mock_urlopen_error(500, "Server Error"):
             assert backend._patch("/runs/abc", {}) is False
 
 
 # ── start_span ───────────────────────────────────────────────────────────────
 
+
 class TestStartSpan:
     def _backend(self):
-        return LangSmithBackend(api_key="key", endpoint="https://api.smith.com",
-                                project="test-proj")
+        return LangSmithBackend(
+            api_key="key", endpoint="https://api.smith.com", project="test-proj"
+        )
 
     def test_creates_run_and_returns_dict(self):
         backend = self._backend()
         with _mock_urlopen_success() as mock:
-            result = backend.start_span("llm.gpt-4", "llm:s1", kind="llm",
-                                        attributes={"model": "gpt-4"})
+            result = backend.start_span(
+                "llm.gpt-4", "llm:s1", kind="llm", attributes={"model": "gpt-4"}
+            )
 
         assert result is not None
         assert "id" in result
@@ -218,8 +223,7 @@ class TestStartSpan:
         backend = self._backend()
         parent = {"id": "parent123", "run_type": "chain"}
         with _mock_urlopen_success() as mock:
-            result = backend.start_span("api.gpt-4", "api:t1", kind="llm",
-                                        parent_run=parent)
+            result = backend.start_span("api.gpt-4", "api:t1", kind="llm", parent_run=parent)
 
         assert result["parent_id"] == "parent123"
         payload = _captured_payload(mock)
@@ -242,10 +246,12 @@ class TestStartSpan:
 
 # ── end_span ─────────────────────────────────────────────────────────────────
 
+
 class TestEndSpan:
     def _backend(self):
-        return LangSmithBackend(api_key="key", endpoint="https://api.smith.com",
-                                project="test-proj")
+        return LangSmithBackend(
+            api_key="key", endpoint="https://api.smith.com", project="test-proj"
+        )
 
     def test_patches_run_with_end_time(self):
         backend = self._backend()

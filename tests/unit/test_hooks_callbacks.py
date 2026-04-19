@@ -25,6 +25,7 @@ def mock_tracer():
     returns False).
     """
     from hermes_otel.plugin_config import HermesOtelConfig
+
     tracer = MagicMock()
     tracer.is_enabled = True
     tracer.spans = MagicMock()
@@ -38,6 +39,7 @@ def mock_tracer():
 def disabled_tracer():
     """Create a disabled mock tracer."""
     from hermes_otel.plugin_config import HermesOtelConfig
+
     tracer = MagicMock()
     tracer.is_enabled = False
     tracer.config = HermesOtelConfig()
@@ -67,9 +69,7 @@ class TestOnSessionStart:
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.record_metric.assert_called_once_with(
-            "session_count", 1, {"session_id": "s1"}
-        )
+        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"session_id": "s1"})
 
     def test_includes_session_attributes(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
@@ -90,28 +90,32 @@ class TestOnSessionStart:
 
 class TestOnSessionEnd:
     def test_pops_parent_and_ends_span(self, mock_tracer):
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
         mock_tracer.spans.pop_parent.assert_called_once()
         mock_tracer.end_span.assert_called_once()
         call_args = mock_tracer.end_span.call_args
         assert call_args[0][0] == "session:s1"
 
     def test_status_ok_when_completed(self, mock_tracer):
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
         call_kwargs = mock_tracer.end_span.call_args[1]
         assert call_kwargs["status"] == "ok"
 
     def test_status_ok_when_interrupted(self, mock_tracer):
-        on_session_end(session_id="s1", completed=False, interrupted=True,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=False, interrupted=True, model="gpt-4", platform="cli"
+        )
         call_kwargs = mock_tracer.end_span.call_args[1]
         assert call_kwargs["status"] == "ok"
 
     def test_status_error_when_neither(self, mock_tracer):
-        on_session_end(session_id="s1", completed=False, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=False, interrupted=False, model="gpt-4", platform="cli"
+        )
         call_kwargs = mock_tracer.end_span.call_args[1]
         assert call_kwargs["status"] == "error"
 
@@ -123,8 +127,9 @@ class TestOnSessionEnd:
             "cache_read_tokens": 20,
             "cache_write_tokens": 10,
         }
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["llm.token_count.prompt"] == 100
         assert attrs["llm.token_count.completion"] == 50
@@ -137,16 +142,18 @@ class TestOnSessionEnd:
 
     def test_rolls_up_session_io(self, mock_tracer):
         hooks_mod._SESSION_IO["s1"] = {"input": "hello", "output": "world"}
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["input.value"] == "hello"
         assert attrs["output.value"] == "world"
         assert "s1" not in hooks_mod._SESSION_IO
 
     def test_noop_when_disabled(self, disabled_tracer):
-        on_session_end(session_id="s1", completed=True, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
         disabled_tracer.end_span.assert_not_called()
 
 
@@ -224,9 +231,14 @@ class TestOnPreLlmCall:
         # first-turn flow: on_session_start runs before on_pre_llm_call).
         mock_tracer.spans._active_spans["session:s1"] = MagicMock()
 
-        on_pre_llm_call(session_id="s1", user_message="hello",
-                        conversation_history=[], is_first_turn=True,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
         assert kw["name"] == "llm.gpt-4"
@@ -238,17 +250,27 @@ class TestOnPreLlmCall:
 
         span = MagicMock()
         mock_tracer.start_span.return_value = span
-        on_pre_llm_call(session_id="s1", user_message="hello",
-                        conversation_history=[], is_first_turn=True,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
         mock_tracer.spans.push_parent.assert_called_once_with(span, session_id="s1")
 
     def test_lazy_creates_session_span_on_continuation_turn(self, mock_tracer):
         """Turn 2+ has no active session span — hooks.py synthesizes one."""
         # No session span in _active_spans → lazy-create path fires.
-        on_pre_llm_call(session_id="s1", user_message="hi",
-                        conversation_history=[], is_first_turn=False,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hi",
+            conversation_history=[],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
+        )
         # Two start_span calls: agent (synthesized) + llm.gpt-4
         assert mock_tracer.start_span.call_count == 2
         first_kw = mock_tracer.start_span.call_args_list[0][1]
@@ -257,70 +279,118 @@ class TestOnPreLlmCall:
         assert first_kw["attributes"].get("hermes.session.synthesized") is True
 
     def test_captures_first_input_in_session_io(self, mock_tracer):
-        on_pre_llm_call(session_id="s1", user_message="hello",
-                        conversation_history=[], is_first_turn=True,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
         assert hooks_mod._SESSION_IO["s1"]["input"] == "hello"
 
     def test_does_not_overwrite_existing_session_io(self, mock_tracer):
         hooks_mod._SESSION_IO["s1"] = {"input": "first", "output": ""}
-        on_pre_llm_call(session_id="s1", user_message="second",
-                        conversation_history=[], is_first_turn=False,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="second",
+            conversation_history=[],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
+        )
         assert hooks_mod._SESSION_IO["s1"]["input"] == "first"
 
     def test_returns_none(self, mock_tracer):
-        result = on_pre_llm_call(session_id="s1", user_message="hello",
-                                 conversation_history=[], is_first_turn=True,
-                                 model="gpt-4", platform="cli")
+        result = on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
         assert result is None
 
     def test_noop_when_disabled(self, disabled_tracer):
-        on_pre_llm_call(session_id="s1", user_message="hello",
-                        conversation_history=[], is_first_turn=True,
-                        model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
         disabled_tracer.start_span.assert_not_called()
 
 
 class TestOnPostLlmCall:
     def test_pops_parent_and_ends_span(self, mock_tracer):
-        on_post_llm_call(session_id="s1", user_message="hello",
-                         assistant_response="hi", conversation_history=[],
-                         model="gpt-4", platform="cli")
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
         mock_tracer.spans.pop_parent.assert_called_once()
         mock_tracer.end_span.assert_called_once()
         assert mock_tracer.end_span.call_args[0][0] == "llm:s1"
 
     def test_captures_last_output_in_session_io(self, mock_tracer):
         hooks_mod._SESSION_IO["s1"] = {"input": "hello", "output": ""}
-        on_post_llm_call(session_id="s1", user_message="hello",
-                         assistant_response="goodbye", conversation_history=[],
-                         model="gpt-4", platform="cli")
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="goodbye",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
         assert hooks_mod._SESSION_IO["s1"]["output"] == "goodbye"
 
     def test_records_message_count_metric(self, mock_tracer):
-        on_post_llm_call(session_id="s1", user_message="hello",
-                         assistant_response="hi", conversation_history=[],
-                         model="gpt-4", platform="cli")
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
         mock_tracer.record_metric.assert_called_once_with(
-            "message_count", 1,
-            {"session_id": "s1", "model": "gpt-4", "provider": "cli"}
+            "message_count", 1, {"session_id": "s1", "model": "gpt-4", "provider": "cli"}
         )
 
     def test_noop_when_disabled(self, disabled_tracer):
-        on_post_llm_call(session_id="s1", user_message="hello",
-                         assistant_response="hi", conversation_history=[],
-                         model="gpt-4", platform="cli")
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
         disabled_tracer.end_span.assert_not_called()
 
 
 class TestOnPreApiRequest:
     def test_creates_api_span(self, mock_tracer):
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="https://api.openai.com", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=2,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="https://api.openai.com",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=2,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
@@ -332,19 +402,37 @@ class TestOnPreApiRequest:
         span = MagicMock()
         mock_tracer.start_span.return_value = span
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=0,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=0,
         )
         mock_tracer.spans.push_parent.assert_called_once_with(span, session_id="s1")
 
     def test_includes_metadata_attributes(self, mock_tracer):
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=10, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=2048,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["llm.model_name"] == "gpt-4"
@@ -354,10 +442,19 @@ class TestOnPreApiRequest:
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=0,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=0,
         )
         disabled_tracer.start_span.assert_not_called()
 
@@ -365,11 +462,21 @@ class TestOnPreApiRequest:
 class TestOnPostApiRequest:
     def _call_post_api(self, mock_tracer, usage=None, **overrides):
         defaults = dict(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4", usage=usage or {},
-            assistant_content_chars=100, assistant_tool_call_count=0,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
+            usage=usage or {},
+            assistant_content_chars=100,
+            assistant_tool_call_count=0,
         )
         defaults.update(overrides)
         on_post_api_request(**defaults)
@@ -440,10 +547,20 @@ class TestOnPostApiRequest:
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4", usage={},
-            assistant_content_chars=100, assistant_tool_call_count=0,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
+            usage={},
+            assistant_content_chars=100,
+            assistant_tool_call_count=0,
         )
         disabled_tracer.end_span.assert_not_called()

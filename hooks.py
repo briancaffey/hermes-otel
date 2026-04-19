@@ -254,9 +254,7 @@ def _start_session_span(
     )
     tracer.spans.push_parent(span, session_id=session_id)
     tracer.register_turn(session_id)
-    debug_log(
-        f"  session span started: key={key}, name={span_name}, synthesized={synthesized}"
-    )
+    debug_log(f"  session span started: key={key}, name={span_name}, synthesized={synthesized}")
 
 
 def on_session_start(session_id: str, model: str, platform: str, **kwargs):
@@ -269,11 +267,17 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     tracer.sweep_expired_turns()
     tracer.record_metric("session_count", 1, {"session_id": session_id})
     _start_session_span(
-        session_id, model, platform, kwargs, synthesized=False,
+        session_id,
+        model,
+        platform,
+        kwargs,
+        synthesized=False,
     )
 
 
-def on_session_end(session_id: str, completed: bool, interrupted: bool, model: str, platform: str, **kwargs):
+def on_session_end(
+    session_id: str, completed: bool, interrupted: bool, model: str, platform: str, **kwargs
+):
     """Close the top-level session span."""
     tracer = get_tracer()
     debug_log(
@@ -307,11 +311,17 @@ def on_session_end(session_id: str, completed: bool, interrupted: bool, model: s
         attributes["gen_ai.usage.output_tokens"] = usage_totals.get("completion_tokens", 0)
         attributes["gen_ai.usage.total_tokens"] = usage_totals.get("total_tokens", 0)
         if usage_totals.get("cache_read_tokens", 0):
-            attributes["llm.token_count.prompt_details.cache_read"] = usage_totals["cache_read_tokens"]
+            attributes["llm.token_count.prompt_details.cache_read"] = usage_totals[
+                "cache_read_tokens"
+            ]
             attributes["gen_ai.usage.cache_read_input_tokens"] = usage_totals["cache_read_tokens"]
         if usage_totals.get("cache_write_tokens", 0):
-            attributes["llm.token_count.prompt_details.cache_write"] = usage_totals["cache_write_tokens"]
-            attributes["gen_ai.usage.cache_creation_input_tokens"] = usage_totals["cache_write_tokens"]
+            attributes["llm.token_count.prompt_details.cache_write"] = usage_totals[
+                "cache_write_tokens"
+            ]
+            attributes["gen_ai.usage.cache_creation_input_tokens"] = usage_totals[
+                "cache_write_tokens"
+            ]
 
     # Per-turn summary roll-up
     summary = _SESSION_TURN_SUMMARY.pop(session_id, None)
@@ -379,7 +389,8 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     if skill:
         attributes["hermes.skill.name"] = skill
         tracer.record_metric(
-            "skill_inferred", 1,
+            "skill_inferred",
+            1,
             {"skill_name": skill, "source": "path_match"},
         )
 
@@ -457,12 +468,21 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.
     status = "error" if has_error else "ok"
-    tracer.end_span(key, attributes=attributes, status=status, error_message=error_msg if has_error else None)
+    tracer.end_span(
+        key, attributes=attributes, status=status, error_message=error_msg if has_error else None
+    )
     debug_log(f"  span ended: status={status}, outcome={outcome}")
 
 
-def on_pre_llm_call(session_id: str, user_message: str, conversation_history: list,
-                    is_first_turn: bool, model: str, platform: str, **kwargs):
+def on_pre_llm_call(
+    session_id: str,
+    user_message: str,
+    conversation_history: list,
+    is_first_turn: bool,
+    model: str,
+    platform: str,
+    **kwargs,
+):
     """Start an LLM span before the model is called."""
     debug_log(f"pre_llm_call fired: model={model}, session={session_id}")
     tracer = get_tracer()
@@ -479,7 +499,11 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
     session_key = f"session:{session_id}"
     if session_id and session_key not in tracer.spans._active_spans:
         _start_session_span(
-            session_id, model, platform, kwargs, synthesized=True,
+            session_id,
+            model,
+            platform,
+            kwargs,
+            synthesized=True,
         )
 
     key = f"llm:{session_id}"
@@ -502,7 +526,8 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
     # that's the historical default and what small backends handle best.
     if tracer.config.capture_conversation_history and tracer.config.capture_previews:
         full = _serialize_conversation_history(
-            conversation_history, tracer.config.conversation_history_max_chars,
+            conversation_history,
+            tracer.config.conversation_history_max_chars,
         )
         if full is not None:
             attributes["input.value"] = full
@@ -531,8 +556,15 @@ def on_pre_llm_call(session_id: str, user_message: str, conversation_history: li
     return None  # Don't inject context, just observe
 
 
-def on_post_llm_call(session_id: str, user_message: str, assistant_response: str,
-                     conversation_history: list, model: str, platform: str, **kwargs):
+def on_post_llm_call(
+    session_id: str,
+    user_message: str,
+    assistant_response: str,
+    conversation_history: list,
+    model: str,
+    platform: str,
+    **kwargs,
+):
     """End the LLM span and record the response."""
     debug_log(f"post_llm_call fired: model={model}, session={session_id}")
     tracer = get_tracer()
@@ -547,7 +579,9 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
     if session_id in _SESSION_IO:
         _SESSION_IO[session_id]["output"] = _preview(assistant_response, 500) or ""
 
-    tracer.record_metric("message_count", 1, {"session_id": session_id, "model": model, "provider": platform})
+    tracer.record_metric(
+        "message_count", 1, {"session_id": session_id, "model": model, "provider": platform}
+    )
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
@@ -566,10 +600,22 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
     debug_log("  LLM span ended: status=ok")
 
 
-def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,
-                       provider: str, base_url: str, api_mode: str, api_call_count: int,
-                       message_count: int, tool_count: int, approx_input_tokens: int,
-                       request_char_count: int, max_tokens: int, **kwargs):
+def on_pre_api_request(
+    task_id: str,
+    session_id: str,
+    platform: str,
+    model: str,
+    provider: str,
+    base_url: str,
+    api_mode: str,
+    api_call_count: int,
+    message_count: int,
+    tool_count: int,
+    approx_input_tokens: int,
+    request_char_count: int,
+    max_tokens: int,
+    **kwargs,
+):
     """Fires before each individual LLM API request."""
     debug_log(f"pre_api_request fired: model={model}, provider={provider}, session={session_id}")
     tracer = get_tracer()
@@ -612,11 +658,24 @@ def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,
     debug_log(f"  API span started: key={key}")
 
 
-def on_post_api_request(task_id: str, session_id: str, platform: str, model: str,
-                        provider: str, base_url: str, api_mode: str, api_call_count: int,
-                        api_duration: float, finish_reason: str, message_count: int,
-                        response_model: str, usage: dict, assistant_content_chars: int,
-                        assistant_tool_call_count: int, **kwargs):
+def on_post_api_request(
+    task_id: str,
+    session_id: str,
+    platform: str,
+    model: str,
+    provider: str,
+    base_url: str,
+    api_mode: str,
+    api_call_count: int,
+    api_duration: float,
+    finish_reason: str,
+    message_count: int,
+    response_model: str,
+    usage: dict,
+    assistant_content_chars: int,
+    assistant_tool_call_count: int,
+    **kwargs,
+):
     """Fires after each individual LLM API request with usage stats."""
     debug_log(f"post_api_request fired: model={model}, finish={finish_reason}")
     tracer = get_tracer()
@@ -683,13 +742,21 @@ def on_post_api_request(task_id: str, session_id: str, platform: str, model: str
             metric_attrs["session_id"] = session_id
 
         if prompt_tokens:
-            tracer.record_metric("token_usage", prompt_tokens, {**metric_attrs, "token_type": "input"})
+            tracer.record_metric(
+                "token_usage", prompt_tokens, {**metric_attrs, "token_type": "input"}
+            )
         if completion_tokens:
-            tracer.record_metric("token_usage", completion_tokens, {**metric_attrs, "token_type": "output"})
+            tracer.record_metric(
+                "token_usage", completion_tokens, {**metric_attrs, "token_type": "output"}
+            )
         if cache_read:
-            tracer.record_metric("token_usage", cache_read, {**metric_attrs, "token_type": "cacheRead"})
+            tracer.record_metric(
+                "token_usage", cache_read, {**metric_attrs, "token_type": "cacheRead"}
+            )
         if cache_write:
-            tracer.record_metric("token_usage", cache_write, {**metric_attrs, "token_type": "cacheCreation"})
+            tracer.record_metric(
+                "token_usage", cache_write, {**metric_attrs, "token_type": "cacheCreation"}
+            )
 
         cost = usage.get("cost") if usage else None
         if cost:

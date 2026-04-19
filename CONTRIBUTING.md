@@ -28,7 +28,13 @@ cd hermes-otel
 uv run --extra dev pytest
 
 # Lint
-uv run --with ruff ruff check
+uv run --extra dev ruff check .
+
+# Format (check only)
+uv run --extra dev black --check .
+
+# Format (apply)
+uv run --extra dev black .
 
 # Coverage
 uv run --extra dev pytest --cov=hermes_otel --cov-report=term-missing
@@ -64,6 +70,19 @@ uv run --extra dev --extra e2e pytest -m smoke          # smoke tests
 Docker services are started/stopped automatically by the E2E fixtures.
 See `docker-compose/` and `docker-compose/all.sh`.
 
+## Code style
+
+- **Formatting** is handled by [black](https://black.readthedocs.io)
+  with `line-length = 100`. Run `uv run --extra dev black .` before
+  committing (or configure your editor to format on save). CI fails on
+  unformatted diffs.
+- **Linting** is handled by [ruff](https://docs.astral.sh/ruff/). The
+  ruleset is intentionally conservative (`E`, `F`, `W`, `I`); tighten
+  as the codebase matures.
+- Both configs live in `pyproject.toml` under `[tool.black]` and
+  `[tool.ruff]`. Don't disable rules in-line unless you have a concrete
+  reason — open an issue first if a rule fights the codebase.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/). The
@@ -90,7 +109,8 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 Before opening a PR:
 
 - [ ] `uv run --extra dev pytest` passes locally.
-- [ ] `uv run --with ruff ruff check` passes (CI will fail otherwise).
+- [ ] `uv run --extra dev ruff check .` passes (CI will fail otherwise).
+- [ ] `uv run --extra dev black --check .` passes — or apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
 - [ ] Updated `README.md` or `docs/` if user-visible behavior changed.
 - [ ] Commit message follows Conventional Commits.

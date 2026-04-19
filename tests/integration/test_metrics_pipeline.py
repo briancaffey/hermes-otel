@@ -57,18 +57,36 @@ class TestTokenUsageMetric:
         _, metric_reader, _ = inmemory_otel_with_metrics
 
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=200, assistant_tool_call_count=0,
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
         )
 
         value = _get_metric_value(metric_reader, "hermes.token.usage")
@@ -94,18 +112,36 @@ class TestModelUsageMetric:
         _, metric_reader, _ = inmemory_otel_with_metrics
 
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=200, assistant_tool_call_count=0,
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
         )
 
         value = _get_metric_value(metric_reader, "hermes.model.usage")

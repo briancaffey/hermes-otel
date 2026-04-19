@@ -25,7 +25,9 @@ sys.path.insert(0, str(ROOT))
 
 def _post(url: str, payload: dict, headers: dict, timeout: float = 10.0) -> dict:
     body = json.dumps(payload).encode("utf-8")
-    req = urllib.request.Request(url, data=body, headers={**headers, "Content-Type": "application/json"})
+    req = urllib.request.Request(
+        url, data=body, headers={**headers, "Content-Type": "application/json"}
+    )
     with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.loads(resp.read().decode("utf-8") or "{}")
 
@@ -49,30 +51,56 @@ def emit_session(session_id: str) -> None:
 
     on_session_start(session_id=session_id, model="gpt-4", platform="cli")
     on_pre_api_request(
-        task_id=f"api-{session_id}", session_id=session_id, platform="cli",
-        model="gpt-4", provider="openai", base_url="", api_mode="chat",
-        api_call_count=1, message_count=2, tool_count=1,
-        approx_input_tokens=42, request_char_count=160, max_tokens=256,
+        task_id=f"api-{session_id}",
+        session_id=session_id,
+        platform="cli",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=2,
+        tool_count=1,
+        approx_input_tokens=42,
+        request_char_count=160,
+        max_tokens=256,
     )
     on_pre_tool_call(
-        tool_name="bash", args={"cmd": "echo hi"},
-        task_id=f"tool-{session_id}", session_id=session_id,
+        tool_name="bash",
+        args={"cmd": "echo hi"},
+        task_id=f"tool-{session_id}",
+        session_id=session_id,
     )
     on_post_tool_call(
-        tool_name="bash", args={"cmd": "echo hi"}, result="hi\n",
-        task_id=f"tool-{session_id}", session_id=session_id,
+        tool_name="bash",
+        args={"cmd": "echo hi"},
+        result="hi\n",
+        task_id=f"tool-{session_id}",
+        session_id=session_id,
     )
     on_post_api_request(
-        task_id=f"api-{session_id}", session_id=session_id, platform="cli",
-        model="gpt-4", provider="openai", base_url="", api_mode="chat",
-        api_call_count=1, api_duration=0.05, finish_reason="stop",
-        message_count=2, response_model="gpt-4",
+        task_id=f"api-{session_id}",
+        session_id=session_id,
+        platform="cli",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=0.05,
+        finish_reason="stop",
+        message_count=2,
+        response_model="gpt-4",
         usage={"prompt_tokens": 42, "output_tokens": 8, "total_tokens": 50},
-        assistant_content_chars=20, assistant_tool_call_count=1,
+        assistant_content_chars=20,
+        assistant_tool_call_count=1,
     )
     on_session_end(
-        session_id=session_id, completed=True, interrupted=False,
-        model="gpt-4", platform="cli",
+        session_id=session_id,
+        completed=True,
+        interrupted=False,
+        model="gpt-4",
+        platform="cli",
     )
 
 
@@ -120,6 +148,7 @@ def query_phoenix(project: str, deadline: float) -> int:
 def query_langfuse(public_key: str, secret_key: str, deadline: float) -> int:
     """Poll Langfuse REST for observations. Returns count."""
     import base64
+
     auth = base64.b64encode(f"{public_key}:{secret_key}".encode()).decode()
     headers = {"Authorization": f"Basic {auth}"}
     url = "http://localhost:3000/api/public/observations?limit=50"
@@ -158,6 +187,7 @@ def query_signoz(service: str, deadline: float) -> int:
     which is enough to prove our spans were ingested.
     """
     import subprocess
+
     query = (
         "SELECT count() FROM signoz_traces.distributed_signoz_index_v3 "
         f"WHERE serviceName='{service}' FORMAT TabSeparated"
@@ -165,9 +195,10 @@ def query_signoz(service: str, deadline: float) -> int:
     while time.time() < deadline:
         try:
             out = subprocess.run(
-                ["docker", "exec", "signoz-clickhouse",
-                 "clickhouse-client", "--query", query],
-                capture_output=True, text=True, timeout=10,
+                ["docker", "exec", "signoz-clickhouse", "clickhouse-client", "--query", query],
+                capture_output=True,
+                text=True,
+                timeout=10,
             )
             text = (out.stdout or "").strip()
             if text.isdigit():
@@ -207,7 +238,9 @@ def main() -> int:
     jaeger_count = query_jaeger("hermes-agent", time.time() + 30)
     signoz_seen = query_signoz("hermes-agent", time.time() + 60)
     langfuse_count = query_langfuse(
-        "lf_pk_test_hermes_otel", "lf_sk_test_hermes_otel", time.time() + 90,
+        "lf_pk_test_hermes_otel",
+        "lf_sk_test_hermes_otel",
+        time.time() + 90,
     )
 
     print(f"\nPhoenix spans for project {project!r}: {phoenix_count}")
@@ -223,8 +256,14 @@ def main() -> int:
     }
     ok = all(results.values())
     misses = [k for k, v in results.items() if not v]
-    print("\n" + ("✓ multi-backend fan-out verified — all 4 backends received spans"
-                  if ok else f"✗ no spans seen in: {', '.join(misses)}"))
+    print(
+        "\n"
+        + (
+            "✓ multi-backend fan-out verified — all 4 backends received spans"
+            if ok
+            else f"✗ no spans seen in: {', '.join(misses)}"
+        )
+    )
     return 0 if ok else 2
 
 

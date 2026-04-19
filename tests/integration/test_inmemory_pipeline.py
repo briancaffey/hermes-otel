@@ -35,14 +35,17 @@ class TestToolSpanExport:
 
         on_pre_tool_call(tool_name="bash", args={"cmd": "rm"}, task_id="t1")
         on_post_tool_call(
-            tool_name="bash", args={"cmd": "rm"},
-            result='{"error": "permission denied"}', task_id="t1",
+            tool_name="bash",
+            args={"cmd": "rm"},
+            result='{"error": "permission denied"}',
+            task_id="t1",
         )
 
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
         from opentelemetry.trace import StatusCode
+
         assert span.status.status_code == StatusCode.ERROR
 
     def test_tool_success_span_has_ok_status(self, inmemory_otel_setup):
@@ -53,6 +56,7 @@ class TestToolSpanExport:
 
         span = exporter.get_finished_spans()[0]
         from opentelemetry.trace import StatusCode
+
         assert span.status.status_code == StatusCode.OK
 
 
@@ -61,12 +65,20 @@ class TestLlmSpanExport:
         exporter, plugin = inmemory_otel_setup
 
         on_pre_llm_call(
-            session_id="s1", user_message="hello", conversation_history=[],
-            is_first_turn=True, model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
         )
         on_post_llm_call(
-            session_id="s1", user_message="hello", assistant_response="hi there",
-            conversation_history=[], model="gpt-4", platform="cli",
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi there",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
         )
 
         spans = exporter.get_finished_spans()
@@ -84,18 +96,36 @@ class TestApiSpanExport:
         exporter, plugin = inmemory_otel_setup
 
         on_pre_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, message_count=5, tool_count=0,
-            approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
         )
         on_post_api_request(
-            task_id="t1", session_id="s1", platform="cli", model="gpt-4",
-            provider="openai", base_url="", api_mode="chat",
-            api_call_count=1, api_duration=0.5, finish_reason="stop",
-            message_count=5, response_model="gpt-4",
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
             usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-            assistant_content_chars=200, assistant_tool_call_count=0,
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
         )
 
         spans = exporter.get_finished_spans()
@@ -116,8 +146,11 @@ class TestSessionSpanExport:
 
         on_session_start(session_id="s1", model="gpt-4", platform="api_server")
         on_session_end(
-            session_id="s1", completed=True, interrupted=False,
-            model="gpt-4", platform="api_server",
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="api_server",
         )
 
         spans = exporter.get_finished_spans()

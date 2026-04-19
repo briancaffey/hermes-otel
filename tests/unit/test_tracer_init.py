@@ -10,12 +10,18 @@ from hermes_otel.tracer import HermesOTelPlugin
 def _clear_backend_env(monkeypatch):
     """Remove all backend env vars so tests start from a clean slate."""
     for var in [
-        "OTEL_PHOENIX_ENDPOINT", "OTEL_PROJECT_NAME",
-        "LANGSMITH_TRACING", "LANGSMITH_API_KEY",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY", "OTEL_LANGFUSE_SECRET_API_KEY",
+        "OTEL_PHOENIX_ENDPOINT",
+        "OTEL_PROJECT_NAME",
+        "LANGSMITH_TRACING",
+        "LANGSMITH_API_KEY",
+        "OTEL_LANGFUSE_PUBLIC_API_KEY",
+        "OTEL_LANGFUSE_SECRET_API_KEY",
         "OTEL_LANGFUSE_ENDPOINT",
-        "LANGFUSE_PUBLIC_KEY", "LANGFUSE_SECRET_KEY", "LANGFUSE_BASE_URL",
-        "OTEL_SIGNOZ_ENDPOINT", "OTEL_SIGNOZ_INGESTION_KEY",
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_BASE_URL",
+        "OTEL_SIGNOZ_ENDPOINT",
+        "OTEL_SIGNOZ_INGESTION_KEY",
         "OTEL_JAEGER_ENDPOINT",
         "OTEL_TEMPO_ENDPOINT",
     ]:
@@ -116,8 +122,10 @@ class TestInitLangSmith:
         monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk-lf")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls, \
-             patch.object(plugin, "_init_otlp") as mock_otlp:
+        with (
+            patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls,
+            patch.object(plugin, "_init_otlp") as mock_otlp,
+        ):
             assert plugin.init() is True
             mock_ls.assert_called_once()
             mock_otlp.assert_not_called()
@@ -147,8 +155,7 @@ class TestInitSigNoz:
 
     def test_init_cloud_with_ingestion_key(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT",
-                           "https://ingest.us.signoz.cloud:443/v1/traces")
+        monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "https://ingest.us.signoz.cloud:443/v1/traces")
         monkeypatch.setenv("OTEL_SIGNOZ_INGESTION_KEY", "sz-key-abc123")
 
         plugin = HermesOTelPlugin()
@@ -272,6 +279,7 @@ class TestInitTempo:
 class TestInitOtelUnavailable:
     def test_returns_false_when_otel_not_available(self, monkeypatch):
         import hermes_otel.tracer as tracer_mod
+
         monkeypatch.setattr(tracer_mod, "_OTEL_AVAILABLE", False)
 
         plugin = HermesOTelPlugin()
@@ -284,6 +292,7 @@ class TestConfigDisabled:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         from hermes_otel.plugin_config import HermesOtelConfig
+
         plugin = HermesOTelPlugin(config=HermesOtelConfig(enabled=False))
         # _init_otlp should NOT be called because we short-circuit on disabled.
         with patch.object(plugin, "_init_otlp") as mock_otlp:
@@ -308,6 +317,7 @@ class TestResourceAttributes:
         captured = {}
 
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
@@ -336,6 +346,7 @@ class TestResourceAttributes:
         plugin = HermesOTelPlugin(config=cfg)
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
@@ -355,6 +366,7 @@ class TestResourceAttributes:
         plugin = HermesOTelPlugin(config=cfg)
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
@@ -374,6 +386,7 @@ class TestResourceAttributes:
         plugin = HermesOTelPlugin(config=HermesOtelConfig())
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
@@ -394,6 +407,7 @@ class TestResourceAttributes:
         plugin = HermesOTelPlugin(config=cfg)
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
@@ -414,9 +428,11 @@ class TestSampling:
         plugin = HermesOTelPlugin(config=HermesOtelConfig(sample_rate=None))
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["kwargs"] = kwargs
             return real_tp(**kwargs)
+
         with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
             plugin.init()
         assert "sampler" not in captured["kwargs"]
@@ -432,9 +448,11 @@ class TestSampling:
         plugin = HermesOTelPlugin(config=HermesOtelConfig(sample_rate=0.3))
         captured = {}
         real_tp = TracerProvider
+
         def _spy(**kwargs):
             captured["kwargs"] = kwargs
             return real_tp(**kwargs)
+
         with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
             plugin.init()
         sampler = captured["kwargs"].get("sampler")

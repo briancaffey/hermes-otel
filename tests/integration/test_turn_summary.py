@@ -27,34 +27,65 @@ def _run_full_turn(session_id: str, tool_calls):
     """
     on_session_start(session_id=session_id, model="gpt-4", platform="cli")
     on_pre_llm_call(
-        session_id=session_id, user_message="hello", conversation_history=[],
-        is_first_turn=True, model="gpt-4", platform="cli",
+        session_id=session_id,
+        user_message="hello",
+        conversation_history=[],
+        is_first_turn=True,
+        model="gpt-4",
+        platform="cli",
     )
     on_pre_api_request(
-        task_id="api1", session_id=session_id, platform="cli", model="gpt-4",
-        provider="openai", base_url="", api_mode="chat",
-        api_call_count=1, message_count=5, tool_count=len(tool_calls),
-        approx_input_tokens=500, request_char_count=2000, max_tokens=1024,
+        task_id="api1",
+        session_id=session_id,
+        platform="cli",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=5,
+        tool_count=len(tool_calls),
+        approx_input_tokens=500,
+        request_char_count=2000,
+        max_tokens=1024,
     )
     for i, (name, args, result) in enumerate(tool_calls):
         task_id = f"t{i}"
         on_pre_tool_call(tool_name=name, args=args, task_id=task_id, session_id=session_id)
-        on_post_tool_call(tool_name=name, args=args, result=result, task_id=task_id, session_id=session_id)
+        on_post_tool_call(
+            tool_name=name, args=args, result=result, task_id=task_id, session_id=session_id
+        )
     on_post_api_request(
-        task_id="api1", session_id=session_id, platform="cli", model="gpt-4",
-        provider="openai", base_url="", api_mode="chat",
-        api_call_count=1, api_duration=1.0, finish_reason="stop",
-        message_count=5, response_model="gpt-4",
+        task_id="api1",
+        session_id=session_id,
+        platform="cli",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=1.0,
+        finish_reason="stop",
+        message_count=5,
+        response_model="gpt-4",
         usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
-        assistant_content_chars=200, assistant_tool_call_count=len(tool_calls),
+        assistant_content_chars=200,
+        assistant_tool_call_count=len(tool_calls),
     )
     on_post_llm_call(
-        session_id=session_id, user_message="hello", assistant_response="done",
-        conversation_history=[], model="gpt-4", platform="cli",
+        session_id=session_id,
+        user_message="hello",
+        assistant_response="done",
+        conversation_history=[],
+        model="gpt-4",
+        platform="cli",
     )
     on_session_end(
-        session_id=session_id, completed=True, interrupted=False,
-        model="gpt-4", platform="cli",
+        session_id=session_id,
+        completed=True,
+        interrupted=False,
+        model="gpt-4",
+        platform="cli",
     )
 
 
@@ -144,16 +175,18 @@ class TestTurnSummaryEdgeCases:
     def test_interrupted_session_final_status(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        on_session_end(session_id="s1", completed=False, interrupted=True,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=False, interrupted=True, model="gpt-4", platform="cli"
+        )
         agent = _span_by_name(exporter.get_finished_spans(), "agent")
         assert agent.attributes["hermes.turn.final_status"] == "interrupted"
 
     def test_incomplete_session_final_status(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        on_session_end(session_id="s1", completed=False, interrupted=False,
-                       model="gpt-4", platform="cli")
+        on_session_end(
+            session_id="s1", completed=False, interrupted=False, model="gpt-4", platform="cli"
+        )
         agent = _span_by_name(exporter.get_finished_spans(), "agent")
         assert agent.attributes["hermes.turn.final_status"] == "incomplete"
 

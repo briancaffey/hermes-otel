@@ -51,7 +51,9 @@ try:
 except ImportError as e:
     _OTEL_AVAILABLE = False
     _METRICS_AVAILABLE = False
-    print(f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http")
+    print(
+        f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
+    )
 
 
 # Backend types whose collectors do not accept OTLP metrics. Pure trace-only.
@@ -182,7 +184,9 @@ class SpanTracker:
         stack = self._parent_stack()
         return stack[-1] if stack else None
 
-    def end_span(self, key: str, attributes: dict = None, status: str = None, error_message: str = None) -> None:
+    def end_span(
+        self, key: str, attributes: dict = None, status: str = None, error_message: str = None
+    ) -> None:
         """End and remove a tracked span.
 
         Args:
@@ -199,7 +203,9 @@ class SpanTracker:
 
             # Set status
             if status == "error":
-                span.set_status(Status(status_code=StatusCode.ERROR, description=error_message or ""))
+                span.set_status(
+                    Status(status_code=StatusCode.ERROR, description=error_message or "")
+                )
             elif status == "ok":
                 # Set an explicit empty description so backends don't render "None".
                 span.set_status(Status(status_code=StatusCode.OK, description=""))
@@ -334,9 +340,8 @@ class HermesOTelPlugin:
 
     @staticmethod
     def _wants_langsmith() -> bool:
-        return (
-            os.getenv("LANGSMITH_TRACING", "").strip().lower() == "true"
-            and bool(os.getenv("LANGSMITH_API_KEY", "").strip())
+        return os.getenv("LANGSMITH_TRACING", "").strip().lower() == "true" and bool(
+            os.getenv("LANGSMITH_API_KEY", "").strip()
         )
 
     def _init_otlp_from_env(self) -> bool:
@@ -360,23 +365,19 @@ class HermesOTelPlugin:
                 base_url = os.getenv("LANGFUSE_BASE_URL", "").strip().rstrip("/")
                 root = base_url if base_url else "https://cloud.langfuse.com"
                 langfuse_endpoint = f"{root}/api/public/otel/v1/traces"
-            auth_b64 = base64.b64encode(
-                f"{langfuse_pub}:{langfuse_sec}".encode()
-            ).decode()
+            auth_b64 = base64.b64encode(f"{langfuse_pub}:{langfuse_sec}".encode()).decode()
             headers = {
                 "Authorization": f"Basic {auth_b64}",
                 "x-langfuse-ingestion-version": "4",
             }
-            return self._init_otlp(langfuse_endpoint, headers=headers,
-                                   backend_name="Langfuse")
+            return self._init_otlp(langfuse_endpoint, headers=headers, backend_name="Langfuse")
 
         # SigNoz
         signoz_endpoint = os.getenv("OTEL_SIGNOZ_ENDPOINT", "").strip()
         if signoz_endpoint:
             signoz_key = os.getenv("OTEL_SIGNOZ_INGESTION_KEY", "").strip()
             headers = {"signoz-ingestion-key": signoz_key} if signoz_key else None
-            return self._init_otlp(signoz_endpoint, headers=headers,
-                                   backend_name="SigNoz")
+            return self._init_otlp(signoz_endpoint, headers=headers, backend_name="SigNoz")
 
         # Jaeger
         jaeger_endpoint = os.getenv("OTEL_JAEGER_ENDPOINT", "").strip()
@@ -393,11 +394,13 @@ class HermesOTelPlugin:
         if phoenix_endpoint:
             return self._init_otlp(phoenix_endpoint, backend_name="Phoenix")
 
-        print("[hermes-otel] ✗ No backend configured "
-              "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
-              "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
-              "Langfuse credentials, or LANGSMITH_TRACING; or define "
-              "'backends:' in config.yaml)")
+        print(
+            "[hermes-otel] ✗ No backend configured "
+            "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
+            "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
+            "Langfuse credentials, or LANGSMITH_TRACING; or define "
+            "'backends:' in config.yaml)"
+        )
         return False
 
     def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
@@ -411,18 +414,22 @@ class HermesOTelPlugin:
             if not ep:
                 raise ValueError("phoenix requires endpoint")
             return _ResolvedBackend(
-                type="phoenix", endpoint=ep, display_name=display,
+                type="phoenix",
+                endpoint=ep,
+                display_name=display,
                 headers=extra_headers or None,
                 supports_metrics=self._metrics_for(t, bc.metrics),
             )
 
         if t == "langfuse":
             pub = self._resolve_secret(
-                bc.public_key, bc.public_key_env,
+                bc.public_key,
+                bc.public_key_env,
                 ["OTEL_LANGFUSE_PUBLIC_API_KEY", "LANGFUSE_PUBLIC_KEY"],
             )
             sec = self._resolve_secret(
-                bc.secret_key, bc.secret_key_env,
+                bc.secret_key,
+                bc.secret_key_env,
                 ["OTEL_LANGFUSE_SECRET_API_KEY", "LANGFUSE_SECRET_KEY"],
             )
             if not (pub and sec):
@@ -439,7 +446,9 @@ class HermesOTelPlugin:
             }
             headers.update(extra_headers)
             return _ResolvedBackend(
-                type="langfuse", endpoint=ep, display_name=display,
+                type="langfuse",
+                endpoint=ep,
+                display_name=display,
                 headers=headers,
                 supports_metrics=self._metrics_for(t, bc.metrics),
             )
@@ -449,7 +458,8 @@ class HermesOTelPlugin:
             if not ep:
                 raise ValueError("signoz requires endpoint")
             key = self._resolve_secret(
-                bc.ingestion_key, bc.ingestion_key_env,
+                bc.ingestion_key,
+                bc.ingestion_key_env,
                 ["OTEL_SIGNOZ_INGESTION_KEY"],
             )
             headers: Dict[str, str] = {}
@@ -457,7 +467,9 @@ class HermesOTelPlugin:
                 headers["signoz-ingestion-key"] = key
             headers.update(extra_headers)
             return _ResolvedBackend(
-                type="signoz", endpoint=ep, display_name=display,
+                type="signoz",
+                endpoint=ep,
+                display_name=display,
                 headers=headers or None,
                 supports_metrics=self._metrics_for(t, bc.metrics),
             )
@@ -467,7 +479,9 @@ class HermesOTelPlugin:
             if not ep:
                 raise ValueError("jaeger requires endpoint")
             return _ResolvedBackend(
-                type="jaeger", endpoint=ep, display_name=display,
+                type="jaeger",
+                endpoint=ep,
+                display_name=display,
                 headers=extra_headers or None,
                 supports_metrics=self._metrics_for(t, bc.metrics),
             )
@@ -477,7 +491,9 @@ class HermesOTelPlugin:
             if not ep:
                 raise ValueError("tempo requires endpoint")
             return _ResolvedBackend(
-                type="tempo", endpoint=ep, display_name=display,
+                type="tempo",
+                endpoint=ep,
+                display_name=display,
                 headers=extra_headers or None,
                 supports_metrics=self._metrics_for(t, bc.metrics),
             )
@@ -487,7 +503,8 @@ class HermesOTelPlugin:
             if not ep:
                 raise ValueError("otlp requires endpoint")
             return _ResolvedBackend(
-                type="otlp", endpoint=ep,
+                type="otlp",
+                endpoint=ep,
                 display_name=bc.name or "OTLP",
                 headers=extra_headers or None,
                 supports_metrics=self._metrics_for(t, bc.metrics),
@@ -524,8 +541,9 @@ class HermesOTelPlugin:
 
     # ── Backend initializers ─────────────────────────────────────────────
 
-    def _init_otlp(self, endpoint: str, headers: Optional[Dict[str, str]] = None,
-                   backend_name: str = "OTLP") -> bool:
+    def _init_otlp(
+        self, endpoint: str, headers: Optional[Dict[str, str]] = None, backend_name: str = "OTLP"
+    ) -> bool:
         """Single-backend wrapper around ``_init_otlp_pipeline``.
 
         Preserves the original API for tests and external callers that
@@ -564,10 +582,7 @@ class HermesOTelPlugin:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
             attrs.update(self.config.resource_attributes)
-        project_name = (
-            self.config.project_name
-            or os.getenv("OTEL_PROJECT_NAME", "").strip()
-        )
+        project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name
         return Resource.create(attrs)
@@ -576,7 +591,7 @@ class HermesOTelPlugin:
     def _derive_metrics_endpoint(traces_endpoint: str) -> str:
         """Phoenix/SigNoz use /v1/traces and /v1/metrics on the same host."""
         if traces_endpoint.endswith("/v1/traces"):
-            return traces_endpoint[:-len("/v1/traces")] + "/v1/metrics"
+            return traces_endpoint[: -len("/v1/traces")] + "/v1/metrics"
         return traces_endpoint
 
     def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
@@ -604,9 +619,8 @@ class HermesOTelPlugin:
                     ParentBased,
                     TraceIdRatioBased,
                 )
-                provider_kwargs["sampler"] = ParentBased(
-                    TraceIdRatioBased(self.config.sample_rate)
-                )
+
+                provider_kwargs["sampler"] = ParentBased(TraceIdRatioBased(self.config.sample_rate))
             provider = TracerProvider(**provider_kwargs)
 
             metric_readers: List[Any] = []
@@ -642,8 +656,10 @@ class HermesOTelPlugin:
                         debug_log(f"{b.display_name} metrics init failed: {e}")
 
                 self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
-                print(f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
-                      + (" (traces only)" if not b.supports_metrics else ""))
+                print(
+                    f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
+                    + (" (traces only)" if not b.supports_metrics else "")
+                )
 
             if not self._span_processors:
                 return False
@@ -672,9 +688,11 @@ class HermesOTelPlugin:
             if not self.config.capture_previews:
                 print("[hermes-otel] ⚠ capture_previews=false — input/output values suppressed")
             if len(self._span_processors) > 1:
-                print(f"[hermes-otel] ✓ Multi-backend fan-out active "
-                      f"({len(self._span_processors)} collectors, "
-                      f"{len(self._metric_readers)} with metrics)")
+                print(
+                    f"[hermes-otel] ✓ Multi-backend fan-out active "
+                    f"({len(self._span_processors)} collectors, "
+                    f"{len(self._metric_readers)} with metrics)"
+                )
             return True
         except Exception as e:
             print(f"[hermes-otel] ✗ pipeline init failed: {e}")
@@ -737,8 +755,14 @@ class HermesOTelPlugin:
             if self._skill_inferred_counter is not None:
                 self._skill_inferred_counter.add(1, attrs)
 
-    def start_span(self, name: str, key: str, kind: str = "general",
-                   attributes: dict = None, session_id: Optional[str] = None):
+    def start_span(
+        self,
+        name: str,
+        key: str,
+        kind: str = "general",
+        attributes: dict = None,
+        session_id: Optional[str] = None,
+    ):
         """Create and track a new span.
 
         Args:
@@ -756,7 +780,11 @@ class HermesOTelPlugin:
         if self._langsmith:
             parent_run = self.spans.get_current_parent(session_id)
             run_obj = self._langsmith.start_span(
-                name, key, kind, attributes, parent_run=parent_run,
+                name,
+                key,
+                kind,
+                attributes,
+                parent_run=parent_run,
             )
             if run_obj is None:
                 return NoopSpan()
@@ -790,15 +818,18 @@ class HermesOTelPlugin:
             debug_log(f"Error starting span '{name}': {e}")
             return NoopSpan()
 
-    def end_span(self, key: str, attributes: dict = None, status: str = None, error_message: str = None):
+    def end_span(
+        self, key: str, attributes: dict = None, status: str = None, error_message: str = None
+    ):
         """End a tracked span by its key."""
         try:
             # LangSmith mode — HTTP
             if self._langsmith:
                 run = self.spans.get_span(key)
                 if run:
-                    self._langsmith.end_span(run, attributes=attributes,
-                                             status=status, error_message=error_message)
+                    self._langsmith.end_span(
+                        run, attributes=attributes, status=status, error_message=error_message
+                    )
                     # Remove from active spans directly (bypass SpanTracker.end_span
                     # which tries to call .end() — but LangSmith runs are dicts)
                     self.spans._active_spans.pop(key, None)
@@ -806,7 +837,9 @@ class HermesOTelPlugin:
                 # OTLP mode — just enqueue. BatchSpanProcessor handles
                 # export asynchronously. on_session_end / atexit flush
                 # when data actually needs to be visible.
-                self.spans.end_span(key, attributes=attributes, status=status, error_message=error_message)
+                self.spans.end_span(
+                    key, attributes=attributes, status=status, error_message=error_message
+                )
             # Remove this key from any session's active-key set.
             for sid, keys in list(self._session_keys.items()):
                 keys.discard(key)
@@ -838,7 +871,8 @@ class HermesOTelPlugin:
         threshold_seconds = self.config.root_span_ttl_ms / 1000.0
         now = time.perf_counter()
         expired = [
-            sid for sid, started_at in self._turn_started_at.items()
+            sid
+            for sid, started_at in self._turn_started_at.items()
             if now - started_at > threshold_seconds
         ]
         for sid in expired:
