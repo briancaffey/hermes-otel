@@ -1,0 +1,22 @@
+name: release-please
+
+# Requires repository secret GH_PAT — a fine-grained or classic personal
+# access token with `contents: write` and `pull-requests: write` on this
+# repo. A PAT is used (rather than GITHUB_TOKEN) so the release PR opened
+# by this workflow triggers downstream workflows (CI) on its own push —
+# GITHUB_TOKEN-originated events are silenced by GitHub's loop-protection.
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          token: ${{ secrets.GH_PAT }}
+          release-type: simple
+          package-name: hermes-otel

@@ -100,10 +100,14 @@ Depends on Phase 2 for the biggest wins.
 
 ## Phase 6 — v1.0 release
 
-- [ ] Tag `v1.0.0`.
-- [ ] Publish to PyPI as `hermes-otel`.
-- [ ] GitHub release notes from `CHANGELOG.md`.
-- [ ] Announce (short post + launch video + Phoenix/Langfuse screenshots).
+- [x] **Release automation** via [release-please](https://github.com/googleapis/release-please) — `.github/workflows/release-please.yml`. On every push to `main`, the action opens (or updates) a single "chore(main): release X.Y.Z" PR that:
+  - Bumps the tracked version based on Conventional Commits accumulated since the last release.
+  - Generates / updates `CHANGELOG.md`.
+  Merging the PR creates the tag and the GitHub release automatically.
+  Uses `release-type: simple` + `package-name: hermes-otel`; no config file needed. Requires a repository secret `GH_PAT` (fine-grained or classic PAT with `contents: write` + `pull-requests: write` on this repo) — a PAT is used rather than `GITHUB_TOKEN` so the release PR triggers CI on its own push.
+- [ ] **Sync `pyproject.toml` version** — release-please `simple` mode tracks version in git tags only; `pyproject.toml` still needs a manual bump at release time (or extra-files config can be added later to automate it).
+- [ ] **Publish to PyPI** as `hermes-otel` — separate follow-up workflow (e.g. a tag-triggered job using OIDC "trusted publisher" on PyPI). Intentionally kept out of this phase so the initial cut can be tested via release-please alone.
+- [ ] **Announce** (short post + launch video + Phoenix / Langfuse screenshots).
 
 ---
 
