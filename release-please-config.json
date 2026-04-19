@@ -4,8 +4,7 @@
     ".": {
       "release-type": "simple",
       "package-name": "hermes-otel",
-      "include-v-in-tag": true,
-      "include-component-in-tag": false
+      "include-v-in-tag": true
     }
   }
 }
