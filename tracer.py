@@ -15,12 +15,12 @@ out via one ``PeriodicExportingMetricReader`` per backend that supports them.
 from __future__ import annotations
 
 import atexit
-import base64
 import os
 import time
-from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from . import backends as _backends
+from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import debug_log
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
@@ -51,26 +51,6 @@ except ImportError as e:
     print(
         f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
     )
-
-
-# Backend types whose collectors do not accept OTLP metrics. Pure trace-only.
-_TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
-
-
-@dataclass
-class _ResolvedBackend:
-    """A backend ready to wire into the OTLP pipeline.
-
-    Headers may already include backend-specific auth (e.g. Langfuse Basic
-    Auth, SigNoz ingestion key); the pipeline merges the global
-    ``config.headers`` on top before constructing the exporter.
-    """
-
-    type: str
-    endpoint: str
-    display_name: str = "OTLP"
-    headers: Optional[Dict[str, str]] = None
-    supports_metrics: bool = True
 
 
 class HermesOTelPlugin:
@@ -193,197 +173,29 @@ class HermesOTelPlugin:
     def _init_otlp_from_env(self) -> bool:
         """First-match-wins single-backend init from environment variables.
 
-        Each branch routes through ``_init_otlp`` so the existing unit-test
-        suite (which patches ``_init_otlp``) keeps verifying the routing.
+        Delegates to :mod:`backends` for resolution, then routes through
+        ``_init_otlp`` so the existing unit-test suite (which patches
+        ``_init_otlp``) keeps verifying the routing.
         """
-        # Langfuse
-        langfuse_pub = (
-            os.getenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "").strip()
-            or os.getenv("LANGFUSE_PUBLIC_KEY", "").strip()
-        )
-        langfuse_sec = (
-            os.getenv("OTEL_LANGFUSE_SECRET_API_KEY", "").strip()
-            or os.getenv("LANGFUSE_SECRET_KEY", "").strip()
-        )
-        if langfuse_pub and langfuse_sec:
-            langfuse_endpoint = os.getenv("OTEL_LANGFUSE_ENDPOINT", "").strip()
-            if not langfuse_endpoint:
-                base_url = os.getenv("LANGFUSE_BASE_URL", "").strip().rstrip("/")
-                root = base_url if base_url else "https://cloud.langfuse.com"
-                langfuse_endpoint = f"{root}/api/public/otel/v1/traces"
-            auth_b64 = base64.b64encode(f"{langfuse_pub}:{langfuse_sec}".encode()).decode()
-            headers = {
-                "Authorization": f"Basic {auth_b64}",
-                "x-langfuse-ingestion-version": "4",
-            }
-            return self._init_otlp(langfuse_endpoint, headers=headers, backend_name="Langfuse")
-
-        # SigNoz
-        signoz_endpoint = os.getenv("OTEL_SIGNOZ_ENDPOINT", "").strip()
-        if signoz_endpoint:
-            signoz_key = os.getenv("OTEL_SIGNOZ_INGESTION_KEY", "").strip()
-            headers = {"signoz-ingestion-key": signoz_key} if signoz_key else None
-            return self._init_otlp(signoz_endpoint, headers=headers, backend_name="SigNoz")
-
-        # Jaeger
-        jaeger_endpoint = os.getenv("OTEL_JAEGER_ENDPOINT", "").strip()
-        if jaeger_endpoint:
-            return self._init_otlp(jaeger_endpoint, backend_name="Jaeger")
-
-        # Tempo
-        tempo_endpoint = os.getenv("OTEL_TEMPO_ENDPOINT", "").strip()
-        if tempo_endpoint:
-            return self._init_otlp(tempo_endpoint, backend_name="Tempo")
-
-        # Phoenix
-        phoenix_endpoint = os.getenv("OTEL_PHOENIX_ENDPOINT", "").strip()
-        if phoenix_endpoint:
-            return self._init_otlp(phoenix_endpoint, backend_name="Phoenix")
-
-        print(
-            "[hermes-otel] ✗ No backend configured "
-            "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
-            "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
-            "Langfuse credentials, or LANGSMITH_TRACING; or define "
-            "'backends:' in config.yaml)"
-        )
-        return False
+        rb = _backends.resolve_from_env()
+        if rb is None:
+            print(
+                "[hermes-otel] ✗ No backend configured "
+                "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
+                "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
+                "Langfuse credentials, or LANGSMITH_TRACING; or define "
+                "'backends:' in config.yaml)"
+            )
+            return False
+        return self._init_otlp(rb.endpoint, headers=rb.headers, backend_name=rb.display_name)
 
     def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
-        """Turn a yaml ``BackendConfig`` into a ready-to-wire backend."""
-        t = (bc.type or "").strip().lower()
-        display = bc.name or t.capitalize() or "OTLP"
-        extra_headers = dict(bc.headers or {})
+        """Turn a yaml ``BackendConfig`` into a ready-to-wire backend.
 
-        if t == "phoenix":
-            ep = (bc.endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "")).strip()
-            if not ep:
-                raise ValueError("phoenix requires endpoint")
-            return _ResolvedBackend(
-                type="phoenix",
-                endpoint=ep,
-                display_name=display,
-                headers=extra_headers or None,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        if t == "langfuse":
-            pub = self._resolve_secret(
-                bc.public_key,
-                bc.public_key_env,
-                ["OTEL_LANGFUSE_PUBLIC_API_KEY", "LANGFUSE_PUBLIC_KEY"],
-            )
-            sec = self._resolve_secret(
-                bc.secret_key,
-                bc.secret_key_env,
-                ["OTEL_LANGFUSE_SECRET_API_KEY", "LANGFUSE_SECRET_KEY"],
-            )
-            if not (pub and sec):
-                raise ValueError("langfuse requires public_key and secret_key")
-            ep = (bc.endpoint or os.getenv("OTEL_LANGFUSE_ENDPOINT", "")).strip()
-            if not ep:
-                base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
-                root = base if base else "https://cloud.langfuse.com"
-                ep = f"{root}/api/public/otel/v1/traces"
-            auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
-            headers = {
-                "Authorization": f"Basic {auth}",
-                "x-langfuse-ingestion-version": "4",
-            }
-            headers.update(extra_headers)
-            return _ResolvedBackend(
-                type="langfuse",
-                endpoint=ep,
-                display_name=display,
-                headers=headers,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        if t == "signoz":
-            ep = (bc.endpoint or os.getenv("OTEL_SIGNOZ_ENDPOINT", "")).strip()
-            if not ep:
-                raise ValueError("signoz requires endpoint")
-            key = self._resolve_secret(
-                bc.ingestion_key,
-                bc.ingestion_key_env,
-                ["OTEL_SIGNOZ_INGESTION_KEY"],
-            )
-            headers: Dict[str, str] = {}
-            if key:
-                headers["signoz-ingestion-key"] = key
-            headers.update(extra_headers)
-            return _ResolvedBackend(
-                type="signoz",
-                endpoint=ep,
-                display_name=display,
-                headers=headers or None,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        if t == "jaeger":
-            ep = (bc.endpoint or os.getenv("OTEL_JAEGER_ENDPOINT", "")).strip()
-            if not ep:
-                raise ValueError("jaeger requires endpoint")
-            return _ResolvedBackend(
-                type="jaeger",
-                endpoint=ep,
-                display_name=display,
-                headers=extra_headers or None,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        if t == "tempo":
-            ep = (bc.endpoint or os.getenv("OTEL_TEMPO_ENDPOINT", "")).strip()
-            if not ep:
-                raise ValueError("tempo requires endpoint")
-            return _ResolvedBackend(
-                type="tempo",
-                endpoint=ep,
-                display_name=display,
-                headers=extra_headers or None,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        if t in ("otlp", "generic"):
-            ep = (bc.endpoint or "").strip()
-            if not ep:
-                raise ValueError("otlp requires endpoint")
-            return _ResolvedBackend(
-                type="otlp",
-                endpoint=ep,
-                display_name=bc.name or "OTLP",
-                headers=extra_headers or None,
-                supports_metrics=self._metrics_for(t, bc.metrics),
-            )
-
-        raise ValueError(f"unknown backend type {bc.type!r}")
-
-    @staticmethod
-    def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
-        if override is not None:
-            return override
-        return backend_type not in _TRACES_ONLY
-
-    @staticmethod
-    def _resolve_secret(
-        inline: Optional[str],
-        env_name: Optional[str],
-        fallback_envs: List[str],
-    ) -> Optional[str]:
-        """Pick the first available secret value. Inline > named env > fallback envs."""
-        if inline:
-            v = inline.strip()
-            if v:
-                return v
-        if env_name:
-            v = os.getenv(env_name, "").strip()
-            if v:
-                return v
-        for name in fallback_envs:
-            v = os.getenv(name, "").strip()
-            if v:
-                return v
-        return None
+        Thin shim around :func:`backends.resolve` — kept as a method so
+        subclasses / monkeypatch-based tests have a stable seam.
+        """
+        return _backends.resolve(bc)
 
     # ── Backend initializers ─────────────────────────────────────────────
 

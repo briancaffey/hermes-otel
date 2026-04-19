@@ -38,6 +38,7 @@ class TestInitPhoenix:
             assert plugin.init() is True
             mock_otlp.assert_called_once_with(
                 "http://localhost:6006/v1/traces",
+                headers=None,
                 backend_name="Phoenix",
             )
 
@@ -187,6 +188,7 @@ class TestInitJaeger:
             assert plugin.init() is True
             mock_otlp.assert_called_once_with(
                 "http://localhost:4318/v1/traces",
+                headers=None,
                 backend_name="Jaeger",
             )
 
@@ -238,6 +240,7 @@ class TestInitTempo:
             assert plugin.init() is True
             mock_otlp.assert_called_once_with(
                 "http://localhost:4318/v1/traces",
+                headers=None,
                 backend_name="Tempo",
             )
 

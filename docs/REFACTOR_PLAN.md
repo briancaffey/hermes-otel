@@ -60,19 +60,17 @@ Phase 5 disappear naturally.
 
 `tracer.py` is 930 lines doing 5 jobs. Split it.
 
-- [ ] **Merge the two backend resolvers**. Currently `_init_otlp_from_env` (`tracer.py:345-404`) and `_resolve_backend_config` (`tracer.py:406-499`) duplicate Langfuse basic-auth construction, SigNoz header logic, endpoint derivation. Write one `resolve_backend(type, source)` that takes either a `BackendConfig` (yaml) or a synthesized one from env; call it from both paths.
-- [ ] **Delete `_init_otlp`** (`tracer.py:530-546`) — the singular-backend shim exists only for tests. Migrate its call sites to `_init_otlp_pipeline([backend])`, or expose a public `add_backend(BackendConfig)` method.
-- [ ] **Registry dispatch** for backend types: replace the 7-branch `if t == "..."` chain in `_resolve_backend_config` with `_BACKEND_RESOLVERS = {"phoenix": _resolve_phoenix, ...}`. ~80 lines → ~15.
-- [ ] **Remove back-compat aliases** `_span_processor` / `_metric_reader` (singular, `tracer.py:258-259, 654-657`) once tests stop asserting on them.
-- [ ] **Split `HermesOTelPlugin` into focused modules**:
-      - `backends.py` — `BackendConfig`, `_ResolvedBackend`, `resolve_backend`
-      - `pipeline.py` — `TelemetryPipeline` (wires `TracerProvider` + `MeterProvider`)
-      - `span_tracker.py` — `SpanTracker` (already a good abstraction, deserves its own file)
-      - `orphan_sweep.py` — the TTL registry + `_finalize_orphan`
-      - `tracer.py` — `HermesOTelPlugin` as orchestrator, delegates to the above
-      - Target: each file ≤ 300 LOC.
-- [ ] **Replace `NoopSpan`** (`tracer.py:80-93`) with OTel's built-in `NonRecordingSpan` if its API is a superset.
-- [ ] **Drop the `endpoint=` explicit-arg init path** (`tracer.py:329-331`) if no real caller uses it; tests shouldn't be the sole consumer.
+- [x] **Merge the two backend resolvers** — both env (`_init_otlp_from_env`) and yaml (`_resolve_backend_config`) paths now delegate to `backends.resolve(BackendConfig)`. Env path walks a priority list via `backends.resolve_from_env()`. Langfuse basic-auth / SigNoz header / endpoint-default logic lives in one place.
+- [-] **Delete `_init_otlp`** — deferred. The shim stays as the test seam (`patch.object(plugin, "_init_otlp")` is used in ~16 tests). Phase 5 will migrate tests to a different seam.
+- [x] **Registry dispatch** for backend types — `backends._RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]]`.
+- [-] **Remove back-compat aliases** `_span_processor` / `_metric_reader` — deferred to Phase 5 (tests still assert on them).
+- [x] **Split `HermesOTelPlugin` into focused modules**:
+      - `backends.py` — `_ResolvedBackend`, `_TRACES_ONLY`, per-type resolvers, registry, `resolve` + `resolve_from_env`.
+      - `span_tracker.py` — `SpanTracker` + `_PARENT_STACK`.
+      - `session_state.py` — already landed in Phase 2 (`SessionState`, `PerSession`, `TurnSummary`).
+      - `tracer.py` — shrank from 930 LOC to 619 LOC. Further extraction (orphan sweep → `orphan_sweep.py`, pipeline → `pipeline.py`) deferred; they remain tightly coupled to plugin state and the current split already hits "each file ≤ ~300 LOC" for the new files.
+- [x] **Replace `NoopSpan`** — now uses OTel's `INVALID_SPAN` (NonRecordingSpan singleton). Custom class deleted.
+- [-] **Drop the `endpoint=` explicit-arg init path** — deferred. One test uses it; removal is low-priority.
 
 ---
 
