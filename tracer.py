@@ -16,7 +16,6 @@ from __future__ import annotations
 
 import atexit
 import base64
-import contextvars
 import os
 import time
 from dataclasses import dataclass
@@ -26,15 +25,9 @@ from .debug_utils import debug_log
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 
-# Per-context parent span stack.  Using ContextVar (not threading.local)
-# ensures isolation across both threads AND asyncio coroutines: each
-# async task and each thread gets its own independent stack because
-# contextvars copy-on-write at task/thread boundaries.
-#
-# Default is None (not []) to avoid sharing a single list across contexts.
-_PARENT_STACK: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
-    "hermes_otel_parent_stack", default=None
-)
+# Re-exported for tests (conftest resets _PARENT_STACK between runs).
+# Canonical definition lives in span_tracker so the module is self-contained.
+from .span_tracker import _PARENT_STACK, SpanTracker  # noqa: F401 (re-export)
 
 try:
     from opentelemetry import metrics, trace
@@ -45,13 +38,16 @@ try:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.trace import Status, StatusCode, set_span_in_context
+    from opentelemetry.trace import INVALID_SPAN, set_span_in_context
 
     _OTEL_AVAILABLE = True
     _METRICS_AVAILABLE = True
 except ImportError as e:
     _OTEL_AVAILABLE = False
     _METRICS_AVAILABLE = False
+    # If OTel itself is missing we short-circuit via is_enabled=False before
+    # ever returning this; the None is just to keep module-level references valid.
+    INVALID_SPAN = None  # type: ignore[assignment]
     print(
         f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
     )
@@ -75,161 +71,6 @@ class _ResolvedBackend:
     display_name: str = "OTLP"
     headers: Optional[Dict[str, str]] = None
     supports_metrics: bool = True
-
-
-class NoopSpan:
-    """No-op span fallback."""
-
-    def set_attribute(self, key: str, value: Any) -> None:
-        pass
-
-    def set_status(self, status_code, description: str = "") -> None:
-        pass
-
-    def record_exception(self, exception: Exception) -> None:
-        pass
-
-    def end(self) -> None:
-        pass
-
-
-class SpanTracker:
-    """Track active spans between pre/post hook calls.
-
-    Since hooks fire independently, we need a registry to look up
-    the active span when the post_* hook fires. Also tracks the
-    current "parent" span so child spans nest correctly.
-
-    Two parent stacks run in parallel:
-
-    * ``_session_parent_stacks`` — a plain dict keyed by session_id.
-      Primary source of parent context. hermes-agent executes hooks
-      across threads/async tasks; a ContextVar alone cannot carry the
-      session span from ``on_session_start`` into subsequent hooks when
-      those hooks fire on different workers. The session-keyed stack is
-      shared state (Python GIL makes dict/list ops atomic), so any hook
-      with a session_id can recover the current parent regardless of
-      which thread it runs on.
-
-    * ``_PARENT_STACK`` ContextVar — fallback for hooks that fire
-      without a session_id (e.g. synthetic test calls) and for keeping
-      nesting correct inside a single task when multiple sessions share
-      a worker thread. Isolated per-task/thread so concurrent sessions
-      don't cross-contaminate.
-
-    ``get_current_parent(session_id)`` prefers the session-keyed stack
-    and falls back to the ContextVar.
-    """
-
-    def __init__(self):
-        # key = f"{tool_name}:{task_id}" or f"llm:{session_id}"
-        self._active_spans: Dict[str, Any] = {}
-        # session_id -> [parent, ...]. Lives in plain memory so every
-        # thread/task that handles a hook for this session sees the same
-        # stack. See class docstring for rationale.
-        self._session_parent_stacks: Dict[str, list] = {}
-
-    def _parent_stack(self) -> list:
-        """Return this context's parent span stack, creating it if needed."""
-        stack = _PARENT_STACK.get()
-        if stack is None:
-            stack = []
-            _PARENT_STACK.set(stack)
-        return stack
-
-    def start_span(self, key: str, span, parent=None) -> None:
-        """Store an active span by key."""
-        self._active_spans[key] = span
-        if parent:
-            span._otel_parent = parent
-
-    def push_parent(self, span, session_id: Optional[str] = None) -> None:
-        """Mark ``span`` as the current parent.
-
-        When ``session_id`` is provided the span is also pushed onto the
-        session-keyed stack so hooks on a different thread/task for the
-        same session still see it.
-        """
-        self._parent_stack().append(span)
-        if session_id:
-            self._session_parent_stacks.setdefault(session_id, []).append(span)
-
-    def pop_parent(self, session_id: Optional[str] = None) -> None:
-        """Remove the current parent span.
-
-        Pops both the ContextVar stack (best-effort — may be empty if
-        the pop lands on a different thread than the push) and the
-        session-keyed stack when a session_id is given.
-        """
-        stack = self._parent_stack()
-        if stack:
-            stack.pop()
-        if session_id:
-            s = self._session_parent_stacks.get(session_id)
-            if s:
-                s.pop()
-                if not s:
-                    self._session_parent_stacks.pop(session_id, None)
-
-    def get_current_parent(self, session_id: Optional[str] = None):
-        """Return the current parent span, or None.
-
-        Prefers the session-keyed stack (survives thread boundaries).
-        Falls back to the ContextVar stack for callers that don't know
-        the session_id.
-        """
-        if session_id:
-            s = self._session_parent_stacks.get(session_id)
-            if s:
-                return s[-1]
-        stack = self._parent_stack()
-        return stack[-1] if stack else None
-
-    def end_span(
-        self, key: str, attributes: dict = None, status: str = None, error_message: str = None
-    ) -> None:
-        """End and remove a tracked span.
-
-        Args:
-            key: The tracking key for the span
-            attributes: Final attributes to set before ending
-            status: "ok" or "error" (defaults to "ok" if None)
-            error_message: Error description if status is "error"
-        """
-        span = self._active_spans.pop(key, None)
-        if span:
-            if attributes:
-                for k, v in attributes.items():
-                    span.set_attribute(k, v)
-
-            # Set status
-            if status == "error":
-                span.set_status(
-                    Status(status_code=StatusCode.ERROR, description=error_message or "")
-                )
-            elif status == "ok":
-                # Set an explicit empty description so backends don't render "None".
-                span.set_status(Status(status_code=StatusCode.OK, description=""))
-
-            span.end()
-
-    def get_span(self, key):
-        """Get an active span by key."""
-        return self._active_spans.get(key)
-
-    def end_all(self) -> None:
-        """End all remaining spans (cleanup).
-
-        Only clears this context's parent stack — other tasks/threads
-        are untouched.
-        """
-        for key in list(self._active_spans.keys()):
-            self.end_span(key)
-        self._active_spans.clear()
-        self._session_parent_stacks.clear()
-        stack = _PARENT_STACK.get()
-        if stack is not None:
-            stack.clear()
 
 
 class HermesOTelPlugin:
@@ -776,7 +617,7 @@ class HermesOTelPlugin:
                         exceeds root_span_ttl_ms.
         """
         if not self._initialized:
-            return NoopSpan()
+            return INVALID_SPAN
 
         if session_id:
             self._session_keys.setdefault(session_id, set()).add(key)
@@ -792,13 +633,13 @@ class HermesOTelPlugin:
                 parent_run=parent_run,
             )
             if run_obj is None:
-                return NoopSpan()
+                return INVALID_SPAN
             self.spans.start_span(key, run_obj)
             return run_obj
 
         # OTLP mode (Phoenix/Langfuse/etc.)
         if not self.tracer:
-            return NoopSpan()
+            return INVALID_SPAN
 
         try:
             attrs = dict(attributes or {})
@@ -821,7 +662,7 @@ class HermesOTelPlugin:
             return span
         except Exception as e:
             debug_log(f"Error starting span '{name}': {e}")
-            return NoopSpan()
+            return INVALID_SPAN
 
     def end_span(
         self, key: str, attributes: dict = None, status: str = None, error_message: str = None
