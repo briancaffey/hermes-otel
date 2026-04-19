@@ -2,9 +2,8 @@
 
 from unittest.mock import patch
 
-import pytest
-
 import hermes_otel.tracer as tracer_mod
+import pytest
 from hermes_otel.hooks import (
     on_pre_api_request,
     on_pre_tool_call,

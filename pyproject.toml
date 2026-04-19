@@ -5,14 +5,54 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-otel"
 version = "1.0.0"
-description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, etc."
+description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo."
 readme = "README.md"
+license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
+authors = [
+    { name = "Brian Caffey", email = "briancaffey2010@gmail.com" },
+]
+keywords = [
+    "opentelemetry",
+    "otel",
+    "hermes",
+    "hermes-agent",
+    "llm",
+    "tracing",
+    "observability",
+    "phoenix",
+    "langfuse",
+    "langsmith",
+    "signoz",
+    "jaeger",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+    "Topic :: System :: Monitoring",
+    "Typing :: Typed",
+]
 dependencies = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",
 ]
+
+[project.urls]
+Homepage = "https://github.com/briancaffey/hermes-otel"
+Repository = "https://github.com/briancaffey/hermes-otel"
+Issues = "https://github.com/briancaffey/hermes-otel/issues"
+Changelog = "https://github.com/briancaffey/hermes-otel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
 langsmith = [
@@ -23,6 +63,7 @@ yaml = [
 ]
 dev = [
     "pytest>=8.0",
+    "pytest-cov",
     "pyyaml",
     "opentelemetry-api",
     "opentelemetry-sdk",
@@ -47,6 +88,53 @@ markers = [
     "smoke: full-stack tests requiring hermes-agent + observability backend running",
 ]
 addopts = "-m 'not e2e and not smoke' -v"
+
+[tool.coverage.run]
+source = ["hermes_otel"]
+omit = [
+    "tests/*",
+    "scripts/*",
+    "*/__pycache__/*",
+]
+
+[tool.coverage.report]
+exclude_lines = [
+    "pragma: no cover",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+]
+
+[tool.ruff]
+line-length = 100
+target-version = "py39"
+extend-exclude = [
+    ".venv",
+    "video",
+    "renders",
+    "hermes_otel.egg-info",
+]
+
+[tool.ruff.lint]
+# Keep the initial ruleset conservative so existing code passes without
+# large rewrites. Can tighten later (UP, B, SIM, RUF) once the codebase
+# settles after the Phase 2–4 refactors.
+select = [
+    "E",    # pycodestyle errors
+    "F",    # pyflakes
+    "W",    # pycodestyle warnings
+    "I",    # isort
+]
+ignore = [
+    "E501",  # line too long — handled by formatter / reviewer judgment
+    "E741",  # ambiguous variable name (e.g. `l`)
+]
+
+[tool.ruff.lint.per-file-ignores]
+# Tests legitimately use `pytest.importorskip(...)` before real imports (E402)
+# and commonly assign results solely for assertion setup (F841).
+"tests/**/*.py" = ["F401", "F811", "E402", "F841"]
+"__init__.py" = ["F401"]
 
 [tool.setuptools]
 packages = ["hermes_otel"]

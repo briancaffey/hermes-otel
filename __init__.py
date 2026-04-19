@@ -12,9 +12,9 @@ def register(ctx):
     # context (e.g. pytest's Package.setup on a rootdir-with-__init__.py
     # project whose directory name is not a valid Python identifier)
     # does not trigger the relative imports.
+    from . import hooks
     from .debug_utils import debug_log
     from .tracer import get_tracer
-    from . import hooks
 
     tracer = get_tracer()
     tracer.init()

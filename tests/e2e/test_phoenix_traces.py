@@ -9,17 +9,17 @@ import pytest
 requests = pytest.importorskip("requests")
 
 import hermes_otel.tracer as tracer_mod
-from hermes_otel.tracer import HermesOTelPlugin
 from hermes_otel.hooks import (
-    on_session_start,
-    on_session_end,
-    on_pre_llm_call,
-    on_post_llm_call,
-    on_pre_api_request,
     on_post_api_request,
-    on_pre_tool_call,
+    on_post_llm_call,
     on_post_tool_call,
+    on_pre_api_request,
+    on_pre_llm_call,
+    on_pre_tool_call,
+    on_session_end,
+    on_session_start,
 )
+from hermes_otel.tracer import HermesOTelPlugin
 
 
 def _query_phoenix_spans(base_url, project_name=None, limit=50):

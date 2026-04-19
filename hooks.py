@@ -392,7 +392,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_command(command)
         summary.add_skill(skill)
 
-    span = tracer.start_span(
+    tracer.start_span(
         name=f"tool.{tool_name}",
         key=key,
         kind="tool",
@@ -563,7 +563,7 @@ def on_post_llm_call(session_id: str, user_message: str, assistant_response: str
 
     # Mark as OK — LLM call completed successfully
     tracer.end_span(key, attributes=attributes, status="ok")
-    debug_log(f"  LLM span ended: status=ok")
+    debug_log("  LLM span ended: status=ok")
 
 
 def on_pre_api_request(task_id: str, session_id: str, platform: str, model: str,

@@ -12,13 +12,11 @@ materializes one processor + one metric reader (when supported).
 
 from __future__ import annotations
 
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
-
 
 # ── End-to-end fan-out: two real exporters, one provider ────────────────────
 
@@ -32,14 +30,13 @@ def two_exporter_pipeline():
     TracerProvider, mirroring how the multi-backend pipeline attaches
     one ``BatchSpanProcessor`` per backend.
     """
+    import hermes_otel.tracer as tracer_mod
+    from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
         InMemorySpanExporter,
     )
-    from opentelemetry.sdk.resources import Resource
-
-    import hermes_otel.tracer as tracer_mod
 
     exporter_a = InMemorySpanExporter()
     exporter_b = InMemorySpanExporter()

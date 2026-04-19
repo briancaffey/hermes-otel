@@ -17,7 +17,6 @@ requests = pytest.importorskip("requests")
 openai = pytest.importorskip("openai")
 from openai import OpenAI
 
-
 # ── Phoenix GraphQL helpers ──────────────────────────────────────────────────
 
 def _phoenix_graphql(base_url, query, variables=None):

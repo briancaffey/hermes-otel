@@ -25,7 +25,6 @@ from typing import Any, Dict, List, Optional
 from .debug_utils import debug_log
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 
-
 # Per-context parent span stack.  Using ContextVar (not threading.local)
 # ensures isolation across both threads AND asyncio coroutines: each
 # async task and each thread gets its own independent stack because
@@ -37,17 +36,15 @@ _PARENT_STACK: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
 )
 
 try:
-    from opentelemetry import trace
-    from opentelemetry.trace import Status, StatusCode, set_span_in_context
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.sdk.resources import Resource
+    from opentelemetry import metrics, trace
+    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
     from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-
-    from opentelemetry import metrics
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.trace import Status, StatusCode, set_span_in_context
 
     _OTEL_AVAILABLE = True
     _METRICS_AVAILABLE = True

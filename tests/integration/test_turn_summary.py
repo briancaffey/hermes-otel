@@ -1,7 +1,6 @@
 """Integration tests for per-turn summary attributes on the session span."""
 
 import pytest
-
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_llm_call,

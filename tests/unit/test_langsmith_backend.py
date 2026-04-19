@@ -5,17 +5,15 @@ All HTTP calls are mocked via urllib.request.urlopen — no real network I/O.
 
 import io
 import json
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
 import pytest
-
 from hermes_otel.langsmith_backend import (
     LangSmithBackend,
     _coerce_int,
     _uuid_to_str,
 )
-
 
 # ── Helpers ──────────────────────────────────────────────────────────────────
 

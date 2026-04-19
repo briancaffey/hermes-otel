@@ -1,8 +1,7 @@
 """Tests for pure helper functions in hooks.py."""
 
 import pytest
-
-from hermes_otel.hooks import _safe_str, _to_int, _detect_session_kind
+from hermes_otel.hooks import _detect_session_kind, _safe_str, _to_int
 
 
 class TestSafeStr:

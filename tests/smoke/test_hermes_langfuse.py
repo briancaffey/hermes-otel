@@ -82,8 +82,8 @@ class TestHermesLangfuseSmoke:
         )
 
         assert len(observations) >= 1, (
-            f"No observations appeared in Langfuse within 60s after chat. "
-            f"Verify the hermes-otel plugin is loaded and OTEL_LANGFUSE_* env vars are set."
+            "No observations appeared in Langfuse within 60s after chat. "
+            "Verify the hermes-otel plugin is loaded and OTEL_LANGFUSE_* env vars are set."
         )
 
         # We should see at least an API span (api.*) from the LLM call

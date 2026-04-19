@@ -1,10 +1,9 @@
 """Tests for HermesOTelPlugin.init() environment detection logic."""
 
 import base64
-from unittest.mock import patch, MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
-
 from hermes_otel.tracer import HermesOTelPlugin
 
 

@@ -97,8 +97,8 @@ def phoenix_service():
 
 def _wait_for_url(url, timeout=120, interval=3):
     """Poll until an HTTP URL returns 200."""
-    import urllib.request
     import urllib.error
+    import urllib.request
 
     deadline = time.time() + timeout
     while time.time() < deadline:

@@ -1,6 +1,6 @@
 """Tests for NoopSpan and graceful degradation."""
 
-from hermes_otel.tracer import NoopSpan, HermesOTelPlugin
+from hermes_otel.tracer import HermesOTelPlugin, NoopSpan
 
 
 class TestNoopSpan:

@@ -1,18 +1,17 @@
 """Integration tests for a complete session lifecycle with token aggregation
 and session I/O roll-up."""
 
-import pytest
-
 import hermes_otel.hooks as hooks_mod
+import pytest
 from hermes_otel.hooks import (
-    on_session_start,
-    on_session_end,
-    on_pre_llm_call,
-    on_post_llm_call,
-    on_pre_api_request,
     on_post_api_request,
-    on_pre_tool_call,
+    on_post_llm_call,
     on_post_tool_call,
+    on_pre_api_request,
+    on_pre_llm_call,
+    on_pre_tool_call,
+    on_session_end,
+    on_session_start,
 )
 
 

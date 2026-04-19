@@ -500,5 +500,4 @@ Jaeger and Tempo are both **traces only**. If you want both spans and the token/
 - **No full prompt capture** — Hermes hooks don't expose the fully-formed prompt (system message + conversation history + tool results) to plugins. API spans only receive metadata (token counts, model, duration). The raw user message and assistant response appear on the parent LLM span.
 - **Langfuse auth** — Requires both public and secret keys; Basic Auth is constructed automatically. If only one key is set, Langfuse mode won't activate.
 - **No gRPC** — Only OTLP over HTTP/JSON is used. gRPC exporters are not included.
-- **Sync export** — Uses `SimpleSpanProcessor` (synchronous export on span end) rather than `BatchSpanProcessor` for reliability, which adds a small latency per span.
-- **Single session per run** — Span tracking is in-memory; if Hermes restarts mid-session, active spans are lost.
+- **Single session per run** — Span tracking is in-memory; if Hermes restarts mid-session, active spans are lost. A TTL-based sweeper finalizes abandoned sessions (see "Orphan-span sweep" above), but the orphaned process's buffered spans still need a graceful `atexit` to flush.

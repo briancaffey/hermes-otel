@@ -24,9 +24,9 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     hermes_otel/config.yaml`` (which can define backends and change the
     init() code path unexpectedly).
     """
-    import hermes_otel.tracer as tracer_mod
     import hermes_otel.hooks as hooks_mod
     import hermes_otel.plugin_config as plugin_config_mod
+    import hermes_otel.tracer as tracer_mod
 
     fake_path = tmp_path_factory.mktemp("isolated-config") / "nonexistent.yaml"
     monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", fake_path)
@@ -53,13 +53,12 @@ def inmemory_otel_setup():
     Returns (exporter, plugin). Tests can call exporter.get_finished_spans()
     to inspect exported spans without any network I/O.
     """
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
     import hermes_otel.tracer as tracer_mod
     from hermes_otel.tracer import HermesOTelPlugin
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     exporter = InMemorySpanExporter()
     resource = Resource.create({"service.name": "hermes-otel-test"})
@@ -88,15 +87,14 @@ def inmemory_otel_with_metrics():
 
     Returns (span_exporter, metric_reader, plugin).
     """
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-
     import hermes_otel.tracer as tracer_mod
     from hermes_otel.tracer import HermesOTelPlugin
+    from opentelemetry.sdk.metrics import MeterProvider
+    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
+    from opentelemetry.sdk.resources import Resource
+    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     # Spans
     span_exporter = InMemorySpanExporter()

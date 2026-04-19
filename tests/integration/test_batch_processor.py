@@ -17,7 +17,6 @@ import time
 from unittest.mock import patch
 
 import pytest
-
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
@@ -109,9 +108,9 @@ def _build_batch_plugin(schedule_delay_ms: int = 50):
 
     Does NOT call plugin.init() — avoids mutating global OTel state.
     """
+    from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
-    from opentelemetry.sdk.resources import Resource
 
     exporter = _RecordingExporter()
     resource = Resource.create({"service.name": "hermes-otel-test"})
@@ -236,8 +235,8 @@ class TestConcurrentSessions:
     def test_two_threads_separate_trees(self, batch_pipeline):
         from hermes_otel.hooks import (
             on_post_api_request,
-            on_pre_api_request,
             on_post_tool_call,
+            on_pre_api_request,
             on_pre_tool_call,
             on_session_end,
             on_session_start,
