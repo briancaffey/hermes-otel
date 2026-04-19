@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-otel"
-version = "1.0.0"
+version = "0.1.0"
 description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo."
 readme = "README.md"
 license = { text = "Apache-2.0" }
