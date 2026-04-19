@@ -1,7 +1,10 @@
 """Shared fixtures for the hermes-otel test suite."""
 
+from __future__ import annotations
+
 import sys
 from pathlib import Path
+from typing import List, Tuple
 
 import pytest
 
@@ -41,90 +44,116 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     _reset()
 
 
-@pytest.fixture()
-def inmemory_otel_setup():
-    """Create a HermesOTelPlugin wired to an InMemorySpanExporter.
+def _build_inmemory_plugin(n_exporters: int = 1):
+    """Wire a ``HermesOTelPlugin`` to N ``InMemorySpanExporter``s.
 
-    Returns (exporter, plugin). Tests can call exporter.get_finished_spans()
-    to inspect exported spans without any network I/O.
+    Bypasses :meth:`HermesOTelPlugin.init` (which is a once-per-process
+    operation against OTel's global ``TracerProvider``) and instead
+    constructs a fresh ``TracerProvider`` with N ``SimpleSpanProcessor``s,
+    one per exporter. Each test thus gets its own isolated pipeline.
+
+    Returns ``(exporters, plugin, provider)``. The caller registers the
+    plugin as the module singleton (so hook callbacks find it) and is
+    responsible for ``provider.shutdown()`` on teardown.
     """
-    import hermes_otel.tracer as tracer_mod
     from hermes_otel.tracer import HermesOTelPlugin
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    exporter = InMemorySpanExporter()
+    exporters = [InMemorySpanExporter() for _ in range(n_exporters)]
     resource = Resource.create({"service.name": "hermes-otel-test"})
     provider = TracerProvider(resource=resource)
-    processor = SimpleSpanProcessor(exporter)
-    provider.add_span_processor(processor)
+    processors = []
+    for exp in exporters:
+        proc = SimpleSpanProcessor(exp)
+        provider.add_span_processor(proc)
+        processors.append(proc)
 
     plugin = HermesOTelPlugin()
     plugin.tracer = provider.get_tracer("hermes-otel-test")
     plugin._initialized = True
-    plugin._span_processor = processor
+    plugin._span_processors = processors
+    plugin._span_processor = processors[0]
+    return exporters, plugin, provider
 
-    # Patch the module singleton so get_tracer() returns our plugin
+
+def _install_as_singleton(plugin) -> None:
+    """Make hooks' ``get_tracer()`` return ``plugin``."""
+    import hermes_otel.tracer as tracer_mod
+
     tracer_mod._tracer = plugin
 
-    yield exporter, plugin
 
-    exporter.clear()
-    provider.shutdown()
-    tracer_mod._tracer = None
+@pytest.fixture()
+def inmemory_otel_setup():
+    """Single ``InMemorySpanExporter`` + a plugin wired to use it.
+
+    Returns ``(exporter, plugin)``. Tests inspect exporter.get_finished_spans()
+    to assert on what would have been sent to a real OTLP collector.
+    """
+    exporters, plugin, provider = _build_inmemory_plugin(n_exporters=1)
+    _install_as_singleton(plugin)
+    try:
+        yield exporters[0], plugin
+    finally:
+        exporters[0].clear()
+        provider.shutdown()
+
+
+@pytest.fixture()
+def two_exporter_pipeline() -> Tuple:
+    """Two ``InMemorySpanExporter``s + a plugin fanning out to both.
+
+    Returns ``(exporter_a, exporter_b, plugin)``. Each ``span.end()``
+    lands in both exporters — mirrors the multi-backend fan-out in
+    production where each backend gets its own ``BatchSpanProcessor``.
+    """
+    exporters, plugin, provider = _build_inmemory_plugin(n_exporters=2)
+    _install_as_singleton(plugin)
+    try:
+        yield exporters[0], exporters[1], plugin
+    finally:
+        for exp in exporters:
+            exp.clear()
+        provider.shutdown()
 
 
 @pytest.fixture()
 def inmemory_otel_with_metrics():
-    """Like inmemory_otel_setup but also configures an InMemoryMetricReader.
+    """``inmemory_otel_setup`` plus an attached ``InMemoryMetricReader``.
 
-    Returns (span_exporter, metric_reader, plugin).
+    Returns ``(span_exporter, metric_reader, plugin)``.
     """
-    import hermes_otel.tracer as tracer_mod
-    from hermes_otel.tracer import HermesOTelPlugin
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import InMemoryMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-    # Spans
-    span_exporter = InMemorySpanExporter()
-    resource = Resource.create({"service.name": "hermes-otel-test"})
-    trace_provider = TracerProvider(resource=resource)
-    processor = SimpleSpanProcessor(span_exporter)
-    trace_provider.add_span_processor(processor)
+    exporters, plugin, trace_provider = _build_inmemory_plugin(n_exporters=1)
 
-    # Metrics
     metric_reader = InMemoryMetricReader()
-    meter_provider = MeterProvider(resource=resource, metric_readers=[metric_reader])
-    meter = meter_provider.get_meter("hermes-otel-test")
-
-    plugin = HermesOTelPlugin()
-    plugin.tracer = trace_provider.get_tracer("hermes-otel-test")
-    plugin._initialized = True
-    plugin._span_processor = processor
-
-    # Wire up metric instruments
-    plugin._meter = meter
+    meter_provider = MeterProvider(
+        resource=Resource.create({"service.name": "hermes-otel-test"}),
+        metric_readers=[metric_reader],
+    )
+    plugin._meter = meter_provider.get_meter("hermes-otel-test")
     plugin._meter_provider = meter_provider
     plugin._metric_reader = metric_reader
-    plugin._session_count = meter.create_counter("hermes.session.count")
-    plugin._token_usage = meter.create_counter("hermes.token.usage")
-    plugin._cost_usage = meter.create_counter("hermes.cost.usage")
-    plugin._tool_duration = meter.create_histogram("hermes.tool.duration", unit="ms")
-    plugin._message_count = meter.create_counter("hermes.message.count")
-    plugin._model_usage = meter.create_counter("hermes.model.usage")
-    plugin._skill_inferred_counter = meter.create_counter("hermes.skill.inferred")
+    plugin._create_metric_instruments()
 
-    tracer_mod._tracer = plugin
+    _install_as_singleton(plugin)
+    try:
+        yield exporters[0], metric_reader, plugin
+    finally:
+        exporters[0].clear()
+        trace_provider.shutdown()
+        meter_provider.shutdown()
 
-    yield span_exporter, metric_reader, plugin
 
-    span_exporter.clear()
-    trace_provider.shutdown()
-    meter_provider.shutdown()
-    tracer_mod._tracer = None
+# Re-export helpers so test modules can build their own variations
+# without duplicating the OTel-SDK wiring boilerplate.
+__all__: List[str] = [
+    "_build_inmemory_plugin",
+    "_install_as_singleton",
+]

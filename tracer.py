@@ -511,11 +511,19 @@ class HermesOTelPlugin:
 
     # ── Turn registry (orphan sweep) ─────────────────────────────────────
 
-    def register_turn(self, session_id: str) -> None:
-        """Record the start time of a session for TTL tracking."""
+    def register_turn(self, session_id: str, started_at: Optional[float] = None) -> None:
+        """Record the start time of a session for TTL tracking.
+
+        ``started_at`` is a ``time.perf_counter()``-style monotonic value
+        (seconds, arbitrary epoch). Defaults to ``now``; tests pass a
+        back-dated value to simulate timeouts without monkeypatching
+        ``time``.
+        """
         if not session_id:
             return
-        self._turn_started_at[session_id] = time.perf_counter()
+        self._turn_started_at[session_id] = (
+            started_at if started_at is not None else time.perf_counter()
+        )
 
     def unregister_turn(self, session_id: str) -> None:
         """Remove a session from the turn registry (normal end)."""

@@ -1,13 +1,12 @@
 """Integration tests for the multi-backend fan-out.
 
-These tests bypass ``init()`` and wire the TracerProvider with multiple
-``BatchSpanProcessor``s manually so we can attach two ``InMemorySpanExporter``s
-and prove that every span lands in *all* configured exporters.
+``TestSpanFanOut`` uses the ``two_exporter_pipeline`` fixture (defined
+in :mod:`tests.conftest`) to wire real in-memory exporters and prove
+every span lands in *every* attached backend.
 
-The ``_init_otlp_pipeline`` end of the wiring is exercised separately in
-``test_pipeline_resolution`` below — that test patches the OTLP
-exporters/processors and verifies that one BackendConfig per yaml entry
-materializes one processor + one metric reader (when supported).
+``TestConfigBackendsRouting`` exercises the upstream end — it patches
+the OTLP exporters and verifies that one ``BackendConfig`` per yaml
+entry materializes one processor + one metric reader (when supported).
 """
 
 from __future__ import annotations
@@ -17,50 +16,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
-
-# ── End-to-end fan-out: two real exporters, one provider ────────────────────
-
-
-@pytest.fixture()
-def two_exporter_pipeline():
-    """Wire a HermesOTelPlugin to two InMemorySpanExporters.
-
-    Returns ``(exporter_a, exporter_b, plugin)``. Both exporters are
-    attached as separate ``SimpleSpanProcessor``s on the same
-    TracerProvider, mirroring how the multi-backend pipeline attaches
-    one ``BatchSpanProcessor`` per backend.
-    """
-    import hermes_otel.tracer as tracer_mod
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import (
-        InMemorySpanExporter,
-    )
-
-    exporter_a = InMemorySpanExporter()
-    exporter_b = InMemorySpanExporter()
-    resource = Resource.create({"service.name": "hermes-otel-test"})
-    provider = TracerProvider(resource=resource)
-    proc_a = SimpleSpanProcessor(exporter_a)
-    proc_b = SimpleSpanProcessor(exporter_b)
-    provider.add_span_processor(proc_a)
-    provider.add_span_processor(proc_b)
-
-    plugin = HermesOTelPlugin()
-    plugin.tracer = provider.get_tracer("hermes-otel-test")
-    plugin._initialized = True
-    plugin._span_processors = [proc_a, proc_b]
-    plugin._span_processor = proc_a  # back-compat alias
-
-    tracer_mod._tracer = plugin
-
-    yield exporter_a, exporter_b, plugin
-
-    exporter_a.clear()
-    exporter_b.clear()
-    provider.shutdown()
-    tracer_mod._tracer = None
 
 
 class TestSpanFanOut:
