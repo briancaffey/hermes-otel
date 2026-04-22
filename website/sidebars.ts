@@ -26,6 +26,7 @@ const sidebars: SidebarsConfig = {
         'backends/jaeger',
         'backends/tempo',
         'backends/otlp',
+        'backends/lgtm',
         'backends/multi-backend',
       ],
     },
@@ -41,6 +42,7 @@ const sidebars: SidebarsConfig = {
         'configuration/privacy',
         'configuration/conversation-capture',
         'configuration/batch-export',
+        'configuration/logs',
       ],
     },
     {

@@ -10,6 +10,10 @@ description: "Send Hermes traces to a local Grafana Tempo stack or Grafana Cloud
 
 **Signals:** traces only. **Deployment:** local (docker compose) or Grafana Cloud. **Cost:** OSS (self-host) / free tier + paid (cloud).
 
+:::tip Looking for all three signals?
+If you want Grafana with **traces + metrics + logs**, use the [**LGTM stack**](/backends/lgtm) instead. It bundles Tempo alongside Loki, Mimir, and an OTel Collector in one container. The `type: tempo` backend covered here is only for standalone Tempo deployments; it's traces-only and won't fan out metrics or logs even if pointed at a collector that accepts them.
+:::
+
 ## Local stack
 
 Tempo ships an upstream single-binary docker-compose example that bundles Tempo + MinIO (S3) + Grafana + Prometheus:
