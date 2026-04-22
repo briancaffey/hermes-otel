@@ -276,9 +276,7 @@ def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
         ["OTEL_UPTRACE_DSN", "UPTRACE_DSN"],
     )
     if not dsn:
-        raise ValueError(
-            "uptrace requires dsn (e.g. http://<project_token>@host:14318?grpc=14317)"
-        )
+        raise ValueError("uptrace requires dsn (e.g. http://<project_token>@host:14318?grpc=14317)")
     headers: Dict[str, str] = {"uptrace-dsn": dsn}
     headers.update(bc.headers or {})
     return _ResolvedBackend(
