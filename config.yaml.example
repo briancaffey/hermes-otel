@@ -68,6 +68,27 @@
 # Clipped with a trailing "..." if the conversation is bigger.
 # conversation_history_max_chars: 20000
 
+# ── Logs (opt-in) ─────────────────────────────────────────────────────────────
+#
+# Attaches an OTel LoggingHandler to Python's logging so stdlib logger.info()
+# calls ship to any log-capable backend (SigNoz, generic OTLP → Loki/LGTM).
+# Each log record is automatically stamped with the active span's trace_id
+# and span_id, so Grafana's "logs for this span" drill-down works.
+#
+# Off by default because attaching to the root logger is invasive — it
+# exports logs from every library hermes-agent imports, not just the plugin.
+# Also settable via HERMES_OTEL_CAPTURE_LOGS / HERMES_OTEL_LOG_LEVEL /
+# HERMES_OTEL_LOG_ATTACH_LOGGER.
+# capture_logs: false
+
+# Minimum level the handler accepts (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+# log_level: INFO
+
+# Which logger to attach to. Null/unset = root logger (captures everything).
+# Set to e.g. "hermes_otel" to capture only plugin logs; "hermes" for
+# hermes-agent's own logs; any logger name to scope further.
+# log_attach_logger: null
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than
@@ -103,10 +124,14 @@
 # Supported `type` values:
 #   phoenix    — Arize Phoenix (local or cloud). Traces + metrics.
 #   langfuse   — Langfuse. Traces only (no OTLP metrics support upstream).
-#   signoz     — SigNoz (self-hosted or cloud). Traces + metrics.
+#   signoz     — SigNoz (self-hosted or cloud). Traces + metrics + logs.
 #   jaeger     — Jaeger. Traces only.
-#   tempo      — Grafana Tempo. Traces only.
-#   otlp       — Any other OTLP/HTTP collector. Traces + metrics.
+#   tempo      — Standalone Grafana Tempo. Traces only. Use `lgtm` for the
+#                full LGTM stack (Tempo + Loki + Mimir + collector).
+#   otlp       — Any other OTLP/HTTP collector. Traces + metrics + logs.
+#   lgtm       — Grafana LGTM (Tempo + Loki + Mimir + collector, one image).
+#                Behaves like `otlp` — all three signals — but a dedicated
+#                type makes intent clear and sets display name to "LGTM".
 #
 # `metrics: true|false` per entry overrides the auto default if needed.
 #
@@ -151,6 +176,20 @@
 #     headers:
 #       X-Tenant: acme
 #     metrics: true
+#     logs: true       # override the default (on for otlp/generic/signoz)
+
+# ── LGTM quickstart ──────────────────────────────────────────────────────────
+#
+# Grafana's "all signals in one container" image (traces + metrics + logs).
+# See docker-compose/lgtm/README.md for setup.
+#
+# backends:
+#   - type: lgtm
+#     endpoint: http://localhost:4318/v1/traces
+# capture_logs: true
+#
+# Do NOT use `type: tempo` for the LGTM stack — that's for standalone Tempo
+# and would disable the logs/metrics fan-out.
 
 # ── LangSmith (env-var only, alternative to the above) ────────────────────────
 #

@@ -30,6 +30,12 @@ from .plugin_config import BackendConfig
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
 _TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
 
+# Backend types whose collectors accept OTLP logs. Everything else defaults
+# to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
+# we'd rather drop logs on the floor than spray 4xx errors at them. Users
+# can override per-backend via the ``logs:`` field in config.yaml.
+_LOGS_CAPABLE = {"signoz", "otlp", "generic", "lgtm"}
+
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
 _DISPLAY_NAMES = {
@@ -40,6 +46,7 @@ _DISPLAY_NAMES = {
     "tempo": "Tempo",
     "otlp": "OTLP",
     "generic": "OTLP",
+    "lgtm": "LGTM",
 }
 
 # Priority for env-var-driven single-backend detection. First backend whose
@@ -61,6 +68,7 @@ class _ResolvedBackend:
     display_name: str = "OTLP"
     headers: Optional[Dict[str, str]] = None
     supports_metrics: bool = True
+    supports_logs: bool = False
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -70,6 +78,12 @@ def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
     return backend_type not in _TRACES_ONLY
+
+
+def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
+    if override is not None:
+        return override
+    return backend_type in _LOGS_CAPABLE
 
 
 def _resolve_secret(
@@ -111,6 +125,7 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "phoenix"),
         headers=extra or None,
         supports_metrics=_metrics_for("phoenix", bc.metrics),
+        supports_logs=_logs_for("phoenix", bc.logs),
     )
 
 
@@ -144,6 +159,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "langfuse"),
         headers=headers,
         supports_metrics=_metrics_for("langfuse", bc.metrics),
+        supports_logs=_logs_for("langfuse", bc.logs),
     )
 
 
@@ -166,6 +182,7 @@ def _resolve_signoz(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "signoz"),
         headers=headers or None,
         supports_metrics=_metrics_for("signoz", bc.metrics),
+        supports_logs=_logs_for("signoz", bc.logs),
     )
 
 
@@ -180,6 +197,7 @@ def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "jaeger"),
         headers=extra or None,
         supports_metrics=_metrics_for("jaeger", bc.metrics),
+        supports_logs=_logs_for("jaeger", bc.logs),
     )
 
 
@@ -194,6 +212,7 @@ def _resolve_tempo(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "tempo"),
         headers=extra or None,
         supports_metrics=_metrics_for("tempo", bc.metrics),
+        supports_logs=_logs_for("tempo", bc.logs),
     )
 
 
@@ -210,6 +229,32 @@ def _resolve_otlp(bc: BackendConfig) -> _ResolvedBackend:
         display_name=bc.name or "OTLP",
         headers=extra or None,
         supports_metrics=_metrics_for("otlp", bc.metrics),
+        supports_logs=_logs_for("otlp", bc.logs),
+    )
+
+
+def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve the Grafana LGTM stack (Grafana + Loki + Tempo + Mimir + collector).
+
+    Functionally identical to :func:`_resolve_otlp` — the LGTM container
+    exposes a standard OTLP HTTP receiver on the collector at :4318. We
+    keep this as a distinct type purely so users running the shipped
+    ``docker-compose/lgtm.yaml`` can declare ``type: lgtm`` in config.yaml
+    and self-document the intent, instead of ``type: otlp name: lgtm``.
+    The display name defaults to ``LGTM`` so startup logs say what they
+    actually are.
+    """
+    ep = (bc.endpoint or "").strip()
+    if not ep:
+        raise ValueError("lgtm requires endpoint")
+    extra = dict(bc.headers or {})
+    return _ResolvedBackend(
+        type="lgtm",
+        endpoint=ep,
+        display_name=_display(bc, "lgtm"),
+        headers=extra or None,
+        supports_metrics=_metrics_for("lgtm", bc.metrics),
+        supports_logs=_logs_for("lgtm", bc.logs),
     )
 
 
@@ -221,6 +266,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "generic": _resolve_otlp,
+    "lgtm": _resolve_lgtm,
 }
 
 
