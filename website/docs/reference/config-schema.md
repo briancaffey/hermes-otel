@@ -19,6 +19,9 @@ Complete schema for `~/.hermes/plugins/hermes_otel/config.yaml`. See [`config.ya
 | `capture_previews` | bool | `true` | false = suppress all input/output previews |
 | `capture_conversation_history` | bool | `false` | Attach full message JSON to llm.* spans |
 | `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
+| `capture_logs` | bool | `false` | Attach OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
+| `log_level` | string | `"INFO"` | Handler level: DEBUG / INFO / WARNING / ERROR / CRITICAL |
+| `log_attach_logger` | string \| null | `null` | Logger to attach to; null = root, "hermes_otel" = scope to plugin |
 | `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL in ms |
 | `flush_interval_ms` | int | `60000` | Metrics export cadence |
 | `force_flush_on_session_end` | bool | `true` | Sync flush every backend at end-of-turn |
@@ -39,10 +42,11 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp` |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve` |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP endpoint URL (backend-specific defaults — see below) |
 | `metrics` | bool | Override metrics-export default for this backend |
+| `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`; off elsewhere) |
 | `headers` | map | Per-backend HTTP headers (merged onto top-level `headers`) |
 
 ### Type-specific fields
@@ -94,8 +98,21 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 |---|---|---|
 | `endpoint` | string | **Required.** OTLP traces endpoint |
 | `metrics` | bool | Default: `true`; set false for traces-only collectors |
+| `logs` | bool | Default: `true`; set false if the collector doesn't accept `/v1/logs` |
 
 Use `headers:` for auth (`${VAR}` interpolation supported).
+
+#### `lgtm`
+
+Alias over `otlp` with a dedicated display name and all signals on by default. See [Grafana LGTM](/backends/lgtm).
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** OTLP traces endpoint — `http://localhost:4318/v1/traces` for the bundled `docker-compose/lgtm.yaml` |
+| `metrics` | bool | Default: `true` |
+| `logs` | bool | Default: `true` |
+
+Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` container — `tempo` is traces-only and would disable the logs/metrics fan-out.
 
 ## Env var interpolation in `headers:`
 

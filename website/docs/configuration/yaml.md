@@ -78,6 +78,29 @@ conversation_history_max_chars: 20000
 
 See [Conversation capture](/configuration/conversation-capture) for a worked example, and [Privacy mode](/configuration/privacy) for the kill switch.
 
+## Logs (opt-in)
+
+```yaml
+# Attach an OTel LoggingHandler to Python's logging so stdlib logger.info(...)
+# calls ship to any log-capable backend (SigNoz, LGTM, Uptrace, OpenObserve,
+# or any OTLP collector). Every
+# record gets the active span's trace_id/span_id stamped on it automatically.
+# Off by default because attaching to root is invasive.
+# Env: HERMES_OTEL_CAPTURE_LOGS
+capture_logs: false
+
+# Minimum severity accepted: DEBUG, INFO, WARNING, ERROR, CRITICAL.
+# Env: HERMES_OTEL_LOG_LEVEL
+log_level: INFO
+
+# Which Python logger to attach to. null = root (everything). "hermes_otel"
+# or "hermes" narrows the firehose.
+# Env: HERMES_OTEL_LOG_ATTACH_LOGGER
+log_attach_logger: null
+```
+
+See [OTel logs](/configuration/logs) for the full story, including the loop-avoidance filter for HTTP client libraries and which backends actually accept logs.
+
 ## Lifecycle / cleanup
 
 ```yaml
@@ -158,6 +181,9 @@ capture_previews: true
 capture_conversation_history: true
 conversation_history_max_chars: 40000
 
+capture_logs: true
+log_level: INFO
+
 root_span_ttl_ms: 600000
 flush_interval_ms: 60000
 force_flush_on_session_end: true
@@ -166,6 +192,9 @@ span_batch_max_queue_size: 4096
 span_batch_schedule_delay_ms: 500
 
 backends:
+  - type: lgtm
+    endpoint: http://localhost:4318/v1/traces
+
   - type: phoenix
     endpoint: http://localhost:6006/v1/traces
 

@@ -1,7 +1,8 @@
 """OpenTelemetry tracer for Hermes plugin.
 
 Provides a singleton tracer manager that fans out spans/metrics to one or more
-collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, generic OTLP).
+collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, LGTM, Uptrace,
+OpenObserve, or any other OTLP-compatible collector via the ``otlp`` type).
 LangSmith remains a separate, env-var-only single-backend path because it uses
 its own HTTP API rather than OTLP.
 
@@ -84,9 +85,13 @@ class HermesOTelPlugin:
         # tests and external callers that introspect them keep working.
         self._span_processors: List[Any] = []
         self._metric_readers: List[Any] = []
+        self._log_processors: List[Any] = []
         self._span_processor = None
         self._metric_reader = None
         self._backend_summaries: List[str] = []
+        # LoggerProvider created when capture_logs is on and at least one
+        # log-capable backend is wired up. None otherwise.
+        self._logger_provider: Optional[Any] = None
         # LangSmith backend (None when using OTLP). Set when LANGSMITH_TRACING=true.
         self._langsmith = None
         # Metrics
@@ -340,6 +345,8 @@ class HermesOTelPlugin:
                 self._create_metric_instruments()
                 debug_log(f"Metrics initialized for {len(metric_readers)} backend(s)")
 
+            self._init_logs_pipeline(resource, backends)
+
             self._initialized = True
             self._register_atexit_flush()
 
@@ -390,6 +397,52 @@ class HermesOTelPlugin:
         self._skill_inferred_counter = self._meter.create_counter(
             "hermes.skill.inferred",
             description="Skill-name inference hits on tool spans",
+        )
+
+    def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
+        """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
+
+        Skipped silently when ``capture_logs=false``, the SDK logs module is
+        unavailable, or no backend accepts OTLP logs. Failures in individual
+        backend exporters are logged but do not block pipeline init.
+        """
+        if not self.config.capture_logs:
+            return
+
+        from . import log_handler
+
+        if not log_handler._LOGS_AVAILABLE:
+            logger.warning(
+                "[hermes-otel] ⚠ capture_logs=true but opentelemetry.sdk._logs "
+                "is unavailable; upgrade opentelemetry-sdk to enable logs"
+            )
+            return
+
+        processors = log_handler.build_log_processors(backends, self.config.headers)
+        if not processors:
+            backend_types = ", ".join(b.type for b in backends) or "none"
+            logger.warning(
+                f"[hermes-otel] ⚠ capture_logs=true but no configured backend "
+                f"accepts OTLP logs ({backend_types}); add a signoz/otlp backend "
+                f"or set logs: true on an existing entry"
+            )
+            return
+
+        level = log_handler.resolve_level(self.config.log_level)
+        self._logger_provider = log_handler.install_handler(
+            resource=resource,
+            processors=processors,
+            level=level,
+            attach_logger=self.config.log_attach_logger,
+        )
+        if self._logger_provider is None:
+            return
+
+        self._log_processors = [p for p, _b in processors]
+        target = self.config.log_attach_logger or "root"
+        logger.info(
+            f"[hermes-otel] ✓ Logs → {len(processors)} backend(s) "
+            f"(attached to {target}, level={self.config.log_level.upper()})"
         )
 
     def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
@@ -599,6 +652,11 @@ class HermesOTelPlugin:
         if self._meter_provider:
             try:
                 self._meter_provider.force_flush(timeout_millis=2000)
+            except Exception:
+                pass
+        if self._logger_provider:
+            try:
+                self._logger_provider.force_flush(timeout_millis=2000)
             except Exception:
                 pass
 

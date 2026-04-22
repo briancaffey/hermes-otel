@@ -18,6 +18,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[SigNoz](/backends/signoz)** | Traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud |
 | **[Jaeger](/backends/jaeger)** | Traces | Local (single container) | OSS, no account needed |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
+| **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
+| **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
+| **[OpenObserve](/backends/openobserve)** | Traces + metrics + logs | Local (single container) · Self-hosted HA | OSS, no account |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
 ## Quick picks
@@ -31,6 +34,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want traces *and* the token/tool/cost metrics dashboard"**
 → [Phoenix](/backends/phoenix) or [SigNoz](/backends/signoz) — both accept OTLP metrics as well as traces.
 
+**"I want all three signals — traces, metrics, AND logs — in Grafana, in one container"**
+→ [Grafana LGTM](/backends/lgtm) — `grafana/otel-lgtm` bundles Grafana + Tempo + Loki + Mimir + a collector. Pair with `capture_logs: true` and you get [trace-id-correlated logs](/configuration/logs) out of the box.
+
 **"I'm already on LangChain / LangSmith"**
 → [LangSmith](/backends/langsmith) — free personal tier, zero extra infra.
 
@@ -43,21 +49,24 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want several of the above simultaneously"**
 → [Multi-backend fan-out](/backends/multi-backend) — same spans, parallel, non-blocking.
 
-## Traces-only vs. traces + metrics
+## Signal support
 
-Some backends accept OTLP traces but not OTLP metrics. The plugin auto-skips metrics export for those — you don't need to configure anything.
+Backends differ in which OTel signals they accept. The plugin auto-skips signals a backend can't take — you don't need to configure anything.
 
-| Backend | Traces | Metrics |
-|---|---|---|
-| Phoenix | ✅ | ✅ |
-| Langfuse | ✅ | ❌ |
-| LangSmith | ✅ (via its own HTTP Run API, not OTLP) | ❌ |
-| SigNoz | ✅ | ✅ |
-| Jaeger | ✅ | ❌ |
-| Grafana Tempo | ✅ | ❌ |
-| Generic OTLP | ✅ | depends on collector |
+| Backend | Traces | Metrics | Logs |
+|---|---|---|---|
+| Phoenix | ✅ | ✅ | ❌ |
+| Langfuse | ✅ | ❌ | ❌ |
+| LangSmith | ✅ (via HTTP Run API, not OTLP) | ❌ | ❌ |
+| SigNoz | ✅ | ✅ | ✅ |
+| Jaeger | ✅ | ❌ | ❌ |
+| Grafana Tempo | ✅ | ❌ | ❌ |
+| Grafana LGTM | ✅ | ✅ | ✅ |
+| Uptrace | ✅ | ✅ | ✅ |
+| OpenObserve | ✅ | ✅ | ✅ |
+| Generic OTLP | ✅ | depends on collector | depends on collector |
 
-If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix/SigNoz alongside.
+If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
 
 ## Selecting a single backend
 
@@ -76,8 +85,6 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:
 
-- [OpenObserve](https://openobserve.ai) — OSS, single binary, traces + metrics + logs
-- [Uptrace](https://uptrace.dev) — OSS, docker compose, full stack
 - [Honeycomb](https://www.honeycomb.io) — cloud, generous free tier
 - [New Relic](https://newrelic.com) — cloud, 100 GB/mo free tier
 - [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) — self-host or Elastic Cloud

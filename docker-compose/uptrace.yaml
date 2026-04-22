@@ -1,0 +1,116 @@
+# Uptrace — all-in-one OTel backend (traces + metrics + logs).
+#
+# Trimmed from the upstream example at
+#   github.com/uptrace/uptrace/tree/master/example/docker
+# keeping only the services hermes-otel actually needs:
+#
+#   clickhouse  — span/log/metric storage (Uptrace's primary store)
+#   postgres    — Uptrace's metadata (users, projects, dashboards, alerts)
+#   redis       — cache; Uptrace's health check depends_on it
+#   uptrace     — the app itself (UI + OTLP ingestion)
+#
+# Intentionally dropped: otelcol, mailpit, vector, grafana, prometheus,
+# node_exporter, certs/TLS. The plugin speaks OTLP/HTTP directly to
+# Uptrace — no collector middleman needed.
+#
+# Usage:
+#   docker compose -p uptrace -f docker-compose/uptrace.yaml up -d
+#   # UI:  http://localhost:14318   (admin@uptrace.local / admin)
+#   docker compose -p uptrace -f docker-compose/uptrace.yaml down
+#   docker compose -p uptrace -f docker-compose/uptrace.yaml down -v   # nuke data
+#
+# Ports:
+#   5432   Postgres              (shared metadata; collides with a host pg)
+#   8123   ClickHouse HTTP
+#   9000   ClickHouse native
+#   14317  Uptrace OTLP/gRPC     ← plugin can export here (not used by default)
+#   14318  Uptrace UI + OTLP/HTTP ← plugin exports here via /v1/{traces,metrics,logs}
+#
+# Conflicts: 9000 also used by MinIO-based stacks (OpenObserve-disk mode
+# doesn't use it, so no collision with the openobserve stack below). 5432
+# collides with a host-installed PostgreSQL — stop the host one or remap.
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: uptrace
+#       endpoint: http://localhost:14318/v1/traces
+#       dsn: http://project1_secret@localhost:14318?grpc=14317
+#   capture_logs: true          # Uptrace ingests logs too
+#
+# The `dsn` is what the seed config in uptrace/uptrace.yml provisions
+# (project1 / project1_secret). Rotate both by editing that file and
+# restarting the stack. See docker-compose/uptrace/README.md for the
+# walkthrough.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3
+    container_name: hermes-otel-uptrace-clickhouse
+    restart: on-failure
+    environment:
+      CLICKHOUSE_USER: uptrace
+      CLICKHOUSE_PASSWORD: uptrace
+      CLICKHOUSE_DB: uptrace
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "localhost:8123/ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - ch_data:/var/lib/clickhouse
+    ports:
+      - "8123:8123"
+      - "9000:9000"
+
+  postgres:
+    image: postgres:17-alpine
+    container_name: hermes-otel-uptrace-postgres
+    restart: on-failure
+    environment:
+      PGDATA: /var/lib/postgresql/data/pgdata
+      POSTGRES_USER: uptrace
+      POSTGRES_PASSWORD: uptrace
+      POSTGRES_DB: uptrace
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U uptrace -d uptrace"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+    volumes:
+      - pg_data:/var/lib/postgresql/data/pgdata
+    ports:
+      - "5432:5432"
+
+  redis:
+    image: redis:7-alpine
+    container_name: hermes-otel-uptrace-redis
+    restart: on-failure
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 30
+
+  uptrace:
+    image: uptrace/uptrace:2.1.0-beta.5
+    container_name: hermes-otel-uptrace
+    restart: on-failure
+    volumes:
+      # Path is relative to THIS compose file, not the invocation cwd.
+      # Resolves to docker-compose/uptrace/uptrace.yml on disk.
+      - ./uptrace/uptrace.yml:/etc/uptrace/config.yml
+    ports:
+      - "14317:4317"   # OTLP gRPC
+      - "14318:80"     # UI + OTLP/HTTP
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+volumes:
+  ch_data:
+  pg_data:

@@ -68,6 +68,27 @@
 # Clipped with a trailing "..." if the conversation is bigger.
 # conversation_history_max_chars: 20000
 
+# ── Logs (opt-in) ─────────────────────────────────────────────────────────────
+#
+# Attaches an OTel LoggingHandler to Python's logging so stdlib logger.info()
+# calls ship to any log-capable backend (SigNoz, generic OTLP → Loki/LGTM).
+# Each log record is automatically stamped with the active span's trace_id
+# and span_id, so Grafana's "logs for this span" drill-down works.
+#
+# Off by default because attaching to the root logger is invasive — it
+# exports logs from every library hermes-agent imports, not just the plugin.
+# Also settable via HERMES_OTEL_CAPTURE_LOGS / HERMES_OTEL_LOG_LEVEL /
+# HERMES_OTEL_LOG_ATTACH_LOGGER.
+# capture_logs: false
+
+# Minimum level the handler accepts (DEBUG, INFO, WARNING, ERROR, CRITICAL).
+# log_level: INFO
+
+# Which logger to attach to. Null/unset = root logger (captures everything).
+# Set to e.g. "hermes_otel" to capture only plugin logs; "hermes" for
+# hermes-agent's own logs; any logger name to scope further.
+# log_attach_logger: null
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than
@@ -101,12 +122,22 @@
 # unreachable collector never blocks the agent or starves the others.
 #
 # Supported `type` values:
-#   phoenix    — Arize Phoenix (local or cloud). Traces + metrics.
-#   langfuse   — Langfuse. Traces only (no OTLP metrics support upstream).
-#   signoz     — SigNoz (self-hosted or cloud). Traces + metrics.
-#   jaeger     — Jaeger. Traces only.
-#   tempo      — Grafana Tempo. Traces only.
-#   otlp       — Any other OTLP/HTTP collector. Traces + metrics.
+#   phoenix      — Arize Phoenix (local or cloud). Traces + metrics.
+#   langfuse     — Langfuse. Traces only (no OTLP metrics support upstream).
+#   signoz       — SigNoz (self-hosted or cloud). Traces + metrics + logs.
+#   jaeger       — Jaeger. Traces only.
+#   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
+#                  the full LGTM stack (Tempo + Loki + Mimir + collector).
+#   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
+#   lgtm         — Grafana LGTM (Tempo + Loki + Mimir + collector, one image).
+#                  Behaves like `otlp` — all three signals — but a dedicated
+#                  type makes intent clear and sets display name to "LGTM".
+#   uptrace      — Uptrace (OSS, ClickHouse + Postgres). Traces + metrics + logs.
+#                  Needs a per-project `dsn:` which the plugin sends as the
+#                  `uptrace-dsn` request header.
+#   openobserve  — OpenObserve (OSS, single container). Traces + metrics + logs.
+#                  Uses HTTP Basic auth — set `user:` + `password:` (or the
+#                  `*_env` variants) and the plugin builds the header for you.
 #
 # `metrics: true|false` per entry overrides the auto default if needed.
 #
@@ -151,6 +182,50 @@
 #     headers:
 #       X-Tenant: acme
 #     metrics: true
+#     logs: true       # override the default (on for otlp/signoz/lgtm/uptrace/openobserve)
+
+# ── LGTM quickstart ──────────────────────────────────────────────────────────
+#
+# Grafana's "all signals in one container" image (traces + metrics + logs).
+# See docker-compose/lgtm/README.md for setup.
+#
+# backends:
+#   - type: lgtm
+#     endpoint: http://localhost:4318/v1/traces
+# capture_logs: true
+#
+# Do NOT use `type: tempo` for the LGTM stack — that's for standalone Tempo
+# and would disable the logs/metrics fan-out.
+
+# ── Uptrace quickstart ───────────────────────────────────────────────────────
+#
+# Uptrace (OSS, ClickHouse + Postgres + Redis) — all three signals.
+# See docker-compose/uptrace/README.md for setup.
+#
+# backends:
+#   - type: uptrace
+#     endpoint: http://localhost:14318/v1/traces
+#     # The ingestion DSN for your Uptrace project. Plugin sends it as the
+#     # ``uptrace-dsn`` request header. Prefer env var for anything not
+#     # throwaway-local — use `dsn_env:` instead of inline `dsn:`.
+#     dsn_env: UPTRACE_DSN
+#     # dsn: http://project1_secret@localhost:14318?grpc=14317
+# capture_logs: true
+
+# ── OpenObserve quickstart ───────────────────────────────────────────────────
+#
+# OpenObserve (OSS, single container) — all three signals, HTTP Basic auth.
+# See docker-compose/openobserve/README.md for setup.
+#
+# backends:
+#   - type: openobserve
+#     # URL includes the org name. Default org is `default`; swap for your
+#     # own under Settings → Organizations in the UI.
+#     endpoint: http://localhost:5080/api/default/v1/traces
+#     user: root@example.com                  # or user_env: OPENOBSERVE_USER
+#     password_env: OPENOBSERVE_PASSWORD
+#     # stream_name: default                  # optional; defaults to "default"
+# capture_logs: true
 
 # ── LangSmith (env-var only, alternative to the above) ────────────────────────
 #

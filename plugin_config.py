@@ -45,6 +45,7 @@ class BackendConfig:
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
+    logs: Optional[bool] = None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve)
     # Langfuse credentials
     public_key: Optional[str] = None
     secret_key: Optional[str] = None
@@ -54,6 +55,15 @@ class BackendConfig:
     # SigNoz cloud credential
     ingestion_key: Optional[str] = None
     ingestion_key_env: Optional[str] = None
+    # Uptrace DSN (sent as the ``uptrace-dsn`` header on every OTLP export)
+    dsn: Optional[str] = None
+    dsn_env: Optional[str] = None
+    # OpenObserve Basic-auth credentials + optional stream name
+    user: Optional[str] = None
+    user_env: Optional[str] = None
+    password: Optional[str] = None
+    password_env: Optional[str] = None
+    stream_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -83,6 +93,18 @@ class HermesOtelConfig:
     # flipping this on is the easiest way to see what the model actually saw.
     capture_conversation_history: bool = False
     conversation_history_max_chars: int = 20_000
+    # ── OTel logs signal ────────────────────────────────────────────────
+    # Opt-in: when enabled, attach an OTel ``LoggingHandler`` to Python's
+    # logging so stdlib ``logger.info(...)`` calls ship to any log-capable
+    # backend (SigNoz, OTLP → Loki, LGTM). Correlates each log record
+    # with the active span's ``trace_id`` / ``span_id`` automatically.
+    # Off by default because attaching to the root logger is invasive —
+    # third-party libraries' logs are also exported.
+    capture_logs: bool = False
+    log_level: str = "INFO"  # handler level: DEBUG, INFO, WARNING, ERROR
+    # None = attach to the root logger (captures all hermes-agent + plugin
+    # logs). Set to e.g. "hermes_otel" to scope capture to plugin logs only.
+    log_attach_logger: Optional[str] = None
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
@@ -180,7 +202,7 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 if isinstance(v, dict):
                     kwargs[k] = {str(kk): str(vv) for kk, vv in v.items()}
                 continue
-            if k == "metrics":
+            if k in ("metrics", "logs"):
                 if isinstance(v, bool):
                     kwargs[k] = v
                 elif isinstance(v, str):
@@ -214,6 +236,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_previews",
         "force_flush_on_session_end",
         "capture_conversation_history",
+        "capture_logs",
     ):
         if isinstance(value, bool):
             return value
@@ -251,6 +274,10 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None
     if key == "project_name":
         return None if value is None else str(value)
+    if key == "log_level":
+        return None if value is None else str(value).upper()
+    if key == "log_attach_logger":
+        return None if value is None else str(value)
     return value
 
 
@@ -279,10 +306,19 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("force_flush_on_session_end", _parse_bool)
     take("capture_conversation_history", _parse_bool)
     take("conversation_history_max_chars", _parse_int)
+    take("capture_logs", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:
         out["project_name"] = proj
+
+    level = os.getenv(_ENV_PREFIX + "LOG_LEVEL", "").strip()
+    if level:
+        out["log_level"] = level.upper()
+
+    attach = os.getenv(_ENV_PREFIX + "LOG_ATTACH_LOGGER", "").strip()
+    if attach:
+        out["log_attach_logger"] = attach
 
     return out
 

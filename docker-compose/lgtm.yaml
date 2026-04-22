@@ -1,0 +1,64 @@
+# Grafana LGTM — Loki + Grafana + Tempo + Mimir + OTel Collector — in one
+# container. This is the only hermes-otel backend that covers all three
+# OTel signals (traces → Tempo, metrics → Prometheus/Mimir, logs → Loki)
+# from a single image, which is why it's the recommended stack for local
+# development and quickstarts.
+#
+# Usage:
+#   docker compose -p lgtm -f docker-compose/lgtm.yaml up -d
+#   # wait ~30s for services to come up
+#   docker compose -p lgtm -f docker-compose/lgtm.yaml down
+#
+# Ports:
+#   3000  Grafana UI           (admin / admin)
+#   3100  Loki API             (log writes from the collector land here)
+#   3200  Tempo UI              (HTTP — Tempo's query API)
+#   4317  OTLP gRPC receiver
+#   4318  OTLP HTTP receiver   ← plugin exports here
+#   9090  Prometheus UI         (Mimir speaks Prometheus under the hood)
+#
+# Conflicts: port 3000 collides with the phoenix stack. Bring up one or
+# the other, not both. Jaeger (4318) and SigNoz (4328/4318) also claim the
+# OTLP HTTP port — LGTM wins on 4318 when running alongside them.
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: otlp
+#       name: lgtm
+#       endpoint: http://localhost:4318/v1/traces
+#
+#   capture_logs: true   # ship Python logs to Loki too
+#
+# See docker-compose/lgtm/README.md for the full walkthrough and the
+# pre-built Grafana dashboard (pending — phase 2 of otel_plan.md).
+
+services:
+  lgtm:
+    image: docker.io/grafana/otel-lgtm:latest
+    container_name: hermes-otel-lgtm
+    restart: unless-stopped
+    ports:
+      - "3000:3000"   # Grafana UI
+      - "3100:3100"   # Loki
+      - "3200:3200"   # Tempo UI
+      - "4317:4317"   # OTLP gRPC
+      - "4318:4318"   # OTLP HTTP
+      - "9090:9090"   # Prometheus / Mimir
+    volumes:
+      # Path is relative to THIS compose file, not the invocation cwd —
+      # i.e. resolves to docker-compose/lgtm/otelcol-config.yaml on disk.
+      # Enables the spanmetrics connector so traces produce RED metrics
+      # (rate/errors/duration) on the Prometheus side without the app
+      # having to emit them.
+      - ./lgtm/otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+    healthcheck:
+      # The image writes /tmp/ready when every bundled service is up. That's
+      # a cheaper and more accurate signal than hitting Grafana (which is up
+      # well before Tempo/Loki have finished starting) and it works even
+      # though the image doesn't ship `wget`.
+      test: ["CMD", "test", "-f", "/tmp/ready"]
+      interval: 10s
+      timeout: 3s
+      retries: 12
+      start_period: 30s

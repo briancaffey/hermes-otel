@@ -1,0 +1,100 @@
+# Collector config for the grafana/otel-lgtm image.
+#
+# Differs from the image's default config in one way: adds a `spanmetrics`
+# connector so incoming traces produce RED metrics (rate/errors/duration)
+# on the Prometheus side automatically. The plugin does NOT need to emit
+# these metrics from Python — the collector derives them from the spans
+# it already receives.
+#
+# Dimensions chosen to match attributes the plugin actually emits today
+# (see hermes_otel/hooks.py). If you add new top-level span attributes,
+# consider adding them here so dashboards can slice by them.
+
+connectors:
+  spanmetrics:
+    # Derived metrics get these labels. Picking dimensions the plugin
+    # actually sets on its root/llm/tool spans so filtering in Grafana
+    # works without extra relabeling.
+    dimensions:
+      - name: llm.provider
+      - name: llm.model_name
+      - name: openinference.span.kind
+      - name: hermes.session.kind
+      - name: hermes.tool.outcome
+    # Default histogram buckets — good for LLM calls that span ms to
+    # tens of seconds. Extend with slower buckets if you run long tools.
+    histogram:
+      explicit:
+        buckets: [5ms, 25ms, 100ms, 250ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: 0.0.0.0:4317
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - "http://*"
+  # Scrape the collector's own internal metrics so dashboards can show
+  # collector health (accepted/refused spans, exporter errors).
+  prometheus/collector:
+    config:
+      scrape_configs:
+        - job_name: "opentelemetry-collector"
+          scrape_interval: 15s
+          static_configs:
+            - targets: ["127.0.0.1:8888"]
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+    path: "/ready"
+
+processors:
+  batch:
+    # Hold spans briefly so exports are chunked — reduces per-request
+    # overhead to Tempo/Loki/Prometheus without hurting latency noticeably.
+    timeout: 1s
+    send_batch_size: 512
+
+exporters:
+  # All three exporters point at the LGTM image's bundled services on
+  # localhost inside the container. Do NOT change these to 4317/4318 —
+  # those are the OTLP RECEIVER ports on this very collector; exporting
+  # there would cause an infinite loop.
+  otlphttp/traces:
+    endpoint: http://127.0.0.1:4418
+    tls:
+      insecure: true
+  otlphttp/metrics:
+    endpoint: http://127.0.0.1:9090/api/v1/otlp
+    tls:
+      insecure: true
+  otlphttp/logs:
+    endpoint: http://127.0.0.1:3100/otlp
+    tls:
+      insecure: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      # Fan out: store the trace in Tempo AND feed it to spanmetrics so
+      # the metrics pipeline can emit RED metrics for it.
+      exporters: [otlphttp/traces, spanmetrics]
+    metrics/spanmetrics:
+      receivers: [spanmetrics]
+      processors: [batch]
+      exporters: [otlphttp/metrics]
+    metrics:
+      receivers: [otlp, prometheus/collector]
+      processors: [batch]
+      exporters: [otlphttp/metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/logs]

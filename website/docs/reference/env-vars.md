@@ -48,6 +48,16 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` | `span_batch_export_timeout_ms` | `30000` |
 | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` | `force_flush_on_session_end` | `true` |
 
+## Logs
+
+See [OTel logs](/configuration/logs) for behavior.
+
+| Var | Maps to | Default |
+|---|---|---|
+| `HERMES_OTEL_CAPTURE_LOGS` | `capture_logs` | `false` |
+| `HERMES_OTEL_LOG_LEVEL` | `log_level` | `INFO` |
+| `HERMES_OTEL_LOG_ATTACH_LOGGER` | `log_attach_logger` | *(unset = root)* |
+
 ## Debug
 
 | Var | Value | Effect |

@@ -65,6 +65,7 @@ Set `backends:` in `config.yaml` with one or more entries. Env-var detection is 
 | Sample traces (e.g. 10%) | [Sampling](/configuration/sampling) |
 | Suppress message content | [Privacy mode](/configuration/privacy) |
 | Capture full conversation history | [Conversation capture](/configuration/conversation-capture) |
+| Ship Python logs to Loki with trace-id correlation | [OTel logs](/configuration/logs) |
 | Tune batch export for high-throughput | [Batch export tuning](/configuration/batch-export) |
 | See every knob | [Full config schema](/reference/config-schema) |
 | Use env vars instead of YAML | [Env vars reference](/reference/env-vars) |

@@ -23,6 +23,11 @@ STACKS=(
   "langfuse|docker-compose/langfuse.yaml"
   "jaeger|docker-compose/jaeger.yaml"
   "signoz|docker-compose/signoz/docker-compose.yaml"
+  # LGTM is intentionally commented out of "up all" because it collides
+  # with phoenix (port 3000) and langfuse (port 3000) and with jaeger
+  # (port 4318). Bring it up standalone:
+  #   docker compose -p lgtm -f docker-compose/lgtm.yaml up -d
+  # "lgtm|docker-compose/lgtm.yaml"
 )
 
 case "$ACTION" in

@@ -30,6 +30,12 @@ from .plugin_config import BackendConfig
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
 _TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
 
+# Backend types whose collectors accept OTLP logs. Everything else defaults
+# to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
+# we'd rather drop logs on the floor than spray 4xx errors at them. Users
+# can override per-backend via the ``logs:`` field in config.yaml.
+_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve"}
+
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
 _DISPLAY_NAMES = {
@@ -39,12 +45,14 @@ _DISPLAY_NAMES = {
     "jaeger": "Jaeger",
     "tempo": "Tempo",
     "otlp": "OTLP",
-    "generic": "OTLP",
+    "lgtm": "LGTM",
+    "uptrace": "Uptrace",
+    "openobserve": "OpenObserve",
 }
 
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
-_ENV_PRIORITY = ["langfuse", "signoz", "jaeger", "tempo", "phoenix"]
+_ENV_PRIORITY = ["langfuse", "signoz", "uptrace", "openobserve", "jaeger", "tempo", "phoenix"]
 
 
 @dataclass
@@ -61,6 +69,7 @@ class _ResolvedBackend:
     display_name: str = "OTLP"
     headers: Optional[Dict[str, str]] = None
     supports_metrics: bool = True
+    supports_logs: bool = False
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -70,6 +79,12 @@ def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
     return backend_type not in _TRACES_ONLY
+
+
+def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
+    if override is not None:
+        return override
+    return backend_type in _LOGS_CAPABLE
 
 
 def _resolve_secret(
@@ -111,6 +126,7 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "phoenix"),
         headers=extra or None,
         supports_metrics=_metrics_for("phoenix", bc.metrics),
+        supports_logs=_logs_for("phoenix", bc.logs),
     )
 
 
@@ -144,6 +160,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "langfuse"),
         headers=headers,
         supports_metrics=_metrics_for("langfuse", bc.metrics),
+        supports_logs=_logs_for("langfuse", bc.logs),
     )
 
 
@@ -166,6 +183,7 @@ def _resolve_signoz(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "signoz"),
         headers=headers or None,
         supports_metrics=_metrics_for("signoz", bc.metrics),
+        supports_logs=_logs_for("signoz", bc.logs),
     )
 
 
@@ -180,6 +198,7 @@ def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "jaeger"),
         headers=extra or None,
         supports_metrics=_metrics_for("jaeger", bc.metrics),
+        supports_logs=_logs_for("jaeger", bc.logs),
     )
 
 
@@ -194,6 +213,7 @@ def _resolve_tempo(bc: BackendConfig) -> _ResolvedBackend:
         display_name=_display(bc, "tempo"),
         headers=extra or None,
         supports_metrics=_metrics_for("tempo", bc.metrics),
+        supports_logs=_logs_for("tempo", bc.logs),
     )
 
 
@@ -210,6 +230,105 @@ def _resolve_otlp(bc: BackendConfig) -> _ResolvedBackend:
         display_name=bc.name or "OTLP",
         headers=extra or None,
         supports_metrics=_metrics_for("otlp", bc.metrics),
+        supports_logs=_logs_for("otlp", bc.logs),
+    )
+
+
+def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve the Grafana LGTM stack (Grafana + Loki + Tempo + Mimir + collector).
+
+    Functionally identical to :func:`_resolve_otlp` — the LGTM container
+    exposes a standard OTLP HTTP receiver on the collector at :4318. We
+    keep this as a distinct type purely so users running the shipped
+    ``docker-compose/lgtm.yaml`` can declare ``type: lgtm`` in config.yaml
+    and self-document the intent, instead of ``type: otlp name: lgtm``.
+    The display name defaults to ``LGTM`` so startup logs say what they
+    actually are.
+    """
+    ep = (bc.endpoint or "").strip()
+    if not ep:
+        raise ValueError("lgtm requires endpoint")
+    extra = dict(bc.headers or {})
+    return _ResolvedBackend(
+        type="lgtm",
+        endpoint=ep,
+        display_name=_display(bc, "lgtm"),
+        headers=extra or None,
+        supports_metrics=_metrics_for("lgtm", bc.metrics),
+        supports_logs=_logs_for("lgtm", bc.logs),
+    )
+
+
+def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Uptrace (all-in-one traces/metrics/logs backend).
+
+    Auth model: per-project DSN sent in the ``uptrace-dsn`` request header,
+    e.g. ``http://project1_secret@localhost:14318?grpc=14317``. The DSN
+    carries the ingestion token; the endpoint URL is where OTLP payloads
+    land. We don't try to parse the DSN — Uptrace does that server-side.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_UPTRACE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("uptrace requires endpoint")
+    dsn = _resolve_secret(
+        bc.dsn,
+        bc.dsn_env,
+        ["OTEL_UPTRACE_DSN", "UPTRACE_DSN"],
+    )
+    if not dsn:
+        raise ValueError(
+            "uptrace requires dsn (e.g. http://<project_token>@host:14318?grpc=14317)"
+        )
+    headers: Dict[str, str] = {"uptrace-dsn": dsn}
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="uptrace",
+        endpoint=ep,
+        display_name=_display(bc, "uptrace"),
+        headers=headers,
+        supports_metrics=_metrics_for("uptrace", bc.metrics),
+        supports_logs=_logs_for("uptrace", bc.logs),
+    )
+
+
+def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve OpenObserve (all-in-one traces/metrics/logs backend).
+
+    Auth model: HTTP Basic using the admin email + password (or any user
+    created in the UI), plus an optional ``stream-name`` header that
+    routes ingested data into a named stream (defaults to ``default``).
+    The endpoint URL embeds the org in its path, e.g.
+    ``http://localhost:5080/api/default/v1/traces``.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_OPENOBSERVE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("openobserve requires endpoint")
+    user = _resolve_secret(
+        bc.user,
+        bc.user_env,
+        ["OTEL_OPENOBSERVE_USER", "OPENOBSERVE_USER"],
+    )
+    pw = _resolve_secret(
+        bc.password,
+        bc.password_env,
+        ["OTEL_OPENOBSERVE_PASSWORD", "OPENOBSERVE_PASSWORD"],
+    )
+    if not (user and pw):
+        raise ValueError("openobserve requires user and password")
+    stream = (bc.stream_name or os.getenv("OTEL_OPENOBSERVE_STREAM", "") or "default").strip()
+    auth = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    headers: Dict[str, str] = {
+        "Authorization": f"Basic {auth}",
+        "stream-name": stream,
+    }
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="openobserve",
+        endpoint=ep,
+        display_name=_display(bc, "openobserve"),
+        headers=headers,
+        supports_metrics=_metrics_for("openobserve", bc.metrics),
+        supports_logs=_logs_for("openobserve", bc.logs),
     )
 
 
@@ -220,7 +339,9 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "jaeger": _resolve_jaeger,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
-    "generic": _resolve_otlp,
+    "lgtm": _resolve_lgtm,
+    "uptrace": _resolve_uptrace,
+    "openobserve": _resolve_openobserve,
 }
 
 
