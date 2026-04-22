@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.3.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.2.0...hermes-otel-v0.3.0) (2026-04-22)
+
+
+### Features
+
+* **backend:** remove generic backend, add uptrace and openobserve backends ([2b49e3d](https://github.com/briancaffey/hermes-otel/commit/2b49e3db986768b25f0280b855790159690eb8b6))
+* **logs,lgtm:** add OTel logs pipeline and LGTM docker stack ([64cbf4d](https://github.com/briancaffey/hermes-otel/commit/64cbf4d70ff26c86a453846e8c88f755a9292c13))
+
 ## [0.2.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.1.0...hermes-otel-v0.2.0) (2026-04-19)
 
 
