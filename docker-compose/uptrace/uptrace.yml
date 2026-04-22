@@ -1,0 +1,116 @@
+# Uptrace runtime config — trimmed for hermes-otel local quickstart.
+# Full reference: https://uptrace.dev/get/hosted/config
+#
+# Seed credentials (change before any non-local use):
+#   UI login:    admin@uptrace.local / admin
+#   Project DSN: http://project1_secret@localhost:14318?grpc=14317
+#
+# The DSN is what the plugin sends as the ``uptrace-dsn`` header. If you
+# change ``project_tokens[].token`` below, update the ``dsn:`` field in
+# your hermes-otel config.yaml to match.
+
+service:
+  env: hosted
+  # Development-only secret. Rotate for anything not throwaway-local.
+  secret: hermes-otel-uptrace-local-secret
+
+site:
+  url: http://localhost:14318
+  ingest_url: http://localhost:14318?grpc=14317
+
+listen:
+  http:
+    addr: :80
+  grpc:
+    addr: :4317
+
+# Seed one org, one project, one admin user, one ingestion token. All of
+# this is editable from the UI after first boot.
+seed_data:
+  update: true
+  delete: true
+
+  users:
+    - key: user1
+      name: Admin
+      email: admin@uptrace.local
+      password: admin
+      email_confirmed: true
+
+  user_tokens:
+    - key: user_token1
+      user_key: user1
+      token: user1_secret
+
+  orgs:
+    - key: org1
+      name: hermes-otel
+
+  org_users:
+    - key: org_user1
+      org_key: org1
+      user_key: user1
+      role: owner
+
+  projects:
+    - key: project1
+      name: hermes-agent
+      org_key: org1
+
+  project_tokens:
+    - key: project_token1
+      project_key: project1
+      token: project1_secret
+
+  project_users:
+    - key: project_user1
+      project_key: project1
+      org_user_key: org_user1
+      perm_level: admin
+
+ch_cluster:
+  cluster: uptrace1
+  replicated: false
+  distributed: false
+  shards:
+    - replicas:
+        - addr: clickhouse:9000
+          database: uptrace
+          user: uptrace
+          password: uptrace
+          dial_timeout: 3s
+          write_timeout: 5s
+          max_retries: 3
+          max_execution_time: 15s
+
+pg:
+  addr: postgres:5432
+  user: uptrace
+  password: uptrace
+  database: uptrace
+
+ch_schema:
+  compression: ZSTD(1)
+  spans_index: { storage_policy: default }
+  spans_data: { storage_policy: default }
+  span_links: { storage_policy: default }
+  logs_index: { storage_policy: default }
+  logs_data: { storage_policy: default }
+  events_index: { storage_policy: default }
+  events_data: { storage_policy: default }
+  metrics: { storage_policy: default }
+
+redis_cache:
+  addrs:
+    1: redis:6379
+  username: ""
+  password: ""
+  db: 0
+
+# Uptrace's self-monitoring loops telemetry back into project1. Fine for
+# local; switch ``disabled: true`` to silence it.
+self_monitoring:
+  dsn: http://project1_secret@uptrace:80?grpc=14317
+
+logging:
+  level: INFO

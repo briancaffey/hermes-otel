@@ -45,7 +45,7 @@ class BackendConfig:
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
-    logs: Optional[bool] = None  # None = auto (on for signoz/otlp/generic)
+    logs: Optional[bool] = None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve)
     # Langfuse credentials
     public_key: Optional[str] = None
     secret_key: Optional[str] = None
@@ -55,6 +55,15 @@ class BackendConfig:
     # SigNoz cloud credential
     ingestion_key: Optional[str] = None
     ingestion_key_env: Optional[str] = None
+    # Uptrace DSN (sent as the ``uptrace-dsn`` header on every OTLP export)
+    dsn: Optional[str] = None
+    dsn_env: Optional[str] = None
+    # OpenObserve Basic-auth credentials + optional stream name
+    user: Optional[str] = None
+    user_env: Optional[str] = None
+    password: Optional[str] = None
+    password_env: Optional[str] = None
+    stream_name: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -87,7 +96,7 @@ class HermesOtelConfig:
     # ── OTel logs signal ────────────────────────────────────────────────
     # Opt-in: when enabled, attach an OTel ``LoggingHandler`` to Python's
     # logging so stdlib ``logger.info(...)`` calls ship to any log-capable
-    # backend (SigNoz, generic OTLP → Loki). Correlates each log record
+    # backend (SigNoz, OTLP → Loki, LGTM). Correlates each log record
     # with the active span's ``trace_id`` / ``span_id`` automatically.
     # Off by default because attaching to the root logger is invasive —
     # third-party libraries' logs are also exported.

@@ -27,6 +27,8 @@ const sidebars: SidebarsConfig = {
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',
+        'backends/uptrace',
+        'backends/openobserve',
         'backends/multi-backend',
       ],
     },

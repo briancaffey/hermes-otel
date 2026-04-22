@@ -1,0 +1,59 @@
+# OpenObserve — all-in-one OTel backend (traces + metrics + logs) in a
+# single binary. Disk-mode (default) keeps it to one container with a
+# local volume — no ClickHouse/S3/Postgres dependency.
+#
+# Usage:
+#   docker compose -p openobserve -f docker-compose/openobserve.yaml up -d
+#   # UI:  http://localhost:5080   (root@example.com / Complexpass#123)
+#   docker compose -p openobserve -f docker-compose/openobserve.yaml down
+#   docker compose -p openobserve -f docker-compose/openobserve.yaml down -v   # nuke data
+#
+# Ports:
+#   5080  OpenObserve UI + OTLP/HTTP ingestion  ← plugin exports here
+#   5081  OpenObserve OTLP/gRPC ingestion        (not used by the plugin)
+#
+# Conflicts: none with the other hermes-otel stacks. 5080 is
+# OpenObserve-specific.
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: openobserve
+#       endpoint: http://localhost:5080/api/default/v1/traces
+#       user: root@example.com          # matches ZO_ROOT_USER_EMAIL
+#       password_env: OPENOBSERVE_PASSWORD
+#       # stream_name: default          # optional; defaults to "default"
+#   capture_logs: true
+#
+# The plugin encodes ``Basic base64(user:password)`` into an
+# Authorization header and adds ``stream-name`` automatically. Set
+# ``OPENOBSERVE_PASSWORD=Complexpass#123`` in your env to match the
+# default; change both here and in your env for anything non-local.
+
+services:
+  openobserve:
+    image: public.ecr.aws/zinclabs/openobserve:latest
+    container_name: hermes-otel-openobserve
+    restart: unless-stopped
+    environment:
+      # Default admin account. Override both values for non-local use.
+      ZO_ROOT_USER_EMAIL: root@example.com
+      ZO_ROOT_USER_PASSWORD: Complexpass#123
+      # Disk-mode storage (default). To use S3/MinIO for production, see
+      # https://openobserve.ai/docs/ha_and_production/
+      ZO_DATA_DIR: /data
+    volumes:
+      - oo_data:/data
+    ports:
+      - "5080:5080"   # UI + OTLP/HTTP ingestion
+      - "5081:5081"   # OTLP/gRPC ingestion
+    healthcheck:
+      # /healthz is the standard liveness probe.
+      test: ["CMD-SHELL", "wget -qO- http://localhost:5080/healthz || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 15s
+
+volumes:
+  oo_data:

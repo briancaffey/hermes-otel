@@ -34,7 +34,7 @@ _TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
 # we'd rather drop logs on the floor than spray 4xx errors at them. Users
 # can override per-backend via the ``logs:`` field in config.yaml.
-_LOGS_CAPABLE = {"signoz", "otlp", "generic", "lgtm"}
+_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve"}
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
@@ -45,13 +45,14 @@ _DISPLAY_NAMES = {
     "jaeger": "Jaeger",
     "tempo": "Tempo",
     "otlp": "OTLP",
-    "generic": "OTLP",
     "lgtm": "LGTM",
+    "uptrace": "Uptrace",
+    "openobserve": "OpenObserve",
 }
 
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
-_ENV_PRIORITY = ["langfuse", "signoz", "jaeger", "tempo", "phoenix"]
+_ENV_PRIORITY = ["langfuse", "signoz", "uptrace", "openobserve", "jaeger", "tempo", "phoenix"]
 
 
 @dataclass
@@ -258,6 +259,79 @@ def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Uptrace (all-in-one traces/metrics/logs backend).
+
+    Auth model: per-project DSN sent in the ``uptrace-dsn`` request header,
+    e.g. ``http://project1_secret@localhost:14318?grpc=14317``. The DSN
+    carries the ingestion token; the endpoint URL is where OTLP payloads
+    land. We don't try to parse the DSN — Uptrace does that server-side.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_UPTRACE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("uptrace requires endpoint")
+    dsn = _resolve_secret(
+        bc.dsn,
+        bc.dsn_env,
+        ["OTEL_UPTRACE_DSN", "UPTRACE_DSN"],
+    )
+    if not dsn:
+        raise ValueError(
+            "uptrace requires dsn (e.g. http://<project_token>@host:14318?grpc=14317)"
+        )
+    headers: Dict[str, str] = {"uptrace-dsn": dsn}
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="uptrace",
+        endpoint=ep,
+        display_name=_display(bc, "uptrace"),
+        headers=headers,
+        supports_metrics=_metrics_for("uptrace", bc.metrics),
+        supports_logs=_logs_for("uptrace", bc.logs),
+    )
+
+
+def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve OpenObserve (all-in-one traces/metrics/logs backend).
+
+    Auth model: HTTP Basic using the admin email + password (or any user
+    created in the UI), plus an optional ``stream-name`` header that
+    routes ingested data into a named stream (defaults to ``default``).
+    The endpoint URL embeds the org in its path, e.g.
+    ``http://localhost:5080/api/default/v1/traces``.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_OPENOBSERVE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("openobserve requires endpoint")
+    user = _resolve_secret(
+        bc.user,
+        bc.user_env,
+        ["OTEL_OPENOBSERVE_USER", "OPENOBSERVE_USER"],
+    )
+    pw = _resolve_secret(
+        bc.password,
+        bc.password_env,
+        ["OTEL_OPENOBSERVE_PASSWORD", "OPENOBSERVE_PASSWORD"],
+    )
+    if not (user and pw):
+        raise ValueError("openobserve requires user and password")
+    stream = (bc.stream_name or os.getenv("OTEL_OPENOBSERVE_STREAM", "") or "default").strip()
+    auth = base64.b64encode(f"{user}:{pw}".encode()).decode()
+    headers: Dict[str, str] = {
+        "Authorization": f"Basic {auth}",
+        "stream-name": stream,
+    }
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="openobserve",
+        endpoint=ep,
+        display_name=_display(bc, "openobserve"),
+        headers=headers,
+        supports_metrics=_metrics_for("openobserve", bc.metrics),
+        supports_logs=_logs_for("openobserve", bc.logs),
+    )
+
+
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
@@ -265,8 +339,9 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "jaeger": _resolve_jaeger,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
-    "generic": _resolve_otlp,
     "lgtm": _resolve_lgtm,
+    "uptrace": _resolve_uptrace,
+    "openobserve": _resolve_openobserve,
 }
 
 

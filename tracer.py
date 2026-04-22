@@ -1,7 +1,8 @@
 """OpenTelemetry tracer for Hermes plugin.
 
 Provides a singleton tracer manager that fans out spans/metrics to one or more
-collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, generic OTLP).
+collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, LGTM, Uptrace,
+OpenObserve, or any other OTLP-compatible collector via the ``otlp`` type).
 LangSmith remains a separate, env-var-only single-backend path because it uses
 its own HTTP API rather than OTLP.
 

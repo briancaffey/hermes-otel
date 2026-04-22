@@ -19,6 +19,8 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Jaeger](/backends/jaeger)** | Traces | Local (single container) | OSS, no account needed |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
+| **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
+| **[OpenObserve](/backends/openobserve)** | Traces + metrics + logs | Local (single container) · Self-hosted HA | OSS, no account |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
 ## Quick picks
@@ -60,6 +62,8 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Jaeger | ✅ | ❌ | ❌ |
 | Grafana Tempo | ✅ | ❌ | ❌ |
 | Grafana LGTM | ✅ | ✅ | ✅ |
+| Uptrace | ✅ | ✅ | ✅ |
+| OpenObserve | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
@@ -81,8 +85,6 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:
 
-- [OpenObserve](https://openobserve.ai) — OSS, single binary, traces + metrics + logs
-- [Uptrace](https://uptrace.dev) — OSS, docker compose, full stack
 - [Honeycomb](https://www.honeycomb.io) — cloud, generous free tier
 - [New Relic](https://newrelic.com) — cloud, 100 GB/mo free tier
 - [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) — self-host or Elastic Cloud

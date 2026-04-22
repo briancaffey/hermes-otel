@@ -322,6 +322,153 @@ class TestLgtmBackendType:
         assert rb.supports_logs is False
 
 
+class TestUptraceBackendType:
+    """The `uptrace` backend type: DSN-based auth, all three signals."""
+
+    def test_uptrace_resolves_with_dsn(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="uptrace",
+                endpoint="http://localhost:14318/v1/traces",
+                dsn="http://project1_secret@localhost:14318?grpc=14317",
+            )
+        )
+        assert rb.type == "uptrace"
+        assert rb.display_name == "Uptrace"
+        assert rb.supports_metrics is True
+        assert rb.supports_logs is True
+        assert rb.headers is not None
+        assert rb.headers.get("uptrace-dsn") == (
+            "http://project1_secret@localhost:14318?grpc=14317"
+        )
+
+    def test_uptrace_requires_endpoint(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        with pytest.raises(ValueError, match="endpoint"):
+            backends.resolve(BackendConfig(type="uptrace", dsn="http://t@h:14318"))
+
+    def test_uptrace_requires_dsn(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        with pytest.raises(ValueError, match="dsn"):
+            backends.resolve(
+                BackendConfig(
+                    type="uptrace",
+                    endpoint="http://localhost:14318/v1/traces",
+                )
+            )
+
+    def test_uptrace_dsn_from_env(self, monkeypatch):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        monkeypatch.setenv("UPTRACE_DSN", "http://token@host:14318?grpc=14317")
+        rb = backends.resolve(
+            BackendConfig(
+                type="uptrace",
+                endpoint="http://localhost:14318/v1/traces",
+            )
+        )
+        assert rb.headers["uptrace-dsn"] == "http://token@host:14318?grpc=14317"
+
+    def test_uptrace_user_headers_merge_on_top(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="uptrace",
+                endpoint="http://localhost:14318/v1/traces",
+                dsn="http://t@h:14318",
+                headers={"X-Extra": "1"},
+            )
+        )
+        assert rb.headers["X-Extra"] == "1"
+        assert rb.headers["uptrace-dsn"] == "http://t@h:14318"
+
+
+class TestOpenObserveBackendType:
+    """The `openobserve` backend: Basic auth + stream-name, all three signals."""
+
+    def test_openobserve_resolves_with_basic_auth(self):
+        import base64
+
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="openobserve",
+                endpoint="http://localhost:5080/api/default/v1/traces",
+                user="root@example.com",
+                password="Complexpass#123",
+            )
+        )
+        assert rb.type == "openobserve"
+        assert rb.display_name == "OpenObserve"
+        assert rb.supports_metrics is True
+        assert rb.supports_logs is True
+        expected_auth = base64.b64encode(b"root@example.com:Complexpass#123").decode()
+        assert rb.headers["Authorization"] == f"Basic {expected_auth}"
+        assert rb.headers["stream-name"] == "default"
+
+    def test_openobserve_requires_endpoint(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        with pytest.raises(ValueError, match="endpoint"):
+            backends.resolve(
+                BackendConfig(type="openobserve", user="u", password="p")
+            )
+
+    def test_openobserve_requires_credentials(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        with pytest.raises(ValueError, match="user and password"):
+            backends.resolve(
+                BackendConfig(
+                    type="openobserve",
+                    endpoint="http://localhost:5080/api/default/v1/traces",
+                )
+            )
+
+    def test_openobserve_credentials_from_env(self, monkeypatch):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        monkeypatch.setenv("OPENOBSERVE_USER", "root@example.com")
+        monkeypatch.setenv("OPENOBSERVE_PASSWORD", "Complexpass#123")
+        rb = backends.resolve(
+            BackendConfig(
+                type="openobserve",
+                endpoint="http://localhost:5080/api/default/v1/traces",
+            )
+        )
+        assert "Authorization" in rb.headers
+
+    def test_openobserve_custom_stream_name(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="openobserve",
+                endpoint="http://localhost:5080/api/myorg/v1/traces",
+                user="u",
+                password="p",
+                stream_name="my-stream",
+            )
+        )
+        assert rb.headers["stream-name"] == "my-stream"
+
+
 class TestExcludeOTelInternalFilter:
     def _record(self, name: str, level: int = logging.DEBUG) -> logging.LogRecord:
         return logging.LogRecord(

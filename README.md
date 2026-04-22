@@ -5,12 +5,15 @@ OpenTelemetry plugin for [Hermes Agent](https://github.com/nousresearch/hermes-a
 ## Backends
 
 Tested with:
-- **[Phoenix](https://github.com/Arize-ai/phoenix)** (local or cloud)
-- **[Langfuse](https://langfuse.com/docs)** (cloud or self-hosted)
-- **[LangSmith](https://smith.langchain.com/)** (LangChain's tracing platform)
-- **[SigNoz](https://signoz.io)** (cloud or self-hosted)
-- **[Jaeger](https://www.jaegertracing.io)** (local)
-- **[Grafana Tempo](https://grafana.com/oss/tempo/)** (local or Grafana Cloud)
+- **[Phoenix](https://github.com/Arize-ai/phoenix)** (local or cloud) — traces + metrics
+- **[Langfuse](https://langfuse.com/docs)** (cloud or self-hosted) — traces only
+- **[LangSmith](https://smith.langchain.com/)** (LangChain's tracing platform) — traces only
+- **[SigNoz](https://signoz.io)** (cloud or self-hosted) — traces + metrics + logs
+- **[Jaeger](https://www.jaegertracing.io)** (local) — traces only
+- **[Grafana Tempo](https://grafana.com/oss/tempo/)** (local or Grafana Cloud) — traces only
+- **[Grafana LGTM](https://github.com/grafana/docker-otel-lgtm)** (local) — traces + metrics + logs
+- **[Uptrace](https://uptrace.dev)** (self-hosted) — traces + metrics + logs
+- **[OpenObserve](https://openobserve.ai)** (self-hosted) — traces + metrics + logs
 
 Any OTLP HTTP endpoint should work.
 
@@ -18,6 +21,9 @@ Any OTLP HTTP endpoint should work.
 - For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
 - For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
 - For SigNoz see [docker-compose/signoz/](docker-compose/signoz/) (includes the upstream stack + port-remap notes)
+- For Grafana LGTM see [docker-compose/lgtm.yaml](docker-compose/lgtm.yaml) and [docker-compose/lgtm/README.md](docker-compose/lgtm/README.md)
+- For Uptrace see [docker-compose/uptrace.yaml](docker-compose/uptrace.yaml) and [docker-compose/uptrace/README.md](docker-compose/uptrace/README.md)
+- For OpenObserve see [docker-compose/openobserve.yaml](docker-compose/openobserve.yaml) and [docker-compose/openobserve/README.md](docker-compose/openobserve/README.md)
 
 ## Installation
 
@@ -193,9 +199,13 @@ path or starve the others — span end is just a non-blocking enqueue. Both
 trace and metrics export run in parallel across all configured backends.
 
 Supported `type` values: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`,
-`otlp` (generic). Backends marked traces-only (`langfuse`, `jaeger`,
-`tempo`) are auto-detected and skip the metrics reader. Override with
-`metrics: true|false` per entry if needed.
+`otlp`, `lgtm`, `uptrace`, `openobserve`. Use `otlp` for any collector
+that doesn't have a dedicated type. Backends marked
+traces-only (`langfuse`, `jaeger`, `tempo`) are auto-detected and skip
+the metrics reader. Override with `metrics: true|false` per entry if
+needed. See `config.yaml.example` for the full list of fields each type
+accepts — Uptrace takes a `dsn:` for the `uptrace-dsn` header, OpenObserve
+takes `user:` / `password:` for HTTP Basic auth, and so on.
 
 ### Full-conversation capture
 
@@ -476,8 +486,9 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 | [Jaeger](https://www.jaegertracing.io) | traces | Local (single container) | OSS, no account needed | ✅ |
 | [SigNoz](https://signoz.io) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Grafana Tempo](https://grafana.com/oss/tempo/) | traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud | ✅ |
-| [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
-| [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | 🔲 |
+| [Grafana LGTM](https://github.com/grafana/docker-otel-lgtm) | traces + metrics + logs | Local (single container) | OSS, no account | ✅ |
+| [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
+| [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
 | [New Relic](https://newrelic.com) | traces + metrics + logs | Cloud only | Free tier (100 GB/mo) + paid | 🔲 |
 | [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) | traces + metrics + logs | Local (docker) · Elastic Cloud | OSS self-host · trial + paid cloud | 🔲 |
