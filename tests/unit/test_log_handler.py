@@ -16,10 +16,8 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
-
 from hermes_otel import log_handler
 from hermes_otel.backends import _ResolvedBackend
-
 
 # ── resolve_level ──────────────────────────────────────────────────────────
 
@@ -200,8 +198,7 @@ class TestInstallHandler:
             level=logging.INFO,
         )
         markers = [
-            h for h in clean_root_logger.handlers
-            if getattr(h, log_handler._HANDLER_MARKER, False)
+            h for h in clean_root_logger.handlers if getattr(h, log_handler._HANDLER_MARKER, False)
         ]
         assert len(markers) == 1
 
@@ -214,14 +211,12 @@ class TestInstallHandler:
         )
         target = logging.getLogger("hermes_otel_test_scoped")
         try:
-            markers = [
-                h for h in target.handlers
-                if getattr(h, log_handler._HANDLER_MARKER, False)
-            ]
+            markers = [h for h in target.handlers if getattr(h, log_handler._HANDLER_MARKER, False)]
             assert len(markers) == 1
             # Root gets nothing — scoped install must not leak.
             root_markers = [
-                h for h in clean_root_logger.handlers
+                h
+                for h in clean_root_logger.handlers
                 if getattr(h, log_handler._HANDLER_MARKER, False)
             ]
             assert root_markers == []
@@ -247,8 +242,7 @@ class TestInstallHandler:
             level=logging.INFO,
         )
         markers = [
-            h for h in clean_root_logger.handlers
-            if getattr(h, log_handler._HANDLER_MARKER, False)
+            h for h in clean_root_logger.handlers if getattr(h, log_handler._HANDLER_MARKER, False)
         ]
         assert len(markers) == 1, "should replace, not stack, prior installs"
 
@@ -423,9 +417,7 @@ class TestOpenObserveBackendType:
         from hermes_otel.plugin_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
-            backends.resolve(
-                BackendConfig(type="openobserve", user="u", password="p")
-            )
+            backends.resolve(BackendConfig(type="openobserve", user="u", password="p"))
 
     def test_openobserve_requires_credentials(self):
         from hermes_otel import backends
@@ -550,8 +542,7 @@ class TestTracerLogsPipelineWiring:
         assert len(plugin._log_processors) == 1
         # Handler reached the root logger with our marker.
         markers = [
-            h for h in clean_root_logger.handlers
-            if getattr(h, log_handler._HANDLER_MARKER, False)
+            h for h in clean_root_logger.handlers if getattr(h, log_handler._HANDLER_MARKER, False)
         ]
         assert len(markers) == 1
 
@@ -562,9 +553,7 @@ class TestTracerLogsPipelineWiring:
 
         cfg = HermesOtelConfig(capture_logs=True)
         plugin = HermesOTelPlugin(config=cfg)
-        traces_only = _ResolvedBackend(
-            type="tempo", endpoint="x", supports_logs=False
-        )
+        traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
 
         with caplog.at_level("WARNING", logger="hermes_otel"):
             plugin._init_logs_pipeline(Resource.create({}), [traces_only])
