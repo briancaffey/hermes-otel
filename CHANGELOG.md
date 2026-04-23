@@ -1,5 +1,26 @@
 # Changelog
 
+## [0.3.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.2.0...hermes-otel-v0.3.0) (2026-04-22)
+
+
+### Features
+
+* **backend:** remove generic backend, add uptrace and openobserve backends ([2b49e3d](https://github.com/briancaffey/hermes-otel/commit/2b49e3db986768b25f0280b855790159690eb8b6))
+* **logs,lgtm:** add OTel logs pipeline and LGTM docker stack ([64cbf4d](https://github.com/briancaffey/hermes-otel/commit/64cbf4d70ff26c86a453846e8c88f755a9292c13))
+
+## [0.2.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.1.0...hermes-otel-v0.2.0) (2026-04-19)
+
+
+### Features
+
+* **docs:** add docs site using docusaurus ([8f4caa0](https://github.com/briancaffey/hermes-otel/commit/8f4caa0ca3eae5be12543e099d1215072ac506d8))
+
+
+### Bug Fixes
+
+* **docs:** unblock build with webpackbar override and MDX escape ([eb00673](https://github.com/briancaffey/hermes-otel/commit/eb00673db3b639830e5925b814e2d05af0a9819f))
+* **docs:** unblock Docusaurus build & deploy site ([9ac3fab](https://github.com/briancaffey/hermes-otel/commit/9ac3fabe20ce0980cbeb9aadb2ff02b85bdc89f4))
+
 ## 0.1.0 (2026-04-19)
 
 
