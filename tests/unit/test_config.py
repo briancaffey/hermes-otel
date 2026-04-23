@@ -277,6 +277,29 @@ class TestCaptureConversationHistory:
         assert cfg.conversation_history_max_chars == 4096
 
 
+class TestCaptureFullFlags:
+    def test_defaults_off(self, tmp_path):
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_full_prompts is False
+        assert cfg.capture_full_responses is False
+
+    def test_env_toggle(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_PROMPTS", "true")
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_RESPONSES", "1")
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_full_prompts is True
+        assert cfg.capture_full_responses is True
+
+    def test_yaml_values(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text("capture_full_prompts: true\ncapture_full_responses: true\n")
+        cfg = load_config(path=path)
+        assert cfg.capture_full_prompts is True
+        assert cfg.capture_full_responses is True
+
+
 class TestBackendsYaml:
     """Yaml ``backends:`` list parses into a tuple of BackendConfig."""
 

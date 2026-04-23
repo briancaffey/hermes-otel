@@ -579,3 +579,142 @@ class TestOnPostApiRequest:
             assistant_tool_call_count=0,
         )
         disabled_tracer.end_span.assert_not_called()
+
+
+class TestFullCaptureFlags:
+    """capture_full_prompts / capture_full_responses config flags."""
+
+    def _pre_kwargs(self, **extra):
+        base = dict(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=2,
+            tool_count=0,
+            approx_input_tokens=10,
+            request_char_count=40,
+            max_tokens=0,
+        )
+        base.update(extra)
+        return base
+
+    def _post_kwargs(self, **extra):
+        base = dict(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.1,
+            finish_reason="stop",
+            message_count=2,
+            response_model="gpt-4",
+            usage={},
+            assistant_content_chars=5,
+            assistant_tool_call_count=0,
+        )
+        base.update(extra)
+        return base
+
+    def test_pre_skips_prompt_attrs_when_flag_off(self, mock_tracer):
+        on_pre_api_request(
+            **self._pre_kwargs(
+                messages=[{"role": "user", "content": "hello"}],
+                system_prompt="you are helpful",
+            )
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert "llm.input_messages" not in attrs
+        assert "llm.system_prompt" not in attrs
+        assert "input.value" not in attrs
+
+    def test_pre_writes_full_prompt_when_flag_on(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        huge = "x" * 5000  # well past preview_max_chars (1200)
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": huge},
+        ]
+        on_pre_api_request(**self._pre_kwargs(messages=messages, system_prompt="the-system-prompt"))
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["llm.system_prompt"] == "the-system-prompt"
+        assert attrs["input.mime_type"] == "application/json"
+        # Full, untruncated payload round-trips
+        import json as _json
+
+        parsed = _json.loads(attrs["llm.input_messages"])
+        assert parsed == messages
+        assert len(attrs["input.value"]) > 5000
+
+    def test_pre_handles_empty_messages(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        on_pre_api_request(**self._pre_kwargs(messages=[], system_prompt=""))
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert "llm.input_messages" not in attrs
+        assert "llm.system_prompt" not in attrs
+
+    def test_post_skips_response_attrs_when_flag_off(self, mock_tracer):
+        on_post_api_request(
+            **self._post_kwargs(
+                response_content="the full response",
+                response_tool_calls=[],
+            )
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert "llm.output.content" not in attrs
+        assert "output.value" not in attrs
+
+    def test_post_writes_full_response_when_flag_on(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_responses=True)
+        big_response = "answer " * 500  # > preview_max_chars
+        on_post_api_request(
+            **self._post_kwargs(response_content=big_response, response_tool_calls=[])
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["llm.output.content"] == big_response
+        assert attrs["output.value"] == big_response
+        assert attrs["output.mime_type"] == "text/plain"
+
+    def test_post_serializes_simplenamespace_tool_calls(self, mock_tracer):
+        from types import SimpleNamespace
+
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_responses=True)
+        tc = SimpleNamespace(
+            id="call_1",
+            type="function",
+            function=SimpleNamespace(name="web_search", arguments='{"q":"x"}'),
+        )
+        on_post_api_request(**self._post_kwargs(response_content="", response_tool_calls=[tc]))
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        import json as _json
+
+        parsed = _json.loads(attrs["llm.output.tool_calls"])
+        assert parsed[0]["id"] == "call_1"
+        assert parsed[0]["function"]["name"] == "web_search"
+        # With no text content, the tool-call JSON stands in as output.value
+        assert attrs["output.mime_type"] == "application/json"
+
+    def test_flags_independent(self, mock_tracer):
+        """Enabling one flag must not imply the other."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        on_post_api_request(**self._post_kwargs(response_content="hi", response_tool_calls=[]))
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert "llm.output.content" not in attrs

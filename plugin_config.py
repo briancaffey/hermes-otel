@@ -93,6 +93,14 @@ class HermesOtelConfig:
     # flipping this on is the easiest way to see what the model actually saw.
     capture_conversation_history: bool = False
     conversation_history_max_chars: int = 20_000
+    # ── Full-fidelity api.* span capture (opt-in, unredacted) ───────────
+    # Writes the *entire* prompt/system prompt and/or response onto each
+    # ``api.{model}`` span, bypassing ``preview_max_chars``. Off by default
+    # because payloads can be large (multi-MB conversations) and contain
+    # sensitive data. Prefer ``capture_conversation_history`` for the
+    # summary-level LLM span; these flags target the per-request span.
+    capture_full_prompts: bool = False
+    capture_full_responses: bool = False
     # ── OTel logs signal ────────────────────────────────────────────────
     # Opt-in: when enabled, attach an OTel ``LoggingHandler`` to Python's
     # logging so stdlib ``logger.info(...)`` calls ship to any log-capable
@@ -237,6 +245,8 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "force_flush_on_session_end",
         "capture_conversation_history",
         "capture_logs",
+        "capture_full_prompts",
+        "capture_full_responses",
     ):
         if isinstance(value, bool):
             return value
@@ -307,6 +317,8 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_conversation_history", _parse_bool)
     take("conversation_history_max_chars", _parse_int)
     take("capture_logs", _parse_bool)
+    take("capture_full_prompts", _parse_bool)
+    take("capture_full_responses", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

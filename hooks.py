@@ -221,6 +221,36 @@ def _preview(value: Any, max_len: int) -> Optional[str]:
     return clip_preview(value, cap)
 
 
+def _json_default(obj: Any) -> Any:
+    """Fallback for :func:`json.dumps` on objects we hand through the api hook.
+
+    Hermes-agent emits ``tool_calls`` as ``SimpleNamespace`` (nested, with a
+    ``.function`` sub-namespace). json.dumps calls this recursively for any
+    non-serialisable object, so returning ``__dict__`` flattens each layer.
+    """
+    if hasattr(obj, "__dict__") and obj.__dict__:
+        return obj.__dict__
+    return str(obj)
+
+
+def _serialize_full(value: Any) -> Optional[str]:
+    """JSON-serialise ``value`` in full (no truncation).
+
+    Used for ``capture_full_prompts`` / ``capture_full_responses``: the whole
+    point is fidelity, so we skip ``preview_max_chars``. Returns None on
+    empty/unserialisable input so the caller can skip setting the attribute.
+    """
+    if value is None or value == "" or value == [] or value == {}:
+        return None
+    try:
+        return json.dumps(value, ensure_ascii=False, default=_json_default)
+    except Exception:
+        try:
+            return str(value)
+        except Exception:
+            return None
+
+
 def _serialize_conversation_history(history: Any, max_chars: int) -> Optional[str]:
     """Render ``conversation_history`` as a JSON string, clipped to ``max_chars``.
 
@@ -668,6 +698,17 @@ def on_pre_api_request(
     if max_tokens:
         attributes["llm.request.max_tokens"] = max_tokens
 
+    if tracer.config.capture_full_prompts:
+        messages = kwargs.get("messages")
+        system_prompt = kwargs.get("system_prompt")
+        serialized = _serialize_full(messages)
+        if serialized is not None:
+            attributes["llm.input_messages"] = serialized
+            attributes["input.value"] = serialized
+            attributes["input.mime_type"] = "application/json"
+        if system_prompt:
+            attributes["llm.system_prompt"] = str(system_prompt)
+
     span = tracer.start_span(
         name=f"api.{model}",
         key=key,
@@ -749,6 +790,20 @@ def on_post_api_request(
         attributes["llm.response.output_chars"] = assistant_content_chars
     if assistant_tool_call_count:
         attributes["llm.response.tool_calls"] = assistant_tool_call_count
+
+    if tracer.config.capture_full_responses:
+        response_content = kwargs.get("response_content")
+        response_tool_calls = kwargs.get("response_tool_calls")
+        if response_content:
+            attributes["llm.output.content"] = str(response_content)
+            attributes["output.value"] = str(response_content)
+            attributes["output.mime_type"] = "text/plain"
+        tool_calls_serialized = _serialize_full(response_tool_calls)
+        if tool_calls_serialized is not None:
+            attributes["llm.output.tool_calls"] = tool_calls_serialized
+            if not response_content:
+                attributes["output.value"] = tool_calls_serialized
+                attributes["output.mime_type"] = "application/json"
 
     # Pop parent
     tracer.spans.pop_parent(session_id=session_id)
