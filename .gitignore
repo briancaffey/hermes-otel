@@ -225,3 +225,9 @@ __marimo__/
 # hermes-otel: user-local plugin config. May contain endpoints or secrets.
 # Check in config.yaml.example only.
 config.yaml
+
+# hermes-otel: dashboard/dist/ is authored JS source, not a build output
+# (the plugin has no build step — see the header of dashboard/dist/index.js).
+# Un-ignore it despite the generic `dist/` rule in the Python block above.
+!dashboard/dist/
+!dashboard/dist/**

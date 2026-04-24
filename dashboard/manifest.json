@@ -1,0 +1,14 @@
+{
+  "name": "hermes_otel",
+  "label": "OTel",
+  "description": "Browse OpenTelemetry traces from the configured collector backend (LGTM/Tempo).",
+  "icon": "ChartGantt",
+  "version": "0.1.0",
+  "tab": {
+    "path": "/otel",
+    "position": "end"
+  },
+  "entry": "dist/index.js",
+  "css": "dist/style.css",
+  "api": "plugin_api.py"
+}

@@ -1,0 +1,65 @@
+/* hermes-otel dashboard tab — light theme polish.
+ * Most styling lives in Tailwind utility classes inside index.js;
+ * this file only adds tweaks Tailwind can't express cleanly.
+ */
+
+/* Force a single-tone text-selection inside the OTel tab. The dashboard
+ * ships a flashy rainbow ::selection rule globally; that effect is
+ * distracting when copying trace IDs, URLs, or span attributes. Scoping
+ * to .hermes-otel-tab keeps the rest of the dashboard untouched. */
+.hermes-otel-tab ::selection {
+  background-color: hsl(var(--primary) / 0.25);
+  color: hsl(var(--foreground));
+  text-shadow: none;
+  background-image: none;
+  -webkit-background-clip: border-box;
+          background-clip: border-box;
+  -webkit-text-fill-color: hsl(var(--foreground));
+}
+.hermes-otel-tab ::-moz-selection {
+  background-color: hsl(var(--primary) / 0.25);
+  color: hsl(var(--foreground));
+  text-shadow: none;
+  background-image: none;
+}
+
+/* Hermes's default body font (Mondwest) is a display typeface whose
+ * lowercase letterforms read as small caps. For prose-heavy content
+ * like span attribute keys/values (input.value, llm.model_name, the
+ * prompt JSON, …) that makes readable names look shouty. Swap in a
+ * regular case-preserving sans stack for the OTel tab. Elements that
+ * explicitly opt into mono (``.font-mono``, ``<code>``, ``<pre>``, the
+ * attribute table) keep Courier Prime; Badges keep their own
+ * uppercase tracking because that's the Hermes design-system
+ * convention — never applied to prose. */
+.hermes-otel-tab {
+  font-family: ui-sans-serif, system-ui, "Inter", "Segoe UI",
+    "Helvetica Neue", Arial, sans-serif;
+}
+
+.hermes-otel-tab code,
+.hermes-otel-tab pre,
+.hermes-otel-tab .font-mono,
+.hermes-otel-tab .hermes-otel-attr,
+.hermes-otel-tab .hermes-otel-attr dt,
+.hermes-otel-tab .hermes-otel-attr dd {
+  font-family: var(--font-mono, ui-monospace, "Courier Prime", monospace);
+}
+
+/* Attribute table specifically: belt-and-suspenders — wipe any
+ * inherited text-transform / letter-spacing / small-caps so keys like
+ * ``input.value`` render in the case they're declared. */
+.hermes-otel-attr,
+.hermes-otel-attr dt,
+.hermes-otel-attr dd {
+  text-transform: none !important;
+  letter-spacing: normal !important;
+  font-variant-caps: normal !important;
+}
+
+/* Long span attribute values (full prompts/responses) overflow nicely
+ * instead of stretching the layout. */
+.hermes-otel-attr dd {
+  max-height: 24rem;
+  overflow: auto;
+}
