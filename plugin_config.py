@@ -101,6 +101,9 @@ class HermesOtelConfig:
     # summary-level LLM span; these flags target the per-request span.
     capture_full_prompts: bool = False
     capture_full_responses: bool = False
+    # Opt-in: platform user identifier from Hermes gateway sessions. Hermes
+    # currently exposes this as ``sender_id`` only on pre_llm_call.
+    capture_sender_id: bool = False
     # ── OTel logs signal ────────────────────────────────────────────────
     # Opt-in: when enabled, attach an OTel ``LoggingHandler`` to Python's
     # logging so stdlib ``logger.info(...)`` calls ship to any log-capable
@@ -247,6 +250,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_logs",
         "capture_full_prompts",
         "capture_full_responses",
+        "capture_sender_id",
     ):
         if isinstance(value, bool):
             return value
@@ -319,6 +323,7 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_logs", _parse_bool)
     take("capture_full_prompts", _parse_bool)
     take("capture_full_responses", _parse_bool)
+    take("capture_sender_id", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

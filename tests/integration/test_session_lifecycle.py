@@ -229,6 +229,45 @@ class TestFullSessionLifecycle:
         # PerSession aggregator popped — no lingering state.
         assert plugin.sessions.peek("s1") is None
 
+    def test_sender_id_rolls_up_to_session_span_when_enabled(self, inmemory_otel_setup):
+        """sender_id from pre_llm_call is attached to llm and session spans when opted in."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(capture_sender_id=True)
+
+        on_session_start(session_id="s1", model="gpt-4", platform="discord")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="discord",
+            sender_id="123456789012345678",
+        )
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="discord",
+        )
+        on_session_end(
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="discord",
+        )
+
+        spans = exporter.get_finished_spans()
+        llm_span = _span_by_name(spans, "llm.gpt-4")
+        session_span = _span_by_name(spans, "agent")
+        assert llm_span.attributes["hermes.sender.id"] == "123456789012345678"
+        assert session_span.attributes["hermes.sender.id"] == "123456789012345678"
+
     def test_interrupted_session(self, inmemory_otel_setup):
         """An interrupted session should still export with status ok."""
         exporter, _ = inmemory_otel_setup

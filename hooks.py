@@ -371,6 +371,9 @@ def on_session_end(
     if ps is not None and ps.usage_updated:
         attributes.update(_usage_attributes(ps.usage))
 
+    if ps is not None and ps.sender_id:
+        attributes["hermes.sender.id"] = ps.sender_id
+
     # Per-turn summary roll-up
     if ps is not None:
         summary = ps.turn_summary
@@ -570,6 +573,13 @@ def on_pre_llm_call(
         "llm.model_name": model,
         "llm.provider": platform,
     }
+
+    if tracer.config.capture_sender_id:
+        sender_id = truncate_string(kwargs.get("sender_id"), 200)
+        if sender_id:
+            attributes["hermes.sender.id"] = sender_id
+            if session_id:
+                tracer.sessions.get_or_create(session_id).sender_id = sender_id
 
     # Opt-in: put the entire conversation the model is about to see on
     # input.value. Falls back to just the latest user_message otherwise —

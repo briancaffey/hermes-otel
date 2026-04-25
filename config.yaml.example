@@ -57,6 +57,12 @@
 # Metadata (tool names, durations, token counts) is still recorded.
 # capture_previews: true
 
+# Platform sender ID capture. When true, gateway sessions add
+# hermes.sender.id to llm.* and root session spans when Hermes exposes it.
+# This is the platform user ID (for example Discord, Telegram, or Slack),
+# not a display name. CLI sessions usually leave it empty.
+# capture_sender_id: false
+
 # Put the entire conversation_history the model is about to see on the
 # llm.* span's input.value. The api.* spans don't carry message-level
 # detail, so flipping this on is the easiest way to see what the model saw.

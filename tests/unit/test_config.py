@@ -25,6 +25,7 @@ _ENV_VARS = [
     "HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE",
     "HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS",
     "HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END",
+    "HERMES_OTEL_CAPTURE_SENDER_ID",
 ]
 
 
@@ -298,6 +299,25 @@ class TestCaptureFullFlags:
         cfg = load_config(path=path)
         assert cfg.capture_full_prompts is True
         assert cfg.capture_full_responses is True
+
+
+class TestCaptureSenderId:
+    def test_defaults_off(self, tmp_path):
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_sender_id is False
+
+    def test_env_toggle(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_SENDER_ID", "true")
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.capture_sender_id is True
+
+    def test_yaml_value(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text("capture_sender_id: true\n")
+        cfg = load_config(path=path)
+        assert cfg.capture_sender_id is True
 
 
 class TestBackendsYaml:

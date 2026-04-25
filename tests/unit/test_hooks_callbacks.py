@@ -323,6 +323,54 @@ class TestOnPreLlmCall:
         )
         assert result is None
 
+    def test_sender_id_not_captured_by_default(self, mock_tracer):
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="discord",
+            sender_id="123456789012345678",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert "hermes.sender.id" not in attrs
+        assert mock_tracer.sessions.peek("s1").sender_id == ""
+
+    def test_sender_id_captured_when_enabled(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_sender_id=True)
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="discord",
+            sender_id="123456789012345678",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["hermes.sender.id"] == "123456789012345678"
+        assert mock_tracer.sessions.peek("s1").sender_id == "123456789012345678"
+
+    def test_empty_sender_id_is_ignored_when_enabled(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_sender_id=True)
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+            sender_id="",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert "hermes.sender.id" not in attrs
+        assert mock_tracer.sessions.peek("s1").sender_id == ""
+
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_llm_call(
             session_id="s1",
