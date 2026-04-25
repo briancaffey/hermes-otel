@@ -344,7 +344,7 @@ root_span_ttl_ms: 600000        # orphan-sweep threshold (10 min default)
 flush_interval_ms: 60000        # metrics export cadence
 preview_max_chars: 1200         # clip_preview truncation limit
 capture_previews: true          # false = suppress all input.value / output.value
-capture_sender_id: false        # true = add platform user ID to llm/session spans
+capture_sender_id: false        # true = add platform-prefixed user.id to spans
 project_name: hermes-prod       # supersedes OTEL_PROJECT_NAME
 global_tags:
   team: platform
@@ -379,7 +379,7 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 
 Set `capture_previews: false` (or `HERMES_OTEL_CAPTURE_PREVIEWS=false`) to suppress every `input.value` / `output.value` attribute. Useful for shared deployments where message content can't leave the process. A one-line startup banner confirms the mode is active.
 
-Set `capture_sender_id: true` (or `HERMES_OTEL_CAPTURE_SENDER_ID=true`) to attach the gateway platform user ID to `llm.*` and root session spans as `hermes.sender.id`. This is opt-in because IDs from Discord, Telegram, Slack, and similar platforms can identify users. CLI sessions usually omit it.
+Set `capture_sender_id: true` (or `HERMES_OTEL_CAPTURE_SENDER_ID=true`) to attach gateway sender identity to spans. The plugin emits the raw platform ID as `hermes.sender.id` and the backend-neutral user key as `user.id={platform}:{sender_id}`. For example, Slack user `U0B074344DP` becomes `user.id=slack:U0B074344DP`. The platform is already available on LLM spans as `llm.provider`. This is opt-in because IDs from Discord, Telegram, Slack, email, SMS, and similar platforms can identify users. CLI sessions usually omit it.
 
 ### Per-turn summary attributes
 

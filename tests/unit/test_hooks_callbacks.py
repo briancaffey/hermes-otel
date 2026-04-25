@@ -335,9 +335,10 @@ class TestOnPreLlmCall:
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert "hermes.sender.id" not in attrs
+        assert "user.id" not in attrs
         assert mock_tracer.sessions.peek("s1").sender_id == ""
 
-    def test_sender_id_captured_when_enabled(self, mock_tracer):
+    def test_sender_id_captured_as_platform_prefixed_user_id_when_enabled(self, mock_tracer):
         from hermes_otel.plugin_config import HermesOtelConfig
 
         mock_tracer.config = HermesOtelConfig(capture_sender_id=True)
@@ -352,7 +353,10 @@ class TestOnPreLlmCall:
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["hermes.sender.id"] == "123456789012345678"
-        assert mock_tracer.sessions.peek("s1").sender_id == "123456789012345678"
+        assert attrs["user.id"] == "discord:123456789012345678"
+        ps = mock_tracer.sessions.peek("s1")
+        assert ps.sender_id == "123456789012345678"
+        assert ps.user_id == "discord:123456789012345678"
 
     def test_empty_sender_id_is_ignored_when_enabled(self, mock_tracer):
         from hermes_otel.plugin_config import HermesOtelConfig
@@ -369,6 +373,7 @@ class TestOnPreLlmCall:
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert "hermes.sender.id" not in attrs
+        assert "user.id" not in attrs
         assert mock_tracer.sessions.peek("s1").sender_id == ""
 
     def test_noop_when_disabled(self, disabled_tracer):
@@ -500,6 +505,29 @@ class TestOnPreApiRequest:
         assert attrs["llm.provider"] == "openai"
         assert attrs["llm.request.message_count"] == 10
         assert attrs["llm.request.max_tokens"] == 2048
+
+    def test_includes_session_user_id_when_available(self, mock_tracer):
+        ps = mock_tracer.sessions.get_or_create("s1")
+        ps.sender_id = "U0B074344DP"
+        ps.user_id = "slack:U0B074344DP"
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="slack",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["hermes.sender.id"] == "U0B074344DP"
+        assert attrs["user.id"] == "slack:U0B074344DP"
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_api_request(

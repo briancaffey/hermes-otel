@@ -57,10 +57,12 @@
 # Metadata (tool names, durations, token counts) is still recorded.
 # capture_previews: true
 
-# Platform sender ID capture. When true, gateway sessions add
-# hermes.sender.id to llm.* and root session spans when Hermes exposes it.
-# This is the platform user ID (for example Discord, Telegram, or Slack),
-# not a display name. CLI sessions usually leave it empty.
+# Platform sender ID capture. When true, gateway sessions add the raw
+# platform sender ID as hermes.sender.id and a backend-neutral user.id
+# formatted as "{platform}:{sender_id}". The platform is already emitted
+# on LLM spans as llm.provider.
+# This can identify users (for example Discord, Telegram, Slack, email, SMS),
+# so keep it opt-in. CLI sessions usually leave it empty.
 # capture_sender_id: false
 
 # Put the entire conversation_history the model is about to see on the
