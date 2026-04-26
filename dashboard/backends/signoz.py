@@ -21,7 +21,6 @@ from .base import (
     StructuredFilter,
     http_get_json,
     http_post_json,
-    otlp_attr,
     otlp_attrs_from_dict,
     otlp_status,
     resolve_env_or_literal,
@@ -171,9 +170,7 @@ class SigNozAdapter(BackendAdapter):
                 }
             )
         for k, v in f.attr_equals.items():
-            items.append(
-                {"key": {"key": k, "type": "tag"}, "op": "=", "value": str(v)}
-            )
+            items.append({"key": {"key": k, "type": "tag"}, "op": "=", "value": str(v)})
         if f.roots_only:
             items.append(
                 {
@@ -224,9 +221,7 @@ class SigNozAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         body = self._build_query_body(f, start_s, end_s, limit)
         url = f"{self.query_url}/api/v4/query_range"
         data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
@@ -313,7 +308,7 @@ def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:
     result = ((data.get("data") or {}).get("result")) or []
     rows: List[Dict[str, Any]] = []
     for series in result:
-        for entry in (series.get("list") or []):
+        for entry in series.get("list") or []:
             row = entry.get("data") if isinstance(entry, dict) else None
             if isinstance(row, dict):
                 rows.append(row)

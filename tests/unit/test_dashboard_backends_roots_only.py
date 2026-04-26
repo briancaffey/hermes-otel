@@ -43,7 +43,6 @@ if "fastapi" not in sys.modules:
 
 from backends.base import StructuredFilter  # noqa: E402
 
-
 # ── Phoenix ────────────────────────────────────────────────────────────
 
 
@@ -58,9 +57,7 @@ def _phoenix_project_list_response() -> Dict[str, Any]:
     return {
         "data": {
             "projects": {
-                "edges": [
-                    {"node": {"id": "UHJvamVjdDox", "name": "default", "hasTraces": True}}
-                ]
+                "edges": [{"node": {"id": "UHJvamVjdDox", "name": "default", "hasTraces": True}}]
             }
         }
     }
@@ -144,9 +141,7 @@ class TestPhoenixRootsOnly:
         assert variables.get("rootsOnly") is False
         assert variables.get("orphanAsRoot") is True
 
-    def test_client_filter_drops_non_roots_even_if_phoenix_returns_them(
-        self, phoenix_adapter
-    ):
+    def test_client_filter_drops_non_roots_even_if_phoenix_returns_them(self, phoenix_adapter):
         """Belt-and-suspenders: if Phoenix somehow leaks a span with a
         parentId through the rootsOnly filter, the adapter drops it."""
         spans = [
@@ -166,17 +161,13 @@ class TestPhoenixRootsOnly:
             return _phoenix_spans_response(spans)
 
         with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
-            result = phoenix_adapter.search(
-                StructuredFilter(roots_only=True), 0, 1_000_000, 10
-            )
+            result = phoenix_adapter.search(StructuredFilter(roots_only=True), 0, 1_000_000, 10)
 
         trace_names = [t["rootTraceName"] for t in result["traces"]]
         assert "api.gpt-4" not in trace_names
         assert trace_names == ["agent", "cron"]
 
-    def test_client_filter_keeps_non_roots_when_roots_only_false(
-        self, phoenix_adapter
-    ):
+    def test_client_filter_keeps_non_roots_when_roots_only_false(self, phoenix_adapter):
         spans = [
             _phoenix_span("agent", parent_id=None, trace_id="t1", span_id="s1"),
             _phoenix_span(
@@ -193,9 +184,7 @@ class TestPhoenixRootsOnly:
             return _phoenix_spans_response(spans)
 
         with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
-            result = phoenix_adapter.search(
-                StructuredFilter(roots_only=False), 0, 1_000_000, 10
-            )
+            result = phoenix_adapter.search(StructuredFilter(roots_only=False), 0, 1_000_000, 10)
 
         trace_names = [t["rootTraceName"] for t in result["traces"]]
         assert "agent" in trace_names
@@ -205,9 +194,7 @@ class TestPhoenixRootsOnly:
 # ── Tempo ──────────────────────────────────────────────────────────────
 
 
-def _tempo_trace(
-    trace_id: str, root_name: str, matched_names: List[str]
-) -> Dict[str, Any]:
+def _tempo_trace(trace_id: str, root_name: str, matched_names: List[str]) -> Dict[str, Any]:
     return {
         "traceID": trace_id,
         "rootServiceName": "hermes-agent",
@@ -216,7 +203,10 @@ def _tempo_trace(
         "durationMs": 10,
         "spanSets": [
             {
-                "spans": [{"spanID": f"sp-{i}", "name": n, "attributes": []} for i, n in enumerate(matched_names)],
+                "spans": [
+                    {"spanID": f"sp-{i}", "name": n, "attributes": []}
+                    for i, n in enumerate(matched_names)
+                ],
                 "matched": len(matched_names),
             }
         ],
@@ -227,9 +217,7 @@ class TestTempoRootsOnly:
     def _build_adapter(self):
         from backends.tempo import TempoAdapter
 
-        return TempoAdapter(
-            {"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"}
-        )
+        return TempoAdapter({"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"})
 
     def test_drops_traces_when_no_matched_span_is_root(self):
         adapter = self._build_adapter()
@@ -393,9 +381,7 @@ class TestJaegerRootsOnly:
     def _adapter(self):
         from backends.jaeger import JaegerAdapter
 
-        return JaegerAdapter(
-            {"type": "jaeger", "endpoint": "http://localhost:16686"}
-        )
+        return JaegerAdapter({"type": "jaeger", "endpoint": "http://localhost:16686"})
 
     @staticmethod
     def _jaeger_trace(trace_id: str, root_has_parent: bool) -> Dict[str, Any]:
@@ -528,9 +514,7 @@ class TestOrderingNewestFirst:
     def test_uptrace_uql_ends_with_order_by_desc(self):
         from backends.uptrace import UptraceAdapter
 
-        adapter = UptraceAdapter(
-            {"type": "uptrace", "dsn": "http://secret@localhost:14318"}
-        )
+        adapter = UptraceAdapter({"type": "uptrace", "dsn": "http://secret@localhost:14318"})
         uql = adapter._build_uql(StructuredFilter())
         assert "order by span.time desc" in uql
 

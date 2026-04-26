@@ -23,13 +23,14 @@ _HERE = Path(__file__).resolve().parent
 if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
+from backends.base import StructuredFilter  # noqa: E402
+
 from backends import (  # noqa: E402  (after the path shim above)
     adapters,
     candidate_config_paths,
     find_adapter_class,
     resolve_adapter,
 )
-from backends.base import StructuredFilter  # noqa: E402
 
 router = APIRouter()
 

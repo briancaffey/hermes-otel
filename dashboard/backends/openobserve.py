@@ -134,9 +134,7 @@ class OpenObserveAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         where = self._build_where(f)
         url = f"{self.query_url}/api/{self.org}/_search?type=traces"
 

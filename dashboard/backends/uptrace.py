@@ -121,9 +121,9 @@ class UptraceAdapter(BackendAdapter):
         if f.name_regex:
             parts.append(f'where span.name like "{_esc(f.name_regex)}"')
         if f.status == "error":
-            parts.append("where span.status_code = \"error\"")
+            parts.append('where span.status_code = "error"')
         elif f.status == "ok":
-            parts.append("where span.status_code = \"ok\"")
+            parts.append('where span.status_code = "ok"')
         if f.min_duration_ms:
             parts.append(f"where span.duration >= {int(f.min_duration_ms)}ms")
         if f.roots_only:
@@ -149,9 +149,7 @@ class UptraceAdapter(BackendAdapter):
         pipeline.extend(parts)
         return " | ".join(pipeline)
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         # Uptrace's documented span-search endpoint:
         # POST /api/v1/tracing/{project_id}/search/spans
         body = {
@@ -187,10 +185,7 @@ class UptraceAdapter(BackendAdapter):
                         attrs_map[k] = raw_attrs[k]
             name = sp.get("name") or sp.get("span.name") or ""
             service = (
-                sp.get("serviceName")
-                or sp.get("service_name")
-                or sp.get("span.service_name")
-                or ""
+                sp.get("serviceName") or sp.get("service_name") or sp.get("span.service_name") or ""
             )
             status = sp.get("statusCode") or sp.get("span.status_code")
             if status:

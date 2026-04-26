@@ -40,9 +40,7 @@ _DEFAULT_LANGFUSE_PORT = 3000
 
 
 def _iso_utc(ts_s: int) -> str:
-    return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat().replace(
-        "+00:00", "Z"
-    )
+    return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _iso_to_ns(iso: Optional[str]) -> Optional[int]:
@@ -145,9 +143,9 @@ class LangfuseAdapter(BackendAdapter):
                     "(or *_env variants) on the langfuse backend entry."
                 ),
             )
-        token = base64.b64encode(
-            f"{self.public_key}:{self.secret_key}".encode("utf-8")
-        ).decode("ascii")
+        token = base64.b64encode(f"{self.public_key}:{self.secret_key}".encode("utf-8")).decode(
+            "ascii"
+        )
         return {"Authorization": f"Basic {token}"}
 
     # ── Filter translation ───────────────────────────────────────────
@@ -185,14 +183,9 @@ class LangfuseAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         params = self._list_params(f, start_s, end_s, limit)
-        url = (
-            f"{self.query_url}/api/public/traces?"
-            + _urlparse.urlencode(params, doseq=True)
-        )
+        url = f"{self.query_url}/api/public/traces?" + _urlparse.urlencode(params, doseq=True)
         data = http_get_json(url, headers=self._headers(), timeout=15.0)
         raw_list = data.get("data") if isinstance(data, dict) else None
         items = raw_list if isinstance(raw_list, list) else []
@@ -315,7 +308,9 @@ class LangfuseAdapter(BackendAdapter):
                 "name": data.get("name") or "trace",
                 "kind": 1,
                 "startTimeUnixNano": str(trace_start) if trace_start else "0",
-                "endTimeUnixNano": str(trace_end) if trace_end else (str(trace_start) if trace_start else "0"),
+                "endTimeUnixNano": (
+                    str(trace_end) if trace_end else (str(trace_start) if trace_start else "0")
+                ),
                 "attributes": otlp_attrs_from_dict(root_attrs),
                 "status": otlp_status("ok"),
             },

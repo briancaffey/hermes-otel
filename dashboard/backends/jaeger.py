@@ -143,9 +143,7 @@ class JaegerAdapter(BackendAdapter):
                 out[tag["key"]] = _tag_value(tag)
         return out
 
-    def _service_name_for_span(
-        self, span: Dict[str, Any], processes: Dict[str, Any]
-    ) -> str:
+    def _service_name_for_span(self, span: Dict[str, Any], processes: Dict[str, Any]) -> str:
         pid = span.get("processID")
         if pid and isinstance(processes, dict):
             proc = processes.get(pid)
@@ -164,9 +162,7 @@ class JaegerAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         params = self._build_query(f, start_s, end_s, limit)
         url = f"{self.query_url}/api/traces?{_urlparse.urlencode(params)}"
         data = http_get_json(url, headers=self._headers(), timeout=15.0)

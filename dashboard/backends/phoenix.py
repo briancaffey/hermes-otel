@@ -22,7 +22,6 @@ from .base import (
     BackendAdapter,
     StructuredFilter,
     http_post_json,
-    otlp_attr,
     otlp_attrs_from_dict,
     otlp_status,
     resolve_env_or_literal,
@@ -153,9 +152,7 @@ class PhoenixAdapter(BackendAdapter):
     def _resolve_project_id(self) -> Optional[str]:
         if self._project_id_cache:
             return self._project_id_cache
-        data = self._gql(
-            "{ projects(first: 50) { edges { node { id name hasTraces } } } }"
-        )
+        data = self._gql("{ projects(first: 50) { edges { node { id name hasTraces } } } }")
         edges = ((data or {}).get("projects") or {}).get("edges") or []
         projects = [e["node"] for e in edges if e.get("node")]
         if not projects:
@@ -228,7 +225,9 @@ class PhoenixAdapter(BackendAdapter):
             attrs.setdefault("gen_ai.usage.output_tokens", span["tokenCountCompletion"])
         status_code = span.get("statusCode")
         if status_code:
-            attrs.setdefault("status", status_code.lower() if isinstance(status_code, str) else status_code)
+            attrs.setdefault(
+                "status", status_code.lower() if isinstance(status_code, str) else status_code
+            )
         if span.get("name"):
             attrs.setdefault("name", span["name"])
         return attrs
@@ -275,16 +274,16 @@ class PhoenixAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         project_id = self._resolve_project_id()
         if not project_id:
             return {"traces": []}
 
         fc = self._build_filter_condition(f)
-        time_range = {"start": _ns_to_iso(start_s * 1_000_000_000),
-                      "end": _ns_to_iso(end_s * 1_000_000_000)}
+        time_range = {
+            "start": _ns_to_iso(start_s * 1_000_000_000),
+            "end": _ns_to_iso(end_s * 1_000_000_000),
+        }
 
         # Phoenix's ``rootSpansOnly`` honours the companion
         # ``orphanSpanAsRootSpan`` flag, which defaults to True and

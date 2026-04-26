@@ -125,9 +125,9 @@ def _instantiate(b: Dict[str, Any]) -> Optional[BackendAdapter]:
         return None
 
 
-def resolve_adapter() -> Tuple[
-    Optional[BackendAdapter], List[Dict[str, Any]], Optional[Path], Optional[str]
-]:
+def resolve_adapter() -> (
+    Tuple[Optional[BackendAdapter], List[Dict[str, Any]], Optional[Path], Optional[str]]
+):
     """Pick the active adapter following the locked precedence rules.
 
     1. Try ``query_backend`` pin (by ``name`` or ``type``).
@@ -158,6 +158,7 @@ def resolve_adapter() -> Tuple[
 # defined before adapter modules start hitting them.
 # Each import is try/except so a single broken adapter doesn't take the
 # whole dashboard offline.
+
 
 def _safe_import(name: str) -> None:
     try:

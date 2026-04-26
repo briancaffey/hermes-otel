@@ -121,9 +121,7 @@ class BackendAdapter:
             "raw_placeholder": self.raw_placeholder,
         }
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         raise NotImplementedError
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
@@ -142,9 +140,7 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
             detail = e.read().decode("utf-8", errors="replace")
         except Exception:
             detail = str(e)
-        raise HTTPException(
-            status_code=502, detail=f"Backend returned {e.code}: {detail[:500]}"
-        )
+        raise HTTPException(status_code=502, detail=f"Backend returned {e.code}: {detail[:500]}")
     except _urlerror.URLError as e:
         raise HTTPException(status_code=502, detail=f"Backend unreachable: {e.reason}")
     except Exception as e:
@@ -157,9 +153,7 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
         raise HTTPException(status_code=502, detail=f"Backend returned non-JSON: {e}")
 
 
-def http_get_json(
-    url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 10.0
-) -> Any:
+def http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 10.0) -> Any:
     req_headers = {"Accept": "application/json"}
     if headers:
         req_headers.update(headers)

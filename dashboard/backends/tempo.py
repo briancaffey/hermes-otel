@@ -103,9 +103,7 @@ class TempoAdapter(BackendAdapter):
             return base
         return base + " | select(" + ", ".join(_CARD_SELECT_ATTRS) + ")"
 
-    def search(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
+    def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         params: Dict[str, Any] = {
             "limit": limit,
             "start": start_s,
