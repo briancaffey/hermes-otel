@@ -1,5 +1,21 @@
 # Changelog
 
+## [0.4.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.3.0...hermes-otel-v0.4.0) (2026-04-26)
+
+
+### Features
+
+* **dashboard:** add dashboard page for otel ([983814d](https://github.com/briancaffey/hermes-otel/commit/983814d48bad6fe4b0e2c145ea81772803395fed))
+* **hook:** optional hook settings ([c86a583](https://github.com/briancaffey/hermes-otel/commit/c86a58391ca75910d76ab847e0928e789c7faee3))
+* **hooks:** capture gateway sender id ([27a1fad](https://github.com/briancaffey/hermes-otel/commit/27a1fadeaf98ef750676ab55d91a52ea5b9acdea))
+* **hooks:** capture gateway sender identity ([5db08d1](https://github.com/briancaffey/hermes-otel/commit/5db08d1a749d450b1c28fe7fd7204f77af28cb80))
+* **hooks:** map sender id to user.id ([d6140c0](https://github.com/briancaffey/hermes-otel/commit/d6140c0098debd7024b19bd44d8b8c1ce4f0b59b))
+
+
+### Bug Fixes
+
+* **lint:** format code ([7721056](https://github.com/briancaffey/hermes-otel/commit/77210563592fbc73613d2cac12f04536b02b5b3d))
+
 ## [0.3.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.2.0...hermes-otel-v0.3.0) (2026-04-22)
 
 
