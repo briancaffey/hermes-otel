@@ -165,6 +165,75 @@ class TestFullSessionLifecycle:
         assert attrs["input.value"] == "What files are here?"
         assert "file.txt" in attrs["output.value"]
 
+    def test_sender_id_propagates_to_api_and_tool_spans(self, inmemory_otel_setup):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(capture_sender_id=True)
+
+        on_session_start(session_id="s1", model="gpt-4", platform="slack")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="run code",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="slack",
+            sender_id="U0B074344DP",
+        )
+        on_pre_api_request(
+            task_id="api1",
+            session_id="s1",
+            platform="slack",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=1,
+            approx_input_tokens=100,
+            request_char_count=500,
+            max_tokens=0,
+        )
+        on_pre_tool_call(
+            tool_name="execute_code",
+            args={"code": "print('hi')"},
+            task_id="tool1",
+            session_id="s1",
+        )
+        on_post_tool_call(
+            tool_name="execute_code",
+            args={"code": "print('hi')"},
+            result="hi",
+            task_id="tool1",
+            session_id="s1",
+        )
+        on_post_api_request(
+            task_id="api1",
+            session_id="s1",
+            platform="slack",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.1,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
+            usage={},
+            assistant_content_chars=0,
+            assistant_tool_call_count=0,
+        )
+
+        spans = exporter.get_finished_spans()
+        api_span = _span_by_name(spans, "api.gpt-4")
+        tool_span = _span_by_name(spans, "tool.execute_code")
+        for span in [api_span, tool_span]:
+            assert span.attributes["hermes.sender.id"] == "U0B074344DP"
+            assert span.attributes["user.id"] == "slack:U0B074344DP"
+
     def test_module_state_cleaned_after_session_end(self, inmemory_otel_setup):
         """Verify that per-session aggregators are popped at session end."""
         exporter, plugin = inmemory_otel_setup
@@ -228,6 +297,47 @@ class TestFullSessionLifecycle:
 
         # PerSession aggregator popped — no lingering state.
         assert plugin.sessions.peek("s1") is None
+
+    def test_sender_id_rolls_up_to_session_span_when_enabled(self, inmemory_otel_setup):
+        """sender_id from pre_llm_call is emitted as a platform-prefixed user.id."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(capture_sender_id=True)
+
+        on_session_start(session_id="s1", model="gpt-4", platform="discord")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="discord",
+            sender_id="123456789012345678",
+        )
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="discord",
+        )
+        on_session_end(
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="discord",
+        )
+
+        spans = exporter.get_finished_spans()
+        llm_span = _span_by_name(spans, "llm.gpt-4")
+        session_span = _span_by_name(spans, "agent")
+        assert llm_span.attributes["hermes.sender.id"] == "123456789012345678"
+        assert llm_span.attributes["user.id"] == "discord:123456789012345678"
+        assert session_span.attributes["hermes.sender.id"] == "123456789012345678"
+        assert session_span.attributes["user.id"] == "discord:123456789012345678"
 
     def test_interrupted_session(self, inmemory_otel_setup):
         """An interrupted session should still export with status ok."""

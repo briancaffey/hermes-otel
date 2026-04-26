@@ -221,6 +221,33 @@ def _preview(value: Any, max_len: int) -> Optional[str]:
     return clip_preview(value, cap)
 
 
+def _sender_attributes(sender_id: str, platform: str) -> Dict[str, str]:
+    """Return backend-neutral sender attributes for trace/user filtering."""
+    if not sender_id:
+        return {}
+    attrs = {"hermes.sender.id": sender_id}
+    attrs["user.id"] = f"{platform}:{sender_id}" if platform else sender_id
+    return attrs
+
+
+def _session_sender_attributes(tracer, session_id: Optional[str]) -> Dict[str, str]:
+    """Return sender attributes already captured for a session."""
+    if not session_id:
+        return {}
+    ps = tracer.sessions.peek(session_id)
+    return _per_session_sender_attributes(ps)
+
+
+def _per_session_sender_attributes(ps: Any) -> Dict[str, str]:
+    """Return sender attributes from a PerSession aggregator."""
+    if ps is None or not ps.sender_id:
+        return {}
+    attrs = {"hermes.sender.id": ps.sender_id}
+    if ps.user_id:
+        attrs["user.id"] = ps.user_id
+    return attrs
+
+
 def _json_default(obj: Any) -> Any:
     """Fallback for :func:`json.dumps` on objects we hand through the api hook.
 
@@ -371,6 +398,8 @@ def on_session_end(
     if ps is not None and ps.usage_updated:
         attributes.update(_usage_attributes(ps.usage))
 
+    attributes.update(_per_session_sender_attributes(ps))
+
     # Per-turn summary roll-up
     if ps is not None:
         summary = ps.turn_summary
@@ -445,6 +474,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
         summary.add_target(target)
@@ -510,6 +540,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Summary roll-up
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
 
@@ -570,6 +601,17 @@ def on_pre_llm_call(
         "llm.model_name": model,
         "llm.provider": platform,
     }
+
+    if tracer.config.capture_sender_id:
+        sender_id = truncate_string(kwargs.get("sender_id"), 200)
+        if sender_id:
+            sender_platform = truncate_string(platform, 120)
+            sender_attrs = _sender_attributes(sender_id, sender_platform)
+            attributes.update(sender_attrs)
+            if session_id:
+                ps = tracer.sessions.get_or_create(session_id)
+                ps.sender_id = sender_id
+                ps.user_id = sender_attrs["user.id"]
 
     # Opt-in: put the entire conversation the model is about to see on
     # input.value. Falls back to just the latest user_message otherwise —
@@ -697,6 +739,8 @@ def on_pre_api_request(
     }
     if max_tokens:
         attributes["llm.request.max_tokens"] = max_tokens
+
+    attributes.update(_session_sender_attributes(tracer, session_id))
 
     if tracer.config.capture_full_prompts:
         messages = kwargs.get("messages")
