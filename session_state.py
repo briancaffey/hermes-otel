@@ -91,6 +91,7 @@ class PerSession:
     usage_updated: bool = False
     sender_id: str = ""
     user_id: str = ""
+    correlation_id: str = ""
     io: Dict[str, str] = field(default_factory=lambda: {"input": "", "output": ""})
     io_captured: bool = False
     turn_summary: TurnSummary = field(default_factory=TurnSummary)

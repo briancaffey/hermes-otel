@@ -78,8 +78,20 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["session_id"] == "s1"
+        assert attrs["correlation.id"] == "s1"
         assert attrs["llm.model_name"] == "gpt-4o"
         assert attrs["llm.provider"] == "telegram"
+
+    def test_incoming_correlation_id_wins(self, mock_tracer):
+        on_session_start(
+            session_id="s1",
+            model="gpt-4o",
+            platform="telegram",
+            correlation_id="corr-123",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["correlation.id"] == "corr-123"
+        assert mock_tracer.sessions.peek("s1").correlation_id == "corr-123"
 
     def test_includes_cron_job_id(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli", job_id="j123")
@@ -253,6 +265,39 @@ class TestOnPreLlmCall:
         assert kw["name"] == "llm.gpt-4"
         assert kw["key"] == "llm:s1"
         assert kw["kind"] == "llm"
+        assert kw["attributes"]["correlation.id"] == "s1"
+
+    def test_reuses_session_correlation_id_on_child_span(self, mock_tracer):
+        mock_tracer.spans._active_spans["session:s1"] = MagicMock()
+        mock_tracer.sessions.get_or_create("s1").correlation_id = "corr-123"
+
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["correlation.id"] == "corr-123"
+
+    def test_session_state_uses_full_session_id_for_correlation(self, mock_tracer):
+        long_session_id = "s" * 250
+        mock_tracer.spans._active_spans[f"session:{long_session_id}"] = MagicMock()
+
+        on_pre_llm_call(
+            session_id=long_session_id,
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+            correlation_id="corr-123",
+        )
+
+        assert mock_tracer.sessions.peek(long_session_id).correlation_id == "corr-123"
+        assert mock_tracer.sessions.peek(long_session_id[:200]) is None
 
     def test_pushes_parent(self, mock_tracer):
         mock_tracer.spans._active_spans["session:s1"] = MagicMock()

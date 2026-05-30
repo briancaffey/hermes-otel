@@ -238,6 +238,65 @@ def _session_sender_attributes(tracer, session_id: Optional[str]) -> Dict[str, s
     return _per_session_sender_attributes(ps)
 
 
+def _extract_correlation_id(extra_kwargs: dict) -> str:
+    """Return an incoming correlation identifier from hook kwargs, if present.
+
+    Different callers spell this value differently. Accept the common Python
+    snake_case form, the canonical OTel attribute key, and the HTTP/W3C-ish
+    hyphenated form so gateways, cron, webhooks, and API callers can pass it
+    through without adapter-specific glue.
+    """
+
+    for key in (
+        "correlation_id",
+        "correlation.id",
+        "correlation-id",
+        "x_correlation_id",
+        "x-correlation-id",
+    ):
+        raw = extra_kwargs.get(key)
+        if raw is None:
+            continue
+        value = truncate_string(raw, 200)
+        if value:
+            return value
+    return ""
+
+
+def _correlation_attributes(tracer, session_id: Optional[str], extra_kwargs: dict) -> Dict[str, str]:
+    """Build stable correlation attributes for a hook callback.
+
+    Preference order:
+    1. Incoming correlation ID supplied by the host app/hook kwargs.
+    2. Previously resolved per-session correlation ID.
+    3. The Hermes session ID as deterministic fallback.
+
+    Using the session ID fallback keeps today's Hermes traces queryable by a
+    stable ``correlation.id`` without requiring gateway/core changes first.
+    When a true upstream boundary provides a correlation ID, it wins and is
+    reused for all later spans in the same session.
+    """
+
+    incoming = _extract_correlation_id(extra_kwargs)
+    session_text = truncate_string(session_id, 200)
+    session_key = str(session_id) if session_id else ""
+    correlation_id = incoming
+
+    if session_key:
+        ps = tracer.sessions.get_or_create(session_key)
+        if incoming:
+            ps.correlation_id = incoming
+        elif ps.correlation_id:
+            correlation_id = ps.correlation_id
+        else:
+            correlation_id = session_text
+            ps.correlation_id = correlation_id
+
+    if not correlation_id:
+        return {}
+    return {"correlation.id": truncate_string(correlation_id, 200)}
+
+
 def _per_session_sender_attributes(ps: Any) -> Dict[str, str]:
     """Return sender attributes from a PerSession aggregator."""
     if ps is None or not ps.sender_id:
@@ -329,6 +388,7 @@ def _start_session_span(
         "llm.model_name": truncate_string(model, 200),
         "llm.provider": truncate_string(platform, 120),
     }
+    attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
@@ -384,6 +444,7 @@ def on_session_end(
         "llm.model_name": truncate_string(model, 200),
         "llm.provider": truncate_string(platform, 120),
     }
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     # Drain the aggregators in one shot. Everything this session buffered
     # — I/O, usage totals, turn summary — comes back in a single PerSession.
@@ -474,6 +535,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
@@ -540,6 +602,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Summary roll-up
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
@@ -601,6 +664,7 @@ def on_pre_llm_call(
         "llm.model_name": model,
         "llm.provider": platform,
     }
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     if tracer.config.capture_sender_id:
         sender_id = truncate_string(kwargs.get("sender_id"), 200)
@@ -684,6 +748,7 @@ def on_post_llm_call(
         "session.id": truncate_string(session_id, 200),
         "session_id": truncate_string(session_id, 200),
     }
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     preview = _preview(assistant_response, 500)
     if preview is not None:
         attributes["output.value"] = preview
@@ -737,6 +802,7 @@ def on_pre_api_request(
         "llm.request.message_count": message_count,
         "llm.request.approx_input_tokens": approx_input_tokens,
     }
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if max_tokens:
         attributes["llm.request.max_tokens"] = max_tokens
 
@@ -796,6 +862,7 @@ def on_post_api_request(
 
     # Build final attributes
     attributes: Dict[str, Any] = {}
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
     # See _usage_attributes for the full attribute list.
