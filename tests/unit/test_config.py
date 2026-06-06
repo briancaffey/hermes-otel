@@ -388,6 +388,34 @@ class TestBackendsYaml:
         assert b.name == "my-collector"
         assert b.headers == {"X-Auth": "secret", "X-Tenant": "acme"}
 
+    def test_loads_per_backend_traces_toggle(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: tempo\n"
+            "    endpoint: http://tempo:4318/v1/traces\n"
+            "    traces: false\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.backends is not None
+        assert cfg.backends[0].traces is False
+
+    def test_trace_alias_maps_to_traces_toggle(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: tempo\n"
+            "    endpoint: http://tempo:4318/v1/traces\n"
+            "    trace: false\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.backends is not None
+        assert cfg.backends[0].traces is False
+
     def test_skips_entry_without_type(self, tmp_path, caplog):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")

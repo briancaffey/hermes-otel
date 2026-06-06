@@ -290,20 +290,21 @@ class HermesOTelPlugin:
 
             for b in backends:
                 hdrs = self._merge_headers(b.headers)
-                try:
-                    exporter = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
-                    processor = BatchSpanProcessor(
-                        exporter,
-                        max_queue_size=self.config.span_batch_max_queue_size,
-                        schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
-                        max_export_batch_size=self.config.span_batch_max_export_batch_size,
-                        export_timeout_millis=self.config.span_batch_export_timeout_ms,
-                    )
-                    provider.add_span_processor(processor)
-                    self._span_processors.append(processor)
-                except Exception as e:
-                    logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
-                    continue
+                if b.supports_traces:
+                    try:
+                        exporter = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
+                        processor = BatchSpanProcessor(
+                            exporter,
+                            max_queue_size=self.config.span_batch_max_queue_size,
+                            schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
+                            max_export_batch_size=self.config.span_batch_max_export_batch_size,
+                            export_timeout_millis=self.config.span_batch_export_timeout_ms,
+                        )
+                        provider.add_span_processor(processor)
+                        self._span_processors.append(processor)
+                    except Exception as e:
+                        logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
+                        continue
 
                 if b.supports_metrics and _METRICS_AVAILABLE:
                     metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
@@ -321,7 +322,8 @@ class HermesOTelPlugin:
                 self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
                 logger.info(
                     f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
-                    + (" (traces only)" if not b.supports_metrics else "")
+                    + (" (query only)" if not b.supports_traces else "")
+                    + (" (traces only)" if b.supports_traces and not b.supports_metrics else "")
                 )
 
             if not self._span_processors:

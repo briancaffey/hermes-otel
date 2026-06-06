@@ -67,9 +67,37 @@ Each backend runs in **its own worker thread with its own bounded queue**:
 - If one backend is completely unreachable, the plugin logs the failed POST attempts and drops the oldest spans in that queue when the buffer fills. The others continue.
 - No backend's latency is on Hermes' hot path. `span.end()` is still a queue push.
 
-## Per-backend metrics override
+## Per-backend signal overrides
 
-By default, backends that don't accept OTLP metrics (`langfuse`, `jaeger`, `tempo`) get metrics-export auto-disabled. You can force the opposite with `metrics: true|false`:
+By default, every backend receives trace exports. Backends that don't accept
+OTLP metrics (`langfuse`, `jaeger`, `tempo`) get metrics-export
+auto-disabled, and logs export is enabled only for log-capable backends.
+Use `traces: true|false`, `metrics: true|false`, or `logs: true|false` to
+override a signal per backend:
+
+```yaml
+backends:
+  - type: otlp
+    name: collector
+    endpoint: http://collector:4318/v1/traces
+    metrics: true
+    logs: true
+
+  # Dashboard/query-only Tempo entry: visible to the OTel Traces tab, but it
+  # does not receive duplicate span exports because traces are disabled here.
+  - type: tempo
+    name: tempo-query
+    endpoint: http://tempo:3200
+    query_port: 3200
+    traces: false
+    metrics: false
+    logs: false
+```
+
+`trace: false` is accepted as a friendly alias for `traces: false`; use the
+plural spelling in new configs to match `metrics` and `logs`.
+
+Legacy metrics-only example:
 
 ```yaml
 backends:

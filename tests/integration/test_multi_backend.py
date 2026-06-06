@@ -211,6 +211,42 @@ class TestConfigBackendsRouting:
         endpoints = [call.kwargs.get("endpoint") for call in mock_exp.call_args_list]
         assert endpoints == ["http://yaml-jaeger/v1/traces"]
 
+    def test_traces_false_backend_is_query_only_not_trace_export_target(self, monkeypatch):
+        """``traces: false`` keeps a dashboard backend out of trace export fan-out."""
+        _clear_backend_env(monkeypatch)
+        cfg = HermesOtelConfig(
+            backends=(
+                BackendConfig(
+                    type="otlp",
+                    name="collector",
+                    endpoint="http://collector:4318/v1/traces",
+                    metrics=True,
+                    logs=True,
+                ),
+                BackendConfig(
+                    type="tempo",
+                    name="tempo-query",
+                    endpoint="http://tempo:4318/v1/traces",
+                    traces=False,
+                    metrics=False,
+                    logs=False,
+                ),
+            ),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter") as mock_span_exp,
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
+            assert plugin.init() is True
+
+        span_endpoints = [call.kwargs.get("endpoint") for call in mock_span_exp.call_args_list]
+        assert span_endpoints == ["http://collector:4318/v1/traces"]
+        assert len(plugin._span_processors) == 1
+        assert len(plugin._metric_readers) == 1
+
     def test_invalid_backend_skipped_others_still_initialize(self, monkeypatch):
         """A bad entry (missing endpoint) is skipped; valid entries still initialize."""
         _clear_backend_env(monkeypatch)

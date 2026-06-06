@@ -68,6 +68,7 @@ class _ResolvedBackend:
     endpoint: str
     display_name: str = "OTLP"
     headers: Optional[Dict[str, str]] = None
+    supports_traces: bool = True
     supports_metrics: bool = True
     supports_logs: bool = False
 
@@ -85,6 +86,14 @@ def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
     return backend_type in _LOGS_CAPABLE
+
+
+def _traces_for(override: Optional[bool]) -> bool:
+    # Traces are the primary signal for every existing backend. ``False`` is
+    # opt-in for query-only/dashboard-only entries that should not receive span
+    # exports (for example, querying Tempo directly while exporting through an
+    # OTel Collector).
+    return True if override is None else override
 
 
 def _resolve_secret(
@@ -125,6 +134,7 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "phoenix"),
         headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("phoenix", bc.metrics),
         supports_logs=_logs_for("phoenix", bc.logs),
     )
@@ -159,6 +169,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "langfuse"),
         headers=headers,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("langfuse", bc.metrics),
         supports_logs=_logs_for("langfuse", bc.logs),
     )
@@ -182,6 +193,7 @@ def _resolve_signoz(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "signoz"),
         headers=headers or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("signoz", bc.metrics),
         supports_logs=_logs_for("signoz", bc.logs),
     )
@@ -197,6 +209,7 @@ def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "jaeger"),
         headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("jaeger", bc.metrics),
         supports_logs=_logs_for("jaeger", bc.logs),
     )
@@ -212,6 +225,7 @@ def _resolve_tempo(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "tempo"),
         headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("tempo", bc.metrics),
         supports_logs=_logs_for("tempo", bc.logs),
     )
@@ -229,6 +243,7 @@ def _resolve_otlp(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=bc.name or "OTLP",
         headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("otlp", bc.metrics),
         supports_logs=_logs_for("otlp", bc.logs),
     )
@@ -254,6 +269,7 @@ def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "lgtm"),
         headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("lgtm", bc.metrics),
         supports_logs=_logs_for("lgtm", bc.logs),
     )
@@ -284,6 +300,7 @@ def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "uptrace"),
         headers=headers,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("uptrace", bc.metrics),
         supports_logs=_logs_for("uptrace", bc.logs),
     )
@@ -325,6 +342,7 @@ def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "openobserve"),
         headers=headers,
+        supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("openobserve", bc.metrics),
         supports_logs=_logs_for("openobserve", bc.logs),
     )
