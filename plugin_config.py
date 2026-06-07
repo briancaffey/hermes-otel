@@ -44,6 +44,7 @@ class BackendConfig:
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
+    traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
     logs: Optional[bool] = None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve)
     # Langfuse credentials
@@ -207,13 +208,19 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
             continue
         kwargs: Dict[str, Any] = {}
         for k, v in raw.items():
+            if k == "trace":
+                # Friendly alias for users who naturally mirror the singular
+                # signal name in prose. ``traces`` wins when both are present.
+                if "traces" in raw:
+                    continue
+                k = "traces"
             if k not in _BACKEND_ALLOWED_KEYS:
                 continue
             if k == "headers":
                 if isinstance(v, dict):
                     kwargs[k] = {str(kk): str(vv) for kk, vv in v.items()}
                 continue
-            if k in ("metrics", "logs"):
+            if k in ("traces", "metrics", "logs"):
                 if isinstance(v, bool):
                     kwargs[k] = v
                 elif isinstance(v, str):

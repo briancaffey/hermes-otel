@@ -147,7 +147,10 @@
 #                  Uses HTTP Basic auth — set `user:` + `password:` (or the
 #                  `*_env` variants) and the plugin builds the header for you.
 #
-# `metrics: true|false` per entry overrides the auto default if needed.
+# `traces: false`, `metrics: false`, or `logs: false` per entry opt a backend
+# out of that signal. This is useful when an entry is dashboard/query-only
+# (for example Tempo query URL) while trace export still goes through an OTel
+# Collector entry. `trace: false` is accepted as a friendly alias.
 #
 # When `backends:` is absent or empty, the plugin falls back to single-backend
 # env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
