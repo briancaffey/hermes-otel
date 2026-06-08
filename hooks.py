@@ -263,7 +263,9 @@ def _extract_correlation_id(extra_kwargs: dict) -> str:
     return ""
 
 
-def _correlation_attributes(tracer, session_id: Optional[str], extra_kwargs: dict) -> Dict[str, str]:
+def _correlation_attributes(
+    tracer, session_id: Optional[str], extra_kwargs: dict
+) -> Dict[str, str]:
     """Build stable correlation attributes for a hook callback.
 
     Preference order:
