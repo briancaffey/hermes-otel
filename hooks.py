@@ -165,9 +165,13 @@ def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
     }
     if cache_read:
         attrs["llm.token_count.prompt_details.cache_read"] = cache_read
+        # Current OTel GenAI spelling, plus the pre-existing alias for
+        # backwards compatibility with dashboards created before this change.
+        attrs["gen_ai.usage.cache_read.input_tokens"] = cache_read
         attrs["gen_ai.usage.cache_read_input_tokens"] = cache_read
     if cache_write:
         attrs["llm.token_count.prompt_details.cache_write"] = cache_write
+        attrs["gen_ai.usage.cache_creation.input_tokens"] = cache_write
         attrs["gen_ai.usage.cache_creation_input_tokens"] = cache_write
     return attrs
 
@@ -235,6 +239,91 @@ def _session_sender_attributes(tracer, session_id: Optional[str]) -> Dict[str, s
         return {}
     ps = tracer.sessions.peek(session_id)
     return _per_session_sender_attributes(ps)
+
+
+def _gen_ai_attributes(
+    session_id: Optional[str],
+    operation_name: str,
+    extra_kwargs: Optional[dict] = None,
+) -> Dict[str, str]:
+    """Return common OpenTelemetry GenAI attributes."""
+    attrs: Dict[str, str] = {
+        "gen_ai.operation.name": operation_name,
+    }
+    session_text = truncate_string(session_id, 200)
+    if session_text:
+        attrs["gen_ai.conversation.id"] = session_text
+    return attrs
+
+
+def _provider_attributes(provider: Any) -> Dict[str, str]:
+    """Return current and compatibility provider attributes."""
+    value = truncate_string(provider, 120)
+    if not value:
+        return {}
+    return {
+        "gen_ai.provider.name": value,
+        # Kept for older OTel drafts and existing dashboards.
+        "gen_ai.system": value,
+    }
+
+
+def _optional_number(value: Any) -> Optional[float]:
+    if isinstance(value, bool) or value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _gen_ai_request_param_attributes(kwargs: dict) -> Dict[str, Any]:
+    """Best-effort standard GenAI request parameter attributes."""
+    attrs: Dict[str, Any] = {}
+    for src, dest in (
+        ("temperature", "gen_ai.request.temperature"),
+        ("top_p", "gen_ai.request.top_p"),
+        ("frequency_penalty", "gen_ai.request.frequency_penalty"),
+        ("presence_penalty", "gen_ai.request.presence_penalty"),
+    ):
+        value = _optional_number(kwargs.get(src))
+        if value is not None:
+            attrs[dest] = value
+
+    top_k = kwargs.get("top_k")
+    if top_k is not None and not isinstance(top_k, bool):
+        try:
+            attrs["gen_ai.request.top_k"] = int(top_k)
+        except (TypeError, ValueError):
+            pass
+
+    for key in ("stream", "streaming", "is_streaming"):
+        if key in kwargs:
+            attrs["gen_ai.request.stream"] = bool(kwargs[key])
+            break
+
+    reasoning = (
+        kwargs.get("reasoning_level") or kwargs.get("reasoning_effort") or kwargs.get("reasoning")
+    )
+    reasoning = truncate_string(reasoning, 120) if reasoning is not None else ""
+    if reasoning:
+        attrs["gen_ai.request.reasoning.level"] = reasoning
+
+    stop_sequences = kwargs.get("stop_sequences") or kwargs.get("stop")
+    if isinstance(stop_sequences, str):
+        attrs["gen_ai.request.stop_sequences"] = [stop_sequences]
+    elif isinstance(stop_sequences, (list, tuple)) and stop_sequences:
+        attrs["gen_ai.request.stop_sequences"] = [truncate_string(v, 200) for v in stop_sequences]
+
+    choice_count = kwargs.get("choice_count") or kwargs.get("n")
+    if choice_count is not None and not isinstance(choice_count, bool):
+        try:
+            n = int(choice_count)
+            if n != 1:
+                attrs["gen_ai.request.choice.count"] = n
+        except (TypeError, ValueError):
+            pass
+    return attrs
 
 
 def _extract_correlation_id(extra_kwargs: dict) -> str:
@@ -388,7 +477,10 @@ def _start_session_span(
         "hermes.session.kind": kind,
         "llm.model_name": truncate_string(model, 200),
         "llm.provider": truncate_string(platform, 120),
+        "gen_ai.request.model": truncate_string(model, 200),
     }
+    attributes.update(_provider_attributes(extra_kwargs.get("provider") or platform))
+    attributes.update(_gen_ai_attributes(session_id, "invoke_agent", extra_kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
@@ -444,7 +536,10 @@ def on_session_end(
         "hermes.session.interrupted": bool(interrupted),
         "llm.model_name": truncate_string(model, 200),
         "llm.provider": truncate_string(platform, 120),
+        "gen_ai.response.model": truncate_string(model, 200),
     }
+    attributes.update(_provider_attributes(kwargs.get("provider") or platform))
+    attributes.update(_gen_ai_attributes(session_id, "invoke_agent", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     # Drain the aggregators in one shot. Everything this session buffered
@@ -513,6 +608,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
         "tool.name": tool_name,
+        "gen_ai.tool.name": tool_name,
     }
     preview = _preview(
         json.dumps(args) if args else "{}",
@@ -520,6 +616,14 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     )
     if preview is not None:
         attributes["input.value"] = preview
+    if (
+        tracer.config.capture_previews
+        and tool_name.startswith("mcp_")
+        and tracer.config.capture_full_prompts
+    ):
+        serialized_args = _serialize_full(args)
+        if serialized_args is not None:
+            attributes["gen_ai.tool.call.arguments"] = serialized_args
 
     # Richer identity — hermes.tool.* (opt-in namespace)
     target, command = resolve_tool_identity(args)
@@ -539,6 +643,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
@@ -571,7 +676,11 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     start_time = tracer.sessions.pop_tool_start(key)
     if start_time:
         duration_ms = (time.perf_counter() - start_time) * 1000
-        tracer.record_metric("tool_duration", duration_ms, {"tool_name": tool_name})
+        tracer.record_metric(
+            "tool_duration",
+            duration_ms,
+            {"tool_name": tool_name, "gen_ai.tool.name": tool_name},
+        )
 
     # Build final attributes — OpenInference conventions for Phoenix Info
     attributes: Dict[str, Any] = {}
@@ -605,10 +714,19 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     )
     if preview is not None:
         attributes["output.value"] = preview
+    if (
+        tracer.config.capture_previews
+        and tool_name.startswith("mcp_")
+        and tracer.config.capture_full_responses
+    ):
+        serialized_result = _serialize_full(result_json if result_json else result)
+        if serialized_result is not None:
+            attributes["gen_ai.tool.call.result"] = serialized_result
 
     # Summary roll-up
     session_id = kwargs.get("session_id")
     if session_id:
+        attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
@@ -676,7 +794,10 @@ def on_pre_llm_call(
         "session_id": truncate_string(session_id, 200),
         "llm.model_name": model,
         "llm.provider": platform,
+        "gen_ai.request.model": truncate_string(model, 200),
     }
+    attributes.update(_provider_attributes(platform))
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     if tracer.config.capture_sender_id:
@@ -772,7 +893,10 @@ def on_post_llm_call(
     attributes: Dict[str, Any] = {
         "session.id": truncate_string(session_id, 200),
         "session_id": truncate_string(session_id, 200),
+        "gen_ai.response.model": truncate_string(model, 200),
     }
+    attributes.update(_provider_attributes(platform))
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     preview = _preview(
         assistant_response,
@@ -829,10 +953,15 @@ def on_pre_api_request(
         "llm.api_mode": api_mode,
         "llm.request.message_count": message_count,
         "llm.request.approx_input_tokens": approx_input_tokens,
+        "gen_ai.request.model": truncate_string(model, 200),
     }
+    attributes.update(_provider_attributes(provider))
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_request_param_attributes(kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if max_tokens:
         attributes["llm.request.max_tokens"] = max_tokens
+        attributes["gen_ai.request.max_tokens"] = max_tokens
 
     attributes.update(_session_sender_attributes(tracer, session_id))
 
@@ -842,10 +971,12 @@ def on_pre_api_request(
         serialized = _serialize_full(messages)
         if serialized is not None:
             attributes["llm.input_messages"] = serialized
+            attributes["gen_ai.input.messages"] = serialized
             attributes["input.value"] = serialized
             attributes["input.mime_type"] = "application/json"
         if system_prompt:
             attributes["llm.system_prompt"] = str(system_prompt)
+            attributes["gen_ai.system_instructions"] = str(system_prompt)
 
     span = tracer.start_span(
         name=f"api.{model}",
@@ -890,6 +1021,14 @@ def on_post_api_request(
 
     # Build final attributes
     attributes: Dict[str, Any] = {}
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_provider_attributes(provider))
+    response_model_value = response_model or model
+    if response_model_value:
+        attributes["gen_ai.response.model"] = truncate_string(response_model_value, 200)
+    response_id = kwargs.get("response_id") or kwargs.get("id")
+    if response_id:
+        attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
@@ -925,6 +1064,7 @@ def on_post_api_request(
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason
+        attributes["gen_ai.response.finish_reasons"] = [finish_reason]
     if assistant_content_chars:
         attributes["llm.response.output_chars"] = assistant_content_chars
     if assistant_tool_call_count:
@@ -934,13 +1074,19 @@ def on_post_api_request(
         response_content = kwargs.get("response_content")
         response_tool_calls = kwargs.get("response_tool_calls")
         if response_content:
-            attributes["llm.output.content"] = str(response_content)
-            attributes["output.value"] = str(response_content)
+            response_text = str(response_content)
+            attributes["llm.output.content"] = response_text
+            attributes["gen_ai.output.messages"] = json.dumps(
+                [{"role": "assistant", "content": response_text}],
+                ensure_ascii=False,
+            )
+            attributes["output.value"] = response_text
             attributes["output.mime_type"] = "text/plain"
         tool_calls_serialized = _serialize_full(response_tool_calls)
         if tool_calls_serialized is not None:
             attributes["llm.output.tool_calls"] = tool_calls_serialized
             if not response_content:
+                attributes["gen_ai.output.messages"] = tool_calls_serialized
                 attributes["output.value"] = tool_calls_serialized
                 attributes["output.mime_type"] = "application/json"
 
