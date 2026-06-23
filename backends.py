@@ -34,7 +34,7 @@ _TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
 # we'd rather drop logs on the floor than spray 4xx errors at them. Users
 # can override per-backend via the ``logs:`` field in config.yaml.
-_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve"}
+_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve", "honeycomb"}
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
@@ -48,11 +48,29 @@ _DISPLAY_NAMES = {
     "lgtm": "LGTM",
     "uptrace": "Uptrace",
     "openobserve": "OpenObserve",
+    "honeycomb": "Honeycomb",
+}
+
+# Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
+# suffix is appended by the resolver; ``tracer.py`` / ``log_handler.py`` derive
+# the ``/v1/metrics`` and ``/v1/logs`` variants from it).
+_HONEYCOMB_ENDPOINTS = {
+    "us": "https://api.honeycomb.io",
+    "eu": "https://api.eu1.honeycomb.io",
 }
 
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
-_ENV_PRIORITY = ["langfuse", "signoz", "uptrace", "openobserve", "jaeger", "tempo", "phoenix"]
+_ENV_PRIORITY = [
+    "langfuse",
+    "signoz",
+    "uptrace",
+    "openobserve",
+    "honeycomb",
+    "jaeger",
+    "tempo",
+    "phoenix",
+]
 
 
 @dataclass
@@ -348,6 +366,59 @@ def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Honeycomb (SaaS, OTLP/HTTP — traces + metrics + logs).
+
+    Auth model: the API key travels in the ``x-honeycomb-team`` header. An
+    optional ``dataset`` is sent as ``x-honeycomb-dataset``; ``region``
+    (``us``|``eu``) selects the base endpoint when one isn't given explicitly.
+
+    Endpoint: defaults to the US ingest host (or EU for ``region: eu``) with the
+    ``/v1/traces`` suffix the OTLP pipeline expects. ``tracer.py`` and
+    ``log_handler.py`` rewrite that suffix to ``/v1/metrics`` and ``/v1/logs``,
+    which matches Honeycomb's per-signal path scheme exactly.
+
+    Dataset routing nuance: a single merged header set feeds the trace, metric,
+    and log exporters (see ``tracer.py``), so setting ``dataset`` tags **all**
+    signals into that dataset. For modern "Environments" keys, traces are
+    normally routed by ``service.name`` and need no dataset; metrics, however,
+    require one or they land in a dataset named ``unknown_metrics``. Pick the
+    dataset with that trade-off in mind (see ``HONEYCOMB.md``).
+    """
+    key = _resolve_secret(
+        bc.api_key,
+        bc.api_key_env,
+        ["OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY"],
+    )
+    if not key:
+        raise ValueError("honeycomb requires api_key (or set HONEYCOMB_API_KEY)")
+
+    ep = (bc.endpoint or os.getenv("OTEL_HONEYCOMB_ENDPOINT", "")).strip()
+    if not ep:
+        region = (bc.region or "us").strip().lower()
+        base = _HONEYCOMB_ENDPOINTS.get(region)
+        if base is None:
+            raise ValueError(
+                f"honeycomb region must be one of {sorted(_HONEYCOMB_ENDPOINTS)}, got {bc.region!r}"
+            )
+        ep = f"{base}/v1/traces"
+
+    headers: Dict[str, str] = {"x-honeycomb-team": key}
+    dataset = (bc.dataset or "").strip()
+    if dataset:
+        headers["x-honeycomb-dataset"] = dataset
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="honeycomb",
+        endpoint=ep,
+        display_name=_display(bc, "honeycomb"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("honeycomb", bc.metrics),
+        supports_logs=_logs_for("honeycomb", bc.logs),
+    )
+
+
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
@@ -358,6 +429,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "lgtm": _resolve_lgtm,
     "uptrace": _resolve_uptrace,
     "openobserve": _resolve_openobserve,
+    "honeycomb": _resolve_honeycomb,
 }
 
 

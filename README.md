@@ -14,6 +14,7 @@ Tested with:
 - **[Grafana LGTM](https://github.com/grafana/docker-otel-lgtm)** (local) — traces + metrics + logs
 - **[Uptrace](https://uptrace.dev)** (self-hosted) — traces + metrics + logs
 - **[OpenObserve](https://openobserve.ai)** (self-hosted) — traces + metrics + logs
+- **[Honeycomb](https://www.honeycomb.io/)** (cloud) — traces + metrics + logs — see [HONEYCOMB.md](HONEYCOMB.md)
 
 Any OTLP HTTP endpoint should work.
 
@@ -311,6 +312,17 @@ docker compose up -d
 
 Tempo is **traces-only** — the plugin skips metric export when this backend is selected. The upstream example already bundles Prometheus + Grafana, so token/tool/cost metrics can be routed there via a separate Prometheus remote-write or OTel collector if needed.
 
+### Honeycomb
+```bash
+export HONEYCOMB_API_KEY="hcaik_..."          # x-honeycomb-team header
+# Optional — defaults to the US ingest endpoint:
+# export OTEL_HONEYCOMB_ENDPOINT="https://api.eu1.honeycomb.io/v1/traces"   # EU
+export OTEL_PROJECT_NAME=hermes-otel-honeycomb
+```
+
+For region selection (`us`/`eu`), a dataset, and the metrics `unknown_metrics`
+gotcha, use the multi-backend `config.yaml` form instead — see [HONEYCOMB.md](HONEYCOMB.md).
+
 ### Optional
 ```bash
 export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
@@ -327,7 +339,7 @@ export HERMES_OTEL_DEBUG=true
 
 Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
 
