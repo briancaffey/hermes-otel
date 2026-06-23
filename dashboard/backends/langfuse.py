@@ -60,21 +60,21 @@ def _obs_kind_to_otlp(obs_type: Optional[str]) -> int:
     return 1
 
 
-# ``GENERATION`` carries LLM-specific fields we want to surface as
-# Otel-style attributes on the normalized shape.
+# ``GENERATION`` carries GenAI-specific fields we want to surface as
+# OTel-style attributes on the normalized shape.
 def _obs_to_card_attrs(obs: Dict[str, Any]) -> Dict[str, Any]:
     out: Dict[str, Any] = {"name": obs.get("name") or ""}
     t = obs.get("type")
     if isinstance(t, str):
         out["langfuse.type"] = t
     if obs.get("model"):
-        out["llm.model_name"] = obs["model"]
+        out["gen_ai.request.model"] = obs["model"]
     # Langfuse doesn't model "provider" as a distinct field — fall
     # through to modelParameters / metadata.
     params = obs.get("modelParameters")
     if isinstance(params, dict):
         for k, v in params.items():
-            out[f"llm.parameters.{k}"] = v
+            out[f"gen_ai.request.{k}"] = v
 
     usage = obs.get("usage") or {}
     if isinstance(usage, dict):

@@ -6,7 +6,7 @@ description: "Every attribute the plugin sets, by span type."
 
 # Span attribute reference
 
-Every attribute the plugin may set, grouped by span type. See [Attribute conventions](/architecture/attributes) for the narrative version of the dual-convention mapping.
+Every attribute the plugin may set, grouped by span type. See [Attribute conventions](/architecture/attributes) for the narrative version of the GenAI mapping.
 
 Attributes marked **optional** are only set when the underlying data is available.
 
@@ -29,8 +29,7 @@ Set at **start**:
 | Attribute | Type | Meaning |
 |---|---|---|
 | `hermes.session.kind` | string | `cli` · `telegram` · `discord` · `cron` · ... |
-| `hermes.session.id` | string | Hermes session ID |
-| `session.id` | string | Standard OTel alias |
+| `gen_ai.conversation.id` | string | Hermes session/conversation ID |
 | `user.id` | string | Hermes user ID (optional) |
 
 Set at **end** (turn summary):
@@ -55,16 +54,15 @@ Span kind: `LLM` (OpenInference).
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `llm.model_name` | OpenInference | string | Model name |
-| `llm.provider` | OpenInference | string | Provider (anthropic, openai, ...) |
-| `gen_ai.request.model` | gen_ai | string | Model name (Langfuse) |
-| `gen_ai.system` | gen_ai | string | Provider (Langfuse) |
-| `input.value` | OpenInference | string | User message OR full conversation JSON |
-| `input.mime_type` | OpenInference | string | `text/plain` OR `application/json` |
-| `output.value` | OpenInference | string | Final assistant response |
-| `output.mime_type` | OpenInference | string | `text/plain` |
-| `gen_ai.content.prompt` | gen_ai | string | User message |
-| `gen_ai.content.completion` | gen_ai | string | Assistant response |
+| `gen_ai.request.model` | gen_ai | string | Model name |
+| `gen_ai.provider.name` | gen_ai | string | Provider (anthropic, openai, ...) |
+| `gen_ai.operation.name` | gen_ai | string | Operation name |
+| `input.value` | generic | string | User message OR full conversation JSON |
+| `input.mime_type` | generic | string | `text/plain` OR `application/json` |
+| `output.value` | generic | string | Final assistant response |
+| `output.mime_type` | generic | string | `text/plain` |
+| `gen_ai.input.messages` | gen_ai | array/string | Full input messages when explicitly enabled |
+| `gen_ai.output.messages` | gen_ai | array/string | Full output messages when explicitly enabled |
 | `hermes.conversation.message_count` | hermes | int | When conversation capture is on (optional) |
 
 ## `api.*`
@@ -74,20 +72,14 @@ Span kind: `LLM` (OpenInference).
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
 | `gen_ai.request.model` | gen_ai | string | Model name |
-| `llm.model_name` | OpenInference | string | Model name |
-| `llm.provider` | OpenInference | string | Provider |
-| `llm.token_count.prompt` | OpenInference | int | Prompt tokens |
-| `llm.token_count.completion` | OpenInference | int | Completion tokens |
-| `llm.token_count.total` | OpenInference | int | Sum |
-| `llm.token_count.cache_read` | OpenInference | int | Cache read (optional) |
-| `llm.token_count.cache_write` | OpenInference | int | Cache write (optional) |
 | `gen_ai.usage.input_tokens` | gen_ai | int | Prompt tokens |
 | `gen_ai.usage.output_tokens` | gen_ai | int | Completion tokens |
-| `gen_ai.usage.cache_read_input_tokens` | gen_ai | int | Cache read (optional) |
-| `gen_ai.usage.cache_creation_input_tokens` | gen_ai | int | Cache write (optional) |
-| `llm.invocation_parameters` | OpenInference | string (JSON) | Request params |
-| `gen_ai.response.finish_reason` | gen_ai | string | `stop`, `tool_use`, `length`, etc. |
-| `http.duration_ms` | hermes | int | Wall-clock HTTP duration |
+| `gen_ai.usage.cache_read.input_tokens` | gen_ai | int | Cache read (optional) |
+| `gen_ai.usage.cache_creation.input_tokens` | gen_ai | int | Cache write (optional) |
+| `gen_ai.request.*` | gen_ai | mixed | Request params |
+| `gen_ai.response.finish_reasons` | gen_ai | string/list | `stop`, `tool_use`, `length`, etc. |
+
+Total tokens are derived downstream from input + output tokens rather than emitted as a duplicate span attribute.
 
 ## `tool.*`
 
@@ -109,15 +101,14 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 
 | Metric | Type | Unit | Labels |
 |---|---|---|---|
-| `hermes.tokens.prompt` | Counter | tokens | `model`, `provider` |
-| `hermes.tokens.completion` | Counter | tokens | `model`, `provider` |
-| `hermes.tokens.total` | Counter | tokens | `model`, `provider` |
-| `hermes.tokens.cache_read` | Counter | tokens | `model`, `provider` |
-| `hermes.tokens.cache_write` | Counter | tokens | `model`, `provider` |
-| `hermes.tool.calls` | Counter | count | `tool_name`, `outcome` |
-| `hermes.tool.duration` | Histogram | ms | `tool_name`, `outcome` |
-| `hermes.api.duration` | Histogram | ms | `model`, `provider`, `finish_reason` |
+| `gen_ai.client.token.usage` | Histogram | `{token}` | `gen_ai.token.type`, `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `gen_ai.client.operation.duration` | Histogram | s | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `gen_ai.invoke_agent.duration` | Histogram | s | `gen_ai.operation.name`, `gen_ai.agent.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `gen_ai.execute_tool.duration` | Histogram | s | `gen_ai.operation.name`, `gen_ai.agent.name`, `gen_ai.tool.name` |
+| `hermes.session.count` | Counter | count | `gen_ai.agent.name`, `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `hermes.cost.usage` | Counter | USD | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `hermes.message.count` | Counter | count | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
+| `hermes.model.usage` | Counter | count | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model` |
 | `hermes.skill.inferred` | Counter | count | `skill_name`, `source` |
-| `hermes.sessions` | Counter | count | `kind`, `final_status` |
 
-Label cardinality is bounded by normalised values (outcomes, finish reasons) and small dimension sets (model, tool name). No user IDs or other high-cardinality labels.
+Label cardinality is bounded by normalised values (token type, operation name) and small dimension sets (model, provider, tool name). No prompt/message/tool payloads are emitted as metric labels.

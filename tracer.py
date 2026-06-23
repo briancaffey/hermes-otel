@@ -100,7 +100,9 @@ class HermesOTelPlugin:
         self._session_count = None
         self._token_usage = None
         self._cost_usage = None
-        self._tool_duration = None
+        self._client_operation_duration = None
+        self._invoke_agent_duration = None
+        self._execute_tool_duration = None
         self._message_count = None
         self._model_usage = None
         self._skill_inferred_counter = None
@@ -375,18 +377,29 @@ class HermesOTelPlugin:
             "hermes.session.count",
             description="Sessions created",
         )
-        self._token_usage = self._meter.create_counter(
-            "hermes.token.usage",
-            description="Tokens consumed by type",
+        self._token_usage = self._meter.create_histogram(
+            "gen_ai.client.token.usage",
+            unit="{token}",
+            description="GenAI client tokens consumed by token type",
         )
         self._cost_usage = self._meter.create_counter(
             "hermes.cost.usage",
             description="USD cost per message",
         )
-        self._tool_duration = self._meter.create_histogram(
-            "hermes.tool.duration",
-            unit="ms",
-            description="Tool execution time",
+        self._client_operation_duration = self._meter.create_histogram(
+            "gen_ai.client.operation.duration",
+            unit="s",
+            description="GenAI client operation duration",
+        )
+        self._invoke_agent_duration = self._meter.create_histogram(
+            "gen_ai.invoke_agent.duration",
+            unit="s",
+            description="GenAI invoke-agent operation duration",
+        )
+        self._execute_tool_duration = self._meter.create_histogram(
+            "gen_ai.execute_tool.duration",
+            unit="s",
+            description="GenAI execute-tool operation duration",
         )
         self._message_count = self._meter.create_counter(
             "hermes.message.count",
@@ -456,12 +469,20 @@ class HermesOTelPlugin:
 
         if name == "session_count":
             self._session_count.add(1, attrs)
-        elif name == "token_usage":
-            self._token_usage.add(int(value), attrs)
+        elif name == "gen_ai.client.token.usage":
+            if self._token_usage is not None:
+                self._token_usage.record(int(value), attrs)
         elif name == "cost_usage":
             self._cost_usage.add(value, attrs)
-        elif name == "tool_duration":
-            self._tool_duration.record(value, attrs)
+        elif name == "gen_ai.client.operation.duration":
+            if self._client_operation_duration is not None:
+                self._client_operation_duration.record(value, attrs)
+        elif name == "gen_ai.invoke_agent.duration":
+            if self._invoke_agent_duration is not None:
+                self._invoke_agent_duration.record(value, attrs)
+        elif name == "gen_ai.execute_tool.duration":
+            if self._execute_tool_duration is not None:
+                self._execute_tool_duration.record(value, attrs)
         elif name == "message_count":
             self._message_count.add(1, attrs)
         elif name == "model_usage":

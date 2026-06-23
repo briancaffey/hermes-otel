@@ -202,17 +202,19 @@ class LangSmithBackend:
 
             # Map OTel-style token attributes to LangSmith's top-level fields.
             for src_key, dst_key in [
-                ("llm.token_count.prompt", "prompt_tokens"),
-                ("llm.token_count.completion", "completion_tokens"),
-                ("llm.token_count.total", "total_tokens"),
                 ("gen_ai.usage.input_tokens", "prompt_tokens"),
                 ("gen_ai.usage.output_tokens", "completion_tokens"),
-                ("gen_ai.usage.total_tokens", "total_tokens"),
             ]:
                 if src_key in outputs:
                     val = _coerce_int(outputs.get(src_key))
                     if val is not None:
                         payload[dst_key] = val
+
+            if (
+                payload.get("prompt_tokens") is not None
+                and payload.get("completion_tokens") is not None
+            ):
+                payload["total_tokens"] = payload["prompt_tokens"] + payload["completion_tokens"]
 
             # Newer LangSmith ingestion path: usage_metadata
             usage_metadata: Dict[str, Any] = {}
@@ -225,8 +227,8 @@ class LangSmithBackend:
                 if v is not None:
                     usage_metadata[k] = v
 
-            cache_read = _coerce_int(outputs.get("gen_ai.usage.cache_read_input_tokens"))
-            cache_write = _coerce_int(outputs.get("gen_ai.usage.cache_creation_input_tokens"))
+            cache_read = _coerce_int(outputs.get("gen_ai.usage.cache_read.input_tokens"))
+            cache_write = _coerce_int(outputs.get("gen_ai.usage.cache_creation.input_tokens"))
             if cache_read is not None:
                 usage_metadata["input_token_details"] = {"cache_read": cache_read}
             if cache_write is not None:

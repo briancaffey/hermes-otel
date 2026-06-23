@@ -32,18 +32,18 @@ from .base import (
 _DEFAULT_TEMPO_QUERY_PORT = 3200
 
 _CARD_SELECT_ATTRS = (
-    ".llm.model_name",
-    ".llm.provider",
-    ".llm.api_mode",
+    ".gen_ai.request.model",
+    ".gen_ai.provider.name",
+    ".hermes.api.mode",
     ".gen_ai.usage.input_tokens",
     ".gen_ai.usage.output_tokens",
     ".gen_ai.usage.total_tokens",
-    ".llm.response.finish_reason",
-    ".llm.response.tool_calls",
+    ".gen_ai.response.finish_reasons",
+    ".hermes.response.tool_calls",
     ".tool.name",
     ".input.value",
     ".output.value",
-    ".llm.output.content",
+    ".gen_ai.output.messages",
     "status",
     "name",
 )
@@ -58,7 +58,7 @@ def _esc(s: str) -> str:
 class TempoAdapter(BackendAdapter):
     handles = frozenset({"lgtm", "tempo"})
     query_lang_label = "TraceQL"
-    raw_placeholder = '{ .llm.provider = "openai" }'
+    raw_placeholder = '{ .gen_ai.provider.name = "openai" }'
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)

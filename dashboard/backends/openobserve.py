@@ -2,7 +2,7 @@
 
 OpenObserve stores traces as rows in a stream (default ``default``).
 Attributes are flattened into columns with dots replaced by
-underscores (``llm.model_name`` → ``llm_model_name``); the adapter
+underscores (``gen_ai.request.model`` → ``gen_ai_request_model``); the adapter
 translates them back so the UI sees the same keys it does on Tempo.
 """
 
@@ -28,18 +28,18 @@ _DEFAULT_OO_PORT = 5080
 # Columns the card renderer cares about. Expressed in Otel dot form;
 # ``_oo_col`` translates to OpenObserve's underscore form on the wire.
 _CARD_ATTR_KEYS = (
-    "llm.model_name",
-    "llm.provider",
-    "llm.api_mode",
+    "gen_ai.request.model",
+    "gen_ai.provider.name",
+    "hermes.api.mode",
     "gen_ai.usage.input_tokens",
     "gen_ai.usage.output_tokens",
     "gen_ai.usage.total_tokens",
-    "llm.response.finish_reason",
-    "llm.response.tool_calls",
+    "gen_ai.response.finish_reasons",
+    "hermes.response.tool_calls",
     "tool.name",
     "input.value",
     "output.value",
-    "llm.output.content",
+    "gen_ai.output.messages",
 )
 
 
@@ -64,7 +64,7 @@ def _sql_escape(v: Any) -> str:
 class OpenObserveAdapter(BackendAdapter):
     handles = frozenset({"openobserve", "openobserver"})
     query_lang_label = "SQL WHERE"
-    raw_placeholder = "llm_model_name = 'gpt-4'"
+    raw_placeholder = "gen_ai_request_model = 'gpt-4'"
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)

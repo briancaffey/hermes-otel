@@ -42,8 +42,8 @@ Jaeger shows the plugin's spans as a standard trace tree — the service-map vie
 
 Jaeger is not LLM-specific, so:
 
-- Message content appears as the raw `input.value` / `gen_ai.content.prompt` tag rather than pretty-printed.
-- Token counts are tags, not first-class fields — look for `gen_ai.usage.input_tokens` / `llm.token_count.prompt`.
+- Message content appears as the raw `input.value` / `output.value` tags rather than pretty-printed.
+- Token counts are tags, not first-class fields — look for `gen_ai.usage.input_tokens` / `gen_ai.usage.output_tokens`.
 - Tool args / results are JSON in the `input.value` / `output.value` tags.
 
 For LLM-native UI, pair Jaeger with a fan-out to Phoenix or Langfuse — see [Multi-backend](/backends/multi-backend).

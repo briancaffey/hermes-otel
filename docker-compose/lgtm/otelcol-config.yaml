@@ -16,9 +16,9 @@ connectors:
     # actually sets on its root/llm/tool spans so filtering in Grafana
     # works without extra relabeling.
     dimensions:
-      - name: llm.provider
-      - name: llm.model_name
-      - name: openinference.span.kind
+      - name: gen_ai.provider.name
+      - name: gen_ai.request.model
+      - name: gen_ai.operation.name
       - name: hermes.session.kind
       - name: hermes.tool.outcome
     # Default histogram buckets — good for LLM calls that span ms to

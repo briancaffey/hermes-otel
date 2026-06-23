@@ -133,10 +133,7 @@ class TestApiSpanExport:
         span = spans[0]
         assert span.name == "api.gpt-4"
         attrs = dict(span.attributes)
-        # Dual conventions
-        assert attrs["llm.token_count.prompt"] == 100
         assert attrs["gen_ai.usage.input_tokens"] == 100
-        assert attrs["llm.token_count.completion"] == 50
         assert attrs["gen_ai.usage.output_tokens"] == 50
 
 

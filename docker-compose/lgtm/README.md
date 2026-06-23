@@ -47,11 +47,11 @@ see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 ## What you get in Grafana
 
 - **Traces** — Explore → Tempo → search by service name `hermes-agent`
-  or span name (`agent`, `tool.*`, `api.*`). Each span shows the full
-  OpenInference + GenAI attribute set the plugin emits.
-- **Metrics** — Explore → Prometheus. Query any `hermes_*` metric the
-  plugin emits (`hermes_session_count_total`, `hermes_token_usage_total`,
-  `hermes_tool_duration_bucket`, ...). Also available: `traces_spanmetrics_*`
+  or span name (`agent`, `tool.*`, `api.*`). Each span shows the GenAI
+  and `hermes.*` attributes the plugin emits.
+- **Metrics** — Explore → Prometheus. Query the OTLP metric series the
+  plugin emits (`hermes_session_count_total`, `gen_ai_client_token_usage_total`,
+  `gen_ai_execute_tool_duration_bucket`, ...). Also available: `traces_spanmetrics_*`
   derived by the collector — RED metrics per-service from your traces.
 - **Logs** — Explore → Loki. Query `{service_name="hermes-agent"}`. When
   `capture_logs` is on, every Python `logger.info(...)` from hermes-agent
@@ -83,7 +83,7 @@ see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 `spanmetrics` connector. It turns incoming traces into RED metrics on the
 Prometheus side without the plugin having to emit them from Python.
 Dimensions are set to attribute names the plugin actually emits:
-`llm.provider`, `llm.model_name`, `openinference.span.kind`,
+`gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.operation.name`,
 `hermes.session.kind`, `hermes.tool.outcome`. Adjust here if you change
 what the plugin sets on its spans.
 

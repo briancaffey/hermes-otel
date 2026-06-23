@@ -74,14 +74,14 @@ Port 14318 was picked specifically to avoid the standard 4318 used by LGTM / Jae
 ## What you'll see in the UI
 
 **Traces:**
-Navigation → Traces. Every attribute the plugin emits is searchable (OpenInference + GenAI + `hermes.*`). Group by `llm.model_name`, `openinference.span.kind`, `hermes.session.kind`, etc. Click a trace to see the full waterfall with the same attributes Phoenix and Grafana show.
+Navigation → Traces. Every attribute the plugin emits is searchable (GenAI + `hermes.*`). Group by `gen_ai.request.model`, `gen_ai.operation.name`, `hermes.session.kind`, etc. Click a trace to see the full waterfall with the same attributes Phoenix and Grafana show.
 
 **Metrics:**
-Navigation → Metrics. Query with PromQL over any `hermes_*` metric the plugin emits:
+Navigation → Metrics. Query with PromQL over the metrics the plugin emits:
 
 - `hermes_session_count_total` — sessions started
-- `hermes_token_usage_total` — prompt / completion tokens by provider / model
-- `hermes_tool_duration_bucket` — tool execution histogram
+- `gen_ai_client_token_usage_total` — prompt / completion tokens by provider / model
+- `gen_ai_execute_tool_duration_bucket` — tool execution histogram
 
 **Logs:**
 Navigation → Logs. When `capture_logs: true` is on, every `logger.info(...)` from hermes or the plugin lands here with the active span's `trace_id` and `span_id` attached — click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs) for the full story.

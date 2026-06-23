@@ -151,39 +151,26 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
 
 
 def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
-    """Build dual-convention OTel attributes from canonical token totals.
+    """Build canonical OTel GenAI usage attributes from token totals.
 
-    Emits both the OTel GenAI convention (``gen_ai.usage.*`` — recognised
-    by Langfuse) and the OpenInference convention (``llm.token_count.*``
-    — recognised by Phoenix). Cache attrs are included only when non-zero
-    so low-traffic spans don't get cluttered with zero fields.
+    Cache attrs are included only when non-zero so low-traffic spans don't
+    get cluttered with zero fields. Compatibility aliases are deliberately
+    not emitted: when a concept has a GenAI semantic-convention field, that
+    field is the single source of truth.
     """
     prompt = totals["prompt_tokens"]
     completion = totals["completion_tokens"]
-    total = totals["total_tokens"]
     cache_read = totals["cache_read_tokens"]
     cache_write = totals["cache_write_tokens"]
 
     attrs: Dict[str, Any] = {
-        # OpenInference (Phoenix)
-        "llm.token_count.prompt": prompt,
-        "llm.token_count.completion": completion,
-        "llm.token_count.total": total,
-        # OTel GenAI (Langfuse)
         "gen_ai.usage.input_tokens": prompt,
         "gen_ai.usage.output_tokens": completion,
-        "gen_ai.usage.total_tokens": total,
     }
     if cache_read:
-        attrs["llm.token_count.prompt_details.cache_read"] = cache_read
-        # Current OTel GenAI spelling, plus the pre-existing alias for
-        # backwards compatibility with dashboards created before this change.
         attrs["gen_ai.usage.cache_read.input_tokens"] = cache_read
-        attrs["gen_ai.usage.cache_read_input_tokens"] = cache_read
     if cache_write:
-        attrs["llm.token_count.prompt_details.cache_write"] = cache_write
         attrs["gen_ai.usage.cache_creation.input_tokens"] = cache_write
-        attrs["gen_ai.usage.cache_creation_input_tokens"] = cache_write
     reasoning_output = totals.get("reasoning_output_tokens", 0)
     if reasoning_output:
         attrs["gen_ai.usage.reasoning.output_tokens"] = reasoning_output
@@ -193,17 +180,43 @@ def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
 _USAGE_METRIC_LABELS = (
     ("prompt_tokens", "input"),
     ("completion_tokens", "output"),
-    ("cache_read_tokens", "cacheRead"),
-    ("cache_write_tokens", "cacheCreation"),
 )
 
 
 def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, Any]) -> None:
-    """Record one ``token_usage`` metric per non-zero canonical field."""
+    """Record one standard GenAI token-usage metric per non-zero field."""
     for key, label in _USAGE_METRIC_LABELS:
         v = totals.get(key, 0)
         if v:
-            tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
+            tracer.record_metric(
+                "gen_ai.client.token.usage",
+                v,
+                {**base_attrs, "gen_ai.token.type": label},
+            )
+
+
+def _metric_attributes(
+    operation_name: str,
+    *,
+    session_id: Optional[str] = None,
+    provider: Any = None,
+    model: Any = None,
+    extra_kwargs: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """Return low-cardinality canonical GenAI attributes for metrics.
+
+    Span-only identifiers such as ``gen_ai.conversation.id`` are intentionally
+    omitted to avoid one metric time series per Hermes turn.
+    """
+    attrs: Dict[str, Any] = {
+        "gen_ai.agent.name": _agent_name(extra_kwargs or {}),
+        "gen_ai.operation.name": operation_name,
+    }
+    attrs.update(_provider_attributes(provider))
+    model_text = truncate_string(model, 200) if model is not None else ""
+    if model_text:
+        attrs["gen_ai.request.model"] = model_text
+    return attrs
 
 
 def _detect_session_kind(platform: str, kwargs: dict) -> str:
@@ -265,7 +278,7 @@ def _gen_ai_attributes(
         "gen_ai.agent.name": _agent_name(extra_kwargs or {}),
         "gen_ai.operation.name": operation_name,
     }
-    session_text = truncate_string(session_id, 200)
+    session_text = truncate_string(session_id, 200) if session_id is not None else ""
     if session_text:
         attrs["gen_ai.conversation.id"] = session_text
     compacted = _conversation_compacted_value(extra_kwargs or {})
@@ -290,8 +303,8 @@ def _conversation_compacted_value(extra_kwargs: dict) -> Optional[bool]:
         "session_compacted",
         "compaction_occurred",
     ):
-        if key in extra_kwargs and isinstance(extra_kwargs[key], bool):
-            return extra_kwargs[key]
+        if key in extra_kwargs and extra_kwargs[key] is True:
+            return True
     return None
 
 
@@ -320,15 +333,13 @@ def _agent_name(extra_kwargs: dict) -> str:
 
 
 def _provider_attributes(provider: Any) -> Dict[str, str]:
-    """Return current and compatibility provider attributes."""
+    """Return canonical GenAI provider attributes."""
+    if provider is None:
+        return {}
     value = truncate_string(provider, 120)
     if not value:
         return {}
-    return {
-        "gen_ai.provider.name": value,
-        # Kept for older OTel drafts and existing dashboards.
-        "gen_ai.system": value,
-    }
+    return {"gen_ai.provider.name": value}
 
 
 def _optional_number(value: Any) -> Optional[float]:
@@ -629,12 +640,7 @@ def _start_session_span(
     key = f"session:{session_id}"
 
     attributes = {
-        "session.id": truncate_string(session_id, 200),
-        "session_id": truncate_string(session_id, 200),
-        "hermes.session_id": truncate_string(session_id, 120),
         "hermes.session.kind": kind,
-        "llm.model_name": truncate_string(model, 200),
-        "llm.provider": truncate_string(platform, 120),
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(extra_kwargs.get("provider") or platform))
@@ -667,7 +673,17 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         return
 
     tracer.sweep_expired_turns()
-    tracer.record_metric("session_count", 1, {"session_id": session_id})
+    tracer.record_metric(
+        "session_count",
+        1,
+        _metric_attributes(
+            "invoke_agent",
+            session_id=session_id,
+            provider=kwargs.get("provider") or platform,
+            model=model,
+            extra_kwargs=kwargs,
+        ),
+    )
     _start_session_span(
         session_id,
         model,
@@ -692,8 +708,6 @@ def on_session_end(
     attributes: Dict[str, Any] = {
         "hermes.session.completed": bool(completed),
         "hermes.session.interrupted": bool(interrupted),
-        "llm.model_name": truncate_string(model, 200),
-        "llm.provider": truncate_string(platform, 120),
         "gen_ai.response.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(kwargs.get("provider") or platform))
@@ -733,6 +747,20 @@ def on_session_end(
             attributes["hermes.turn.final_status"] = "interrupted"
         else:
             attributes["hermes.turn.final_status"] = "incomplete"
+
+    started_at = getattr(tracer, "_turn_started_at", {}).get(session_id)
+    if isinstance(started_at, (int, float)):
+        tracer.record_metric(
+            "gen_ai.invoke_agent.duration",
+            max(time.perf_counter() - started_at, 0.0),
+            _metric_attributes(
+                "invoke_agent",
+                session_id=session_id,
+                provider=kwargs.get("provider") or platform,
+                model=model,
+                extra_kwargs=kwargs,
+            ),
+        )
 
     status = "ok" if completed or interrupted else "error"
     if status == "error":
@@ -837,11 +865,18 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
 
     start_time = tracer.sessions.pop_tool_start(key)
     if start_time:
-        duration_ms = (time.perf_counter() - start_time) * 1000
+        duration_s = time.perf_counter() - start_time
         tracer.record_metric(
-            "tool_duration",
-            duration_ms,
-            {"tool_name": tool_name, "gen_ai.tool.name": tool_name},
+            "gen_ai.execute_tool.duration",
+            duration_s,
+            {
+                **_metric_attributes(
+                    "execute_tool",
+                    session_id=kwargs.get("session_id"),
+                    extra_kwargs=kwargs,
+                ),
+                "gen_ai.tool.name": tool_name,
+            },
         )
 
     # Build final attributes — OpenInference conventions for Phoenix Info
@@ -954,10 +989,6 @@ def on_pre_llm_call(
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
-        "session.id": truncate_string(session_id, 200),
-        "session_id": truncate_string(session_id, 200),
-        "llm.model_name": model,
-        "llm.provider": platform,
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(platform))
@@ -1050,15 +1081,15 @@ def on_post_llm_call(
             )
 
     tracer.record_metric(
-        "message_count", 1, {"session_id": session_id, "model": model, "provider": platform}
+        "message_count",
+        1,
+        _metric_attributes(
+            "chat", session_id=session_id, provider=platform, model=model, extra_kwargs=kwargs
+        ),
     )
 
     # OpenInference attributes — Phoenix Info panel
-    attributes: Dict[str, Any] = {
-        "session.id": truncate_string(session_id, 200),
-        "session_id": truncate_string(session_id, 200),
-        "gen_ai.response.model": truncate_string(model, 200),
-    }
+    attributes: Dict[str, Any] = {"gen_ai.response.model": truncate_string(model, 200)}
     attributes.update(_provider_attributes(platform))
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
@@ -1110,13 +1141,9 @@ def on_pre_api_request(
 
     # OpenInference attributes — Phoenix Info panel
     attributes = {
-        "session.id": truncate_string(session_id, 200),
-        "session_id": truncate_string(session_id, 200),
-        "llm.model_name": model,
-        "llm.provider": provider,
-        "llm.api_mode": api_mode,
-        "llm.request.message_count": message_count,
-        "llm.request.approx_input_tokens": approx_input_tokens,
+        "hermes.api.mode": api_mode,
+        "hermes.request.message_count": message_count,
+        "hermes.request.approx_input_tokens": approx_input_tokens,
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(provider))
@@ -1125,7 +1152,6 @@ def on_pre_api_request(
     attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if max_tokens:
-        attributes["llm.request.max_tokens"] = max_tokens
         attributes["gen_ai.request.max_tokens"] = max_tokens
 
     attributes.update(_session_sender_attributes(tracer, session_id))
@@ -1135,12 +1161,10 @@ def on_pre_api_request(
         system_prompt = kwargs.get("system_prompt")
         serialized = _serialize_full(messages)
         if serialized is not None:
-            attributes["llm.input_messages"] = serialized
             attributes["gen_ai.input.messages"] = serialized
             attributes["input.value"] = serialized
             attributes["input.mime_type"] = "application/json"
         if system_prompt:
-            attributes["llm.system_prompt"] = str(system_prompt)
             attributes["gen_ai.system_instructions"] = str(system_prompt)
 
     span = tracer.start_span(
@@ -1177,9 +1201,7 @@ def on_api_request_error(
     key = f"api:{task_id}"
     error_message = truncate_string(error, 500) if error is not None else ""
     attributes: Dict[str, Any] = {
-        "llm.model_name": model,
-        "llm.provider": provider,
-        "llm.api_mode": api_mode,
+        "hermes.api.mode": api_mode,
         "gen_ai.request.model": truncate_string(model, 200),
         "error.type": _error_type(error or kwargs, default="api_request_error"),
     }
@@ -1236,8 +1258,7 @@ def on_post_api_request(
         attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
-    # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
-    # See _usage_attributes for the full attribute list.
+    # Token usage — canonical GenAI attributes only (no compatibility aliases).
     if usage:
         totals = _normalize_usage(usage)
         attributes.update(_usage_attributes(totals))
@@ -1250,9 +1271,9 @@ def on_post_api_request(
             ps.usage_updated = True
 
         # Record metrics
-        metric_attrs: Dict[str, Any] = {"model": model, "provider": provider}
-        if session_id:
-            metric_attrs["session_id"] = session_id
+        metric_attrs = _metric_attributes(
+            "chat", session_id=session_id, provider=provider, model=model, extra_kwargs=kwargs
+        )
         _record_usage_metrics(tracer, totals, metric_attrs)
 
         cost = usage.get("cost")
@@ -1262,28 +1283,32 @@ def on_post_api_request(
             except (ValueError, TypeError):
                 pass
 
-        tracer.record_metric("model_usage", 1, {"model": model, "provider": provider})
+        tracer.record_metric("model_usage", 1, metric_attrs)
 
     # Performance metrics
     if api_duration:
-        attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
+        tracer.record_metric(
+            "gen_ai.client.operation.duration",
+            api_duration,
+            _metric_attributes(
+                "chat", session_id=session_id, provider=provider, model=model, extra_kwargs=kwargs
+            ),
+        )
     if finish_reason:
-        attributes["llm.response.finish_reason"] = finish_reason
         attributes["gen_ai.response.finish_reasons"] = [finish_reason]
     ttfc = _response_time_to_first_chunk(kwargs)
     if ttfc is not None:
         attributes["gen_ai.response.time_to_first_chunk"] = ttfc
     if assistant_content_chars:
-        attributes["llm.response.output_chars"] = assistant_content_chars
+        attributes["hermes.response.output_chars"] = assistant_content_chars
     if assistant_tool_call_count:
-        attributes["llm.response.tool_calls"] = assistant_tool_call_count
+        attributes["hermes.response.tool_calls"] = assistant_tool_call_count
 
     if tracer.config.capture_full_responses:
         response_content = kwargs.get("response_content")
         response_tool_calls = kwargs.get("response_tool_calls")
         if response_content:
             response_text = str(response_content)
-            attributes["llm.output.content"] = response_text
             attributes["gen_ai.output.messages"] = json.dumps(
                 [{"role": "assistant", "content": response_text}],
                 ensure_ascii=False,
@@ -1292,7 +1317,6 @@ def on_post_api_request(
             attributes["output.mime_type"] = "text/plain"
         tool_calls_serialized = _serialize_full(response_tool_calls)
         if tool_calls_serialized is not None:
-            attributes["llm.output.tool_calls"] = tool_calls_serialized
             if not response_content:
                 attributes["gen_ai.output.messages"] = tool_calls_serialized
                 attributes["output.value"] = tool_calls_serialized

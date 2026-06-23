@@ -25,15 +25,15 @@ Fires when the tool returns (success, error, or timeout).
 - **Span op:** closes the `tool.*` span
 - **Attributes set on end:** `output.value` (result), `hermes.tool.outcome`
 - **Span status:** `ERROR` if outcome is `error`, else `OK`
-- **Metrics:** `hermes.tool.calls{tool_name, outcome}` counter, `hermes.tool.duration{tool_name, outcome}` histogram
+- **Metrics:** `gen_ai.execute_tool.duration{gen_ai.tool.name}` histogram (seconds)
 
 ### `pre_llm_call`
 
 Fires before the logical LLM turn starts (before any HTTP round-trips).
 
 - **Span op:** `tracker.start("llm.{model}", parent=session_root)`
-- **Attributes set on start:** `llm.model_name`, `llm.provider`, `gen_ai.request.model`, and (when `capture_conversation_history: true`) `input.value` JSON + `input.mime_type=application/json` + `hermes.conversation.message_count`
-- **Side effects:** stores the current `llm.*` as the parent for subsequent `api.*` and `tool.*`
+- **Attributes set on start:** `gen_ai.request.model`, `gen_ai.provider.name`, `gen_ai.operation.name`, and (when `capture_conversation_history: true`) `input.value` JSON + `input.mime_type=application/json` + `hermes.conversation.message_count`
+- **Side effects:** stores the current `llm.*` span as the parent for subsequent `api.*` and `tool.*`
 
 ### `post_llm_call`
 
@@ -47,7 +47,7 @@ Fires after the logical LLM turn finishes (all round-trips done, final response 
 Fires before each HTTP request to the LLM provider. Can fire multiple times per `llm.*` turn.
 
 - **Span op:** `tracker.start("api.{model}", parent=current_llm)`
-- **Attributes set on start:** `llm.model_name`, `llm.provider`, `llm.invocation_parameters`
+- **Attributes set on start:** `gen_ai.request.model`, `gen_ai.provider.name`, `gen_ai.operation.name`, and request parameters such as `gen_ai.request.temperature`
 - **Side effects:** increments `hermes.turn.api_call_count`
 
 ### `post_api_request`
@@ -55,8 +55,8 @@ Fires before each HTTP request to the LLM provider. Can fire multiple times per 
 Fires when the HTTP response is parsed.
 
 - **Span op:** closes the `api.*` span
-- **Attributes set on end:** token counts (both conventions), `gen_ai.response.finish_reason`, `http.duration_ms`
-- **Metrics:** `hermes.tokens.*` counters, `hermes.api.duration` histogram
+- **Attributes set on end:** `gen_ai.usage.*` token counts and `gen_ai.response.finish_reasons`
+- **Metrics:** `gen_ai.client.token.usage` counter, `gen_ai.client.operation.duration` histogram
 
 ## Newer (session hooks)
 
@@ -67,7 +67,7 @@ Registered inside a `try:/except:` because older Hermes versions don't expose th
 Fires at the start of a user turn (CLI input, inbound message, cron wake-up).
 
 - **Span op:** `tracker.start("session.{kind}", parent=None)` — this becomes the root of the trace
-- **Attributes set on start:** `hermes.session.kind`, `hermes.session.id`, `session.id`, `user.id`, `openinference.project.name`
+- **Attributes set on start:** `hermes.session.kind`, `gen_ai.conversation.id`, `gen_ai.conversation.compacted=true` when compaction is explicitly reported, `gen_ai.agent.name`, `gen_ai.operation.name=invoke_agent`, `user.id` when sender capture is enabled, `openinference.project.name`
 - **Fallback if not available:** the `llm.*` span becomes the root; turn summary is attached there instead of on a dedicated session root
 
 ### `on_session_end`
@@ -76,7 +76,7 @@ Fires when the turn is fully complete (assistant has returned its final response
 
 - **Span op:** closes the `session.*` span
 - **Attributes set on end:** the full [turn summary](/architecture/turn-summary) — `hermes.turn.tool_count`, `hermes.turn.tools`, `hermes.turn.tool_targets`, `hermes.turn.tool_commands`, `hermes.turn.tool_outcomes`, `hermes.turn.skill_count`, `hermes.turn.skills`, `hermes.turn.api_call_count`, `hermes.turn.final_status`
-- **Metrics:** `hermes.sessions{kind, final_status}` counter
+- **Metrics:** `hermes.session.count` counter and `gen_ai.invoke_agent.duration` histogram (seconds)
 - **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
 
 ## Hook → span mapping

@@ -1,47 +1,49 @@
 ---
 sidebar_position: 3
 title: "Attribute conventions"
-description: "Dual-convention emitted on every span — gen_ai.* (Langfuse, SigNoz) and OpenInference llm.* (Phoenix)."
+description: "Canonical OpenTelemetry GenAI attributes plus Hermes extensions."
 ---
 
 # Attribute conventions
 
-The observability ecosystem hasn't agreed on attribute names for LLM telemetry yet. Langfuse and SigNoz use the (pre-standard) `gen_ai.*` convention from [OTel's GenAI SIG](https://github.com/open-telemetry/semantic-conventions/tree/main/docs/gen-ai); Phoenix uses [Arize's OpenInference](https://arize.com/docs/phoenix/reference/openinference) with `llm.token_count.*` and `input.value` / `output.value`.
-
-hermes-otel emits **both** conventions on the same span so whichever backend reads from it picks up the data it's expecting. No vendor-specific adapter code per backend.
+hermes-otel emits the OpenTelemetry GenAI convention for LLM telemetry (`gen_ai.*`) and uses `hermes.*` for Hermes-specific extensions. Generic `input.value` / `output.value` are still used for preview-safe input and output rendering.
 
 ## Token counts (on `api.*` spans)
 
-| Metric | Langfuse / gen_ai | Phoenix / OpenInference |
-|---|---|---|
-| Prompt tokens | `gen_ai.usage.input_tokens` | `llm.token_count.prompt` |
-| Completion tokens | `gen_ai.usage.output_tokens` | `llm.token_count.completion` |
-| Total tokens | — | `llm.token_count.total` |
-| Cache read | `gen_ai.usage.cache_read_input_tokens` | `llm.token_count.cache_read` |
-| Cache write | `gen_ai.usage.cache_creation_input_tokens` | `llm.token_count.cache_write` |
+| Metric | GenAI attribute |
+|---|---|
+| Prompt tokens | `gen_ai.usage.input_tokens` |
+| Completion tokens | `gen_ai.usage.output_tokens` |
+| Cache read | `gen_ai.usage.cache_read.input_tokens` |
+| Cache write | `gen_ai.usage.cache_creation.input_tokens` |
 
-Phoenix adds a `total` variant that's the sum; gen_ai doesn't. Cache read/write are only populated when the provider reports them (Anthropic's prompt caching, OpenAI's — both surface them in their API responses).
+Cache read/write are only populated when the provider reports them (Anthropic's prompt caching, OpenAI's — both surface them in their API responses).
+Total tokens are derived downstream from input + output tokens rather than emitted as a duplicate span attribute.
 
 ## Message content (on `llm.*` spans)
 
-| | Langfuse / gen_ai | Phoenix / OpenInference |
-|---|---|---|
-| User message | `gen_ai.content.prompt` | `input.value` |
-| Assistant response | `gen_ai.content.completion` | `output.value` |
-| Content type | *(not set)* | `input.mime_type`, `output.mime_type` |
+| Attribute | Meaning |
+|---|---|
+| `input.value` | Preview-safe user message or full conversation JSON |
+| `input.mime_type` | `text/plain` or `application/json` |
+| `output.value` | Preview-safe assistant response |
+| `output.mime_type` | `text/plain` |
+| `gen_ai.input.messages` | Full input messages when explicitly enabled |
+| `gen_ai.output.messages` | Full output messages when explicitly enabled |
+| `gen_ai.system_instructions` | System prompt when explicitly enabled |
 
 When [conversation capture](/configuration/conversation-capture) is on, `input.value` becomes JSON of the full message list, `input.mime_type` becomes `application/json`, and `hermes.conversation.message_count` records how many messages were passed.
 
 ## Model / request metadata
 
-| | Langfuse / gen_ai | Phoenix / OpenInference |
-|---|---|---|
-| Model name | `gen_ai.request.model` | `llm.model_name` |
-| Provider | `gen_ai.system` | `llm.provider` |
-| Invocation params | — | `llm.invocation_parameters` (JSON) |
-| Finish reason | `gen_ai.response.finish_reason` | *(same)* |
-
-`llm.invocation_parameters` is a JSON blob with the request params (temperature, max_tokens, tool schemas, etc.) that Phoenix pretty-prints in the UI.
+| Attribute | Meaning |
+|---|---|
+| `gen_ai.request.model` | Requested model name |
+| `gen_ai.response.model` | Provider-returned model name |
+| `gen_ai.provider.name` | Provider (anthropic, openai, ...) |
+| `gen_ai.operation.name` | `chat`, `invoke_agent`, `execute_tool`, etc. |
+| `gen_ai.request.temperature`, `gen_ai.request.max_tokens`, ... | Request params when available |
+| `gen_ai.response.finish_reasons` | Finish reasons such as `stop`, `tool_use`, `length` |
 
 ## Tool spans
 
@@ -61,14 +63,14 @@ See [Tool identity](/architecture/tool-identity).
 
 ## Session / turn metadata (on `session.*`)
 
-All plugin-specific:
-
 | Attribute | Meaning |
 |---|---|
 | `openinference.project.name` | Project name from `OTEL_PROJECT_NAME` |
-| `hermes.session.kind` | `cli` / `telegram` / `discord` / `cron` / ... |
-| `hermes.session.id` | Hermes session ID |
-| `session.id` | Standard OTel alias of the above |
+| `gen_ai.conversation.id` | Hermes session/conversation ID |
+| `gen_ai.conversation.compacted` | `true` when Hermes explicitly reports compaction; otherwise unset |
+| `gen_ai.agent.name` | Active Hermes profile / agent name |
+| `gen_ai.operation.name` | `invoke_agent` for session spans |
+| `hermes.session.kind` | `cli` / `telegram` / `discord` / `cron` / ... (plugin-specific) |
 | `user.id` | Hermes user ID |
 | `hermes.turn.*` | Turn summary (see [Turn summary](/architecture/turn-summary)) |
 
@@ -84,12 +86,12 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 | `openinference.project.name` | Same as `service.name` |
 | *plus* any `resource_attributes:` / `global_tags:` from `config.yaml` |
 
-## Why dual-convention rather than pick one?
+## Compatibility note
 
-Every backend supports a different set. Emitting both is cheap (same span, a few extra key-value pairs) and saves every user from writing their own mapping adapter. When the GenAI spec stabilises and Phoenix/Langfuse converge, this will simplify.
+Older hermes-otel releases emitted OpenInference `llm.*` aliases alongside GenAI fields. Current releases prefer the GenAI names only for model/provider/token metadata; update backend queries and collector dimensions to use the `gen_ai.*` keys above.
 
 ## Roadmap
 
 - [OpenInference Tool span kind is now stable](https://arize.com/docs/phoenix/reference/openinference) — already emitted.
 - `gen_ai.tool.*` convention is evolving; we'll add it once the spec is stable.
-- `session.id` is the standard OTel name; the plugin emits both `hermes.session.id` (for compatibility with older backends that key on it) and `session.id`. The former may be dropped in a future major version — watch the changelog.
+- Session identity uses `gen_ai.conversation.id`; older `session.id` / `hermes.session.id` aliases are intentionally not dual-emitted.

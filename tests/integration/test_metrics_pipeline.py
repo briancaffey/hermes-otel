@@ -26,10 +26,11 @@ def _get_metric_value(metric_reader, name):
     metric = _get_metric(metric_reader, name)
     if metric is None:
         return None
-    # Sum data points
+    # Sum data points. Counters expose ``value`` while histograms expose
+    # ``sum``; token usage is a GenAI histogram per OTel semantic conventions.
     total = 0
     for dp in metric.data.data_points:
-        total += dp.value
+        total += getattr(dp, "value", getattr(dp, "sum", 0))
     return total
 
 
@@ -89,7 +90,7 @@ class TestTokenUsageMetric:
             assistant_tool_call_count=0,
         )
 
-        value = _get_metric_value(metric_reader, "hermes.token.usage")
+        value = _get_metric_value(metric_reader, "gen_ai.client.token.usage")
         # 100 (input) + 50 (output) = 150
         assert value == 150
 
@@ -101,7 +102,7 @@ class TestToolDurationMetric:
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
 
-        metric = _get_metric(metric_reader, "hermes.tool.duration")
+        metric = _get_metric(metric_reader, "gen_ai.execute_tool.duration")
         assert metric is not None
         # Should have at least one data point
         assert len(metric.data.data_points) > 0

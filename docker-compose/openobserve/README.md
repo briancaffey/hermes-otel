@@ -51,7 +51,7 @@ should appear in startup logs.
 ## What you get in the UI
 
 - **Traces** — "Traces" tab. Search by service, span name, attributes.
-  The plugin emits OpenInference + GenAI attributes that OpenObserve
+  The plugin emits GenAI and `hermes.*` attributes that OpenObserve
   indexes automatically.
 - **Metrics** — "Metrics" tab. Query `hermes_*` metrics the plugin
   emits (sessions, tokens, tool durations).

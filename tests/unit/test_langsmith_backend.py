@@ -284,29 +284,12 @@ class TestEndSpan:
         payload = _captured_payload(mock)
         assert "error" not in payload
 
-    def test_token_mapping_from_openinference(self):
-        backend = self._backend()
-        run = {"id": "abc", "run_type": "llm"}
-        attrs = {
-            "llm.token_count.prompt": 100,
-            "llm.token_count.completion": 50,
-            "llm.token_count.total": 150,
-        }
-        with _mock_urlopen_success() as mock:
-            backend.end_span(run, attributes=attrs)
-
-        payload = _captured_payload(mock)
-        assert payload["prompt_tokens"] == 100
-        assert payload["completion_tokens"] == 50
-        assert payload["total_tokens"] == 150
-
     def test_token_mapping_from_gen_ai(self):
         backend = self._backend()
         run = {"id": "abc", "run_type": "llm"}
         attrs = {
             "gen_ai.usage.input_tokens": 200,
             "gen_ai.usage.output_tokens": 80,
-            "gen_ai.usage.total_tokens": 280,
         }
         with _mock_urlopen_success() as mock:
             backend.end_span(run, attributes=attrs)
@@ -322,7 +305,6 @@ class TestEndSpan:
         attrs = {
             "gen_ai.usage.input_tokens": 100,
             "gen_ai.usage.output_tokens": 50,
-            "gen_ai.usage.total_tokens": 150,
         }
         with _mock_urlopen_success() as mock:
             backend.end_span(run, attributes=attrs)
@@ -339,9 +321,8 @@ class TestEndSpan:
         attrs = {
             "gen_ai.usage.input_tokens": 100,
             "gen_ai.usage.output_tokens": 50,
-            "gen_ai.usage.total_tokens": 150,
-            "gen_ai.usage.cache_read_input_tokens": 30,
-            "gen_ai.usage.cache_creation_input_tokens": 10,
+            "gen_ai.usage.cache_read.input_tokens": 30,
+            "gen_ai.usage.cache_creation.input_tokens": 10,
         }
         with _mock_urlopen_success() as mock:
             backend.end_span(run, attributes=attrs)

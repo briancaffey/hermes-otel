@@ -111,7 +111,7 @@ This is the standard OTel trade-off and matches every production tracing stack �
 ## Next
 
 - **[Span hierarchy](/architecture/span-hierarchy)** — what each span carries
-- **[Attribute conventions](/architecture/attributes)** — the dual-convention mapping
+- **[Attribute conventions](/architecture/attributes)** — GenAI and Hermes attribute conventions
 - **[Turn summary](/architecture/turn-summary)** — the rolled-up attributes on the session root
 - **[Tool identity](/architecture/tool-identity)** — how `hermes.tool.command` / `target` / `outcome` / `skill` get inferred
 - **[Orphan-span sweep](/architecture/orphan-sweep)** — how crashed sessions get cleaned up

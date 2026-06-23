@@ -4,7 +4,7 @@ Phoenix stores spans per-project. The adapter honours ``project_name``
 from the backend cfg (or the top-level plugin config) and falls back
 to the first project that has traces. Attributes come back as a
 nested JSON string; we parse + flatten to dot-notation keys
-(``llm.model_name``) so the frontend renderer can use them unchanged.
+(``gen_ai.request.model``) so the frontend renderer can use them unchanged.
 
 Native query language is Phoenix's ``filterCondition`` expression
 syntax — same one the Phoenix UI uses in its filter bar.
@@ -33,8 +33,8 @@ _DEFAULT_PHOENIX_PORT = 6006
 
 def _flatten(obj: Any, prefix: str = "") -> Dict[str, Any]:
     """Phoenix's ``attributes`` JSON is nested by dot groupings
-    (``{"llm": {"model_name": ...}}``). Re-emit as a flat dict
-    (``{"llm.model_name": ...}``) to match Tempo/OTLP attribute keys.
+    (``{"gen_ai": {"request": {"model": ...}}}``). Re-emit as a flat dict
+    (``{"gen_ai.request.model": ...}``) to match Tempo/OTLP attribute keys.
     """
     out: Dict[str, Any] = {}
     if isinstance(obj, dict):
@@ -77,18 +77,18 @@ def _span_kind_to_otlp(kind: Optional[str]) -> int:
 
 _CARD_ATTR_KEYS = frozenset(
     {
-        "llm.model_name",
-        "llm.provider",
-        "llm.api_mode",
+        "gen_ai.request.model",
+        "gen_ai.provider.name",
+        "hermes.api.mode",
         "gen_ai.usage.input_tokens",
         "gen_ai.usage.output_tokens",
         "gen_ai.usage.total_tokens",
-        "llm.response.finish_reason",
-        "llm.response.tool_calls",
+        "gen_ai.response.finish_reasons",
+        "hermes.response.tool_calls",
         "tool.name",
         "input.value",
         "output.value",
-        "llm.output.content",
+        "gen_ai.output.messages",
         "status",
         "name",
     }
@@ -99,7 +99,7 @@ _CARD_ATTR_KEYS = frozenset(
 class PhoenixAdapter(BackendAdapter):
     handles = frozenset({"phoenix"})
     query_lang_label = "Phoenix filter"
-    raw_placeholder = "llm.model_name == 'gpt-4'"
+    raw_placeholder = "gen_ai.request.model == 'gpt-4'"
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)

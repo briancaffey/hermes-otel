@@ -36,8 +36,7 @@ Key attributes, set at start:
 |---|---|
 | `openinference.project.name` | `OTEL_PROJECT_NAME` / `HERMES_OTEL_PROJECT_NAME` |
 | `hermes.session.kind` | From Hermes (`cli`, `telegram`, `cron`, etc.) |
-| `hermes.session.id` | Hermes session ID |
-| `session.id` | Same as above, standard OTel naming |
+| `gen_ai.conversation.id` | Hermes session/conversation ID |
 | `user.id` | Hermes user ID (when available) |
 
 Key attributes, set at end (the **turn summary**):
@@ -60,19 +59,19 @@ See [Turn summary](/architecture/turn-summary) for why these exist.
 
 One per logical model turn. Name is `llm.{model}` (e.g. `llm.claude-sonnet-4-6`).
 
-**Span kind:** `LLM` (OpenInference).
+**Span kind:** LLM-like model turn.
 
 | Attribute | Convention | Meaning |
 |---|---|---|
-| `llm.model_name` | OpenInference | Model name |
-| `llm.provider` | OpenInference | Provider (anthropic, openai, etc.) |
-| `input.value` | OpenInference | User message *or* full conversation history (see below) |
-| `input.mime_type` | OpenInference | `text/plain` or `application/json` |
-| `output.value` | OpenInference | Final assistant response |
-| `output.mime_type` | OpenInference | `text/plain` |
-| `gen_ai.request.model` | gen_ai | Model name (for Langfuse / SigNoz) |
-| `gen_ai.content.prompt` | gen_ai | User message (same content as `input.value` when both are strings) |
-| `gen_ai.content.completion` | gen_ai | Assistant response |
+| `gen_ai.request.model` | gen_ai | Model name |
+| `gen_ai.provider.name` | gen_ai | Provider (anthropic, openai, etc.) |
+| `gen_ai.operation.name` | gen_ai | Operation name such as `chat` |
+| `input.value` | generic | User message *or* full conversation history (see below) |
+| `input.mime_type` | generic | `text/plain` or `application/json` |
+| `output.value` | generic | Final assistant response |
+| `output.mime_type` | generic | `text/plain` |
+| `gen_ai.input.messages` | gen_ai | Full input messages when explicitly enabled |
+| `gen_ai.output.messages` | gen_ai | Full output messages when explicitly enabled |
 | `hermes.conversation.message_count` | hermes-specific | When `capture_conversation_history: true` |
 
 By default `input.value` is the latest user turn only. To see the full message list the model saw, enable [conversation capture](/configuration/conversation-capture).
@@ -81,24 +80,18 @@ By default `input.value` is the latest user turn only. To see the full message l
 
 One per HTTP round-trip to the provider. Name is `api.{model}`.
 
-**Span kind:** `LLM` (OpenInference).
+**Span kind:** LLM-like provider request.
 
 | Attribute | Convention | Meaning |
 |---|---|---|
-| `llm.token_count.prompt` | OpenInference | Prompt tokens |
-| `llm.token_count.completion` | OpenInference | Completion tokens |
-| `llm.token_count.total` | OpenInference | Sum of the above |
-| `llm.token_count.cache_read` | OpenInference | Prompt tokens read from cache (if provider reports) |
-| `llm.token_count.cache_write` | OpenInference | Prompt tokens written to cache (if provider reports) |
-| `gen_ai.usage.input_tokens` | gen_ai | Prompt tokens (for Langfuse) |
-| `gen_ai.usage.output_tokens` | gen_ai | Completion tokens (for Langfuse) |
-| `gen_ai.usage.cache_read_input_tokens` | gen_ai | Cache read (if provider reports) |
-| `gen_ai.usage.cache_creation_input_tokens` | gen_ai | Cache write (if provider reports) |
-| `llm.invocation_parameters` | OpenInference | JSON of temperature, max_tokens, etc. |
-| `gen_ai.response.finish_reason` | gen_ai | `stop`, `tool_use`, `length`, etc. |
-| `http.duration_ms` | hermes-specific | Wall-clock duration of the HTTP call |
+| `gen_ai.usage.input_tokens` | gen_ai | Prompt tokens |
+| `gen_ai.usage.output_tokens` | gen_ai | Completion tokens |
+| `gen_ai.usage.cache_read.input_tokens` | gen_ai | Prompt tokens read from cache (if provider reports) |
+| `gen_ai.usage.cache_creation.input_tokens` | gen_ai | Prompt tokens written to cache (if provider reports) |
+| `gen_ai.request.*` | gen_ai | Request params such as temperature and max tokens |
+| `gen_ai.response.finish_reasons` | gen_ai | `stop`, `tool_use`, `length`, etc. |
 
-The `api.*` span is the right place to look for token counts — not the parent `llm.*` (which doesn't carry per-call counts, because a turn can have multiple `api.*` calls).
+The `api.*` span is the right place to look for token counts — not the parent `llm.*` (which doesn't carry per-call counts, because a turn can have multiple `api.*` calls). Total tokens are derived downstream from input + output tokens rather than emitted as a duplicate span attribute; API duration is emitted as the `gen_ai.client.operation.duration` metric.
 
 ## `tool.*`
 
@@ -126,4 +119,4 @@ The tree mirrors the agent's execution structure:
 - **`llm.*` as a logical parent of all `api.*`** because the conversation-with-the-model is one coherent thing even when it takes multiple HTTP calls.
 - **`tool.*` under `api.*`** because tools run *between* rounds of model inference, within a specific HTTP response's tool_calls. The `api.*` parent makes that explicit.
 
-See [Attribute conventions](/architecture/attributes) for the dual-convention mapping side-by-side.
+See [Attribute conventions](/architecture/attributes) for the GenAI attribute mapping.

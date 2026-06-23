@@ -73,23 +73,28 @@ class TestOnSessionStart:
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"session_id": "s1"})
+        mock_tracer.record_metric.assert_called_once_with(
+            "session_count",
+            1,
+            {
+                "gen_ai.agent.name": "hermes-agent",
+                "gen_ai.operation.name": "invoke_agent",
+                "gen_ai.provider.name": "cli",
+                "gen_ai.request.model": "gpt-4",
+            },
+        )
 
     def test_includes_session_attributes(self, mock_tracer, monkeypatch):
         monkeypatch.delenv("HERMES_PROFILE", raising=False)
         monkeypatch.delenv("HERMES_HOME", raising=False)
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["session_id"] == "s1"
         assert attrs["correlation.id"] == "s1"
-        assert attrs["llm.model_name"] == "gpt-4o"
-        assert attrs["llm.provider"] == "telegram"
         assert attrs["gen_ai.conversation.id"] == "s1"
         assert attrs["gen_ai.agent.name"] == "hermes-agent"
         assert attrs["gen_ai.operation.name"] == "invoke_agent"
         assert attrs["gen_ai.request.model"] == "gpt-4o"
         assert attrs["gen_ai.provider.name"] == "telegram"
-        assert attrs["gen_ai.system"] == "telegram"
 
     def test_incoming_correlation_id_wins(self, mock_tracer):
         on_session_start(
@@ -172,12 +177,9 @@ class TestOnSessionEnd:
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert attrs["llm.token_count.prompt"] == 100
-        assert attrs["llm.token_count.completion"] == 50
         assert attrs["gen_ai.usage.input_tokens"] == 100
         assert attrs["gen_ai.usage.output_tokens"] == 50
-        assert attrs["llm.token_count.prompt_details.cache_read"] == 20
-        assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 10
+        assert attrs["gen_ai.usage.cache_creation.input_tokens"] == 10
         # Verify cleanup — PerSession popped from registry.
         assert mock_tracer.sessions.peek("s1") is None
 
@@ -304,9 +306,11 @@ class TestOnPostToolCall:
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         mock_tracer.record_metric.assert_called_once()
         name, _value, attrs = mock_tracer.record_metric.call_args[0]
-        assert name == "tool_duration"
-        assert attrs["tool_name"] == "bash"
+        assert name == "gen_ai.execute_tool.duration"
+        assert attrs["gen_ai.operation.name"] == "execute_tool"
         assert attrs["gen_ai.tool.name"] == "bash"
+        assert "gen_ai.conversation.id" not in attrs
+        assert "gen_ai.provider.name" not in attrs
 
     def test_cleans_up_start_time(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
@@ -543,7 +547,14 @@ class TestOnPostLlmCall:
             platform="cli",
         )
         mock_tracer.record_metric.assert_called_once_with(
-            "message_count", 1, {"session_id": "s1", "model": "gpt-4", "provider": "cli"}
+            "message_count",
+            1,
+            {
+                "gen_ai.agent.name": "hermes-agent",
+                "gen_ai.operation.name": "chat",
+                "gen_ai.provider.name": "cli",
+                "gen_ai.request.model": "gpt-4",
+            },
         )
 
     def test_noop_when_disabled(self, disabled_tracer):
@@ -691,15 +702,16 @@ class TestOnPreApiRequest:
             max_tokens=2048,
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["llm.model_name"] == "gpt-4"
-        assert attrs["llm.provider"] == "openai"
-        assert attrs["llm.request.message_count"] == 10
-        assert attrs["llm.request.max_tokens"] == 2048
+        # Hermes-specific request-shape metadata stays under hermes.* because
+        # there is no equivalent GenAI semantic-convention field.
+        assert attrs["hermes.api.mode"] == "chat"
+        assert attrs["hermes.request.message_count"] == 10
+        assert attrs["hermes.request.approx_input_tokens"] == 500
+        assert attrs["gen_ai.request.max_tokens"] == 2048
         assert attrs["gen_ai.conversation.id"] == "s1"
         assert attrs["gen_ai.operation.name"] == "chat"
         assert attrs["gen_ai.request.model"] == "gpt-4"
         assert attrs["gen_ai.provider.name"] == "openai"
-        assert attrs["gen_ai.system"] == "openai"
 
     def test_includes_server_attributes_from_base_url(self, mock_tracer):
         on_pre_api_request(
@@ -895,7 +907,7 @@ class TestOnPostApiRequest:
         mock_tracer.end_span.assert_called_once()
         assert mock_tracer.end_span.call_args[0][0] == "api:t1"
 
-    def test_dual_convention_token_attributes(self, mock_tracer):
+    def test_canonical_gen_ai_token_attributes(self, mock_tracer):
         usage = {
             "prompt_tokens": 100,
             "output_tokens": 50,
@@ -903,19 +915,13 @@ class TestOnPostApiRequest:
         }
         self._call_post_api(mock_tracer, usage=usage)
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        # OpenInference (Phoenix)
-        assert attrs["llm.token_count.prompt"] == 100
-        assert attrs["llm.token_count.completion"] == 50
-        assert attrs["llm.token_count.total"] == 150
-        # OTel GenAI (Langfuse)
         assert attrs["gen_ai.usage.input_tokens"] == 100
         assert attrs["gen_ai.usage.output_tokens"] == 50
-        assert attrs["gen_ai.usage.total_tokens"] == 150
+        assert "gen_ai.usage.total_tokens" not in attrs
         assert attrs["gen_ai.conversation.id"] == "s1"
         assert attrs["gen_ai.operation.name"] == "chat"
         assert attrs["gen_ai.response.model"] == "gpt-4"
         assert attrs["gen_ai.provider.name"] == "openai"
-        assert attrs["gen_ai.system"] == "openai"
 
     def test_reasoning_token_attribute(self, mock_tracer):
         usage = {
@@ -939,6 +945,11 @@ class TestOnPostApiRequest:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.conversation.compacted" not in attrs
 
+    def test_no_compaction_attr_when_explicit_false(self, mock_tracer):
+        self._call_post_api(mock_tracer, conversation_compacted=False)
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert "gen_ai.conversation.compacted" not in attrs
+
     def test_time_to_first_chunk_attribute(self, mock_tracer):
         self._call_post_api(mock_tracer, time_to_first_chunk_ms=125)
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
@@ -954,12 +965,8 @@ class TestOnPostApiRequest:
         }
         self._call_post_api(mock_tracer, usage=usage)
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert attrs["llm.token_count.prompt_details.cache_read"] == 30
         assert attrs["gen_ai.usage.cache_read.input_tokens"] == 30
-        assert attrs["gen_ai.usage.cache_read_input_tokens"] == 30
-        assert attrs["llm.token_count.prompt_details.cache_write"] == 15
         assert attrs["gen_ai.usage.cache_creation.input_tokens"] == 15
-        assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 15
 
     def test_session_usage_rollup(self, mock_tracer):
         usage = {"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150}
@@ -978,16 +985,28 @@ class TestOnPostApiRequest:
 
     def test_records_duration_attribute(self, mock_tracer):
         self._call_post_api(mock_tracer, api_duration=1.234)
-        attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert attrs["llm.response.duration_ms"] == 1234.0
+        metric_names = [c[0][0] for c in mock_tracer.record_metric.call_args_list]
+        assert "gen_ai.client.operation.duration" in metric_names
 
-    def test_records_token_metrics(self, mock_tracer):
-        usage = {"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150}
+    def test_records_canonical_gen_ai_token_metrics(self, mock_tracer):
+        usage = {
+            "prompt_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 150,
+            "cache_read_tokens": 30,
+            "cache_write_tokens": 15,
+        }
         self._call_post_api(mock_tracer, usage=usage)
         metric_calls = [c for c in mock_tracer.record_metric.call_args_list]
         metric_names = [c[0][0] for c in metric_calls]
-        assert "token_usage" in metric_names
+        assert "gen_ai.client.token.usage" in metric_names
         assert "model_usage" in metric_names
+        token_calls = [c for c in metric_calls if c[0][0] == "gen_ai.client.token.usage"]
+        assert {c[0][2]["gen_ai.token.type"] for c in token_calls} == {"input", "output"}
+        token_call = token_calls[0]
+        assert token_call[0][2]["gen_ai.token.type"] == "input"
+        assert token_call[0][2]["gen_ai.operation.name"] == "chat"
+        assert token_call[0][2]["gen_ai.provider.name"] == "openai"
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_post_api_request(
@@ -1061,8 +1080,8 @@ class TestFullCaptureFlags:
             )
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert "llm.input_messages" not in attrs
-        assert "llm.system_prompt" not in attrs
+        assert "gen_ai.input.messages" not in attrs
+        assert "gen_ai.system_instructions" not in attrs
         assert "input.value" not in attrs
 
     def test_pre_writes_full_prompt_when_flag_on(self, mock_tracer):
@@ -1076,13 +1095,12 @@ class TestFullCaptureFlags:
         ]
         on_pre_api_request(**self._pre_kwargs(messages=messages, system_prompt="the-system-prompt"))
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["llm.system_prompt"] == "the-system-prompt"
         assert attrs["gen_ai.system_instructions"] == "the-system-prompt"
         assert attrs["input.mime_type"] == "application/json"
         # Full, untruncated payload round-trips
         import json as _json
 
-        parsed = _json.loads(attrs["llm.input_messages"])
+        parsed = _json.loads(attrs["gen_ai.input.messages"])
         assert parsed == messages
         assert _json.loads(attrs["gen_ai.input.messages"]) == messages
         assert len(attrs["input.value"]) > 5000
@@ -1093,8 +1111,8 @@ class TestFullCaptureFlags:
         mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
         on_pre_api_request(**self._pre_kwargs(messages=[], system_prompt=""))
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert "llm.input_messages" not in attrs
-        assert "llm.system_prompt" not in attrs
+        assert "gen_ai.input.messages" not in attrs
+        assert "gen_ai.system_instructions" not in attrs
 
     def test_post_skips_response_attrs_when_flag_off(self, mock_tracer):
         on_post_api_request(
@@ -1104,7 +1122,7 @@ class TestFullCaptureFlags:
             )
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert "llm.output.content" not in attrs
+        assert "gen_ai.output.messages" not in attrs
         assert "output.value" not in attrs
 
     def test_post_writes_full_response_when_flag_on(self, mock_tracer):
@@ -1116,7 +1134,6 @@ class TestFullCaptureFlags:
             **self._post_kwargs(response_content=big_response, response_tool_calls=[])
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert attrs["llm.output.content"] == big_response
         assert "gen_ai.output.messages" in attrs
         assert attrs["output.value"] == big_response
         assert attrs["output.mime_type"] == "text/plain"
@@ -1136,7 +1153,7 @@ class TestFullCaptureFlags:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         import json as _json
 
-        parsed = _json.loads(attrs["llm.output.tool_calls"])
+        parsed = _json.loads(attrs["gen_ai.output.messages"])
         assert parsed[0]["id"] == "call_1"
         assert parsed[0]["function"]["name"] == "web_search"
         # With no text content, the tool-call JSON stands in as output.value
@@ -1149,4 +1166,4 @@ class TestFullCaptureFlags:
         mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
         on_post_api_request(**self._post_kwargs(response_content="hi", response_tool_calls=[]))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert "llm.output.content" not in attrs
+        assert "gen_ai.output.messages" not in attrs

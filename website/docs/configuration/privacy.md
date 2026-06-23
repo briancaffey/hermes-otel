@@ -43,7 +43,7 @@ Everything that isn't user-originated content:
 - Span tree (parent/child relationships)
 - Span timings (start / end / duration)
 - Tool names, commands, targets, outcomes (`tool.name`, `hermes.tool.command`, `hermes.tool.target`, `hermes.tool.outcome`)
-- Token counts (`gen_ai.usage.*`, `llm.token_count.*`)
+- Token counts (`gen_ai.usage.*`)
 - Model name, provider, finish reason
 - Per-turn summary (tool count, skill count, API call count, final status)
 - Metrics (all of them — counters and histograms)
@@ -72,6 +72,6 @@ If even command and target are too sensitive for your deployment, file an issue 
 
 ## Verifying
 
-A quick way to verify privacy mode is working: run a Hermes turn that uses a tool, then inspect the trace. Every `input.value` / `output.value` / `gen_ai.content.*` attribute should be **absent** (not empty — absent). Token counts and tool names should still be present.
+A quick way to verify privacy mode is working: run a Hermes turn that uses a tool, then inspect the trace. Every `input.value`, `output.value`, `gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions` attribute should be **absent** (not empty — absent). Token counts and tool names should still be present.
 
 In Langfuse, you'll see observations with empty input/output panels. In Phoenix, the Input/Output panels won't render at all for those spans.

@@ -388,7 +388,7 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 
 Set `capture_previews: false` (or `HERMES_OTEL_CAPTURE_PREVIEWS=false`) to suppress every `input.value` / `output.value` attribute. Useful for shared deployments where message content can't leave the process. A one-line startup banner confirms the mode is active.
 
-Set `capture_sender_id: true` (or `HERMES_OTEL_CAPTURE_SENDER_ID=true`) to attach gateway sender identity to spans. The plugin emits the raw platform ID as `hermes.sender.id` and the backend-neutral user key as `user.id={platform}:{sender_id}`. For example, Slack user `U0B074344DP` becomes `user.id=slack:U0B074344DP`. The platform is already available on LLM spans as `llm.provider`. This is opt-in because IDs from Discord, Telegram, Slack, email, SMS, and similar platforms can identify users. CLI sessions usually omit it.
+Set `capture_sender_id: true` (or `HERMES_OTEL_CAPTURE_SENDER_ID=true`) to attach gateway sender identity to spans. The plugin emits the raw platform ID as `hermes.sender.id` and the backend-neutral user key as `user.id={platform}:{sender_id}`. For example, Slack user `U0B074344DP` becomes `user.id=slack:U0B074344DP`. The provider is available on LLM spans as `gen_ai.provider.name`. This is opt-in because IDs from Discord, Telegram, Slack, email, SMS, and similar platforms can identify users. CLI sessions usually omit it.
 
 ### Per-turn summary attributes
 
@@ -458,19 +458,20 @@ Turn 1:
 
 ### Attribute conventions
 
-The plugin emits **dual-convention** attributes so both backends work:
+The plugin emits canonical OpenTelemetry GenAI attributes for model/provider metadata and token counts:
 
-| Metric | OpenTelemetry GenAI | Phoenix (OpenInference) |
-|--------|---------------------|------------------------|
-| Prompt tokens | `gen_ai.usage.input_tokens` | `llm.token_count.prompt` |
-| Completion tokens | `gen_ai.usage.output_tokens` | `llm.token_count.completion` |
-| Total tokens | `gen_ai.usage.total_tokens` | `llm.token_count.total` |
-| Cache read | `gen_ai.usage.cache_read.input_tokens` (`gen_ai.usage.cache_read_input_tokens` also kept) | `llm.token_count.prompt_details.cache_read` |
-| Cache write | `gen_ai.usage.cache_creation.input_tokens` (`gen_ai.usage.cache_creation_input_tokens` also kept) | `llm.token_count.prompt_details.cache_write` |
+| Metric | OpenTelemetry GenAI |
+|--------|---------------------|
+| Prompt tokens | `gen_ai.usage.input_tokens` |
+| Completion tokens | `gen_ai.usage.output_tokens` |
+| Cache read | `gen_ai.usage.cache_read.input_tokens` |
+| Cache write | `gen_ai.usage.cache_creation.input_tokens` |
+
+Total tokens are derived downstream from input + output tokens rather than emitted as a duplicate span attribute.
 
 LLM and API spans also expose standard GenAI request/response metadata where Hermes provides it, including `gen_ai.provider.name`, `gen_ai.request.model`, request parameters such as `gen_ai.request.temperature`, and response fields such as `gen_ai.response.model` and `gen_ai.response.finish_reasons`.
 
-Phoenix uses `input.value` and `output.value` for previews. When full prompt/response capture is explicitly enabled, the plugin also writes the corresponding GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`).
+When full prompt/response capture is explicitly enabled, the plugin writes GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`). Preview-safe `input.value` / `output.value` are still used for generic span input/output rendering.
 
 ## File structure
 

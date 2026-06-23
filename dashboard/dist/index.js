@@ -67,6 +67,14 @@
     return out;
   }
 
+  function firstAttr(attrs, keys) {
+    for (var i = 0; i < keys.length; i++) {
+      var value = attrs[keys[i]];
+      if (value !== null && value !== undefined && value !== "") return value;
+    }
+    return null;
+  }
+
   function fmtDurationMs(ms) {
     if (ms == null || isNaN(ms)) return "—";
     if (ms < 1) return ms.toFixed(2) + "ms";
@@ -95,7 +103,9 @@
 
   function spanKindLabel(span) {
     var attrs = span._attrs || {};
-    var kind = attrs["openinference.span.kind"] || attrs["llm.provider"] ? "llm" : null;
+    var kind = attrs["openinference.span.kind"] || (
+      attrs["gen_ai.provider.name"] ? "llm" : null
+    );
     if (attrs["tool.name"]) return "tool";
     if (kind) return kind.toLowerCase();
     return null;
@@ -266,7 +276,10 @@
   }
 
   function extractOutputPreview(attrs) {
-    return attrs["llm.output.content"] || attrs["output.value"] || null;
+    var raw = firstAttr(attrs, ["gen_ai.output.messages", "output.value"]);
+    if (Array.isArray(raw)) return JSON.stringify(raw);
+    if (raw && typeof raw === "object") return JSON.stringify(raw);
+    return raw;
   }
 
   function traceSpanCount(trace) {
@@ -537,14 +550,15 @@
     var startNs = t.startTimeUnixNano
       ? Number(t.startTimeUnixNano)
       : (t.startTime ? new Date(t.startTime).getTime() * 1e6 : 0);
-    var model = attrs["llm.model_name"];
-    var provider = attrs["llm.provider"];
-    var apiMode = attrs["llm.api_mode"];
+    var model = firstAttr(attrs, ["gen_ai.response.model", "gen_ai.request.model"]);
+    var provider = attrs["gen_ai.provider.name"];
+    var apiMode = firstAttr(attrs, ["hermes.api.mode", "gen_ai.operation.name"]);
     var totalTokens = attrs["gen_ai.usage.total_tokens"];
     var inputTokens = attrs["gen_ai.usage.input_tokens"];
     var outputTokens = attrs["gen_ai.usage.output_tokens"];
     var toolName = attrs["tool.name"];
-    var finishReason = attrs["llm.response.finish_reason"];
+    var finishReason = attrs["gen_ai.response.finish_reasons"];
+    if (Array.isArray(finishReason)) finishReason = finishReason.join(", ");
     var status = attrs["status"];
     var spanCount = traceSpanCount(t);
     var isError = status === "error" || status === "STATUS_CODE_ERROR";

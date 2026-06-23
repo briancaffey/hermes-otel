@@ -150,16 +150,15 @@ class TestFullSessionLifecycle:
         session_span = _span_by_name(spans, "agent")
         attrs = dict(session_span.attributes)
 
-        # Token roll-up: 200+300=500 prompt, 30+80=110 completion, 230+380=610 total
-        assert attrs["llm.token_count.prompt"] == 500
-        assert attrs["llm.token_count.completion"] == 110
-        assert attrs["llm.token_count.total"] == 610
+        # Token roll-up: 200+300=500 prompt, 30+80=110 completion.
+        # Total tokens are derived from input+output downstream rather than emitted
+        # as a duplicate compatibility attribute.
         assert attrs["gen_ai.usage.input_tokens"] == 500
         assert attrs["gen_ai.usage.output_tokens"] == 110
+        assert "gen_ai.usage.total_tokens" not in attrs
 
         # Cache roll-up: 50+100=150 cache read
-        assert attrs["llm.token_count.prompt_details.cache_read"] == 150
-        assert attrs["gen_ai.usage.cache_read_input_tokens"] == 150
+        assert attrs["gen_ai.usage.cache_read.input_tokens"] == 150
 
         # Session I/O: first input and last output
         assert attrs["input.value"] == "What files are here?"

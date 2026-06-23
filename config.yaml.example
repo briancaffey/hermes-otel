@@ -60,7 +60,7 @@
 # Platform sender ID capture. When true, gateway sessions add the raw
 # platform sender ID as hermes.sender.id and a backend-neutral user.id
 # formatted as "{platform}:{sender_id}". The platform is already emitted
-# on LLM spans as llm.provider.
+# on LLM spans as gen_ai.provider.name.
 # This can identify users (for example Discord, Telegram, Slack, email, SMS),
 # so keep it opt-in. CLI sessions usually leave it empty.
 # capture_sender_id: false

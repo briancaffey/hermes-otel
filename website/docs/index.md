@@ -33,8 +33,8 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
 
 <div className="feature-grid">
   <div className="feature-card">
-    <h3>Dual-convention attributes</h3>
-    <p>Emits both <code>{'gen_ai.*'}</code> (Langfuse / SigNoz) and <code>{'llm.token_count.*'}</code> (Phoenix / OpenInference) so the UI in your chosen backend just <em>works</em>.</p>
+    <h3>GenAI semantic attributes</h3>
+    <p>Emits canonical <code>{'gen_ai.*'}</code> model, provider, token, and response fields plus Hermes-specific extensions for turn and tool details.</p>
   </div>
   <div className="feature-card">
     <h3>Multi-backend fan-out</h3>
@@ -105,7 +105,7 @@ session.{platform} / cron                 [root, GENERAL]
     └── api.{model}                       [LLM — second round-trip, final response]
 ```
 
-Each span carries the attributes both Langfuse (`gen_ai.usage.input_tokens`, `gen_ai.content.prompt`) and Phoenix (`llm.token_count.prompt`, `input.value`) expect — see [Attribute conventions](/architecture/attributes).
+Each span carries GenAI attributes such as `gen_ai.usage.input_tokens`, `gen_ai.provider.name`, and `gen_ai.request.model`, plus preview-safe `input.value` / `output.value` — see [Attribute conventions](/architecture/attributes).
 
 ## Where to go next
 

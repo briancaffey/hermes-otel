@@ -43,9 +43,9 @@ Because a single user turn usually involves **multiple HTTP round-trips**. The t
 
 That's two `api.*` calls but one logical `llm.*` turn. The parent `llm.*` span carries the user message (input) and the final assistant response (output), so at a glance you see what the user asked and what they got back.
 
-## Dual-convention attributes
+## GenAI semantic attributes
 
-Different observability vendors standardised on different attribute names for the same LLM concepts. hermes-otel emits **both** the [Langfuse / `gen_ai.*`](https://langfuse.com/docs) convention and the [Phoenix / OpenInference `llm.*`](https://arize.com/docs/phoenix/reference/openinference) convention on the same span, so whichever backend you point at sees the data it's expecting.
+hermes-otel emits canonical OpenTelemetry GenAI attributes (`gen_ai.*`) for model, provider, token, request, and response metadata, plus `hermes.*` extensions for agent-specific turn and tool details.
 
 See [Attribute conventions](/architecture/attributes) for the full mapping.
 

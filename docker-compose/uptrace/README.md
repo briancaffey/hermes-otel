@@ -46,11 +46,11 @@ should appear in startup logs.
 ## What you get in the UI
 
 - **Traces** — the "Spans" and "Traces" pages. Every attribute the plugin
-  emits is searchable (OpenInference + GenAI + `hermes.*`). Group by
-  `llm.model_name`, `openinference.span.kind`, etc.
+  emits is searchable (GenAI + `hermes.*`). Group by
+  `gen_ai.request.model`, `gen_ai.operation.name`, etc.
 - **Metrics** — Prometheus-style PromQL over the metrics the plugin
-  emits (`hermes_session_count_total`, `hermes_token_usage_total`, the
-  tool-duration histogram).
+  emits (`hermes_session_count_total`, `gen_ai_client_token_usage_total`,
+  `gen_ai_execute_tool_duration_bucket`).
 - **Logs** — structured logs with automatic `trace_id` / `span_id`
   correlation when `capture_logs` is on. Clicking a log record's
   `trace_id` jumps to the full trace.

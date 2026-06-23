@@ -317,8 +317,8 @@ class TestPhoenixTraceExport:
             attrs_str = api_span["attributes"]
 
             # Token attributes should be present (as stringified JSON in Phoenix)
-            assert "llm.token_count.prompt" in attrs_str
-            assert "llm.token_count.completion" in attrs_str
+            assert "gen_ai.usage.input_tokens" in attrs_str
+            assert "gen_ai.usage.output_tokens" in attrs_str
 
         finally:
             tracer_mod._tracer = None

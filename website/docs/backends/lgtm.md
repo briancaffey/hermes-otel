@@ -66,9 +66,9 @@ The bundled collector config at `docker-compose/lgtm/otelcol-config.yaml` enable
 
 Dimensions are picked from attributes the plugin actually emits:
 
-- `llm.provider` — split RED by model provider
-- `llm.model_name` — split by specific model
-- `openinference.span.kind` — split by LLM / TOOL / AGENT
+- `gen_ai.provider.name` — split RED by model provider
+- `gen_ai.request.model` — split by specific model
+- `gen_ai.operation.name` — split by chat / invoke_agent / execute_tool
 - `hermes.session.kind` — split by session vs cron
 - `hermes.tool.outcome` — error-rate panels
 
@@ -77,10 +77,10 @@ Add more in the YAML under `connectors.spanmetrics.dimensions` if you want to sl
 ## What you'll see in Grafana
 
 **Traces (Tempo):**
-Explore → Tempo. Search by `service.name=hermes-agent` or span name (`agent`, `tool.*`, `api.*`). Every span carries the OpenInference + GenAI attribute set and the plugin's `hermes.*` extensions.
+Explore → Tempo. Search by `service.name=hermes-agent` or span name (`agent`, `tool.*`, `api.*`). Every span carries the OTel GenAI attribute set and the plugin's `hermes.*` extensions.
 
 **Metrics (Prometheus):**
-Explore → Prometheus. Query any `hermes_*` metric (`hermes_session_count_total`, `hermes_token_usage_total`, `hermes_tool_duration_bucket`, ...) or any `traces_spanmetrics_*` derived metric.
+Explore → Prometheus. Query emitted metric series such as `hermes_session_count_total`, `gen_ai_client_token_usage_total`, and `gen_ai_execute_tool_duration_bucket`, or any `traces_spanmetrics_*` derived metric.
 
 **Logs (Loki):**
 Explore → Loki. Query `{service_name="hermes-agent"}`. Every `logger.info(...)` call from hermes or the plugin lands here with the active span's `trace_id` / `span_id` automatically attached — clicking a `trace_id` in a log line jumps straight into the Tempo trace. See [OTel logs](/configuration/logs) for the full story.

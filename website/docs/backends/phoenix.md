@@ -52,14 +52,12 @@ Phoenix is built around LLM-specific spans, so the UI understands the plugin's s
 
 - **`session.*` / `cron`** spans appear as top-level traces with the turn summary on them (tool count, skills, final status).
 - **`llm.*`** spans show the user message in the Input panel and the assistant response in the Output panel (pretty-printed JSON when [conversation capture](/configuration/conversation-capture) is on).
-- **`api.*`** spans carry the token counts (`llm.token_count.prompt`, `llm.token_count.completion`, `llm.token_count.total`), the `finish_reason`, and the HTTP duration.
+- **`api.*`** spans carry token counts (`gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`), finish reasons, and related duration metrics. Total tokens are derived downstream from input + output tokens.
 - **`tool.*`** spans show the arguments (Input) and the result (Output). Errors map to `StatusCode.ERROR` so the Phoenix error filter works.
 
 ## Attribute convention
 
-Phoenix uses [OpenInference](https://arize.com/docs/phoenix/reference/openinference). hermes-otel emits that convention on every span (`llm.token_count.*`, `input.value`, `output.value`) alongside the `gen_ai.*` convention for other backends.
-
-See [Attribute conventions](/architecture/attributes) for the full dual-convention table.
+hermes-otel emits OpenTelemetry GenAI model/provider/token attributes and preview-safe `input.value` / `output.value` fields for generic span rendering. See [Attribute conventions](/architecture/attributes) for the full table.
 
 ## Metrics
 
@@ -79,4 +77,4 @@ Phoenix accepts OTLP metrics in addition to traces. The plugin's token/tool/cost
 
 **"Tokens show as zero"**
 
-- Phoenix keys off `llm.token_count.*` — the plugin emits these on `api.*` spans (not `llm.*`). Check the child `api.*` span, not the parent.
+- Token attributes are emitted on `api.*` spans (not `llm.*`) as `gen_ai.usage.*`. Check the child `api.*` span, not the parent.

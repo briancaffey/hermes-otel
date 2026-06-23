@@ -59,16 +59,17 @@ SigNoz treats the plugin's spans as standard OTel traces. The service-map view l
 
 Metrics flow to the SigNoz metrics UI automatically:
 
-- `hermes.tokens.prompt` / `hermes.tokens.completion` (counters)
-- `hermes.tool.calls` (counter)
-- `hermes.tool.duration` (histogram)
-- `hermes.api.duration` (histogram)
+- `gen_ai.client.token.usage` (histogram, tokens)
+- `gen_ai.client.operation.duration` (histogram, seconds)
+- `gen_ai.invoke_agent.duration` (histogram, seconds)
+- `gen_ai.execute_tool.duration` (histogram, seconds)
+- `hermes.session.count`, `hermes.message.count`, and `hermes.model.usage` (Hermes-specific counters)
 
 See [Span attributes reference](/reference/span-attributes) for the full list.
 
 ## Attribute convention
 
-SigNoz reads `gen_ai.*` attributes for LLM-specific views, which the plugin emits alongside the OpenInference `llm.*` convention. Both sets land on the same spans — SigNoz uses whichever it recognises.
+SigNoz reads `gen_ai.*` attributes for LLM-specific views. The plugin emits canonical GenAI model/provider/token fields and keeps `hermes.*` only for Hermes-specific extensions.
 
 ## Troubleshooting
 
