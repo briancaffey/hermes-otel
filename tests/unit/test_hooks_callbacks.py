@@ -81,6 +81,11 @@ class TestOnSessionStart:
         assert attrs["correlation.id"] == "s1"
         assert attrs["llm.model_name"] == "gpt-4o"
         assert attrs["llm.provider"] == "telegram"
+        assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["gen_ai.operation.name"] == "invoke_agent"
+        assert attrs["gen_ai.request.model"] == "gpt-4o"
+        assert attrs["gen_ai.provider.name"] == "telegram"
+        assert attrs["gen_ai.system"] == "telegram"
 
     def test_incoming_correlation_id_wins(self, mock_tracer):
         on_session_start(
@@ -191,7 +196,24 @@ class TestOnPreToolCall:
         on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id="t1")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["tool.name"] == "bash"
+        assert attrs["gen_ai.tool.name"] == "bash"
         assert '"cmd"' in attrs["input.value"]
+
+    def test_full_mcp_args_follow_preview_privacy_gate(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(
+            capture_previews=False,
+            capture_full_prompts=True,
+        )
+        on_pre_tool_call(
+            tool_name="mcp_honeycomb_run_query",
+            args={"secret": "token"},
+            task_id="t1",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert "input.value" not in attrs
+        assert "gen_ai.tool.call.arguments" not in attrs
 
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
@@ -215,6 +237,24 @@ class TestOnPostToolCall:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == "file.txt"
 
+    def test_full_mcp_result_follows_preview_privacy_gate(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(
+            capture_previews=False,
+            capture_full_responses=True,
+        )
+        mock_tracer.sessions.record_tool_start("mcp_honeycomb_run_query:t1", 1000.0)
+        on_post_tool_call(
+            tool_name="mcp_honeycomb_run_query",
+            args={},
+            result='{"secret": "token"}',
+            task_id="t1",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert "output.value" not in attrs
+        assert "gen_ai.tool.call.result" not in attrs
+
     def test_status_ok_on_success(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
@@ -232,9 +272,10 @@ class TestOnPostToolCall:
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         mock_tracer.record_metric.assert_called_once()
-        name, value, attrs = mock_tracer.record_metric.call_args[0]
+        name, _value, attrs = mock_tracer.record_metric.call_args[0]
         assert name == "tool_duration"
         assert attrs["tool_name"] == "bash"
+        assert attrs["gen_ai.tool.name"] == "bash"
 
     def test_cleans_up_start_time(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
@@ -623,6 +664,38 @@ class TestOnPreApiRequest:
         assert attrs["llm.provider"] == "openai"
         assert attrs["llm.request.message_count"] == 10
         assert attrs["llm.request.max_tokens"] == 2048
+        assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["gen_ai.operation.name"] == "chat"
+        assert attrs["gen_ai.request.model"] == "gpt-4"
+        assert attrs["gen_ai.provider.name"] == "openai"
+        assert attrs["gen_ai.system"] == "openai"
+
+    def test_includes_standard_request_params(self, mock_tracer):
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
+            temperature=0.2,
+            top_p=0.9,
+            stream=True,
+            reasoning_effort="high",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.request.max_tokens"] == 2048
+        assert attrs["gen_ai.request.temperature"] == 0.2
+        assert attrs["gen_ai.request.top_p"] == 0.9
+        assert attrs["gen_ai.request.stream"] is True
+        assert attrs["gen_ai.request.reasoning.level"] == "high"
 
     def test_includes_session_user_id_when_available(self, mock_tracer):
         ps = mock_tracer.sessions.get_or_create("s1")
@@ -710,6 +783,11 @@ class TestOnPostApiRequest:
         assert attrs["gen_ai.usage.input_tokens"] == 100
         assert attrs["gen_ai.usage.output_tokens"] == 50
         assert attrs["gen_ai.usage.total_tokens"] == 150
+        assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["gen_ai.operation.name"] == "chat"
+        assert attrs["gen_ai.response.model"] == "gpt-4"
+        assert attrs["gen_ai.provider.name"] == "openai"
+        assert attrs["gen_ai.system"] == "openai"
 
     def test_cache_token_attributes(self, mock_tracer):
         usage = {
@@ -722,8 +800,10 @@ class TestOnPostApiRequest:
         self._call_post_api(mock_tracer, usage=usage)
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["llm.token_count.prompt_details.cache_read"] == 30
+        assert attrs["gen_ai.usage.cache_read.input_tokens"] == 30
         assert attrs["gen_ai.usage.cache_read_input_tokens"] == 30
         assert attrs["llm.token_count.prompt_details.cache_write"] == 15
+        assert attrs["gen_ai.usage.cache_creation.input_tokens"] == 15
         assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 15
 
     def test_session_usage_rollup(self, mock_tracer):
@@ -842,12 +922,14 @@ class TestFullCaptureFlags:
         on_pre_api_request(**self._pre_kwargs(messages=messages, system_prompt="the-system-prompt"))
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["llm.system_prompt"] == "the-system-prompt"
+        assert attrs["gen_ai.system_instructions"] == "the-system-prompt"
         assert attrs["input.mime_type"] == "application/json"
         # Full, untruncated payload round-trips
         import json as _json
 
         parsed = _json.loads(attrs["llm.input_messages"])
         assert parsed == messages
+        assert _json.loads(attrs["gen_ai.input.messages"]) == messages
         assert len(attrs["input.value"]) > 5000
 
     def test_pre_handles_empty_messages(self, mock_tracer):
@@ -880,6 +962,7 @@ class TestFullCaptureFlags:
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["llm.output.content"] == big_response
+        assert "gen_ai.output.messages" in attrs
         assert attrs["output.value"] == big_response
         assert attrs["output.mime_type"] == "text/plain"
 

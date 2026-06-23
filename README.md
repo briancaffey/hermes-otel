@@ -460,15 +460,17 @@ Turn 1:
 
 The plugin emits **dual-convention** attributes so both backends work:
 
-| Metric | Langfuse (gen_ai) | Phoenix (OpenInference) |
-|--------|-------------------|------------------------|
+| Metric | OpenTelemetry GenAI | Phoenix (OpenInference) |
+|--------|---------------------|------------------------|
 | Prompt tokens | `gen_ai.usage.input_tokens` | `llm.token_count.prompt` |
 | Completion tokens | `gen_ai.usage.output_tokens` | `llm.token_count.completion` |
-| Total tokens | — | `llm.token_count.total` |
-| Cache read | `gen_ai.usage.cache_read_input_tokens` | `llm.token_count.cache_read` |
-| Cache write | `gen_ai.usage.cache_creation_input_tokens` | `llm.token_count.cache_write` |
+| Total tokens | `gen_ai.usage.total_tokens` | `llm.token_count.total` |
+| Cache read | `gen_ai.usage.cache_read.input_tokens` (`gen_ai.usage.cache_read_input_tokens` also kept) | `llm.token_count.prompt_details.cache_read` |
+| Cache write | `gen_ai.usage.cache_creation.input_tokens` (`gen_ai.usage.cache_creation_input_tokens` also kept) | `llm.token_count.prompt_details.cache_write` |
 
-Langfuse uses `gen_ai.content.prompt` and `gen_ai.content.completion` for text. Phoenix uses `input.value` and `output.value`. Both are set on LLM spans.
+LLM and API spans also expose standard GenAI request/response metadata where Hermes provides it, including `gen_ai.provider.name`, `gen_ai.request.model`, request parameters such as `gen_ai.request.temperature`, and response fields such as `gen_ai.response.model` and `gen_ai.response.finish_reasons`.
+
+Phoenix uses `input.value` and `output.value` for previews. When full prompt/response capture is explicitly enabled, the plugin also writes the corresponding GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`).
 
 ## File structure
 
