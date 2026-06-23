@@ -56,6 +56,13 @@ class HookContext(TypedDict, total=False):
     trigger: str
     job_id: str
     cron_job_id: str
+    kanban_task_id: str
+    kanban_run_id: str
+    kanban_board: str
+    kanban_tenant: str
+    kanban_assignee: str
+    kanban_flow_kind: str
+    kanban_source_kind: str
 
 
 _MAX_SUMMARY_CHARS = 500
@@ -241,6 +248,125 @@ def _detect_session_kind(platform: str, kwargs: dict) -> str:
         return "cron"
 
     return "session"
+
+
+def _first_text(*values: Any, limit: int = 200) -> str:
+    """Return the first non-empty scalar value, safely stringified and clipped."""
+    for raw in values:
+        if isinstance(raw, bool) or raw is None:
+            continue
+        value = str(raw).strip()
+        if value:
+            return truncate_string(value, limit)
+    return ""
+
+
+def _kwargs_value(kwargs: dict, *keys: str, limit: int = 200) -> str:
+    return _first_text(*(kwargs.get(key) for key in keys), limit=limit)
+
+
+def _env_value(*keys: str, limit: int = 200) -> str:
+    return _first_text(*(os.getenv(key) for key in keys), limit=limit)
+
+
+def _has_explicit_kanban_kwargs(extra_kwargs: Optional[dict]) -> bool:
+    kwargs = extra_kwargs or {}
+    return any(key.startswith("hermes.kanban.") or key.startswith("kanban_") for key in kwargs)
+
+
+def _kanban_context_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> Dict[str, Any]:
+    """Resolve safe Hermes Kanban context from hook kwargs first, then env.
+
+    The resolver intentionally emits one canonical dotted ``hermes.kanban.*``
+    field per concept and only returns attributes when a real Kanban marker is
+    present. ``HERMES_PROFILE`` alone is not enough to imply Kanban context.
+    """
+    kwargs = extra_kwargs or {}
+    task_id = _kwargs_value(
+        kwargs,
+        "hermes.kanban.task.id",
+        "kanban_task_id",
+        "kanban_task",
+    ) or _env_value("HERMES_KANBAN_TASK")
+    run_id = _kwargs_value(
+        kwargs,
+        "hermes.kanban.run.id",
+        "kanban_run_id",
+    ) or _env_value("HERMES_KANBAN_RUN_ID")
+    board = _kwargs_value(
+        kwargs,
+        "hermes.kanban.board",
+        "kanban_board",
+    ) or _env_value("HERMES_KANBAN_BOARD")
+    tenant = _kwargs_value(
+        kwargs,
+        "hermes.kanban.tenant",
+        "kanban_tenant",
+    ) or _env_value("HERMES_TENANT")
+
+    # HERMES_TENANT can be useful in Kanban workers, but tenant alone is not
+    # a reliable Kanban marker. Require an explicit task/run/board marker so
+    # non-Kanban tenant-scoped processes do not get misclassified.
+    if not any((task_id, run_id, board)):
+        return {}
+
+    attrs: Dict[str, Any] = {"hermes.kanban.flow.kind": "worker"}
+    flow_kind = _kwargs_value(
+        kwargs,
+        "hermes.kanban.flow.kind",
+        "kanban_flow_kind",
+        "flow_kind",
+    )
+    if flow_kind:
+        attrs["hermes.kanban.flow.kind"] = flow_kind
+    if task_id:
+        attrs["hermes.kanban.task.id"] = task_id
+    if run_id:
+        attrs["hermes.kanban.run.id"] = run_id
+    if board:
+        attrs["hermes.kanban.board"] = board
+    if tenant:
+        attrs["hermes.kanban.tenant"] = tenant
+
+    assignee = _kwargs_value(
+        kwargs,
+        "hermes.kanban.assignee",
+        "kanban_assignee",
+        "assignee",
+        "profile",
+        "hermes_profile",
+    ) or _env_value("HERMES_PROFILE", limit=120)
+    if assignee:
+        attrs["hermes.kanban.assignee"] = assignee
+
+    source_kind = _kwargs_value(
+        kwargs,
+        "hermes.kanban.source.kind",
+        "kanban_source_kind",
+        "source_kind",
+        "source",
+        "origin",
+        limit=120,
+    ) or _env_value("HERMES_KANBAN_SOURCE_KIND", limit=120)
+    if source_kind:
+        attrs["hermes.kanban.source.kind"] = source_kind
+
+    return attrs
+
+
+def _kanban_attributes(tracer, session_id: Optional[str], extra_kwargs: Optional[dict]) -> Dict[str, Any]:
+    """Return Kanban attrs, reusing per-session context when hooks omit kwargs."""
+    has_explicit_kwargs = _has_explicit_kanban_kwargs(extra_kwargs)
+    incoming = _kanban_context_from_kwargs_env(extra_kwargs)
+    if session_id:
+        ps = tracer.sessions.get_or_create(session_id)
+        if ps.kanban_attrs and not has_explicit_kwargs:
+            return dict(ps.kanban_attrs)
+        if incoming:
+            ps.kanban_attrs = dict(incoming)
+        elif ps.kanban_attrs:
+            return dict(ps.kanban_attrs)
+    return incoming
 
 
 def _preview(value: Any, max_chars: int) -> Optional[str]:
@@ -646,6 +772,7 @@ def _start_session_span(
     attributes.update(_provider_attributes(extra_kwargs.get("provider") or platform))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent", extra_kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
@@ -713,6 +840,7 @@ def on_session_end(
     attributes.update(_provider_attributes(kwargs.get("provider") or platform))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     # Drain the aggregators in one shot. Everything this session buffered
     # — I/O, usage totals, turn summary — comes back in a single PerSession.
@@ -841,6 +969,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_target(target)
         summary.add_command(command)
         summary.add_skill(skill)
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     tracer.start_span(
         name=f"tool.{tool_name}",
@@ -930,6 +1059,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.
@@ -994,6 +1124,7 @@ def on_pre_llm_call(
     attributes.update(_provider_attributes(platform))
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     if tracer.config.capture_sender_id:
         sender_id = truncate_string(kwargs.get("sender_id"), 200)
@@ -1093,6 +1224,7 @@ def on_post_llm_call(
     attributes.update(_provider_attributes(platform))
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
     preview = _preview(
         assistant_response,
         tracer.config.llm_output_preview_max_chars or tracer.config.preview_max_chars,
@@ -1151,6 +1283,7 @@ def on_pre_api_request(
     attributes.update(_gen_ai_request_param_attributes(kwargs))
     attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
     if max_tokens:
         attributes["gen_ai.request.max_tokens"] = max_tokens
 
@@ -1211,6 +1344,7 @@ def on_api_request_error(
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status="error", error_message=error_message)
@@ -1257,6 +1391,7 @@ def on_post_api_request(
     if response_id:
         attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     # Token usage — canonical GenAI attributes only (no compatibility aliases).
     if usage:
@@ -1328,3 +1463,56 @@ def on_post_api_request(
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
+
+
+def _on_kanban_lifecycle(event: str, **kwargs) -> None:
+    """Emit a short span for Hermes Kanban lifecycle hook notifications."""
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    session_id = kwargs.get("session_id")
+    attributes = _kanban_attributes(tracer, session_id, kwargs)
+    if not attributes:
+        attributes = _kanban_context_from_kwargs_env(kwargs)
+    attributes["hermes.kanban.lifecycle.event"] = event
+
+    task_id = attributes.get("hermes.kanban.task.id") or kwargs.get("task_id") or "unknown"
+    run_id = attributes.get("hermes.kanban.run.id") or kwargs.get("run_id") or ""
+    key = f"kanban.lifecycle:{event}:{task_id}:{run_id}:{time.perf_counter_ns()}"
+    tracer.start_span(
+        name=f"kanban.task.{event}",
+        key=key,
+        kind="general",
+        attributes=attributes,
+        session_id=session_id,
+    )
+    tracer.end_span(key, attributes=attributes, status="ok")
+
+
+def _kanban_kwargs_from_args(args: tuple, kwargs: dict) -> dict:
+    merged = dict(kwargs)
+    if args:
+        merged.setdefault("kanban_task_id", args[0])
+    if len(args) > 1:
+        merged.setdefault("kanban_run_id", args[1])
+    if "task_id" in merged:
+        merged.setdefault("kanban_task_id", merged["task_id"])
+    if "run_id" in merged:
+        merged.setdefault("kanban_run_id", merged["run_id"])
+    return merged
+
+
+def on_kanban_task_claimed(*args, **kwargs):
+    kwargs = _kanban_kwargs_from_args(args, kwargs)
+    _on_kanban_lifecycle("claimed", **kwargs)
+
+
+def on_kanban_task_completed(*args, **kwargs):
+    kwargs = _kanban_kwargs_from_args(args, kwargs)
+    _on_kanban_lifecycle("completed", **kwargs)
+
+
+def on_kanban_task_blocked(*args, **kwargs):
+    kwargs = _kanban_kwargs_from_args(args, kwargs)
+    _on_kanban_lifecycle("blocked", **kwargs)

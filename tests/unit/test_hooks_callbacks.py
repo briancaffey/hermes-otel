@@ -4,7 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from hermes_otel.hooks import (
+    _kanban_context_from_kwargs_env,
     on_api_request_error,
+    on_kanban_task_blocked,
+    on_kanban_task_claimed,
+    on_kanban_task_completed,
     on_post_api_request,
     on_post_llm_call,
     on_post_tool_call,
@@ -14,6 +18,21 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
+
+KANBAN_ENV_KEYS = (
+    "HERMES_KANBAN_TASK",
+    "HERMES_KANBAN_RUN_ID",
+    "HERMES_KANBAN_BOARD",
+    "HERMES_TENANT",
+    "HERMES_PROFILE",
+    "HERMES_KANBAN_SOURCE_KIND",
+)
+
+
+@pytest.fixture()
+def clean_kanban_env(monkeypatch):
+    for key in KANBAN_ENV_KEYS:
+        monkeypatch.delenv(key, raising=False)
 
 
 @pytest.fixture()
@@ -128,6 +147,97 @@ class TestOnSessionStart:
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         disabled_tracer.start_span.assert_not_called()
+
+
+class TestKanbanContextResolver:
+    def test_env_only_context(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_123")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "42")
+        monkeypatch.setenv("HERMES_KANBAN_BOARD", "default")
+        monkeypatch.setenv("HERMES_TENANT", "hermes-otel")
+        monkeypatch.setenv("HERMES_PROFILE", "engineer")
+
+        attrs = _kanban_context_from_kwargs_env({})
+
+        assert attrs == {
+            "hermes.kanban.flow.kind": "worker",
+            "hermes.kanban.task.id": "t_123",
+            "hermes.kanban.run.id": "42",
+            "hermes.kanban.board": "default",
+            "hermes.kanban.tenant": "hermes-otel",
+            "hermes.kanban.assignee": "engineer",
+        }
+
+    def test_kwargs_win_over_env(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "env-task")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "env-run")
+        monkeypatch.setenv("HERMES_PROFILE", "env-profile")
+
+        attrs = _kanban_context_from_kwargs_env(
+            {
+                "kanban_task_id": "kw-task",
+                "kanban_run_id": "kw-run",
+                "kanban_board": "board-a",
+                "kanban_assignee": "researcher",
+                "kanban_flow_kind": "recovery",
+                "kanban_source_kind": "telegram",
+            }
+        )
+
+        assert attrs["hermes.kanban.task.id"] == "kw-task"
+        assert attrs["hermes.kanban.run.id"] == "kw-run"
+        assert attrs["hermes.kanban.board"] == "board-a"
+        assert attrs["hermes.kanban.assignee"] == "researcher"
+        assert attrs["hermes.kanban.flow.kind"] == "recovery"
+        assert attrs["hermes.kanban.source.kind"] == "telegram"
+
+    def test_generic_hook_kwargs_do_not_imply_kanban_context(self, clean_kanban_env):
+        attrs = _kanban_context_from_kwargs_env(
+            {"task_id": "api-call-1", "run_id": "generic-run", "tenant": "project"}
+        )
+        assert attrs == {}
+
+    def test_non_kanban_session_omits_context(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_PROFILE", "engineer")
+        assert _kanban_context_from_kwargs_env({}) == {}
+
+    def test_tenant_alone_does_not_imply_kanban_context(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_TENANT", "hermes-otel")
+        monkeypatch.setenv("HERMES_PROFILE", "engineer")
+        assert _kanban_context_from_kwargs_env({}) == {}
+
+    def test_malformed_values_are_omitted(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "   ")
+        assert _kanban_context_from_kwargs_env({"kanban_task_id": None}) == {}
+
+    def test_long_whitespace_values_are_omitted(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", " " * 500)
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "\t" * 500)
+        monkeypatch.setenv("HERMES_KANBAN_BOARD", "\n" * 500)
+        assert _kanban_context_from_kwargs_env({}) == {}
+
+    def test_uses_only_canonical_dotted_keys(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_123")
+        attrs = _kanban_context_from_kwargs_env({})
+        assert all(key.startswith("hermes.kanban.") for key in attrs)
+        assert "kanban_task_id" not in attrs
+        assert "hermes_kanban_task_id" not in attrs
+
+    def test_canonical_concepts_are_not_dual_emitted(self, clean_kanban_env, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_123")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "43")
+        monkeypatch.setenv("HERMES_KANBAN_BOARD", "default")
+        attrs = _kanban_context_from_kwargs_env({})
+        forbidden_aliases = {
+            "kanban_task_id",
+            "hermes_kanban_task_id",
+            "kanban_run_id",
+            "hermes_kanban_run_id",
+            "kanban_board",
+            "hermes_kanban_board",
+        }
+        assert forbidden_aliases.isdisjoint(attrs)
 
 
 class TestOnSessionEnd:
@@ -1167,3 +1277,191 @@ class TestFullCaptureFlags:
         on_post_api_request(**self._post_kwargs(response_content="hi", response_tool_calls=[]))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.output.messages" not in attrs
+
+
+class TestKanbanSpanAttributes:
+    def _set_env(self, monkeypatch):
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_123")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "43")
+        monkeypatch.setenv("HERMES_KANBAN_BOARD", "default")
+        monkeypatch.setenv("HERMES_TENANT", "hermes-otel")
+        monkeypatch.setenv("HERMES_PROFILE", "engineer")
+
+    def _assert_kanban_attrs(self, attrs):
+        assert attrs["hermes.kanban.flow.kind"] == "worker"
+        assert attrs["hermes.kanban.task.id"] == "t_123"
+        assert attrs["hermes.kanban.run.id"] == "43"
+        assert attrs["hermes.kanban.board"] == "default"
+        assert attrs["hermes.kanban.tenant"] == "hermes-otel"
+        assert attrs["hermes.kanban.assignee"] == "engineer"
+
+    def test_session_llm_api_tool_and_error_spans_include_kanban_context(
+        self, mock_tracer, clean_kanban_env, monkeypatch
+    ):
+        self._set_env(monkeypatch)
+
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._assert_kanban_attrs(mock_tracer.start_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+        self._assert_kanban_attrs(mock_tracer.start_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
+        self._assert_kanban_attrs(mock_tracer.end_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_pre_api_request(
+            task_id="api1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=1,
+            request_char_count=5,
+            max_tokens=0,
+        )
+        self._assert_kanban_attrs(mock_tracer.start_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_api_request_error(
+            task_id="api1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            error=RuntimeError("boom"),
+        )
+        self._assert_kanban_attrs(mock_tracer.end_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_post_api_request(
+            task_id="api2",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.1,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
+            usage={},
+            assistant_content_chars=0,
+            assistant_tool_call_count=0,
+        )
+        self._assert_kanban_attrs(mock_tracer.end_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_pre_tool_call(tool_name="bash", args={}, task_id="tool1", session_id="s1")
+        self._assert_kanban_attrs(mock_tracer.start_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_post_tool_call(
+            tool_name="bash",
+            args={},
+            result="ok",
+            task_id="tool1",
+            session_id="s1",
+        )
+        self._assert_kanban_attrs(mock_tracer.end_span.call_args[1]["attributes"])
+        mock_tracer.reset_mock()
+
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+        self._assert_kanban_attrs(mock_tracer.end_span.call_args[1]["attributes"])
+
+    def test_session_reuses_saved_kanban_context_when_env_changes(
+        self, mock_tracer, clean_kanban_env, monkeypatch
+    ):
+        self._set_env(monkeypatch)
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_999")
+        monkeypatch.setenv("HERMES_KANBAN_RUN_ID", "99")
+        mock_tracer.reset_mock()
+
+        on_pre_tool_call(tool_name="bash", args={}, task_id="tool1", session_id="s1")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["hermes.kanban.task.id"] == "t_123"
+        assert attrs["hermes.kanban.run.id"] == "43"
+
+    def test_non_kanban_spans_omit_kanban_context(self, mock_tracer, clean_kanban_env):
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert not any(key.startswith("hermes.kanban.") for key in attrs)
+
+    def test_non_kanban_tool_and_api_spans_omit_kanban_context(
+        self, mock_tracer, clean_kanban_env
+    ):
+        on_pre_tool_call(tool_name="bash", args={}, task_id="tool1", session_id="s1")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert not any(key.startswith("hermes.kanban.") for key in attrs)
+        mock_tracer.reset_mock()
+
+        on_pre_api_request(
+            task_id="api1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=1,
+            request_char_count=5,
+            max_tokens=0,
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert not any(key.startswith("hermes.kanban.") for key in attrs)
+
+    @pytest.mark.parametrize(
+        ("callback", "event"),
+        [
+            (on_kanban_task_claimed, "claimed"),
+            (on_kanban_task_completed, "completed"),
+            (on_kanban_task_blocked, "blocked"),
+        ],
+    )
+    def test_lifecycle_hooks_emit_short_spans(self, mock_tracer, clean_kanban_env, callback, event):
+        callback(
+            kanban_task_id="t_123",
+            kanban_run_id="43",
+            kanban_board="default",
+            kanban_tenant="hermes-otel",
+            kanban_assignee="engineer",
+        )
+        start_kwargs = mock_tracer.start_span.call_args[1]
+        end_kwargs = mock_tracer.end_span.call_args[1]
+        assert start_kwargs["name"] == f"kanban.task.{event}"
+        assert start_kwargs["kind"] == "general"
+        assert start_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
+        assert end_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
+        assert end_kwargs["status"] == "ok"

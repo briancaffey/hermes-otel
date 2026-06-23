@@ -53,4 +53,16 @@ def register(ctx):
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    logger.info(f"[hermes-otel] Registered {6 + extra_hooks + session_hooks} hooks")
+    kanban_hooks = 0
+    for hook_name, callback in [
+        ("kanban_task_claimed", hooks.on_kanban_task_claimed),
+        ("kanban_task_completed", hooks.on_kanban_task_completed),
+        ("kanban_task_blocked", hooks.on_kanban_task_blocked),
+    ]:
+        try:
+            ctx.register_hook(hook_name, callback)
+            kanban_hooks += 1
+        except Exception:
+            debug_log(f"{hook_name} hook unavailable")
+
+    logger.info(f"[hermes-otel] Registered {6 + extra_hooks + session_hooks + kanban_hooks} hooks")

@@ -93,6 +93,7 @@ class PerSession:
     sender_id: str = ""
     user_id: str = ""
     correlation_id: str = ""
+    kanban_attrs: Dict[str, object] = field(default_factory=dict)
     io: Dict[str, str] = field(default_factory=lambda: {"input": "", "output": ""})
     io_captured: bool = False
     turn_summary: TurnSummary = field(default_factory=TurnSummary)

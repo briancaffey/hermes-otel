@@ -19,3 +19,7 @@ provides_hooks:
   - post_llm_call
   - pre_api_request
   - post_api_request
+  - api_request_error
+  - kanban_task_claimed
+  - kanban_task_completed
+  - kanban_task_blocked
