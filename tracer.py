@@ -498,6 +498,7 @@ class HermesOTelPlugin:
         kind: str = "general",
         attributes: dict = None,
         session_id: Optional[str] = None,
+        parent_context: Any = None,
     ):
         """Create and track a new span.
 
@@ -542,7 +543,7 @@ class HermesOTelPlugin:
             # Check for active parent — prefers the session-keyed stack so
             # nesting survives hermes' cross-thread hook dispatch.
             parent = self.spans.get_current_parent(session_id)
-            span_ctx = None
+            span_ctx = parent_context
             if parent is not None and hasattr(parent, "get_span_context"):
                 span_ctx = set_span_in_context(parent)
 

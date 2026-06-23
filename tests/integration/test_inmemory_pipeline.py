@@ -157,3 +157,26 @@ class TestSessionSpanExport:
         attrs = dict(span.attributes)
         assert attrs["openinference.span.kind"] == "AGENT"
         assert attrs["hermes.session.completed"] is True
+
+    def test_kanban_session_continues_propagated_trace(self, inmemory_otel_setup, monkeypatch):
+        exporter, plugin = inmemory_otel_setup
+        trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+        parent_span_id = "00f067aa0ba902b7"
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_child")
+        monkeypatch.setenv(
+            "HERMES_KANBAN_TRACEPARENT",
+            f"00-{trace_id}-{parent_span_id}-01",
+        )
+
+        on_session_start(session_id="s1", model="gpt-4", platform="api_server")
+        on_session_end(
+            session_id="s1",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="api_server",
+        )
+
+        span = exporter.get_finished_spans()[0]
+        assert f"{span.context.trace_id:032x}" == trace_id
+        assert f"{span.parent.span_id:016x}" == parent_span_id

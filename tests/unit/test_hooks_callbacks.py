@@ -115,6 +115,29 @@ class TestOnSessionStart:
         assert attrs["gen_ai.request.model"] == "gpt-4o"
         assert attrs["gen_ai.provider.name"] == "telegram"
 
+    def test_uses_propagated_kanban_parent_context(self, mock_tracer, monkeypatch):
+        traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_child")
+        monkeypatch.setenv("HERMES_KANBAN_TRACEPARENT", traceparent)
+        monkeypatch.setenv("OPENAI_API_KEY", "sk-sho...leak")
+
+        on_session_start(session_id="s1", model="gpt-4o", platform="cli")
+
+        call_kwargs = mock_tracer.start_span.call_args[1]
+        assert call_kwargs["parent_context"] is not None
+        attrs = call_kwargs["attributes"]
+        assert attrs["hermes.kanban.traceparent"] == traceparent
+        assert "OPENAI_API_KEY" not in attrs
+
+    def test_falls_back_without_propagated_kanban_context(self, mock_tracer, monkeypatch):
+        monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+        monkeypatch.delenv("HERMES_KANBAN_TRACEPARENT", raising=False)
+
+        on_session_start(session_id="s1", model="gpt-4o", platform="cli")
+
+        call_kwargs = mock_tracer.start_span.call_args[1]
+        assert call_kwargs["parent_context"] is None
+
     def test_incoming_correlation_id_wins(self, mock_tracer):
         on_session_start(
             session_id="s1",
@@ -1451,17 +1474,21 @@ class TestKanbanSpanAttributes:
         ],
     )
     def test_lifecycle_hooks_emit_short_spans(self, mock_tracer, clean_kanban_env, callback, event):
+        traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
         callback(
             kanban_task_id="t_123",
             kanban_run_id="43",
             kanban_board="default",
             kanban_tenant="hermes-otel",
             kanban_assignee="engineer",
+            traceparent=traceparent,
         )
         start_kwargs = mock_tracer.start_span.call_args[1]
         end_kwargs = mock_tracer.end_span.call_args[1]
         assert start_kwargs["name"] == f"kanban.task.{event}"
         assert start_kwargs["kind"] == "general"
+        assert start_kwargs["parent_context"] is not None
+        assert start_kwargs["attributes"]["hermes.kanban.traceparent"] == traceparent
         assert start_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
         assert end_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
         assert end_kwargs["status"] == "ok"

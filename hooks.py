@@ -29,6 +29,11 @@ from .helpers import (
 from .session_state import TurnSummary
 from .tracer import get_tracer
 
+try:
+    from opentelemetry import propagate
+except Exception:  # pragma: no cover - optional dependency guard
+    propagate = None  # type: ignore[assignment]
+
 
 class HookContext(TypedDict, total=False):
     """Optional extras Hermes may pass through a hook's ``**kwargs``.
@@ -63,6 +68,8 @@ class HookContext(TypedDict, total=False):
     kanban_assignee: str
     kanban_flow_kind: str
     kanban_source_kind: str
+    traceparent: str
+    tracestate: str
 
 
 _MAX_SUMMARY_CHARS = 500
@@ -269,9 +276,50 @@ def _env_value(*keys: str, limit: int = 200) -> str:
     return _first_text(*(os.getenv(key) for key in keys), limit=limit)
 
 
+def _kanban_trace_carrier(extra_kwargs: Optional[dict] = None) -> Dict[str, str]:
+    kwargs = extra_kwargs or {}
+    traceparent = _kwargs_value(
+        kwargs,
+        "traceparent",
+        "hermes.kanban.traceparent",
+        "kanban_traceparent",
+        limit=128,
+    ) or _env_value("HERMES_KANBAN_TRACEPARENT", limit=128)
+    if not traceparent:
+        return {}
+    carrier = {"traceparent": traceparent}
+    tracestate = _kwargs_value(
+        kwargs,
+        "tracestate",
+        "hermes.kanban.tracestate",
+        "kanban_tracestate",
+        limit=512,
+    ) or _env_value("HERMES_KANBAN_TRACESTATE", limit=512)
+    if tracestate:
+        carrier["tracestate"] = tracestate
+    return carrier
+
+
+def _kanban_parent_context(extra_kwargs: Optional[dict] = None):
+    if propagate is None:
+        return None
+    carrier = _kanban_trace_carrier(extra_kwargs)
+    if not carrier:
+        return None
+    try:
+        return propagate.extract(carrier)
+    except Exception:
+        return None
+
+
 def _has_explicit_kanban_kwargs(extra_kwargs: Optional[dict]) -> bool:
     kwargs = extra_kwargs or {}
-    return any(key.startswith("hermes.kanban.") or key.startswith("kanban_") for key in kwargs)
+    return any(
+        key.startswith("hermes.kanban.")
+        or key.startswith("kanban_")
+        or key in {"traceparent", "tracestate"}
+        for key in kwargs
+    )
 
 
 def _kanban_context_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> Dict[str, Any]:
@@ -338,6 +386,12 @@ def _kanban_context_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> Dict
     ) or _env_value("HERMES_PROFILE", limit=120)
     if assignee:
         attrs["hermes.kanban.assignee"] = assignee
+
+    trace_carrier = _kanban_trace_carrier(kwargs)
+    if trace_carrier.get("traceparent"):
+        attrs["hermes.kanban.traceparent"] = trace_carrier["traceparent"]
+    if trace_carrier.get("tracestate"):
+        attrs["hermes.kanban.tracestate"] = trace_carrier["tracestate"]
 
     source_kind = _kwargs_value(
         kwargs,
@@ -786,6 +840,7 @@ def _start_session_span(
         kind="agent",
         attributes=attributes,
         session_id=session_id,
+        parent_context=_kanban_parent_context(extra_kwargs),
     )
     tracer.spans.push_parent(span, session_id=session_id)
     tracer.register_turn(session_id)
@@ -1486,6 +1541,7 @@ def _on_kanban_lifecycle(event: str, **kwargs) -> None:
         kind="general",
         attributes=attributes,
         session_id=session_id,
+        parent_context=_kanban_parent_context(kwargs),
     )
     tracer.end_span(key, attributes=attributes, status="ok")
 
