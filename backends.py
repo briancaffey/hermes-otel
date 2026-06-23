@@ -378,12 +378,13 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     ``log_handler.py`` rewrite that suffix to ``/v1/metrics`` and ``/v1/logs``,
     which matches Honeycomb's per-signal path scheme exactly.
 
-    Dataset routing nuance: a single merged header set feeds the trace, metric,
-    and log exporters (see ``tracer.py``), so setting ``dataset`` tags **all**
-    signals into that dataset. For modern "Environments" keys, traces are
-    normally routed by ``service.name`` and need no dataset; metrics, however,
-    require one or they land in a dataset named ``unknown_metrics``. Pick the
-    dataset with that trade-off in mind (see ``HONEYCOMB.md``).
+    Dataset routing: ``x-honeycomb-dataset`` is honored only by Honeycomb
+    Classic keys (where it's required for every signal). Modern "Environments"
+    keys ignore it — traces route by ``service.name`` and metrics go to the
+    environment's default ``Metrics`` dataset (verified live; see
+    ``HONEYCOMB.md``). The plugin sends ``dataset`` on all three exporters via
+    one merged header set, which is correct for Classic and a harmless no-op for
+    modern keys; leave ``dataset`` unset on a modern key.
     """
     key = _resolve_secret(
         bc.api_key,

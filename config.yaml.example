@@ -251,11 +251,10 @@
 #   - type: honeycomb
 #     region: us                              # us (default) or eu
 #     api_key_env: HONEYCOMB_API_KEY          # or inline api_key: (discouraged)
-#     # Optional dataset (sent as x-honeycomb-dataset). Heads up: it routes
-#     # ALL signals into that dataset. Modern (Environments) keys route TRACES
-#     # by service.name and need no dataset — but METRICS require one, or they
-#     # land in a dataset named "unknown_metrics". Honeycomb Classic keys need
-#     # a dataset for every signal. See HONEYCOMB.md for the trade-off.
+#     # Optional dataset (sent as x-honeycomb-dataset). Modern (Environments)
+#     # keys IGNORE it — traces route by service.name, metrics to a default
+#     # "Metrics" dataset (verified live). Only Honeycomb Classic keys need it
+#     # (required for every signal). See HONEYCOMB.md.
 #     # dataset: hermes
 #     # endpoint:                             # optional; overrides the region default
 # capture_logs: true

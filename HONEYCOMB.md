@@ -4,13 +4,14 @@
 backend: **traces, metrics, and logs**. This page is the usage guide plus a note
 on what's intentionally deferred.
 
-> **Tested how:** the resolver is covered by unit tests
-> (`tests/unit/test_backends_honeycomb.py`, no network). Honeycomb is SaaS with
-> no free tier available to the maintainers, so live export has **not** been run
-> end-to-end against a real Honeycomb account by us — the trace path was
-> previously exercised via the generic `otlp` type during the GenAI-semconv work
-> (#17). If you have an account, confirmation in a real environment is very
-> welcome (see [#20](https://github.com/briancaffey/hermes-otel/issues/20)).
+> **Tested:** verified end-to-end against a real Honeycomb free-tier account
+> (US, a modern "Environments" key). A real `hermes` turn fanned spans out to
+> Honeycomb alongside Phoenix; traces, metrics, and logs all registered, the
+> OTLP export returned success, and Honeycomb auto-created the datasets. The
+> resolver is also covered by unit tests (`tests/unit/test_backends_honeycomb.py`,
+> no network). See [Verified behavior](#verified-behavior) for the routing
+> details, which differ from older docs. (See
+> [#20](https://github.com/briancaffey/hermes-otel/issues/20).)
 
 ---
 
@@ -67,25 +68,28 @@ per-signal path scheme.
 Honeycomb routes data into *datasets*, and the rules differ by signal and key
 type:
 
-- **Traces, modern "Environments" key** — dataset is derived server-side from
-  the `service.name` resource attribute. **No `dataset` needed.**
-- **Metrics** — a dataset is effectively **required**. Without one, metrics land
-  in a dataset literally named `unknown_metrics`.
-- **Logs** — routed by the dataset header too.
-- **Honeycomb Classic keys** (legacy 32-char) — `dataset` is **required for
-  every signal**, including traces.
+**Modern "Environments" keys (what most accounts use today):**
 
-**Important trade-off:** the plugin applies one merged header set to the trace,
-metric, and log exporters, so setting `dataset` tags **all three signals** into
-that dataset. For a modern key that means traces stop being split by
-`service.name` and get forced into `dataset` too. So:
+- **Traces** route by the `service.name` resource attribute → a dataset of that
+  name is auto-created. The `x-honeycomb-dataset` header is **ignored**.
+- **Metrics** route to the environment's default metrics dataset (named
+  `Metrics`). The header is **ignored** here too.
+- **Logs** are ingested as events.
+- ⇒ With a modern key, **`dataset` has no observable effect** — you can leave it
+  unset. Control your trace dataset name via `service.name` (the plugin sets it
+  from the OTel resource / project name). This was confirmed by live testing
+  (see [Verified behavior](#verified-behavior)).
 
-- Want traces split by service **and** metrics that don't go to
-  `unknown_metrics`? You currently can't have both on one Honeycomb entry —
-  either omit `dataset` (clean traces, `unknown_metrics` metrics) or set it
-  (everything in one dataset). A per-signal `metrics_dataset` is a possible
-  follow-up; see [#20](https://github.com/briancaffey/hermes-otel/issues/20).
-- On a **Classic** key, just set `dataset` — it's required anyway.
+**Honeycomb Classic keys (legacy 32-char):**
+
+- `x-honeycomb-dataset` is honored and **required for every signal**. Set
+  `dataset` so data isn't rejected / mis-routed.
+
+Because the plugin applies one merged header set to the trace, metric, and log
+exporters, a `dataset` you set is sent on all three. That's correct for Classic
+keys; for modern keys it's simply ignored. If a future use case needs distinct
+per-signal datasets on Classic keys, a `metrics_dataset` field could be added —
+see [#20](https://github.com/briancaffey/hermes-otel/issues/20).
 
 ---
 
@@ -108,6 +112,28 @@ backends:
 
 ---
 
+## Verified behavior
+
+Confirmed against a real Honeycomb free-tier account (US region, modern
+Environments key) by running a real `hermes` turn with Honeycomb configured
+alongside Phoenix:
+
+- **Startup:** `✓ Honeycomb at https://api.honeycomb.io/v1/traces`, logs and
+  metrics fan-out both reported Honeycomb as a target (Phoenix was traces-only).
+- **Export:** a span pushed through the plugin's resolved exporter returned
+  `SpanExportResult.SUCCESS`; the full `hermes` turn produced no export errors.
+- **Ingestion:** Honeycomb auto-created datasets — a **trace** dataset named
+  after `service.name` (`hermes-agent`, ~16 columns from the gen_ai/`llm.*`
+  attributes) and a default **`Metrics`** dataset. The `x-honeycomb-dataset`
+  header set in config did **not** override either, confirming it's ignored for
+  modern keys.
+- **Couldn't verify:** individual column names / span contents — the test key's
+  scope was `events + createDatasets + markers` but **not** `columns` or
+  `queries`, so the management API can't enumerate columns or run queries. The
+  dataset column counts are strong evidence the attributes landed; full
+  attribute-level confirmation needs a key with `columns`/`queries` access or a
+  look in the Honeycomb UI.
+
 ## Deferred / known limitations
 
 - **No dashboard query adapter (export-only).** The bundled dashboard queries a
@@ -118,10 +144,12 @@ backends:
   bounded to a 7-day window. That's a poor fit for the dashboard's needs, so
   there is no `dashboard/backends/honeycomb.py`. Use a local backend for
   `query_backend` and Honeycomb's UI for exploration.
-- **No automated live verification.** No free tier → verification is unit tests
-  + manual confirmation in the Honeycomb UI. `scripts/verify_multi_backend.py`
-  does not query Honeycomb.
-- **Single dataset across signals** — see "Datasets" above.
+- **No automated live verification in CI.** Live ingestion was confirmed
+  manually (see [Verified behavior](#verified-behavior)); CI relies on the
+  no-network unit tests. `scripts/verify_multi_backend.py` does not query
+  Honeycomb.
+- **Dataset header ignored on modern keys** — see "Datasets" above. Control the
+  trace dataset via `service.name`.
 
 ---
 
