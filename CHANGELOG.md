@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.7.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.6.0...hermes-otel-v0.7.0) (2026-06-23)
+
+
+### Features
+
+* **hooks:** add GenAI semantic convention attributes ([c40012c](https://github.com/briancaffey/hermes-otel/commit/c40012c706092925b4f53b6bc2b46184c46e586f))
+* **hooks:** add GenAI semantic convention attributes ([719e790](https://github.com/briancaffey/hermes-otel/commit/719e7907719dc03724d63afd828cb3994d71e408))
+
 ## [0.6.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.5.0...hermes-otel-v0.6.0) (2026-06-21)
 
 
