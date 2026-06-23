@@ -16,6 +16,7 @@ import os
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
+from urllib.parse import urlparse
 
 from .debug_utils import debug_log
 from .helpers import (
@@ -118,6 +119,7 @@ _USAGE_FIELDS = (
     "total_tokens",
     "cache_read_tokens",
     "cache_write_tokens",
+    "reasoning_output_tokens",
 )
 
 
@@ -129,6 +131,8 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
     the reported value or sum(prompt, completion) when absent. Returns all
     five canonical fields, zero-filled.
     """
+    details = usage.get("output_tokens_details")
+    reasoning_from_details = details.get("reasoning_tokens") if isinstance(details, dict) else 0
     completion = _to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
     prompt = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
     total = _to_int(usage.get("total_tokens", 0)) or (prompt + completion)
@@ -138,6 +142,11 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
         "total_tokens": total,
         "cache_read_tokens": _to_int(usage.get("cache_read_tokens")),
         "cache_write_tokens": _to_int(usage.get("cache_write_tokens")),
+        "reasoning_output_tokens": _to_int(
+            usage.get("reasoning_output_tokens")
+            or usage.get("reasoning_tokens")
+            or reasoning_from_details
+        ),
     }
 
 
@@ -175,6 +184,9 @@ def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
         attrs["llm.token_count.prompt_details.cache_write"] = cache_write
         attrs["gen_ai.usage.cache_creation.input_tokens"] = cache_write
         attrs["gen_ai.usage.cache_creation_input_tokens"] = cache_write
+    reasoning_output = totals.get("reasoning_output_tokens", 0)
+    if reasoning_output:
+        attrs["gen_ai.usage.reasoning.output_tokens"] = reasoning_output
     return attrs
 
 
@@ -247,16 +259,40 @@ def _gen_ai_attributes(
     session_id: Optional[str],
     operation_name: str,
     extra_kwargs: Optional[dict] = None,
-) -> Dict[str, str]:
+) -> Dict[str, Any]:
     """Return common OpenTelemetry GenAI attributes."""
-    attrs: Dict[str, str] = {
+    attrs: Dict[str, Any] = {
         "gen_ai.agent.name": _agent_name(extra_kwargs or {}),
         "gen_ai.operation.name": operation_name,
     }
     session_text = truncate_string(session_id, 200)
     if session_text:
         attrs["gen_ai.conversation.id"] = session_text
+    compacted = _conversation_compacted_value(extra_kwargs or {})
+    if compacted is not None:
+        attrs["gen_ai.conversation.compacted"] = compacted
     return attrs
+
+
+def _conversation_compacted_value(extra_kwargs: dict) -> Optional[bool]:
+    """Return explicit conversation-compaction state when Hermes provides it.
+
+    We deliberately do not infer compaction from message counts or history
+    shape: the spec field should only be sent when the caller explicitly tells
+    us whether compaction happened.
+    """
+    for key in (
+        "gen_ai.conversation.compacted",
+        "conversation_compacted",
+        "compacted",
+        "is_compacted",
+        "was_compacted",
+        "session_compacted",
+        "compaction_occurred",
+    ):
+        if key in extra_kwargs and isinstance(extra_kwargs[key], bool):
+            return extra_kwargs[key]
+    return None
 
 
 def _agent_name(extra_kwargs: dict) -> str:
@@ -351,6 +387,101 @@ def _gen_ai_request_param_attributes(kwargs: dict) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
     return attrs
+
+
+def _server_attributes(base_url: Any) -> Dict[str, Any]:
+    """Extract low-cardinality server.address/server.port from a provider URL."""
+    value = truncate_string(base_url, 500) if base_url is not None else ""
+    if not value:
+        return {}
+    parsed = urlparse(value if "://" in value else f"//{value}")
+    host = parsed.hostname
+    if not host:
+        return {}
+    attrs: Dict[str, Any] = {"server.address": truncate_string(host, 255)}
+    if parsed.port is not None:
+        attrs["server.port"] = parsed.port
+    return attrs
+
+
+def _response_time_to_first_chunk(kwargs: dict) -> Optional[float]:
+    """Return streaming TTFC seconds when the host provides a numeric value."""
+    for key in (
+        "time_to_first_chunk",
+        "time_to_first_chunk_seconds",
+        "response_time_to_first_chunk",
+        "gen_ai.response.time_to_first_chunk",
+    ):
+        value = _optional_number(kwargs.get(key))
+        if value is not None:
+            return value
+    ttfc_ms = _optional_number(kwargs.get("time_to_first_chunk_ms"))
+    if ttfc_ms is not None:
+        return ttfc_ms / 1000.0
+    return None
+
+
+def _error_type(value: Any = None, default: str = "error") -> str:
+    """Return a bounded, non-sensitive error.type value."""
+    if isinstance(value, BaseException):
+        return truncate_string(type(value).__name__, 120)
+    if isinstance(value, dict):
+        for key in ("error_type", "type", "code", "status_code"):
+            raw = value.get(key)
+            text = truncate_string(raw, 120) if raw is not None else ""
+            if text:
+                return text
+    return truncate_string(default, 120) or "error"
+
+
+def _tool_type(tool_name: str, args: dict, kwargs: dict) -> str:
+    """Return a best-effort GenAI tool type without exposing arguments."""
+    explicit = kwargs.get("tool_type") or (args.get("tool_type") if isinstance(args, dict) else None)
+    explicit_text = truncate_string(explicit, 120) if explicit is not None else ""
+    if explicit_text:
+        return explicit_text
+    if tool_name.startswith("mcp_"):
+        return "mcp"
+    return "function"
+
+
+def _tool_call_id(tool_name: str, task_id: str, args: dict, kwargs: dict) -> str:
+    """Resolve the stable tool-call identifier from hook metadata."""
+    for value in (
+        kwargs.get("tool_call_id"),
+        kwargs.get("call_id"),
+        kwargs.get("gen_ai.tool.call.id"),
+        args.get("tool_call_id") if isinstance(args, dict) else None,
+        args.get("call_id") if isinstance(args, dict) else None,
+        task_id,
+    ):
+        text = truncate_string(value, 200) if value is not None else ""
+        if text:
+            return text
+    return truncate_string(f"{tool_name}:{task_id}", 200)
+
+
+def _add_inference_details_event(span: Any, attributes: Dict[str, Any]) -> None:
+    """Attach the standard GenAI inference details event when supported."""
+    if span is None or not hasattr(span, "add_event"):
+        return
+    excluded = {
+        "gen_ai.input.messages",
+        "gen_ai.output.messages",
+        "gen_ai.system_instructions",
+    }
+    event_attrs = {
+        key: value
+        for key, value in attributes.items()
+        if key not in excluded
+        and (key.startswith("gen_ai.") or key in {"server.address", "server.port", "error.type"})
+    }
+    if not event_attrs:
+        return
+    try:
+        span.add_event("gen_ai.client.inference.operation.details", event_attrs)
+    except Exception:
+        pass
 
 
 def _extract_correlation_id(extra_kwargs: dict) -> str:
@@ -604,6 +735,8 @@ def on_session_end(
             attributes["hermes.turn.final_status"] = "incomplete"
 
     status = "ok" if completed or interrupted else "error"
+    if status == "error":
+        attributes["error.type"] = _error_type(kwargs, default="session_error")
 
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
@@ -636,6 +769,8 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     attributes: Dict[str, Any] = {
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
+        "gen_ai.tool.type": _tool_type(tool_name, args, kwargs),
+        "gen_ai.tool.call.id": _tool_call_id(tool_name, task_id, args, kwargs),
     }
     preview = _preview(
         json.dumps(args) if args else "{}",
@@ -724,11 +859,13 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Determine outcome taxonomy
     outcome = extract_tool_result_status(result_json) or "completed"
     attributes["hermes.tool.outcome"] = outcome
+    attributes["gen_ai.tool.call.id"] = _tool_call_id(tool_name, task_id, args, kwargs)
 
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
     error_msg = ""
     if has_error and isinstance(result_json, dict):
+        attributes["error.type"] = _error_type(result_json, default="tool_error")
         err_val = result_json.get("error")
         if err_val:
             error_msg = truncate_string(err_val, 500)
@@ -985,6 +1122,7 @@ def on_pre_api_request(
     attributes.update(_provider_attributes(provider))
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_gen_ai_request_param_attributes(kwargs))
+    attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if max_tokens:
         attributes["llm.request.max_tokens"] = max_tokens
@@ -1012,10 +1150,49 @@ def on_pre_api_request(
         attributes=attributes,
         session_id=session_id,
     )
+    _add_inference_details_event(span, attributes)
 
     # Push as parent — tool spans during this API call will nest under it
     tracer.spans.push_parent(span, session_id=session_id)
     debug_log(f"  API span started: key={key}")
+
+
+def on_api_request_error(
+    task_id: str,
+    session_id: str,
+    platform: str = "",
+    model: str = "",
+    provider: str = "",
+    base_url: str = "",
+    api_mode: str = "",
+    error: Any = None,
+    **kwargs,
+):
+    """Fires when an individual LLM API request raises before post_api_request."""
+    debug_log(f"api_request_error fired: model={model}, provider={provider}, session={session_id}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    key = f"api:{task_id}"
+    error_message = truncate_string(error, 500) if error is not None else ""
+    attributes: Dict[str, Any] = {
+        "llm.model_name": model,
+        "llm.provider": provider,
+        "llm.api_mode": api_mode,
+        "gen_ai.request.model": truncate_string(model, 200),
+        "error.type": _error_type(error or kwargs, default="api_request_error"),
+    }
+    if error_message:
+        attributes["error.message"] = error_message
+    attributes.update(_provider_attributes(provider))
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_server_attributes(base_url))
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+
+    tracer.spans.pop_parent(session_id=session_id)
+    tracer.end_span(key, attributes=attributes, status="error", error_message=error_message)
+    debug_log(f"  API span ended: status=error, error.type={attributes['error.type']}")
 
 
 def on_post_api_request(
@@ -1050,6 +1227,7 @@ def on_post_api_request(
     attributes: Dict[str, Any] = {}
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_provider_attributes(provider))
+    attributes.update(_server_attributes(base_url))
     response_model_value = response_model or model
     if response_model_value:
         attributes["gen_ai.response.model"] = truncate_string(response_model_value, 200)
@@ -1092,6 +1270,9 @@ def on_post_api_request(
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason
         attributes["gen_ai.response.finish_reasons"] = [finish_reason]
+    ttfc = _response_time_to_first_chunk(kwargs)
+    if ttfc is not None:
+        attributes["gen_ai.response.time_to_first_chunk"] = ttfc
     if assistant_content_chars:
         attributes["llm.response.output_chars"] = assistant_content_chars
     if assistant_tool_call_count:

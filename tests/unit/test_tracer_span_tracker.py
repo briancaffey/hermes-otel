@@ -1,6 +1,6 @@
 """Tests for the SpanTracker class in tracer.py."""
 
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, call
 
 from hermes_otel.tracer import SpanTracker
 from opentelemetry.trace import Status, StatusCode
@@ -64,6 +64,15 @@ class TestSpanTrackerAttributes:
         status_arg = span.set_status.call_args[0][0]
         assert status_arg.status_code == StatusCode.ERROR
         assert status_arg.description == "something broke"
+        span.set_attribute.assert_any_call("error.type", "error")
+
+    def test_end_span_status_error_preserves_explicit_error_type(self):
+        tracker = SpanTracker()
+        span = MagicMock()
+        tracker.start_span("k1", span)
+        tracker.end_span("k1", attributes={"error.type": "TimeoutError"}, status="error")
+        span.set_attribute.assert_any_call("error.type", "TimeoutError")
+        assert call("error.type", "error") not in span.set_attribute.call_args_list
 
     def test_end_span_no_status_skips_set_status(self):
         tracker = SpanTracker()

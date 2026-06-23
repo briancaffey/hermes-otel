@@ -34,6 +34,12 @@ def register(ctx):
     ctx.register_hook("post_llm_call", hooks.on_post_llm_call)
     ctx.register_hook("pre_api_request", hooks.on_pre_api_request)
     ctx.register_hook("post_api_request", hooks.on_post_api_request)
+    extra_hooks = 0
+    try:
+        ctx.register_hook("api_request_error", hooks.on_api_request_error)
+        extra_hooks += 1
+    except Exception:
+        debug_log("api_request_error hook unavailable")
 
     # Session hooks (available on newer Hermes versions)
     session_hooks = 0
@@ -47,4 +53,4 @@ def register(ctx):
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    logger.info(f"[hermes-otel] Registered {6 + session_hooks} hooks")
+    logger.info(f"[hermes-otel] Registered {6 + extra_hooks + session_hooks} hooks")

@@ -71,6 +71,7 @@ def _empty_usage() -> Dict[str, int]:
         "total_tokens": 0,
         "cache_read_tokens": 0,
         "cache_write_tokens": 0,
+        "reasoning_output_tokens": 0,
     }
 
 

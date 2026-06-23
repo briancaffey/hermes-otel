@@ -34,6 +34,18 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
 
     fake_path = tmp_path_factory.mktemp("isolated-config") / "nonexistent.yaml"
     monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", fake_path)
+    for env_name in (
+        "HERMES_HOME",
+        "HERMES_PROFILE",
+        "HERMES_OTEL_CONFIG_PATH",
+        "HONEYCOMB_API_KEY",
+        "OTEL_HONEYCOMB_API_KEY",
+        "HONEYCOMB_DATASET",
+        "OTEL_HONEYCOMB_DATASET",
+        "HONEYCOMB_REGION",
+        "OTEL_HONEYCOMB_ENDPOINT",
+    ):
+        monkeypatch.delenv(env_name, raising=False)
 
     def _reset():
         tracer_mod._tracer = None

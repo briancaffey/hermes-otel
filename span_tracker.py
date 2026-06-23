@@ -145,6 +145,8 @@ class SpanTracker:
                 span.set_attribute(k, v)
 
         if status == "error":
+            if not (attributes and "error.type" in attributes):
+                span.set_attribute("error.type", "error")
             span.set_status(Status(status_code=StatusCode.ERROR, description=error_message or ""))
         elif status == "ok":
             # Set an explicit empty description so backends don't render "None".

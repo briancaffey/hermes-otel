@@ -4,6 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from hermes_otel.hooks import (
+    on_api_request_error,
     on_post_api_request,
     on_post_llm_call,
     on_post_tool_call,
@@ -213,6 +214,8 @@ class TestOnPreToolCall:
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["tool.name"] == "bash"
         assert attrs["gen_ai.tool.name"] == "bash"
+        assert attrs["gen_ai.tool.type"] == "function"
+        assert attrs["gen_ai.tool.call.id"] == "t1"
         assert '"cmd"' in attrs["input.value"]
 
     def test_full_mcp_args_follow_preview_privacy_gate(self, mock_tracer):
@@ -283,6 +286,18 @@ class TestOnPostToolCall:
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "error"
         assert "boom" in (kw.get("error_message") or "")
+        assert kw["attributes"]["error.type"] == "tool_error"
+
+    def test_uses_explicit_error_type_when_present(self, mock_tracer):
+        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        on_post_tool_call(
+            tool_name="bash",
+            args={},
+            result='{"error": "boom", "error_type": "RateLimitError"}',
+            task_id="t1",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["error.type"] == "RateLimitError"
 
     def test_records_tool_duration_metric(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
@@ -686,6 +701,80 @@ class TestOnPreApiRequest:
         assert attrs["gen_ai.provider.name"] == "openai"
         assert attrs["gen_ai.system"] == "openai"
 
+    def test_includes_server_attributes_from_base_url(self, mock_tracer):
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="https://api.openai.com:8443/v1",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["server.address"] == "api.openai.com"
+        assert attrs["server.port"] == 8443
+
+    def test_emits_inference_details_event_without_prompt_payload(self, mock_tracer):
+        span = MagicMock()
+        mock_tracer.start_span.return_value = span
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="https://api.openai.com/v1",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": "secret"}],
+        )
+        event_name, event_attrs = span.add_event.call_args[0]
+        assert event_name == "gen_ai.client.inference.operation.details"
+        assert event_attrs["gen_ai.operation.name"] == "chat"
+        assert event_attrs["gen_ai.request.model"] == "gpt-4"
+        assert "gen_ai.input.messages" not in event_attrs
+
+    def test_inference_details_event_excludes_full_prompt_payload_when_enabled(
+        self, mock_tracer
+    ):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        span = MagicMock()
+        mock_tracer.start_span.return_value = span
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="https://api.openai.com/v1",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=10,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=2048,
+            messages=[{"role": "user", "content": "secret"}],
+            system_prompt="private system prompt",
+        )
+        event_attrs = span.add_event.call_args[0][1]
+        assert "gen_ai.input.messages" not in event_attrs
+        assert "gen_ai.system_instructions" not in event_attrs
+
     def test_includes_standard_request_params(self, mock_tracer):
         on_pre_api_request(
             task_id="t1",
@@ -755,6 +844,29 @@ class TestOnPreApiRequest:
         disabled_tracer.start_span.assert_not_called()
 
 
+class TestOnApiRequestError:
+    def test_ends_api_span_with_error_type(self, mock_tracer):
+        error = TimeoutError("request timed out")
+        on_api_request_error(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="https://api.openai.com/v1",
+            api_mode="chat",
+            error=error,
+        )
+        mock_tracer.spans.pop_parent.assert_called_once_with(session_id="s1")
+        kw = mock_tracer.end_span.call_args[1]
+        attrs = kw["attributes"]
+        assert kw["status"] == "error"
+        assert kw["error_message"] == "request timed out"
+        assert attrs["error.type"] == "TimeoutError"
+        assert attrs["server.address"] == "api.openai.com"
+        assert attrs["gen_ai.operation.name"] == "chat"
+
+
 class TestOnPostApiRequest:
     def _call_post_api(self, mock_tracer, usage=None, **overrides):
         defaults = dict(
@@ -804,6 +916,33 @@ class TestOnPostApiRequest:
         assert attrs["gen_ai.response.model"] == "gpt-4"
         assert attrs["gen_ai.provider.name"] == "openai"
         assert attrs["gen_ai.system"] == "openai"
+
+    def test_reasoning_token_attribute(self, mock_tracer):
+        usage = {
+            "prompt_tokens": 100,
+            "output_tokens": 50,
+            "total_tokens": 170,
+            "output_tokens_details": {"reasoning_tokens": 20},
+        }
+        self._call_post_api(mock_tracer, usage=usage)
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.usage.reasoning.output_tokens"] == 20
+        assert mock_tracer.sessions.peek("s1").usage["reasoning_output_tokens"] == 20
+
+    def test_compaction_attr_only_when_explicit(self, mock_tracer):
+        self._call_post_api(mock_tracer, conversation_compacted=True)
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.conversation.compacted"] is True
+
+    def test_no_compaction_attr_when_unknown(self, mock_tracer):
+        self._call_post_api(mock_tracer)
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert "gen_ai.conversation.compacted" not in attrs
+
+    def test_time_to_first_chunk_attribute(self, mock_tracer):
+        self._call_post_api(mock_tracer, time_to_first_chunk_ms=125)
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.response.time_to_first_chunk"] == 0.125
 
     def test_cache_token_attributes(self, mock_tracer):
         usage = {
