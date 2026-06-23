@@ -25,6 +25,18 @@ Scalar = Union[str, int, float, bool]
 
 DEFAULT_CONFIG_PATH = Path.home() / ".hermes" / "plugins" / "hermes_otel" / "config.yaml"
 
+
+def _default_config_path() -> Path:
+    """Return the config path for the active Hermes profile.
+
+    Gateway/systemd runs set ``HERMES_HOME`` to the active profile directory;
+    fall back to the legacy global plugin config path for CLI/test usage.
+    """
+    hermes_home = os.getenv("HERMES_HOME", "").strip()
+    if hermes_home:
+        return Path(hermes_home) / "plugins" / "hermes_otel" / "config.yaml"
+    return DEFAULT_CONFIG_PATH
+
 _ENV_PREFIX = "HERMES_OTEL_"
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _FALSE_STRINGS = {"0", "false", "no", "off"}
@@ -56,6 +68,12 @@ class BackendConfig:
     # SigNoz cloud credential
     ingestion_key: Optional[str] = None
     ingestion_key_env: Optional[str] = None
+    # Honeycomb credential/routing
+    api_key: Optional[str] = None
+    api_key_env: Optional[str] = None
+    region: Optional[str] = None  # us | eu, defaults to us
+    dataset: Optional[str] = None
+    dataset_env: Optional[str] = None
     # Uptrace DSN (sent as the ``uptrace-dsn`` header on every OTLP export)
     dsn: Optional[str] = None
     dsn_env: Optional[str] = None
@@ -372,7 +390,7 @@ def load_config(
         env:  Reserved for future use; env is read via os.getenv directly so
               existing monkeypatch-based tests keep working.
     """
-    yaml_path = path if path is not None else DEFAULT_CONFIG_PATH
+    yaml_path = path if path is not None else _default_config_path()
     yaml_data = _load_yaml(yaml_path)
 
     values: Dict[str, Any] = {}

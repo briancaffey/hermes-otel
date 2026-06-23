@@ -373,6 +373,22 @@ class TestBackendsYaml:
         cfg = load_config(path=tmp_path / "missing.yaml")
         assert cfg.backends is None
 
+    def test_default_path_uses_active_hermes_home(self, tmp_path, monkeypatch):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        cfg_path = tmp_path / "plugins" / "hermes_otel" / "config.yaml"
+        cfg_path.parent.mkdir(parents=True)
+        cfg_path.write_text(
+            "backends:\n"
+            "  - type: honeycomb\n"
+            "    api_key_env: HONEYCOMB_API_KEY\n"
+        )
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        cfg = load_config()
+        assert cfg.backends is not None
+        assert cfg.backends[0].type == "honeycomb"
+        assert cfg.backends[0].api_key_env == "HONEYCOMB_API_KEY"
+
     def test_loads_multiple_backends(self, tmp_path):
         if not _has_yaml():
             pytest.skip("pyyaml not installed")
@@ -414,6 +430,25 @@ class TestBackendsYaml:
         assert b.public_key_env == "LANGFUSE_PUBLIC_KEY"
         assert b.secret_key_env == "LANGFUSE_SECRET_KEY"
         assert b.base_url == "https://cloud.langfuse.com"
+
+    def test_loads_honeycomb_credentials(self, tmp_path):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(
+            "backends:\n"
+            "  - type: honeycomb\n"
+            "    region: eu\n"
+            "    api_key_env: HONEYCOMB_API_KEY\n"
+            "    dataset_env: HONEYCOMB_DATASET\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.backends is not None
+        b = cfg.backends[0]
+        assert b.type == "honeycomb"
+        assert b.region == "eu"
+        assert b.api_key_env == "HONEYCOMB_API_KEY"
+        assert b.dataset_env == "HONEYCOMB_DATASET"
 
     def test_loads_per_backend_headers(self, tmp_path):
         if not _has_yaml():

@@ -28,7 +28,7 @@ from typing import Callable, Dict, List, Optional
 from .plugin_config import BackendConfig
 
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
-_TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
+_TRACES_ONLY = {"honeycomb", "langfuse", "jaeger", "tempo"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -40,6 +40,7 @@ _LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve"}
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
 _DISPLAY_NAMES = {
     "phoenix": "Phoenix",
+    "honeycomb": "Honeycomb",
     "langfuse": "Langfuse",
     "signoz": "SigNoz",
     "jaeger": "Jaeger",
@@ -52,7 +53,16 @@ _DISPLAY_NAMES = {
 
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
-_ENV_PRIORITY = ["langfuse", "signoz", "uptrace", "openobserve", "jaeger", "tempo", "phoenix"]
+_ENV_PRIORITY = [
+    "honeycomb",
+    "langfuse",
+    "signoz",
+    "uptrace",
+    "openobserve",
+    "jaeger",
+    "tempo",
+    "phoenix",
+]
 
 
 @dataclass
@@ -122,6 +132,47 @@ def _display(bc: BackendConfig, t: str) -> str:
 
 
 # ── Per-backend resolvers ──────────────────────────────────────────────────
+
+
+def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Honeycomb OTLP HTTP trace ingestion.
+
+    Honeycomb authenticates OTLP requests with the ``x-honeycomb-team``
+    header. For modern Honeycomb environments, ``service.name`` routes events
+    to the dataset; classic datasets may also pass ``x-honeycomb-dataset``.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_HONEYCOMB_ENDPOINT", "")).strip()
+    if not ep:
+        region = (bc.region or os.getenv("HONEYCOMB_REGION", "") or "us").strip().lower()
+        host = "api.eu1.honeycomb.io" if region in {"eu", "eu1"} else "api.honeycomb.io"
+        ep = f"https://{host}/v1/traces"
+
+    key = _resolve_secret(
+        bc.api_key,
+        bc.api_key_env,
+        ["HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_API_KEY"],
+    )
+    if not key:
+        raise ValueError("honeycomb requires api_key or api_key_env")
+
+    headers: Dict[str, str] = {"x-honeycomb-team": key}
+    dataset = _resolve_secret(
+        bc.dataset,
+        bc.dataset_env,
+        ["HONEYCOMB_DATASET", "OTEL_HONEYCOMB_DATASET"],
+    )
+    if dataset:
+        headers["x-honeycomb-dataset"] = dataset
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="honeycomb",
+        endpoint=ep,
+        display_name=_display(bc, "honeycomb"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("honeycomb", bc.metrics),
+        supports_logs=_logs_for("honeycomb", bc.logs),
+    )
 
 
 def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
@@ -349,6 +400,7 @@ def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
 
 
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
+    "honeycomb": _resolve_honeycomb,
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
     "signoz": _resolve_signoz,

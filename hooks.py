@@ -12,7 +12,9 @@ routed through the tracer singleton so test reset is just
 from __future__ import annotations
 
 import json
+import os
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log
@@ -248,12 +250,37 @@ def _gen_ai_attributes(
 ) -> Dict[str, str]:
     """Return common OpenTelemetry GenAI attributes."""
     attrs: Dict[str, str] = {
+        "gen_ai.agent.name": _agent_name(extra_kwargs or {}),
         "gen_ai.operation.name": operation_name,
     }
     session_text = truncate_string(session_id, 200)
     if session_text:
         attrs["gen_ai.conversation.id"] = session_text
     return attrs
+
+
+def _agent_name(extra_kwargs: dict) -> str:
+    """Return the active Hermes profile/agent name for GenAI telemetry."""
+    for key in ("agent_name", "profile", "hermes_profile", "gen_ai.agent.name"):
+        raw = extra_kwargs.get(key)
+        value = truncate_string(raw, 120) if raw is not None else ""
+        if value:
+            return value
+
+    raw_profile = os.getenv("HERMES_PROFILE")
+    value = truncate_string(raw_profile, 120) if raw_profile is not None else ""
+    if value:
+        return value
+
+    raw_home = os.getenv("HERMES_HOME")
+    hermes_home = truncate_string(raw_home, 500) if raw_home is not None else ""
+    if hermes_home:
+        path = Path(hermes_home)
+        value = "default" if path.name == ".hermes" else truncate_string(path.name, 120)
+        if value:
+            return value
+
+    return "hermes-agent"
 
 
 def _provider_attributes(provider: Any) -> Dict[str, str]:

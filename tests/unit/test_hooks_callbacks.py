@@ -74,7 +74,9 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"session_id": "s1"})
 
-    def test_includes_session_attributes(self, mock_tracer):
+    def test_includes_session_attributes(self, mock_tracer, monkeypatch):
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["session_id"] == "s1"
@@ -82,6 +84,7 @@ class TestOnSessionStart:
         assert attrs["llm.model_name"] == "gpt-4o"
         assert attrs["llm.provider"] == "telegram"
         assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["gen_ai.agent.name"] == "hermes-agent"
         assert attrs["gen_ai.operation.name"] == "invoke_agent"
         assert attrs["gen_ai.request.model"] == "gpt-4o"
         assert attrs["gen_ai.provider.name"] == "telegram"
@@ -102,6 +105,19 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="cli", job_id="j123")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["hermes.cron.job_id"] == "j123"
+
+    def test_agent_name_uses_profile_context(self, mock_tracer, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes/profiles/engineer")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.agent.name"] == "engineer"
+
+    def test_agent_name_uses_default_profile_for_root_home(self, mock_tracer, monkeypatch):
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.agent.name"] == "default"
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
