@@ -27,6 +27,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_JAEGER_ENDPOINT` | URL | Jaeger OTLP endpoint (`http://localhost:4318/v1/traces`) |
 | `OTEL_TEMPO_ENDPOINT` | URL | Tempo OTLP endpoint |
 | `OTEL_PHOENIX_ENDPOINT` | URL | Phoenix OTLP endpoint (`http://localhost:6006/v1/traces`) |
+| `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
+| `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key (plugin-specific alias) |
+| `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
 | `OTEL_PROJECT_NAME` | string | Resource `service.name` + `openinference.project.name` |
 
 ## Shaping overrides

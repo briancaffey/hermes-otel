@@ -21,6 +21,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
 | **[OpenObserve](/backends/openobserve)** | Traces + metrics + logs | Local (single container) · Self-hosted HA | OSS, no account |
+| **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
 ## Quick picks
@@ -43,7 +44,10 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"Standard distributed tracing stack, no LLM-specific UI needed"**
 → [Jaeger](/backends/jaeger) or [Grafana Tempo](/backends/tempo) — both are traces-only; pair with Prometheus if you need metrics.
 
-**"My company already has an OTel collector / Honeycomb / New Relic / Datadog"**
+**"I want a cloud backend with a generous free tier and all three signals"**
+→ [Honeycomb](/backends/honeycomb) — OTLP-native, just set `HONEYCOMB_API_KEY` and a region.
+
+**"My company already has an OTel collector / New Relic / Datadog"**
 → [Generic OTLP](/backends/otlp) — point at its ingest endpoint and it just works.
 
 **"I want several of the above simultaneously"**
@@ -64,6 +68,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Grafana LGTM | ✅ | ✅ | ✅ |
 | Uptrace | ✅ | ✅ | ✅ |
 | OpenObserve | ✅ | ✅ | ✅ |
+| Honeycomb | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
@@ -75,9 +80,12 @@ Single-backend selection is env-var-driven. First match wins:
 1. `LANGSMITH_TRACING=true` → LangSmith
 2. `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` set → Langfuse
 3. `OTEL_SIGNOZ_ENDPOINT` set → SigNoz
-4. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-5. `OTEL_TEMPO_ENDPOINT` set → Tempo
-6. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+4. `OTEL_UPTRACE_ENDPOINT` + DSN set → Uptrace
+5. `OTEL_OPENOBSERVE_ENDPOINT` + credentials set → OpenObserve
+6. `HONEYCOMB_API_KEY` set → Honeycomb
+7. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+8. `OTEL_TEMPO_ENDPOINT` set → Tempo
+9. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
@@ -85,7 +93,6 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:
 
-- [Honeycomb](https://www.honeycomb.io) — cloud, generous free tier
 - [New Relic](https://newrelic.com) — cloud, 100 GB/mo free tier
 - [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) — self-host or Elastic Cloud
 - [Datadog](https://www.datadoghq.com) — cloud, trial only

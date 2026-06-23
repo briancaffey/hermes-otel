@@ -29,6 +29,7 @@ const sidebars: SidebarsConfig = {
         'backends/lgtm',
         'backends/uptrace',
         'backends/openobserve',
+        'backends/honeycomb',
         'backends/multi-backend',
       ],
     },
