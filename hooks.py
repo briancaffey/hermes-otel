@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
@@ -268,6 +269,37 @@ def _first_text(*values: Any, limit: int = 200) -> str:
     return ""
 
 
+_KANBAN_AUTH_SCHEME_RE = re.compile(
+    r"(?i)\b(authorization)\b\s*[:=]?\s*(?:\S+\s+)?[^\s,;]+|"
+    r"\b(bearer|basic)\b\s+[^\s,;]+"
+)
+_KANBAN_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|client[_-]?secret|connect[_-]?token|password|passwd|"
+    r"secret|token)\b\s*[:=]\s*[^\s,;]+"
+)
+_KANBAN_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|"
+    r"xox[baprs]-[A-Za-z0-9-]{8,})\b"
+)
+
+
+def _safe_kanban_text(*values: Any, limit: int = 200) -> str:
+    """Return the first non-empty Kanban text value, redacted and clipped."""
+    text = _first_text(*values, limit=limit * 4)
+    if not text:
+        return ""
+    text = re.sub(r"\s+", " ", text).strip()
+    text = _KANBAN_AUTH_SCHEME_RE.sub(
+        lambda m: f"{(m.group(1) or m.group(2))}=[REDACTED]",
+        text,
+    )
+    text = _KANBAN_SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+    text = _KANBAN_SECRET_VALUE_RE.sub("[REDACTED]", text)
+    if len(text) > limit:
+        return text[: limit - 3] + "..." if limit > 3 else "." * limit
+    return text
+
+
 def _kwargs_value(kwargs: dict, *keys: str, limit: int = 200) -> str:
     return _first_text(*(kwargs.get(key) for key in keys), limit=limit)
 
@@ -371,6 +403,14 @@ def _kanban_context_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> Dict
         attrs["hermes.kanban.task.id"] = task_id
     if run_id:
         attrs["hermes.kanban.run.id"] = run_id
+    title = _safe_kanban_text(
+        kwargs.get("hermes.kanban.task.title"),
+        kwargs.get("kanban_task_title"),
+        kwargs.get("task_title"),
+        kwargs.get("title"),
+    )
+    if title:
+        attrs["hermes.kanban.task.title"] = title
     if board:
         attrs["hermes.kanban.board"] = board
     if tenant:
@@ -404,6 +444,21 @@ def _kanban_context_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> Dict
     ) or _env_value("HERMES_KANBAN_SOURCE_KIND", limit=120)
     if source_kind:
         attrs["hermes.kanban.source.kind"] = source_kind
+
+    summary = _safe_kanban_text(
+        kwargs.get("hermes.kanban.summary"),
+        kwargs.get("kanban_summary"),
+        kwargs.get("summary"),
+    )
+    if summary:
+        attrs["hermes.kanban.summary"] = summary
+    reason = _safe_kanban_text(
+        kwargs.get("hermes.kanban.reason"),
+        kwargs.get("kanban_reason"),
+        kwargs.get("reason"),
+    )
+    if reason:
+        attrs["hermes.kanban.reason"] = reason
 
     return attrs
 

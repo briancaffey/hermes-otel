@@ -1492,3 +1492,41 @@ class TestKanbanSpanAttributes:
         assert start_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
         assert end_kwargs["attributes"]["hermes.kanban.lifecycle.event"] == event
         assert end_kwargs["status"] == "ok"
+
+    def test_lifecycle_hook_includes_safe_task_title(self, mock_tracer, clean_kanban_env):
+        on_kanban_task_claimed(
+            task_id="t_123",
+            run_id="43",
+            board="default",
+            title="Fix production smoke",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["hermes.kanban.task.id"] == "t_123"
+        assert attrs["hermes.kanban.task.title"] == "Fix production smoke"
+
+    def test_lifecycle_title_summary_and_reason_are_redacted_and_truncated(
+        self, mock_tracer, clean_kanban_env
+    ):
+        secret = "sk-" + "a" * 48
+        bearer = "eyJ" + "b" * 48
+        basic = "dXNlcjpwYXNz"
+        on_kanban_task_blocked(
+            task_id="t_secret",
+            title=(
+                f"deploy Authorization: Basic {basic} Bearer {bearer} "
+                f"Basic {basic} token={secret} "
+            ) + "x" * 260,
+            summary=f"summary api_key={secret}",
+            reason=f"reason password={secret}",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        for key in (
+            "hermes.kanban.task.title",
+            "hermes.kanban.summary",
+            "hermes.kanban.reason",
+        ):
+            assert "[REDACTED]" in attrs[key]
+            assert secret not in attrs[key]
+            assert bearer not in attrs[key]
+            assert basic not in attrs[key]
+            assert len(attrs[key]) <= 200
