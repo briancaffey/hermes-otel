@@ -29,6 +29,9 @@ Setting any of these enables the matching backend. First match wins (see [Backen
 | `OTEL_JAEGER_ENDPOINT` | Jaeger | `http://localhost:4318/v1/traces` |
 | `OTEL_TEMPO_ENDPOINT` | Tempo | `http://localhost:4318/v1/traces` |
 | `OTEL_PHOENIX_ENDPOINT` | Phoenix | `http://localhost:6006/v1/traces` |
+| `HONEYCOMB_API_KEY` | Honeycomb | `hcaik_...` |
+| `OTEL_HONEYCOMB_API_KEY` | Honeycomb (plugin-specific alias) | `hcaik_...` |
+| `OTEL_HONEYCOMB_ENDPOINT` | Honeycomb (optional; overrides region default) | `https://api.eu1.honeycomb.io/v1/traces` |
 | `OTEL_PROJECT_NAME` | All | `hermes-agent` |
 
 ## Shaping overrides

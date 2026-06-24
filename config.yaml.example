@@ -146,6 +146,9 @@
 #   openobserve  — OpenObserve (OSS, single container). Traces + metrics + logs.
 #                  Uses HTTP Basic auth — set `user:` + `password:` (or the
 #                  `*_env` variants) and the plugin builds the header for you.
+#   honeycomb    — Honeycomb (SaaS). Traces + metrics + logs. Set `api_key`
+#                  (or `api_key_env`) and `region:` (us|eu); the plugin fills in
+#                  the endpoint and `x-honeycomb-team` header. See HONEYCOMB.md.
 #
 # `traces: false`, `metrics: false`, or `logs: false` per entry opt a backend
 # out of that signal. This is useful when an entry is dashboard/query-only
@@ -193,7 +196,7 @@
 #     headers:
 #       X-Tenant: acme
 #     metrics: true
-#     logs: true       # override the default (on for otlp/signoz/lgtm/uptrace/openobserve)
+#     logs: true       # override the default (on for otlp/signoz/lgtm/uptrace/openobserve/honeycomb)
 
 # ── LGTM quickstart ──────────────────────────────────────────────────────────
 #
@@ -236,6 +239,24 @@
 #     user: root@example.com                  # or user_env: OPENOBSERVE_USER
 #     password_env: OPENOBSERVE_PASSWORD
 #     # stream_name: default                  # optional; defaults to "default"
+# capture_logs: true
+
+# ── Honeycomb quickstart ─────────────────────────────────────────────────────
+#
+# Honeycomb (SaaS, OTLP/HTTP) — traces + metrics + logs. See HONEYCOMB.md.
+# Trace export also works via a plain `type: otlp` entry; the dedicated
+# `honeycomb` type just fills in the endpoint and auth header for you.
+#
+# backends:
+#   - type: honeycomb
+#     region: us                              # us (default) or eu
+#     api_key_env: HONEYCOMB_API_KEY          # or inline api_key: (discouraged)
+#     # Optional dataset (sent as x-honeycomb-dataset). Modern (Environments)
+#     # keys IGNORE it — traces route by service.name, metrics to a default
+#     # "Metrics" dataset (verified live). Only Honeycomb Classic keys need it
+#     # (required for every signal). See HONEYCOMB.md.
+#     # dataset: hermes
+#     # endpoint:                             # optional; overrides the region default
 # capture_logs: true
 
 # ── LangSmith (env-var only, alternative to the above) ────────────────────────

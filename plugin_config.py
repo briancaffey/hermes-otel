@@ -40,7 +40,7 @@ class BackendConfig:
     discouraged because the file is plaintext.
     """
 
-    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp
+    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | honeycomb
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
@@ -65,6 +65,13 @@ class BackendConfig:
     password: Optional[str] = None
     password_env: Optional[str] = None
     stream_name: Optional[str] = None
+    # Honeycomb: API key (sent as the ``x-honeycomb-team`` header), optional
+    # dataset (``x-honeycomb-dataset``), and ``region`` (``us``|``eu``) used to
+    # default the endpoint when one isn't given explicitly.
+    api_key: Optional[str] = None
+    api_key_env: Optional[str] = None
+    dataset: Optional[str] = None
+    region: Optional[str] = None
 
 
 @dataclass(frozen=True)
