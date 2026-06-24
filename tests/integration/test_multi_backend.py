@@ -91,7 +91,7 @@ class TestSpanFanOut:
         names_a = sorted(s.name for s in exp_a.get_finished_spans())
         names_b = sorted(s.name for s in exp_b.get_finished_spans())
         assert names_a == names_b
-        assert "invoke_agent" in names_a
+        assert "invoke_agent hermes-agent" in names_a
         assert any(n.startswith("chat ") for n in names_a)
         assert any(n.startswith("execute_tool ") for n in names_a)
 

@@ -73,7 +73,7 @@ class TestSessionContainsLlm:
         spans = exporter.get_finished_spans()
         assert len(spans) == 2
 
-        session_span = _span_by_name(spans, "invoke_agent")
+        session_span = _span_by_name(spans, "invoke_agent hermes-agent")
         llm_span = _span_by_attr(spans, "chat gpt-4", "input.value")
 
         assert _parent_span_id(llm_span) == session_span.context.span_id
@@ -273,7 +273,7 @@ class TestFullHierarchy:
         spans = exporter.get_finished_spans()
         assert len(spans) == 4
 
-        session = _span_by_name(spans, "invoke_agent")
+        session = _span_by_name(spans, "invoke_agent hermes-agent")
         llm = _span_by_attr(spans, "chat gpt-4", "input.value")
         api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
         tool = _span_by_name(spans, "execute_tool bash")
@@ -541,7 +541,7 @@ class TestContinuationTurnSynthesizesAgent:
         trace_ids = {s.context.trace_id for s in spans}
         assert len(trace_ids) == 1
 
-        agent = _span_by_name(spans, "invoke_agent")
+        agent = _span_by_name(spans, "invoke_agent hermes-agent")
         llm = _span_by_attr(spans, "chat gpt-4", "input.value")
         api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
 
@@ -667,7 +667,7 @@ class TestCrossThreadNesting:
             len(trace_ids) == 1
         ), f"expected 1 trace, got {len(trace_ids)}: {[s.name for s in spans]}"
 
-        agent = _span_by_name(spans, "invoke_agent")
+        agent = _span_by_name(spans, "invoke_agent hermes-agent")
         llm = _span_by_attr(spans, "chat gpt-4", "input.value")
         api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
         tool = _span_by_name(spans, "execute_tool bash")

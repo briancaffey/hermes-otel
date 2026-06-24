@@ -169,7 +169,7 @@ class TestLangSmithPluginFlow:
         # agent (session) + llm + api + tool = 4 runs created.
         assert len(posts) == 4
         names = [p["name"] for p in posts]
-        assert "invoke_agent" in names
+        assert "invoke_agent hermes-agent" in names
         assert names.count("chat gpt-4") == 2
         assert "execute_tool bash" in names
 
@@ -189,13 +189,13 @@ class TestLangSmithPluginFlow:
         posts = recorder.posts()
         by_name = {p["name"]: p for p in posts if p["name"] != "chat gpt-4"}
 
-        agent_id = by_name["invoke_agent"]["id"]
+        agent_id = by_name["invoke_agent hermes-agent"]["id"]
         llm = next(p for p in posts if p.get("parent_run_id") == agent_id)
         api = next(p for p in posts if p.get("parent_run_id") == llm["id"])
         tool = by_name["execute_tool bash"]
 
         # Root span has no parent_run_id.
-        assert "parent_run_id" not in by_name["invoke_agent"]
+        assert "parent_run_id" not in by_name["invoke_agent hermes-agent"]
         # llm is rooted under agent.
         assert llm["parent_run_id"] == agent_id
         # api is rooted under llm.

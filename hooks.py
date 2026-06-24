@@ -71,6 +71,8 @@ class HookContext(TypedDict, total=False):
     kanban_source_kind: str
     traceparent: str
     tracestate: str
+    gen_ai_conversation_id: str
+    conversation_id: str
 
 
 _MAX_SUMMARY_CHARS = 500
@@ -308,6 +310,31 @@ def _env_value(*keys: str, limit: int = 200) -> str:
     return _first_text(*(os.getenv(key) for key in keys), limit=limit)
 
 
+def _conversation_id_from_kwargs_env(extra_kwargs: Optional[dict] = None) -> str:
+    """Return an explicitly propagated GenAI conversation id, if present.
+
+    Hermes creates a fresh ``session_id`` for many independent processes
+    (subagents, workers, explicit spawned CLIs).  When the parent process can
+    pass the user-visible conversation boundary through kwargs or env, keep
+    ``gen_ai.conversation.id`` stable while leaving ``correlation.id`` free to
+    describe the local process/session.
+    """
+    kwargs = extra_kwargs or {}
+    return _kwargs_value(
+        kwargs,
+        "gen_ai.conversation.id",
+        "gen_ai_conversation_id",
+        "conversation_id",
+        "conversation.id",
+        "parent_conversation_id",
+        limit=200,
+    ) or _env_value(
+        "HERMES_OTEL_CONVERSATION_ID",
+        "HERMES_PARENT_CONVERSATION_ID",
+        limit=200,
+    )
+
+
 def _kanban_trace_carrier(extra_kwargs: Optional[dict] = None) -> Dict[str, str]:
     kwargs = extra_kwargs or {}
     traceparent = _kwargs_value(
@@ -504,6 +531,7 @@ def _session_sender_attributes(tracer, session_id: Optional[str]) -> Dict[str, s
 
 
 def _gen_ai_attributes(
+    tracer,
     session_id: Optional[str],
     operation_name: str,
     extra_kwargs: Optional[dict] = None,
@@ -514,8 +542,16 @@ def _gen_ai_attributes(
         "gen_ai.operation.name": operation_name,
     }
     session_text = truncate_string(session_id, 200) if session_id is not None else ""
-    if session_text:
-        attrs["gen_ai.conversation.id"] = session_text
+    incoming_conversation_id = _conversation_id_from_kwargs_env(extra_kwargs)
+    conversation_id = incoming_conversation_id or session_text
+    if session_id and hasattr(tracer, "sessions"):
+        ps = tracer.sessions.get_or_create(session_id)
+        if incoming_conversation_id:
+            ps.conversation_id = incoming_conversation_id
+        elif ps.conversation_id:
+            conversation_id = ps.conversation_id
+    if conversation_id:
+        attrs["gen_ai.conversation.id"] = conversation_id
     compacted = _conversation_compacted_value(extra_kwargs or {})
     if compacted is not None:
         attrs["gen_ai.conversation.compacted"] = compacted
@@ -762,7 +798,8 @@ def _add_payload_event(
 
 def _agent_span_name(operation_name: str, extra_kwargs: dict) -> str:
     """Return the Honeycomb Agent Timeline span name for an agent operation."""
-    return operation_name
+    agent_text = truncate_string(_agent_name(extra_kwargs), 200)
+    return f"{operation_name} {agent_text}" if agent_text else operation_name
 
 
 def _model_span_name(operation_name: str, model: Any) -> str:
@@ -937,7 +974,7 @@ def _start_session_span(
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(extra_kwargs.get("provider") or platform))
-    attributes.update(_gen_ai_attributes(session_id, "invoke_agent", extra_kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "invoke_agent", extra_kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
     attributes.update(_kanban_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
@@ -1006,7 +1043,7 @@ def on_session_end(
         "gen_ai.response.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(kwargs.get("provider") or platform))
-    attributes.update(_gen_ai_attributes(session_id, "invoke_agent", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "invoke_agent", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
@@ -1129,7 +1166,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
     if session_id:
-        attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
+        attributes.update(_gen_ai_attributes(tracer, session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
@@ -1222,7 +1259,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Summary roll-up
     session_id = kwargs.get("session_id")
     if session_id:
-        attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
+        attributes.update(_gen_ai_attributes(tracer, session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
@@ -1290,7 +1327,7 @@ def on_pre_llm_call(
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(platform))
-    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
@@ -1402,7 +1439,7 @@ def on_post_llm_call(
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {"gen_ai.response.model": truncate_string(model, 200)}
     attributes.update(_provider_attributes(platform))
-    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_kanban_attributes(tracer, session_id, kwargs))
     preview = _preview(
@@ -1470,7 +1507,7 @@ def on_pre_api_request(
         "gen_ai.request.model": truncate_string(model, 200),
     }
     attributes.update(_provider_attributes(provider))
-    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "chat", kwargs))
     attributes.update(_gen_ai_request_param_attributes(kwargs))
     attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
@@ -1546,7 +1583,7 @@ def on_api_request_error(
     if error_message:
         attributes["error.message"] = error_message
     attributes.update(_provider_attributes(provider))
-    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "chat", kwargs))
     attributes.update(_server_attributes(base_url))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_kanban_attributes(tracer, session_id, kwargs))
@@ -1586,7 +1623,7 @@ def on_post_api_request(
 
     # Build final attributes
     attributes: Dict[str, Any] = {}
-    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_gen_ai_attributes(tracer, session_id, "chat", kwargs))
     attributes.update(_provider_attributes(provider))
     attributes.update(_server_attributes(base_url))
     response_model_value = response_model or model

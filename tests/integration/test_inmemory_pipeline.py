@@ -153,7 +153,7 @@ class TestSessionSpanExport:
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "invoke_agent"
+        assert span.name == "invoke_agent hermes-agent"
         attrs = dict(span.attributes)
         assert attrs["openinference.span.kind"] == "AGENT"
         assert attrs["hermes.session.completed"] is True
@@ -180,3 +180,32 @@ class TestSessionSpanExport:
         span = exporter.get_finished_spans()[0]
         assert f"{span.context.trace_id:032x}" == trace_id
         assert f"{span.parent.span_id:016x}" == parent_span_id
+
+    def test_cross_process_child_can_share_parent_conversation_id(
+        self, inmemory_otel_setup, monkeypatch
+    ):
+        exporter, plugin = inmemory_otel_setup
+        trace_id = "4bf92f3577b34da6a3ce929d0e0e4736"
+        parent_span_id = "00f067aa0ba902b7"
+        monkeypatch.setenv("HERMES_KANBAN_TASK", "t_child")
+        monkeypatch.setenv(
+            "HERMES_KANBAN_TRACEPARENT",
+            f"00-{trace_id}-{parent_span_id}-01",
+        )
+        monkeypatch.setenv("HERMES_OTEL_CONVERSATION_ID", "parent-session")
+
+        on_session_start(session_id="child-session", model="gpt-4", platform="api_server")
+        on_session_end(
+            session_id="child-session",
+            completed=True,
+            interrupted=False,
+            model="gpt-4",
+            platform="api_server",
+        )
+
+        span = exporter.get_finished_spans()[0]
+        attrs = dict(span.attributes)
+        assert f"{span.context.trace_id:032x}" == trace_id
+        assert f"{span.parent.span_id:016x}" == parent_span_id
+        assert attrs["gen_ai.conversation.id"] == "parent-session"
+        assert attrs["correlation.id"] == "child-session"

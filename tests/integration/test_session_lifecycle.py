@@ -154,7 +154,7 @@ class TestFullSessionLifecycle:
         # Expect: 2 api spans + 1 tool span + 1 llm span + 1 session span = 5
         assert len(spans) == 5
 
-        session_span = _span_by_name(spans, "invoke_agent")
+        session_span = _span_by_name(spans, "invoke_agent hermes-agent")
         attrs = dict(session_span.attributes)
 
         # Token roll-up: 200+300=500 prompt, 30+80=110 completion.
@@ -339,7 +339,7 @@ class TestFullSessionLifecycle:
 
         spans = exporter.get_finished_spans()
         llm_span = _span_by_attr(spans, "chat gpt-4", "input.value")
-        session_span = _span_by_name(spans, "invoke_agent")
+        session_span = _span_by_name(spans, "invoke_agent hermes-agent")
         assert llm_span.attributes["hermes.sender.id"] == "123456789012345678"
         assert llm_span.attributes["user.id"] == "discord:123456789012345678"
         assert session_span.attributes["hermes.sender.id"] == "123456789012345678"

@@ -26,6 +26,8 @@ KANBAN_ENV_KEYS = (
     "HERMES_TENANT",
     "HERMES_PROFILE",
     "HERMES_KANBAN_SOURCE_KIND",
+    "HERMES_OTEL_CONVERSATION_ID",
+    "HERMES_PARENT_CONVERSATION_ID",
 )
 
 
@@ -75,7 +77,7 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="api_server")
         mock_tracer.start_span.assert_called_once()
         call_kwargs = mock_tracer.start_span.call_args[1]
-        assert call_kwargs["name"] == "invoke_agent"
+        assert call_kwargs["name"] == "invoke_agent hermes-agent"
         assert call_kwargs["key"] == "session:s1"
         assert call_kwargs["kind"] == "agent"
 
@@ -114,6 +116,30 @@ class TestOnSessionStart:
         assert attrs["gen_ai.operation.name"] == "invoke_agent"
         assert attrs["gen_ai.request.model"] == "gpt-4o"
         assert attrs["gen_ai.provider.name"] == "telegram"
+
+    def test_uses_propagated_conversation_id_from_env(self, mock_tracer, monkeypatch):
+        monkeypatch.setenv("HERMES_OTEL_CONVERSATION_ID", "parent-conversation")
+
+        on_session_start(session_id="child-session", model="gpt-4o", platform="cli")
+
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.conversation.id"] == "parent-conversation"
+        assert "hermes.conversation.id" not in attrs
+
+    def test_explicit_canonical_conversation_id_wins_over_env(
+        self, mock_tracer, monkeypatch
+    ):
+        monkeypatch.setenv("HERMES_OTEL_CONVERSATION_ID", "env-conversation")
+
+        on_session_start(
+            session_id="child-session",
+            model="gpt-4o",
+            platform="cli",
+            **{"gen_ai.conversation.id": "kw-conversation"},
+        )
+
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.conversation.id"] == "kw-conversation"
 
     def test_uses_propagated_kanban_parent_context(self, mock_tracer, monkeypatch):
         traceparent = "00-4bf92f3577b34da6a3ce929d0e0e4736-00f067aa0ba902b7-01"
@@ -157,6 +183,7 @@ class TestOnSessionStart:
     def test_agent_name_uses_profile_context(self, mock_tracer, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes/profiles/engineer")
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        assert mock_tracer.start_span.call_args[1]["name"] == "invoke_agent engineer"
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["gen_ai.agent.name"] == "engineer"
 
@@ -164,6 +191,7 @@ class TestOnSessionStart:
         monkeypatch.delenv("HERMES_PROFILE", raising=False)
         monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes")
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        assert mock_tracer.start_span.call_args[1]["name"] == "invoke_agent default"
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["gen_ai.agent.name"] == "default"
 
@@ -491,6 +519,53 @@ class TestOnPreLlmCall:
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["correlation.id"] == "corr-123"
 
+    def test_reuses_session_conversation_id_on_child_span(self, mock_tracer):
+        mock_tracer.spans._active_spans["session:child-session"] = MagicMock()
+        on_session_start(
+            session_id="child-session",
+            model="gpt-4",
+            platform="cli",
+            **{"gen_ai.conversation.id": "parent-conversation"},
+        )
+        mock_tracer.start_span.reset_mock()
+
+        on_pre_llm_call(
+            session_id="child-session",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.conversation.id"] == "parent-conversation"
+
+    def test_session_state_uses_full_session_id_for_conversation(self, mock_tracer):
+        long_session_id = "s" * 250
+        mock_tracer.spans._active_spans[f"session:{long_session_id}"] = MagicMock()
+        on_session_start(
+            session_id=long_session_id,
+            model="gpt-4",
+            platform="cli",
+            **{"gen_ai.conversation.id": "long-parent-conversation"},
+        )
+        assert long_session_id in mock_tracer.sessions._sessions
+        assert ("s" * 200) not in mock_tracer.sessions._sessions
+        mock_tracer.start_span.reset_mock()
+
+        on_pre_llm_call(
+            session_id=long_session_id,
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.conversation.id"] == "long-parent-conversation"
+
     def test_session_state_uses_full_session_id_for_correlation(self, mock_tracer):
         long_session_id = "s" * 250
         mock_tracer.spans._active_spans[f"session:{long_session_id}"] = MagicMock()
@@ -537,7 +612,7 @@ class TestOnPreLlmCall:
         # Two start_span calls: invoke_agent (synthesized) + chat gpt-4
         assert mock_tracer.start_span.call_count == 2
         first_kw = mock_tracer.start_span.call_args_list[0][1]
-        assert first_kw["name"] == "invoke_agent"
+        assert first_kw["name"] == "invoke_agent hermes-agent"
         assert first_kw["key"] == "session:s1"
         assert first_kw["attributes"].get("hermes.session.synthesized") is True
 

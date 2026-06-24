@@ -81,10 +81,10 @@ class TestOrphanSweep:
         names = [s.name for s in spans]
         # Both the agent (session) span and the orphaned api span must have
         # been finalized by the sweep.
-        assert "invoke_agent" in names
+        assert "invoke_agent hermes-agent" in names
         assert "chat gpt-4" in names
         # And the session span carries the timed_out status.
-        agent = _span_by_name(spans, "invoke_agent")
+        agent = _span_by_name(spans, "invoke_agent hermes-agent")
         assert agent.attributes.get("hermes.turn.final_status") == "timed_out"
 
     def test_sweep_does_not_expire_young_sessions(self, inmemory_otel_setup):

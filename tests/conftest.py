@@ -44,6 +44,8 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
         "OTEL_HONEYCOMB_DATASET",
         "HONEYCOMB_REGION",
         "OTEL_HONEYCOMB_ENDPOINT",
+        "HERMES_OTEL_CONVERSATION_ID",
+        "HERMES_PARENT_CONVERSATION_ID",
     ):
         monkeypatch.delenv(env_name, raising=False)
 
