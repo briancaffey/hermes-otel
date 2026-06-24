@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.8.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.7.0...hermes-otel-v0.8.0) (2026-06-24)
+
+
+### Features
+
+* **backends:** add first-class Honeycomb backend type ([3de6828](https://github.com/briancaffey/hermes-otel/commit/3de682873e4b9e3ba701d5686206e2691067b894))
+* **backends:** add first-class Honeycomb backend type ([57ea5a5](https://github.com/briancaffey/hermes-otel/commit/57ea5a5dc851805e5694d444dbedd99c22086263)), closes [#20](https://github.com/briancaffey/hermes-otel/issues/20)
+
 ## [0.7.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.6.0...hermes-otel-v0.7.0) (2026-06-23)
 
 
