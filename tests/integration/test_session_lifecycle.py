@@ -21,6 +21,13 @@ def _span_by_name(spans, name):
     raise ValueError(f"No span named '{name}'")
 
 
+def _span_by_attr(spans, name, attr):
+    for s in spans:
+        if s.name == name and attr in dict(s.attributes):
+            return s
+    raise ValueError(f"No span named '{name}' with attr '{attr}'")
+
+
 class TestFullSessionLifecycle:
     def test_complete_session_with_token_aggregation(self, inmemory_otel_setup):
         """Simulate a complete session: start -> llm -> api -> tool -> api end -> llm end -> end.
@@ -147,7 +154,7 @@ class TestFullSessionLifecycle:
         # Expect: 2 api spans + 1 tool span + 1 llm span + 1 session span = 5
         assert len(spans) == 5
 
-        session_span = _span_by_name(spans, "agent")
+        session_span = _span_by_name(spans, "invoke_agent")
         attrs = dict(session_span.attributes)
 
         # Token roll-up: 200+300=500 prompt, 30+80=110 completion.
@@ -227,8 +234,8 @@ class TestFullSessionLifecycle:
         )
 
         spans = exporter.get_finished_spans()
-        api_span = _span_by_name(spans, "api.gpt-4")
-        tool_span = _span_by_name(spans, "tool.execute_code")
+        api_span = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
+        tool_span = _span_by_name(spans, "execute_tool execute_code")
         for span in [api_span, tool_span]:
             assert span.attributes["hermes.sender.id"] == "U0B074344DP"
             assert span.attributes["user.id"] == "slack:U0B074344DP"
@@ -331,8 +338,8 @@ class TestFullSessionLifecycle:
         )
 
         spans = exporter.get_finished_spans()
-        llm_span = _span_by_name(spans, "llm.gpt-4")
-        session_span = _span_by_name(spans, "agent")
+        llm_span = _span_by_attr(spans, "chat gpt-4", "input.value")
+        session_span = _span_by_name(spans, "invoke_agent")
         assert llm_span.attributes["hermes.sender.id"] == "123456789012345678"
         assert llm_span.attributes["user.id"] == "discord:123456789012345678"
         assert session_span.attributes["hermes.sender.id"] == "123456789012345678"

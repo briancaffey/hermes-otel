@@ -101,7 +101,7 @@ class TestTurnSummaryBasic:
         )
 
         spans = exporter.get_finished_spans()
-        agent = _span_by_name(spans, "agent")
+        agent = _span_by_name(spans, "invoke_agent")
         attrs = dict(agent.attributes)
 
         assert attrs["hermes.turn.tool_count"] == 2
@@ -123,7 +123,7 @@ class TestTurnSummaryBasic:
                 ("bash", {"command": "ls"}, "ok"),  # duplicate command
             ],
         )
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         attrs = dict(agent.attributes)
         assert attrs["hermes.turn.tool_count"] == 1
         assert attrs["hermes.turn.tools"] == "bash"
@@ -139,7 +139,7 @@ class TestTurnSummaryBasic:
                 ("read", {"path": "/repo/skills/deployer/index.md"}, "ok"),
             ],
         )
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         attrs = dict(agent.attributes)
         assert attrs["hermes.turn.skill_count"] == 2
         assert attrs["hermes.turn.skills"] == "deployer,monitor"
@@ -153,7 +153,7 @@ class TestTurnSummaryBasic:
                 ("bash", {"command": "fail"}, '{"error": "boom"}'),
             ],
         )
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         attrs = dict(agent.attributes)
         assert "completed" in attrs["hermes.turn.tool_outcomes"]
         assert "error" in attrs["hermes.turn.tool_outcomes"]
@@ -163,7 +163,7 @@ class TestTurnSummaryEdgeCases:
     def test_session_with_no_tools(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         _run_full_turn("s1", [])
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         attrs = dict(agent.attributes)
         # Zero-count attributes are skipped entirely
         assert "hermes.turn.tool_count" not in attrs
@@ -178,7 +178,7 @@ class TestTurnSummaryEdgeCases:
         on_session_end(
             session_id="s1", completed=False, interrupted=True, model="gpt-4", platform="cli"
         )
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         assert agent.attributes["hermes.turn.final_status"] == "interrupted"
 
     def test_incomplete_session_final_status(self, inmemory_otel_setup):
@@ -187,7 +187,7 @@ class TestTurnSummaryEdgeCases:
         on_session_end(
             session_id="s1", completed=False, interrupted=False, model="gpt-4", platform="cli"
         )
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         assert agent.attributes["hermes.turn.final_status"] == "incomplete"
 
     def test_long_tool_list_clipped(self, inmemory_otel_setup):
@@ -195,7 +195,7 @@ class TestTurnSummaryEdgeCases:
         exporter, _ = inmemory_otel_setup
         many = [(f"tool_{i:04d}", {}, "ok") for i in range(200)]
         _run_full_turn("s1", many)
-        agent = _span_by_name(exporter.get_finished_spans(), "agent")
+        agent = _span_by_name(exporter.get_finished_spans(), "invoke_agent")
         tools_attr = agent.attributes["hermes.turn.tools"]
         assert len(tools_attr) == 500
         assert tools_attr.endswith("...")

@@ -75,7 +75,7 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="api_server")
         mock_tracer.start_span.assert_called_once()
         call_kwargs = mock_tracer.start_span.call_args[1]
-        assert call_kwargs["name"] == "agent"
+        assert call_kwargs["name"] == "invoke_agent"
         assert call_kwargs["key"] == "session:s1"
         assert call_kwargs["kind"] == "agent"
 
@@ -340,7 +340,7 @@ class TestOnPreToolCall:
         on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id="t1")
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "tool.bash"
+        assert kw["name"] == "execute_tool bash"
         assert kw["key"] == "bash:t1"
         assert kw["kind"] == "tool"
 
@@ -471,7 +471,7 @@ class TestOnPreLlmCall:
         )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "llm.gpt-4"
+        assert kw["name"] == "chat gpt-4"
         assert kw["key"] == "llm:s1"
         assert kw["kind"] == "llm"
         assert kw["attributes"]["correlation.id"] == "s1"
@@ -534,10 +534,10 @@ class TestOnPreLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        # Two start_span calls: agent (synthesized) + llm.gpt-4
+        # Two start_span calls: invoke_agent (synthesized) + chat gpt-4
         assert mock_tracer.start_span.call_count == 2
         first_kw = mock_tracer.start_span.call_args_list[0][1]
-        assert first_kw["name"] == "agent"
+        assert first_kw["name"] == "invoke_agent"
         assert first_kw["key"] == "session:s1"
         assert first_kw["attributes"].get("hermes.session.synthesized") is True
 
@@ -794,7 +794,7 @@ class TestOnPreApiRequest:
         )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "api.gpt-4"
+        assert kw["name"] == "chat gpt-4"
         assert kw["key"] == "api:t1"
         assert kw["kind"] == "llm"
 
@@ -916,7 +916,13 @@ class TestOnPreApiRequest:
             messages=[{"role": "user", "content": "secret"}],
             system_prompt="private system prompt",
         )
-        event_attrs = span.add_event.call_args[0][1]
+        inference_events = [
+            call.args[1]
+            for call in span.add_event.call_args_list
+            if call.args[0] == "gen_ai.client.inference.operation.details"
+        ]
+        assert len(inference_events) == 1
+        event_attrs = inference_events[0]
         assert "gen_ai.input.messages" not in event_attrs
         assert "gen_ai.system_instructions" not in event_attrs
 
@@ -1220,6 +1226,8 @@ class TestFullCaptureFlags:
     def test_pre_writes_full_prompt_when_flag_on(self, mock_tracer):
         from hermes_otel.plugin_config import HermesOtelConfig
 
+        span = MagicMock()
+        mock_tracer.start_span.return_value = span
         mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
         huge = "x" * 5000  # well past preview_max_chars (1200)
         messages = [
@@ -1228,15 +1236,25 @@ class TestFullCaptureFlags:
         ]
         on_pre_api_request(**self._pre_kwargs(messages=messages, system_prompt="the-system-prompt"))
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["gen_ai.system_instructions"] == "the-system-prompt"
-        assert attrs["input.mime_type"] == "application/json"
-        # Full, untruncated payload round-trips
+        assert "gen_ai.input.messages" not in attrs
+        assert "gen_ai.system_instructions" not in attrs
+        assert "input.value" not in attrs
+        assert "input.mime_type" not in attrs
+
+        calls = span.add_event.call_args_list
+        payload_events = {call.args[0]: call.args[1] for call in calls}
+        assert payload_events["gen_ai.system_instructions"]["gen_ai.system_instructions"] == (
+            "the-system-prompt"
+        )
+        assert payload_events["gen_ai.input.messages"]["gen_ai.input.messages.mime_type"] == (
+            "application/json"
+        )
+        # Full, untruncated event payload round-trips
         import json as _json
 
-        parsed = _json.loads(attrs["gen_ai.input.messages"])
+        parsed = _json.loads(payload_events["gen_ai.input.messages"]["gen_ai.input.messages"])
         assert parsed == messages
-        assert _json.loads(attrs["gen_ai.input.messages"]) == messages
-        assert len(attrs["input.value"]) > 5000
+        assert len(payload_events["gen_ai.input.messages"]["gen_ai.input.messages"]) > 5000
 
     def test_pre_handles_empty_messages(self, mock_tracer):
         from hermes_otel.plugin_config import HermesOtelConfig
@@ -1261,15 +1279,20 @@ class TestFullCaptureFlags:
     def test_post_writes_full_response_when_flag_on(self, mock_tracer):
         from hermes_otel.plugin_config import HermesOtelConfig
 
+        span = MagicMock()
+        mock_tracer.spans.get_span.return_value = span
         mock_tracer.config = HermesOtelConfig(capture_full_responses=True)
         big_response = "answer " * 500  # > preview_max_chars
         on_post_api_request(
             **self._post_kwargs(response_content=big_response, response_tool_calls=[])
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
-        assert "gen_ai.output.messages" in attrs
-        assert attrs["output.value"] == big_response
-        assert attrs["output.mime_type"] == "text/plain"
+        assert "gen_ai.output.messages" not in attrs
+        assert "output.value" not in attrs
+        event_name, event_attrs = span.add_event.call_args.args
+        assert event_name == "gen_ai.output.messages"
+        assert event_attrs["gen_ai.output.messages.mime_type"] == "application/json"
+        assert big_response in event_attrs["gen_ai.output.messages"]
 
     def test_post_serializes_simplenamespace_tool_calls(self, mock_tracer):
         from types import SimpleNamespace
@@ -1286,11 +1309,13 @@ class TestFullCaptureFlags:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         import json as _json
 
-        parsed = _json.loads(attrs["gen_ai.output.messages"])
+        event_name, event_attrs = mock_tracer.spans.get_span.return_value.add_event.call_args.args
+        assert event_name == "gen_ai.output.messages"
+        parsed = _json.loads(event_attrs["gen_ai.output.messages"])
         assert parsed[0]["id"] == "call_1"
         assert parsed[0]["function"]["name"] == "web_search"
-        # With no text content, the tool-call JSON stands in as output.value
-        assert attrs["output.mime_type"] == "application/json"
+        assert "gen_ai.output.messages" not in attrs
+        assert "output.mime_type" not in attrs
 
     def test_flags_independent(self, mock_tracer):
         """Enabling one flag must not imply the other."""

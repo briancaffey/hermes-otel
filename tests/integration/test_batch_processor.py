@@ -213,7 +213,7 @@ class TestSessionEndFlushes:
 
         # Flush was synchronous — no sleep.
         assert any(
-            s.name == "agent" for s in exporter.exported
+            s.name == "invoke_agent" for s in exporter.exported
         ), f"agent span missing: {[s.name for s in exporter.exported]}"
 
     def test_session_end_flush_opt_out(self, batch_pipeline):
@@ -231,10 +231,10 @@ class TestSessionEndFlushes:
 
         deadline = time.time() + 2.0
         while time.time() < deadline:
-            if any(s.name == "agent" for s in exporter.exported):
+            if any(s.name == "invoke_agent" for s in exporter.exported):
                 break
             time.sleep(0.02)
-        assert any(s.name == "agent" for s in exporter.exported)
+        assert any(s.name == "invoke_agent" for s in exporter.exported)
 
 
 class TestConcurrentSessions:
@@ -327,6 +327,6 @@ class TestConcurrentSessions:
         # Each trace must be internally consistent: tool parent is api, api parent is agent.
         for trace_spans in traces.values():
             names = {s.name for s in trace_spans}
-            assert "agent" in names
-            assert any(n.startswith("api.") for n in names)
-            assert any(n.startswith("tool.") for n in names)
+            assert "invoke_agent" in names
+            assert any(n.startswith("chat ") for n in names)
+            assert any(n.startswith("execute_tool ") for n in names)

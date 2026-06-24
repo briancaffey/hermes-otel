@@ -30,6 +30,7 @@ from hermes_otel.hooks import (
     on_session_start,
 )
 from hermes_otel.langsmith_backend import LangSmithBackend
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -168,10 +169,9 @@ class TestLangSmithPluginFlow:
         # agent (session) + llm + api + tool = 4 runs created.
         assert len(posts) == 4
         names = [p["name"] for p in posts]
-        assert "agent" in names
-        assert "llm.gpt-4" in names
-        assert "api.gpt-4" in names
-        assert "tool.bash" in names
+        assert "invoke_agent" in names
+        assert names.count("chat gpt-4") == 2
+        assert "execute_tool bash" in names
 
     def test_patches_one_per_span(self, langsmith_plugin):
         """Each end_span → one PATCH /runs/{id}; 4 spans = 4 updates."""
@@ -187,15 +187,15 @@ class TestLangSmithPluginFlow:
         recorder, _ = langsmith_plugin
         self._fire_complete_session()
         posts = recorder.posts()
-        by_name = {p["name"]: p for p in posts}
+        by_name = {p["name"]: p for p in posts if p["name"] != "chat gpt-4"}
 
-        agent_id = by_name["agent"]["id"]
-        llm = by_name["llm.gpt-4"]
-        api = by_name["api.gpt-4"]
-        tool = by_name["tool.bash"]
+        agent_id = by_name["invoke_agent"]["id"]
+        llm = next(p for p in posts if p.get("parent_run_id") == agent_id)
+        api = next(p for p in posts if p.get("parent_run_id") == llm["id"])
+        tool = by_name["execute_tool bash"]
 
         # Root span has no parent_run_id.
-        assert "parent_run_id" not in by_name["agent"]
+        assert "parent_run_id" not in by_name["invoke_agent"]
         # llm is rooted under agent.
         assert llm["parent_run_id"] == agent_id
         # api is rooted under llm.
@@ -208,13 +208,10 @@ class TestLangSmithPluginFlow:
         recorder, _ = langsmith_plugin
         self._fire_complete_session()
 
-        posts = recorder.posts()
-        api_id = next(p["id"] for p in posts if p["name"] == "api.gpt-4")
-
-        # Find the PATCH for that run_id in the request log.
+        # Find the PATCH carrying usage for the API span.
         api_patch = None
         for method, url, body in recorder.requests:
-            if method == "PATCH" and url.endswith(f"/runs/{api_id}"):
+            if method == "PATCH" and body.get("usage_metadata"):
                 api_patch = body
                 break
         assert api_patch is not None, "no PATCH for api span"
@@ -227,3 +224,58 @@ class TestLangSmithPluginFlow:
         assert api_patch["usage_metadata"]["input_tokens"] == 100
         assert api_patch["usage_metadata"]["output_tokens"] == 50
         assert api_patch["usage_metadata"]["total_tokens"] == 150
+
+    def test_full_capture_flags_preserve_payloads_for_langsmith(self, langsmith_plugin):
+        """LangSmith lacks OTel span events, so payload events remain canonical fields."""
+        recorder, plugin = langsmith_plugin
+        plugin.config = HermesOtelConfig(
+            capture_full_prompts=True,
+            capture_full_responses=True,
+        )
+
+        messages = [{"role": "user", "content": "secret prompt"}]
+        on_pre_api_request(
+            task_id="t-full",
+            session_id="s-full",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=10,
+            request_char_count=100,
+            max_tokens=128,
+            messages=messages,
+            system_prompt="system secret",
+        )
+        api_post = next(p for p in recorder.posts() if p["name"] == "chat gpt-4")
+        assert json.loads(api_post["inputs"]["gen_ai.input.messages"]) == messages
+        assert api_post["inputs"]["gen_ai.input.messages.mime_type"] == "application/json"
+        assert api_post["inputs"]["gen_ai.system_instructions"] == "system secret"
+
+        on_post_api_request(
+            task_id="t-full",
+            session_id="s-full",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.1,
+            finish_reason="stop",
+            message_count=1,
+            response_model="gpt-4",
+            usage={},
+            assistant_content_chars=6,
+            assistant_tool_call_count=0,
+            response_content="answer",
+            response_tool_calls=[],
+        )
+        api_patch = recorder.patches()[-1]
+        output_messages = json.loads(api_patch["outputs"]["gen_ai.output.messages"])
+        assert output_messages == [{"role": "assistant", "content": "answer"}]
+        assert api_patch["outputs"]["gen_ai.output.messages.mime_type"] == "application/json"

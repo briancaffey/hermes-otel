@@ -23,6 +23,17 @@ def _span_by_name(spans, name):
     raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
 
 
+def _span_by_attr(spans, name, attr):
+    """Find a span by name that carries a specific attribute."""
+    for s in spans:
+        if s.name == name and attr in dict(s.attributes):
+            return s
+    raise ValueError(
+        f"No span named '{name}' with attr '{attr}' in "
+        f"{[(s.name, sorted(dict(s.attributes))) for s in spans]}"
+    )
+
+
 def _parent_span_id(span):
     """Extract the parent span ID from a span, or None."""
     if span.parent is not None:
@@ -62,8 +73,8 @@ class TestSessionContainsLlm:
         spans = exporter.get_finished_spans()
         assert len(spans) == 2
 
-        session_span = _span_by_name(spans, "agent")
-        llm_span = _span_by_name(spans, "llm.gpt-4")
+        session_span = _span_by_name(spans, "invoke_agent")
+        llm_span = _span_by_attr(spans, "chat gpt-4", "input.value")
 
         assert _parent_span_id(llm_span) == session_span.context.span_id
 
@@ -124,8 +135,8 @@ class TestLlmContainsApi:
         spans = exporter.get_finished_spans()
         assert len(spans) == 2
 
-        llm_span = _span_by_name(spans, "llm.gpt-4")
-        api_span = _span_by_name(spans, "api.gpt-4")
+        llm_span = _span_by_attr(spans, "chat gpt-4", "input.value")
+        api_span = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
 
         assert _parent_span_id(api_span) == llm_span.context.span_id
 
@@ -189,8 +200,8 @@ class TestApiContainsTool:
         spans = exporter.get_finished_spans()
         assert len(spans) == 3
 
-        api_span = _span_by_name(spans, "api.gpt-4")
-        tool_span = _span_by_name(spans, "tool.bash")
+        api_span = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
+        tool_span = _span_by_name(spans, "execute_tool bash")
 
         assert _parent_span_id(tool_span) == api_span.context.span_id
 
@@ -262,10 +273,10 @@ class TestFullHierarchy:
         spans = exporter.get_finished_spans()
         assert len(spans) == 4
 
-        session = _span_by_name(spans, "agent")
-        llm = _span_by_name(spans, "llm.gpt-4")
-        api = _span_by_name(spans, "api.gpt-4")
-        tool = _span_by_name(spans, "tool.bash")
+        session = _span_by_name(spans, "invoke_agent")
+        llm = _span_by_attr(spans, "chat gpt-4", "input.value")
+        api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
+        tool = _span_by_name(spans, "execute_tool bash")
 
         # Verify parent chain: tool -> api -> llm -> session
         assert _parent_span_id(tool) == api.context.span_id
@@ -334,8 +345,8 @@ class TestMultipleToolsUnderApi:
         spans = exporter.get_finished_spans()
         assert len(spans) == 4
 
-        api_span = _span_by_name(spans, "api.gpt-4")
-        tool_spans = [s for s in spans if s.name.startswith("tool.")]
+        api_span = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
+        tool_spans = [s for s in spans if s.name.startswith("execute_tool ")]
         assert len(tool_spans) == 2
 
         for tool_span in tool_spans:
@@ -388,7 +399,7 @@ class TestCaptureConversationHistory:
         ]
         self._drive_llm_call("s1", history, user_message="now do it again")
 
-        llm = _span_by_name(exporter.get_finished_spans(), "llm.gpt-4")
+        llm = _span_by_name(exporter.get_finished_spans(), "chat gpt-4")
         attrs = dict(llm.attributes)
         assert attrs.get("input.value") == "now do it again"
         assert "hermes.conversation.message_count" not in attrs
@@ -408,13 +419,18 @@ class TestCaptureConversationHistory:
         ]
         self._drive_llm_call("s2", history)
 
-        llm = _span_by_name(exporter.get_finished_spans(), "llm.gpt-4")
+        llm = _span_by_attr(
+            exporter.get_finished_spans(), "chat gpt-4", "hermes.conversation.message_count"
+        )
         attrs = dict(llm.attributes)
-        input_value = attrs.get("input.value", "")
+        assert attrs.get("hermes.conversation.message_count") == 4
+        assert "input.value" not in attrs
+        assert "input.mime_type" not in attrs
+        events = {event.name: dict(event.attributes) for event in llm.events}
+        input_value = events["gen_ai.input.messages"]["gen_ai.input.messages"]
         assert "an earlier assistant reply" in input_value
         assert "tool output from before" in input_value
-        assert attrs.get("hermes.conversation.message_count") == 4
-        assert attrs.get("input.mime_type") == "application/json"
+        assert events["gen_ai.input.messages"]["gen_ai.input.messages.mime_type"] == "application/json"
 
     def test_respects_max_chars_clip(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
@@ -428,10 +444,14 @@ class TestCaptureConversationHistory:
         history = [{"role": "user", "content": "x" * 5000}]
         self._drive_llm_call("s3", history)
 
-        llm = _span_by_name(exporter.get_finished_spans(), "llm.gpt-4")
+        llm = _span_by_attr(
+            exporter.get_finished_spans(), "chat gpt-4", "hermes.conversation.message_count"
+        )
         attrs = dict(llm.attributes)
-        assert len(attrs["input.value"]) <= 200
-        assert attrs["input.value"].endswith("...")
+        events = {event.name: dict(event.attributes) for event in llm.events}
+        input_value = events["gen_ai.input.messages"]["gen_ai.input.messages"]
+        assert len(input_value) <= 200
+        assert input_value.endswith("...")
 
     def test_empty_history_falls_back_to_user_message(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
@@ -441,7 +461,7 @@ class TestCaptureConversationHistory:
 
         self._drive_llm_call("s4", [], user_message="solo turn")
 
-        llm = _span_by_name(exporter.get_finished_spans(), "llm.gpt-4")
+        llm = _span_by_name(exporter.get_finished_spans(), "chat gpt-4")
         attrs = dict(llm.attributes)
         assert attrs.get("input.value") == "solo turn"
         assert "hermes.conversation.message_count" not in attrs
@@ -521,9 +541,9 @@ class TestContinuationTurnSynthesizesAgent:
         trace_ids = {s.context.trace_id for s in spans}
         assert len(trace_ids) == 1
 
-        agent = _span_by_name(spans, "agent")
-        llm = _span_by_name(spans, "llm.gpt-4")
-        api = _span_by_name(spans, "api.gpt-4")
+        agent = _span_by_name(spans, "invoke_agent")
+        llm = _span_by_attr(spans, "chat gpt-4", "input.value")
+        api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
 
         assert _parent_span_id(agent) is None
         assert _parent_span_id(llm) == agent.context.span_id
@@ -647,10 +667,10 @@ class TestCrossThreadNesting:
             len(trace_ids) == 1
         ), f"expected 1 trace, got {len(trace_ids)}: {[s.name for s in spans]}"
 
-        agent = _span_by_name(spans, "agent")
-        llm = _span_by_name(spans, "llm.gpt-4")
-        api = _span_by_name(spans, "api.gpt-4")
-        tool = _span_by_name(spans, "tool.bash")
+        agent = _span_by_name(spans, "invoke_agent")
+        llm = _span_by_attr(spans, "chat gpt-4", "input.value")
+        api = _span_by_attr(spans, "chat gpt-4", "hermes.api.mode")
+        tool = _span_by_name(spans, "execute_tool bash")
 
         assert _parent_span_id(agent) is None
         assert _parent_span_id(llm) == agent.context.span_id

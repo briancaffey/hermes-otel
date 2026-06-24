@@ -730,6 +730,64 @@ def _add_inference_details_event(span: Any, attributes: Dict[str, Any]) -> None:
         pass
 
 
+def _add_payload_event(
+    span: Any,
+    name: str,
+    payload: Any,
+    *,
+    mime_type: Optional[str] = None,
+    extra_attributes: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Attach a Honeycomb Agent Timeline payload event when supported.
+
+    Full prompts/responses can be large and private, so callers only reach
+    this helper after their explicit capture gates pass. The payload lives on
+    a span event (not a span attribute) so Agent Timeline can render the
+    message while regular span attributes stay compact and query-safe.
+    """
+    if span is None or not hasattr(span, "add_event"):
+        return
+    if payload is None or payload == "" or payload == [] or payload == {}:
+        return
+    attrs: Dict[str, Any] = {name: payload}
+    if mime_type:
+        attrs[f"{name}.mime_type"] = mime_type
+    if extra_attributes:
+        attrs.update(extra_attributes)
+    try:
+        span.add_event(name, attrs)
+    except Exception:
+        pass
+
+
+def _agent_span_name(operation_name: str, extra_kwargs: dict) -> str:
+    """Return the Honeycomb Agent Timeline span name for an agent operation."""
+    return operation_name
+
+
+def _model_span_name(operation_name: str, model: Any) -> str:
+    """Return the Honeycomb Agent Timeline span name for a model operation."""
+    model_text = truncate_string(model, 200)
+    return f"{operation_name} {model_text}" if model_text else operation_name
+
+
+def _tool_span_name(operation_name: str, tool_name: str) -> str:
+    """Return the Honeycomb Agent Timeline span name for a tool operation."""
+    tool_text = truncate_string(tool_name, 200)
+    return f"{operation_name} {tool_text}" if tool_text else operation_name
+
+
+def _uses_langsmith_backend(tracer: Any) -> bool:
+    """Return True when the active tracer is the LangSmith HTTP backend.
+
+    LangSmith's active spans are run dictionaries, not OTel span objects, so
+    they cannot receive OTel span events after creation. Keep canonical payload
+    fields on LangSmith inputs/outputs as a backend-compatibility fallback while
+    OTLP/Honeycomb backends receive the payloads as span events.
+    """
+    return bool(getattr(tracer, "__dict__", {}).get("_langsmith"))
+
+
 def _extract_correlation_id(extra_kwargs: dict) -> str:
     """Return an incoming correlation identifier from hook kwargs, if present.
 
@@ -871,7 +929,7 @@ def _start_session_span(
     """
     tracer = get_tracer()
     kind = _detect_session_kind(platform, extra_kwargs)
-    span_name = "agent" if kind != "cron" else "cron"
+    span_name = "cron" if kind == "cron" else _agent_span_name("invoke_agent", extra_kwargs)
     key = f"session:{session_id}"
 
     attributes = {
@@ -1082,7 +1140,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     attributes.update(_kanban_attributes(tracer, session_id, kwargs))
 
     tracer.start_span(
-        name=f"tool.{tool_name}",
+        name=_tool_span_name("execute_tool", tool_name),
         key=key,
         kind="tool",
         attributes=attributes,
@@ -1247,18 +1305,23 @@ def on_pre_llm_call(
                 ps.sender_id = sender_id
                 ps.user_id = sender_attrs["user.id"]
 
-    # Opt-in: put the entire conversation the model is about to see on
-    # input.value. Falls back to just the latest user_message otherwise —
-    # that's the historical default and what small backends handle best.
+    input_payload_event: Optional[str] = None
+
+    # Opt-in: put the entire conversation the model is about to see on a
+    # GenAI payload event. Falls back to just the latest user_message preview
+    # on input.value otherwise — that's the historical default and what small
+    # backends handle best.
     if tracer.config.capture_conversation_history and tracer.config.capture_previews:
         full = _serialize_conversation_history(
             conversation_history,
             tracer.config.conversation_history_max_chars,
         )
         if full is not None:
-            attributes["input.value"] = full
-            attributes["input.mime_type"] = "application/json"
+            input_payload_event = full
             attributes["hermes.conversation.message_count"] = len(conversation_history)
+            if _uses_langsmith_backend(tracer):
+                attributes["gen_ai.input.messages"] = full
+                attributes["gen_ai.input.messages.mime_type"] = "application/json"
         else:
             preview = _preview(
                 user_message,
@@ -1275,12 +1338,19 @@ def on_pre_llm_call(
             attributes["input.value"] = preview
 
     span = tracer.start_span(
-        name=f"llm.{model}",
+        name=_model_span_name("chat", model),
         key=key,
         kind="llm",
         attributes=attributes,
         session_id=session_id,
     )
+    if input_payload_event is not None:
+        _add_payload_event(
+            span,
+            "gen_ai.input.messages",
+            input_payload_event,
+            mime_type="application/json",
+        )
 
     # Push as parent — tool spans during this LLM call will nest under it
     tracer.spans.push_parent(span, session_id=session_id)
@@ -1342,6 +1412,17 @@ def on_post_llm_call(
     if preview is not None:
         attributes["output.value"] = preview
 
+    span = tracer.spans.get_span(key)
+    if tracer.config.capture_full_responses and assistant_response:
+        payload = json.dumps(
+            [{"role": "assistant", "content": str(assistant_response)}],
+            ensure_ascii=False,
+        )
+        if _uses_langsmith_backend(tracer):
+            attributes["gen_ai.output.messages"] = payload
+            attributes["gen_ai.output.messages.mime_type"] = "application/json"
+        _add_payload_event(span, "gen_ai.output.messages", payload, mime_type="application/json")
+
     # Pop parent — tool spans after this won't nest under this LLM call
     tracer.spans.pop_parent(session_id=session_id)
 
@@ -1399,25 +1480,39 @@ def on_pre_api_request(
 
     attributes.update(_session_sender_attributes(tracer, session_id))
 
+    input_payload_event: Optional[str] = None
+    system_prompt_event: Optional[str] = None
     if tracer.config.capture_full_prompts:
         messages = kwargs.get("messages")
         system_prompt = kwargs.get("system_prompt")
         serialized = _serialize_full(messages)
         if serialized is not None:
-            attributes["gen_ai.input.messages"] = serialized
-            attributes["input.value"] = serialized
-            attributes["input.mime_type"] = "application/json"
+            input_payload_event = serialized
+            if _uses_langsmith_backend(tracer):
+                attributes["gen_ai.input.messages"] = serialized
+                attributes["gen_ai.input.messages.mime_type"] = "application/json"
         if system_prompt:
-            attributes["gen_ai.system_instructions"] = str(system_prompt)
+            system_prompt_event = str(system_prompt)
+            if _uses_langsmith_backend(tracer):
+                attributes["gen_ai.system_instructions"] = system_prompt_event
 
     span = tracer.start_span(
-        name=f"api.{model}",
+        name=_model_span_name("chat", model),
         key=key,
         kind="llm",
         attributes=attributes,
         session_id=session_id,
     )
     _add_inference_details_event(span, attributes)
+    if input_payload_event is not None:
+        _add_payload_event(
+            span,
+            "gen_ai.input.messages",
+            input_payload_event,
+            mime_type="application/json",
+        )
+    if system_prompt_event:
+        _add_payload_event(span, "gen_ai.system_instructions", system_prompt_event)
 
     # Push as parent — tool spans during this API call will nest under it
     tracer.spans.push_parent(span, session_id=session_id)
@@ -1549,23 +1644,36 @@ def on_post_api_request(
     if assistant_tool_call_count:
         attributes["hermes.response.tool_calls"] = assistant_tool_call_count
 
+    output_payload_event: Optional[str] = None
+    output_payload_mime_type: Optional[str] = None
     if tracer.config.capture_full_responses:
         response_content = kwargs.get("response_content")
         response_tool_calls = kwargs.get("response_tool_calls")
         if response_content:
             response_text = str(response_content)
-            attributes["gen_ai.output.messages"] = json.dumps(
+            output_payload_event = json.dumps(
                 [{"role": "assistant", "content": response_text}],
                 ensure_ascii=False,
             )
-            attributes["output.value"] = response_text
-            attributes["output.mime_type"] = "text/plain"
+            output_payload_mime_type = "application/json"
         tool_calls_serialized = _serialize_full(response_tool_calls)
         if tool_calls_serialized is not None:
             if not response_content:
-                attributes["gen_ai.output.messages"] = tool_calls_serialized
-                attributes["output.value"] = tool_calls_serialized
-                attributes["output.mime_type"] = "application/json"
+                output_payload_event = tool_calls_serialized
+                output_payload_mime_type = "application/json"
+
+    if output_payload_event is not None:
+        span = tracer.spans.get_span(key)
+        if _uses_langsmith_backend(tracer):
+            attributes["gen_ai.output.messages"] = output_payload_event
+            if output_payload_mime_type:
+                attributes["gen_ai.output.messages.mime_type"] = output_payload_mime_type
+        _add_payload_event(
+            span,
+            "gen_ai.output.messages",
+            output_payload_event,
+            mime_type=output_payload_mime_type,
+        )
 
     # Pop parent
     tracer.spans.pop_parent(session_id=session_id)

@@ -24,7 +24,7 @@ class TestToolSpanExport:
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "tool.bash"
+        assert span.name == "execute_tool bash"
         attrs = dict(span.attributes)
         assert attrs["tool.name"] == "bash"
         assert attrs["openinference.span.kind"] == "TOOL"
@@ -84,7 +84,7 @@ class TestLlmSpanExport:
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "llm.gpt-4"
+        assert span.name == "chat gpt-4"
         attrs = dict(span.attributes)
         assert attrs["openinference.span.kind"] == "LLM"
         assert attrs["input.value"] == "hello"
@@ -131,7 +131,7 @@ class TestApiSpanExport:
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "api.gpt-4"
+        assert span.name == "chat gpt-4"
         attrs = dict(span.attributes)
         assert attrs["gen_ai.usage.input_tokens"] == 100
         assert attrs["gen_ai.usage.output_tokens"] == 50
@@ -153,7 +153,7 @@ class TestSessionSpanExport:
         spans = exporter.get_finished_spans()
         assert len(spans) == 1
         span = spans[0]
-        assert span.name == "agent"
+        assert span.name == "invoke_agent"
         attrs = dict(span.attributes)
         assert attrs["openinference.span.kind"] == "AGENT"
         assert attrs["hermes.session.completed"] is True
