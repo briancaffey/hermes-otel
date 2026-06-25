@@ -46,6 +46,7 @@ const sidebars: SidebarsConfig = {
         'configuration/conversation-capture',
         'configuration/batch-export',
         'configuration/logs',
+        'configuration/mcp-trace-propagation',
       ],
     },
     {
