@@ -215,6 +215,48 @@ def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, 
             tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
 
 
+def _genai_metric_dims(
+    model: Any,
+    provider: Any,
+    response_model: Any = None,
+    operation: str = "chat",
+) -> Dict[str, Any]:
+    """Low-cardinality dimension set for the OTel GenAI spec metrics.
+
+    Only stable, bounded dimensions (operation, provider, model names) — never
+    per-call IDs like session_id — so the spec metrics stay aggregatable and
+    match generic OTel-GenAI dashboards.
+    """
+    dims: Dict[str, Any] = {"gen_ai.operation.name": operation}
+    prov = truncate_string(provider, 120)
+    if prov:
+        dims["gen_ai.provider.name"] = prov
+    if model:
+        dims["gen_ai.request.model"] = truncate_string(model, 200)
+    if response_model:
+        dims["gen_ai.response.model"] = truncate_string(response_model, 200)
+    return dims
+
+
+# Canonical-field -> OTel GenAI token.type value. The spec enumerates only
+# ``input`` and ``output``; cache/reasoning buckets are subsets already counted
+# in those, so they are intentionally not split into the spec metric.
+_GENAI_TOKEN_TYPES = (
+    ("prompt_tokens", "input"),
+    ("completion_tokens", "output"),
+)
+
+
+def _record_genai_token_usage(
+    tracer, metric_name: str, totals: Dict[str, int], dims: Dict[str, Any]
+) -> None:
+    """Record a GenAI-spec token-usage histogram point per non-zero type."""
+    for key, token_type in _GENAI_TOKEN_TYPES:
+        v = totals.get(key, 0)
+        if v:
+            tracer.record_metric(metric_name, v, {**dims, "gen_ai.token.type": token_type})
+
+
 def _detect_session_kind(platform: str, kwargs: dict) -> str:
     """Determine session type from explicit fields or fallback to detection."""
     session_type = kwargs.get("session_type")
@@ -601,6 +643,17 @@ def on_session_end(
 
     if ps is not None and ps.usage_updated:
         attributes.update(_usage_attributes(ps.usage))
+        # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
+        # Prefer the provider captured from this session's API calls over the
+        # platform, so the dimension matches the gen_ai.client.* metrics.
+        if tracer.config.emit_genai_metrics:
+            agent_provider = ps.provider or kwargs.get("provider") or platform
+            _record_genai_token_usage(
+                tracer,
+                "gen_ai.agent.token.usage",
+                ps.usage,
+                _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
+            )
 
     # Surface the last API error's type on the root so a failed turn shows why.
     if ps is not None and ps.last_error_type:
@@ -1094,12 +1147,25 @@ def on_post_api_request(
             for field in _USAGE_FIELDS:
                 ps.usage[field] += totals[field]
             ps.usage_updated = True
+            # Remember the real LLM provider — on_session_end only sees the
+            # platform, so the agent-level metric would otherwise mislabel it.
+            if provider:
+                ps.provider = provider
 
         # Record metrics
         metric_attrs: Dict[str, Any] = {"model": model, "provider": provider}
         if session_id:
             metric_attrs["session_id"] = session_id
         _record_usage_metrics(tracer, totals, metric_attrs)
+
+        # OTel GenAI spec token-usage histogram (dual-write; low cardinality).
+        if tracer.config.emit_genai_metrics:
+            _record_genai_token_usage(
+                tracer,
+                "gen_ai.client.token.usage",
+                totals,
+                _genai_metric_dims(model, provider, response_model_value),
+            )
 
         cost = usage.get("cost")
         if cost:
@@ -1113,6 +1179,14 @@ def on_post_api_request(
     # Performance metrics
     if api_duration:
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
+        # OTel GenAI spec operation-duration histogram — in SECONDS (the spec
+        # unit), unlike the ms hermes.* histograms.
+        if tracer.config.emit_genai_metrics:
+            tracer.record_metric(
+                "gen_ai.client.operation.duration",
+                api_duration,
+                _genai_metric_dims(model, provider, response_model_value),
+            )
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason
         attributes["gen_ai.response.finish_reasons"] = [finish_reason]
@@ -1284,6 +1358,13 @@ def on_api_request_error(
         if provider:
             retry_attrs["provider"] = provider
         tracer.record_metric("retry_count", 1, retry_attrs)
+
+    # OTel GenAI spec operation-duration on the failure path, tagged with
+    # error.type so success/error durations are queryable from one histogram.
+    if api_duration and tracer.config.emit_genai_metrics:
+        duration_dims = _genai_metric_dims(model, provider)
+        duration_dims["error.type"] = error_type or "unknown"
+        tracer.record_metric("gen_ai.client.operation.duration", api_duration, duration_dims)
 
     debug_log(f"  API error span ended: key={key}, error.type={error_type}, class={status_class}")
 

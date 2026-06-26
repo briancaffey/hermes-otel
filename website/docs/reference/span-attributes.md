@@ -177,3 +177,24 @@ reasoning into the total. Only emitted by reasoning-capable models that report
 a non-zero count.
 
 Label cardinality is bounded by normalised values (outcomes, finish reasons) and small dimension sets (model, tool name). No user IDs or other high-cardinality labels.
+
+### OTel GenAI semantic-convention metrics
+
+In addition to the `hermes.*` instruments above, the plugin emits spec-named
+metrics so generic OpenTelemetry GenAI dashboards and alert rules work without
+any per-user wiring. This mirrors the dual-convention span attributes. Set
+`emit_genai_metrics: false` (or `HERMES_OTEL_EMIT_GENAI_METRICS=false`) to emit
+only the `hermes.*` metrics.
+
+| Metric | Type | Unit | Labels |
+|---|---|---|---|
+| `gen_ai.client.token.usage` | Histogram | `{token}` | `gen_ai.token.type` (`input`/`output`), `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model` |
+| `gen_ai.client.operation.duration` | Histogram | **`s`** | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `error.type` (on failures) |
+| `gen_ai.agent.token.usage` | Histogram | `{token}` | `gen_ai.token.type`, `gen_ai.operation.name` (`invoke_agent`), `gen_ai.provider.name`, `gen_ai.request.model` |
+
+Notes:
+- **Units follow the spec:** durations are in **seconds** (`gen_ai.client.operation.duration`), whereas the `hermes.*` duration histograms stay in **ms** for backward compatibility.
+- `gen_ai.token.type` is limited to the spec's `input` / `output` enum. Cache and reasoning buckets are subsets already counted in those, so they are not split into the spec metric (the `hermes.tokens.*` metrics retain that breakdown).
+- Dimensions are deliberately low-cardinality — operation, provider, and model only, **never** per-call IDs such as `session_id` — so the metrics stay aggregatable.
+- `gen_ai.agent.token.usage` is the per-turn/session rollup recorded at session end; `gen_ai.client.*` are per-API-call.
+- `gen_ai.agent.request.duration` is intentionally **not** emitted yet — there is no reliable per-turn duration signal today (a turn can span multiple API calls); it is deferred until true session-lifecycle timing lands.

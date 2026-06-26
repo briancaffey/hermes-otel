@@ -130,6 +130,11 @@ class HermesOtelConfig:
     # None = attach to the root logger (captures all hermes-agent + plugin
     # logs). Set to e.g. "hermes_otel" to scope capture to plugin logs only.
     log_attach_logger: Optional[str] = None
+    # ── OTel GenAI semantic-convention metrics ──────────────────────────
+    # Emit spec-named instruments (gen_ai.client.*, gen_ai.agent.*) in
+    # addition to the custom hermes.* metrics, so generic OTel-GenAI
+    # dashboards/alerts work out of the box. Set false for hermes.* only.
+    emit_genai_metrics: bool = True
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
@@ -271,6 +276,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_full_prompts",
         "capture_full_responses",
         "capture_sender_id",
+        "emit_genai_metrics",
     ):
         if isinstance(value, bool):
             return value
@@ -352,6 +358,7 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_full_prompts", _parse_bool)
     take("capture_full_responses", _parse_bool)
     take("capture_sender_id", _parse_bool)
+    take("emit_genai_metrics", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

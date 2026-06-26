@@ -54,6 +54,7 @@ Each of these overrides the corresponding field in `config.yaml`. See [`config.y
 | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` | `span_batch_max_export_batch_size` | int |
 | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` | `span_batch_export_timeout_ms` | int (ms) |
 | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` | `force_flush_on_session_end` | bool |
+| `HERMES_OTEL_EMIT_GENAI_METRICS` | `emit_genai_metrics` | bool |
 
 ## Debug / diagnostics
 
