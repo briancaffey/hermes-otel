@@ -93,6 +93,55 @@ class TestTokenUsageMetric:
         # 100 (input) + 50 (output) = 150
         assert value == 150
 
+    def test_reasoning_token_type_recorded(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="o3",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
+        )
+        on_post_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="o3",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="o3",
+            usage={
+                "prompt_tokens": 100,
+                "output_tokens": 80,
+                "total_tokens": 180,
+                "reasoning_tokens": 60,
+            },
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
+        )
+
+        metric = _get_metric(metric_reader, "hermes.token.usage")
+        assert metric is not None
+        reasoning_points = [
+            dp for dp in metric.data.data_points if dp.attributes.get("token_type") == "reasoning"
+        ]
+        assert len(reasoning_points) == 1
+        assert reasoning_points[0].value == 60
+
 
 class TestToolDurationMetric:
     def test_tool_duration_recorded(self, inmemory_otel_with_metrics):

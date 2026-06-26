@@ -148,6 +148,7 @@ class TestOnSessionEnd:
                 "total_tokens": 150,
                 "cache_read_tokens": 20,
                 "cache_write_tokens": 10,
+                "reasoning_tokens": 15,
             }
         )
         ps.usage_updated = True
@@ -161,6 +162,9 @@ class TestOnSessionEnd:
         assert attrs["gen_ai.usage.output_tokens"] == 50
         assert attrs["llm.token_count.prompt_details.cache_read"] == 20
         assert attrs["gen_ai.usage.cache_creation_input_tokens"] == 10
+        # Reasoning tokens roll up to the session span (subset of output).
+        assert attrs["llm.token_count.completion_details.reasoning"] == 15
+        assert attrs["gen_ai.usage.reasoning.output_tokens"] == 15
         # Verify cleanup — PerSession popped from registry.
         assert mock_tracer.sessions.peek("s1") is None
 

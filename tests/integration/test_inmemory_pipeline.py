@@ -139,6 +139,57 @@ class TestApiSpanExport:
         assert attrs["llm.token_count.completion"] == 50
         assert attrs["gen_ai.usage.output_tokens"] == 50
 
+    def test_api_span_exports_reasoning_tokens(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="o3",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
+        )
+        on_post_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="o3",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="o3",
+            # reasoning_tokens is a subset of output_tokens (the thinking portion).
+            usage={
+                "prompt_tokens": 100,
+                "output_tokens": 80,
+                "total_tokens": 180,
+                "reasoning_tokens": 60,
+            },
+            assistant_content_chars=200,
+            assistant_tool_call_count=0,
+        )
+
+        spans = exporter.get_finished_spans()
+        assert len(spans) == 1
+        attrs = dict(spans[0].attributes)
+        assert attrs["llm.token_count.completion_details.reasoning"] == 60
+        assert attrs["gen_ai.usage.reasoning.output_tokens"] == 60
+        # Total stays input + output; reasoning is not double-counted.
+        assert attrs["gen_ai.usage.total_tokens"] == 180
+        assert attrs["gen_ai.usage.output_tokens"] == 80
+
 
 class TestSessionSpanExport:
     def test_session_span_exports(self, inmemory_otel_setup):

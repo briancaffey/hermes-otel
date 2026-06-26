@@ -81,10 +81,12 @@ Span kind: `LLM` (OpenInference).
 | `llm.token_count.total` | OpenInference | int | Sum |
 | `llm.token_count.cache_read` | OpenInference | int | Cache read (optional) |
 | `llm.token_count.cache_write` | OpenInference | int | Cache write (optional) |
+| `llm.token_count.completion_details.reasoning` | OpenInference | int | Reasoning/thinking tokens — a subset of completion (optional) |
 | `gen_ai.usage.input_tokens` | gen_ai | int | Prompt tokens |
 | `gen_ai.usage.output_tokens` | gen_ai | int | Completion tokens |
 | `gen_ai.usage.cache_read_input_tokens` | gen_ai | int | Cache read (optional) |
 | `gen_ai.usage.cache_creation_input_tokens` | gen_ai | int | Cache write (optional) |
+| `gen_ai.usage.reasoning.output_tokens` | gen_ai | int | Reasoning/thinking tokens — a subset of output (optional) |
 | `llm.invocation_parameters` | OpenInference | string (JSON) | Request params |
 | `gen_ai.response.finish_reason` | gen_ai | string | `stop`, `tool_use`, `length`, etc. |
 | `http.duration_ms` | hermes | int | Wall-clock HTTP duration |
@@ -152,6 +154,7 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 | `hermes.tokens.total` | Counter | tokens | `model`, `provider` |
 | `hermes.tokens.cache_read` | Counter | tokens | `model`, `provider` |
 | `hermes.tokens.cache_write` | Counter | tokens | `model`, `provider` |
+| `hermes.tokens.reasoning` | Counter | tokens | `model`, `provider` |
 | `hermes.tool.calls` | Counter | count | `tool_name`, `outcome` |
 | `hermes.tool.duration` | Histogram | ms | `tool_name`, `outcome` |
 | `hermes.api.duration` | Histogram | ms | `model`, `provider`, `finish_reason` |
@@ -165,5 +168,12 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 `status_class` is bucketed to `2xx`/`3xx`/`4xx`/`5xx`/`network`/`other` to keep
 cardinality bounded. `hermes.retry.count` increments once per *retryable*
 failure.
+
+`hermes.tokens.reasoning` (token_type `reasoning`) counts the model's
+thinking tokens. These are a **subset of completion/output tokens**, not an
+additive bucket — they are reported separately for visibility but are already
+included in `hermes.tokens.completion` and `total_tokens`, so do not sum
+reasoning into the total. Only emitted by reasoning-capable models that report
+a non-zero count.
 
 Label cardinality is bounded by normalised values (outcomes, finish reasons) and small dimension sets (model, tool name). No user IDs or other high-cardinality labels.

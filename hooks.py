@@ -126,6 +126,7 @@ _USAGE_FIELDS = (
     "total_tokens",
     "cache_read_tokens",
     "cache_write_tokens",
+    "reasoning_tokens",
 )
 
 
@@ -134,8 +135,10 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
 
     Hermes exposes ``output_tokens``; some providers use ``completion_tokens``.
     Similarly ``input_tokens`` vs ``prompt_tokens``. Total is derived from
-    the reported value or sum(prompt, completion) when absent. Returns all
-    five canonical fields, zero-filled.
+    the reported value or sum(prompt, completion) when absent. ``reasoning_tokens``
+    is a *subset* of ``completion_tokens`` (the thinking portion of the output),
+    not an additive bucket, so it is never folded into ``total_tokens``. Returns
+    all canonical fields, zero-filled.
     """
     completion = _to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
     prompt = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
@@ -146,6 +149,7 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
         "total_tokens": total,
         "cache_read_tokens": _to_int(usage.get("cache_read_tokens")),
         "cache_write_tokens": _to_int(usage.get("cache_write_tokens")),
+        "reasoning_tokens": _to_int(usage.get("reasoning_tokens")),
     }
 
 
@@ -162,6 +166,7 @@ def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
     total = totals["total_tokens"]
     cache_read = totals["cache_read_tokens"]
     cache_write = totals["cache_write_tokens"]
+    reasoning = totals.get("reasoning_tokens", 0)
 
     attrs: Dict[str, Any] = {
         # OpenInference (Phoenix)
@@ -183,6 +188,13 @@ def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
         attrs["llm.token_count.prompt_details.cache_write"] = cache_write
         attrs["gen_ai.usage.cache_creation.input_tokens"] = cache_write
         attrs["gen_ai.usage.cache_creation_input_tokens"] = cache_write
+    if reasoning:
+        # Reasoning ("thinking") tokens are a subset of the output/completion
+        # count, surfaced as a breakdown. OpenInference (Phoenix) reads
+        # ``completion_details.reasoning``; OTel GenAI uses
+        # ``gen_ai.usage.reasoning.output_tokens``.
+        attrs["llm.token_count.completion_details.reasoning"] = reasoning
+        attrs["gen_ai.usage.reasoning.output_tokens"] = reasoning
     return attrs
 
 
@@ -191,6 +203,7 @@ _USAGE_METRIC_LABELS = (
     ("completion_tokens", "output"),
     ("cache_read_tokens", "cacheRead"),
     ("cache_write_tokens", "cacheCreation"),
+    ("reasoning_tokens", "reasoning"),
 )
 
 

@@ -486,6 +486,9 @@ The plugin emits **dual-convention** attributes so both backends work:
 | Total tokens | `gen_ai.usage.total_tokens` | `llm.token_count.total` |
 | Cache read | `gen_ai.usage.cache_read.input_tokens` (`gen_ai.usage.cache_read_input_tokens` also kept) | `llm.token_count.prompt_details.cache_read` |
 | Cache write | `gen_ai.usage.cache_creation.input_tokens` (`gen_ai.usage.cache_creation_input_tokens` also kept) | `llm.token_count.prompt_details.cache_write` |
+| Reasoning | `gen_ai.usage.reasoning.output_tokens` | `llm.token_count.completion_details.reasoning` |
+
+Reasoning ("thinking") tokens are emitted only by reasoning-capable models that report them. They are a **subset of the completion/output count** — already included in the completion and total figures — and are surfaced separately for visibility, so they should not be added on top of the total.
 
 LLM and API spans also expose standard GenAI request/response metadata where Hermes provides it, including `gen_ai.provider.name`, `gen_ai.request.model`, request parameters such as `gen_ai.request.temperature`, and response fields such as `gen_ai.response.model` and `gen_ai.response.finish_reasons`.
 
