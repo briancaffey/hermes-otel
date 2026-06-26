@@ -108,6 +108,11 @@ class HermesOTelPlugin:
         self._subagent_duration = None
         self._api_error_count = None
         self._retry_count = None
+        # OTel GenAI semantic-convention instruments (dual-write alongside the
+        # hermes.* ones above).
+        self._gen_ai_client_token_usage = None
+        self._gen_ai_client_operation_duration = None
+        self._gen_ai_agent_token_usage = None
         # Sub-agent delegation registry. Maps a delegated child's session_id to
         # a record about the delegation span opened in the parent on
         # ``subagent_start`` — ``{"span", "context", "role", "parent_session_id"}``
@@ -430,6 +435,28 @@ class HermesOTelPlugin:
             description="Provider API retry attempts",
         )
 
+        # ── OTel GenAI semantic-convention metrics ──────────────────────────
+        # Spec-named instruments emitted in addition to the hermes.* ones, so
+        # generic OTel-GenAI dashboards/alerts work without per-user config.
+        # Units follow the spec exactly: {token} for token counts, s (seconds)
+        # for durations — note hermes.tool.duration / hermes.subagent.duration
+        # stay in ms for backward compatibility.
+        self._gen_ai_client_token_usage = self._meter.create_histogram(
+            "gen_ai.client.token.usage",
+            unit="{token}",
+            description="Number of tokens used per client (LLM) operation, by type",
+        )
+        self._gen_ai_client_operation_duration = self._meter.create_histogram(
+            "gen_ai.client.operation.duration",
+            unit="s",
+            description="Duration of client (LLM) operations",
+        )
+        self._gen_ai_agent_token_usage = self._meter.create_histogram(
+            "gen_ai.agent.token.usage",
+            unit="{token}",
+            description="Tokens used per agent invocation (session/turn rollup), by type",
+        )
+
     def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
         """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
 
@@ -510,6 +537,15 @@ class HermesOTelPlugin:
         elif name == "retry_count":
             if self._retry_count is not None:
                 self._retry_count.add(int(value), attrs)
+        elif name == "gen_ai.client.token.usage":
+            if self._gen_ai_client_token_usage is not None:
+                self._gen_ai_client_token_usage.record(int(value), attrs)
+        elif name == "gen_ai.client.operation.duration":
+            if self._gen_ai_client_operation_duration is not None:
+                self._gen_ai_client_operation_duration.record(value, attrs)
+        elif name == "gen_ai.agent.token.usage":
+            if self._gen_ai_agent_token_usage is not None:
+                self._gen_ai_agent_token_usage.record(int(value), attrs)
 
     def start_span(
         self,

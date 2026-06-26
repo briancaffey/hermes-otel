@@ -101,6 +101,18 @@ log_attach_logger: null
 
 See [OTel logs](/configuration/logs) for the full story, including the loop-avoidance filter for HTTP client libraries and which backends actually accept logs.
 
+## Metrics
+
+```yaml
+# Emit OTel GenAI semantic-convention metrics (gen_ai.client.*, gen_ai.agent.*)
+# alongside the custom hermes.* metrics, so generic OTel-GenAI dashboards and
+# alerts work without per-user wiring. Set false for hermes.* only.
+# Env: HERMES_OTEL_EMIT_GENAI_METRICS. Default: true.
+emit_genai_metrics: true
+```
+
+See [Span & metric reference](/reference/span-attributes#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
+
 ## Lifecycle / cleanup
 
 ```yaml

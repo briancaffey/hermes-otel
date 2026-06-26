@@ -97,6 +97,19 @@
 # hermes-agent's own logs; any logger name to scope further.
 # log_attach_logger: null
 
+# ── OTel GenAI semantic-convention metrics ────────────────────────────────────
+#
+# In addition to the custom hermes.* metrics, the plugin emits spec-named
+# instruments so generic OpenTelemetry GenAI dashboards/alerts light up with
+# no per-user wiring:
+#   gen_ai.client.token.usage      Histogram {token}  (gen_ai.token.type input/output)
+#   gen_ai.client.operation.duration  Histogram s     (SECONDS, per spec)
+#   gen_ai.agent.token.usage       Histogram {token}  (per-turn/session rollup)
+# Dimensions stay low-cardinality (operation, provider, model — never per-call
+# IDs). Set false to emit only the hermes.* metrics.
+# Also settable via HERMES_OTEL_EMIT_GENAI_METRICS.
+# emit_genai_metrics: true
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than

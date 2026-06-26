@@ -4,6 +4,7 @@ import pytest
 from hermes_otel.helpers import truncate_string
 from hermes_otel.hooks import (
     _detect_session_kind,
+    _genai_metric_dims,
     _normalize_usage,
     _to_int,
     _usage_attributes,
@@ -140,6 +141,28 @@ class TestNormalizeUsageReasoning:
             {"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 30}
         )
         assert totals["total_tokens"] == 150  # 100 + 50, reasoning excluded
+
+
+class TestGenAIMetricDims:
+    def test_default_operation_is_chat(self):
+        dims = _genai_metric_dims("gpt-4", "openai")
+        assert dims["gen_ai.operation.name"] == "chat"
+        assert dims["gen_ai.provider.name"] == "openai"
+        assert dims["gen_ai.request.model"] == "gpt-4"
+
+    def test_response_model_and_operation_override(self):
+        dims = _genai_metric_dims("gpt-4", "openai", "gpt-4o", operation="invoke_agent")
+        assert dims["gen_ai.operation.name"] == "invoke_agent"
+        assert dims["gen_ai.response.model"] == "gpt-4o"
+
+    def test_no_high_cardinality_keys(self):
+        dims = _genai_metric_dims("gpt-4", "openai", "gpt-4")
+        assert "session_id" not in dims
+        assert "task_id" not in dims
+
+    def test_empty_provider_and_model_omitted(self):
+        dims = _genai_metric_dims("", "")
+        assert dims == {"gen_ai.operation.name": "chat"}
 
 
 class TestUsageAttributesReasoning:

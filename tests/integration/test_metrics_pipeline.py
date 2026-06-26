@@ -6,8 +6,51 @@ from hermes_otel.hooks import (
     on_post_tool_call,
     on_pre_api_request,
     on_pre_tool_call,
+    on_session_end,
     on_session_start,
 )
+from hermes_otel.plugin_config import HermesOtelConfig
+
+
+def _api_call(session_id="s1", model="gpt-4", provider="openai", api_duration=0.5, usage=None):
+    """Fire a pre/post API request pair to drive metric recording."""
+    on_pre_api_request(
+        task_id="t1",
+        session_id=session_id,
+        platform="cli",
+        model=model,
+        provider=provider,
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=5,
+        tool_count=0,
+        approx_input_tokens=500,
+        request_char_count=2000,
+        max_tokens=1024,
+    )
+    on_post_api_request(
+        task_id="t1",
+        session_id=session_id,
+        platform="cli",
+        model=model,
+        provider=provider,
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=api_duration,
+        finish_reason="stop",
+        message_count=5,
+        response_model=model,
+        usage=usage or {"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150},
+        assistant_content_chars=200,
+        assistant_tool_call_count=0,
+    )
+
+
+def _points(metric):
+    """All data points for a metric (histogram or counter)."""
+    return list(metric.data.data_points) if metric is not None else []
 
 
 def _get_metric(metric_reader, name):
@@ -141,6 +184,84 @@ class TestTokenUsageMetric:
         ]
         assert len(reasoning_points) == 1
         assert reasoning_points[0].value == 60
+
+
+class TestGenAISpecMetrics:
+    def test_client_token_usage_dual_written(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        _api_call(usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150})
+
+        # Custom metric still recorded.
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+
+        # Spec metric (a histogram) recorded with matching input/output split.
+        spec = _get_metric(metric_reader, "gen_ai.client.token.usage")
+        assert spec is not None
+        assert spec.unit == "{token}"
+        by_type = {dp.attributes.get("gen_ai.token.type"): dp.sum for dp in _points(spec)}
+        assert by_type == {"input": 100, "output": 50}
+
+    def test_client_token_usage_dimensions_low_cardinality(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        _api_call()
+
+        spec = _get_metric(metric_reader, "gen_ai.client.token.usage")
+        for dp in _points(spec):
+            keys = set(dp.attributes.keys())
+            # GenAI-spec dims only — never per-call IDs like session_id.
+            assert "session_id" not in keys
+            assert "gen_ai.operation.name" in keys
+            assert "gen_ai.provider.name" in keys
+            assert "gen_ai.request.model" in keys
+
+    def test_operation_duration_in_seconds(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        _api_call(api_duration=0.5)
+
+        dur = _get_metric(metric_reader, "gen_ai.client.operation.duration")
+        assert dur is not None
+        assert dur.unit == "s"
+        pts = _points(dur)
+        assert len(pts) == 1
+        # Recorded in seconds (0.5), NOT milliseconds.
+        assert pts[0].sum == pytest.approx(0.5)
+        assert pts[0].attributes.get("gen_ai.operation.name") == "chat"
+
+    def test_tool_duration_stays_milliseconds(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
+        on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
+
+        tool = _get_metric(metric_reader, "hermes.tool.duration")
+        assert tool is not None
+        # The hermes.* duration histogram keeps ms for backward compatibility.
+        assert tool.unit == "ms"
+
+    def test_agent_token_usage_on_session_end(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call(usage={"prompt_tokens": 100, "output_tokens": 50, "total_tokens": 150})
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        agent = _get_metric(metric_reader, "gen_ai.agent.token.usage")
+        assert agent is not None
+        by_type = {dp.attributes.get("gen_ai.token.type"): dp.sum for dp in _points(agent)}
+        assert by_type == {"input": 100, "output": 50}
+        for dp in _points(agent):
+            assert dp.attributes.get("gen_ai.operation.name") == "invoke_agent"
+
+    def test_flag_disables_spec_metrics_only(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        plugin.config = HermesOtelConfig(emit_genai_metrics=False)
+
+        _api_call()
+
+        # hermes.* still flows; gen_ai.* suppressed.
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+        assert _get_metric(metric_reader, "gen_ai.client.token.usage") is None
+        assert _get_metric(metric_reader, "gen_ai.client.operation.duration") is None
 
 
 class TestToolDurationMetric:
