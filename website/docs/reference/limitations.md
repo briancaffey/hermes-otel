@@ -41,6 +41,12 @@ The [orphan-span sweep](/architecture/orphan-sweep) is the partial fix for this:
 
 Live with this. Production tracing stacks have the same trade-off; the alternative is persisting span state to disk, which has its own failure modes.
 
+## Sub-agent linking is link-only across processes
+
+Delegated child agents (`delegate_task`) are modeled as `subagent.*` spans, and the child's own root span rejoins the parent trace so a multi-agent run is one connected tree. This relies on the delegation span being reachable from the child's `on_session_start` — which works because Hermes runs delegated children **in the same process** (on background threads), where the plugin's in-memory sub-agent registry holds the live span.
+
+If a future Hermes version runs delegated children **in a separate process**, that registry won't hold the live span. The plugin then degrades gracefully: the child root attaches an OTel **span link** to the delegation span's `SpanContext` (when available) and is tagged with `hermes.subagent.parent_session_id` for correlation — but the child becomes its own trace rather than nesting in the parent. True cross-process trace-context *propagation* (injecting the parent context into the child process) is out of scope for now; open an issue if you need it.
+
 ## Sampling is head-based only
 
 `ParentBased(TraceIdRatioBased(rate))` makes the sampling decision at the **root**. There's no tail-based sampler that boosts on error or keeps all traces above a duration threshold.

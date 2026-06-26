@@ -452,10 +452,12 @@ Hermes fires lifecycle hooks. This plugin maps them to OTel spans:
 
 ```
 Turn 1:
-  session.{platform} / cron (root, when session hooks are available)
+  agent / cron (root, when session hooks are available)
   └── LLM span
       └── API span (first call → stop or tool_calls)
           └── Tool span(s) (if tools called)
+      ├── subagent.{role} span (when delegate_task is used)
+      │   └── agent (child run rejoins the trace) → its own LLM/API/tool spans
       └── API span (second call → final response)
 ```
 
@@ -463,10 +465,13 @@ Turn 1:
 
 | Span | Kind | Contains |
 |------|------|----------|
-| `session.{platform}` / `cron` | GENERAL | Session metadata, completion/interruption status |
+| `agent` / `cron` | AGENT | Session metadata, completion/interruption status, turn summary |
 | `llm.{model}` | LLM | Model name, provider, user message (input), assistant response (output) |
 | `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens |
 | `tool.{name}` | TOOL | Tool name, arguments (input), result (output), error status |
+| `subagent.{role}` | AGENT | Delegated child agent — role, goal, status, duration, summary; the child's own run nests beneath it so a multi-agent run is **one connected trace** |
+
+**Sub-agent delegation:** when the agent calls `delegate_task`, the plugin opens a `subagent.{role}` span in the parent trace (via the `subagent_start` / `subagent_stop` hooks) and rejoins the delegated child's own root span underneath it. Without this, child agents export as dozens of disconnected traces. See [Span hierarchy → `subagent.*`](website/docs/architecture/span-hierarchy.md) and the `hermes.subagent.count` / `hermes.subagent.duration` metrics.
 
 ### Attribute conventions
 
@@ -489,7 +494,7 @@ Phoenix uses `input.value` and `output.value` for previews. When full prompt/res
 | File | Role |
 |------|------|
 | `plugin.yaml` | Plugin manifest — declares hooks to Hermes |
-| `__init__.py` | Entry point — initializes tracer, registers core hooks (+ session hooks when supported) |
+| `__init__.py` | Entry point — initializes tracer, registers core hooks (+ session and sub-agent hooks when supported) |
 | `tracer.py` | OTel TracerProvider setup, span lifecycle management, parent/child tracking |
 | `hooks.py` | Hook implementations — maps Hermes events to OTel spans with attributes |
 | `debug_utils.py` | Optional debug logging and secret masking |

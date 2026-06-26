@@ -103,6 +103,26 @@ Span kind: `TOOL` (OpenInference).
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` |
 | `hermes.skill.name` | hermes | string | Inferred skill name (optional) |
 
+## `subagent.*`
+
+Span kind: `AGENT` (OpenInference). One per delegated child agent; nests under the parent turn, with the child's own root span nested beneath it (or linked, cross-process).
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
+| `gen_ai.agent.name` | gen_ai | string | Child role |
+| `hermes.subagent.role` | hermes | string | Child role |
+| `hermes.subagent.goal` | hermes | string | Delegated goal (preview) |
+| `hermes.subagent.child_session_id` | hermes | string | Child session ID (join key) |
+| `hermes.subagent.parent_session_id` | hermes | string | Parent session ID |
+| `hermes.subagent.parent_turn_id` | hermes | string | Parent turn ID |
+| `hermes.subagent.child_id` | hermes | string | Child sub-agent ID (optional) |
+| `hermes.subagent.status` | hermes | string | Reported `child_status` (on stop) |
+| `hermes.subagent.duration_ms` | hermes | float | Child wall-clock ms (on stop) |
+| `hermes.subagent.summary` | hermes | string | Child result summary (on stop) |
+
+The delegated child's own `agent` root additionally carries `hermes.session.is_subagent=true`, `hermes.subagent.parent_session_id`, and `hermes.subagent.role`.
+
 ## Metrics (separate from spans)
 
 Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metrics:
@@ -119,5 +139,7 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 | `hermes.api.duration` | Histogram | ms | `model`, `provider`, `finish_reason` |
 | `hermes.skill.inferred` | Counter | count | `skill_name`, `source` |
 | `hermes.sessions` | Counter | count | `kind`, `final_status` |
+| `hermes.subagent.count` | Counter | count | `role`, `status` |
+| `hermes.subagent.duration` | Histogram | ms | `role` |
 
 Label cardinality is bounded by normalised values (outcomes, finish reasons) and small dimension sets (model, tool name). No user IDs or other high-cardinality labels.
