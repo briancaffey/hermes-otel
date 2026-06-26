@@ -12,6 +12,7 @@ routed through the tracer singleton so test reset is just
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional, TypedDict
 
@@ -19,9 +20,9 @@ from .debug_utils import debug_log
 from .helpers import (
     clip_preview,
     coerce_bool,
+    detect_skill,
     extract_tool_result_status,
     http_status_class,
-    infer_skill_name,
     resolve_tool_identity,
     subagent_span_key,
     subagent_status_to_span_status,
@@ -682,6 +683,19 @@ def on_session_end(
 
     status = "ok" if completed or interrupted else "error"
 
+    # Close any skill execution-window spans opened this turn. Done before the
+    # root is popped/ended so they close as children of the still-open root.
+    # Overlapping skills each get their own close. Status is OK — a skill being
+    # active is never itself an error; the turn outcome rides on result_status.
+    if tracer.config.skill_spans:
+        skill_status = "completed" if completed else "interrupted" if interrupted else "incomplete"
+        for skill_name, skill_key in tracer.spans.pop_skill_spans(session_id).items():
+            tracer.end_span(
+                skill_key,
+                attributes={"hermes.skill.result_status": skill_status},
+                status="ok",
+            )
+
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
     tracer.unregister_turn(session_id)
@@ -694,6 +708,39 @@ def on_session_end(
         tracer._force_flush()
 
     debug_log(f"  session span ended: key={key}, status={status}")
+
+
+def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: dict) -> None:
+    """Open an overlapping skill execution-window span (idempotent per turn).
+
+    A skill is loaded once (via ``skill_view`` or a ``/skills/`` read) and then
+    guides the rest of the turn, so the span opens here and is closed at the
+    turn boundary in :func:`on_session_end`. Skills overlap freely — each gets
+    its own span keyed by name, nested under the turn root rather than the
+    in-flight tool/LLM span.
+    """
+    if tracer.spans.has_skill_span(session_id, skill):
+        return  # already active this turn — keep the first window open
+    key = f"skill:{session_id}:{skill}"
+    home = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    attributes: Dict[str, Any] = {
+        "hermes.skill.name": skill,
+        "hermes.skill.source": source,
+        "hermes.skill.path": os.path.join(home, "skills", skill),
+        "hermes.span_kind": "skill",
+        "gen_ai.skill.name": skill,
+    }
+    attributes.update(_gen_ai_attributes(session_id, "execute_skill", kwargs))
+    tracer.start_span(
+        name=f"skill.{skill}",
+        key=key,
+        kind="general",
+        attributes=attributes,
+        session_id=session_id,
+        parent=tracer.spans.get_session_root(session_id),
+    )
+    tracer.spans.register_skill_span(session_id, skill, key)
+    debug_log(f"  skill span opened: {skill} (source={source})")
 
 
 def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
@@ -735,13 +782,14 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         attributes["hermes.tool.target"] = truncate_string(target, 500)
     if command:
         attributes["hermes.tool.command"] = truncate_string(command, 500)
-    skill = infer_skill_name(args)
+    skill, skill_source = detect_skill(tool_name, args)
     if skill:
         attributes["hermes.skill.name"] = skill
+        attributes["hermes.skill.source"] = skill_source
         tracer.record_metric(
             "skill_inferred",
             1,
-            {"skill_name": skill, "source": "path_match"},
+            {"skill_name": skill, "source": skill_source},
         )
 
     # Summary roll-up (requires session_id to bucket into the right turn).
@@ -755,6 +803,8 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_target(target)
         summary.add_command(command)
         summary.add_skill(skill)
+        if skill and tracer.config.skill_spans:
+            _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
 
     tracer.start_span(
         name=f"tool.{tool_name}",

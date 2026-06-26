@@ -66,6 +66,11 @@ class SpanTracker:
         # thread / task that handles a hook for this session sees the
         # same stack. See module docstring for rationale.
         self._session_parent_stacks: Dict[str, list] = {}
+        # session_id -> {skill_name: span_key}. Skills are *overlapping*
+        # execution windows opened when a skill is loaded and closed at the
+        # turn boundary — they are tracked here (NOT on the parent stack) so
+        # several can be active at once without disturbing tool/LLM nesting.
+        self._session_skill_spans: Dict[str, Dict[str, str]] = {}
 
     def _parent_stack(self) -> list:
         """Return this context's parent span stack, creating it if needed."""
@@ -106,6 +111,31 @@ class SpanTracker:
                 s.pop()
                 if not s:
                     self._session_parent_stacks.pop(session_id, None)
+
+    def get_session_root(self, session_id: Optional[str] = None):
+        """Return the session's *root* span (bottom of the stack), or None.
+
+        Skill spans nest under this turn-level root rather than whatever tool /
+        LLM span happens to be in flight, so a skill reads as active for the
+        whole turn.
+        """
+        if session_id:
+            s = self._session_parent_stacks.get(session_id)
+            if s:
+                return s[0]
+        return None
+
+    def has_skill_span(self, session_id: str, skill: str) -> bool:
+        """True when a skill span for ``skill`` is already open this session."""
+        return skill in self._session_skill_spans.get(session_id, {})
+
+    def register_skill_span(self, session_id: str, skill: str, key: str) -> None:
+        """Track an open skill span so it can be closed at the turn boundary."""
+        self._session_skill_spans.setdefault(session_id, {})[skill] = key
+
+    def pop_skill_spans(self, session_id: str) -> Dict[str, str]:
+        """Return and clear all open skill spans for a session (skill -> key)."""
+        return self._session_skill_spans.pop(session_id, {})
 
     def get_current_parent(self, session_id: Optional[str] = None):
         """Return the current parent span, or None.
@@ -166,6 +196,7 @@ class SpanTracker:
             self.end_span(key)
         self._active_spans.clear()
         self._session_parent_stacks.clear()
+        self._session_skill_spans.clear()
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()

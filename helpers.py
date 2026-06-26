@@ -166,6 +166,44 @@ def infer_skill_name_from_text(text: str) -> Optional[str]:
     return match.group(1)
 
 
+# Argument keys the ``skill_view`` tool may carry the skill name under.
+_SKILL_VIEW_ARG_KEYS = ("name", "skill", "skill_name")
+
+
+def detect_skill(tool_name: Optional[str], args: Optional[Dict[str, Any]]):
+    """Detect an activated skill from a tool call.
+
+    Two sources, in priority order:
+
+    * ``skill_view`` — the canonical way Hermes loads a skill. The skill name
+      arrives as an *argument* (e.g. ``{"name": "axolotl"}``), which the
+      path-based :func:`infer_skill_name` heuristic does not catch. A
+      plugin-namespaced name (``"plugin:axolotl"``) is reduced to the bare
+      skill name.
+    * path match — any tool whose ``path`` / ``file_path`` / ``target`` points
+      into ``/skills/<name>/`` (e.g. ``read`` of a SKILL.md).
+
+    Returns ``(skill_name, source)`` where ``source`` is ``"skill_view"`` or
+    ``"path_match"``, or ``(None, None)`` when no skill is involved.
+    """
+    if not isinstance(args, dict):
+        return None, None
+    if tool_name == "skill_view":
+        for key in _SKILL_VIEW_ARG_KEYS:
+            v = args.get(key)
+            if not isinstance(v, str) or not v.strip():
+                continue
+            # The value may be a bare name, a plugin-namespaced name, or (rarely)
+            # a /skills/ path — handle all three.
+            name = infer_skill_name_from_text(v) or v.split(":")[-1].split("/")[0].strip()
+            if name:
+                return name, "skill_view"
+    name = infer_skill_name(args)
+    if name:
+        return name, "path_match"
+    return None, None
+
+
 # ── Sub-agent / delegation ───────────────────────────────────────────────────
 
 # child_status values hermes-agent reports on subagent_stop that indicate a

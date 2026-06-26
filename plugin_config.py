@@ -135,6 +135,12 @@ class HermesOtelConfig:
     # addition to the custom hermes.* metrics, so generic OTel-GenAI
     # dashboards/alerts work out of the box. Set false for hermes.* only.
     emit_genai_metrics: bool = True
+    # ── Skill execution-window spans ────────────────────────────────────
+    # Emit a skill:<name> span when the agent loads a skill (via skill_view
+    # or a /skills/ path), spanning from load to the turn boundary. Skills
+    # overlap freely. Set false to keep only the hermes.skill.* attribute and
+    # the skill_inferred counter.
+    skill_spans: bool = True
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
@@ -277,6 +283,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_full_responses",
         "capture_sender_id",
         "emit_genai_metrics",
+        "skill_spans",
     ):
         if isinstance(value, bool):
             return value
@@ -359,6 +366,7 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_full_responses", _parse_bool)
     take("capture_sender_id", _parse_bool)
     take("emit_genai_metrics", _parse_bool)
+    take("skill_spans", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

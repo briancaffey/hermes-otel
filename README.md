@@ -453,6 +453,7 @@ Hermes fires lifecycle hooks. This plugin maps them to OTel spans:
 ```
 Turn 1:
   agent / cron (root, when session hooks are available)
+  ├── skill.{name} span (when a skill is loaded; spans load → turn end)
   └── LLM span
       └── API span (first call → stop or tool_calls)
           └── Tool span(s) (if tools called)
@@ -466,12 +467,15 @@ Turn 1:
 | Span | Kind | Contains |
 |------|------|----------|
 | `agent` / `cron` | AGENT | Session metadata, completion/interruption status, turn summary |
+| `skill.{name}` | SKILL | A skill loaded during the turn — `hermes.skill.name`, `hermes.skill.source` (`skill_view`/`path_match`), `hermes.skill.path`, `hermes.skill.result_status`. Spans from load to turn end; skills overlap freely |
 | `llm.{model}` | LLM | Model name, provider, user message (input), assistant response (output) |
 | `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens. On failure: `ERROR` status + recorded exception + retry metadata |
 | `tool.{name}` | TOOL | Tool name, arguments (input), result (output), error status |
 | `subagent.{role}` | AGENT | Delegated child agent — role, goal, status, duration, summary; the child's own run nests beneath it so a multi-agent run is **one connected trace** |
 
 **Sub-agent delegation:** when the agent calls `delegate_task`, the plugin opens a `subagent.{role}` span in the parent trace (via the `subagent_start` / `subagent_stop` hooks) and rejoins the delegated child's own root span underneath it. Without this, child agents export as dozens of disconnected traces. See [Span hierarchy → `subagent.*`](website/docs/architecture/span-hierarchy.md) and the `hermes.subagent.count` / `hermes.subagent.duration` metrics.
+
+**Skill execution windows:** when the agent loads a skill (the `skill_view` tool, or a read of a `/skills/<name>/` file), the plugin opens a `skill.{name}` span that runs until the turn ends — so a trace shows *which skills were active and for how long*, with overlaps. Controlled by `skill_spans` (default on). The plugin also ships a companion Hermes skill, `hermes_otel:observability` (load it with `skill_view`), which explains how to turn on and read this telemetry — and because skill loads are instrumented, opening it emits its own `skill.observability` span. See [Span hierarchy → `skill.*`](website/docs/architecture/span-hierarchy.md#skill).
 
 **API errors & retries:** failed provider requests (rate limits, timeouts, 5xx, network errors) close the `api.{model}` span as `ERROR` with an `exception` event and retry metadata (`error.type`, status code, `hermes.retry.count`, `hermes.retryable`), via the `api_request_error` hook — previously these ended `OK` and were invisible. Emits `hermes.api.error.count{error_type,status_class,retryable}` and `hermes.retry.count`.
 
