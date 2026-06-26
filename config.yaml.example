@@ -110,6 +110,19 @@
 # Also settable via HERMES_OTEL_EMIT_GENAI_METRICS.
 # emit_genai_metrics: true
 
+# ── Skill execution-window spans ──────────────────────────────────────────────
+#
+# When the agent loads a skill — via the skill_view tool or a read of a
+# /skills/<name>/ path — the plugin opens a skill.<name> span that runs from
+# load until the turn boundary, nested under the turn's agent span. Skills
+# overlap freely (two loaded in one turn → two concurrent spans). Attributes:
+# hermes.skill.name, hermes.skill.source (skill_view|path_match),
+# hermes.skill.path, hermes.skill.result_status, hermes.span_kind=skill.
+# The hermes.skill.* attribute and skill_inferred counter are unaffected.
+# Set false to keep only those and skip the spans.
+# Also settable via HERMES_OTEL_SKILL_SPANS.
+# skill_spans: true
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than

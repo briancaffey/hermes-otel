@@ -156,3 +156,8 @@ packages = ["hermes_otel"]
 
 [tool.setuptools.package-dir]
 hermes_otel = "."
+
+[tool.setuptools.package-data]
+# Ship the bundled Hermes skill (registered as hermes_otel:observability) in
+# wheels; source/editable installs already resolve it via __file__.
+hermes_otel = ["skills/**/*", "plugin.yaml"]

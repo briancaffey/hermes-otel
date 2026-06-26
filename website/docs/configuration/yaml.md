@@ -113,6 +113,19 @@ emit_genai_metrics: true
 
 See [Span & metric reference](/reference/span-attributes#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
 
+## Skills
+
+```yaml
+# Open a skill.<name> span when the agent loads a skill (via skill_view or a
+# /skills/<name>/ read), spanning from load to the turn boundary. Skills
+# overlap freely. The hermes.skill.name attribute and skill_inferred counter
+# are emitted regardless of this flag.
+# Env: HERMES_OTEL_SKILL_SPANS. Default: true.
+skill_spans: true
+```
+
+See [Span hierarchy → skill.*](/architecture/span-hierarchy#skill) for the span shape and attributes.
+
 ## Lifecycle / cleanup
 
 ```yaml

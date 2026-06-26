@@ -72,3 +72,22 @@ def register(ctx):
         debug_log("mcp_request_headers hook not supported by this Hermes; skipping")
 
     logger.info(f"[hermes-otel] Registered {6 + optional_hooks + mcp_hooks} hooks")
+
+    # Bundle a companion Hermes skill that explains how to turn on and read this
+    # plugin's telemetry. Resolvable as `hermes_otel:observability` via
+    # skill_view — and because the plugin instruments skill loads, invoking it
+    # emits its own `skill.observability` span (the feature dogfooding itself).
+    # Forward-compatible: older Hermes builds may not expose register_skill.
+    try:
+        from pathlib import Path
+
+        skill_path = Path(__file__).resolve().parent / "skills" / "observability" / "SKILL.md"
+        if skill_path.exists():
+            ctx.register_skill(
+                "observability",
+                skill_path,
+                description="Turn on and understand OpenTelemetry observability for this Hermes agent.",
+            )
+            debug_log("registered bundled skill: hermes_otel:observability")
+    except Exception:
+        debug_log("register_skill unavailable; skipping bundled observability skill")

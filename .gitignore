@@ -223,8 +223,12 @@ __marimo__/
 .streamlit/secrets.toml
 
 # hermes-otel: user-local plugin config. May contain endpoints or secrets.
-# Check in config.yaml.example only.
+# Check in config.yaml.example only. Also ignore local backups/variants so
+# `git add -A` can't sweep them into the repo (config.yaml.example stays tracked).
 config.yaml
+config.yaml.bak*
+config.yaml.backup
+config.yaml.local
 
 # hermes-otel: dashboard/dist/ is authored JS source, not a build output
 # (the plugin has no build step — see the header of dashboard/dist/index.js).

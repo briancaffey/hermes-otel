@@ -1,7 +1,7 @@
 """Tests for pure helper functions in hooks.py and helpers.py."""
 
 import pytest
-from hermes_otel.helpers import truncate_string
+from hermes_otel.helpers import detect_skill, truncate_string
 from hermes_otel.hooks import (
     _detect_session_kind,
     _genai_metric_dims,
@@ -9,6 +9,31 @@ from hermes_otel.hooks import (
     _to_int,
     _usage_attributes,
 )
+
+
+class TestDetectSkill:
+    def test_skill_view_name_arg(self):
+        assert detect_skill("skill_view", {"name": "axolotl"}) == ("axolotl", "skill_view")
+
+    def test_skill_view_skill_arg(self):
+        assert detect_skill("skill_view", {"skill": "deploy"}) == ("deploy", "skill_view")
+
+    def test_skill_view_strips_plugin_namespace(self):
+        assert detect_skill("skill_view", {"name": "myplugin:foo"}) == ("foo", "skill_view")
+
+    def test_path_match_on_read(self):
+        got = detect_skill("read", {"path": "/h/.hermes/skills/bar/SKILL.md"})
+        assert got == ("bar", "path_match")
+
+    def test_skill_view_with_path_value(self):
+        got = detect_skill("skill_view", {"name": "x/.hermes/skills/baz/refs.md"})
+        assert got == ("baz", "skill_view")
+
+    def test_non_skill_tool(self):
+        assert detect_skill("bash", {"command": "ls"}) == (None, None)
+
+    def test_non_dict_args(self):
+        assert detect_skill("skill_view", None) == (None, None)
 
 
 class TestTruncateString:

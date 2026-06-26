@@ -73,15 +73,17 @@ Why timeouts and blocks don't map to `ERROR`: they're expected operational condi
 
 ## `hermes.skill.name`
 
-When a tool is called with a path argument that matches `/skills/<name>/` (Hermes skill layout), the skill name is extracted and attached as `hermes.skill.name`:
+A skill is detected from a tool call two ways, and the name is attached as `hermes.skill.name` with a `hermes.skill.source` of:
 
-- Matches: `/home/user/.hermes/skills/git-workflow/reference.md` → `git-workflow`
-- Does **not** match: `/home/user/.hermes/optional-skills/ai-tools/references/foo.md` (explicit exclusion — `optional-skills/*/references/` is for reference material, not skill invocation)
+- **`skill_view`** — the canonical signal. The `skill_view` tool carries the skill name as an *argument* (`{"name": "git-workflow"}`), so it's read directly. A plugin-namespaced name (`plugin:git-workflow`) is reduced to the bare name.
+- **`path_match`** — any tool with a path arg matching `/skills/<name>/`:
+  - Matches: `/home/user/.hermes/skills/git-workflow/reference.md` → `git-workflow`
+  - Does **not** match: `/home/user/.hermes/optional-skills/ai-tools/references/foo.md` (explicit exclusion — `optional-skills/*/references/` is for reference material, not skill invocation)
 
-Also increments a Prometheus-style counter:
+Also increments a Prometheus-style counter (and, unless `skill_spans` is off, opens a [`skill.*` span](/architecture/span-hierarchy#skill)):
 
 ```text
-hermes.skill.inferred{skill_name="git-workflow", source="tool.read_file"}
+hermes.skill.inferred{skill_name="git-workflow", source="skill_view"}
 ```
 
 Useful for:

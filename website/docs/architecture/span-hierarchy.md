@@ -12,9 +12,11 @@ Every Hermes turn produces a nested tree of spans. This page documents what each
 
 ```text
 agent / cron                                  [AGENT]
+├── skill.{name}                              [SKILL] (load → turn end; overlaps OK)
 └── llm.{model}                               [LLM]
     ├── api.{model}                           [LLM]
     │   ├── tool.{name}                       [TOOL]
+    │   ├── tool.skill_view                   [TOOL] (the call that *loads* skill.{name})
     │   ├── tool.{name}                       [TOOL] (parallel tool calls — siblings)
     │   ├── tool.delegate_task                [TOOL] (the tool call that delegates)
     │   └── subagent.{role}                   [AGENT] (delegation span)
@@ -24,6 +26,7 @@ agent / cron                                  [AGENT]
 ```
 
 - **`agent` / `cron`** — the root for each turn. Present when session hooks are available in the Hermes build; absent on older versions (the `llm.*` span becomes the root).
+- **`skill.*`** — one per skill loaded during the turn. Spans from the load (a `skill_view` call or a `/skills/` read) to the turn boundary, nested under the turn root. Skills overlap freely — two loaded in one turn are two concurrent siblings. See [`skill.*`](#skill) below.
 - **`llm.*`** — one per logical model turn. Wraps one or more HTTP round-trips to the provider.
 - **`api.*`** — one per HTTP round-trip. Tools run during a round-trip, so their parent is `api.*`, not `llm.*`.
 - **`tool.*`** — one per tool invocation. Parallel tool calls are siblings under the same `api.*`.
@@ -122,6 +125,33 @@ One per tool invocation. Name is `tool.{name}` (e.g. `tool.bash`, `tool.read_fil
 | `hermes.skill.name` | hermes-specific | Skill inferred from args paths (optional) |
 
 Errors: `hermes.tool.outcome=error` also maps the span's `StatusCode` to `ERROR`. Timeouts and blocked tools stay `OK` so dashboards don't count them as failures.
+
+## `skill.*` {#skill}
+
+One per skill the agent loads during a turn. A skill isn't a tool call — it's
+loaded once (the agent calls `skill_view`, or reads a `/skills/<name>/` file)
+and then *guides the rest of the turn*. So the span opens at the load and
+closes at the **turn boundary** (`on_session_end`), nested under the turn's
+`agent` root rather than the in-flight tool/LLM span. That makes "which skills
+were active, and for how long" a visible part of the timeline.
+
+Skills **overlap**: load two in one turn and you get two concurrent `skill.*`
+siblings — loading a skill again in the same turn keeps the first window (no
+duplicate span). Controlled by `skill_spans` (default on); the
+`hermes.skill.name` attribute on the tool span and the `skill_inferred` counter
+are emitted regardless.
+
+| Attribute | Convention | Meaning |
+|---|---|---|
+| `hermes.skill.name` | hermes-specific | Skill name |
+| `gen_ai.skill.name` | gen_ai (ext.) | Skill name (GenAI-convention alias) |
+| `hermes.skill.source` | hermes-specific | `skill_view` (canonical) or `path_match` |
+| `hermes.skill.path` | hermes-specific | Conventional `~/.hermes/skills/<name>` location |
+| `hermes.skill.result_status` | hermes-specific | Turn outcome: `completed` · `interrupted` · `incomplete` |
+| `hermes.span_kind` | hermes-specific | `skill` (for UI grouping) |
+
+Status is always `OK` — a skill being active is never itself an error; the
+turn's outcome rides on `hermes.skill.result_status`.
 
 ## `subagent.*` {#subagent}
 
