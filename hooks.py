@@ -644,14 +644,15 @@ def on_session_end(
     if ps is not None and ps.usage_updated:
         attributes.update(_usage_attributes(ps.usage))
         # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
+        # Prefer the provider captured from this session's API calls over the
+        # platform, so the dimension matches the gen_ai.client.* metrics.
         if tracer.config.emit_genai_metrics:
+            agent_provider = ps.provider or kwargs.get("provider") or platform
             _record_genai_token_usage(
                 tracer,
                 "gen_ai.agent.token.usage",
                 ps.usage,
-                _genai_metric_dims(
-                    model, kwargs.get("provider") or platform, model, operation="invoke_agent"
-                ),
+                _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
             )
 
     # Surface the last API error's type on the root so a failed turn shows why.
@@ -1146,6 +1147,10 @@ def on_post_api_request(
             for field in _USAGE_FIELDS:
                 ps.usage[field] += totals[field]
             ps.usage_updated = True
+            # Remember the real LLM provider — on_session_end only sees the
+            # platform, so the agent-level metric would otherwise mislabel it.
+            if provider:
+                ps.provider = provider
 
         # Record metrics
         metric_attrs: Dict[str, Any] = {"model": model, "provider": provider}

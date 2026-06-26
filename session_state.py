@@ -99,6 +99,10 @@ class PerSession:
     # The most recent API error's ``error.type`` for this session, surfaced on
     # the root span at on_session_end so a failed turn shows *why* it failed.
     last_error_type: str = ""
+    # The LLM provider seen on this session's API calls (e.g. "openrouter").
+    # on_session_end only receives the platform (e.g. "cli"), so the real
+    # provider is captured here for the agent-level GenAI metric dimensions.
+    provider: str = ""
 
 
 class SessionState:

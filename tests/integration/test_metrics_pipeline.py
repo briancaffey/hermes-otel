@@ -251,6 +251,9 @@ class TestGenAISpecMetrics:
         assert by_type == {"input": 100, "output": 50}
         for dp in _points(agent):
             assert dp.attributes.get("gen_ai.operation.name") == "invoke_agent"
+            # Provider must be the LLM provider from the API call ("openai"),
+            # not the session platform ("cli").
+            assert dp.attributes.get("gen_ai.provider.name") == "openai"
 
     def test_flag_disables_spec_metrics_only(self, inmemory_otel_with_metrics):
         _, metric_reader, plugin = inmemory_otel_with_metrics
