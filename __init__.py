@@ -35,16 +35,20 @@ def register(ctx):
     ctx.register_hook("pre_api_request", hooks.on_pre_api_request)
     ctx.register_hook("post_api_request", hooks.on_post_api_request)
 
-    # Session hooks (available on newer Hermes versions)
-    session_hooks = 0
+    # Session + sub-agent hooks (available on newer Hermes versions). Each is
+    # registered defensively so an older Hermes that lacks a given hook name
+    # doesn't break registration of the rest.
+    optional_hooks = 0
     for hook_name, callback in [
         ("on_session_start", hooks.on_session_start),
         ("on_session_end", hooks.on_session_end),
+        ("subagent_start", hooks.on_subagent_start),
+        ("subagent_stop", hooks.on_subagent_stop),
     ]:
         try:
             ctx.register_hook(hook_name, callback)
-            session_hooks += 1
+            optional_hooks += 1
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    logger.info(f"[hermes-otel] Registered {6 + session_hooks} hooks")
+    logger.info(f"[hermes-otel] Registered {6 + optional_hooks} hooks")
