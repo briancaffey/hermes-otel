@@ -71,6 +71,10 @@ class SpanTracker:
         # turn boundary — they are tracked here (NOT on the parent stack) so
         # several can be active at once without disturbing tool/LLM nesting.
         self._session_skill_spans: Dict[str, Dict[str, str]] = {}
+        # approval span key -> perf_counter start, so post_approval_response can
+        # compute the human-wait duration. Flat (not per-session) — keys are
+        # already namespaced by session_id + tool_call_id.
+        self._approval_starts: Dict[str, float] = {}
 
     def _parent_stack(self) -> list:
         """Return this context's parent span stack, creating it if needed."""
@@ -137,6 +141,14 @@ class SpanTracker:
         """Return and clear all open skill spans for a session (skill -> key)."""
         return self._session_skill_spans.pop(session_id, {})
 
+    def record_approval_start(self, key: str, started_at: float) -> None:
+        """Stash the start time of an approval wait, keyed by span key."""
+        self._approval_starts[key] = started_at
+
+    def pop_approval_start(self, key: str) -> Optional[float]:
+        """Return and remove an approval's start time, or None if unknown."""
+        return self._approval_starts.pop(key, None)
+
     def get_current_parent(self, session_id: Optional[str] = None):
         """Return the current parent span, or None.
 
@@ -197,6 +209,7 @@ class SpanTracker:
         self._active_spans.clear()
         self._session_parent_stacks.clear()
         self._session_skill_spans.clear()
+        self._approval_starts.clear()
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()

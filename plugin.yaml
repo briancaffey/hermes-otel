@@ -22,3 +22,5 @@ provides_hooks:
   - api_request_error
   - subagent_start
   - subagent_stop
+  - pre_approval_request
+  - post_approval_response

@@ -32,6 +32,7 @@ When `capture_previews: false`:
 - `gen_ai.content.prompt` / `gen_ai.content.completion` on `llm.*` spans
 - `input.value` on `tool.*` spans (tool args)
 - `output.value` on `tool.*` spans (tool result)
+- `hermes.approval.command` / `hermes.approval.description` on `approval.*` spans (the command awaiting human approval)
 - The conversation-history JSON when [conversation capture](/configuration/conversation-capture) is also enabled
 
 These attributes are **never set** on the span — not "set and then redacted". A reader can't pull them back out.
@@ -46,6 +47,7 @@ Everything that isn't user-originated content:
 - Token counts (`gen_ai.usage.*`, `llm.token_count.*`)
 - Model name, provider, finish reason
 - Per-turn summary (tool count, skill count, API call count, final status)
+- Approval decisions and wait times (`hermes.approval.choice` / `.granted` / `.timed_out` / `.duration_ms`, `hermes.approval.pattern_key`) — the *outcome* of an approval flows even when the command text is suppressed
 - Metrics (all of them — counters and histograms)
 
 So you still get a useful operational view: how many tools ran, which tools they were, how long each took, how many tokens the model burned, and whether the turn completed or timed out. You just don't see the message content.

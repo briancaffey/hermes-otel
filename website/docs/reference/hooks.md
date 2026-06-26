@@ -113,6 +113,24 @@ Fires when a delegated child agent returns or fails.
 
 When the delegated child runs **in the same process** (the default for `delegate_task`), `on_session_start` for the child finds the stashed delegation span and nests the child's root span directly under it — so the whole multi-agent run is **one connected trace**. When only a `SpanContext` is available (cross-process delegation), the child root attaches a span **link** to the delegation span instead and is tagged with `hermes.subagent.parent_session_id` for correlation. See [Limitations](/reference/limitations).
 
+### `pre_approval_request`
+
+Fires when a tool trips a dangerous-command approval rule and the agent blocks waiting on a human.
+
+- **Span op:** opens an `approval.{pattern_key}` span (within the turn; correlated to the gated tool via `gen_ai.tool.call.id`)
+- **Attributes set on start:** `hermes.approval.pattern_key`, `hermes.approval.surface`, `hermes.approval.command` / `hermes.approval.description` (preview-clipped), `gen_ai.tool.call.id`
+- **Correlation:** keyed off `turn_id` (which embeds the session id), so it lands in the right trace even though approvals run on a separate executor thread
+- **Observer-only:** the return value is ignored — the plugin **cannot veto or pre-answer** an approval (use `pre_tool_call` blocking for that)
+
+### `post_approval_response`
+
+Fires when the human answers (or the prompt times out).
+
+- **Span op:** closes the `approval.{pattern_key}` span
+- **Attributes set on end:** `hermes.approval.choice` (`once`/`session`/`always`/`deny`/`timeout`), `hermes.approval.granted`, `hermes.approval.timed_out`, `hermes.approval.duration_ms`
+- **Span status:** always `OK` — a denial or timeout is a legitimate human decision, not an error
+- **Metrics:** `hermes.approval.count{choice, pattern_key}` counter, `hermes.approval.duration{choice, pattern_key}` histogram
+
 ## Hook → span mapping
 
 ```text
@@ -128,6 +146,8 @@ post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
 post_llm_call            close llm.{model}
 subagent_stop            close subagent.{role}   + status + duration + metrics
+pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
+post_approval_response   close approval.{pattern} + choice + wait duration + metrics
 on_session_end           close agent/cron        + turn summary + force-flush
 ```
 

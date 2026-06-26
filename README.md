@@ -471,7 +471,10 @@ Turn 1:
 | `llm.{model}` | LLM | Model name, provider, user message (input), assistant response (output) |
 | `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens. On failure: `ERROR` status + recorded exception + retry metadata |
 | `tool.{name}` | TOOL | Tool name, arguments (input), result (output), error status |
+| `approval.{pattern}` | APPROVAL | Human-in-the-loop approval prompt — the **human-decision wait time**, `hermes.approval.choice` (`once`/`session`/`always`/`deny`/`timeout`), correlated to the gated tool via `gen_ai.tool.call.id` |
 | `subagent.{role}` | AGENT | Delegated child agent — role, goal, status, duration, summary; the child's own run nests beneath it so a multi-agent run is **one connected trace** |
+
+**Human-in-the-loop approvals:** when a tool trips a dangerous-command approval rule, the agent blocks waiting for a human (often the dominant chunk of a turn's wall-clock, previously invisible). The plugin opens an `approval.*` span (via the `pre_approval_request` / `post_approval_response` hooks) capturing the wait time and the decision (approve/deny/timeout) — works on CLI and gateway surfaces (Telegram, Discord, …), and feeds `hermes.approval.count` / `hermes.approval.duration` metrics for deny/timeout-rate tracking. Observer-only: telemetry never alters an approval. See [Span hierarchy → `approval.*`](website/docs/architecture/span-hierarchy.md#approval).
 
 **Sub-agent delegation:** when the agent calls `delegate_task`, the plugin opens a `subagent.{role}` span in the parent trace (via the `subagent_start` / `subagent_stop` hooks) and rejoins the delegated child's own root span underneath it. Without this, child agents export as dozens of disconnected traces. See [Span hierarchy → `subagent.*`](website/docs/architecture/span-hierarchy.md) and the `hermes.subagent.count` / `hermes.subagent.duration` metrics.
 
