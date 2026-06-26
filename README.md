@@ -489,6 +489,17 @@ LLM and API spans also expose standard GenAI request/response metadata where Her
 
 Phoenix uses `input.value` and `output.value` for previews. When full prompt/response capture is explicitly enabled, the plugin also writes the corresponding GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`).
 
+## Trace propagation to MCP servers
+
+The plugin forwards the active span's W3C `traceparent` on outbound MCP HTTP requests so an OTel-instrumented MCP server's spans join the **same trace** as the agent. It registers an `mcp_request_headers` hook (only when the host Hermes advertises it — a silent no-op otherwise) and exposes a public helper:
+
+```python
+from hermes_plugins.hermes_otel.hooks import get_current_traceparent
+traceparent = get_current_traceparent(session_id)   # "00-<trace>-<span>-01" or None
+```
+
+See [docs: MCP trace propagation](website/docs/configuration/mcp-trace-propagation.md).
+
 ## File structure
 
 | File | Role |

@@ -51,4 +51,23 @@ def register(ctx):
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    logger.info(f"[hermes-otel] Registered {6 + optional_hooks} hooks")
+    # Trace-context propagation to MCP servers. Registered only when the host
+    # Hermes advertises the `mcp_request_headers` hook, so older Hermes builds
+    # don't get an "unknown hook" warning. The hook injects a W3C `traceparent`
+    # onto outbound MCP HTTP requests so MCP-server spans link into the agent's
+    # trace. No-op (returns {}) when no span is active. See get_current_traceparent.
+    mcp_hooks = 0
+    try:
+        from hermes_cli.plugins import VALID_HOOKS as _valid_hooks
+    except Exception:
+        _valid_hooks = None
+    if _valid_hooks is None or "mcp_request_headers" in _valid_hooks:
+        try:
+            ctx.register_hook("mcp_request_headers", hooks.on_mcp_request_headers)
+            mcp_hooks = 1
+        except Exception:
+            debug_log("mcp_request_headers hook unavailable")
+    else:
+        debug_log("mcp_request_headers hook not supported by this Hermes; skipping")
+
+    logger.info(f"[hermes-otel] Registered {6 + optional_hooks + mcp_hooks} hooks")
