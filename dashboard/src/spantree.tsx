@@ -42,14 +42,18 @@ export function AttrTable({ attrs }: { attrs: Record<string, any> }) {
   );
 }
 
-// One span = a collapsible card with a kind-coloured strip along its top edge.
-// Nesting is shown by indentation; timing is shown as text (duration + offset).
+// One span per line = a full-width collapsible card. The coloured LINE along the
+// top is the flamegraph bar: positioned by offset and sized by duration, all
+// against the SAME full-card scale (every card is full width) so the strips line
+// up into a flamegraph. Nesting is shown by indenting the card's content only.
 function SpanSection({
   span,
   depth,
   open,
   onToggle,
   startMs,
+  offsetPct,
+  durPct,
   hasKids,
 }: {
   span: TreeSpan;
@@ -57,6 +61,8 @@ function SpanSection({
   open: boolean;
   onToggle: () => void;
   startMs: number;
+  offsetPct: number;
+  durPct: number;
   hasKids: boolean;
 }) {
   const kind = kindOf(span.name, span._attrs);
@@ -65,18 +71,16 @@ function SpanSection({
   const cost = span._attrs["hermes.cost.usage"];
   const tokens = span._attrs["gen_ai.usage.total_tokens"] || span._attrs["llm.token_count.total"];
   const approval = span._attrs["hermes.approval.choice"];
+  const width = Math.min(100 - offsetPct, Math.max(0.8, durPct));
   return (
-    <div
-      className={cn("overflow-hidden border bg-card/40 transition-colors hover:bg-accent/20", isErr ? "border-destructive/40" : "border-border")}
-      style={{ marginLeft: depth * 18 }}
-    >
-      {/* kind-coloured strip along the top edge */}
-      <div className="h-[3px] w-full" style={{ background: hex }} />
-      <div className="flex cursor-pointer items-center gap-2 px-3 py-2" onClick={onToggle}>
+    <div className={cn("overflow-hidden border bg-card/40 transition-colors hover:bg-accent/20", isErr ? "border-destructive/40" : "border-border")}>
+      {/* flamegraph line: full-width track + a coloured segment (offset → duration) */}
+      <div className="relative h-1.5 w-full bg-border/25" title={`+${fmtDurationMs(startMs)} · ${fmtDurationMs(span.durationMs)}`}>
+        <div className="absolute inset-y-0" style={{ left: `${offsetPct}%`, width: `${width}%`, minWidth: 2, background: hex }} />
+      </div>
+      <div className="flex cursor-pointer items-center gap-2 px-3 py-2" style={{ paddingLeft: 12 + depth * 20 }} onClick={onToggle}>
         <span className="w-3 shrink-0 text-xs text-muted-foreground">{hasKids ? (open ? "▾" : "▸") : ""}</span>
-        <span className="shrink-0 text-[10px] font-semibold uppercase tracking-wide" style={{ color: hex }}>
-          {kind}
-        </span>
+        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: hex }} />
         <span className="truncate font-mono text-sm" title={span.name}>
           {span.name}
         </span>
@@ -130,6 +134,8 @@ export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaul
             open={!!openIds[n.span.spanId]}
             onToggle={() => toggle(n.span.spanId)}
             startMs={(n.span.startNs - t0) / 1e6}
+            offsetPct={((n.span.startNs - t0) / total) * 100}
+            durPct={(n.span.durationMs * 1e6 * 100) / total}
             hasKids={n.span.children.length > 0}
           />
         ))}
