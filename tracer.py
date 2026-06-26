@@ -112,6 +112,30 @@ else:  # pragma: no cover — plugin is unusable without OTel
     _LiveSpanProcessor = None  # type: ignore[assignment, misc]
 
 
+class _LiveLogNoiseFilter(logging.Filter):
+    """Drop Hermes' chattiest housekeeping lines from the live tail.
+
+    These fire on every gateway boot/refresh and drown out the agent's own
+    activity in the dashboard. Dropped regardless of level.
+    """
+
+    _NOISY_LOGGERS = ("gateway.config",)
+    _NOISY_SUBSTRINGS = (
+        "is_connected returned False",
+        "available but not configured",
+        "has no subscriptions",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name in self._NOISY_LOGGERS:
+            return False
+        try:
+            msg = record.getMessage()
+        except Exception:  # pragma: no cover
+            return True
+        return not any(s in msg for s in self._NOISY_SUBSTRINGS)
+
+
 class _LiveLogHandler(logging.Handler):
     """Mirror log records into the in-process LiveStore, trace-correlated.
 
@@ -426,10 +450,17 @@ class HermesOTelPlugin:
                         try:
                             from . import log_handler as _lh
 
-                            lvl = _lh.resolve_level(self.config.log_level)
+                            # Floor the live tail at INFO so the dashboard isn't
+                            # flooded by Hermes' DEBUG firehose (platform probes,
+                            # kanban notifier, etc.) — those evict useful lines
+                            # from the bounded buffer. OTLP export keeps its own
+                            # (possibly DEBUG) level via the separate handler.
+                            lvl = max(_lh.resolve_level(self.config.log_level), logging.INFO)
                             target = logging.getLogger(self.config.log_attach_logger or None)
                             h = _LiveLogHandler(store)
                             h.setLevel(lvl)
+                            # Filter the chattiest config/probe loggers regardless.
+                            h.addFilter(_LiveLogNoiseFilter())
                             target.addHandler(h)
                             self._live_log_handler = h
                             if target.level == logging.NOTSET or target.level > lvl:

@@ -299,3 +299,92 @@ export const liveModel = (s: LiveSpan) =>
   null;
 export const sessionOf = (s: LiveSpan) =>
   s.attributes["hermes.session_id"] || s.attributes["session_id"] || s.attributes["session.id"] || null;
+
+// ── assemble TRACES from flat live spans (so the live store powers a real ──
+// trace browser + waterfall, no external backend needed) ──────────────────
+export type LiveTrace = {
+  traceId: string;
+  root: LiveSpan;
+  rootName: string;
+  rootKind: Kind;
+  service: string;
+  startNs: number;
+  endNs: number;
+  durationMs: number;
+  spanCount: number;
+  model: string | null;
+  tokens: number | null;
+  cost: number | null;
+  error: boolean;
+  session: string | null;
+  spans: LiveSpan[];
+};
+
+export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {
+  const byTrace: Record<string, LiveSpan[]> = {};
+  for (const s of spans) (byTrace[s.trace_id] ||= []).push(s);
+  const out: LiveTrace[] = [];
+  for (const tid in byTrace) {
+    const ss = byTrace[tid];
+    const ids = new Set(ss.map((s) => s.span_id));
+    const root = ss.find((s) => !s.parent_span_id || !ids.has(s.parent_span_id)) || ss[0];
+    const startNs = Math.min(...ss.map((s) => s.start_time_unix_nano || 0));
+    const endNs = Math.max(...ss.map((s) => s.end_time_unix_nano || s.start_time_unix_nano || 0));
+    let tokens = 0;
+    let cost = 0;
+    let model: string | null = null;
+    let error = false;
+    for (const s of ss) {
+      tokens += liveTokens(s) || 0;
+      cost += liveCost(s) || 0;
+      if (!model) model = liveModel(s);
+      if (s.status === "ERROR") error = true;
+    }
+    out.push({
+      traceId: tid,
+      root,
+      rootName: root.name,
+      rootKind: kindOf(root.name, root.attributes),
+      service: root.attributes["service.name"] || "hermes",
+      startNs,
+      endNs,
+      durationMs: (endNs - startNs) / 1e6,
+      spanCount: ss.length,
+      model,
+      tokens: tokens || null,
+      cost: cost || null,
+      error,
+      session: sessionOf(root),
+      spans: ss,
+    });
+  }
+  return out.sort((a, b) => b.startNs - a.startNs);
+}
+
+// Live spans → the same TreeSpan shape the backend waterfall renders.
+export function liveTreeFromSpans(spans: LiveSpan[]): { roots: TreeSpan[]; all: TreeSpan[] } {
+  const all: TreeSpan[] = spans.map((s) => ({
+    spanId: s.span_id,
+    parentSpanId: s.parent_span_id || null,
+    name: s.name,
+    startNs: s.start_time_unix_nano || 0,
+    endNs: s.end_time_unix_nano || s.start_time_unix_nano || 0,
+    durationMs: s.duration_ms || 0,
+    status: s.status === "ERROR" ? { code: 2 } : null,
+    _attrs: s.attributes || {},
+    children: [],
+  }));
+  const byId: Record<string, TreeSpan> = {};
+  all.forEach((s) => (byId[s.spanId] = s));
+  const roots: TreeSpan[] = [];
+  all.forEach((s) => {
+    if (s.parentSpanId && byId[s.parentSpanId]) byId[s.parentSpanId].children.push(s);
+    else roots.push(s);
+  });
+  const sortRec = (list: TreeSpan[]) => {
+    list.sort((a, b) => a.startNs - b.startNs);
+    list.forEach((n) => sortRec(n.children));
+  };
+  sortRec(roots);
+  return { roots, all };
+}

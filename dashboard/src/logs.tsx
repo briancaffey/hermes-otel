@@ -1,4 +1,4 @@
-import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Button, Input, cn } from "./sdk";
+import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Button, Input, Select, SelectOption, cn } from "./sdk";
 import { fmtTimeAgo } from "./lib";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -21,12 +21,14 @@ const LEVEL_CLASS: Record<string, string> = {
   INFO: "text-sky-400",
   DEBUG: "text-muted-foreground",
 };
+const SEVERITY: Record<string, number> = { DEBUG: 10, INFO: 20, WARNING: 30, WARN: 30, ERROR: 40, CRITICAL: 50 };
 
 export function LogsPage() {
   const [logs, setLogs] = useState<LogRec[]>([]);
   const [live, setLive] = useState<boolean | null>(null);
   const [paused, setPaused] = useState(false);
   const [filter, setFilter] = useState("");
+  const [minLevel, setMinLevel] = useState("0");
   const cursor = useRef(0);
 
   const poll = useCallback(async () => {
@@ -51,9 +53,11 @@ export function LogsPage() {
   }, [poll, paused]);
 
   const f = filter.trim().toLowerCase();
+  const min = Number(minLevel);
   const shown = logs
     .slice()
     .reverse()
+    .filter((l) => (SEVERITY[(l.level || "INFO").toUpperCase()] || 20) >= min)
     .filter((l) => !f || (l.body || "").toLowerCase().includes(f) || (l.logger || "").toLowerCase().includes(f))
     .slice(0, 300);
 
@@ -80,6 +84,12 @@ export function LogsPage() {
           <span className="text-xs text-muted-foreground">{logs.length} buffered</span>
         </div>
         <div className="flex items-center gap-2">
+          <Select value={minLevel} onValueChange={setMinLevel}>
+            <SelectOption value="0">All levels</SelectOption>
+            <SelectOption value="20">Info+</SelectOption>
+            <SelectOption value="30">Warn+</SelectOption>
+            <SelectOption value="40">Error</SelectOption>
+          </Select>
           <Input placeholder="filter…" value={filter} onChange={(e: any) => setFilter(e.target.value)} className="h-8 w-40" />
           <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
             {paused ? "▶" : "⏸"}

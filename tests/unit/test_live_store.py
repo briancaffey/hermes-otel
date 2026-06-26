@@ -82,6 +82,26 @@ class TestLiveStore:
         assert logs[0]["logger"] == "my.logger"
         assert logs[0]["body"] == "boom x"
 
+    def test_live_log_noise_filter(self):
+        import logging
+
+        from hermes_otel.tracer import _LiveLogNoiseFilter
+
+        nf = _LiveLogNoiseFilter()
+
+        def rec(name, msg):
+            return logging.LogRecord(name, logging.INFO, __file__, 1, msg, None, None)
+
+        # dropped: noisy logger + probe substrings
+        assert nf.filter(rec("gateway.config", "anything")) is False
+        assert (
+            nf.filter(rec("gateway.run", "kanban notifier: board default has no subscriptions"))
+            is False
+        )
+        assert nf.filter(rec("x", "Plugin platform 'raft' available but not configured")) is False
+        # kept: real agent activity
+        assert nf.filter(rec("hermes_otel", "exported 3 spans")) is True
+
     def test_singleton_create_flag(self, tmp_path):
         import hermes_otel.live_store as ls
 
