@@ -18,11 +18,14 @@ from typing import Any, Dict, List, Optional, TypedDict
 from .debug_utils import debug_log
 from .helpers import (
     clip_preview,
+    coerce_bool,
     extract_tool_result_status,
+    http_status_class,
     infer_skill_name,
     resolve_tool_identity,
     subagent_span_key,
     subagent_status_to_span_status,
+    to_optional_int,
     truncate_string,
 )
 from .session_state import TurnSummary
@@ -586,6 +589,10 @@ def on_session_end(
     if ps is not None and ps.usage_updated:
         attributes.update(_usage_attributes(ps.usage))
 
+    # Surface the last API error's type on the root so a failed turn shows why.
+    if ps is not None and ps.last_error_type:
+        attributes["error.type"] = ps.last_error_type
+
     attributes.update(_per_session_sender_attributes(ps))
 
     # Per-turn summary roll-up
@@ -1127,6 +1134,145 @@ def on_post_api_request(
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
+
+
+def on_api_request_error(
+    task_id: str = None,
+    session_id: str = None,
+    platform: str = None,
+    model: str = None,
+    provider: str = None,
+    api_duration: float = None,
+    status_code: Any = None,
+    retry_count: Any = None,
+    max_retries: Any = None,
+    retryable: Any = None,
+    reason: str = None,
+    error: dict = None,
+    **kwargs,
+):
+    """Fires when a provider API request fails (rate limit, timeout, 5xx, ...).
+
+    Without this hook the ``api.{model}`` span opened by ``on_pre_api_request``
+    is never closed on failure — it ends ``OK`` via the orphan sweep, hiding the
+    error. Here we close it as ``ERROR`` with a recorded exception and retry
+    metadata, and record error/retry metrics. Fails open.
+    """
+    debug_log(
+        f"api_request_error fired: model={model}, status_code={status_code}, "
+        f"retry_count={retry_count}, retryable={retryable}"
+    )
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    tracer.sweep_expired_turns()
+
+    error = error or {}
+    error_type = truncate_string(error.get("type"), 200) if error.get("type") else ""
+    error_message = truncate_string(error.get("message") or reason, 500)
+    status_class = http_status_class(status_code)
+    is_retryable = coerce_bool(retryable)
+
+    # Build the error attributes that go on whichever span we close.
+    attributes: Dict[str, Any] = {}
+    if error_type:
+        attributes["error.type"] = error_type
+    sc = to_optional_int(status_code)
+    if sc is not None:
+        attributes["http.response.status_code"] = sc
+        attributes["gen_ai.response.status_code"] = sc
+    rc = to_optional_int(retry_count)
+    if rc is not None:
+        attributes["hermes.retry.count"] = rc
+    mr = to_optional_int(max_retries)
+    if mr is not None:
+        attributes["hermes.max_retries"] = mr
+    if is_retryable is not None:
+        attributes["hermes.retryable"] = is_retryable
+    if api_duration:
+        attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
+    attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
+    attributes.update(_provider_attributes(provider or platform))
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+
+    # Remember why this turn failed so on_session_end can surface it on the root.
+    if session_id and error_type:
+        tracer.sessions.get_or_create(session_id).last_error_type = error_type
+
+    key = f"api:{task_id}" if task_id else None
+    span = tracer.spans.get_span(key) if key else None
+    created_fallback = False
+
+    if span is None:
+        # No in-flight api span (error before pre_api_request, or already swept).
+        # Create a short-lived span so the failure is still visible. Fail-open.
+        fallback_key = key or f"api.error:{kwargs.get('api_request_id') or session_id or 'unknown'}"
+        identity: Dict[str, Any] = {
+            "session.id": truncate_string(session_id, 200),
+            "session_id": truncate_string(session_id, 200),
+        }
+        if model:
+            identity["llm.model_name"] = model
+            identity["gen_ai.request.model"] = truncate_string(model, 200)
+        if provider:
+            identity["llm.provider"] = provider
+        span = tracer.start_span(
+            name=f"api.{model}" if model else "api.error",
+            key=fallback_key,
+            kind="llm",
+            attributes=identity,
+            session_id=session_id,
+        )
+        key = fallback_key
+        created_fallback = True
+
+    # Record an OTel exception event (semconv: an event named "exception").
+    if span is not None and hasattr(span, "add_event"):
+        event_attrs: Dict[str, Any] = {
+            "exception.type": error_type or "error",
+            "exception.escaped": True,
+        }
+        if error_message:
+            event_attrs["exception.message"] = error_message
+        try:
+            span.add_event("exception", event_attrs)
+        except Exception:  # pragma: no cover — never let telemetry raise
+            pass
+
+    # The in-flight api span was pushed as the parent in on_pre_api_request;
+    # balance the stack (the fallback span was never pushed).
+    if not created_fallback:
+        tracer.spans.pop_parent(session_id=session_id)
+
+    tracer.end_span(
+        key,
+        attributes=attributes,
+        status="error",
+        error_message=error_message or reason or error_type or "api request failed",
+    )
+
+    # Metrics. Keep labels low-cardinality.
+    metric_attrs: Dict[str, Any] = {
+        "error_type": error_type or "unknown",
+        "status_class": status_class,
+        "retryable": str(bool(is_retryable)).lower(),
+    }
+    if model:
+        metric_attrs["model"] = model
+    if provider:
+        metric_attrs["provider"] = provider
+    tracer.record_metric("api_error_count", 1, metric_attrs)
+    # Count a retry attempt only when the failure was actually retryable.
+    if is_retryable:
+        retry_attrs: Dict[str, Any] = {}
+        if model:
+            retry_attrs["model"] = model
+        if provider:
+            retry_attrs["provider"] = provider
+        tracer.record_metric("retry_count", 1, retry_attrs)
+
+    debug_log(f"  API error span ended: key={key}, error.type={error_type}, class={status_class}")
 
 
 def on_subagent_start(

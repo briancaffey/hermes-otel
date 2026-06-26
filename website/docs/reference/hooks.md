@@ -1,12 +1,12 @@
 ---
 sidebar_position: 4
 title: "Hooks reference"
-description: "The ten Hermes lifecycle hooks this plugin subscribes to, and the span operation each performs."
+description: "The Hermes lifecycle hooks this plugin subscribes to, and the span operation each performs."
 ---
 
 # Hooks reference
 
-hermes-otel subscribes to ten Hermes lifecycle hooks. Six are "always available" on any Hermes version with plugin support. Four are newer (two session hooks and two sub-agent hooks) and are registered conditionally.
+hermes-otel subscribes to a set of Hermes lifecycle hooks. Six are "always available" on any Hermes version with plugin support. The rest are newer (the session hooks, the sub-agent delegation hooks, and `api_request_error`) and are registered conditionally — older Hermes builds simply register fewer.
 
 ## Always available
 
@@ -57,6 +57,18 @@ Fires when the HTTP response is parsed.
 - **Span op:** closes the `api.*` span
 - **Attributes set on end:** token counts (both conventions), `gen_ai.response.finish_reason`, `http.duration_ms`
 - **Metrics:** `hermes.tokens.*` counters, `hermes.api.duration` histogram
+
+### `api_request_error`
+
+Fires when a provider API request **fails** (rate limit, timeout, 5xx, network error) instead of returning a response. Registered conditionally (newer Hermes).
+
+- **Span op:** closes the in-flight `api.{model}` span (key `api:{task_id}`) as **ERROR** with a recorded `exception` event. Without this hook that span would be left to the orphan sweep and end `OK` — hiding the failure. If no in-flight span exists (error before `pre_api_request`, or already swept) a short-lived `api.error` span is created so the failure is still visible.
+- **Attributes set on end:** `error.type`, `http.response.status_code` + `gen_ai.response.status_code`, `hermes.retry.count`, `hermes.max_retries`, `hermes.retryable`, `llm.response.duration_ms`
+- **Span event:** `exception` (`exception.type`, `exception.message`, `exception.escaped`)
+- **Metrics:** `hermes.api.error.count{error_type, status_class, retryable}` counter; `hermes.retry.count` counter (incremented once per *retryable* failure)
+- **Side effect:** records the `error.type` on the session aggregator so `on_session_end` can stamp it on the turn's root span
+
+Only API-level failures become `ERROR`. Tool timeout/blocked outcomes deliberately stay `OK` (see [Limitations](/reference/limitations)) so they don't inflate error rates.
 
 ## Newer (session + sub-agent hooks)
 
@@ -112,7 +124,8 @@ pre_api_request          open  api.{model}       (child of llm)
 pre_tool_call            open  tool.{name}       (child of api or llm)
 subagent_start           open  subagent.{role}   (child of api or llm)
 post_tool_call           close tool.{name}
-post_api_request         close api.{model}
+post_api_request         close api.{model}        (OK)
+api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
 post_llm_call            close llm.{model}
 subagent_stop            close subagent.{role}   + status + duration + metrics
 on_session_end           close agent/cron        + turn summary + force-flush

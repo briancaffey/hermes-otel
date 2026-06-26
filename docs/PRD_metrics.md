@@ -33,7 +33,7 @@ This document describes adding first-class OpenTelemetry Metrics support to the 
 | `hermes.session.token.total` | Histogram | Total tokens per session on idle |
 | `hermes.session.cost.total` | Histogram | Total USD cost per session on idle |
 | `hermes.model.usage` | Counter | Messages per model + provider |
-| `hermes.retry.count` | Counter | API retries via session.status events |
+| `hermes.retry.count` | Counter | API retries — **implemented** via the `api_request_error` hook (incremented once per retryable failure), not `on_session_status`. See issue #28. |
 
 ### Attribute Dimensions
 
@@ -117,7 +117,7 @@ Phoenix stores OTLP metrics in Aurora (ADGM). Langfuse stores usage data indepen
 | session.token.total | `on_session_idle` (aggregated from _SESSION_USAGE) |
 | session.cost.total | `on_session_idle` (aggregated costs) |
 | model.usage | `on_post_api_request` (per model + provider) |
-| retry.count | New hook: `on_session_status` (status=retry) |
+| retry.count | **Implemented** via `api_request_error` (per retryable failure) — superseded the originally-planned `on_session_status` approach (#28) |
 
 ### New Hook Requirements
 

@@ -209,3 +209,71 @@ def subagent_status_to_span_status(child_status: Any) -> str:
     if text in _SUBAGENT_ERROR_STATUSES:
         return "error"
     return "ok"
+
+
+# ── API errors / retries ─────────────────────────────────────────────────────
+
+_TRUE_STRINGS = frozenset({"1", "true", "t", "yes", "y", "on"})
+_FALSE_STRINGS = frozenset({"0", "false", "f", "no", "n", "off", ""})
+
+
+def to_optional_int(value: Any) -> Optional[int]:
+    """Best-effort int conversion that returns None (not 0) when unparseable.
+
+    Distinct from the hooks-module ``_to_int`` (which zero-fills) because for
+    error telemetry we must tell "status 0" apart from "no status reported".
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return None
+        try:
+            return int(float(text))
+        except ValueError:
+            return None
+    return None
+
+
+def coerce_bool(value: Any) -> Optional[bool]:
+    """Parse a loosely-typed truthy/falsey value, or None when undecidable.
+
+    Accepts real bools, ints, and the usual string spellings. Returns None for
+    ``None`` so callers can distinguish "not reported" from "reported false".
+    """
+    if value is None:
+        return None
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, float)):
+        return bool(value)
+    if isinstance(value, str):
+        text = value.strip().lower()
+        if text in _TRUE_STRINGS:
+            return True
+        if text in _FALSE_STRINGS:
+            return False
+        return None
+    return None
+
+
+def http_status_class(status_code: Any) -> str:
+    """Bucket an HTTP status code into a low-cardinality metric label.
+
+    Returns ``"2xx"``/``"3xx"``/``"4xx"``/``"5xx"`` for a valid HTTP code,
+    ``"network"`` when there is no code (None / 0 / unparseable — i.e. the
+    request never got an HTTP response: timeout, connection error), and
+    ``"other"`` for an out-of-range number. Keeps error-metric cardinality
+    bounded regardless of provider quirks.
+    """
+    code = to_optional_int(status_code)
+    if code is None or code <= 0:
+        return "network"
+    if 100 <= code < 600:
+        return f"{code // 100}xx"
+    return "other"
