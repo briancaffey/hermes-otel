@@ -6,6 +6,8 @@ the whole multi-agent run is one connected tree (in-process delegation) — or,
 when only a SpanContext is available (cross-process), attached via a span link.
 """
 
+import time
+
 import pytest
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -436,10 +438,7 @@ class TestSubagentMetrics:
 
         data = metric_reader.get_metrics_data()
         metrics = {
-            m.name: m
-            for rm in data.resource_metrics
-            for sm in rm.scope_metrics
-            for m in sm.metrics
+            m.name: m for rm in data.resource_metrics for sm in rm.scope_metrics for m in sm.metrics
         }
         assert "hermes.subagent.count" in metrics
         count_dp = list(metrics["hermes.subagent.count"].data.data_points)[0]
@@ -477,7 +476,12 @@ class TestOrphanedDelegationSwept:
     sweep when the parent session times out (not left open forever)."""
 
     def test_unfinished_delegation_is_swept(self, inmemory_otel_setup):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
         exporter, plugin = inmemory_otel_setup
+        # Small TTL + a back-dated start (relative to perf_counter, whose epoch
+        # is arbitrary) so the sweep is deterministic on any machine/CI runner.
+        plugin.config = HermesOtelConfig(root_span_ttl_ms=1_000)
         on_session_start(session_id="parent", model="gpt-4", platform="cli")
         on_subagent_start(
             parent_session_id="parent",
@@ -485,8 +489,8 @@ class TestOrphanedDelegationSwept:
             child_role="researcher",
             child_goal="g",
         )
-        # Back-date the parent turn so the sweep considers it expired.
-        plugin.register_turn("parent", started_at=0.0)
+        # Back-date the parent turn well past the TTL so the sweep expires it.
+        plugin.register_turn("parent", started_at=time.perf_counter() - 10.0)
         swept = plugin.sweep_expired_turns()
         assert "parent" in swept
 

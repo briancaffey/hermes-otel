@@ -556,16 +556,14 @@ class HermesOTelPlugin:
             # Check for active parent — an explicit ``parent`` wins (sub-agent
             # delegation), otherwise prefer the session-keyed stack so nesting
             # survives hermes' cross-thread hook dispatch.
-            effective_parent = parent if parent is not None else self.spans.get_current_parent(
-                session_id
+            effective_parent = (
+                parent if parent is not None else self.spans.get_current_parent(session_id)
             )
             span_ctx = None
             if effective_parent is not None and hasattr(effective_parent, "get_span_context"):
                 span_ctx = set_span_in_context(effective_parent)
 
-            span = self.tracer.start_span(
-                name, attributes=attrs, context=span_ctx, links=links
-            )
+            span = self.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
             self.spans.start_span(key, span)
             debug_log(f"start_span: {name} (key={key}, kind={kind_value})")
             return span
