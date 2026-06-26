@@ -9,6 +9,11 @@
 node_modules/
 dashboard/.esbuild/
 
+# Dashboard live store (shared SQLite ring buffer; runtime, per-machine)
+live.db
+live.db-wal
+live.db-shm
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]

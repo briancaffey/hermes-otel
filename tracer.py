@@ -381,7 +381,7 @@ class HermesOTelPlugin:
 
                 store = get_live_store(
                     create=True,
-                    max_spans=self.config.dashboard_live_max_spans,
+                    max_rows=self.config.dashboard_live_max_spans,
                 )
                 if store is not None:
                     provider.add_span_processor(_LiveSpanProcessor(store))
