@@ -2,7 +2,12 @@
 
 import pytest
 from hermes_otel.helpers import truncate_string
-from hermes_otel.hooks import _detect_session_kind, _to_int
+from hermes_otel.hooks import (
+    _detect_session_kind,
+    _normalize_usage,
+    _to_int,
+    _usage_attributes,
+)
 
 
 class TestTruncateString:
@@ -116,3 +121,66 @@ class TestDetectSessionKind:
     def test_session_type_takes_priority(self):
         # session_type wins even when job_id is also present
         assert _detect_session_kind("cron", {"session_type": "manual", "job_id": "j1"}) == "manual"
+
+
+class TestNormalizeUsageReasoning:
+    def test_reasoning_tokens_parsed(self):
+        totals = _normalize_usage(
+            {"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 15}
+        )
+        assert totals["reasoning_tokens"] == 15
+
+    def test_reasoning_absent_defaults_zero(self):
+        totals = _normalize_usage({"input_tokens": 100, "output_tokens": 50})
+        assert totals["reasoning_tokens"] == 0
+
+    def test_reasoning_not_added_to_total(self):
+        # Reasoning is a subset of output, so it must never inflate the total.
+        totals = _normalize_usage(
+            {"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 30}
+        )
+        assert totals["total_tokens"] == 150  # 100 + 50, reasoning excluded
+
+
+class TestUsageAttributesReasoning:
+    def test_reasoning_dual_convention_attributes(self):
+        attrs = _usage_attributes(
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "reasoning_tokens": 15,
+            }
+        )
+        # OpenInference (Phoenix) + OTel GenAI (Langfuse) spellings.
+        assert attrs["llm.token_count.completion_details.reasoning"] == 15
+        assert attrs["gen_ai.usage.reasoning.output_tokens"] == 15
+
+    def test_zero_reasoning_omitted(self):
+        attrs = _usage_attributes(
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+                "reasoning_tokens": 0,
+            }
+        )
+        assert "llm.token_count.completion_details.reasoning" not in attrs
+        assert "gen_ai.usage.reasoning.output_tokens" not in attrs
+
+    def test_missing_reasoning_key_tolerated(self):
+        # _usage_attributes uses .get for reasoning so older totals dicts work.
+        attrs = _usage_attributes(
+            {
+                "prompt_tokens": 100,
+                "completion_tokens": 50,
+                "total_tokens": 150,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 0,
+            }
+        )
+        assert "gen_ai.usage.reasoning.output_tokens" not in attrs

@@ -19,8 +19,9 @@ hermes-otel emits **both** conventions on the same span so whichever backend rea
 | Total tokens | — | `llm.token_count.total` |
 | Cache read | `gen_ai.usage.cache_read_input_tokens` | `llm.token_count.cache_read` |
 | Cache write | `gen_ai.usage.cache_creation_input_tokens` | `llm.token_count.cache_write` |
+| Reasoning | `gen_ai.usage.reasoning.output_tokens` | `llm.token_count.completion_details.reasoning` |
 
-Phoenix adds a `total` variant that's the sum; gen_ai doesn't. Cache read/write are only populated when the provider reports them (Anthropic's prompt caching, OpenAI's — both surface them in their API responses).
+Phoenix adds a `total` variant that's the sum; gen_ai doesn't. Cache read/write are only populated when the provider reports them (Anthropic's prompt caching, OpenAI's — both surface them in their API responses). Reasoning tokens are emitted only by reasoning-capable models and are a **subset of completion/output tokens** (already counted in the completion and total figures), surfaced separately for visibility — don't add them on top of the total.
 
 ## Message content (on `llm.*` spans)
 
