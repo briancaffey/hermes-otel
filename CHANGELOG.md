@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.9.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.8.0...hermes-otel-v0.9.0) (2026-06-26)
+
+
+### Features
+
+* **hooks:** W3C traceparent propagation to MCP servers ([2ca6700](https://github.com/briancaffey/hermes-otel/commit/2ca6700e7e0f70bf46f605dbb6122721b2ade2ad))
+* **hooks:** W3C traceparent propagation to MCP servers ([b794604](https://github.com/briancaffey/hermes-otel/commit/b794604554e0718fec4fc5c8d0fa7ac0565ad516))
+
 ## [0.8.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.7.0...hermes-otel-v0.8.0) (2026-06-24)
 
 
