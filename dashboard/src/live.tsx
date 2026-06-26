@@ -1,23 +1,23 @@
 import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Badge, Button } from "./sdk";
 import {
   LiveSpan,
-  spanKind,
-  KIND_COLOR,
-  KIND_LABEL,
+  kindOf,
   Kind,
-  spanCost,
-  spanTokens,
-  spanModel,
+  KIND_HEX,
+  liveCost,
+  liveTokens,
+  liveModel,
   sessionOf,
   fmtCost,
   fmtInt,
-  fmtDuration,
-  fmtAgo,
+  fmtDurationMs,
+  fmtTimeAgo,
 } from "./lib";
-import { Stat, KindDot, Sparkline, Pulse, EmptyState, ErrorBanner } from "./ui";
+import { Stat, Sparkline, Pulse, MiniLabel, ErrorBanner } from "./atoms";
 
+/* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 1500;
-const MAX_KEEP = 600; // cap accumulated spans in the browser
+const MAX_KEEP = 800;
 
 function deriveStats(spans: LiveSpan[]) {
   let cost = 0;
@@ -26,42 +26,45 @@ function deriveStats(spans: LiveSpan[]) {
   const traces = new Set<string>();
   const byKind: Record<string, number> = {};
   for (const s of spans) {
-    cost += spanCost(s) || 0;
-    tokens += spanTokens(s) || 0;
+    cost += liveCost(s) || 0;
+    tokens += liveTokens(s) || 0;
     if (s.status === "ERROR") errors++;
     traces.add(s.trace_id);
-    const k = spanKind(s);
+    const k = kindOf(s.name, s.attributes);
     byKind[k] = (byKind[k] || 0) + 1;
   }
   return { cost, tokens, errors, traces: traces.size, byKind };
 }
 
-function SpanRow({ s }: { s: LiveSpan }) {
-  const kind: Kind = spanKind(s);
-  const model = spanModel(s);
-  const cost = spanCost(s);
-  const tokens = spanTokens(s);
-  const approvalChoice = s.attributes["hermes.approval.choice"];
-  const skillName = s.attributes["hermes.skill.name"];
+function StreamRow({ s }: { s: LiveSpan }) {
+  const kind = kindOf(s.name, s.attributes);
+  const model = liveModel(s);
+  const cost = liveCost(s);
+  const tokens = liveTokens(s);
+  const approval = s.attributes["hermes.approval.choice"];
+  const skill = s.attributes["hermes.skill.name"];
   return (
-    <div className="otel-span-row" style={{ borderLeftColor: KIND_COLOR[kind] }}>
-      <div className="otel-span-main">
-        <KindDot kind={kind} />
-        <span className="otel-span-name" title={s.name}>
+    <div
+      className="flex items-center justify-between gap-3 border border-border bg-card/40 px-3 py-1.5 otel-slidein"
+      style={{ borderLeftWidth: 3, borderLeftColor: KIND_HEX[kind] }}
+    >
+      <div className="flex min-w-0 flex-1 items-center gap-2">
+        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_HEX[kind] }} />
+        <span className="truncate font-mono text-sm" title={s.name}>
           {s.name}
         </span>
-        <span className="otel-span-meta">
-          {s.status === "ERROR" ? <Badge variant="destructive">error</Badge> : null}
-          {model ? <span className="otel-chip">{model}</span> : null}
-          {tokens ? <span className="otel-chip">{fmtInt(tokens)} tok</span> : null}
-          {cost ? <span className="otel-chip otel-chip-cost">{fmtCost(cost)}</span> : null}
-          {approvalChoice ? <span className="otel-chip">👤 {approvalChoice}</span> : null}
-          {skillName && kind === "skill" ? <span className="otel-chip">🧩 {skillName}</span> : null}
+        <span className="flex flex-wrap items-center gap-1.5">
+          {s.status === "ERROR" ? <Badge variant="destructive" className="text-[10px]">error</Badge> : null}
+          {model ? <span className="font-mono text-[11px] text-muted-foreground">{model}</span> : null}
+          {tokens ? <Badge variant="secondary" className="text-[10px] tabular-nums">{fmtInt(tokens)} tok</Badge> : null}
+          {cost ? <span className="tabular-nums text-[11px] text-emerald-400">{fmtCost(cost)}</span> : null}
+          {approval ? <Badge variant="secondary" className="text-[10px]">👤 {approval}</Badge> : null}
+          {skill && kind === "skill" ? <Badge variant="secondary" className="text-[10px]">🧩 {skill}</Badge> : null}
         </span>
       </div>
-      <div className="otel-span-side">
-        <span className="otel-span-dur">{fmtDuration(s.duration_ms)}</span>
-        <span className="otel-span-ago">{fmtAgo(s.end_time_unix_nano || s.start_time_unix_nano)}</span>
+      <div className="flex shrink-0 flex-col items-end">
+        <span className="tabular-nums text-xs font-medium">{fmtDurationMs(s.duration_ms)}</span>
+        <span className="text-[11px] text-muted-foreground">{fmtTimeAgo(s.end_time_unix_nano || s.start_time_unix_nano)}</span>
       </div>
     </div>
   );
@@ -81,19 +84,16 @@ export function LivePage() {
       if (!st || st.live === false) return;
       const sp = await fetchJSON(`${API}/live/spans?since=${cursor.current}&limit=2000`);
       cursor.current = Math.max(sp.cursor || 0, cursor.current);
-      if (sp.spans && sp.spans.length) {
-        setSpans((prev) => [...prev, ...sp.spans].slice(-MAX_KEEP));
-      }
+      if (sp.spans?.length) setSpans((prev) => [...prev, ...sp.spans].slice(-MAX_KEEP));
       setError(null);
     } catch (e: any) {
-      setError(String(e && e.message ? e.message : e));
+      setError(String(e?.message || e));
     }
   }, []);
 
   useEffect(() => {
     poll();
   }, [poll]);
-
   useEffect(() => {
     if (paused) return;
     const id = setInterval(poll, POLL_MS);
@@ -101,49 +101,50 @@ export function LivePage() {
   }, [poll, paused]);
 
   const stats = deriveStats(spans);
-  const recent = spans.slice().reverse().slice(0, 120);
+  const recent = spans.slice().reverse().slice(0, 150);
   const lastSession = spans.length ? sessionOf(spans[spans.length - 1]) : null;
 
-  // spans-per-2s activity sparkline (last ~90s)
   const now = Date.now();
-  const buckets = new Array(45).fill(0);
+  const buckets = new Array(50).fill(0);
   for (const s of spans) {
     const t = (s.end_time_unix_nano || s.start_time_unix_nano) / 1e6;
-    const idx = 44 - Math.floor((now - t) / 2000);
-    if (idx >= 0 && idx < 45) buckets[idx]++;
+    const idx = 49 - Math.floor((now - t) / 2000);
+    if (idx >= 0 && idx < 50) buckets[idx]++;
   }
 
   if (status && status.live === false) {
     return (
-      <EmptyState
-        title="Live mode is off"
-        hint={
-          status.reason ||
-          "Set dashboard_live: true in the plugin config.yaml (it's on by default), then run a turn."
-        }
-      />
+      <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
+        <div className="mb-1 text-base font-medium text-foreground">Live mode is off</div>
+        {status.reason || "Set dashboard_live: true in the plugin config (it's on by default), then run a turn."}
+      </div>
     );
   }
 
   return (
-    <div className="otel-live">
-      <div className="otel-live-header">
-        <div className="otel-live-title">
+    <div className="space-y-3">
+      <div className="flex items-center justify-between">
+        <div className="flex items-center gap-2.5">
           <Pulse active={!paused && (status?.spans || 0) > 0} />
-          <span>Live</span>
-          <span className="otel-live-sub">
+          <span className="text-base font-semibold tracking-tight">Live</span>
+          <span className="text-xs text-muted-foreground">
             in-process · {fmtInt(status?.spans)} spans buffered
-            {lastSession ? <> · session <code>{String(lastSession).slice(0, 16)}</code></> : null}
+            {lastSession ? (
+              <>
+                {" "}
+                · session <span className="font-mono">{String(lastSession).slice(0, 16)}</span>
+              </>
+            ) : null}
           </span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setPaused((p: boolean) => !p)}>
+        <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
           {paused ? "▶ Resume" : "⏸ Pause"}
         </Button>
       </div>
 
       {error ? <ErrorBanner error={error} /> : null}
 
-      <div className="otel-stat-grid">
+      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
         <Stat label="Cost" value={fmtCost(stats.cost)} accent="cost" />
         <Stat label="Tokens" value={fmtInt(stats.tokens)} />
         <Stat label="Traces" value={fmtInt(stats.traces)} />
@@ -151,30 +152,32 @@ export function LivePage() {
         <Stat label="Errors" value={fmtInt(stats.errors)} accent={stats.errors ? "error" : undefined} />
       </div>
 
-      <div className="otel-activity">
-        <span className="otel-activity-label">activity</span>
-        <Sparkline values={buckets} />
-        <div className="otel-kind-legend">
+      <div className="flex items-center gap-4 border border-border bg-card/40 px-3 py-2">
+        <MiniLabel>activity</MiniLabel>
+        <div className="w-44">
+          <Sparkline values={buckets} />
+        </div>
+        <div className="ml-auto flex flex-wrap gap-3">
           {(Object.keys(stats.byKind) as Kind[])
             .sort((a, b) => stats.byKind[b] - stats.byKind[a])
             .slice(0, 7)
             .map((k) => (
-              <span className="otel-legend-item" key={k}>
-                <KindDot kind={k} />
-                {KIND_LABEL[k]} {stats.byKind[k]}
+              <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
+                <span className="inline-block h-2 w-2 rounded-full" style={{ background: KIND_HEX[k] }} />
+                {k} {stats.byKind[k]}
               </span>
             ))}
         </div>
       </div>
 
-      <div className="otel-stream">
+      <div className="flex flex-col gap-1.5">
         {recent.length === 0 ? (
-          <EmptyState
-            title="Waiting for activity…"
-            hint="Run a Hermes turn (CLI, Telegram, anything). Spans appear here in real time — no backend needed."
-          />
+          <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
+            <div className="mb-1 text-base font-medium text-foreground">Waiting for activity…</div>
+            Run a Hermes turn (CLI, Telegram, anything). Spans stream in here live — no backend required.
+          </div>
         ) : (
-          recent.map((s) => <SpanRow key={s.seq} s={s} />)
+          recent.map((s) => <StreamRow key={s.seq} s={s} />)
         )}
       </div>
     </div>

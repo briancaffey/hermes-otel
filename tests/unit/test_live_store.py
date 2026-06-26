@@ -68,6 +68,20 @@ class TestLiveStore:
         assert [s["name"] for s in reader.spans()] == ["from-gateway"]
         assert reader.cursor() == writer.cursor() == 1
 
+    def test_live_log_handler_feeds_store(self, store):
+        import logging
+
+        from hermes_otel.tracer import _LiveLogHandler
+
+        h = _LiveLogHandler(store)
+        rec = logging.LogRecord("my.logger", logging.WARNING, __file__, 1, "boom %s", ("x",), None)
+        h.emit(rec)
+        logs = store.logs()
+        assert len(logs) == 1
+        assert logs[0]["level"] == "WARNING"
+        assert logs[0]["logger"] == "my.logger"
+        assert logs[0]["body"] == "boom x"
+
     def test_singleton_create_flag(self, tmp_path):
         import hermes_otel.live_store as ls
 
