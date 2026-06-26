@@ -1,5 +1,11 @@
 // Shared span-tree waterfall + trace cards. Used by both the Traces browser and
 // the Live "recent turns" feed so live spans and backend spans render identically.
+//
+// The waterfall is a 3-column GRID (name | shared timeline | duration) so every
+// row's timeline starts at the same x and shares ONE time axis — that's what
+// makes offsets comparable at a glance. Bars are absolutely positioned within
+// the timeline cell by (start−t0)/total and dur/total; gridlines + an axis
+// header give the scale.
 import { React, useState, useMemo, Card, CardHeader, CardTitle, CardContent, Badge, Button, cn } from "./sdk";
 import {
   fmtDurationMs,
@@ -16,6 +22,8 @@ import {
 import { kindIcon, IconChevronRight } from "./icons";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
+const GRID = "grid grid-cols-[minmax(130px,34%)_minmax(0,1fr)_auto] items-center gap-2";
+const TICKS = [0, 0.25, 0.5, 0.75, 1];
 
 export function AttrTable({ attrs }: { attrs: Record<string, any> }) {
   const keys = Object.keys(attrs || {}).sort();
@@ -36,31 +44,82 @@ export function AttrTable({ attrs }: { attrs: Record<string, any> }) {
   );
 }
 
-function SpanRow({ span, depth, open, onToggle, t0, total }: { span: TreeSpan; depth: number; open: boolean; onToggle: () => void; t0: number; total: number }) {
+// faint vertical gridlines shared by the axis header + every row (same %s).
+function Gridlines() {
+  return (
+    <>
+      {TICKS.map((p) => (
+        <div key={p} className="pointer-events-none absolute bottom-0 top-0 w-px bg-border/40" style={{ left: `${p * 100}%` }} />
+      ))}
+    </>
+  );
+}
+
+function WaterfallRow({
+  span,
+  depth,
+  open,
+  onToggle,
+  t0,
+  total,
+  hasKids,
+}: {
+  span: TreeSpan;
+  depth: number;
+  open: boolean;
+  onToggle: () => void;
+  t0: number;
+  total: number;
+  hasKids: boolean;
+}) {
   const kind = kindOf(span.name, span._attrs);
   const isErr = statusCode(span.status) === "error";
+  const startMs = (span.startNs - t0) / 1e6;
   const left = total ? ((span.startNs - t0) / total) * 100 : 0;
-  const width = total ? Math.max(0.6, (span.durationMs * 1e6 * 100) / total) : 0;
+  const width = total ? Math.min(100 - left, Math.max(0.5, (span.durationMs * 1e6 * 100) / total)) : 0;
   const cost = span._attrs["hermes.cost.usage"];
   const tokens = span._attrs["gen_ai.usage.total_tokens"] || span._attrs["llm.token_count.total"];
   const approval = span._attrs["hermes.approval.choice"];
+  // Put the duration label outside the bar if the bar is near the right edge.
+  const labelRight = left + width > 80;
   return (
-    <li className="border-b border-border last:border-b-0">
-      <div className="flex cursor-pointer items-center gap-2 px-3 py-1.5 hover:bg-accent/30" style={{ paddingLeft: 12 + depth * 16 }} onClick={onToggle}>
-        <span className="w-3 shrink-0 text-xs text-muted-foreground">{span.children.length ? (open ? "▾" : "▸") : ""}</span>
-        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_HEX[kind] }} />
-        <span className="truncate font-mono text-sm">{span.name}</span>
-        {isErr ? <Badge variant="destructive" className="text-[10px]">error</Badge> : null}
-        {approval ? <Badge variant="secondary" className="text-[10px]">👤 {approval}</Badge> : null}
-        <div className="relative ml-2 hidden h-3 min-w-[80px] flex-1 bg-muted/30 sm:block">
-          <div className="absolute top-0.5 h-2" style={{ left: `${left}%`, width: `${width}%`, background: KIND_HEX[kind], minWidth: 2 }} title={`${fmtDurationMs(span.durationMs)}`} />
+    <li className="border-b border-border/60 last:border-b-0">
+      <div className={cn(GRID, "cursor-pointer px-3 py-1.5 hover:bg-accent/30")} onClick={onToggle}>
+        {/* name */}
+        <div className="flex min-w-0 items-center gap-1.5" style={{ paddingLeft: depth * 14 }}>
+          <span className="w-3 shrink-0 text-xs text-muted-foreground">{hasKids ? (open ? "▾" : "▸") : ""}</span>
+          <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: KIND_HEX[kind] }} />
+          <span className="truncate font-mono text-xs" title={span.name}>
+            {span.name}
+          </span>
+          {isErr ? <Badge variant="destructive" className="shrink-0 text-[10px]">error</Badge> : null}
+          {approval ? <Badge variant="secondary" className="shrink-0 text-[10px]">👤 {approval}</Badge> : null}
         </div>
-        {tokens ? <span className="hidden tabular-nums text-[11px] text-muted-foreground md:inline">{fmtTokens(tokens)} tok</span> : null}
-        {cost ? <span className="hidden tabular-nums text-[11px] text-emerald-400 md:inline">${Number(cost).toFixed(4)}</span> : null}
-        <span className="ml-auto shrink-0 tabular-nums text-xs text-muted-foreground">{fmtDurationMs(span.durationMs)}</span>
+        {/* shared timeline */}
+        <div className="relative h-5">
+          <Gridlines />
+          <div
+            className="absolute top-1 flex h-3 items-center rounded-[1px]"
+            style={{ left: `${left}%`, width: `${width}%`, background: KIND_HEX[kind], minWidth: 3 }}
+            title={`start +${fmtDurationMs(startMs)} · dur ${fmtDurationMs(span.durationMs)}`}
+          />
+          {/* duration label rides just outside the bar end */}
+          <span
+            className="absolute top-1 whitespace-nowrap text-[10px] leading-5 text-muted-foreground"
+            style={labelRight ? { right: `${100 - left}%`, marginRight: 4 } : { left: `${left + width}%`, marginLeft: 4 }}
+          >
+            {fmtDurationMs(span.durationMs)}
+          </span>
+        </div>
+        {/* meta column */}
+        <div className="flex shrink-0 items-center gap-2 pl-2 text-[11px] text-muted-foreground">
+          {tokens ? <span className="tabular-nums">{fmtTokens(tokens)} tok</span> : null}
+          {cost ? <span className="tabular-nums text-emerald-400">${Number(cost).toFixed(4)}</span> : null}
+          <span className="w-10 text-right tabular-nums">+{fmtDurationMs(startMs)}</span>
+        </div>
       </div>
       {open ? (
-        <div className="bg-muted/20 px-4 py-3" style={{ paddingLeft: 28 + depth * 16 }}>
+        <div className="bg-muted/20 px-4 py-3" style={{ paddingLeft: 28 + depth * 14 }}>
           <AttrTable attrs={span._attrs} />
         </div>
       ) : null}
@@ -68,7 +127,7 @@ function SpanRow({ span, depth, open, onToggle, t0, total }: { span: TreeSpan; d
   );
 }
 
-// The reusable waterfall: pass tree roots; handles expand/collapse + timing bars.
+// The reusable waterfall: pass tree roots; handles expand/collapse + a shared axis.
 export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaultOpen?: boolean }) {
   const flat = useMemo(() => flatten(roots), [roots]);
   const [openIds, setOpenIds] = useState<Record<string, boolean>>(() =>
@@ -77,6 +136,7 @@ export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaul
   if (!flat.length) return <div className="py-6 text-center text-sm text-muted-foreground">No spans.</div>;
   const t0 = Math.min(...flat.map((n) => n.span.startNs));
   const total = Math.max(...flat.map((n) => n.span.endNs)) - t0 || 1;
+  const totalMs = total / 1e6;
   const toggle = (id: string) => setOpenIds((p) => ({ ...p, [id]: !p[id] }));
   const expandAll = () => setOpenIds(Object.fromEntries(flat.map((n) => [n.span.spanId, true])));
   const collapseAll = () => setOpenIds({});
@@ -84,18 +144,49 @@ export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaul
     <div className="space-y-2">
       <div className="flex items-center justify-between">
         <span className="text-[11px] text-muted-foreground">
-          {flat.length} span{flat.length === 1 ? "" : "s"} · {fmtDurationMs(total / 1e6)}
+          {flat.length} span{flat.length === 1 ? "" : "s"} · {fmtDurationMs(totalMs)} total
         </span>
         <div className="flex gap-2">
           <Button variant="outline" size="sm" onClick={expandAll}>Expand all</Button>
           <Button variant="outline" size="sm" onClick={collapseAll}>Collapse</Button>
         </div>
       </div>
-      <ul className="overflow-hidden border border-border">
-        {flat.map((n) => (
-          <SpanRow key={n.span.spanId} span={n.span} depth={n.depth} open={!!openIds[n.span.spanId]} onToggle={() => toggle(n.span.spanId)} t0={t0} total={total} />
-        ))}
-      </ul>
+      <div className="overflow-hidden border border-border">
+        {/* axis header — tick labels at 0/25/50/75/100% of the trace duration */}
+        <div className={cn(GRID, "border-b border-border bg-muted/20 px-3 py-1 text-[10px] uppercase tracking-wide text-muted-foreground")}>
+          <span>span</span>
+          <div className="relative h-4">
+            <Gridlines />
+            {TICKS.map((p) => (
+              <span
+                key={p}
+                className="absolute top-0 tabular-nums leading-4"
+                style={{
+                  left: `${p * 100}%`,
+                  transform: p === 0 ? "none" : p === 1 ? "translateX(-100%)" : "translateX(-50%)",
+                }}
+              >
+                {fmtDurationMs(totalMs * p)}
+              </span>
+            ))}
+          </div>
+          <span className="pl-2 text-right">offset</span>
+        </div>
+        <ul>
+          {flat.map((n) => (
+            <WaterfallRow
+              key={n.span.spanId}
+              span={n.span}
+              depth={n.depth}
+              open={!!openIds[n.span.spanId]}
+              onToggle={() => toggle(n.span.spanId)}
+              t0={t0}
+              total={total}
+              hasKids={n.span.children.length > 0}
+            />
+          ))}
+        </ul>
+      </div>
     </div>
   );
 }
@@ -151,7 +242,7 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
   );
 }
 
-// Full-screen-ish detail for a live trace: header + waterfall.
+// Full detail for a live trace: header + waterfall.
 export function LiveTraceDetail({ trace, roots, onBack }: { trace: LiveTrace; roots: TreeSpan[]; onBack: () => void }) {
   return (
     <Card>
