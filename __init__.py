@@ -45,6 +45,8 @@ def register(ctx):
         ("subagent_start", hooks.on_subagent_start),
         ("subagent_stop", hooks.on_subagent_stop),
         ("api_request_error", hooks.on_api_request_error),
+        ("pre_approval_request", hooks.on_pre_approval_request),
+        ("post_approval_response", hooks.on_post_approval_response),
     ]:
         try:
             ctx.register_hook(hook_name, callback)

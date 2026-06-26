@@ -18,12 +18,14 @@ from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log
 from .helpers import (
+    classify_approval_choice,
     clip_preview,
     coerce_bool,
     detect_skill,
     extract_tool_result_status,
     http_status_class,
     resolve_tool_identity,
+    session_id_from_turn_id,
     subagent_span_key,
     subagent_status_to_span_status,
     to_optional_int,
@@ -893,6 +895,123 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         key, attributes=attributes, status=status, error_message=error_msg if has_error else None
     )
     debug_log(f"  span ended: status={status}, outcome={outcome}")
+
+
+def _approval_span_key(session_id: str, tool_call_id: Any, pattern_key: str) -> str:
+    """Stable key for an approval span; correlated to the triggering tool call."""
+    return f"approval:{session_id}:{tool_call_id or pattern_key or 'cmd'}"
+
+
+def on_pre_approval_request(
+    command: str = None,
+    description: str = None,
+    pattern_key: str = None,
+    pattern_keys: list = None,
+    session_key: str = None,
+    surface: str = None,
+    turn_id: str = None,
+    tool_call_id: str = None,
+    **kwargs,
+):
+    """Open a span while the agent blocks waiting on a human approval decision.
+
+    Observer-only: the return value is ignored by the approval system, so this
+    can never veto/alter an approval. Correlates to the turn via ``turn_id``
+    (which embeds the session_id) and to the triggering tool via
+    ``tool_call_id``. Fails open.
+    """
+    debug_log(f"pre_approval_request fired: pattern={pattern_key}, surface={surface}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    tracer.sweep_expired_turns()
+
+    session_id = session_id_from_turn_id(turn_id)
+    pk = truncate_string(pattern_key, 200) or "command"
+    key = _approval_span_key(session_id, tool_call_id, pk)
+
+    attributes: Dict[str, Any] = {
+        "hermes.approval.pattern_key": pk,
+        "hermes.span_kind": "approval",
+    }
+    if tool_call_id:
+        # Correlates the approval to the tool span / call it gates.
+        attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, 200)
+    if surface:
+        attributes["hermes.approval.surface"] = truncate_string(surface, 60)
+    if pattern_keys:
+        attributes["hermes.approval.pattern_keys"] = _clip_joined(
+            [str(k) for k in pattern_keys], ","
+        )
+    # command / description follow the same preview policy as tool input.
+    cmd = _preview(
+        command, tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars
+    )
+    if cmd is not None:
+        attributes["hermes.approval.command"] = cmd
+    if description:
+        desc = _preview(description, tracer.config.preview_max_chars)
+        if desc is not None:
+            attributes["hermes.approval.description"] = desc
+    attributes.update(_gen_ai_attributes(session_id, "approval", kwargs))
+
+    tracer.spans.record_approval_start(key, time.perf_counter())
+    tracer.start_span(
+        name=f"approval.{pk}",
+        key=key,
+        kind="general",
+        attributes=attributes,
+        session_id=session_id,
+        parent=tracer.spans.get_current_parent(session_id),
+    )
+    debug_log(f"  approval span opened: key={key}")
+
+
+def on_post_approval_response(
+    command: str = None,
+    description: str = None,
+    pattern_key: str = None,
+    pattern_keys: list = None,
+    session_key: str = None,
+    surface: str = None,
+    choice: str = None,
+    turn_id: str = None,
+    tool_call_id: str = None,
+    **kwargs,
+):
+    """Close the approval span with the human's decision + wait duration."""
+    debug_log(f"post_approval_response fired: pattern={pattern_key}, choice={choice}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    session_id = session_id_from_turn_id(turn_id)
+    pk = truncate_string(pattern_key, 200) or "command"
+    key = _approval_span_key(session_id, tool_call_id, pk)
+
+    verdict = classify_approval_choice(choice)
+    attributes: Dict[str, Any] = {
+        "hermes.approval.granted": verdict["granted"],
+        "hermes.approval.timed_out": verdict["timed_out"],
+    }
+    if verdict["choice"]:
+        attributes["hermes.approval.choice"] = verdict["choice"]
+
+    start = tracer.spans.pop_approval_start(key)
+    duration_ms = None
+    if start is not None:
+        duration_ms = (time.perf_counter() - start) * 1000
+        attributes["hermes.approval.duration_ms"] = round(duration_ms, 1)
+
+    # A denied or timed-out approval is a valid human outcome, not an error.
+    tracer.end_span(key, attributes=attributes, status="ok")
+
+    metric_attrs = {"choice": verdict["choice"] or "unknown", "pattern_key": pk}
+    tracer.record_metric("approval_count", 1, metric_attrs)
+    if duration_ms is not None:
+        tracer.record_metric("approval_duration", duration_ms, metric_attrs)
+    debug_log(f"  approval span ended: key={key}, choice={verdict['choice']}, dur={duration_ms}")
 
 
 def on_pre_llm_call(

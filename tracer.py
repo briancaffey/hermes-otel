@@ -108,6 +108,8 @@ class HermesOTelPlugin:
         self._subagent_duration = None
         self._api_error_count = None
         self._retry_count = None
+        self._approval_count = None
+        self._approval_duration = None
         # OTel GenAI semantic-convention instruments (dual-write alongside the
         # hermes.* ones above).
         self._gen_ai_client_token_usage = None
@@ -434,6 +436,15 @@ class HermesOTelPlugin:
             "hermes.retry.count",
             description="Provider API retry attempts",
         )
+        self._approval_count = self._meter.create_counter(
+            "hermes.approval.count",
+            description="Human-in-the-loop approval prompts by choice / pattern",
+        )
+        self._approval_duration = self._meter.create_histogram(
+            "hermes.approval.duration",
+            unit="ms",
+            description="Human-decision wait time on approval prompts",
+        )
 
         # ── OTel GenAI semantic-convention metrics ──────────────────────────
         # Spec-named instruments emitted in addition to the hermes.* ones, so
@@ -537,6 +548,12 @@ class HermesOTelPlugin:
         elif name == "retry_count":
             if self._retry_count is not None:
                 self._retry_count.add(int(value), attrs)
+        elif name == "approval_count":
+            if self._approval_count is not None:
+                self._approval_count.add(1, attrs)
+        elif name == "approval_duration":
+            if self._approval_duration is not None:
+                self._approval_duration.record(value, attrs)
         elif name == "gen_ai.client.token.usage":
             if self._gen_ai_client_token_usage is not None:
                 self._gen_ai_client_token_usage.record(int(value), attrs)

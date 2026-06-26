@@ -18,6 +18,7 @@ agent / cron                                  [AGENT]
     │   ├── tool.{name}                       [TOOL]
     │   ├── tool.skill_view                   [TOOL] (the call that *loads* skill.{name})
     │   ├── tool.{name}                       [TOOL] (parallel tool calls — siblings)
+    │   ├── approval.{pattern_key}            [APPROVAL] (human-in-the-loop wait; gen_ai.tool.call.id → the gated tool)
     │   ├── tool.delegate_task                [TOOL] (the tool call that delegates)
     │   └── subagent.{role}                   [AGENT] (delegation span)
     │       └── agent (child session root)    [AGENT] (the child rejoins this trace)
@@ -30,6 +31,7 @@ agent / cron                                  [AGENT]
 - **`llm.*`** — one per logical model turn. Wraps one or more HTTP round-trips to the provider.
 - **`api.*`** — one per HTTP round-trip. Tools run during a round-trip, so their parent is `api.*`, not `llm.*`.
 - **`tool.*`** — one per tool invocation. Parallel tool calls are siblings under the same `api.*`.
+- **`approval.*`** — one per dangerous-command approval prompt. Spans the time the agent blocks waiting for a human to approve/deny, correlated to the gated tool via `gen_ai.tool.call.id`. See [`approval.*`](#approval) below.
 - **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
 ## `session.*` / `cron`
@@ -152,6 +154,39 @@ are emitted regardless.
 
 Status is always `OK` — a skill being active is never itself an error; the
 turn's outcome rides on `hermes.skill.result_status`.
+
+## `approval.*` {#approval}
+
+One per dangerous-command approval prompt. When a tool trips an approval rule,
+the agent **blocks waiting for a human** to approve or deny — often the single
+biggest chunk of a turn's wall-clock, and previously invisible. This span makes
+that human-decision latency a first-class part of the trace, and records what
+was decided (an audit signal for allowlist tuning).
+
+The span opens on `pre_approval_request` and closes on `post_approval_response`,
+nested within the turn (under the active `api.*`/`agent` span) and correlated to
+the tool it gates via `gen_ai.tool.call.id`. It's keyed off the `turn_id` the
+hook carries (which embeds the session id), so it lands in the right trace even
+though the approval system runs on its own executor thread. Works on both the
+CLI (`surface=cli`) and gateway surfaces (`surface=gateway` — Telegram, Discord,
+Slack, …).
+
+| Attribute | Convention | Meaning |
+|---|---|---|
+| `hermes.approval.pattern_key` | hermes-specific | The matched approval rule (e.g. `rm_rf`) — also the span name |
+| `hermes.approval.choice` | hermes-specific | `once` · `session` · `always` · `deny` · `timeout` |
+| `hermes.approval.granted` | hermes-specific | `true` for once/session/always |
+| `hermes.approval.timed_out` | hermes-specific | `true` when the human never answered |
+| `hermes.approval.duration_ms` | hermes-specific | Human-decision wait time (ms) |
+| `hermes.approval.surface` | hermes-specific | `cli` or `gateway` |
+| `hermes.approval.command` | hermes-specific | The command awaiting approval (preview-clipped; suppressed when `capture_previews=false`) |
+| `hermes.approval.description` | hermes-specific | Why approval is required (preview-clipped) |
+| `gen_ai.tool.call.id` | gen_ai | The gated tool call — correlates this approval to its `tool.*` span |
+
+Status is always `OK` — a denial or timeout is a legitimate human outcome, not
+an error. Metrics: `hermes.approval.count` (by `choice` / `pattern_key`) and
+`hermes.approval.duration` (the wait histogram). These spans are observer-only —
+the plugin never vetoes or alters an approval.
 
 ## `subagent.*` {#subagent}
 

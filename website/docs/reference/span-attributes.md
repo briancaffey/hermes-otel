@@ -164,6 +164,8 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 | `hermes.subagent.duration` | Histogram | ms | `role` |
 | `hermes.api.error.count` | Counter | count | `error_type`, `status_class`, `retryable`, `model`, `provider` |
 | `hermes.retry.count` | Counter | count | `model`, `provider` |
+| `hermes.approval.count` | Counter | count | `choice`, `pattern_key` |
+| `hermes.approval.duration` | Histogram | ms | `choice`, `pattern_key` |
 
 `status_class` is bucketed to `2xx`/`3xx`/`4xx`/`5xx`/`network`/`other` to keep
 cardinality bounded. `hermes.retry.count` increments once per *retryable*

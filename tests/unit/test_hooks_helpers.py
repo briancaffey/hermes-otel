@@ -1,7 +1,12 @@
 """Tests for pure helper functions in hooks.py and helpers.py."""
 
 import pytest
-from hermes_otel.helpers import detect_skill, truncate_string
+from hermes_otel.helpers import (
+    classify_approval_choice,
+    detect_skill,
+    session_id_from_turn_id,
+    truncate_string,
+)
 from hermes_otel.hooks import (
     _detect_session_kind,
     _genai_metric_dims,
@@ -9,6 +14,44 @@ from hermes_otel.hooks import (
     _to_int,
     _usage_attributes,
 )
+
+
+class TestSessionIdFromTurnId:
+    def test_extracts_session_id_head(self):
+        assert session_id_from_turn_id("20260626_x:task7:hex") == "20260626_x"
+
+    def test_session_placeholder_is_empty(self):
+        # turn_context uses "session" when the agent has no real session_id.
+        assert session_id_from_turn_id("session:task:hex") == ""
+
+    def test_no_colon_returns_empty(self):
+        assert session_id_from_turn_id("nocolon") == ""
+
+    def test_non_string_returns_empty(self):
+        assert session_id_from_turn_id(None) == ""
+        assert session_id_from_turn_id(12345) == ""
+
+
+class TestClassifyApprovalChoice:
+    def test_grants(self):
+        for c in ("once", "session", "always"):
+            v = classify_approval_choice(c)
+            assert v == {"choice": c, "granted": True, "timed_out": False}
+
+    def test_deny_is_not_granted_not_timeout(self):
+        assert classify_approval_choice("deny") == {
+            "choice": "deny",
+            "granted": False,
+            "timed_out": False,
+        }
+
+    def test_timeout_flagged(self):
+        v = classify_approval_choice("TimeOut")
+        assert v["timed_out"] is True and v["granted"] is False
+
+    def test_empty_or_none(self):
+        assert classify_approval_choice(None)["choice"] == ""
+        assert classify_approval_choice("")["granted"] is False
 
 
 class TestDetectSkill:

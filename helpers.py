@@ -204,6 +204,40 @@ def detect_skill(tool_name: Optional[str], args: Optional[Dict[str, Any]]):
     return None, None
 
 
+def session_id_from_turn_id(turn_id: Any) -> str:
+    """Recover the plugin ``session_id`` from a hook ``turn_id``.
+
+    Hermes builds ``turn_id`` as ``"<session_id>:<task_id>:<hex>"``
+    (``agent/turn_context.py``). Hooks that only carry ``turn_id`` (e.g. the
+    approval hooks) can therefore recover the session the plugin keys its spans
+    on by taking the first segment. Returns ``""`` when unavailable.
+    """
+    if not isinstance(turn_id, str) or ":" not in turn_id:
+        return ""
+    head = turn_id.split(":", 1)[0].strip()
+    # ``agent/turn_context.py`` uses the literal "session" placeholder when the
+    # agent has no session_id yet — that's not a real id to correlate on.
+    return "" if head == "session" else head
+
+
+_APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
+
+
+def classify_approval_choice(choice: Any) -> Dict[str, Any]:
+    """Normalize an approval ``choice`` into telemetry fields.
+
+    ``choice`` is one of ``once`` / ``session`` / ``always`` / ``deny`` /
+    ``timeout``. The first three are grants; ``timeout`` is flagged distinctly.
+    A denied or timed-out approval is a legitimate human outcome, not an error.
+    """
+    c = (choice or "").strip().lower() if isinstance(choice, str) else ""
+    return {
+        "choice": c,
+        "granted": c in _APPROVAL_GRANT_CHOICES,
+        "timed_out": c == "timeout",
+    }
+
+
 # ── Sub-agent / delegation ───────────────────────────────────────────────────
 
 # child_status values hermes-agent reports on subagent_stop that indicate a
