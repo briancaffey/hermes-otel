@@ -1,65 +1,164 @@
-/* hermes-otel dashboard tab — light theme polish.
- * Most styling lives in Tailwind utility classes inside index.js;
- * this file only adds tweaks Tailwind can't express cleanly.
- */
+/* hermes-otel dashboard — scoped styles.
+   Inherits the host design system via CSS variables (--background, --foreground,
+   --color-card, --color-primary, --color-muted, --color-border …) so it matches
+   Hermes' dark / light / LENS themes automatically. Built from dashboard/src. */
 
-/* Force a single-tone text-selection inside the OTel tab. The dashboard
- * ships a flashy rainbow ::selection rule globally; that effect is
- * distracting when copying trace IDs, URLs, or span attributes. Scoping
- * to .hermes-otel-tab keeps the rest of the dashboard untouched. */
-.hermes-otel-tab ::selection {
-  background-color: hsl(var(--primary) / 0.25);
-  color: hsl(var(--foreground));
-  text-shadow: none;
-  background-image: none;
-  -webkit-background-clip: border-box;
-          background-clip: border-box;
-  -webkit-text-fill-color: hsl(var(--foreground));
-}
-.hermes-otel-tab ::-moz-selection {
-  background-color: hsl(var(--primary) / 0.25);
-  color: hsl(var(--foreground));
-  text-shadow: none;
-  background-image: none;
+.otel-root {
+  --otel-agent: #a78bfa;
+  --otel-llm: #58a6ff;
+  --otel-api: #38bdf8;
+  --otel-tool: #fbbf24;
+  --otel-skill: #34d399;
+  --otel-approval: #f472b6;
+  --otel-subagent: #c084fc;
+  --otel-other: #94a3b8;
+  --otel-spark: var(--color-primary, #58a6ff);
+  --otel-card: var(--color-card, var(--background, #0d1117));
+  --otel-fg: var(--foreground, #c9d1d9);
+  --otel-muted: var(--color-muted-foreground, #8b949e);
+  --otel-border: var(--color-border, rgba(255, 255, 255, 0.08));
+  color: var(--otel-fg);
+  font-size: 13px;
 }
 
-/* Hermes's default body font (Mondwest) is a display typeface whose
- * lowercase letterforms read as small caps. For prose-heavy content
- * like span attribute keys/values (input.value, llm.model_name, the
- * prompt JSON, …) that makes readable names look shouty. Swap in a
- * regular case-preserving sans stack for the OTel tab. Elements that
- * explicitly opt into mono (``.font-mono``, ``<code>``, ``<pre>``, the
- * attribute table) keep Courier Prime; Badges keep their own
- * uppercase tracking because that's the Hermes design-system
- * convention — never applied to prose. */
-.hermes-otel-tab {
-  font-family: ui-sans-serif, system-ui, "Inter", "Segoe UI",
-    "Helvetica Neue", Arial, sans-serif;
+/* ── tab bar ─────────────────────────────────────────────────────────── */
+.otel-tabbar {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 4px 10px;
+  border-bottom: 1px solid var(--otel-border);
+  margin-bottom: 14px;
+}
+.otel-tabbtn {
+  background: transparent;
+  border: 1px solid transparent;
+  color: var(--otel-muted);
+  padding: 6px 14px;
+  border-radius: 8px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.12s ease;
+}
+.otel-tabbtn:hover {
+  color: var(--otel-fg);
+  background: color-mix(in srgb, var(--otel-fg) 7%, transparent);
+}
+.otel-tabbtn-active {
+  color: var(--otel-fg);
+  background: color-mix(in srgb, var(--color-primary, #58a6ff) 16%, transparent);
+  border-color: color-mix(in srgb, var(--color-primary, #58a6ff) 40%, transparent);
+}
+.otel-tabbar-spacer { flex: 1; }
+.otel-brand {
+  font-family: ui-monospace, "JetBrains Mono", monospace;
+  font-size: 11px;
+  color: var(--otel-muted);
+  opacity: 0.7;
 }
 
-.hermes-otel-tab code,
-.hermes-otel-tab pre,
-.hermes-otel-tab .font-mono,
-.hermes-otel-tab .hermes-otel-attr,
-.hermes-otel-tab .hermes-otel-attr dt,
-.hermes-otel-tab .hermes-otel-attr dd {
-  font-family: var(--font-mono, ui-monospace, "Courier Prime", monospace);
+/* ── live header ─────────────────────────────────────────────────────── */
+.otel-live-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+.otel-live-title { display: flex; align-items: center; gap: 10px; font-size: 18px; font-weight: 700; }
+.otel-live-sub { font-size: 12px; font-weight: 400; color: var(--otel-muted); }
+.otel-live-sub code {
+  font-family: ui-monospace, monospace;
+  background: color-mix(in srgb, var(--otel-fg) 8%, transparent);
+  padding: 1px 5px; border-radius: 4px;
 }
 
-/* Attribute table specifically: belt-and-suspenders — wipe any
- * inherited text-transform / letter-spacing / small-caps so keys like
- * ``input.value`` render in the case they're declared. */
-.hermes-otel-attr,
-.hermes-otel-attr dt,
-.hermes-otel-attr dd {
-  text-transform: none !important;
-  letter-spacing: normal !important;
-  font-variant-caps: normal !important;
+.otel-pulse { width: 10px; height: 10px; border-radius: 50%; background: var(--otel-muted); display: inline-block; }
+.otel-pulse-on {
+  background: var(--otel-skill);
+  animation: otel-pulse 1.6s infinite;
+}
+@keyframes otel-pulse {
+  0% { box-shadow: 0 0 0 0 color-mix(in srgb, var(--otel-skill) 60%, transparent); }
+  70% { box-shadow: 0 0 0 7px transparent; }
+  100% { box-shadow: 0 0 0 0 transparent; }
 }
 
-/* Long span attribute values (full prompts/responses) overflow nicely
- * instead of stretching the layout. */
-.hermes-otel-attr dd {
-  max-height: 24rem;
-  overflow: auto;
+/* ── stat cards ──────────────────────────────────────────────────────── */
+.otel-stat-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-bottom: 14px;
 }
+.otel-stat { background: var(--otel-card); border: 1px solid var(--otel-border); border-radius: 12px; padding: 12px 14px; }
+.otel-stat-value { font-size: 22px; font-weight: 700; font-variant-numeric: tabular-nums; }
+.otel-stat-label { font-size: 11px; color: var(--otel-muted); text-transform: uppercase; letter-spacing: 0.04em; }
+.otel-stat-cost .otel-stat-value { color: var(--otel-skill); }
+.otel-stat-error .otel-stat-value { color: #f87171; }
+
+/* ── activity sparkline ──────────────────────────────────────────────── */
+.otel-activity {
+  display: flex; align-items: center; gap: 12px;
+  background: var(--otel-card); border: 1px solid var(--otel-border);
+  border-radius: 12px; padding: 8px 14px; margin-bottom: 14px;
+}
+.otel-activity-label { font-size: 11px; color: var(--otel-muted); text-transform: uppercase; }
+.otel-spark { width: 180px; height: 28px; }
+.otel-kind-legend { display: flex; flex-wrap: wrap; gap: 12px; margin-left: auto; }
+.otel-legend-item { display: inline-flex; align-items: center; gap: 5px; font-size: 11px; color: var(--otel-muted); }
+.otel-dot { width: 8px; height: 8px; border-radius: 50%; display: inline-block; flex: none; }
+
+/* ── live span stream ────────────────────────────────────────────────── */
+.otel-stream { display: flex; flex-direction: column; gap: 4px; }
+.otel-span-row {
+  display: flex; align-items: center; justify-content: space-between;
+  gap: 10px; padding: 6px 10px; border-radius: 8px;
+  border-left: 3px solid var(--otel-other);
+  background: var(--otel-card);
+  animation: otel-slidein 0.25s ease;
+}
+@keyframes otel-slidein { from { opacity: 0; transform: translateY(-3px); } to { opacity: 1; transform: none; } }
+.otel-span-main { display: flex; align-items: center; gap: 8px; min-width: 0; flex: 1; }
+.otel-span-name { font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.otel-span-meta { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.otel-chip {
+  font-size: 11px; color: var(--otel-muted);
+  background: color-mix(in srgb, var(--otel-fg) 7%, transparent);
+  padding: 1px 7px; border-radius: 999px; white-space: nowrap;
+}
+.otel-chip-cost { color: var(--otel-skill); }
+.otel-span-side { display: flex; flex-direction: column; align-items: flex-end; flex: none; }
+.otel-span-dur { font-variant-numeric: tabular-nums; font-weight: 600; }
+.otel-span-ago { font-size: 11px; color: var(--otel-muted); }
+
+/* ── empty / error / loading ─────────────────────────────────────────── */
+.otel-empty { text-align: center; padding: 48px 16px; color: var(--otel-muted); }
+.otel-empty-title { font-size: 15px; font-weight: 600; color: var(--otel-fg); margin-bottom: 6px; }
+.otel-empty-hint { font-size: 12px; max-width: 460px; margin: 0 auto; }
+.otel-error {
+  background: color-mix(in srgb, #f87171 14%, transparent);
+  border: 1px solid color-mix(in srgb, #f87171 40%, transparent);
+  color: #fca5a5; padding: 8px 12px; border-radius: 8px; margin-bottom: 12px; font-size: 12px;
+}
+.otel-loading { padding: 24px; color: var(--otel-muted); }
+
+/* ── traces ──────────────────────────────────────────────────────────── */
+.otel-filters { display: flex; align-items: flex-end; gap: 10px; flex-wrap: wrap; }
+.otel-filters-grow { flex: 1; min-width: 160px; }
+.otel-traces-split { display: grid; grid-template-columns: minmax(220px, 320px) 1fr; gap: 12px; margin-top: 12px; }
+.otel-traces-list { display: flex; flex-direction: column; gap: 6px; max-height: 70vh; overflow: auto; }
+.otel-trace-card { background: var(--otel-card); border: 1px solid var(--otel-border); border-radius: 10px; padding: 8px 12px; cursor: pointer; transition: border-color 0.12s; }
+.otel-trace-card:hover { border-color: color-mix(in srgb, var(--color-primary, #58a6ff) 50%, transparent); }
+.otel-trace-card-active { border-color: var(--color-primary, #58a6ff); }
+.otel-trace-card-top { display: flex; justify-content: space-between; gap: 8px; }
+.otel-trace-name { font-weight: 600; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.otel-trace-dur { font-variant-numeric: tabular-nums; color: var(--otel-muted); flex: none; }
+.otel-trace-card-sub { display: flex; align-items: center; gap: 8px; margin-top: 4px; }
+.otel-traces-detail { background: var(--otel-card); border: 1px solid var(--otel-border); border-radius: 12px; padding: 8px; min-height: 240px; max-height: 70vh; overflow: auto; }
+
+/* span waterfall (Traces detail) */
+.otel-wf-row { display: grid; grid-template-columns: minmax(140px, 260px) 1fr 64px; align-items: center; gap: 8px; padding: 3px 6px; }
+.otel-wf-name { display: flex; align-items: center; gap: 6px; font-family: ui-monospace, monospace; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.otel-wf-track { position: relative; height: 14px; background: color-mix(in srgb, var(--otel-fg) 5%, transparent); border-radius: 4px; }
+.otel-wf-bar { position: absolute; top: 2px; height: 10px; border-radius: 3px; min-width: 2px; }
+.otel-wf-dur { text-align: right; font-variant-numeric: tabular-nums; color: var(--otel-muted); }

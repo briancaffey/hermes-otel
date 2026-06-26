@@ -1,0 +1,16 @@
+{
+  "name": "hermes-otel-dashboard",
+  "private": true,
+  "version": "0.2.0",
+  "description": "Frontend for the hermes-otel dashboard tab (built to dist/index.js, committed). Dev-time build only — installation never runs this.",
+  "type": "module",
+  "scripts": {
+    "build": "node build.mjs",
+    "watch": "node build.mjs --watch"
+  },
+  "devDependencies": {
+    "@types/react": "^18.3.0",
+    "esbuild": "^0.25.0",
+    "typescript": "^5.7.0"
+  }
+}

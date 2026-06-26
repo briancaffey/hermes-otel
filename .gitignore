@@ -5,6 +5,10 @@
 # macOS
 .DS_Store
 
+# Node (dashboard frontend build deps — dist/ IS committed, node_modules is not)
+node_modules/
+dashboard/.esbuild/
+
 # Byte-compiled / optimized / DLL files
 __pycache__/
 *.py[codz]
