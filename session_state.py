@@ -95,6 +95,9 @@ class PerSession:
     io: Dict[str, str] = field(default_factory=lambda: {"input": "", "output": ""})
     io_captured: bool = False
     turn_summary: TurnSummary = field(default_factory=TurnSummary)
+    # The most recent API error's ``error.type`` for this session, surfaced on
+    # the root span at on_session_end so a failed turn shows *why* it failed.
+    last_error_type: str = ""
 
 
 class SessionState:

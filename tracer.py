@@ -106,6 +106,8 @@ class HermesOTelPlugin:
         self._skill_inferred_counter = None
         self._subagent_count = None
         self._subagent_duration = None
+        self._api_error_count = None
+        self._retry_count = None
         # Sub-agent delegation registry. Maps a delegated child's session_id to
         # a record about the delegation span opened in the parent on
         # ``subagent_start`` — ``{"span", "context", "role", "parent_session_id"}``
@@ -419,6 +421,14 @@ class HermesOTelPlugin:
             unit="ms",
             description="Delegated sub-agent wall-clock duration",
         )
+        self._api_error_count = self._meter.create_counter(
+            "hermes.api.error.count",
+            description="Failed provider API requests by error type / status class",
+        )
+        self._retry_count = self._meter.create_counter(
+            "hermes.retry.count",
+            description="Provider API retry attempts",
+        )
 
     def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
         """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
@@ -494,6 +504,12 @@ class HermesOTelPlugin:
         elif name == "subagent_duration":
             if self._subagent_duration is not None:
                 self._subagent_duration.record(value, attrs)
+        elif name == "api_error_count":
+            if self._api_error_count is not None:
+                self._api_error_count.add(1, attrs)
+        elif name == "retry_count":
+            if self._retry_count is not None:
+                self._retry_count.add(int(value), attrs)
 
     def start_span(
         self,
