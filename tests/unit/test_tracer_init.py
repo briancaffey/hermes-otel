@@ -4,6 +4,7 @@ import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -45,9 +46,26 @@ class TestInitPhoenix:
     def test_init_no_endpoint_returns_false(self, monkeypatch):
         _clear_backend_env(monkeypatch)
 
-        plugin = HermesOTelPlugin()
+        # With the live store disabled, no backend means truly nothing to do.
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
         assert plugin.init() is False
         assert plugin.is_enabled is False
+
+    def test_init_no_backend_live_only_succeeds(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        import hermes_otel.live_store as ls
+
+        # Zero-config default: no backend, but the in-process live store keeps
+        # the plugin enabled (the dashboard's Live mode). Patch the global
+        # provider set so we don't mutate process-wide OTel state.
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=True))
+        with patch("hermes_otel.tracer.trace.set_tracer_provider"):
+            try:
+                assert plugin.init() is True
+                assert plugin.is_enabled is True
+                assert plugin._live_active is True
+            finally:
+                ls._LIVE_STORE = None  # don't leak the singleton into other tests
 
     def test_init_with_explicit_endpoint_arg(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -136,7 +154,8 @@ class TestInitLangSmith:
         monkeypatch.setenv("LANGSMITH_TRACING", "false")
         monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
 
-        plugin = HermesOTelPlugin()
+        # dashboard_live off so the assertion isolates the LangSmith gate.
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
         assert plugin.init() is False
 
 

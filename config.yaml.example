@@ -123,6 +123,18 @@
 # Also settable via HERMES_OTEL_SKILL_SPANS.
 # skill_spans: true
 
+# ── Live dashboard (in-process store) ─────────────────────────────────────────
+#
+# The built-in dashboard tab has a "Live" mode that renders your agent's recent
+# spans + metrics + logs from a small in-memory ring buffer kept in the plugin
+# process — so the dashboard works the instant you install the plugin, with NO
+# external backend configured. The buffer is bounded and cheap. Set false to
+# disable the in-process store entirely (the dashboard then needs a configured
+# backend to show anything).
+# Also settable via HERMES_OTEL_DASHBOARD_LIVE / HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS.
+# dashboard_live: true
+# dashboard_live_max_spans: 1000
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than

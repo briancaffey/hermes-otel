@@ -319,6 +319,7 @@ class TestPartialBackendFailure:
         _clear_backend_env(monkeypatch)
         cfg = HermesOtelConfig(
             backends=(BackendConfig(type="phoenix", endpoint="http://broken/v1/traces"),),
+            dashboard_live=False,  # isolate the OTLP path; live store would otherwise keep it up
         )
         plugin = HermesOTelPlugin(config=cfg)
 
