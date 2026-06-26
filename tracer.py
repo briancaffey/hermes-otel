@@ -104,6 +104,16 @@ class HermesOTelPlugin:
         self._message_count = None
         self._model_usage = None
         self._skill_inferred_counter = None
+        self._subagent_count = None
+        self._subagent_duration = None
+        # Sub-agent delegation registry. Maps a delegated child's session_id to
+        # a record about the delegation span opened in the parent on
+        # ``subagent_start`` — ``{"span", "context", "role", "parent_session_id"}``
+        # — so the child's own root span can rejoin the parent trace on
+        # ``on_session_start``. Process-local: in-process delegation parents the
+        # child root directly under the delegation span (one connected trace);
+        # cross-process delegation degrades to attribute-only correlation.
+        self._subagent_registry: Dict[str, Dict[str, Any]] = {}
         # Config
         self.config: HermesOtelConfig = config if config is not None else load_config()
         # Turn registry for orphan sweep (session_id -> perf_counter start time)
@@ -400,6 +410,15 @@ class HermesOTelPlugin:
             "hermes.skill.inferred",
             description="Skill-name inference hits on tool spans",
         )
+        self._subagent_count = self._meter.create_counter(
+            "hermes.subagent.count",
+            description="Delegated sub-agent runs by role and status",
+        )
+        self._subagent_duration = self._meter.create_histogram(
+            "hermes.subagent.duration",
+            unit="ms",
+            description="Delegated sub-agent wall-clock duration",
+        )
 
     def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
         """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
@@ -469,6 +488,12 @@ class HermesOTelPlugin:
         elif name == "skill_inferred":
             if self._skill_inferred_counter is not None:
                 self._skill_inferred_counter.add(1, attrs)
+        elif name == "subagent_count":
+            if self._subagent_count is not None:
+                self._subagent_count.add(1, attrs)
+        elif name == "subagent_duration":
+            if self._subagent_duration is not None:
+                self._subagent_duration.record(value, attrs)
 
     def start_span(
         self,
@@ -477,6 +502,8 @@ class HermesOTelPlugin:
         kind: str = "general",
         attributes: dict = None,
         session_id: Optional[str] = None,
+        parent: Any = None,
+        links: Optional[list] = None,
     ):
         """Create and track a new span.
 
@@ -484,6 +511,14 @@ class HermesOTelPlugin:
             session_id: When provided, the span key is linked to this session
                         so the orphan sweep can finalize it if the session
                         exceeds root_span_ttl_ms.
+            parent: Explicit parent span to nest under, overriding the
+                    session-keyed parent stack. Used for sub-agent delegation,
+                    where a child's root span must nest under the delegation
+                    span opened in the *parent* session (a different stack).
+            links: Optional list of ``opentelemetry.trace.Link`` objects to
+                   attach at span creation (links can't be added later). Used
+                   as the cross-process fallback for sub-agent correlation when
+                   a live parent span isn't available to nest under.
         """
         if not self._initialized:
             return INVALID_SPAN
@@ -493,7 +528,7 @@ class HermesOTelPlugin:
 
         # LangSmith mode — HTTP only
         if self._langsmith:
-            parent_run = self.spans.get_current_parent(session_id)
+            parent_run = parent if parent is not None else self.spans.get_current_parent(session_id)
             run_obj = self._langsmith.start_span(
                 name,
                 key,
@@ -518,14 +553,17 @@ class HermesOTelPlugin:
             attrs["traceloop.span.kind"] = kind_value
             attrs["openinference.span.kind"] = kind_value
 
-            # Check for active parent — prefers the session-keyed stack so
-            # nesting survives hermes' cross-thread hook dispatch.
-            parent = self.spans.get_current_parent(session_id)
+            # Check for active parent — an explicit ``parent`` wins (sub-agent
+            # delegation), otherwise prefer the session-keyed stack so nesting
+            # survives hermes' cross-thread hook dispatch.
+            effective_parent = (
+                parent if parent is not None else self.spans.get_current_parent(session_id)
+            )
             span_ctx = None
-            if parent is not None and hasattr(parent, "get_span_context"):
-                span_ctx = set_span_in_context(parent)
+            if effective_parent is not None and hasattr(effective_parent, "get_span_context"):
+                span_ctx = set_span_in_context(effective_parent)
 
-            span = self.tracer.start_span(name, attributes=attrs, context=span_ctx)
+            span = self.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
             self.spans.start_span(key, span)
             debug_log(f"start_span: {name} (key={key}, kind={kind_value})")
             return span

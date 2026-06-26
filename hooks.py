@@ -21,10 +21,17 @@ from .helpers import (
     extract_tool_result_status,
     infer_skill_name,
     resolve_tool_identity,
+    subagent_span_key,
+    subagent_status_to_span_status,
     truncate_string,
 )
 from .session_state import TurnSummary
 from .tracer import get_tracer
+
+try:
+    from opentelemetry.trace import Link
+except ImportError:  # pragma: no cover — plugin is unusable without OTel
+    Link = None  # type: ignore[assignment]
 
 
 class HookContext(TypedDict, total=False):
@@ -489,12 +496,36 @@ def _start_session_span(
     if cron_job_id:
         attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, 200)
 
+    # Sub-agent rejoin: if this session is a delegated child (its session_id was
+    # registered by on_subagent_start in the parent), nest its root span under
+    # the delegation span so the whole multi-agent run is one connected trace.
+    # In-process delegation has the live span → real parent. Cross-process only
+    # has the SpanContext → attach a link instead (best-effort correlation).
+    parent_override = None
+    links = None
+    record = tracer._subagent_registry.get(session_id)
+    if record:
+        attributes["hermes.session.is_subagent"] = True
+        if record.get("role"):
+            attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
+        if record.get("parent_session_id"):
+            attributes["hermes.subagent.parent_session_id"] = truncate_string(
+                record["parent_session_id"], 200
+            )
+        span_obj = record.get("span")
+        if span_obj is not None and hasattr(span_obj, "get_span_context"):
+            parent_override = span_obj
+        elif record.get("context") is not None and Link is not None:
+            links = [Link(record["context"])]
+
     span = tracer.start_span(
         name=span_name,
         key=key,
         kind="agent",
         attributes=attributes,
         session_id=session_id,
+        parent=parent_override,
+        links=links,
     )
     tracer.spans.push_parent(span, session_id=session_id)
     tracer.register_turn(session_id)
@@ -1096,6 +1127,155 @@ def on_post_api_request(
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
+
+
+def on_subagent_start(
+    parent_session_id: str = None,
+    child_session_id: str = None,
+    child_role: str = None,
+    child_goal: str = None,
+    **kwargs,
+):
+    """Open a delegation span when a parent agent spawns a child agent.
+
+    The span lives in the *parent's* trace, nested under whatever the parent
+    has in flight (its api/llm span for the turn that called ``delegate_task``).
+    Its ``SpanContext`` is stashed by ``child_session_id`` so the child's own
+    root span (created later from its own ``on_session_start``) rejoins this
+    trace — see the sub-agent rejoin block in ``_start_session_span``.
+    """
+    debug_log(
+        f"subagent_start fired: parent={parent_session_id}, child={child_session_id}, "
+        f"role={child_role}"
+    )
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    tracer.sweep_expired_turns()
+
+    key = subagent_span_key(child_session_id)
+    if key is None:
+        # No child session id → nothing to correlate the child run back to.
+        debug_log("  subagent_start: no child_session_id, skipping")
+        return
+
+    role = truncate_string(child_role, 200) if child_role else "subagent"
+    span_name = f"subagent.{role}"
+
+    attributes: Dict[str, Any] = {
+        "gen_ai.operation.name": "invoke_agent",
+        "gen_ai.agent.name": role,
+        "hermes.subagent.role": role,
+        "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+    }
+    if parent_session_id:
+        attributes["session.id"] = truncate_string(parent_session_id, 200)
+        attributes["session_id"] = truncate_string(parent_session_id, 200)
+        attributes["hermes.subagent.parent_session_id"] = truncate_string(parent_session_id, 200)
+    parent_turn_id = kwargs.get("parent_turn_id")
+    if parent_turn_id:
+        attributes["hermes.subagent.parent_turn_id"] = truncate_string(parent_turn_id, 200)
+    child_subagent_id = kwargs.get("child_subagent_id")
+    if child_subagent_id:
+        attributes["hermes.subagent.child_id"] = truncate_string(child_subagent_id, 200)
+    parent_subagent_id = kwargs.get("parent_subagent_id")
+    if parent_subagent_id:
+        attributes["hermes.subagent.parent_id"] = truncate_string(parent_subagent_id, 200)
+    goal_preview = _preview(
+        child_goal,
+        tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars,
+    )
+    if goal_preview is not None:
+        attributes["hermes.subagent.goal"] = goal_preview
+        attributes["input.value"] = goal_preview
+    attributes.update(_correlation_attributes(tracer, parent_session_id, kwargs))
+
+    # Nest under the parent session's in-flight span (api/llm/session). The
+    # delegation span is NOT pushed as a parent — the parent session keeps
+    # working on its own stack; this span is a side branch that the child
+    # rejoins via _subagent_registry.
+    span = tracer.start_span(
+        name=span_name,
+        key=key,
+        kind="agent",
+        attributes=attributes,
+        session_id=parent_session_id,
+    )
+
+    record: Dict[str, Any] = {
+        "span": span,
+        "role": role,
+        "parent_session_id": parent_session_id,
+    }
+    if span is not None and hasattr(span, "get_span_context"):
+        try:
+            record["context"] = span.get_span_context()
+        except Exception:
+            record["context"] = None
+    tracer._subagent_registry[str(child_session_id)] = record
+    debug_log(f"  subagent span started: key={key}, name={span_name}")
+
+
+def on_subagent_stop(
+    parent_session_id: str = None,
+    child_session_id: str = None,
+    child_role: str = None,
+    child_summary: str = None,
+    child_status: str = None,
+    duration_ms: float = None,
+    **kwargs,
+):
+    """Close the delegation span when a child agent returns or fails."""
+    debug_log(
+        f"subagent_stop fired: child={child_session_id}, status={child_status}, "
+        f"duration_ms={duration_ms}"
+    )
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+
+    key = subagent_span_key(child_session_id)
+    if key is None:
+        debug_log("  subagent_stop: no child_session_id, skipping")
+        return
+
+    record = tracer._subagent_registry.pop(str(child_session_id), None)
+    role = (record.get("role") if record else None) or (
+        truncate_string(child_role, 200) if child_role else "subagent"
+    )
+
+    status = subagent_status_to_span_status(child_status)
+    attributes: Dict[str, Any] = {}
+    if child_status:
+        attributes["hermes.subagent.status"] = truncate_string(child_status, 120)
+    if duration_ms is not None:
+        try:
+            attributes["hermes.subagent.duration_ms"] = round(float(duration_ms), 1)
+        except (TypeError, ValueError):
+            pass
+    summary_preview = _preview(
+        child_summary,
+        tracer.config.tool_output_preview_max_chars or tracer.config.preview_max_chars,
+    )
+    if summary_preview is not None:
+        attributes["hermes.subagent.summary"] = summary_preview
+        attributes["output.value"] = summary_preview
+
+    error_message = None
+    if status == "error":
+        error_message = truncate_string(child_summary or child_status, 500)
+
+    tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)
+
+    # Metrics
+    tracer.record_metric("subagent_count", 1, {"role": role, "status": status})
+    if duration_ms is not None:
+        try:
+            tracer.record_metric("subagent_duration", float(duration_ms), {"role": role})
+        except (TypeError, ValueError):
+            pass
+    debug_log(f"  subagent span ended: key={key}, status={status}")
 
 
 # ── Distributed trace-context propagation (W3C traceparent) ──────────────────

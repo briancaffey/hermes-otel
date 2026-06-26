@@ -11,18 +11,23 @@ Every Hermes turn produces a nested tree of spans. This page documents what each
 ## The tree
 
 ```text
-session.{platform} / cron                     [GENERAL]
+agent / cron                                  [AGENT]
 └── llm.{model}                               [LLM]
     ├── api.{model}                           [LLM]
-    │   └── tool.{name}                       [TOOL]
-    │   └── tool.{name}                       [TOOL] (parallel tool calls — siblings)
+    │   ├── tool.{name}                       [TOOL]
+    │   ├── tool.{name}                       [TOOL] (parallel tool calls — siblings)
+    │   ├── tool.delegate_task                [TOOL] (the tool call that delegates)
+    │   └── subagent.{role}                   [AGENT] (delegation span)
+    │       └── agent (child session root)    [AGENT] (the child rejoins this trace)
+    │           └── llm.{model} → api.{model} → tool.{name} ...   (child's own work)
     └── api.{model}                           [LLM]  (second round-trip after tool results)
 ```
 
-- **`session.*` / `cron`** — the root for each turn. Present when session hooks are available in the Hermes build; absent on older versions (the `llm.*` span becomes the root).
+- **`agent` / `cron`** — the root for each turn. Present when session hooks are available in the Hermes build; absent on older versions (the `llm.*` span becomes the root).
 - **`llm.*`** — one per logical model turn. Wraps one or more HTTP round-trips to the provider.
 - **`api.*`** — one per HTTP round-trip. Tools run during a round-trip, so their parent is `api.*`, not `llm.*`.
 - **`tool.*`** — one per tool invocation. Parallel tool calls are siblings under the same `api.*`.
+- **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
 ## `session.*` / `cron`
 
@@ -117,6 +122,36 @@ One per tool invocation. Name is `tool.{name}` (e.g. `tool.bash`, `tool.read_fil
 | `hermes.skill.name` | hermes-specific | Skill inferred from args paths (optional) |
 
 Errors: `hermes.tool.outcome=error` also maps the span's `StatusCode` to `ERROR`. Timeouts and blocked tools stay `OK` so dashboards don't count them as failures.
+
+## `subagent.*` {#subagent}
+
+One per delegated child agent (when the parent calls the `delegate_task` tool). Name is `subagent.{role}` (e.g. `subagent.leaf`, `subagent.researcher`).
+
+**Span kind:** `AGENT` (OpenInference).
+
+The delegation span opens on `subagent_start` and nests under the parent turn's in-flight `api.*`/`llm.*` span. Crucially, the delegated child's **own root span rejoins this trace**: when the child runs in the same process (the default), its `agent` root nests directly under the `subagent.*` span, so a multi-agent run is a single connected tree instead of many disconnected traces.
+
+| Attribute | Convention | Meaning |
+|---|---|---|
+| `gen_ai.operation.name` | gen_ai | `invoke_agent` |
+| `gen_ai.agent.name` | gen_ai | The child's role |
+| `hermes.subagent.role` | hermes-specific | Child role (`leaf`, `orchestrator`, …) |
+| `hermes.subagent.goal` | hermes-specific | What the child was asked to do (preview) |
+| `hermes.subagent.child_session_id` | hermes-specific | The child's session ID (join key) |
+| `hermes.subagent.parent_session_id` | hermes-specific | The delegating parent's session ID |
+| `hermes.subagent.parent_turn_id` | hermes-specific | The parent turn that delegated |
+| `hermes.subagent.child_id` | hermes-specific | The child's sub-agent ID |
+| `hermes.subagent.status` | hermes-specific | Reported `child_status` (set on stop) |
+| `hermes.subagent.duration_ms` | hermes-specific | Child wall-clock duration (set on stop) |
+| `hermes.subagent.summary` | hermes-specific | The child's result summary (set on stop) |
+
+The child's `agent` root carries `hermes.session.is_subagent=true` plus `hermes.subagent.parent_session_id` / `hermes.subagent.role` so you can filter child runs even when looking at a single span.
+
+**Status:** failure-like `child_status` values (`error`, `failed`, `cancelled`, `timeout`) map the span to `ERROR`; anything else (including a missing status) stays `OK`.
+
+**Metrics:** `hermes.subagent.count{role, status}` and `hermes.subagent.duration{role}`.
+
+See [Hooks reference](/reference/hooks#subagent_start) for the rejoin mechanism and the cross-process span-link fallback.
 
 ## Why this shape?
 

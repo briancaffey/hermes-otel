@@ -1,12 +1,12 @@
 ---
 sidebar_position: 4
 title: "Hooks reference"
-description: "The eight Hermes lifecycle hooks this plugin subscribes to, and the span operation each performs."
+description: "The ten Hermes lifecycle hooks this plugin subscribes to, and the span operation each performs."
 ---
 
 # Hooks reference
 
-hermes-otel subscribes to eight Hermes lifecycle hooks. Six are "always available" on any Hermes version with plugin support. Two are newer (session hooks) and are registered conditionally.
+hermes-otel subscribes to ten Hermes lifecycle hooks. Six are "always available" on any Hermes version with plugin support. Four are newer (two session hooks and two sub-agent hooks) and are registered conditionally.
 
 ## Always available
 
@@ -58,9 +58,9 @@ Fires when the HTTP response is parsed.
 - **Attributes set on end:** token counts (both conventions), `gen_ai.response.finish_reason`, `http.duration_ms`
 - **Metrics:** `hermes.tokens.*` counters, `hermes.api.duration` histogram
 
-## Newer (session hooks)
+## Newer (session + sub-agent hooks)
 
-Registered inside a `try:/except:` because older Hermes versions don't expose them. If they're missing, the plugin logs a debug message and degrades gracefully to 6-hook operation.
+Registered inside a `try:/except:` because older Hermes versions don't expose them. If any is missing, the plugin logs a debug message and degrades gracefully (older Hermes simply registers fewer hooks).
 
 ### `on_session_start`
 
@@ -79,19 +79,43 @@ Fires when the turn is fully complete (assistant has returned its final response
 - **Metrics:** `hermes.sessions{kind, final_status}` counter
 - **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
 
+### `subagent_start`
+
+Fires when a parent agent delegates work to a child agent (the `delegate_task` tool). Dispatched in the parent's process, on the parent thread.
+
+- **Span op:** `tracker.start("subagent.{role}", parent=current_api or current_llm)` — a delegation span in the **parent's** trace
+- **Attributes set on start:** `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name`, `hermes.subagent.role`, `hermes.subagent.child_session_id`, `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.child_id`, `hermes.subagent.goal`, `input.value`
+- **Side effects:** stashes the delegation span (and its `SpanContext`) keyed by `child_session_id` in the tracer's sub-agent registry so the child's own root span can rejoin this trace; registers the span with the orphan sweep under the parent session
+
+### `subagent_stop`
+
+Fires when a delegated child agent returns or fails.
+
+- **Span op:** closes the `subagent.{role}` span
+- **Attributes set on end:** `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value`
+- **Span status:** `ERROR` for failure-like statuses (`error`, `failed`, `cancelled`, `timeout`); `OK` otherwise (an unknown/missing status never inflates error rates)
+- **Metrics:** `hermes.subagent.count{role, status}` counter, `hermes.subagent.duration{role}` histogram
+- **Side effects:** removes the child from the sub-agent registry
+
+#### How the child rejoins the parent trace
+
+When the delegated child runs **in the same process** (the default for `delegate_task`), `on_session_start` for the child finds the stashed delegation span and nests the child's root span directly under it — so the whole multi-agent run is **one connected trace**. When only a `SpanContext` is available (cross-process delegation), the child root attaches a span **link** to the delegation span instead and is tagged with `hermes.subagent.parent_session_id` for correlation. See [Limitations](/reference/limitations).
+
 ## Hook → span mapping
 
 ```text
 Hermes hook              OTel operation
 ──────────────────────   ─────────────────────────────────────
-on_session_start         open  session.{kind}
+on_session_start         open  agent/cron        (or rejoin a delegation span as a child)
 pre_llm_call             open  llm.{model}       (child of session)
 pre_api_request          open  api.{model}       (child of llm)
 pre_tool_call            open  tool.{name}       (child of api or llm)
+subagent_start           open  subagent.{role}   (child of api or llm)
 post_tool_call           close tool.{name}
 post_api_request         close api.{model}
 post_llm_call            close llm.{model}
-on_session_end           close session.{kind}    + turn summary + force-flush
+subagent_stop            close subagent.{role}   + status + duration + metrics
+on_session_end           close agent/cron        + turn summary + force-flush
 ```
 
 ## Parallel tool calls

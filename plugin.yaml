@@ -19,3 +19,5 @@ provides_hooks:
   - post_llm_call
   - pre_api_request
   - post_api_request
+  - subagent_start
+  - subagent_stop
