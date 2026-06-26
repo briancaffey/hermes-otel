@@ -68,6 +68,7 @@ const sidebars: SidebarsConfig = {
       collapsed: true,
       items: [
         'development/contributing',
+        'development/pr-workflow',
         'development/testing',
         'development/releasing',
         'development/debug-logging',

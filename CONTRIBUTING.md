@@ -14,6 +14,17 @@ that exports LLM traces to a number of OTLP-compatible backends.
 - **Docs follow code** — if you add a config knob, update
   `README.md` / `docs/` in the same PR.
 
+## Workflow
+
+The full issue-to-merged-PR recipe (branching, hook/span/metric conventions,
+running the exact CI checks locally, docs as acceptance criteria, and
+before/after backend verification) lives in
+[`.claude/skills/hermes-otel-pr/SKILL.md`](.claude/skills/hermes-otel-pr/SKILL.md)
+and is summarized in the docs under
+[Development → PR workflow](https://briancaffey.github.io/hermes-otel/development/pr-workflow).
+If you use Claude Code, that skill loads automatically in this repo, so the
+agent follows the same workflow you do.
+
 ## Local setup
 
 The project uses [`uv`](https://github.com/astral-sh/uv) for dependency
