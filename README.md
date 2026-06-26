@@ -467,11 +467,13 @@ Turn 1:
 |------|------|----------|
 | `agent` / `cron` | AGENT | Session metadata, completion/interruption status, turn summary |
 | `llm.{model}` | LLM | Model name, provider, user message (input), assistant response (output) |
-| `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens |
+| `api.{model}` | LLM | Token counts (prompt + completion), duration, finish reason, cache tokens. On failure: `ERROR` status + recorded exception + retry metadata |
 | `tool.{name}` | TOOL | Tool name, arguments (input), result (output), error status |
 | `subagent.{role}` | AGENT | Delegated child agent — role, goal, status, duration, summary; the child's own run nests beneath it so a multi-agent run is **one connected trace** |
 
 **Sub-agent delegation:** when the agent calls `delegate_task`, the plugin opens a `subagent.{role}` span in the parent trace (via the `subagent_start` / `subagent_stop` hooks) and rejoins the delegated child's own root span underneath it. Without this, child agents export as dozens of disconnected traces. See [Span hierarchy → `subagent.*`](website/docs/architecture/span-hierarchy.md) and the `hermes.subagent.count` / `hermes.subagent.duration` metrics.
+
+**API errors & retries:** failed provider requests (rate limits, timeouts, 5xx, network errors) close the `api.{model}` span as `ERROR` with an `exception` event and retry metadata (`error.type`, status code, `hermes.retry.count`, `hermes.retryable`), via the `api_request_error` hook — previously these ended `OK` and were invisible. Emits `hermes.api.error.count{error_type,status_class,retryable}` and `hermes.retry.count`.
 
 ### Attribute conventions
 

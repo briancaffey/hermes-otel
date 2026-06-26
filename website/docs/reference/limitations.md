@@ -47,6 +47,21 @@ Delegated child agents (`delegate_task`) are modeled as `subagent.*` spans, and 
 
 If a future Hermes version runs delegated children **in a separate process**, that registry won't hold the live span. The plugin then degrades gracefully: the child root attaches an OTel **span link** to the delegation span's `SpanContext` (when available) and is tagged with `hermes.subagent.parent_session_id` for correlation — but the child becomes its own trace rather than nesting in the parent. True cross-process trace-context *propagation* (injecting the parent context into the child process) is out of scope for now; open an issue if you need it.
 
+## API error capture depends on the `api_request_error` hook
+
+Failed provider API requests (rate limits, timeouts, 5xx, network errors) are
+now captured: the `api.{model}` span ends `ERROR` with a recorded exception and
+retry metadata, via the `api_request_error` hook. On older Hermes builds that
+don't fire that hook, a failed request's span is instead finalized by the
+[orphan sweep](/architecture/orphan-sweep) on the next turn and ends `OK` — so
+on those builds failures remain invisible until you upgrade Hermes.
+
+A hard crash *before* the error hook fires (or before the next sweep) can still
+lose the in-flight span, the same buffered-span trade-off described above.
+
+Note the deliberate asymmetry: only API-level failures map to `ERROR`. Tool
+`timeout`/`blocked` outcomes stay `OK` so they don't inflate error rates.
+
 ## Sampling is head-based only
 
 `ParentBased(TraceIdRatioBased(rate))` makes the sampling decision at the **root**. There's no tail-based sampler that boosts on error or keeps all traces above a duration threshold.

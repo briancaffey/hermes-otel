@@ -89,6 +89,24 @@ Span kind: `LLM` (OpenInference).
 | `gen_ai.response.finish_reason` | gen_ai | string | `stop`, `tool_use`, `length`, etc. |
 | `http.duration_ms` | hermes | int | Wall-clock HTTP duration |
 
+### `api.*` on failure (`api_request_error`)
+
+When the request fails, the span ends with `StatusCode.ERROR`, an `exception`
+event (`exception.type` / `exception.message` / `exception.escaped`), and:
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `error.type` | OTel | string | Error class reported by Hermes (e.g. `RateLimitError`) |
+| `http.response.status_code` | OTel | int | HTTP status (omitted for network errors) |
+| `gen_ai.response.status_code` | gen_ai | int | Same value, gen_ai spelling |
+| `hermes.retry.count` | hermes | int | Retries attempted so far for this request |
+| `hermes.max_retries` | hermes | int | Configured retry ceiling |
+| `hermes.retryable` | hermes | bool | Whether the error is retryable |
+| `llm.response.duration_ms` | hermes | float | Wall-clock of the failed attempt |
+
+The most recent `error.type` is also stamped on the turn's root `agent` span at
+`on_session_end`.
+
 ## `tool.*`
 
 Span kind: `TOOL` (OpenInference).
@@ -141,5 +159,11 @@ Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metric
 | `hermes.sessions` | Counter | count | `kind`, `final_status` |
 | `hermes.subagent.count` | Counter | count | `role`, `status` |
 | `hermes.subagent.duration` | Histogram | ms | `role` |
+| `hermes.api.error.count` | Counter | count | `error_type`, `status_class`, `retryable`, `model`, `provider` |
+| `hermes.retry.count` | Counter | count | `model`, `provider` |
+
+`status_class` is bucketed to `2xx`/`3xx`/`4xx`/`5xx`/`network`/`other` to keep
+cardinality bounded. `hermes.retry.count` increments once per *retryable*
+failure.
 
 Label cardinality is bounded by normalised values (outcomes, finish reasons) and small dimension sets (model, tool name). No user IDs or other high-cardinality labels.
