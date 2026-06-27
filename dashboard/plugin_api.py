@@ -53,7 +53,9 @@ def _get_live_store():
             from hermes_otel.live_store import get_live_store
         except Exception:
             return None
-    return get_live_store()
+    # create=True: the dashboard runs in a SEPARATE process from the gateway, so
+    # it opens the shared SQLite store itself (reading what the gateway writes).
+    return get_live_store(create=True)
 
 
 @router.get("/live/status")

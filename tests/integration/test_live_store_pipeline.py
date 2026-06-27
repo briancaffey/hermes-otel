@@ -12,14 +12,14 @@ from hermes_otel.plugin_config import HermesOtelConfig
 
 
 @pytest.fixture()
-def live_plugin():
+def live_plugin(tmp_path):
     import hermes_otel.live_store as ls
     import hermes_otel.tracer as tracer_mod
     from hermes_otel.tracer import HermesOTelPlugin, _LiveSpanProcessor
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
 
-    ls._LIVE_STORE = LiveStore()  # fresh store for this test
+    ls._LIVE_STORE = LiveStore(db_path=str(tmp_path / "live.db"))  # fresh tmp store
     store = get_live_store()
 
     provider = TracerProvider(resource=Resource.create({"service.name": "live-test"}))

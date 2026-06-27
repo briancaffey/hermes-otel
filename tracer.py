@@ -16,6 +16,7 @@ out via one ``PeriodicExportingMetricReader`` per backend that supports them.
 from __future__ import annotations
 
 import atexit
+import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -111,6 +112,62 @@ else:  # pragma: no cover — plugin is unusable without OTel
     _LiveSpanProcessor = None  # type: ignore[assignment, misc]
 
 
+class _LiveLogNoiseFilter(logging.Filter):
+    """Drop Hermes' chattiest housekeeping lines from the live tail.
+
+    These fire on every gateway boot/refresh and drown out the agent's own
+    activity in the dashboard. Dropped regardless of level.
+    """
+
+    _NOISY_LOGGERS = ("gateway.config",)
+    _NOISY_SUBSTRINGS = (
+        "is_connected returned False",
+        "available but not configured",
+        "has no subscriptions",
+    )
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        if record.name in self._NOISY_LOGGERS:
+            return False
+        try:
+            msg = record.getMessage()
+        except Exception:  # pragma: no cover
+            return True
+        return not any(s in msg for s in self._NOISY_SUBSTRINGS)
+
+
+class _LiveLogHandler(logging.Handler):
+    """Mirror log records into the in-process LiveStore, trace-correlated.
+
+    Installed only when both ``dashboard_live`` and ``capture_logs`` are on, so
+    the dashboard's Logs tab tails the agent's logs with no external backend.
+    """
+
+    def __init__(self, store: Any) -> None:
+        super().__init__()
+        self._store = store
+
+    def emit(self, record: logging.LogRecord) -> None:
+        try:
+            trace_id = None
+            if _OTEL_AVAILABLE:
+                span = trace.get_current_span()
+                ctx = span.get_span_context() if span is not None else None
+                if ctx is not None and getattr(ctx, "trace_id", 0):
+                    trace_id = format(ctx.trace_id, "032x")
+            self._store.add_log(
+                {
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "body": record.getMessage(),
+                    "time_unix_nano": int(record.created * 1e9),
+                    "trace_id": trace_id,
+                }
+            )
+        except Exception:  # pragma: no cover — logging must never raise
+            pass
+
+
 class HermesOTelPlugin:
     """OpenTelemetry tracer manager for the Hermes plugin.
 
@@ -138,6 +195,7 @@ class HermesOTelPlugin:
         self._initialized = False
         # True when the in-process live store (zero-config dashboard) is wired.
         self._live_active = False
+        self._live_log_handler = None
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
         # per backend. The singular ``_span_processor`` / ``_metric_reader``
         # attributes are kept as aliases pointing at the first entry so legacy
@@ -381,11 +439,34 @@ class HermesOTelPlugin:
 
                 store = get_live_store(
                     create=True,
-                    max_spans=self.config.dashboard_live_max_spans,
+                    max_rows=self.config.dashboard_live_max_spans,
                 )
                 if store is not None:
                     provider.add_span_processor(_LiveSpanProcessor(store))
                     self._live_active = True
+                    # Tail agent logs into the live store too (Logs tab), opt-in
+                    # via capture_logs so we don't capture the root logger by default.
+                    if self.config.capture_logs:
+                        try:
+                            from . import log_handler as _lh
+
+                            # Floor the live tail at INFO so the dashboard isn't
+                            # flooded by Hermes' DEBUG firehose (platform probes,
+                            # kanban notifier, etc.) — those evict useful lines
+                            # from the bounded buffer. OTLP export keeps its own
+                            # (possibly DEBUG) level via the separate handler.
+                            lvl = max(_lh.resolve_level(self.config.log_level), logging.INFO)
+                            target = logging.getLogger(self.config.log_attach_logger or None)
+                            h = _LiveLogHandler(store)
+                            h.setLevel(lvl)
+                            # Filter the chattiest config/probe loggers regardless.
+                            h.addFilter(_LiveLogNoiseFilter())
+                            target.addHandler(h)
+                            self._live_log_handler = h
+                            if target.level == logging.NOTSET or target.level > lvl:
+                                target.setLevel(lvl)
+                        except Exception as e:  # pragma: no cover
+                            debug_log(f"live log handler not installed: {e}")
 
             metric_readers: List[Any] = []
 
