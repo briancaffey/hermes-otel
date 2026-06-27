@@ -1,5 +1,40 @@
 # Changelog
 
+## [0.10.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.9.0...hermes-otel-v0.10.0) (2026-06-27)
+
+
+### Features
+
+* **dashboard:** complete rebuild — full Traces + Metrics + Logs, native theme ([7d2bcdf](https://github.com/briancaffey/hermes-otel/commit/7d2bcdfeb58006d3d837950e2ccade55fed10cc6))
+* **dashboard:** esbuild build + tabbed shell + live "Live" view ([9824809](https://github.com/briancaffey/hermes-otel/commit/982480986dfa945b20f2e429dc8efe346d3a63fc))
+* **dashboard:** esbuild build + tabbed shell + live "Live" view ([c732052](https://github.com/briancaffey/hermes-otel/commit/c732052aff5b8dfd4d9808e7e6cc46d377f50170))
+* **dashboard:** in-process live telemetry store + /live API (zero-config foundation) ([fec9101](https://github.com/briancaffey/hermes-otel/commit/fec91018544a587c25012c33ac56c8b5e42f160a))
+* **dashboard:** in-process live telemetry store + /live API (zero-config foundation) ([2e3f80a](https://github.com/briancaffey/hermes-otel/commit/2e3f80aab931ed60f2abbd45d69e3fdc210c8e06))
+* **dashboard:** traces from live store, turn-grouped Live, quieter Logs ([3ef378e](https://github.com/briancaffey/hermes-otel/commit/3ef378e199cef69f6d29fb4f103939e47d572f29))
+* **metrics:** emit OTel-standard GenAI metrics (gen_ai.client.*/gen_ai.agent.*) alongside hermes.* ([791ae35](https://github.com/briancaffey/hermes-otel/commit/791ae3581870ed3ae7d54c2946f2e2be1c5ff5ec))
+* **metrics:** emit OTel-standard GenAI metrics alongside hermes.* ([70cc4ba](https://github.com/briancaffey/hermes-otel/commit/70cc4ba1d8db12c0bd2f466e3be282a8b6ff82aa)), closes [#38](https://github.com/briancaffey/hermes-otel/issues/38)
+* **skills:** dev skills + self-registering observability skill ([2e5b4ba](https://github.com/briancaffey/hermes-otel/commit/2e5b4ba5f6e3332a1c0289b4086b6d6b2d766ea1))
+* **spans:** capture API errors & retries (api_request_error) ([c2a036d](https://github.com/briancaffey/hermes-otel/commit/c2a036d80351d2f4350a3335b86c81f00d13362a))
+* **spans:** capture API errors & retries (api_request_error) ([18b1aa1](https://github.com/briancaffey/hermes-otel/commit/18b1aa1beadd54824f608819ab8980fdfb629e2c))
+* **spans:** human-in-the-loop approval spans (approval.&lt;pattern_key&gt;) ([d8ec5b1](https://github.com/briancaffey/hermes-otel/commit/d8ec5b1bb7915d21c52cde94d9ca5cf9a7953503))
+* **spans:** human-in-the-loop approval spans (approval.&lt;pattern_key&gt;) ([1723784](https://github.com/briancaffey/hermes-otel/commit/172378435be25a7d4eecba2972a0f2f04245d158)), closes [#30](https://github.com/briancaffey/hermes-otel/issues/30)
+* **spans:** model skills as execution-window spans (skill.&lt;name&gt;) ([517bd4c](https://github.com/briancaffey/hermes-otel/commit/517bd4c011453cb363cacda5df83fe25f092548e)), closes [#39](https://github.com/briancaffey/hermes-otel/issues/39)
+* **spans:** model sub-agent delegation as a linked trace tree ([5dfe885](https://github.com/briancaffey/hermes-otel/commit/5dfe885e6a0bccf018d4b11fee3b742e93858bd4))
+* **spans:** skill execution-window spans (skill.&lt;name&gt;) + observability skills ([67c644d](https://github.com/briancaffey/hermes-otel/commit/67c644d80982263ec19e86a6fd2e8fc477861140))
+* **spans:** sub-agent delegation tree (subagent_start / subagent_stop) ([0c74460](https://github.com/briancaffey/hermes-otel/commit/0c744606496fd5c7c4928d27c58a41ebc80c994c))
+* **usage:** capture reasoning output tokens ([a3ce136](https://github.com/briancaffey/hermes-otel/commit/a3ce136b4eb4d08bb0bc84229fd87ae9b6ceaff7)), closes [#40](https://github.com/briancaffey/hermes-otel/issues/40)
+* **usage:** capture reasoning output tokens (gen_ai.usage.reasoning.output_tokens) ([b0148be](https://github.com/briancaffey/hermes-otel/commit/b0148be03ece14905876f9721574b206caabdeda))
+
+
+### Bug Fixes
+
+* **ci:** black formatting + make orphan-sweep subagent test deterministic ([3ccb952](https://github.com/briancaffey/hermes-otel/commit/3ccb95275c8586286a967fd74704a819912f8685))
+* **dashboard:** back the live store with shared SQLite (cross-process) ([8316648](https://github.com/briancaffey/hermes-otel/commit/8316648dc5be4d8488f45e796b9dc4e4310bfb7d))
+* **dashboard:** flamegraph as a top-line on each full-width span card ([ac98c7e](https://github.com/briancaffey/hermes-otel/commit/ac98c7e5271f14d2caa4ba7e0485a1ce50167270))
+* **dashboard:** grid-aligned span waterfall with a shared time axis ([44e5e26](https://github.com/briancaffey/hermes-otel/commit/44e5e26425c7db1adce3c513b515989bc70ba474))
+* **dashboard:** span detail as collapsible cards with a kind-colour top strip ([26c4036](https://github.com/briancaffey/hermes-otel/commit/26c403605f8036a1344578d208631c7b57ac24d4))
+* **metrics:** label agent token usage with the real LLM provider ([93496d7](https://github.com/briancaffey/hermes-otel/commit/93496d76a7fc7946a7340f8604fbca7c5118dea4))
+
 ## [0.9.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.8.0...hermes-otel-v0.9.0) (2026-06-26)
 
 
