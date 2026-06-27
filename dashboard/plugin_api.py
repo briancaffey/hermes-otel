@@ -35,6 +35,76 @@ from backends import (  # noqa: E402  (after the path shim above)
 router = APIRouter()
 
 
+def _get_live_store():
+    """Return the in-process LiveStore the tracer feeds, or None.
+
+    Must import the SAME ``hermes_otel.live_store`` module the tracer uses so
+    the singleton is shared (the dashboard runs in the same process). The
+    plugin package's parent is added to sys.path defensively in case this API
+    module was loaded before ``hermes_otel`` was importable.
+    """
+    try:
+        from hermes_otel.live_store import get_live_store
+    except Exception:
+        pkg_parent = _HERE.parent.parent  # …/plugins  (so `hermes_otel` resolves)
+        if str(pkg_parent) not in sys.path:
+            sys.path.insert(0, str(pkg_parent))
+        try:
+            from hermes_otel.live_store import get_live_store
+        except Exception:
+            return None
+    return get_live_store()
+
+
+@router.get("/live/status")
+def live_status() -> Dict[str, Any]:
+    """Whether the in-process live store is active, and its current fill."""
+    store = _get_live_store()
+    if store is None:
+        return {
+            "live": False,
+            "reason": "live store unavailable (dashboard_live off / no telemetry yet)",
+        }
+    return {"live": True, **store.stats()}
+
+
+@router.get("/live/spans")
+def live_spans(
+    since: int = Query(0, ge=0, description="Return items with seq > since"),
+    limit: int = Query(500, ge=1, le=5000),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "spans": [], "cursor": 0}
+    return {"live": True, "spans": store.spans(since=since, limit=limit), "cursor": store.cursor()}
+
+
+@router.get("/live/metrics")
+def live_metrics(
+    since: int = Query(0, ge=0),
+    limit: int = Query(2000, ge=1, le=10000),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "metrics": [], "cursor": 0}
+    return {
+        "live": True,
+        "metrics": store.metrics(since=since, limit=limit),
+        "cursor": store.cursor(),
+    }
+
+
+@router.get("/live/logs")
+def live_logs(
+    since: int = Query(0, ge=0),
+    limit: int = Query(2000, ge=1, le=10000),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "logs": [], "cursor": 0}
+    return {"live": True, "logs": store.logs(since=since, limit=limit), "cursor": store.cursor()}
+
+
 @router.get("/status")
 def status() -> Dict[str, Any]:
     """Report the active query backend + every configured backend."""

@@ -141,6 +141,12 @@ class HermesOtelConfig:
     # overlap freely. Set false to keep only the hermes.skill.* attribute and
     # the skill_inferred counter.
     skill_spans: bool = True
+    # ── Live dashboard (in-process store) ───────────────────────────────
+    # Keep a bounded, in-memory window of recent spans + metrics + logs so the
+    # built-in dashboard's "Live" mode works with NO external backend. Cheap
+    # (ring buffers); set false to disable the in-process store entirely.
+    dashboard_live: bool = True
+    dashboard_live_max_spans: int = 1000
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
@@ -284,6 +290,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_sender_id",
         "emit_genai_metrics",
         "skill_spans",
+        "dashboard_live",
     ):
         if isinstance(value, bool):
             return value
@@ -311,6 +318,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "span_batch_max_export_batch_size",
         "span_batch_export_timeout_ms",
         "conversation_history_max_chars",
+        "dashboard_live_max_spans",
     ):
         if isinstance(value, bool):
             return None  # bools are ints in python; reject explicitly
@@ -367,6 +375,8 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_sender_id", _parse_bool)
     take("emit_genai_metrics", _parse_bool)
     take("skill_spans", _parse_bool)
+    take("dashboard_live", _parse_bool)
+    take("dashboard_live_max_spans", _parse_int)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

@@ -56,6 +56,8 @@ Each of these overrides the corresponding field in `config.yaml`. See [`config.y
 | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` | `force_flush_on_session_end` | bool |
 | `HERMES_OTEL_EMIT_GENAI_METRICS` | `emit_genai_metrics` | bool |
 | `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | bool |
+| `HERMES_OTEL_DASHBOARD_LIVE` | `dashboard_live` | bool |
+| `HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS` | `dashboard_live_max_spans` | int |
 
 ## Debug / diagnostics
 

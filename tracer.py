@@ -37,7 +37,7 @@ try:
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
 
@@ -52,6 +52,63 @@ except ImportError as e:
     print(
         f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
     )
+
+
+def _attr_value(v: Any) -> Any:
+    """Make a span attribute value JSON-friendly for the live store."""
+    if isinstance(v, (list, tuple)):
+        return [str(x) for x in v]
+    return v
+
+
+def _serialize_span(span: Any) -> Dict[str, Any]:
+    """Compact dict for the live dashboard — the trace tree + attributes."""
+    ctx = span.get_span_context()
+    parent = getattr(span, "parent", None)
+    start = span.start_time or 0
+    end = span.end_time or 0
+    try:
+        status = span.status.status_code.name  # OK / ERROR / UNSET
+    except Exception:
+        status = "UNSET"
+    return {
+        "trace_id": format(ctx.trace_id, "032x"),
+        "span_id": format(ctx.span_id, "016x"),
+        "parent_span_id": format(parent.span_id, "016x") if parent is not None else None,
+        "name": span.name,
+        "start_time_unix_nano": start,
+        "end_time_unix_nano": end,
+        "duration_ms": round((end - start) / 1e6, 3) if (end and start) else None,
+        "status": status,
+        "attributes": {k: _attr_value(v) for k, v in (span.attributes or {}).items()},
+    }
+
+
+if _OTEL_AVAILABLE:
+
+    class _LiveSpanProcessor(SpanProcessor):
+        """SpanProcessor that mirrors finished spans into the in-process LiveStore."""
+
+        def __init__(self, store: Any) -> None:
+            self._store = store
+
+        def on_start(self, span: Any, parent_context: Any = None) -> None:  # noqa: D401
+            pass
+
+        def on_end(self, span: Any) -> None:
+            try:
+                self._store.add_span(_serialize_span(span))
+            except Exception:  # pragma: no cover — never break the SDK export path
+                pass
+
+        def shutdown(self) -> None:
+            pass
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return True
+
+else:  # pragma: no cover — plugin is unusable without OTel
+    _LiveSpanProcessor = None  # type: ignore[assignment, misc]
 
 
 class HermesOTelPlugin:
@@ -79,6 +136,8 @@ class HermesOTelPlugin:
         # re-create the tracer singleton automatically get a fresh set.
         self.sessions = SessionState()
         self._initialized = False
+        # True when the in-process live store (zero-config dashboard) is wired.
+        self._live_active = False
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
         # per backend. The singular ``_span_processor`` / ``_metric_reader``
         # attributes are kept as aliases pointing at the first entry so legacy
@@ -203,6 +262,14 @@ class HermesOTelPlugin:
         """
         rb = _backends.resolve_from_env()
         if rb is None:
+            # No external backend — but the in-process live store still gives a
+            # working zero-config dashboard. Stand up a live-only pipeline.
+            if self.config.dashboard_live:
+                logger.info(
+                    "[hermes-otel] No OTLP backend configured — running in "
+                    "live-only mode (in-process dashboard store)."
+                )
+                return self._init_otlp_pipeline([])
             logger.warning(
                 "[hermes-otel] ✗ No backend configured "
                 "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
@@ -305,6 +372,21 @@ class HermesOTelPlugin:
                 provider_kwargs["sampler"] = ParentBased(TraceIdRatioBased(self.config.sample_rate))
             provider = TracerProvider(**provider_kwargs)
 
+            # In-process live store for the zero-config dashboard. Added FIRST so
+            # the dashboard renders the agent's activity even with no OTLP
+            # backend configured — install the plugin, open the tab, see traces.
+            self._live_active = False
+            if self.config.dashboard_live and _LiveSpanProcessor is not None:
+                from .live_store import get_live_store
+
+                store = get_live_store(
+                    create=True,
+                    max_spans=self.config.dashboard_live_max_spans,
+                )
+                if store is not None:
+                    provider.add_span_processor(_LiveSpanProcessor(store))
+                    self._live_active = True
+
             metric_readers: List[Any] = []
 
             for b in backends:
@@ -345,11 +427,14 @@ class HermesOTelPlugin:
                     + (" (traces only)" if b.supports_traces and not b.supports_metrics else "")
                 )
 
-            if not self._span_processors:
+            # Proceed when *either* an OTLP backend or the live store is active.
+            # (Live-only = the zero-config dashboard with no external collector.)
+            if not self._span_processors and not self._live_active:
                 return False
 
             # Back-compat singular aliases — first entry wins.
-            self._span_processor = self._span_processors[0]
+            if self._span_processors:
+                self._span_processor = self._span_processors[0]
             if self._metric_readers:
                 self._metric_reader = self._metric_readers[0]
 
@@ -380,6 +465,11 @@ class HermesOTelPlugin:
                     f"[hermes-otel] ✓ Multi-backend fan-out active "
                     f"({len(self._span_processors)} collectors, "
                     f"{len(self._metric_readers)} with metrics)"
+                )
+            if self._live_active:
+                logger.info(
+                    "[hermes-otel] ✓ Live dashboard store active"
+                    + ("" if self._span_processors else " (no OTLP backend — live-only)")
                 )
             return True
         except Exception as e:
@@ -516,6 +606,20 @@ class HermesOTelPlugin:
 
     def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
         """Record a metric value."""
+        # Mirror into the live store BEFORE the meter guard so live metrics work
+        # even with no OTLP backend (no MeterProvider) — the zero-config path.
+        if self._live_active:
+            try:
+                import time as _time
+
+                from .live_store import get_live_store
+
+                store = get_live_store()
+                if store is not None:
+                    store.add_metric(name, value, attributes or {}, _time.time_ns())
+            except Exception:  # pragma: no cover — never break the hot path
+                pass
+
         if not self._meter:
             return
 
