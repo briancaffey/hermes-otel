@@ -30,6 +30,8 @@ _ENV_VARS = [
     "HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS",
     "HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END",
     "HERMES_OTEL_CAPTURE_SENDER_ID",
+    "HERMES_OTEL_SENSITIVE_MCP_SERVERS",
+    "HERMES_OTEL_SENSITIVE_MCP_TOOLS",
 ]
 
 
@@ -131,6 +133,13 @@ class TestEnvOverrides:
         cfg = load_config(path=tmp_path / "nonexistent.yaml")
         assert cfg.project_name == "my-project"
 
+    def test_env_sensitive_mcp_lists(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_SENSITIVE_MCP_SERVERS", "YNAB, sat-smoke")
+        monkeypatch.setenv("HERMES_OTEL_SENSITIVE_MCP_TOOLS", "lookup, mcp_budget_lookup")
+        cfg = load_config(path=tmp_path / "nonexistent.yaml")
+        assert cfg.sensitive_mcp_servers == ("ynab", "sat-smoke")
+        assert cfg.sensitive_mcp_tools == ("lookup", "mcp_budget_lookup")
+
     def test_env_bad_int_ignored(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HERMES_OTEL_ROOT_SPAN_TTL_MS", "not-a-number")
         cfg = load_config(path=tmp_path / "nonexistent.yaml")
@@ -214,6 +223,10 @@ class TestYaml:
             "root_span_ttl_ms: 120000\n"
             "preview_max_chars: 400\n"
             "capture_previews: false\n"
+            "sensitive_mcp_servers:\n"
+            "  - YNAB\n"
+            "  - sat-smoke\n"
+            "sensitive_mcp_tools: lookup, mcp_budget_lookup\n"
             "project_name: yaml-project\n"
             "resource_attributes:\n"
             "  deployment: prod\n"
@@ -228,6 +241,8 @@ class TestYaml:
         assert cfg.root_span_ttl_ms == 120_000
         assert cfg.preview_max_chars == 400
         assert cfg.capture_previews is False
+        assert cfg.sensitive_mcp_servers == ("ynab", "sat-smoke")
+        assert cfg.sensitive_mcp_tools == ("lookup", "mcp_budget_lookup")
         assert cfg.project_name == "yaml-project"
         assert cfg.resource_attributes == {"deployment": "prod", "region": "us-east-1"}
         assert cfg.global_tags == {"team": "platform"}

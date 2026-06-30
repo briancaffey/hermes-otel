@@ -254,6 +254,35 @@ class TestOnPreToolCall:
         assert attrs["mcp.transport"] == "stdio"
         assert attrs["mcp.protocol"] == "mcp"
 
+    def test_sensitive_mcp_server_suppresses_args_but_keeps_identity(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(
+            capture_full_prompts=True,
+            sensitive_mcp_servers=("budget-server",),
+        )
+        on_pre_tool_call(
+            tool_name="mcp_budget_lookup",
+            args={
+                "path": "/tmp/synthetic-private.csv",
+                "token": "synthetic-token",
+            },
+            task_id="t1",
+            session_id="s1",
+            tool_call_id="call-123",
+            mcp_server_name="budget_server",
+            mcp_tool_name="lookup",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.tool.call.id"] == "call-123"
+        assert attrs["mcp.server.name"] == "budget_server"
+        assert attrs["mcp.tool.name"] == "lookup"
+        assert "input.value" not in attrs
+        assert "gen_ai.tool.call.arguments" not in attrs
+        assert "hermes.tool.target" not in attrs
+        summary = mock_tracer.sessions.peek("s1").turn_summary
+        assert summary.tool_targets == []
+
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         assert mock_tracer.sessions.has_tool_start("bash:t1")
@@ -314,6 +343,52 @@ class TestOnPostToolCall:
         assert attrs["mcp.tool.name"] == "lookup"
         assert attrs["mcp.transport"] == "stdio"
         assert attrs["mcp.protocol"] == "mcp"
+
+    def test_sensitive_mcp_tool_suppresses_result_but_keeps_identity(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(
+            capture_full_responses=True,
+            sensitive_mcp_tools=("lookup",),
+        )
+        mock_tracer.sessions.record_tool_start("mcp_budget_lookup:t1", 1000.0)
+        on_post_tool_call(
+            tool_name="mcp_budget_lookup",
+            args={},
+            result='{"amount": "123.45", "token": "synthetic-token"}',
+            task_id="t1",
+            tool_call_id="call-123",
+            mcp_server_name="budget_server",
+            mcp_tool_name="lookup",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.tool.call.id"] == "call-123"
+        assert attrs["mcp.server.name"] == "budget_server"
+        assert attrs["mcp.tool.name"] == "lookup"
+        assert attrs["hermes.tool.outcome"] == "completed"
+        assert "output.value" not in attrs
+        assert "gen_ai.tool.call.result" not in attrs
+
+    def test_sensitive_mcp_error_suppresses_error_message_payload(self, mock_tracer):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(sensitive_mcp_tools=("lookup",))
+        mock_tracer.sessions.record_tool_start("mcp_budget_lookup:t1", 1000.0)
+        on_post_tool_call(
+            tool_name="mcp_budget_lookup",
+            args={},
+            result='{"error": "synthetic account balance 123.45"}',
+            task_id="t1",
+            tool_call_id="call-123",
+            mcp_server_name="budget_server",
+            mcp_tool_name="lookup",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "error"
+        assert "error.message" not in attrs
+        assert "output.value" not in attrs
+        assert mock_tracer.end_span.call_args[1]["status"] == "error"
+        assert mock_tracer.end_span.call_args[1]["error_message"] == ""
 
     def test_status_ok_on_success(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)

@@ -270,8 +270,8 @@ def _tool_execution_attributes(kwargs: dict) -> Dict[str, Any]:
     return attrs
 
 
-def _mcp_tool_attributes(tool_name: str, kwargs: dict) -> Dict[str, Any]:
-    """Return canonical GenAI + safe custom MCP attributes for MCP tool spans."""
+def _mcp_tool_metadata(tool_name: str, kwargs: dict) -> Dict[str, Any]:
+    """Return MCP server/tool metadata from hook kwargs or Hermes registry."""
     metadata = {
         key: kwargs.get(key)
         for key in ("mcp_server_name", "mcp_tool_name", "mcp_transport", "mcp_protocol")
@@ -285,6 +285,12 @@ def _mcp_tool_attributes(tool_name: str, kwargs: dict) -> Dict[str, Any]:
             metadata = get_mcp_tool_metadata(tool_name)
         except Exception:
             metadata = {}
+    return metadata
+
+
+def _mcp_tool_attributes(tool_name: str, kwargs: dict) -> Dict[str, Any]:
+    """Return canonical GenAI + safe custom MCP attributes for MCP tool spans."""
+    metadata = _mcp_tool_metadata(tool_name, kwargs)
     if not metadata and not tool_name.startswith("mcp_"):
         return {}
 
@@ -305,6 +311,45 @@ def _mcp_tool_attributes(tool_name: str, kwargs: dict) -> Dict[str, Any]:
     if protocol:
         attrs["mcp.protocol"] = protocol
     return attrs
+
+
+def _normalized_name(value: Any) -> str:
+    return str(value or "").strip().lower()
+
+
+def _normalized_name_variants(value: Any) -> set[str]:
+    normalized = _normalized_name(value)
+    if not normalized:
+        return set()
+    return {normalized, normalized.replace("_", "-")}
+
+
+def _is_sensitive_mcp_tool(tool_name: str, kwargs: dict) -> bool:
+    """Return true when this MCP call's configured server/tool is sensitive.
+
+    Sensitive MCP calls keep linkage metadata but suppress input/output payload
+    attributes, including previews and full-fidelity GenAI tool call fields.
+    """
+    if not tool_name.startswith("mcp_"):
+        return False
+    tracer = get_tracer()
+    servers = {
+        variant
+        for name in (getattr(tracer.config, "sensitive_mcp_servers", ()) or ())
+        for variant in _normalized_name_variants(name)
+    }
+    tools = {
+        variant
+        for name in (getattr(tracer.config, "sensitive_mcp_tools", ()) or ())
+        for variant in _normalized_name_variants(name)
+    }
+    if not servers and not tools:
+        return False
+    metadata = _mcp_tool_metadata(tool_name, kwargs)
+    server_names = _normalized_name_variants(metadata.get("mcp_server_name"))
+    raw_tools = _normalized_name_variants(metadata.get("mcp_tool_name"))
+    wrapper_tools = _normalized_name_variants(tool_name)
+    return bool((server_names & servers) or (raw_tools & tools) or (wrapper_tools & tools))
 
 
 def _preview(value: Any, max_chars: int) -> Optional[str]:
@@ -810,26 +855,28 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     }
     attributes.update(_mcp_tool_attributes(tool_name, kwargs))
     attributes.update(profile_attributes(kwargs))
-    preview = _preview(
-        json.dumps(args) if args else "{}",
-        tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars,
-    )
-    if preview is not None:
-        attributes["input.value"] = preview
-    if (
-        tracer.config.capture_previews
-        and tool_name.startswith("mcp_")
-        and tracer.config.capture_full_prompts
-    ):
-        serialized_args = _serialize_full(args)
-        if serialized_args is not None:
-            attributes["gen_ai.tool.call.arguments"] = serialized_args
+    sensitive_mcp = _is_sensitive_mcp_tool(tool_name, kwargs)
+    if not sensitive_mcp:
+        preview = _preview(
+            json.dumps(args) if args else "{}",
+            tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars,
+        )
+        if preview is not None:
+            attributes["input.value"] = preview
+        if (
+            tracer.config.capture_previews
+            and tool_name.startswith("mcp_")
+            and tracer.config.capture_full_prompts
+        ):
+            serialized_args = _serialize_full(args)
+            if serialized_args is not None:
+                attributes["gen_ai.tool.call.arguments"] = serialized_args
 
     # Richer identity — hermes.tool.* (opt-in namespace)
     target, command = resolve_tool_identity(args)
-    if target:
+    if target and not sensitive_mcp:
         attributes["hermes.tool.target"] = truncate_string(target, 500)
-    if command:
+    if command and not sensitive_mcp:
         attributes["hermes.tool.command"] = truncate_string(command, 500)
     skill = infer_skill_name(args)
     if skill:
@@ -848,8 +895,9 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         attributes.update(_session_sender_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
-        summary.add_target(target)
-        summary.add_command(command)
+        if not sensitive_mcp:
+            summary.add_target(target)
+            summary.add_command(command)
         summary.add_skill(skill)
 
     tracer.start_span(
@@ -899,31 +947,33 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     attributes["hermes.tool.outcome"] = outcome
     attributes.update(_tool_execution_attributes(kwargs))
     attributes.update(_mcp_tool_attributes(tool_name, kwargs))
+    sensitive_mcp = _is_sensitive_mcp_tool(tool_name, kwargs)
 
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
     error_msg = ""
-    if has_error and isinstance(result_json, dict):
+    if has_error and isinstance(result_json, dict) and not sensitive_mcp:
         err_val = result_json.get("error")
         if err_val:
             error_msg = truncate_string(err_val, 500)
             attributes["error.message"] = error_msg
 
     # OpenInference output value — Phoenix shows this in Info
-    preview = _preview(
-        result,
-        tracer.config.tool_output_preview_max_chars or tracer.config.preview_max_chars,
-    )
-    if preview is not None:
-        attributes["output.value"] = preview
-    if (
-        tracer.config.capture_previews
-        and tool_name.startswith("mcp_")
-        and tracer.config.capture_full_responses
-    ):
-        serialized_result = _serialize_full(result_json if result_json else result)
-        if serialized_result is not None:
-            attributes["gen_ai.tool.call.result"] = serialized_result
+    if not sensitive_mcp:
+        preview = _preview(
+            result,
+            tracer.config.tool_output_preview_max_chars or tracer.config.preview_max_chars,
+        )
+        if preview is not None:
+            attributes["output.value"] = preview
+        if (
+            tracer.config.capture_previews
+            and tool_name.startswith("mcp_")
+            and tracer.config.capture_full_responses
+        ):
+            serialized_result = _serialize_full(result_json if result_json else result)
+            if serialized_result is not None:
+                attributes["gen_ai.tool.call.result"] = serialized_result
 
     # Summary roll-up
     session_id = kwargs.get("session_id")
@@ -937,9 +987,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.
     status = "error" if has_error else "ok"
-    tracer.end_span(
-        key, attributes=attributes, status=status, error_message=error_msg if has_error else None
-    )
+    tracer.end_span(key, attributes=attributes, status=status, error_message=error_msg)
     debug_log(f"  span ended: status={status}, outcome={outcome}")
 
 

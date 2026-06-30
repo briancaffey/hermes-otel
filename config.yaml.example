@@ -65,6 +65,18 @@
 # so keep it opt-in. CLI sessions usually leave it empty.
 # capture_sender_id: false
 
+# Suppress MCP tool argument/result payload capture for sensitive MCP servers
+# or tools while preserving linkage fields like gen_ai.conversation.id,
+# gen_ai.tool.call.id, mcp.server.name, and mcp.tool.name. This overrides
+# capture_full_prompts / capture_full_responses for matching MCP calls and
+# also suppresses input.value/output.value previews and error.message for those
+# calls.
+# Values are exact names, case-insensitive; hyphens and underscores are
+# treated equivalently, and tools may be raw MCP tool names or Hermes wrapper
+# names.
+# sensitive_mcp_servers: []
+# sensitive_mcp_tools: []
+
 # Put the entire conversation_history the model is about to see on the
 # llm.* span's input.value. The api.* spans don't carry message-level
 # detail, so flipping this on is the easiest way to see what the model saw.

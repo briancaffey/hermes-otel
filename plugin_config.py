@@ -126,6 +126,13 @@ class HermesOtelConfig:
     # summary-level LLM span; these flags target the per-request span.
     capture_full_prompts: bool = False
     capture_full_responses: bool = False
+    # Suppress MCP tool input/output payload capture for configured sensitive
+    # servers/tools while preserving low-cardinality linkage metadata such as
+    # mcp.server.name, mcp.tool.name, gen_ai.conversation.id, and
+    # gen_ai.tool.call.id. Values match exact server/tool names after trimming
+    # and lowercasing. Tools may be raw MCP tool names or Hermes wrapper names.
+    sensitive_mcp_servers: Tuple[str, ...] = ()
+    sensitive_mcp_tools: Tuple[str, ...] = ()
     # Opt-in: platform user identifier from Hermes gateway sessions. Hermes
     # currently exposes this as ``sender_id`` only on pre_llm_call.
     capture_sender_id: bool = False
@@ -169,6 +176,13 @@ def _parse_int(value: str) -> Optional[int]:
         return int(float(value.strip()))
     except (ValueError, AttributeError):
         return None
+
+
+def _parse_csv_tuple(value: str) -> Tuple[str, ...]:
+    """Parse a comma-separated env-var list into normalized names."""
+    if not value:
+        return ()
+    return tuple(part.strip().lower() for part in value.split(",") if part.strip())
 
 
 # ── YAML loader ────────────────────────────────────────────────────────────
@@ -273,6 +287,12 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None
     if key == "backends":
         return _coerce_backends(value)
+    if key in ("sensitive_mcp_servers", "sensitive_mcp_tools"):
+        if isinstance(value, str):
+            return _parse_csv_tuple(value)
+        if isinstance(value, (list, tuple, set)):
+            return tuple(str(item).strip().lower() for item in value if str(item).strip())
+        return None
     if key in (
         "enabled",
         "capture_previews",
@@ -363,6 +383,13 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_full_prompts", _parse_bool)
     take("capture_full_responses", _parse_bool)
     take("capture_sender_id", _parse_bool)
+
+    servers = os.getenv(_ENV_PREFIX + "SENSITIVE_MCP_SERVERS", "").strip()
+    if servers:
+        out["sensitive_mcp_servers"] = _parse_csv_tuple(servers)
+    tools = os.getenv(_ENV_PREFIX + "SENSITIVE_MCP_TOOLS", "").strip()
+    if tools:
+        out["sensitive_mcp_tools"] = _parse_csv_tuple(tools)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:

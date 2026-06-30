@@ -350,6 +350,8 @@ llm_input_preview_max_chars: 1200
 llm_output_preview_max_chars: 1200
 capture_previews: true          # false = suppress all input.value / output.value
 capture_sender_id: false        # true = add platform-prefixed user.id to spans
+sensitive_mcp_servers: []       # suppress MCP args/results/previews for matching servers
+sensitive_mcp_tools: []         # raw MCP tool names or Hermes wrapper names
 project_name: hermes-prod       # supersedes OTEL_PROJECT_NAME
 global_tags:
   team: platform
@@ -375,6 +377,8 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 | `llm_output_preview_max_chars` | `HERMES_OTEL_LLM_OUTPUT_PREVIEW_MAX_CHARS` |
 | `capture_previews` | `HERMES_OTEL_CAPTURE_PREVIEWS` |
 | `capture_sender_id` | `HERMES_OTEL_CAPTURE_SENDER_ID` |
+| `sensitive_mcp_servers` | `HERMES_OTEL_SENSITIVE_MCP_SERVERS` (comma-separated) |
+| `sensitive_mcp_tools` | `HERMES_OTEL_SENSITIVE_MCP_TOOLS` (comma-separated) |
 | `project_name` | `HERMES_OTEL_PROJECT_NAME` |
 | `span_batch_max_queue_size` | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` |
 | `span_batch_schedule_delay_ms` | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` |
@@ -387,6 +391,8 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 #### Privacy mode
 
 Set `capture_previews: false` (or `HERMES_OTEL_CAPTURE_PREVIEWS=false`) to suppress every `input.value` / `output.value` attribute. Useful for shared deployments where message content can't leave the process. A one-line startup banner confirms the mode is active.
+
+Set `sensitive_mcp_servers` or `sensitive_mcp_tools` to suppress MCP tool argument/result payload capture only for selected MCP calls. Matching calls keep linkage metadata (`gen_ai.conversation.id`, `gen_ai.tool.call.id`, `mcp.server.name`, `mcp.tool.name`) but omit `input.value`, `output.value`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, `error.message`, and target/command roll-up fields that are derived from tool args. Names are exact and case-insensitive; hyphens and underscores are treated equivalently for server names, and `sensitive_mcp_tools` accepts either raw MCP tool names or Hermes wrapper tool names.
 
 Set `capture_sender_id: true` (or `HERMES_OTEL_CAPTURE_SENDER_ID=true`) to attach gateway sender identity to spans. The plugin emits the raw platform ID as `hermes.sender.id` and the backend-neutral user key as `user.id={platform}:{sender_id}`. For example, Slack user `U0B074344DP` becomes `user.id=slack:U0B074344DP`. The platform is already available on LLM spans as `llm.provider`. This is opt-in because IDs from Discord, Telegram, Slack, email, SMS, and similar platforms can identify users. CLI sessions usually omit it.
 
