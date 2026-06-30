@@ -234,6 +234,26 @@ class TestOnPreToolCall:
         assert "input.value" not in attrs
         assert "gen_ai.tool.call.arguments" not in attrs
 
+    def test_sets_mcp_identity_and_call_attributes(self, mock_tracer):
+        on_pre_tool_call(
+            tool_name="mcp_budget_lookup",
+            args={"secret": "not-exported-as-mcp-identity"},
+            task_id="t1",
+            tool_call_id="call-123",
+            mcp_server_name="budget_server",
+            mcp_tool_name="lookup",
+            mcp_transport="stdio",
+            mcp_protocol="mcp",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.tool.name"] == "mcp_budget_lookup"
+        assert attrs["gen_ai.tool.type"] == "mcp"
+        assert attrs["gen_ai.tool.call.id"] == "call-123"
+        assert attrs["mcp.server.name"] == "budget_server"
+        assert attrs["mcp.tool.name"] == "lookup"
+        assert attrs["mcp.transport"] == "stdio"
+        assert attrs["mcp.protocol"] == "mcp"
+
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         assert mock_tracer.sessions.has_tool_start("bash:t1")
@@ -273,6 +293,27 @@ class TestOnPostToolCall:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "output.value" not in attrs
         assert "gen_ai.tool.call.result" not in attrs
+
+    def test_sets_mcp_identity_on_post_tool_call(self, mock_tracer):
+        mock_tracer.sessions.record_tool_start("mcp_budget_lookup:t1", 1000.0)
+        on_post_tool_call(
+            tool_name="mcp_budget_lookup",
+            args={},
+            result='{"result": "ok"}',
+            task_id="t1",
+            tool_call_id="call-123",
+            mcp_server_name="budget_server",
+            mcp_tool_name="lookup",
+            mcp_transport="stdio",
+            mcp_protocol="mcp",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.tool.type"] == "mcp"
+        assert attrs["gen_ai.tool.call.id"] == "call-123"
+        assert attrs["mcp.server.name"] == "budget_server"
+        assert attrs["mcp.tool.name"] == "lookup"
+        assert attrs["mcp.transport"] == "stdio"
+        assert attrs["mcp.protocol"] == "mcp"
 
     def test_status_ok_on_success(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)

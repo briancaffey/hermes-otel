@@ -270,6 +270,43 @@ def _tool_execution_attributes(kwargs: dict) -> Dict[str, Any]:
     return attrs
 
 
+def _mcp_tool_attributes(tool_name: str, kwargs: dict) -> Dict[str, Any]:
+    """Return canonical GenAI + safe custom MCP attributes for MCP tool spans."""
+    metadata = {
+        key: kwargs.get(key)
+        for key in ("mcp_server_name", "mcp_tool_name", "mcp_transport", "mcp_protocol")
+        if kwargs.get(key)
+    }
+    if tool_name.startswith("mcp_") and not metadata:
+        try:
+            from importlib import import_module
+
+            get_mcp_tool_metadata = import_module("tools.mcp_tool").get_mcp_tool_metadata
+            metadata = get_mcp_tool_metadata(tool_name)
+        except Exception:
+            metadata = {}
+    if not metadata and not tool_name.startswith("mcp_"):
+        return {}
+
+    attrs: Dict[str, Any] = {"gen_ai.tool.type": "mcp"}
+    call_id = truncate_string(kwargs.get("tool_call_id"), 200)
+    if call_id:
+        attrs["gen_ai.tool.call.id"] = call_id
+    server_name = truncate_string(metadata.get("mcp_server_name"), 200)
+    if server_name:
+        attrs["mcp.server.name"] = server_name
+    raw_tool = truncate_string(metadata.get("mcp_tool_name"), 200)
+    if raw_tool:
+        attrs["mcp.tool.name"] = raw_tool
+    transport = truncate_string(metadata.get("mcp_transport"), 80)
+    if transport:
+        attrs["mcp.transport"] = transport
+    protocol = truncate_string(metadata.get("mcp_protocol"), 80)
+    if protocol:
+        attrs["mcp.protocol"] = protocol
+    return attrs
+
+
 def _preview(value: Any, max_chars: int) -> Optional[str]:
     """Apply the configured preview policy: capture toggle + clip_preview."""
     tracer = get_tracer()
@@ -771,6 +808,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
     }
+    attributes.update(_mcp_tool_attributes(tool_name, kwargs))
     attributes.update(profile_attributes(kwargs))
     preview = _preview(
         json.dumps(args) if args else "{}",
@@ -860,6 +898,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     outcome = extract_tool_result_status(result_json) or "completed"
     attributes["hermes.tool.outcome"] = outcome
     attributes.update(_tool_execution_attributes(kwargs))
+    attributes.update(_mcp_tool_attributes(tool_name, kwargs))
 
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
