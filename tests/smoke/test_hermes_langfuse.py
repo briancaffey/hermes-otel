@@ -87,8 +87,8 @@ class TestHermesLangfuseSmoke:
 
         # We should see at least an API span (api.*) from the LLM call
         obs_names = [o.get("name", "") for o in observations]
-        has_api_span = any("api." in n for n in obs_names)
-        has_llm_span = any("llm." in n for n in obs_names)
+        has_api_span = any(n.startswith("chat ") for n in obs_names)
+        has_llm_span = has_api_span
 
         assert (
             has_api_span or has_llm_span
@@ -98,7 +98,7 @@ class TestHermesLangfuseSmoke:
         """Send a prompt that triggers tool use and verify tool spans appear.
 
         Uses a prompt that should cause hermes to invoke a tool (like terminal),
-        producing tool.* spans in Langfuse.
+        producing execute_tool * spans in Langfuse.
         """
         from_time = time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime())
 
@@ -131,10 +131,10 @@ class TestHermesLangfuseSmoke:
 
         obs_names = [o.get("name", "") for o in observations]
 
-        # Should have tool spans (tool.*) alongside api/llm spans
-        has_tool_span = any("tool." in n for n in obs_names)
+        # Should have tool spans (execute_tool *) alongside chat spans
+        has_tool_span = any(n.startswith("execute_tool ") for n in obs_names)
         assert has_tool_span, (
-            f"Expected tool.* observations from tool use, got: {obs_names}. "
+            f"Expected execute_tool * observations from tool use, got: {obs_names}. "
             f"The prompt may not have triggered tool use — check hermes toolset config."
         )
 
@@ -164,7 +164,7 @@ class TestHermesLangfuseSmoke:
 
         # Find an API observation
         api_obs = next(
-            (o for o in observations if "api." in o.get("name", "")),
+            (o for o in observations if o.get("name", "").startswith("chat ")),
             None,
         )
 

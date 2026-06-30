@@ -330,6 +330,7 @@ class TestResourceAttributes:
 
         attrs = dict(captured["resource"].attributes)
         assert attrs["service.name"] == "hermes-agent"
+
         assert attrs["env"] == "prod"
         assert attrs["region"] == "us-east-1"
         assert attrs["team"] == "platform"
@@ -357,6 +358,7 @@ class TestResourceAttributes:
         with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
             plugin.init()
         assert dict(captured["resource"].attributes)["env"] == "prod"
+
 
     def test_user_can_override_service_name(self, monkeypatch):
         _clear_backend_env(monkeypatch)

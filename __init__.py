@@ -35,16 +35,19 @@ def register(ctx):
     ctx.register_hook("pre_api_request", hooks.on_pre_api_request)
     ctx.register_hook("post_api_request", hooks.on_post_api_request)
 
-    # Session hooks (available on newer Hermes versions)
-    session_hooks = 0
+    # Kanban task lifecycle hooks (available on newer Hermes versions)
+    optional_hooks = 0
     for hook_name, callback in [
         ("on_session_start", hooks.on_session_start),
         ("on_session_end", hooks.on_session_end),
+        ("kanban_task_claimed", hooks.on_kanban_task_claimed),
+        ("kanban_task_completed", hooks.on_kanban_task_completed),
+        ("kanban_task_blocked", hooks.on_kanban_task_blocked),
     ]:
         try:
             ctx.register_hook(hook_name, callback)
-            session_hooks += 1
+            optional_hooks += 1
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    logger.info(f"[hermes-otel] Registered {6 + session_hooks} hooks")
+    logger.info(f"[hermes-otel] Registered {6 + optional_hooks} hooks")

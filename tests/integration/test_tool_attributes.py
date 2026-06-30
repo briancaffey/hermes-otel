@@ -1,4 +1,4 @@
-"""Integration tests for hermes.tool.* and hermes.skill.* attributes on tool spans."""
+"""Integration tests for hermes.execute_tool * and hermes.skill.* attributes on tool spans."""
 
 import pytest
 from hermes_otel.hooks import (
@@ -21,7 +21,7 @@ class TestToolTargetAttributes:
         on_post_tool_call(
             tool_name="read", args={"path": "/tmp/foo.txt"}, result="contents", task_id="t1"
         )
-        span = _span_by_name(exporter.get_finished_spans(), "tool.read")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool read")
         assert span.attributes["hermes.tool.target"] == "/tmp/foo.txt"
 
     def test_target_attribute_from_file_path(self, inmemory_otel_setup):
@@ -30,21 +30,21 @@ class TestToolTargetAttributes:
         on_post_tool_call(
             tool_name="edit", args={"file_path": "/etc/hosts"}, result="ok", task_id="t1"
         )
-        span = _span_by_name(exporter.get_finished_spans(), "tool.edit")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool edit")
         assert span.attributes["hermes.tool.target"] == "/etc/hosts"
 
     def test_command_attribute_from_command(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={"command": "ls -la"}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={"command": "ls -la"}, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.attributes["hermes.tool.command"] == "ls -la"
 
     def test_no_target_or_command_when_absent(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="noop", args={"foo": "bar"}, task_id="t1")
         on_post_tool_call(tool_name="noop", args={"foo": "bar"}, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.noop")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool noop")
         assert "hermes.tool.target" not in span.attributes
         assert "hermes.tool.command" not in span.attributes
 
@@ -54,21 +54,21 @@ class TestToolOutcomeAttribute:
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.attributes["hermes.tool.outcome"] == "completed"
 
     def test_error_on_error_result(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result='{"error": "boom"}', task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.attributes["hermes.tool.outcome"] == "error"
 
     def test_explicit_status_overrides(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result='{"status": "timeout"}', task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.attributes["hermes.tool.outcome"] == "timeout"
 
     def test_timeout_does_not_flip_span_status_to_error(self, inmemory_otel_setup):
@@ -78,7 +78,7 @@ class TestToolOutcomeAttribute:
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result='{"status": "timeout"}', task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.status.status_code == StatusCode.OK
 
     def test_error_flips_span_status(self, inmemory_otel_setup):
@@ -87,7 +87,7 @@ class TestToolOutcomeAttribute:
         exporter, _ = inmemory_otel_setup
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         on_post_tool_call(tool_name="bash", args={}, result='{"error": "boom"}', task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool bash")
         assert span.status.status_code == StatusCode.ERROR
 
 
@@ -97,7 +97,7 @@ class TestSkillNameInference:
         args = {"path": "/repo/skills/monitor/SKILL.md"}
         on_pre_tool_call(tool_name="read", args=args, task_id="t1")
         on_post_tool_call(tool_name="read", args=args, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.read")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool read")
         assert span.attributes["hermes.skill.name"] == "monitor"
 
     def test_no_skill_on_regular_path(self, inmemory_otel_setup):
@@ -105,7 +105,7 @@ class TestSkillNameInference:
         args = {"path": "/tmp/scratch.txt"}
         on_pre_tool_call(tool_name="read", args=args, task_id="t1")
         on_post_tool_call(tool_name="read", args=args, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.read")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool read")
         assert "hermes.skill.name" not in span.attributes
 
     def test_no_skill_on_optional_skills_references(self, inmemory_otel_setup):
@@ -114,7 +114,7 @@ class TestSkillNameInference:
         args = {"path": "/repo/optional-skills/monitor/references/api.md"}
         on_pre_tool_call(tool_name="read", args=args, task_id="t1")
         on_post_tool_call(tool_name="read", args=args, result="ok", task_id="t1")
-        span = _span_by_name(exporter.get_finished_spans(), "tool.read")
+        span = _span_by_name(exporter.get_finished_spans(), "execute_tool read")
         assert "hermes.skill.name" not in span.attributes
 
 

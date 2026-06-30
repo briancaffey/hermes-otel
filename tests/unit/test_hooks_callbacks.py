@@ -4,6 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 from hermes_otel.hooks import (
+    on_kanban_task_blocked,
+    on_kanban_task_claimed,
+    on_kanban_task_completed,
     on_post_api_request,
     on_post_llm_call,
     on_post_tool_call,
@@ -55,14 +58,14 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="api_server")
         mock_tracer.start_span.assert_called_once()
         call_kwargs = mock_tracer.start_span.call_args[1]
-        assert call_kwargs["name"] == "agent"
+        assert call_kwargs["name"] == "invoke_agent hermes-agent"
         assert call_kwargs["key"] == "session:s1"
         assert call_kwargs["kind"] == "agent"
 
     def test_creates_cron_span_when_cron(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli", session_type="cron")
         call_kwargs = mock_tracer.start_span.call_args[1]
-        assert call_kwargs["name"] == "cron"
+        assert call_kwargs["name"] == "invoke_agent hermes-agent"
 
     def test_pushes_parent(self, mock_tracer):
         span = MagicMock()
@@ -74,7 +77,9 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"session_id": "s1"})
 
-    def test_includes_session_attributes(self, mock_tracer):
+    def test_includes_session_attributes(self, mock_tracer, monkeypatch):
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.delenv("HERMES_HOME", raising=False)
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["session_id"] == "s1"
@@ -82,6 +87,7 @@ class TestOnSessionStart:
         assert attrs["llm.model_name"] == "gpt-4o"
         assert attrs["llm.provider"] == "telegram"
         assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["gen_ai.agent.name"] == "hermes-agent"
         assert attrs["gen_ai.operation.name"] == "invoke_agent"
         assert attrs["gen_ai.request.model"] == "gpt-4o"
         assert attrs["gen_ai.provider.name"] == "telegram"
@@ -102,6 +108,19 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4", platform="cli", job_id="j123")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["hermes.cron.job_id"] == "j123"
+
+    def test_agent_name_uses_profile_context(self, mock_tracer, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes/profiles/engineer")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.agent.name"] == "engineer"
+
+    def test_agent_name_uses_default_profile_for_root_home(self, mock_tracer, monkeypatch):
+        monkeypatch.delenv("HERMES_PROFILE", raising=False)
+        monkeypatch.setenv("HERMES_HOME", "/home/test/.hermes")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["gen_ai.agent.name"] == "default"
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
@@ -188,7 +207,7 @@ class TestOnPreToolCall:
         on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id="t1")
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "tool.bash"
+        assert kw["name"] == "execute_tool bash"
         assert kw["key"] == "bash:t1"
         assert kw["kind"] == "tool"
 
@@ -303,7 +322,7 @@ class TestOnPreLlmCall:
         )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "llm.gpt-4"
+        assert kw["name"] == "chat gpt-4"
         assert kw["key"] == "llm:s1"
         assert kw["kind"] == "llm"
         assert kw["attributes"]["correlation.id"] == "s1"
@@ -366,10 +385,10 @@ class TestOnPreLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        # Two start_span calls: agent (synthesized) + llm.gpt-4
+        # Two start_span calls: invoke_agent (synthesized) + chat gpt-4
         assert mock_tracer.start_span.call_count == 2
         first_kw = mock_tracer.start_span.call_args_list[0][1]
-        assert first_kw["name"] == "agent"
+        assert first_kw["name"] == "invoke_agent hermes-agent"
         assert first_kw["key"] == "session:s1"
         assert first_kw["attributes"].get("hermes.session.synthesized") is True
 
@@ -619,7 +638,7 @@ class TestOnPreApiRequest:
         )
         mock_tracer.start_span.assert_called_once()
         kw = mock_tracer.start_span.call_args[1]
-        assert kw["name"] == "api.gpt-4"
+        assert kw["name"] == "chat gpt-4"
         assert kw["key"] == "api:t1"
         assert kw["kind"] == "llm"
 
@@ -853,6 +872,55 @@ class TestOnPostApiRequest:
             assistant_tool_call_count=0,
         )
         disabled_tracer.end_span.assert_not_called()
+
+
+class TestKanbanLifecycleHooks:
+    def test_claimed_span_includes_task_title_and_metadata(self, mock_tracer):
+        on_kanban_task_claimed(
+            task_id="t_abc123",
+            board="default",
+            assignee="engineer",
+            profile_name="engineer",
+            run_id=42,
+            title="Fix production smoke",
+            traceparent="00-1234567890abcdef1234567890abcdef-1234567890abcdef-01",
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert mock_tracer.start_span.call_args[1]["name"] == "kanban.task_claimed"
+        assert attrs["hermes.kanban.event"] == "task_claimed"
+        assert attrs["hermes.kanban.task.id"] == "t_abc123"
+        assert attrs["hermes.kanban.task.title"] == "Fix production smoke"
+        assert attrs["hermes.kanban.board"] == "default"
+        assert attrs["hermes.kanban.assignee"] == "engineer"
+        assert attrs["hermes.kanban.profile"] == "engineer"
+        assert attrs["hermes.kanban.run.id"] == 42
+        assert mock_tracer.end_span.call_args[0][0] == "kanban:task_claimed:t_abc123:42"
+
+    def test_completed_and_blocked_include_safe_outcome_text(self, mock_tracer):
+        on_kanban_task_completed(task_id="t_done", title="Done", summary="finished")
+        completed_attrs = mock_tracer.start_span.call_args_list[-1][1]["attributes"]
+        assert completed_attrs["hermes.kanban.event"] == "task_completed"
+        assert completed_attrs["hermes.kanban.summary"] == "finished"
+
+        on_kanban_task_blocked(task_id="t_blocked", title="Blocked", reason="needs input")
+        blocked_attrs = mock_tracer.start_span.call_args_list[-1][1]["attributes"]
+        assert blocked_attrs["hermes.kanban.event"] == "task_blocked"
+        assert blocked_attrs["hermes.kanban.reason"] == "needs input"
+
+    def test_task_title_is_redacted_and_truncated(self, mock_tracer):
+        secret = "sk-" + "a" * 48
+        on_kanban_task_claimed(
+            task_id="t_secret",
+            title=f"deploy token={secret} " + "x" * 260,
+        )
+        title = mock_tracer.start_span.call_args[1]["attributes"]["hermes.kanban.task.title"]
+        assert "[REDACTED]" in title
+        assert secret not in title
+        assert len(title) <= 200
+
+    def test_noop_when_disabled(self, disabled_tracer):
+        on_kanban_task_claimed(task_id="t1", title="ignored")
+        disabled_tracer.start_span.assert_not_called()
 
 
 class TestFullCaptureFlags:

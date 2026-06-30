@@ -179,7 +179,7 @@ class TestHermesPhoenixSmoke:
         )
 
         span_names = [s["name"] for s in spans]
-        has_api_or_llm = any("api." in n or "llm." in n for n in span_names)
+        has_api_or_llm = any(n.startswith("chat ") for n in span_names)
         assert (
             has_api_or_llm
         ), f"Expected api.* or llm.* spans in Phoenix after chat, got: {span_names}"
@@ -211,8 +211,8 @@ class TestHermesPhoenixSmoke:
         )
 
         span_names = [s["name"] for s in spans]
-        has_tool = any("tool." in n for n in span_names)
-        assert has_tool, f"Expected tool.* spans in Phoenix from tool use, got: {span_names}"
+        has_tool = any(n.startswith("execute_tool ") for n in span_names)
+        assert has_tool, f"Expected execute_tool * spans in Phoenix from tool use, got: {span_names}"
 
     def test_spans_have_parent_hierarchy(self, hermes_client, phoenix_api):
         """Verify that spans from a chat have correct parent-child nesting."""

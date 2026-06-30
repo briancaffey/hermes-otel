@@ -12,10 +12,14 @@ routed through the tracer singleton so test reset is just
 from __future__ import annotations
 
 import json
+import os
+import re
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log
+from .identity import active_profile_name, profile_attributes
 from .helpers import (
     clip_preview,
     extract_tool_result_status,
@@ -216,6 +220,55 @@ def _detect_session_kind(platform: str, kwargs: dict) -> str:
     return "session"
 
 
+def _terminal_attributes(kwargs: dict) -> Dict[str, Any]:
+    """Map Hermes terminal/finalization telemetry kwargs to span attributes."""
+    attrs: Dict[str, Any] = {}
+    for source, attr in (
+        ("terminal_status", "hermes.agent.terminal_status"),
+        ("timeout_kind", "hermes.agent.timeout_kind"),
+        ("interrupted_by", "hermes.agent.interrupted_by"),
+    ):
+        value = kwargs.get(source)
+        if value:
+            attrs[attr] = truncate_string(value, 200)
+
+    max_turns = kwargs.get("max_turns")
+    if isinstance(max_turns, (int, float)):
+        attrs["hermes.agent.max_turns"] = int(max_turns)
+
+    cron_job_id = kwargs.get("job_id") or kwargs.get("cron_job_id")
+    if cron_job_id:
+        attrs["hermes.cron.job_id"] = truncate_string(cron_job_id, 200)
+
+    return attrs
+
+
+def _tool_execution_attributes(kwargs: dict) -> Dict[str, Any]:
+    """Map secret-safe command/error metadata from post_tool_call kwargs."""
+    attrs: Dict[str, Any] = {}
+    for source, attr in (
+        ("error_kind", "hermes.tool.error_kind"),
+        ("command_class", "hermes.tool.command_class"),
+    ):
+        value = kwargs.get(source)
+        if value:
+            attrs[attr] = truncate_string(value, 200)
+
+    timeout = kwargs.get("timeout_seconds")
+    if isinstance(timeout, (int, float)) and timeout > 0:
+        attrs["hermes.tool.timeout_seconds"] = int(timeout)
+
+    for source, attr in (
+        ("background", "hermes.tool.background"),
+        ("notify_on_complete", "hermes.tool.notify_on_complete"),
+        ("pty", "hermes.tool.pty"),
+    ):
+        if source in kwargs:
+            attrs[attr] = bool(kwargs.get(source))
+
+    return attrs
+
+
 def _preview(value: Any, max_chars: int) -> Optional[str]:
     """Apply the configured preview policy: capture toggle + clip_preview."""
     tracer = get_tracer()
@@ -247,12 +300,105 @@ def _gen_ai_attributes(
     extra_kwargs: Optional[dict] = None,
 ) -> Dict[str, str]:
     """Return common OpenTelemetry GenAI attributes."""
+    profile = active_profile_name(extra_kwargs or {})
     attrs: Dict[str, str] = {
+        "gen_ai.agent.name": profile,
+        "hermes.profile": profile,
         "gen_ai.operation.name": operation_name,
     }
     session_text = truncate_string(session_id, 200)
     if session_text:
         attrs["gen_ai.conversation.id"] = session_text
+    return attrs
+
+
+def _agent_name(extra_kwargs: dict) -> str:
+    """Return the active Hermes profile/agent name for GenAI telemetry."""
+    for key in ("agent_name", "profile", "hermes_profile", "gen_ai.agent.name"):
+        raw = extra_kwargs.get(key)
+        value = truncate_string(raw, 120) if raw is not None else ""
+        if value:
+            return value
+
+    raw_profile = os.getenv("HERMES_PROFILE")
+    value = truncate_string(raw_profile, 120) if raw_profile is not None else ""
+    if value:
+        return value
+
+    raw_home = os.getenv("HERMES_HOME")
+    hermes_home = truncate_string(raw_home, 500) if raw_home is not None else ""
+    if hermes_home:
+        path = Path(hermes_home)
+        value = "default" if path.name == ".hermes" else truncate_string(path.name, 120)
+        if value:
+            return value
+
+    return "hermes-agent"
+
+
+_KANBAN_ATTR_MAX_CHARS = 200
+_KANBAN_SECRET_ASSIGNMENT_RE = re.compile(
+    r"(?i)\b(api[_-]?key|authorization|bearer|client[_-]?secret|connect[_-]?token|"
+    r"password|passwd|secret|token)\b\s*[:=]\s*[^\s,;]+"
+)
+_KANBAN_SECRET_VALUE_RE = re.compile(
+    r"(?i)\b(sk-[A-Za-z0-9_-]{8,}|gh[pousr]_[A-Za-z0-9_]{8,}|"
+    r"xox[baprs]-[A-Za-z0-9-]{8,}|[A-Za-z0-9+/]{32,}={0,2})\b"
+)
+
+
+def _safe_kanban_attr(value: Any, *, max_chars: int = _KANBAN_ATTR_MAX_CHARS) -> Optional[str]:
+    """Return bounded, redacted Kanban metadata for span attributes."""
+    if value is None:
+        return None
+    text = re.sub(r"\s+", " ", str(value)).strip()
+    if not text:
+        return None
+    text = _KANBAN_SECRET_ASSIGNMENT_RE.sub(lambda m: f"{m.group(1)}=[REDACTED]", text)
+    text = _KANBAN_SECRET_VALUE_RE.sub("[REDACTED]", text)
+    return truncate_string(text, max_chars)
+
+
+def _kanban_lifecycle_attributes(
+    event: str,
+    task_id: str,
+    *,
+    board: Optional[str] = None,
+    assignee: Optional[str] = None,
+    run_id: Optional[int] = None,
+    profile_name: Optional[str] = None,
+    title: Optional[str] = None,
+    traceparent: Optional[str] = None,
+    tracestate: Optional[str] = None,
+    summary: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Build privacy-bounded Kanban lifecycle span attributes."""
+    attrs: Dict[str, Any] = {
+        "hermes.kanban.event": event,
+        "hermes.kanban.task.id": truncate_string(task_id, 200),
+    }
+    optional_values = {
+        "hermes.kanban.board": board,
+        "hermes.kanban.assignee": assignee,
+        "hermes.kanban.profile": profile_name,
+        "hermes.kanban.task.title": title,
+        "hermes.kanban.traceparent": traceparent,
+        "hermes.kanban.tracestate": tracestate,
+        "hermes.kanban.summary": summary,
+        "hermes.kanban.reason": reason,
+    }
+    for key, value in optional_values.items():
+        safe = _safe_kanban_attr(value)
+        if safe:
+            attrs[key] = safe
+    if run_id is not None:
+        try:
+            attrs["hermes.kanban.run.id"] = int(run_id)
+        except (TypeError, ValueError):
+            safe_run_id = _safe_kanban_attr(run_id)
+            if safe_run_id:
+                attrs["hermes.kanban.run.id"] = safe_run_id
     return attrs
 
 
@@ -449,6 +595,19 @@ def _serialize_conversation_history(history: Any, max_chars: int) -> Optional[st
     return text[: max_chars - 3] + "..."
 
 
+def _gen_ai_span_name(operation_name: str, subject: Any) -> str:
+    """Return Honeycomb Agent Timeline-compatible GenAI span names.
+
+    Honeycomb expects operation-oriented names like ``chat {model}``,
+    ``execute_tool {tool_name}``, and ``invoke_agent {agent_name}``.
+    Keep the high-cardinality identifiers in attributes, not span names.
+    """
+    subject_text = truncate_string(subject, 200)
+    if subject_text:
+        return f"{operation_name} {subject_text}"
+    return operation_name
+
+
 def _start_session_span(
     session_id: str,
     model: str,
@@ -467,7 +626,7 @@ def _start_session_span(
     """
     tracer = get_tracer()
     kind = _detect_session_kind(platform, extra_kwargs)
-    span_name = "agent" if kind != "cron" else "cron"
+    span_name = _gen_ai_span_name("invoke_agent", active_profile_name(extra_kwargs))
     key = f"session:{session_id}"
 
     attributes = {
@@ -541,6 +700,7 @@ def on_session_end(
     attributes.update(_provider_attributes(kwargs.get("provider") or platform))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_terminal_attributes(kwargs))
 
     # Drain the aggregators in one shot. Everything this session buffered
     # — I/O, usage totals, turn summary — comes back in a single PerSession.
@@ -610,6 +770,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
     }
+    attributes.update(profile_attributes(kwargs))
     preview = _preview(
         json.dumps(args) if args else "{}",
         tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars,
@@ -653,7 +814,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_skill(skill)
 
     tracer.start_span(
-        name=f"tool.{tool_name}",
+        name=_gen_ai_span_name("execute_tool", tool_name),
         key=key,
         kind="tool",
         attributes=attributes,
@@ -683,7 +844,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         )
 
     # Build final attributes — OpenInference conventions for Phoenix Info
-    attributes: Dict[str, Any] = {}
+    attributes: Dict[str, Any] = profile_attributes(kwargs)
 
     # Parse the result once
     if isinstance(result, dict):
@@ -697,6 +858,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Determine outcome taxonomy
     outcome = extract_tool_result_status(result_json) or "completed"
     attributes["hermes.tool.outcome"] = outcome
+    attributes.update(_tool_execution_attributes(kwargs))
 
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
@@ -839,7 +1001,7 @@ def on_pre_llm_call(
             attributes["input.value"] = preview
 
     span = tracer.start_span(
-        name=f"llm.{model}",
+        name=_gen_ai_span_name("chat", model),
         key=key,
         kind="llm",
         attributes=attributes,
@@ -979,7 +1141,7 @@ def on_pre_api_request(
             attributes["gen_ai.system_instructions"] = str(system_prompt)
 
     span = tracer.start_span(
-        name=f"api.{model}",
+        name=_gen_ai_span_name("chat", model),
         key=key,
         kind="llm",
         attributes=attributes,
@@ -1096,3 +1258,58 @@ def on_post_api_request(
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
+
+
+def _record_kanban_lifecycle_span(
+    event: str,
+    *,
+    task_id: str,
+    board: Optional[str] = None,
+    assignee: Optional[str] = None,
+    run_id: Optional[int] = None,
+    profile_name: Optional[str] = None,
+    title: Optional[str] = None,
+    traceparent: Optional[str] = None,
+    tracestate: Optional[str] = None,
+    summary: Optional[str] = None,
+    reason: Optional[str] = None,
+) -> None:
+    """Record one short span for a Kanban task lifecycle event."""
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+    safe_task_id = truncate_string(task_id, 200) or "unknown"
+    safe_run_id = _safe_kanban_attr(run_id) if run_id is not None else "none"
+    key = f"kanban:{event}:{safe_task_id}:{safe_run_id}"
+    attributes = _kanban_lifecycle_attributes(
+        event,
+        task_id,
+        board=board,
+        assignee=assignee,
+        run_id=run_id,
+        profile_name=profile_name,
+        title=title,
+        traceparent=traceparent,
+        tracestate=tracestate,
+        summary=summary,
+        reason=reason,
+    )
+    tracer.start_span(
+        name=f"kanban.{event}",
+        key=key,
+        kind="general",
+        attributes=attributes,
+    )
+    tracer.end_span(key, status="ok")
+
+
+def on_kanban_task_claimed(task_id: str, **kwargs) -> None:
+    _record_kanban_lifecycle_span("task_claimed", task_id=task_id, **kwargs)
+
+
+def on_kanban_task_completed(task_id: str, **kwargs) -> None:
+    _record_kanban_lifecycle_span("task_completed", task_id=task_id, **kwargs)
+
+
+def on_kanban_task_blocked(task_id: str, **kwargs) -> None:
+    _record_kanban_lifecycle_span("task_blocked", task_id=task_id, **kwargs)

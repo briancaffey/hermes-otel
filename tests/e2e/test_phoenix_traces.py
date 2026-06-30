@@ -162,8 +162,8 @@ class TestPhoenixTraceExport:
                     our_spans.append(span)
 
             span_names = [s["name"] for s in our_spans]
-            assert "agent" in span_names, f"Expected 'agent' span, got: {span_names}"
-            assert any("llm" in n for n in span_names), f"Expected LLM span, got: {span_names}"
+            assert any(n.startswith("invoke_agent ") for n in span_names), f"Expected invoke_agent span, got: {span_names}"
+            assert any(n.startswith("chat ") for n in span_names), f"Expected chat span, got: {span_names}"
             assert any("api" in n for n in span_names), f"Expected API span, got: {span_names}"
 
         finally:
@@ -251,10 +251,10 @@ class TestPhoenixTraceExport:
             our_spans = [s for s in spans if session_id in s.get("attributes", "")]
 
             span_names = [s["name"] for s in our_spans]
-            assert "tool.bash" in span_names, f"Expected tool span, got: {span_names}"
+            assert "execute_tool bash" in span_names, f"Expected tool span, got: {span_names}"
 
             # Verify tool span has a parent
-            tool_span = next(s for s in our_spans if s["name"] == "tool.bash")
+            tool_span = next(s for s in our_spans if s["name"] == "execute_tool bash")
             assert tool_span["parentId"] is not None, "Tool span should have a parent"
 
         finally:

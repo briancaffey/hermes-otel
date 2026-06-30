@@ -32,6 +32,12 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     import hermes_otel.plugin_config as plugin_config_mod
     import hermes_otel.tracer as tracer_mod
 
+    # Keep span-name assertions stable across whichever Hermes profile is
+    # running pytest. Tests that exercise profile discovery set these vars
+    # explicitly in their own body.
+    monkeypatch.delenv("HERMES_PROFILE", raising=False)
+    monkeypatch.delenv("HERMES_HOME", raising=False)
+
     fake_path = tmp_path_factory.mktemp("isolated-config") / "nonexistent.yaml"
     monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", fake_path)
 

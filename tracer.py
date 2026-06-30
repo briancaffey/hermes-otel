@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import debug_log, logger
+from .identity import profile_attributes
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 
@@ -245,6 +246,9 @@ class HermesOTelPlugin:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
             attrs.update(self.config.resource_attributes)
+        # Runtime identity must reflect the process profile. Apply after config
+        # values so copied/stale profile config cannot stamp all profiles the same.
+        attrs.update(profile_attributes())
         project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name

@@ -91,9 +91,9 @@ class TestSpanFanOut:
         names_a = sorted(s.name for s in exp_a.get_finished_spans())
         names_b = sorted(s.name for s in exp_b.get_finished_spans())
         assert names_a == names_b
-        assert "agent" in names_a
-        assert any(n.startswith("api.") for n in names_a)
-        assert any(n.startswith("tool.") for n in names_a)
+        assert "invoke_agent hermes-agent" in names_a
+        assert any(n.startswith("chat ") for n in names_a)
+        assert any(n.startswith("execute_tool ") for n in names_a)
 
 
 class TestForceFlushFansOut:
@@ -129,6 +129,12 @@ class TestForceFlushFansOut:
 def _clear_backend_env(monkeypatch):
     for var in [
         "OTEL_PHOENIX_ENDPOINT",
+        "OTEL_HONEYCOMB_ENDPOINT",
+        "OTEL_HONEYCOMB_API_KEY",
+        "HONEYCOMB_API_KEY",
+        "HONEYCOMB_REGION",
+        "HONEYCOMB_DATASET",
+        "OTEL_HONEYCOMB_DATASET",
         "OTEL_PROJECT_NAME",
         "LANGSMITH_TRACING",
         "LANGSMITH_API_KEY",
@@ -147,6 +153,25 @@ def _clear_backend_env(monkeypatch):
 
 
 class TestConfigBackendsRouting:
+    def test_honeycomb_backend_wires_trace_exporter(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        cfg = HermesOtelConfig(
+            backends=(BackendConfig(type="honeycomb", api_key="test-key", region="us"),),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+        with (
+            patch("hermes_otel.tracer.OTLPSpanExporter") as mock_span_exp,
+            patch("hermes_otel.tracer.OTLPMetricExporter"),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.tracer.metrics.set_meter_provider"),
+        ):
+            assert plugin.init() is True
+
+        assert len(plugin._span_processors) == 1
+        assert len(plugin._metric_readers) == 0
+        assert mock_span_exp.call_args.kwargs["endpoint"] == "https://api.honeycomb.io/v1/traces"
+        assert mock_span_exp.call_args.kwargs["headers"] == {"x-honeycomb-team": "test-key"}
+
     def test_two_backends_each_get_their_own_processor(self, monkeypatch):
         """One BackendConfig per entry → one BatchSpanProcessor per entry."""
         _clear_backend_env(monkeypatch)

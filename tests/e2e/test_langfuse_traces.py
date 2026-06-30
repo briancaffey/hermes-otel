@@ -176,8 +176,8 @@ class TestLangfuseTraceExport:
 
             obs_names = [o.get("name", "") for o in observations]
             assert any(
-                "agent" in n for n in obs_names
-            ), f"Expected 'agent' observation, got: {obs_names}"
+                n.startswith("invoke_agent ") for n in obs_names
+            ), f"Expected invoke_agent observation, got: {obs_names}"
             assert any("llm" in n for n in obs_names), f"Expected LLM observation, got: {obs_names}"
             assert any("api" in n for n in obs_names), f"Expected API observation, got: {obs_names}"
 
@@ -275,8 +275,8 @@ class TestLangfuseTraceExport:
 
             obs_names = [o.get("name", "") for o in observations]
             assert any(
-                "tool.bash" in n for n in obs_names
-            ), f"Expected 'tool.bash' observation, got: {obs_names}"
+                "execute_tool bash" in n for n in obs_names
+            ), f"Expected 'execute_tool bash' observation, got: {obs_names}"
 
         finally:
             tracer_mod._tracer = None
