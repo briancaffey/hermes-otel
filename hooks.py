@@ -249,6 +249,7 @@ def _tool_execution_attributes(kwargs: dict) -> Dict[str, Any]:
     for source, attr in (
         ("error_kind", "hermes.tool.error_kind"),
         ("command_class", "hermes.tool.command_class"),
+        ("wait_kind", "hermes.tool.wait_kind"),
     ):
         value = kwargs.get(source)
         if value:
