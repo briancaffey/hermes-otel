@@ -2,6 +2,11 @@
 
 OpenTelemetry plugin for [Hermes Agent](https://github.com/nousresearch/hermes-agent). Automatically exports LLM tool calls, model invocations, and API requests as OTel spans to any OTLP-compatible backend.
 
+Installed Hermes plugins appear in the same trace stream as normal tool calls.
+For example, [Hermes Tweet](https://github.com/Xquik-dev/hermes-tweet) read
+tools can be observed alongside model spans when an agent gathers X/Twitter
+account, post, or trend context.
+
 ## Backends
 
 Tested with:
