@@ -30,6 +30,7 @@ const sidebars: SidebarsConfig = {
         'backends/uptrace',
         'backends/openobserve',
         'backends/honeycomb',
+        'backends/weave',
         'backends/multi-backend',
       ],
     },

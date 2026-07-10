@@ -40,13 +40,15 @@ class BackendConfig:
     discouraged because the file is plaintext.
     """
 
-    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | honeycomb
+    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | honeycomb | weave
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
-    logs: Optional[bool] = None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve)
+    logs: Optional[bool] = (
+        None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/honeycomb)
+    )
     # Langfuse credentials
     public_key: Optional[str] = None
     secret_key: Optional[str] = None
@@ -72,6 +74,14 @@ class BackendConfig:
     api_key_env: Optional[str] = None
     dataset: Optional[str] = None
     region: Optional[str] = None
+    # W&B Weave routing. Weave authenticates with ``api_key`` and routes spans
+    # by OTel Resource attributes. These fields are copied to ``wandb.entity``
+    # / ``wandb.project``; users can alternatively set them in top-level
+    # ``resource_attributes``.
+    entity: Optional[str] = None
+    entity_env: Optional[str] = None
+    project: Optional[str] = None
+    project_env: Optional[str] = None
 
 
 @dataclass(frozen=True)

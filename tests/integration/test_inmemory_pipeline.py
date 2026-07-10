@@ -1,6 +1,8 @@
 """Integration tests using InMemorySpanExporter to verify the full
 hook -> span -> export pipeline without any network I/O."""
 
+from dataclasses import replace
+
 import pytest
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -27,6 +29,10 @@ class TestToolSpanExport:
         assert span.name == "tool.bash"
         attrs = dict(span.attributes)
         assert attrs["tool.name"] == "bash"
+        assert attrs["gen_ai.tool.name"] == "bash"
+        assert attrs["gen_ai.tool.call.id"] == "t1"
+        assert attrs["gen_ai.tool.call.arguments"] == '{"cmd": "ls"}'
+        assert attrs["gen_ai.tool.call.result"] == "file.txt"
         assert attrs["openinference.span.kind"] == "TOOL"
         assert "file.txt" in attrs["output.value"]
 
@@ -59,6 +65,33 @@ class TestToolSpanExport:
 
         assert span.status.status_code == StatusCode.OK
 
+    def test_tool_content_aliases_respect_capture_previews(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = replace(plugin.config, capture_previews=False)
+
+        on_pre_tool_call(
+            tool_name="bash",
+            args={"cmd": "secret"},
+            task_id="t1",
+            session_id="s1",
+        )
+        on_post_tool_call(
+            tool_name="bash",
+            args={"cmd": "secret"},
+            result="secret output",
+            task_id="t1",
+            session_id="s1",
+        )
+
+        span = exporter.get_finished_spans()[0]
+        attrs = dict(span.attributes)
+        assert attrs["gen_ai.tool.name"] == "bash"
+        assert attrs["gen_ai.tool.call.id"] == "t1"
+        assert "input.value" not in attrs
+        assert "output.value" not in attrs
+        assert "gen_ai.tool.call.arguments" not in attrs
+        assert "gen_ai.tool.call.result" not in attrs
+
 
 class TestLlmSpanExport:
     def test_llm_span_exports(self, inmemory_otel_setup):
@@ -89,6 +122,8 @@ class TestLlmSpanExport:
         assert attrs["openinference.span.kind"] == "LLM"
         assert attrs["input.value"] == "hello"
         assert attrs["output.value"] == "hi there"
+        assert attrs["gen_ai.input.messages"] == '[{"role": "user", "content": "hello"}]'
+        assert attrs["gen_ai.output.messages"] == '[{"role": "assistant", "content": "hi there"}]'
 
 
 class TestApiSpanExport:
@@ -211,3 +246,8 @@ class TestSessionSpanExport:
         attrs = dict(span.attributes)
         assert attrs["openinference.span.kind"] == "AGENT"
         assert attrs["hermes.session.completed"] is True
+        assert attrs["gen_ai.operation.name"] == "invoke_agent"
+        assert attrs["gen_ai.agent.name"] == "hermes-agent"
+        assert attrs["gen_ai.conversation.id"] == "s1"
+        assert attrs["wandb.thread_id"] == "s1"
+        assert attrs["wandb.is_turn"] is True

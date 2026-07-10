@@ -22,6 +22,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
 | **[OpenObserve](/backends/openobserve)** | Traces + metrics + logs | Local (single container) · Self-hosted HA | OSS, no account |
 | **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
+| **[W&B Weave](/backends/weave)** | Traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
 ## Quick picks
@@ -47,6 +48,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want a cloud backend with a generous free tier and all three signals"**
 → [Honeycomb](/backends/honeycomb) — OTLP-native, just set `HONEYCOMB_API_KEY` and a region.
 
+**"I want W&B's Agents and Traces UI for Hermes runs"**
+→ [W&B Weave](/backends/weave) — direct OTLP trace ingest with `WANDB_API_KEY`, `wandb.entity`, and `wandb.project`.
+
 **"My company already has an OTel collector / New Relic / Datadog"**
 → [Generic OTLP](/backends/otlp) — point at its ingest endpoint and it just works.
 
@@ -69,6 +73,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Uptrace | ✅ | ✅ | ✅ |
 | OpenObserve | ✅ | ✅ | ✅ |
 | Honeycomb | ✅ | ✅ | ✅ |
+| W&B Weave | ✅ | ❌ | ❌ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
@@ -82,10 +87,11 @@ Single-backend selection is env-var-driven. First match wins:
 3. `OTEL_SIGNOZ_ENDPOINT` set → SigNoz
 4. `OTEL_UPTRACE_ENDPOINT` + DSN set → Uptrace
 5. `OTEL_OPENOBSERVE_ENDPOINT` + credentials set → OpenObserve
-6. `HONEYCOMB_API_KEY` set → Honeycomb
-7. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-8. `OTEL_TEMPO_ENDPOINT` set → Tempo
-9. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+6. `WANDB_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` set → W&B Weave
+7. `HONEYCOMB_API_KEY` set → Honeycomb
+8. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+9. `OTEL_TEMPO_ENDPOINT` set → Tempo
+10. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 

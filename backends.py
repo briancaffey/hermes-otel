@@ -28,7 +28,7 @@ from typing import Callable, Dict, List, Optional
 from .plugin_config import BackendConfig
 
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
-_TRACES_ONLY = {"langfuse", "jaeger", "tempo"}
+_TRACES_ONLY = {"langfuse", "jaeger", "tempo", "weave"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -49,6 +49,7 @@ _DISPLAY_NAMES = {
     "uptrace": "Uptrace",
     "openobserve": "OpenObserve",
     "honeycomb": "Honeycomb",
+    "weave": "W&B Weave",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -59,6 +60,8 @@ _HONEYCOMB_ENDPOINTS = {
     "eu": "https://api.eu1.honeycomb.io",
 }
 
+_WEAVE_DEFAULT_ENDPOINT = "https://trace.wandb.ai/otel/v1/traces"
+
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
 _ENV_PRIORITY = [
@@ -66,6 +69,7 @@ _ENV_PRIORITY = [
     "signoz",
     "uptrace",
     "openobserve",
+    "weave",
     "honeycomb",
     "jaeger",
     "tempo",
@@ -89,6 +93,7 @@ class _ResolvedBackend:
     supports_traces: bool = True
     supports_metrics: bool = True
     supports_logs: bool = False
+    resource_attributes: Optional[Dict[str, str]] = None
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -420,6 +425,76 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
+    """Build Weave's OTLP traces endpoint from a W&B base URL."""
+    base = (base_url or "").strip().rstrip("/")
+    if not base:
+        return _WEAVE_DEFAULT_ENDPOINT
+    if base.endswith("/v1/traces"):
+        return base
+    if base.endswith("/otel") or base.endswith("/traces/otel"):
+        return f"{base}/v1/traces"
+    if "trace.wandb.ai" in base:
+        return f"{base}/otel/v1/traces"
+    # Dedicated Cloud / Self-Managed use the org host plus the /traces prefix.
+    return f"{base}/traces/otel/v1/traces"
+
+
+def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve W&B Weave's dedicated OTLP trace ingest endpoint.
+
+    Weave authenticates trace ingest with the ``wandb-api-key`` header and
+    routes spans by OTel Resource attributes: ``wandb.entity`` and
+    ``wandb.project``. The latter can be supplied either on this backend entry
+    (``entity`` / ``project``) or globally via ``resource_attributes``.
+    """
+    key = _resolve_secret(
+        bc.api_key,
+        bc.api_key_env,
+        ["WANDB_API_KEY"],
+    )
+    if not key:
+        raise ValueError("weave requires api_key (or set WANDB_API_KEY)")
+
+    ep = (
+        bc.endpoint or os.getenv("OTEL_WEAVE_ENDPOINT", "") or os.getenv("WANDB_OTLP_ENDPOINT", "")
+    ).strip()
+    if not ep:
+        ep = _weave_endpoint_from_base(
+            bc.base_url or os.getenv("OTEL_WEAVE_BASE_URL", "") or os.getenv("WANDB_BASE_URL", "")
+        )
+
+    headers: Dict[str, str] = {"wandb-api-key": key}
+    headers.update(bc.headers or {})
+
+    resource_attrs: Dict[str, str] = {}
+    entity = _resolve_secret(
+        bc.entity,
+        bc.entity_env,
+        ["WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"],
+    )
+    project = _resolve_secret(
+        bc.project,
+        bc.project_env,
+        ["WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"],
+    )
+    if entity:
+        resource_attrs["wandb.entity"] = entity
+    if project:
+        resource_attrs["wandb.project"] = project
+
+    return _ResolvedBackend(
+        type="weave",
+        endpoint=ep,
+        display_name=_display(bc, "weave"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("weave", bc.metrics),
+        supports_logs=_logs_for("weave", bc.logs),
+        resource_attributes=resource_attrs or None,
+    )
+
+
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
@@ -431,6 +506,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "uptrace": _resolve_uptrace,
     "openobserve": _resolve_openobserve,
     "honeycomb": _resolve_honeycomb,
+    "weave": _resolve_weave,
 }
 
 
@@ -457,7 +533,12 @@ def resolve_from_env() -> Optional[_ResolvedBackend]:
     """
     for backend_type in _ENV_PRIORITY:
         try:
-            return resolve(BackendConfig(type=backend_type))
+            rb = resolve(BackendConfig(type=backend_type))
+            if backend_type == "weave":
+                attrs = rb.resource_attributes or {}
+                if not (attrs.get("wandb.entity") and attrs.get("wandb.project")):
+                    continue
+            return rb
         except ValueError:
             continue
     return None

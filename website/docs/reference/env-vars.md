@@ -30,6 +30,15 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key (plugin-specific alias) |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
+| `WANDB_API_KEY` | string | W&B API key; enables Weave in env-var mode when routing vars are also set |
+| `WANDB_ENTITY` | string | W&B entity/team for Weave routing (`wandb.entity`) |
+| `WANDB_PROJECT` | string | W&B project for Weave routing (`wandb.project`) |
+| `DEFAULT_WANDB_ENTITY` | string | Weave entity fallback, useful with an OTel Collector |
+| `DEFAULT_WANDB_PROJECT` | string | Weave project fallback, useful with an OTel Collector |
+| `OTEL_WEAVE_ENDPOINT` | URL | Full Weave OTLP traces endpoint override |
+| `WANDB_OTLP_ENDPOINT` | URL | Weave OTLP endpoint alias used by W&B docs |
+| `OTEL_WEAVE_BASE_URL` | URL | W&B base URL; plugin appends the trace ingest path |
+| `WANDB_BASE_URL` | URL | W&B base URL alias for Dedicated Cloud / Self-Managed |
 | `OTEL_PROJECT_NAME` | string | Resource `service.name` + `openinference.project.name` |
 
 ## Shaping overrides

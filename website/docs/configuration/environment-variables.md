@@ -32,6 +32,11 @@ Setting any of these enables the matching backend. First match wins (see [Backen
 | `HONEYCOMB_API_KEY` | Honeycomb | `hcaik_...` |
 | `OTEL_HONEYCOMB_API_KEY` | Honeycomb (plugin-specific alias) | `hcaik_...` |
 | `OTEL_HONEYCOMB_ENDPOINT` | Honeycomb (optional; overrides region default) | `https://api.eu1.honeycomb.io/v1/traces` |
+| `WANDB_API_KEY` | W&B Weave | `...` |
+| `WANDB_ENTITY` | W&B Weave routing | `my-team` |
+| `WANDB_PROJECT` | W&B Weave routing | `hermes-agent` |
+| `OTEL_WEAVE_ENDPOINT` | W&B Weave (optional full endpoint) | `https://trace.wandb.ai/otel/v1/traces` |
+| `OTEL_WEAVE_BASE_URL` | W&B Weave (optional base URL) | `https://acme.wandb.io` |
 | `OTEL_PROJECT_NAME` | All | `hermes-agent` |
 
 ## Shaping overrides

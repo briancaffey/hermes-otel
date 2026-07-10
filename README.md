@@ -15,6 +15,7 @@ Tested with:
 - **[Uptrace](https://uptrace.dev)** (self-hosted) — traces + metrics + logs
 - **[OpenObserve](https://openobserve.ai)** (self-hosted) — traces + metrics + logs
 - **[Honeycomb](https://www.honeycomb.io/)** (cloud) — traces + metrics + logs — see [HONEYCOMB.md](HONEYCOMB.md)
+- **[W&B Weave](https://docs.wandb.ai/weave/)** (cloud / Dedicated Cloud / self-managed) — traces only
 
 Any OTLP HTTP endpoint should work.
 
@@ -200,13 +201,14 @@ path or starve the others — span end is just a non-blocking enqueue. Both
 trace and metrics export run in parallel across all configured backends.
 
 Supported `type` values: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`,
-`otlp`, `lgtm`, `uptrace`, `openobserve`. Use `otlp` for any collector
+`otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb`, `weave`. Use `otlp` for any collector
 that doesn't have a dedicated type. Backends marked
-traces-only (`langfuse`, `jaeger`, `tempo`) are auto-detected and skip
+traces-only (`langfuse`, `jaeger`, `tempo`, `weave`) are auto-detected and skip
 the metrics reader. Override with `metrics: true|false` per entry if
 needed. See `config.yaml.example` for the full list of fields each type
 accepts — Uptrace takes a `dsn:` for the `uptrace-dsn` header, OpenObserve
-takes `user:` / `password:` for HTTP Basic auth, and so on.
+takes `user:` / `password:` for HTTP Basic auth, and Weave takes W&B routing
+fields (`entity` / `project`) for `wandb.entity` / `wandb.project`.
 
 ### Full-conversation capture
 
@@ -323,6 +325,19 @@ export OTEL_PROJECT_NAME=hermes-otel-honeycomb
 For region selection (`us`/`eu`), a dataset, and the metrics `unknown_metrics`
 gotcha, use the multi-backend `config.yaml` form instead — see [HONEYCOMB.md](HONEYCOMB.md).
 
+### W&B Weave
+```bash
+export WANDB_API_KEY="..."                 # wandb-api-key header
+export WANDB_ENTITY="my-team"              # Resource: wandb.entity
+export WANDB_PROJECT="hermes-agent"        # Resource: wandb.project
+# Optional Dedicated Cloud / Self-Managed:
+# export OTEL_WEAVE_BASE_URL="https://acme.wandb.io"
+```
+
+Weave is trace ingest only by default. The dedicated `type: weave` config
+also supports `api_key_env`, `entity`, `project`, `base_url`, and explicit
+`endpoint`; see `config.yaml.example` and the website docs for details.
+
 ### Optional
 ```bash
 export OTEL_PROJECT_NAME="hermes-agent"   # Shown in Phoenix
@@ -339,7 +354,7 @@ export HERMES_OTEL_DEBUG=true
 
 Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Weave (`WANDB_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT`) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
 
@@ -499,7 +514,7 @@ Reasoning ("thinking") tokens are emitted only by reasoning-capable models that 
 
 LLM and API spans also expose standard GenAI request/response metadata where Hermes provides it, including `gen_ai.provider.name`, `gen_ai.request.model`, request parameters such as `gen_ai.request.temperature`, and response fields such as `gen_ai.response.model` and `gen_ai.response.finish_reasons`.
 
-Phoenix uses `input.value` and `output.value` for previews. When full prompt/response capture is explicitly enabled, the plugin also writes the corresponding GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`).
+Phoenix uses `input.value` and `output.value` for previews. Weave and other GenAI-aware backends also receive privacy-gated `gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.tool.call.arguments`, and `gen_ai.tool.call.result` where Hermes exposes the content. When full prompt/response capture is explicitly enabled, the plugin writes the corresponding full GenAI content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, and `gen_ai.system_instructions`).
 
 ## Trace propagation to MCP servers
 
@@ -545,6 +560,7 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 | [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
+| [W&B Weave](https://docs.wandb.ai/weave/) | traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account | ✅ |
 | [New Relic](https://newrelic.com) | traces + metrics + logs | Cloud only | Free tier (100 GB/mo) + paid | 🔲 |
 | [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) | traces + metrics + logs | Local (docker) · Elastic Cloud | OSS self-host · trial + paid cloud | 🔲 |
 | [Datadog](https://www.datadoghq.com) | traces + metrics + logs | Cloud only | Trial only, paid thereafter | 🔲 |
@@ -553,13 +569,14 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 
 - **Fully offline / no account ever:** Phoenix, Langfuse (self-hosted), Jaeger, SigNoz, Grafana Tempo+Mimir, OpenObserve, Uptrace, Elastic APM self-host. All runnable via `docker compose up`.
 - **Free SaaS (personal / hobby tier, no credit card):** Langfuse Cloud, LangSmith, SigNoz Cloud, Grafana Cloud, Honeycomb, New Relic. Best if you don't want to run infrastructure.
+- **W&B agent experiment tracking:** W&B Weave, using OTLP trace ingest plus GenAI agent attributes.
 - **Paid only (credit card required after trial):** Datadog, Dynatrace, LangSmith self-hosted (enterprise plan).
 
 > Free-tier limits change frequently — check each vendor's pricing page before committing. The table reflects what's advertised as of this writing.
 
 ### Signals note
 
-Jaeger and Tempo are both **traces only**. If you want both spans and the token/tool/cost metrics this plugin emits (via `PeriodicExportingMetricReader`), pair them with Prometheus, or pick one of the traces+metrics backends above.
+Jaeger, Tempo, and Weave are **traces only** by default. If you want both spans and the token/tool/cost metrics this plugin emits (via `PeriodicExportingMetricReader`), pair them with Prometheus, or pick one of the traces+metrics backends above.
 
 ## Current limitations
 
@@ -567,3 +584,4 @@ Jaeger and Tempo are both **traces only**. If you want both spans and the token/
 - **Langfuse auth** — Requires both public and secret keys; Basic Auth is constructed automatically. If only one key is set, Langfuse mode won't activate.
 - **No gRPC** — Only OTLP over HTTP/JSON is used. gRPC exporters are not included.
 - **Single session per run** — Span tracking is in-memory; if Hermes restarts mid-session, active spans are lost. A TTL-based sweeper finalizes abandoned sessions (see "Orphan-span sweep" above), but the orphaned process's buffered spans still need a graceful `atexit` to flush.
+- **Weave trace-only ingest** — `type: weave` disables metrics/logs by default and routes all spans in one Hermes process to one `wandb.entity` / `wandb.project`.
