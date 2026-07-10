@@ -42,7 +42,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb` |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb`, `weave` |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP endpoint URL (backend-specific defaults — see below) |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
@@ -126,6 +126,21 @@ Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` co
 | `endpoint` | string | Override; skips the region default. Also via `OTEL_HONEYCOMB_ENDPOINT` |
 
 The plugin sets `x-honeycomb-team` from the key automatically and enables all three signals. See [Honeycomb](/backends/honeycomb) for dataset routing details.
+
+#### `weave`
+
+| Field | Type | Description |
+|---|---|---|
+| `api_key` | string | W&B API key (inline; discouraged) |
+| `api_key_env` | string | Env var name holding the key (falls back to `WANDB_API_KEY`) |
+| `entity` | string | W&B entity/team; copied to Resource attribute `wandb.entity` |
+| `entity_env` | string | Env var name holding the entity (falls back to `WANDB_ENTITY` / `DEFAULT_WANDB_ENTITY`) |
+| `project` | string | W&B project; copied to Resource attribute `wandb.project` |
+| `project_env` | string | Env var name holding the project (falls back to `WANDB_PROJECT` / `DEFAULT_WANDB_PROJECT`) |
+| `base_url` | string | W&B base URL. Cloud default is `https://trace.wandb.ai`; Dedicated Cloud / Self-Managed hosts such as `https://acme.wandb.io` get `/traces/otel/v1/traces` appended |
+| `endpoint` | string | Override; skips `base_url` construction. Also via `OTEL_WEAVE_ENDPOINT` / `WANDB_OTLP_ENDPOINT` |
+
+The plugin sets the `wandb-api-key` header automatically. Weave is traces-only by default; set `metrics: true` / `logs: true` only if W&B documents ingest for those signals or you are pointing at a compatible collector. `wandb.entity` and `wandb.project` may also be supplied via top-level `resource_attributes`; conflicting values fail startup.
 
 ## Env var interpolation in `headers:`
 

@@ -187,6 +187,10 @@
 #   honeycomb    — Honeycomb (SaaS). Traces + metrics + logs. Set `api_key`
 #                  (or `api_key_env`) and `region:` (us|eu); the plugin fills in
 #                  the endpoint and `x-honeycomb-team` header. See HONEYCOMB.md.
+#   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
+#                  only by default. Set `api_key_env`, `entity`, and `project`;
+#                  the plugin fills in the endpoint, `wandb-api-key` header, and
+#                  `wandb.entity` / `wandb.project` resource attributes.
 #
 # `traces: false`, `metrics: false`, or `logs: false` per entry opt a backend
 # out of that signal. This is useful when an entry is dashboard/query-only
@@ -296,6 +300,21 @@
 #     # dataset: hermes
 #     # endpoint:                             # optional; overrides the region default
 # capture_logs: true
+
+# ── W&B Weave quickstart ──────────────────────────────────────────────────────
+#
+# W&B Weave ingests OTLP traces at https://trace.wandb.ai/otel/v1/traces and
+# routes them by OTel Resource attributes `wandb.entity` and `wandb.project`.
+# It is traces-only by default; keep metrics/logs in Phoenix, LGTM, SigNoz, etc.
+#
+# backends:
+#   - type: weave
+#     api_key_env: WANDB_API_KEY              # or inline api_key: (discouraged)
+#     entity: my-team                         # or entity_env: WANDB_ENTITY
+#     project: hermes-agent                   # or project_env: WANDB_PROJECT
+#     # Dedicated Cloud / Self-Managed:
+#     # base_url: https://acme.wandb.io       # plugin appends /traces/otel/v1/traces
+#     # endpoint: https://trace.wandb.ai/otel/v1/traces  # optional full override
 
 # ── LangSmith (env-var only, alternative to the above) ────────────────────────
 #

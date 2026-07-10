@@ -18,6 +18,8 @@ Attributes marked **optional** are only set when the underlying data is availabl
 | `service.version` | `hermes-otel` plugin version |
 | `otel.scope.name` | `hermes-otel` |
 | `openinference.project.name` | Same as `service.name` |
+| `wandb.entity` | W&B Weave routing (when configured) |
+| `wandb.project` | W&B Weave routing (when configured) |
 | `telemetry.sdk.*` | Set by OTel SDK |
 | *any* `resource_attributes.*` | From `config.yaml` |
 | *any* `global_tags.*` | From `config.yaml` (overridden by `resource_attributes` on key conflict) |
@@ -31,6 +33,12 @@ Set at **start**:
 | `hermes.session.kind` | string | `cli` · `telegram` · `discord` · `cron` · ... |
 | `hermes.session.id` | string | Hermes session ID |
 | `session.id` | string | Standard OTel alias |
+| `gen_ai.operation.name` | string | `invoke_agent` |
+| `gen_ai.agent.name` | string | Agent name shown in Weave (`hermes-agent` by default) |
+| `gen_ai.conversation.id` | string | Session/conversation grouping ID |
+| `wandb.thread_id` | string | Weave thread grouping ID |
+| `wandb.is_turn` | bool | Marks the root span as a Weave conversation turn |
+| `weave.agent.version` | string | Plugin package version (optional) |
 | `user.id` | string | Hermes user ID (optional) |
 
 Set at **end** (turn summary):
@@ -63,6 +71,8 @@ Span kind: `LLM` (OpenInference).
 | `input.mime_type` | OpenInference | string | `text/plain` OR `application/json` |
 | `output.value` | OpenInference | string | Final assistant response |
 | `output.mime_type` | OpenInference | string | `text/plain` |
+| `gen_ai.input.messages` | gen_ai | string (JSON) | Privacy-gated user message / conversation history for Weave |
+| `gen_ai.output.messages` | gen_ai | string (JSON) | Privacy-gated assistant response for Weave |
 | `gen_ai.content.prompt` | gen_ai | string | User message |
 | `gen_ai.content.completion` | gen_ai | string | Assistant response |
 | `hermes.conversation.message_count` | hermes | int | When conversation capture is on (optional) |
@@ -118,6 +128,11 @@ Span kind: `TOOL` (OpenInference).
 | `tool.name` | OpenInference | string | Tool name |
 | `input.value` | OpenInference | string | Tool args (JSON) |
 | `output.value` | OpenInference | string | Tool result |
+| `gen_ai.operation.name` | gen_ai | string | `execute_tool` |
+| `gen_ai.tool.name` | gen_ai | string | Tool name |
+| `gen_ai.tool.call.id` | gen_ai | string | Tool call/task ID |
+| `gen_ai.tool.call.arguments` | gen_ai | string | Privacy-gated tool args (JSON preview or full capture) |
+| `gen_ai.tool.call.result` | gen_ai | string | Privacy-gated tool result |
 | `hermes.tool.target` | hermes | string | Inferred file path / URL (optional) |
 | `hermes.tool.command` | hermes | string | Inferred shell command (optional) |
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` |

@@ -78,6 +78,22 @@ Why: LangSmith uses its own HTTP Run API rather than OTLP; its transport doesn't
 
 Workaround if you need both: run the OTel Collector and have it route traces to LangSmith's OTLP-compatible beta ingest, if/when LangSmith ships one.
 
+## Weave is trace-ingest only
+
+W&B Weave's documented OTLP endpoint is `/otel/v1/traces`, authenticated with
+the `wandb-api-key` header and routed by `wandb.entity` / `wandb.project`
+Resource attributes. The dedicated `type: weave` backend therefore disables
+OTLP metrics and logs by default.
+
+If you need `hermes.*` metrics or OTel logs next to Weave traces, fan out to
+Weave plus a metrics/logs-capable backend such as Phoenix, SigNoz, LGTM, or
+OpenObserve. The bundled dashboard also does not query Weave; use Weave's UI
+for W&B traces and point the dashboard at a local backend.
+
+Because `wandb.entity` and `wandb.project` are Resource attributes on the
+shared `TracerProvider`, one Hermes process can route to one Weave project at a
+time. Multiple configured Weave entries must agree on those values.
+
 ## Debug log has no rotation
 
 Enabling `HERMES_OTEL_DEBUG=true` appends to `~/.hermes/plugins/hermes_otel/debug.log` forever. No rotation, no size cap.

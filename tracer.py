@@ -336,6 +336,10 @@ class HermesOTelPlugin:
                 "'backends:' in config.yaml)"
             )
             return False
+        if rb.type == "weave":
+            # Weave routes by Resource attributes, so keep the resolved backend
+            # object intact instead of collapsing it through the legacy wrapper.
+            return self._init_otlp_pipeline([rb])
         return self._init_otlp(rb.endpoint, headers=rb.headers, backend_name=rb.display_name)
 
     def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
@@ -383,12 +387,30 @@ class HermesOTelPlugin:
             logger.error(f"[hermes-otel] ✗ LangSmith init failed: {e}")
             return False
 
-    def _build_resource(self) -> "Resource":
+    def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
         attrs: Dict[str, Any] = {"service.name": "hermes-agent"}
         if self.config.global_tags:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
             attrs.update(self.config.resource_attributes)
+        for b in backends or []:
+            for key, value in (b.resource_attributes or {}).items():
+                existing = attrs.get(key)
+                if existing is not None and str(existing) != str(value):
+                    raise ValueError(
+                        f"{b.display_name} resource attribute {key!r} conflicts with "
+                        f"configured value {existing!r}"
+                    )
+                attrs[key] = value
+        for b in backends or []:
+            if b.type == "weave":
+                missing = [key for key in ("wandb.entity", "wandb.project") if not attrs.get(key)]
+                if missing:
+                    joined = ", ".join(missing)
+                    raise ValueError(
+                        f"Weave requires {joined} as resource attributes "
+                        "(set them under resource_attributes or on the weave backend entry)"
+                    )
         project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name
@@ -418,7 +440,7 @@ class HermesOTelPlugin:
         metrics, attached to a single shared ``MeterProvider``.
         """
         try:
-            resource = self._build_resource()
+            resource = self._build_resource(backends)
 
             provider_kwargs: Dict[str, Any] = {"resource": resource}
             if self.config.sample_rate is not None:

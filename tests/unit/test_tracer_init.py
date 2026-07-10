@@ -4,7 +4,7 @@ import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
-from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -23,6 +23,14 @@ def _clear_backend_env(monkeypatch):
         "LANGFUSE_BASE_URL",
         "OTEL_SIGNOZ_ENDPOINT",
         "OTEL_SIGNOZ_INGESTION_KEY",
+        "WANDB_API_KEY",
+        "WANDB_ENTITY",
+        "WANDB_PROJECT",
+        "DEFAULT_WANDB_ENTITY",
+        "DEFAULT_WANDB_PROJECT",
+        "OTEL_WEAVE_ENDPOINT",
+        "OTEL_WEAVE_BASE_URL",
+        "WANDB_OTLP_ENDPOINT",
         "OTEL_JAEGER_ENDPOINT",
         "OTEL_TEMPO_ENDPOINT",
     ]:
@@ -296,6 +304,96 @@ class TestInitTempo:
             plugin.init()
         assert plugin._meter is None
         assert plugin._meter_provider is None
+
+
+class TestInitWeave:
+    def test_env_init_uses_pipeline_to_preserve_resource_attrs(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        monkeypatch.setenv("WANDB_API_KEY", "wandb_key")
+        monkeypatch.setenv("WANDB_ENTITY", "team")
+        monkeypatch.setenv("WANDB_PROJECT", "proj")
+
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
+            assert plugin.init() is True
+            backends_arg = mock_pipeline.call_args[0][0]
+            assert len(backends_arg) == 1
+            assert backends_arg[0].type == "weave"
+            assert backends_arg[0].resource_attributes == {
+                "wandb.entity": "team",
+                "wandb.project": "proj",
+            }
+
+    def test_weave_backend_resource_attrs_reach_provider(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+
+        from opentelemetry.sdk.trace import TracerProvider
+
+        cfg = HermesOtelConfig(
+            backends=(
+                BackendConfig(
+                    type="weave",
+                    api_key="wandb_key",
+                    entity="team",
+                    project="proj",
+                ),
+            )
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+        captured = {}
+        real_tp = TracerProvider
+
+        def _spy(**kwargs):
+            captured["resource"] = kwargs["resource"]
+            return real_tp(**kwargs)
+
+        with (
+            patch("hermes_otel.tracer.TracerProvider", side_effect=_spy),
+            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+        ):
+            assert plugin.init() is True
+
+        attrs = dict(captured["resource"].attributes)
+        assert attrs["wandb.entity"] == "team"
+        assert attrs["wandb.project"] == "proj"
+        assert plugin._meter is None
+
+    def test_weave_can_use_top_level_resource_attrs(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+
+        rb_config = BackendConfig(type="weave", api_key="wandb_key")
+        cfg = HermesOtelConfig(
+            resource_attributes={
+                "wandb.entity": "team",
+                "wandb.project": "proj",
+            },
+            backends=(rb_config,),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+        resource = plugin._build_resource([plugin._resolve_backend_config(rb_config)])
+        attrs = dict(resource.attributes)
+        assert attrs["wandb.entity"] == "team"
+        assert attrs["wandb.project"] == "proj"
+
+    def test_conflicting_weave_resource_attrs_fail_init(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+
+        cfg = HermesOtelConfig(
+            resource_attributes={
+                "wandb.entity": "team-a",
+                "wandb.project": "proj",
+            },
+            backends=(
+                BackendConfig(
+                    type="weave",
+                    api_key="wandb_key",
+                    entity="team-b",
+                    project="proj",
+                ),
+            ),
+        )
+        plugin = HermesOTelPlugin(config=cfg)
+        assert plugin.init() is False
 
 
 class TestInitOtelUnavailable:

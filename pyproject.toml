@@ -5,7 +5,7 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "hermes-otel"
 version = "0.1.0"
-description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo."
+description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo, and W&B Weave."
 readme = "README.md"
 license = { text = "Apache-2.0" }
 requires-python = ">=3.9"
@@ -25,6 +25,7 @@ keywords = [
     "langsmith",
     "signoz",
     "jaeger",
+    "weave",
 ]
 classifiers = [
     "Development Status :: 4 - Beta",

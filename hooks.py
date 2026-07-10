@@ -14,6 +14,7 @@ from __future__ import annotations
 import json
 import os
 import time
+from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log
@@ -69,6 +70,7 @@ class HookContext(TypedDict, total=False):
 
 
 _MAX_SUMMARY_CHARS = 500
+_DEFAULT_AGENT_NAME = "hermes-agent"
 
 
 def _clip_joined(items: List[str], sep: str, limit: int = _MAX_SUMMARY_CHARS) -> str:
@@ -324,6 +326,45 @@ def _gen_ai_attributes(
     return attrs
 
 
+def _package_version() -> Optional[str]:
+    try:
+        return version("hermes-otel")
+    except PackageNotFoundError:
+        return None
+
+
+def _weave_turn_attributes(
+    session_id: Optional[str],
+    extra_kwargs: Optional[dict] = None,
+) -> Dict[str, Any]:
+    """Attributes that make raw OTLP spans render cleanly in Weave's Agents UI."""
+    kwargs = extra_kwargs or {}
+    agent_name = truncate_string(kwargs.get("agent_name") or _DEFAULT_AGENT_NAME, 200)
+    attrs: Dict[str, Any] = {
+        "gen_ai.agent.name": agent_name,
+        "wandb.is_turn": True,
+    }
+    session_text = truncate_string(session_id, 200)
+    if session_text:
+        attrs["wandb.thread_id"] = session_text
+    package_version = _package_version()
+    if package_version:
+        attrs["weave.agent.version"] = package_version
+    return attrs
+
+
+def _message_json(role: str, content: Any) -> Optional[str]:
+    if content is None or content == "":
+        return None
+    try:
+        return json.dumps(
+            [{"role": role, "content": str(content)}],
+            ensure_ascii=False,
+        )
+    except (TypeError, ValueError):
+        return None
+
+
 def _provider_attributes(provider: Any) -> Dict[str, str]:
     """Return current and compatibility provider attributes."""
     value = truncate_string(provider, 120)
@@ -549,6 +590,7 @@ def _start_session_span(
     }
     attributes.update(_provider_attributes(extra_kwargs.get("provider") or platform))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent", extra_kwargs))
+    attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
@@ -632,6 +674,7 @@ def on_session_end(
     }
     attributes.update(_provider_attributes(kwargs.get("provider") or platform))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent", kwargs))
+    attributes.update(_weave_turn_attributes(session_id, kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     # Drain the aggregators in one shot. Everything this session buffered
@@ -762,6 +805,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     attributes: Dict[str, Any] = {
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
+        "gen_ai.tool.call.id": truncate_string(task_id, 200),
     }
     preview = _preview(
         json.dumps(args) if args else "{}",
@@ -769,6 +813,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     )
     if preview is not None:
         attributes["input.value"] = preview
+        attributes["gen_ai.tool.call.arguments"] = preview
     if (
         tracer.config.capture_previews
         and tool_name.startswith("mcp_")
@@ -839,7 +884,10 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         )
 
     # Build final attributes — OpenInference conventions for Phoenix Info
-    attributes: Dict[str, Any] = {}
+    attributes: Dict[str, Any] = {
+        "gen_ai.tool.name": tool_name,
+        "gen_ai.tool.call.id": truncate_string(task_id, 200),
+    }
 
     # Parse the result once
     if isinstance(result, dict):
@@ -870,6 +918,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     )
     if preview is not None:
         attributes["output.value"] = preview
+        attributes["gen_ai.tool.call.result"] = preview
     if (
         tracer.config.capture_previews
         and tool_name.startswith("mcp_")
@@ -1095,6 +1144,7 @@ def on_pre_llm_call(
         if full is not None:
             attributes["input.value"] = full
             attributes["input.mime_type"] = "application/json"
+            attributes["gen_ai.input.messages"] = full
             attributes["hermes.conversation.message_count"] = len(conversation_history)
         else:
             preview = _preview(
@@ -1103,6 +1153,9 @@ def on_pre_llm_call(
             )
             if preview is not None:
                 attributes["input.value"] = preview
+                messages = _message_json("user", preview)
+                if messages is not None:
+                    attributes["gen_ai.input.messages"] = messages
     else:
         preview = _preview(
             user_message,
@@ -1110,6 +1163,9 @@ def on_pre_llm_call(
         )
         if preview is not None:
             attributes["input.value"] = preview
+            messages = _message_json("user", preview)
+            if messages is not None:
+                attributes["gen_ai.input.messages"] = messages
 
     span = tracer.start_span(
         name=f"llm.{model}",
@@ -1177,6 +1233,9 @@ def on_post_llm_call(
     )
     if preview is not None:
         attributes["output.value"] = preview
+        messages = _message_json("assistant", preview)
+        if messages is not None:
+            attributes["gen_ai.output.messages"] = messages
 
     # Pop parent — tool spans after this won't nest under this LLM call
     tracer.spans.pop_parent(session_id=session_id)
