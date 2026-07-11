@@ -1,5 +1,13 @@
 # Changelog
 
+## [0.11.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.10.0...hermes-otel-v0.11.0) (2026-07-10)
+
+
+### Features
+
+* **backends:** add Weave (W&B) backend ([b4b5183](https://github.com/briancaffey/hermes-otel/commit/b4b51836e96415c6b1435e50db667c30aa87974a))
+* **backends:** add Weave (W&B) OTLP backend ([670e98f](https://github.com/briancaffey/hermes-otel/commit/670e98ff503e574994e6e64fa0d1294f4d7eefdf))
+
 ## [0.10.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.9.0...hermes-otel-v0.10.0) (2026-06-27)
 
 
