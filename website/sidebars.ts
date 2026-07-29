@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
         'backends/openobserve',
         'backends/honeycomb',
         'backends/weave',
+        'backends/telemetry',
         'backends/multi-backend',
       ],
     },

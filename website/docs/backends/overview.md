@@ -23,6 +23,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[OpenObserve](/backends/openobserve)** | Traces + metrics + logs | Local (single container) · Self-hosted HA | OSS, no account |
 | **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
 | **[W&B Weave](/backends/weave)** | Traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account |
+| **[telemetry.dev](/backends/telemetry)** (via generic `otlp`) | Traces + metrics + logs | Cloud | Free tier + paid plans |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
 ## Quick picks
@@ -51,6 +52,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want W&B's Agents and Traces UI for Hermes runs"**
 → [W&B Weave](/backends/weave) — direct OTLP trace ingest with `WANDB_API_KEY`, `wandb.entity`, and `wandb.project`.
 
+**"I want a hosted backend purpose-built for LLM/agent telemetry, `gen_ai.*`-native"**
+→ [telemetry.dev](/backends/telemetry) — OTLP ingest with a single `Authorization: Bearer` header, via the generic `otlp` type.
+
 **"My company already has an OTel collector / New Relic / Datadog"**
 → [Generic OTLP](/backends/otlp) — point at its ingest endpoint and it just works.
 
@@ -74,6 +78,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | OpenObserve | ✅ | ✅ | ✅ |
 | Honeycomb | ✅ | ✅ | ✅ |
 | W&B Weave | ✅ | ❌ | ❌ |
+| telemetry.dev | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
