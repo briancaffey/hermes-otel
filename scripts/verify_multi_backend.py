@@ -238,8 +238,8 @@ def main() -> int:
     jaeger_count = query_jaeger("hermes-agent", time.time() + 30)
     signoz_seen = query_signoz("hermes-agent", time.time() + 60)
     langfuse_count = query_langfuse(
-        "lf_pk_test_hermes_otel",
-        "lf_sk_test_hermes_otel",
+        "lf_pk_hermes_dev",
+        "lf_sk_hermes_dev",
         time.time() + 90,
     )
 

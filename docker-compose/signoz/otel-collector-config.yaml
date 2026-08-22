@@ -5,13 +5,17 @@ connectors:
       - name: service.name
       - name: deployment.environment
       - name: host.name
+# Bind address for every receiver/extension in this file. It resolves to
+# 0.0.0.0 inside the container (set in the compose service) so the ports
+# published by Docker are reachable; override OTEL_BIND_HOST to bind a
+# single interface instead.
 receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: ${env:OTEL_BIND_HOST}:4317
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: ${env:OTEL_BIND_HOST}:4318
   prometheus:
     config:
       global:
@@ -63,9 +67,9 @@ processors:
       - name: container.name
 extensions:
   health_check:
-    endpoint: 0.0.0.0:13133
+    endpoint: ${env:OTEL_BIND_HOST}:13133
   pprof:
-    endpoint: 0.0.0.0:1777
+    endpoint: ${env:OTEL_BIND_HOST}:1777
 exporters:
   clickhousetraces:
     datasource: tcp://clickhouse:9000/signoz_traces

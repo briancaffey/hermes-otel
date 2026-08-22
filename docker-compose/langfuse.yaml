@@ -6,8 +6,8 @@
 #   docker compose -p langfuse -f docker-compose/langfuse.yaml down -v
 #
 # Pre-seeded API keys (via headless initialization):
-#   Public key:  lf_pk_test_hermes_otel
-#   Secret key:  lf_sk_test_hermes_otel
+#   Public key:  lf_pk_hermes_dev
+#   Secret key:  lf_sk_hermes_dev
 #
 # OTEL endpoint:  http://localhost:3000/api/public/otel
 # REST API:       http://localhost:3000/api/public/...
@@ -57,8 +57,8 @@ services:
       LANGFUSE_INIT_ORG_NAME: Test Org
       LANGFUSE_INIT_PROJECT_ID: test-project
       LANGFUSE_INIT_PROJECT_NAME: hermes-otel-e2e
-      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_test_hermes_otel
-      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_test_hermes_otel
+      LANGFUSE_INIT_PROJECT_PUBLIC_KEY: lf_pk_hermes_dev
+      LANGFUSE_INIT_PROJECT_SECRET_KEY: lf_sk_hermes_dev
       LANGFUSE_INIT_USER_EMAIL: test@test.com
       LANGFUSE_INIT_USER_PASSWORD: testpassword123
       LANGFUSE_INIT_USER_NAME: Test User

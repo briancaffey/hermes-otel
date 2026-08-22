@@ -81,8 +81,8 @@ docker compose -f docker-compose/langfuse.yaml up -d
 
 Pre-seeded Langfuse credentials:
 
-- Public key: `lf_pk_test_hermes_otel`
-- Secret key: `lf_sk_test_hermes_otel`
+- Public key: `lf_pk_hermes_dev`
+- Secret key: `lf_sk_hermes_dev`
 - OTEL endpoint: `http://localhost:3000/api/public/otel`
 
 ## Smoke tests (`tests/smoke/`)

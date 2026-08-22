@@ -44,7 +44,7 @@ to the feature:
 | api errors | fail | point at a bad key / rate-limited free tier |
 
 Fast > smart: a small fast model (Groq ~500 tok/s) iterates far quicker than a
-slow 550B free model. The model is configured in `~/.hermes/config.yaml` under
+slow 550B free model. The model is configured in `$HERMES_HOME/config.yaml` under
 `model:` (`default`, `provider`, `base_url`, `api_key`, `api_mode`). **Back it
 up before editing and restore it after** — and rotate any key you pasted.
 

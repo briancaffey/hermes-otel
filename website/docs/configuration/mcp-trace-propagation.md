@@ -46,7 +46,8 @@ automatically and you'll see one extra hook in the startup banner:
 [hermes-otel] Registered 9 hooks
 ```
 
-Then point the agent at an MCP server over HTTP (`~/.hermes/config.yaml`):
+Then point the agent at an MCP server over HTTP (in the Hermes config file,
+`$HERMES_HOME/config.yaml`, defaulting to `~/.hermes`):
 
 ```yaml
 mcp_servers:
