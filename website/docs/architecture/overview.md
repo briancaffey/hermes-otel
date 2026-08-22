@@ -94,6 +94,8 @@ This is the standard OTel trade-off and matches every production tracing stack �
 
 ## The file map
 
+Every path below is relative to `hermes_otel/` — the package directory that `hermes plugins install briancaffey/hermes-otel/hermes_otel` unpacks into `~/.hermes/plugins/hermes_otel/`.
+
 | File | Role |
 |---|---|
 | `__init__.py` | Plugin entry point — wires `register(ctx)` |

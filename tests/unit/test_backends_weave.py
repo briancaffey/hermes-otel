@@ -1,6 +1,7 @@
 """Unit tests for the W&B Weave backend resolver."""
 
 import pytest
+
 from hermes_otel import backends
 from hermes_otel.plugin_config import BackendConfig
 

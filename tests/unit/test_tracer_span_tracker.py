@@ -2,8 +2,9 @@
 
 from unittest.mock import MagicMock
 
-from hermes_otel.tracer import SpanTracker
 from opentelemetry.trace import Status, StatusCode
+
+from hermes_otel.tracer import SpanTracker
 
 
 class TestSpanTrackerBasics:

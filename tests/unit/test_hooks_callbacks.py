@@ -3,6 +3,7 @@
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_llm_call,

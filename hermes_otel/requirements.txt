@@ -1,0 +1,12 @@
+# Runtime dependencies for the hermes-otel plugin.
+#
+# Install these into the virtualenv that runs `hermes` — the plugin is
+# imported into that process, so its imports must resolve there:
+#
+#   /path/to/hermes-agent/venv/bin/pip install -r requirements.txt
+#
+# Kept in sync with pyproject.toml's [project] dependencies by
+# tests/unit/test_install_artifact.py.
+opentelemetry-api
+opentelemetry-sdk
+opentelemetry-exporter-otlp-proto-http

@@ -1,6 +1,7 @@
 """Unit tests for the SQLite-backed live store (zero-config dashboard)."""
 
 import pytest
+
 from hermes_otel.live_store import LiveStore, get_live_store
 
 

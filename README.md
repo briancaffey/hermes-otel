@@ -30,10 +30,16 @@ Any OTLP HTTP endpoint should work.
 ## Installation
 
 ```
-hermes plugins install briancaffey/hermes-otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel
 ```
 
-The plugin lives in `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. However, the OTel dependencies must be installed into the **hermes-agent virtual environment** (where `hermes` itself runs):
+The trailing `/hermes_otel` is the plugin package inside this repo — Hermes installs that
+subdirectory (~40 files) rather than the whole repository, so docs, tests and the example
+Compose stacks never land in `~/.hermes/plugins/`. It unpacks to `~/.hermes/plugins/hermes_otel/`
+either way, and Hermes auto-discovers it via `plugin.yaml`.
+
+The OTel dependencies must then be installed into the **hermes-agent virtual environment**
+(where `hermes` itself runs) — Hermes never installs plugin dependencies for you:
 
 ```bash
 # Install OTel runtime dependencies into the hermes-agent venv
@@ -46,10 +52,17 @@ The plugin lives in `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers i
 ~/git/hermes-agent/venv/bin/pip install langsmith
 ```
 
-You can also install the plugin package itself in editable mode (this pulls in the same OTel deps automatically):
+The same list ships with the plugin, so this is equivalent:
 
 ```bash
-~/git/hermes-agent/venv/bin/pip install -e ~/.hermes/plugins/hermes_otel
+~/git/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
+```
+
+Working from a clone instead? An editable install of the repo pulls the same dependencies
+and makes `pip show hermes-otel` report a real version:
+
+```bash
+~/git/hermes-agent/venv/bin/pip install -e ~/git/hermes-otel
 ```
 
 ### Running tests
@@ -57,7 +70,7 @@ You can also install the plugin package itself in editable mode (this pulls in t
 The test suite uses its own isolated environment via `uv` and does **not** require the hermes-agent venv:
 
 ```bash
-cd ~/.hermes/plugins/hermes_otel
+cd ~/git/hermes-otel   # a clone of this repo, not the installed plugin dir
 
 # Unit + integration tests (no Docker needed, <1s)
 uv run --extra dev pytest
@@ -120,7 +133,7 @@ docker compose -f docker-compose/phoenix.yaml up -d
 **Langfuse** — full stack (Langfuse + Postgres + Redis + ClickHouse + MinIO), starts in ~60s:
 ```bash
 docker compose -f docker-compose/langfuse.yaml up -d
-# Pre-seeded API keys: lf_pk_test_hermes_otel / lf_sk_test_hermes_otel
+# Pre-seeded API keys: lf_pk_hermes_dev / lf_sk_hermes_dev
 # UI at http://localhost:3000, OTEL endpoint at http://localhost:3000/api/public/otel
 ```
 

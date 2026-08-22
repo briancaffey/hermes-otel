@@ -4,6 +4,7 @@ import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
@@ -425,8 +426,9 @@ class TestResourceAttributes:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         cfg = HermesOtelConfig(
             resource_attributes={"env": "prod", "region": "us-east-1"},
@@ -456,8 +458,9 @@ class TestResourceAttributes:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         cfg = HermesOtelConfig(
             global_tags={"env": "staging"},
@@ -479,8 +482,9 @@ class TestResourceAttributes:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         cfg = HermesOtelConfig(resource_attributes={"service.name": "custom-svc"})
         plugin = HermesOTelPlugin(config=cfg)
@@ -500,8 +504,9 @@ class TestResourceAttributes:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
         monkeypatch.setenv("OTEL_PROJECT_NAME", "env-project")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig())
         captured = {}
@@ -520,8 +525,9 @@ class TestResourceAttributes:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
         monkeypatch.setenv("OTEL_PROJECT_NAME", "env-project")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         cfg = HermesOtelConfig(project_name="cfg-wins")
         plugin = HermesOTelPlugin(config=cfg)
@@ -542,8 +548,9 @@ class TestSampling:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(sample_rate=None))
         captured = {}
@@ -561,9 +568,10 @@ class TestSampling:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
-        from hermes_otel.plugin_config import HermesOtelConfig
         from opentelemetry.sdk.trace import TracerProvider
         from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+
+        from hermes_otel.plugin_config import HermesOtelConfig
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(sample_rate=0.3))
         captured = {}

@@ -6,6 +6,8 @@ to end OK via the orphan sweep.
 """
 
 import pytest
+from opentelemetry.trace import StatusCode
+
 from hermes_otel.hooks import (
     on_api_request_error,
     on_post_api_request,
@@ -15,7 +17,6 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
-from opentelemetry.trace import StatusCode
 
 
 def _spans_by_name(spans, name):

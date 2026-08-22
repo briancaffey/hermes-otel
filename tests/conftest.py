@@ -56,11 +56,12 @@ def _build_inmemory_plugin(n_exporters: int = 1):
     plugin as the module singleton (so hook callbacks find it) and is
     responsible for ``provider.shutdown()`` on teardown.
     """
-    from hermes_otel.tracer import HermesOTelPlugin
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+    from hermes_otel.tracer import HermesOTelPlugin
 
     exporters = [InMemorySpanExporter() for _ in range(n_exporters)]
     resource = Resource.create({"service.name": "hermes-otel-test"})

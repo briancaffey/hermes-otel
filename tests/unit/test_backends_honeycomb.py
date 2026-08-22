@@ -6,6 +6,7 @@ export is verified manually in the Honeycomb UI rather than here.
 """
 
 import pytest
+
 from hermes_otel import backends
 from hermes_otel.plugin_config import BackendConfig
 

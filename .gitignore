@@ -7,12 +7,15 @@
 
 # Node (dashboard frontend build deps — dist/ IS committed, node_modules is not)
 node_modules/
-dashboard/.esbuild/
+hermes_otel/dashboard/.esbuild/
 
 # Dashboard live store (shared SQLite ring buffer; runtime, per-machine)
 live.db
 live.db-wal
 live.db-shm
+hermes_otel/live.db
+hermes_otel/live.db-wal
+hermes_otel/live.db-shm
 
 # Byte-compiled / optimized / DLL files
 __pycache__/
@@ -239,8 +242,8 @@ config.yaml.bak*
 config.yaml.backup
 config.yaml.local
 
-# hermes-otel: dashboard/dist/ is authored JS source, not a build output
-# (the plugin has no build step — see the header of dashboard/dist/index.js).
+# hermes-otel: hermes_otel/dashboard/dist/ is authored JS source, not a build
+# output (no build step — see the header of hermes_otel/dashboard/dist/index.js).
 # Un-ignore it despite the generic `dist/` rule in the Python block above.
-!dashboard/dist/
-!dashboard/dist/**
+!hermes_otel/dashboard/dist/
+!hermes_otel/dashboard/dist/**

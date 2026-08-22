@@ -52,10 +52,40 @@ uv run --extra dev pytest --cov=hermes_otel --cov-report=term-missing
 ```
 
 If you want to actually run the plugin inside Hermes (rare for
-contributors), install it in editable mode into the hermes-agent venv:
+contributors), install it in editable mode into the hermes-agent venv and
+point the plugin directory at your working copy:
 
 ```bash
 ~/git/hermes-agent/venv/bin/pip install -e .
+ln -s "$PWD/hermes_otel" ~/.hermes/plugins/hermes_otel
+```
+
+## Repository layout
+
+Runtime code lives in `hermes_otel/`; everything else is development material.
+
+```text
+hermes_otel/        ← the install artifact: modules, plugin.yaml, skill, dashboard
+tests/              unit / integration / e2e / smoke
+website/            Docusaurus docs site
+docker-compose/     example backend stacks
+scripts/            dev + CI utilities
+```
+
+`hermes plugins install briancaffey/hermes-otel/hermes_otel` installs **only**
+`hermes_otel/`. Two consequences worth internalizing:
+
+- **Runtime code belongs in `hermes_otel/`.** A module at the repo root imports
+  fine in the test suite and is missing on a user's machine.
+  `tests/unit/test_install_artifact.py` fails the build if that happens.
+- **Hermes ≥ v0.20 security-scans a plugin's file tree before installing it**,
+  and any `critical` finding is a hard block that `--force` cannot override
+  ([#53](https://github.com/briancaffey/hermes-otel/issues/53)). Docs and test
+  fixtures are graded like executable code, which is the other reason they stay
+  out of the artifact. Run the same scanner locally before pushing:
+
+```bash
+python scripts/scan_plugin_artifact.py
 ```
 
 ## Test tiers
