@@ -1,6 +1,7 @@
 """Integration tests for metrics recording via InMemoryMetricReader."""
 
 import pytest
+
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_tool_call,

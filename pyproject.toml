@@ -98,6 +98,11 @@ omit = [
     "tests/*",
     "scripts/*",
     "*/__pycache__/*",
+    # The dashboard tab is loaded by the Hermes dashboard process (by file
+    # path, as top-level ``backends.*``), not imported as part of the plugin
+    # package. It has its own adapter tests; the gate below covers the hook /
+    # tracer runtime.
+    "hermes_otel/dashboard/*",
 ]
 
 [tool.coverage.report]
@@ -155,10 +160,16 @@ ignore = [
 [tool.setuptools]
 packages = ["hermes_otel"]
 
-[tool.setuptools.package-dir]
-hermes_otel = "."
-
 [tool.setuptools.package-data]
-# Ship the bundled Hermes skill (registered as hermes_otel:observability) in
-# wheels; source/editable installs already resolve it via __file__.
-hermes_otel = ["skills/**/*", "plugin.yaml"]
+# Ship everything the installed plugin needs (bundled skill, manifest, and
+# the dashboard tab) in wheels; source/editable installs resolve them via
+# __file__. This mirrors exactly what `hermes plugins install` unpacks.
+hermes_otel = [
+    "plugin.yaml",
+    "LICENSE",
+    "skills/**/*",
+    "dashboard/manifest.json",
+    "dashboard/plugin_api.py",
+    "dashboard/backends/*.py",
+    "dashboard/dist/*",
+]

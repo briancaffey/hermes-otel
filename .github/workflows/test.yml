@@ -19,6 +19,20 @@ jobs:
       - name: Black format check
         run: uv run --extra dev black --check .
 
+  plugin-scan:
+    # Hermes scans a plugin's file tree before install; one `critical` finding
+    # is an unoverridable block (issue #53). Run that exact scanner here so a
+    # regression is a red build, not a user who cannot install the plugin.
+    name: Plugin security scan
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Scan install artifact and repository
+        run: python scripts/scan_plugin_artifact.py
+
   test:
     runs-on: ubuntu-latest
     strategy:

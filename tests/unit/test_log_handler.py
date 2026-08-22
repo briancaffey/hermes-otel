@@ -16,6 +16,7 @@ import logging
 from unittest.mock import MagicMock, patch
 
 import pytest
+
 from hermes_otel import log_handler
 from hermes_otel.backends import _ResolvedBackend
 
@@ -514,9 +515,10 @@ class TestTracerLogsPipelineWiring:
         )
 
     def test_skipped_when_capture_logs_false(self):
+        from opentelemetry.sdk.resources import Resource
+
         from hermes_otel.plugin_config import HermesOtelConfig
         from hermes_otel.tracer import HermesOTelPlugin
-        from opentelemetry.sdk.resources import Resource
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=False))
         with patch.object(log_handler, "build_log_processors") as mock_build:
@@ -526,9 +528,10 @@ class TestTracerLogsPipelineWiring:
         assert plugin._log_processors == []
 
     def test_installs_handler_when_capture_logs_true(self, clean_root_logger):
+        from opentelemetry.sdk.resources import Resource
+
         from hermes_otel.plugin_config import HermesOtelConfig
         from hermes_otel.tracer import HermesOTelPlugin
-        from opentelemetry.sdk.resources import Resource
 
         cfg = HermesOtelConfig(capture_logs=True, log_level="DEBUG")
         plugin = HermesOTelPlugin(config=cfg)
@@ -547,9 +550,10 @@ class TestTracerLogsPipelineWiring:
         assert len(markers) == 1
 
     def test_warns_when_no_backend_supports_logs(self, caplog):
+        from opentelemetry.sdk.resources import Resource
+
         from hermes_otel.plugin_config import HermesOtelConfig
         from hermes_otel.tracer import HermesOTelPlugin
-        from opentelemetry.sdk.resources import Resource
 
         cfg = HermesOtelConfig(capture_logs=True)
         plugin = HermesOTelPlugin(config=cfg)

@@ -166,14 +166,14 @@ def langfuse_service():
         or os.environ.get("LANGFUSE_PUBLIC_KEY")
         or hermes_env.get("OTEL_LANGFUSE_PUBLIC_API_KEY")
         or hermes_env.get("LANGFUSE_PUBLIC_KEY")
-        or "lf_pk_test_hermes_otel"
+        or "lf_pk_hermes_dev"
     )
     secret_key = (
         os.environ.get("OTEL_LANGFUSE_SECRET_API_KEY")
         or os.environ.get("LANGFUSE_SECRET_KEY")
         or hermes_env.get("OTEL_LANGFUSE_SECRET_API_KEY")
         or hermes_env.get("LANGFUSE_SECRET_KEY")
-        or "lf_sk_test_hermes_otel"
+        or "lf_sk_hermes_dev"
     )
 
     # The OTEL ingestion endpoint may differ from the REST API base URL.

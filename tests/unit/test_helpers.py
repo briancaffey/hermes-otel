@@ -1,6 +1,7 @@
 """Unit tests for helpers.py: clip_preview, tool identity, skill inference, outcome."""
 
 import pytest
+
 from hermes_otel.helpers import (
     clip_preview,
     extract_tool_result_status,

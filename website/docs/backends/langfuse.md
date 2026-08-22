@@ -48,8 +48,8 @@ docker compose -f docker-compose/langfuse.yaml up -d
 Pre-seeded test keys:
 
 ```bash
-export OTEL_LANGFUSE_PUBLIC_API_KEY="lf_pk_test_hermes_otel"
-export OTEL_LANGFUSE_SECRET_API_KEY="lf_sk_test_hermes_otel"
+export OTEL_LANGFUSE_PUBLIC_API_KEY="lf_pk_hermes_dev"
+export OTEL_LANGFUSE_SECRET_API_KEY="lf_sk_hermes_dev"
 export OTEL_LANGFUSE_ENDPOINT="http://localhost:3000/api/public/otel"
 ```
 

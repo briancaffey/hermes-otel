@@ -9,6 +9,8 @@ when only a SpanContext is available (cross-process), attached via a span link.
 import time
 
 import pytest
+from opentelemetry.trace import StatusCode
+
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_llm_call,
@@ -21,7 +23,6 @@ from hermes_otel.hooks import (
     on_subagent_start,
     on_subagent_stop,
 )
-from opentelemetry.trace import StatusCode
 
 
 def _spans_by_name(spans, name):

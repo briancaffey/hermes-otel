@@ -38,6 +38,11 @@ services:
     image: docker.io/grafana/otel-lgtm:latest
     container_name: hermes-otel-lgtm
     restart: unless-stopped
+    environment:
+      # Interface the bundled collector's receivers bind to, consumed by
+      # lgtm/otelcol-config.yaml. All interfaces inside the container so
+      # the published ports below work; narrow it if you know better.
+      - OTEL_BIND_HOST=0.0.0.0
     ports:
       - "3000:3000"   # Grafana UI
       - "3100:3100"   # Loki

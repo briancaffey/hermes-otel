@@ -122,7 +122,7 @@ FOR HERMES AGENT
   | content prompt      | gen_ai.content.prompt           | input.value               |
   - Headers Inter 800 26px; rows Mono 24px, tabular-nums
   - Dividing rules mute gray
-- `scene5-cta`: large line "hermes plugins install briancaffey/hermes-otel" Mono 38px, in an accent-blue code block with subtle glow
+- `scene5-cta`: large line "hermes plugins install briancaffey/hermes-otel/hermes_otel" Mono 38px, in an accent-blue code block with subtle glow
 - `scene5-subcta`: "SEE EVERY SPAN." Inter 800, 40px, tracking 0.05em, white
 
 **Motion**

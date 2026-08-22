@@ -26,7 +26,7 @@ x-clickhouse-defaults: &clickhouse-defaults
       - wget
       - --spider
       - -q
-      - 0.0.0.0:8123/ping
+      - localhost:8123/ping
     interval: 30s
     timeout: 5s
     retries: 3
@@ -149,6 +149,9 @@ services:
       - ./common/signoz/otel-collector-opamp-config.yaml:/etc/manager-config.yaml
     environment:
       - OTEL_RESOURCE_ATTRIBUTES=host.name=signoz-host,os.type=linux
+      # Interface the collector's receivers bind to (see
+      # otel-collector-config.yaml). All interfaces inside the container.
+      - OTEL_BIND_HOST=0.0.0.0
       - LOW_CARDINAL_EXCEPTION_GROUPING=false
       - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_DSN=tcp://clickhouse:9000
       - SIGNOZ_OTEL_COLLECTOR_CLICKHOUSE_CLUSTER=cluster

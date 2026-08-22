@@ -1,7 +1,8 @@
 """Graceful-degradation tests: uninitialized plugin returns no-op spans."""
 
-from hermes_otel.tracer import HermesOTelPlugin
 from opentelemetry.trace import NonRecordingSpan
+
+from hermes_otel.tracer import HermesOTelPlugin
 
 
 class TestUninitializedPlugin:

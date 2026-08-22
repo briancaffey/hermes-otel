@@ -27,13 +27,17 @@ connectors:
       explicit:
         buckets: [5ms, 25ms, 100ms, 250ms, 1s, 2.5s, 5s, 10s, 30s, 60s]
 
+# Bind address for every receiver/extension in this file. It resolves to
+# 0.0.0.0 inside the container (set in the compose service) so the ports
+# published by Docker are reachable; override OTEL_BIND_HOST to bind a
+# single interface instead.
 receivers:
   otlp:
     protocols:
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: ${env:OTEL_BIND_HOST}:4317
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: ${env:OTEL_BIND_HOST}:4318
         cors:
           allowed_origins:
             - "http://*"
@@ -49,7 +53,7 @@ receivers:
 
 extensions:
   health_check:
-    endpoint: 0.0.0.0:13133
+    endpoint: ${env:OTEL_BIND_HOST}:13133
     path: "/ready"
 
 processors:

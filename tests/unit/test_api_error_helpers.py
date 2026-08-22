@@ -1,6 +1,7 @@
 """Unit tests for API-error/retry pure helpers and fail-open handler paths."""
 
 import pytest
+
 from hermes_otel.helpers import coerce_bool, http_status_class, to_optional_int
 
 

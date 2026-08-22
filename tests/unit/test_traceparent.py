@@ -8,10 +8,11 @@ No network.
 import re
 
 import pytest
-from hermes_otel import hooks
-from hermes_otel.tracer import get_tracer
 from opentelemetry import trace as _trace
 from opentelemetry.sdk.trace import TracerProvider
+
+from hermes_otel import hooks
+from hermes_otel.tracer import get_tracer
 
 _TRACEPARENT_RE = re.compile(r"^00-[0-9a-f]{32}-[0-9a-f]{16}-0[01]$")
 

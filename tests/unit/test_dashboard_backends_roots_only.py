@@ -16,11 +16,12 @@ from unittest.mock import patch
 
 import pytest
 
-# The dashboard backends package isn't a normal Python package (flat
-# plugin layout), so point sys.path at the ``dashboard/`` folder the
-# Hermes plugin loader uses at runtime.
-_HERE = Path(__file__).resolve().parent.parent.parent  # plugin root
-_DASHBOARD = _HERE / "dashboard"
+# The dashboard backends package isn't a normal Python package (the
+# Hermes plugin loader imports ``plugin_api.py`` by file path), so point
+# sys.path at the ``dashboard/`` folder exactly as the loader does at
+# runtime.
+_HERE = Path(__file__).resolve().parent.parent.parent  # repo root
+_DASHBOARD = _HERE / "hermes_otel" / "dashboard"
 if str(_DASHBOARD) not in sys.path:
     sys.path.insert(0, str(_DASHBOARD))
 

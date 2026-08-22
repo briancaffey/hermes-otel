@@ -1,0 +1,44 @@
+name: Plugin scan (upstream tip)
+
+# The CI job in test.yml scans against a *pinned* copy of Hermes's plugin
+# scanner, so it is reproducible and cannot change under a PR's feet. This job
+# is the other half: it runs the scanner from upstream `main`, on a schedule,
+# so a newly added threat pattern surfaces here as a failed run rather than as
+# a user whose `hermes plugins install` is blocked (issue #53).
+#
+# A failure here does not mean the plugin is unsafe — it means upstream added a
+# pattern this repo now trips. Read the finding, fix it at the source, then
+# re-pin with:
+#
+#   python scripts/scan_plugin_artifact.py --ref <new-tag> --update-lock
+
+on:
+  schedule:
+    - cron: "17 6 * * 1" # Mondays, 06:17 UTC
+  workflow_dispatch:
+    inputs:
+      ref:
+        description: "Upstream hermes-agent ref to scan with"
+        required: false
+        default: "main"
+
+permissions:
+  contents: read
+
+jobs:
+  scan:
+    name: Scan against hermes-agent@${{ github.event.inputs.ref || 'main' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.13"
+      - name: Scan with the current upstream scanner
+        # --no-verify: the lock file pins a release tag, so hashes are expected
+        # to differ from upstream tip. The point of this job is to see that
+        # difference early.
+        run: >
+          python scripts/scan_plugin_artifact.py
+          --ref ${{ github.event.inputs.ref || 'main' }}
+          --no-verify

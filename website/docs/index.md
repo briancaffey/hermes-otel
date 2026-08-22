@@ -20,7 +20,7 @@ import Link from '@docusaurus/Link';
       <Link className="hero__cta hero__cta--secondary" to="/backends/overview">Browse backends</Link>
     </div>
     <div className="hero__code-block">
-      <span className="prompt">$ </span><span className="cmd">hermes plugins install briancaffey/hermes-otel</span>
+      <span className="prompt">$ </span><span className="cmd">hermes plugins install briancaffey/hermes-otel/hermes_otel</span>
     </div>
   </div>
 </div>

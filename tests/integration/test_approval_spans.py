@@ -23,7 +23,12 @@ def _one(spans, name):
     return matches[0]
 
 
-def _approve(choice, tool_call_id="tc1", pattern_key="rm_rf", command="rm -rf /tmp/x"):
+# Fixture commands use relative paths on purpose: a recursive-delete literal
+# rooted at the filesystem root is a critical finding for Hermes's plugin
+# scanner anywhere in the repo, test data included, and blocks
+# `hermes plugins install` (issue #53). What's under test here is the
+# approval span, not the command string.
+def _approve(choice, tool_call_id="tc1", pattern_key="rm_rf", command="rm -rf ./tmp/x"):
     on_pre_approval_request(
         command=command,
         description="Delete a directory tree",
@@ -50,7 +55,7 @@ class TestApprovalSpanFlow:
         exporter, _ = inmemory_otel_setup
         on_session_start(session_id=SID, model="gpt-4", platform="telegram")
         on_pre_tool_call(
-            tool_name="bash", args={"command": "rm -rf /tmp/x"}, task_id="tc1", session_id=SID
+            tool_name="bash", args={"command": "rm -rf ./tmp/x"}, task_id="tc1", session_id=SID
         )
         _approve("once", tool_call_id="tc1")
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="tc1", session_id=SID)
@@ -115,7 +120,7 @@ class TestApprovalPrivacy:
 
         plugin.config = HermesOtelConfig(capture_previews=False)
         on_session_start(session_id=SID, model="gpt-4", platform="telegram")
-        _approve("once", command="rm -rf /secret")
+        _approve("once", command="rm -rf ./secret")
         on_session_end(
             session_id=SID, completed=True, interrupted=False, model="gpt-4", platform="telegram"
         )

@@ -4,6 +4,7 @@ hook -> span -> export pipeline without any network I/O."""
 from dataclasses import replace
 
 import pytest
+
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_llm_call,

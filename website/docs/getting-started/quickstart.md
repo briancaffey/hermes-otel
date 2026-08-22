@@ -13,7 +13,7 @@ This walks you end-to-end: install the plugin, start a local [Phoenix](https://g
 hermes-otel is a [Hermes Agent](https://github.com/nousresearch/hermes-agent) plugin. Install it like any other:
 
 ```bash
-hermes plugins install briancaffey/hermes-otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel
 ```
 
 This drops the plugin at `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. The OTel runtime still needs to be installed into the Hermes venv itself — that part is a one-liner:

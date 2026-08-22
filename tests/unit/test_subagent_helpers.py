@@ -1,6 +1,7 @@
 """Unit tests for sub-agent (delegation) pure helpers and fail-open handlers."""
 
 import pytest
+
 from hermes_otel.helpers import subagent_span_key, subagent_status_to_span_status
 
 

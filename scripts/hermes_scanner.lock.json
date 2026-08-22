@@ -1,0 +1,9 @@
+{
+  "_comment": "Pinned copy of Hermes's plugin security scanner. Regenerate with `python scripts/scan_plugin_artifact.py --ref <tag> --update-lock` after reviewing the upstream diff.",
+  "repo": "NousResearch/hermes-agent",
+  "ref": "v2026.8.19",
+  "sha256": {
+    "tools/skills_guard.py": "9534cf7b658ec0cb6c85dc2c35fa08a4b46a3a1284be1bbe3c4af2deeb4df7a0",
+    "tools/plugin_guard.py": "1f353f3db1c8e4758a2e9e1d72c516fbca0accf204b5b50b6af6e8d1e6eba5b8"
+  }
+}

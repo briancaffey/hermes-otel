@@ -18,20 +18,62 @@ Plugins live in `~/.hermes/plugins/` so they can be swapped without reinstalling
 ## Recommended: `hermes plugins install`
 
 ```bash
-hermes plugins install briancaffey/hermes-otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel
 ```
 
-This clones the repo into `~/.hermes/plugins/hermes_otel/`. Then install the OTel runtime into the hermes-agent venv:
+Note the trailing `/hermes_otel`: that is the plugin package inside the repo, and Hermes installs
+just that subdirectory. It still lands at `~/.hermes/plugins/hermes_otel/` — the destination comes
+from `plugin.yaml`, not from the path you typed.
+
+Then install the OTel runtime into the hermes-agent venv, using the requirements file that ships
+alongside the plugin:
 
 ```bash
-~/git/hermes-agent/venv/bin/pip install -e ~/.hermes/plugins/hermes_otel
+~/git/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
 ```
 
-Editable mode is the cleanest option because:
+Hermes deliberately never installs plugin dependencies for you; it prints them at install time and
+leaves the venv to you.
 
-- It pulls `opentelemetry-api`, `opentelemetry-sdk`, and `opentelemetry-exporter-otlp-proto-http` as declared dependencies.
-- `pip show hermes-otel` reports a real version, which debug logs reference.
-- Updating is a single `git pull` in the plugin directory.
+:::note What actually gets installed
+About 40 files / 500 KB: the Python modules, `plugin.yaml`, the bundled skill and the dashboard tab.
+The docs site, test suite and example Compose stacks stay in the repository — they are development
+material, and shipping them would put several megabytes of unused files into every Hermes install.
+
+This also matters for Hermes ≥ v0.20, which security-scans a plugin's whole file tree before
+installing it and hard-blocks on any `critical` finding. Documentation and test fixtures are graded
+by the same rules as executable code, so keeping them out of the artifact is what keeps installs
+working ([issue #53](https://github.com/briancaffey/hermes-otel/issues/53)).
+:::
+
+### Upgrading from an older install
+
+Installs made before v0.12 used `briancaffey/hermes-otel` (no subdirectory) and recorded that as
+the plugin's source, so `hermes plugins update` still points at the repository root. Re-install
+once to move to the new artifact:
+
+```bash
+hermes plugins remove hermes_otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel
+```
+
+Your `config.yaml` lives in the plugin directory, so copy it aside first if you have one.
+
+### Installing from a clone
+
+Contributors can install the package into the hermes venv in editable mode, which pulls the same
+dependencies and makes `pip show hermes-otel` report a real version (debug logs reference it):
+
+```bash
+git clone https://github.com/briancaffey/hermes-otel.git ~/git/hermes-otel
+~/git/hermes-agent/venv/bin/pip install -e ~/git/hermes-otel
+```
+
+To have Hermes load your working copy, point the plugin directory at the package inside the clone:
+
+```bash
+ln -s ~/git/hermes-otel/hermes_otel ~/.hermes/plugins/hermes_otel
+```
 
 ## Manual dependency install
 

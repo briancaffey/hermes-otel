@@ -1,3 +1,15 @@
+<!--
+  ClickHouse custom-function config as shipped by SigNoz, with the upstream explanatory comments removed.
+
+  Those comments document features this stack does not use (TLS key paths,
+  MySQL/PostgreSQL wire compatibility, password-generation recipes). Hermes
+  scans a plugin's whole file tree before install and grades that prose as
+  critical/high findings, which hard-blocks installation (see issue #53).
+  Stripping the comments changes no setting.
+
+  Read the annotated originals at
+  https://github.com/SigNoz/signoz/tree/main/deploy/common/clickhouse
+-->
 <functions>
     <function>
         <type>executable</type>

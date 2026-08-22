@@ -21,9 +21,14 @@ skip steps only when they genuinely don't apply (and say so).
 
 ## 0. Orient
 
-The plugin is a **flat package**: modules live at the repo root, which *is* the
-`hermes_otel` package (required by Hermes auto-discovery — don't move them into
-a subdir). Key files:
+Runtime code lives in **`hermes_otel/`** — that directory is the package *and*
+the published install artifact (`hermes plugins install
+briancaffey/hermes-otel/hermes_otel` copies just it into
+`~/.hermes/plugins/hermes_otel/`). Everything else in the repo — `tests/`,
+`website/`, `docker-compose/`, `scripts/` — is development material and is
+never installed. New runtime modules go in `hermes_otel/`, never at the repo
+root; `tests/unit/test_install_artifact.py` enforces that. Paths below are
+relative to `hermes_otel/`:
 
 | File | Role |
 |---|---|
@@ -108,13 +113,14 @@ status mapping, metrics, two-exporter fan-out, and orphan-sweep where relevant.
 
 ## 4. Run the EXACT CI checks locally — before every push
 
-CI (`.github/workflows/test.yml`) runs three things. Run all three; do not push
+CI (`.github/workflows/test.yml`) runs four things. Run all four; do not push
 until they pass. The canonical invocation uses `uv` (matches CI):
 
 ```bash
 uv run --extra dev ruff check .
 uv run --extra dev black --check .          # ← easy to forget; CI fails without it
 uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85
+python scripts/scan_plugin_artifact.py      # Hermes's own plugin security scanner
 ```
 
 - If `black --check` complains, fix with `uv run --extra dev black .`.
@@ -198,6 +204,9 @@ For observability changes, prove the gap existed and your change closes it.
 - [ ] Spans/attrs follow dual-convention; metrics low-cardinality.
 - [ ] Unit + integration tests added; deterministic.
 - [ ] `ruff`, `black --check`, and `pytest --cov-fail-under=85` all pass locally.
+- [ ] `python scripts/scan_plugin_artifact.py` passes — a `critical` finding
+      anywhere in the repo (docs and test fixtures included) hard-blocks
+      `hermes plugins install` and cannot be forced past.
 - [ ] Docs updated (hooks, span-attributes, hierarchy/limitations as needed) +
       README; `npm run build` clean.
 - [ ] (If observability) before/after verified against a real backend.

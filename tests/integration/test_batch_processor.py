@@ -17,6 +17,7 @@ import time
 from unittest.mock import patch
 
 import pytest
+
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
