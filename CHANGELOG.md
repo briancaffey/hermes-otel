@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.0.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.11.0...hermes-otel-v1.0.0) (2026-08-22)
+
+
+### ⚠ BREAKING CHANGES
+
+* the install command is now `hermes plugins install briancaffey/hermes-otel/hermes_otel`. Existing installs recorded the old repository-root source, so `hermes plugins update` will not move them; re-install once (`hermes plugins remove hermes_otel` then the command above), saving `config.yaml` first if you have one.
+
+### Bug Fixes
+
+* **config:** keep config.yaml outside the plugin directory, pin dependency bounds ([c2844e4](https://github.com/briancaffey/hermes-otel/commit/c2844e48c6f57155f70e80bc3f191f4360f74f6b))
+* **config:** keep config.yaml outside the plugin directory, pin dependency bounds ([821d097](https://github.com/briancaffey/hermes-otel/commit/821d0978dc762bc812b1d0e4f14610f3bd0f8c70))
+* **examples,docs,tests:** clear every critical/high plugin-scan finding ([6b2150b](https://github.com/briancaffey/hermes-otel/commit/6b2150b9321bdd36907ba5271680429cae5920ed))
+* ship a minimal install artifact instead of the whole repository ([115c569](https://github.com/briancaffey/hermes-otel/commit/115c5699f67c6a7028709234b915a85be41bd5bb))
+
 ## [0.11.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.10.0...hermes-otel-v0.11.0) (2026-07-10)
 
 
