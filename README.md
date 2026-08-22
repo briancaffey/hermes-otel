@@ -177,8 +177,7 @@ A fully annotated template lives at [`config.yaml.example`](config.yaml.example)
 in the plugin root. Copy it to `config.yaml` and edit in place:
 
 ```bash
-cp ~/.hermes/plugins/hermes_otel/config.yaml.example \
-   ~/.hermes/plugins/hermes_otel/config.yaml
+cp config.yaml.example ~/.hermes/hermes_otel.yaml
 ```
 
 `config.yaml` is gitignored so local endpoints and (avoidable) secrets
@@ -371,7 +370,7 @@ Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does no
 
 ### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
 
-Backend selection stays env-var-driven (above). For telemetry **shaping** — sampling, preview size, resource attributes, TTL, extra headers — you can also use a YAML file at `~/.hermes/plugins/hermes_otel/config.yaml`.
+Backend selection stays env-var-driven (above). For telemetry **shaping** — sampling, preview size, resource attributes, TTL, extra headers — you can also use a YAML file at `~/.hermes/hermes_otel.yaml` (or wherever `HERMES_OTEL_CONFIG` points). The legacy location inside the plugin directory still works, but a reinstall replaces that directory.
 
 **Precedence (per-field):** `HERMES_OTEL_*` env var > `config.yaml` value > default.
 

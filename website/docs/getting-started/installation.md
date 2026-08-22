@@ -46,20 +46,44 @@ by the same rules as executable code, so keeping them out of the artifact is wha
 working ([issue #53](https://github.com/briancaffey/hermes-otel/issues/53)).
 :::
 
-### Upgrading from an older install
+## Upgrading {#upgrading}
 
-Installs made before v0.12 used `briancaffey/hermes-otel` (no subdirectory) and recorded that as
-the plugin's source, so `hermes plugins update` still points at the repository root. Re-install
-once to move to the new artifact:
+`hermes plugins update` does **not** work for a subdirectory install: the installed directory is a
+plain copy with no `.git`, and update refuses with *"was not installed from git"*. Upgrade by
+reinstalling:
 
 ```bash
-hermes plugins remove hermes_otel
-hermes plugins install briancaffey/hermes-otel/hermes_otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel --force
+hermes plugins enable hermes_otel     # --force reinstall leaves it disabled
 ```
 
-Your `config.yaml` lives in the plugin directory, so copy it aside first if you have one.
+:::warning A reinstall replaces the plugin directory
+`--force` swaps the whole directory, so **anything you keep inside it is deleted** — including
+`config.yaml` and the live dashboard's `live.db`. Keep them elsewhere and upgrades stop being
+destructive:
 
-### Installing from a clone
+```bash
+mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
+export HERMES_OTEL_LIVE_DB=~/.hermes/hermes_otel.live.db
+```
+
+`$HERMES_HOME/hermes_otel.yaml` is read automatically — see
+[Where does `config.yaml` live?](/configuration/overview).
+:::
+
+### Coming from an install made before v0.12
+
+Those used `briancaffey/hermes-otel` with no subdirectory and recorded the repository root as the
+source, so neither `update` nor a plain `--force` reinstall moves them. Point the install at the
+new subdirectory once:
+
+```bash
+cp ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml   # if you have one
+hermes plugins remove hermes_otel
+hermes plugins install briancaffey/hermes-otel/hermes_otel --enable
+```
+
+## Installing from a clone
 
 Contributors can install the package into the hermes venv in editable mode, which pulls the same
 dependencies and makes `pip show hermes-otel` report a real version (debug logs reference it):

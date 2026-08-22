@@ -6,9 +6,9 @@ description: OpenTelemetry integration - automatically export traces to OTLP end
 # that runs `hermes`, because the plugin is imported into that process.
 # See after-install.md, or requirements.txt for a pip-installable copy.
 python_dependencies:
-  - opentelemetry-api
-  - opentelemetry-sdk
-  - opentelemetry-exporter-otlp-proto-http
+  - opentelemetry-api<2
+  - opentelemetry-sdk<2
+  - opentelemetry-exporter-otlp-proto-http<2
 # Optional: `langsmith` (uuid7 time-ordered run IDs, LangSmith backend) and
 # `pyyaml` (config.yaml parsing; env vars and defaults work without it).
 #

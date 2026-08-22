@@ -1,6 +1,12 @@
 """Declarative configuration for hermes-otel.
 
-Loader precedence per field: env var > ~/.hermes/plugins/hermes_otel/config.yaml > default.
+Loader precedence per field: env var > config.yaml > default.
+
+The config file itself is resolved by :func:`resolve_config_path`:
+``HERMES_OTEL_CONFIG`` > ``$HERMES_HOME/hermes_otel.yaml`` >
+``$HERMES_HOME/plugins/hermes_otel/config.yaml``. Prefer one of the first
+two: the plugin directory is replaced wholesale on reinstall, so a config
+kept there does not survive an upgrade.
 
 Two ways to pick backends:
   * **Multi-backend** (preferred): set ``backends:`` in config.yaml. Every entry
@@ -23,7 +29,49 @@ from .debug_utils import logger
 
 Scalar = Union[str, int, float, bool]
 
-DEFAULT_CONFIG_PATH = Path.home() / ".hermes" / "plugins" / "hermes_otel" / "config.yaml"
+
+def hermes_home() -> Path:
+    """``$HERMES_HOME`` if set, else ``~/.hermes`` — matching Hermes itself."""
+    raw = os.environ.get("HERMES_HOME", "").strip()
+    return Path(raw).expanduser() if raw else Path.home() / ".hermes"
+
+
+# Environment variable holding an explicit config file path.
+CONFIG_PATH_ENV = "HERMES_OTEL_CONFIG"
+
+# Outside the plugin directory, so it survives `hermes plugins install --force`
+# (which replaces the plugin directory wholesale — see issue #55).
+DURABLE_CONFIG_PATH = hermes_home() / "hermes_otel.yaml"
+
+# The historical location: inside the plugin directory. Still read, so existing
+# installs keep working, but it is wiped by a reinstall.
+DEFAULT_CONFIG_PATH = hermes_home() / "plugins" / "hermes_otel" / "config.yaml"
+
+
+def resolve_config_path() -> Optional[Path]:
+    """Return the config file to read, or ``None`` when there is none.
+
+    Order: ``HERMES_OTEL_CONFIG`` (even if missing — an explicit path that does
+    not exist is worth surfacing), then the durable location, then the legacy
+    plugin-directory copy. Module-level path constants are read at call time so
+    tests can redirect them.
+    """
+    override = os.environ.get(CONFIG_PATH_ENV, "").strip()
+    if override:
+        return Path(override).expanduser()
+
+    durable, legacy = DURABLE_CONFIG_PATH, DEFAULT_CONFIG_PATH
+    if durable.exists():
+        if legacy.exists():
+            logger.warning(
+                f"[hermes-otel] using {durable}; ignoring the copy in the plugin "
+                f"directory ({legacy}). Delete the latter to silence this."
+            )
+        return durable
+    if legacy.exists():
+        return legacy
+    return None
+
 
 _ENV_PREFIX = "HERMES_OTEL_"
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
@@ -410,12 +458,13 @@ def load_config(
     """Build a HermesOtelConfig from yaml + env, per-field precedence.
 
     Args:
-        path: Override config.yaml location (tests).
+        path: Explicit config.yaml location. When omitted the file is resolved
+              by :func:`resolve_config_path`.
         env:  Reserved for future use; env is read via os.getenv directly so
               existing monkeypatch-based tests keep working.
     """
-    yaml_path = path if path is not None else DEFAULT_CONFIG_PATH
-    yaml_data = _load_yaml(yaml_path)
+    yaml_path = path if path is not None else resolve_config_path()
+    yaml_data = _load_yaml(yaml_path) if yaml_path is not None else {}
 
     values: Dict[str, Any] = {}
     for key, raw in yaml_data.items():

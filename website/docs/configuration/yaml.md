@@ -6,9 +6,9 @@ description: "Full reference for the plugin's YAML config file — project metad
 
 # `config.yaml`
 
-A fully-annotated example ships at `~/.hermes/plugins/hermes_otel/config.yaml.example`. This page is the reference — every field, what it does, what the default is.
+A fully-annotated example ships in the repository as `config.yaml.example`. This page is the reference — every field, what it does, what the default is.
 
-Location: `~/.hermes/plugins/hermes_otel/config.yaml`. Parsed only if `pyyaml` is installed in the Hermes venv.
+Location: `$HERMES_HOME/hermes_otel.yaml` (recommended), or `$HERMES_OTEL_CONFIG`, or the legacy `$HERMES_HOME/plugins/hermes_otel/config.yaml` — see [Where does config.yaml live?](/configuration/overview). Parsed only if `pyyaml` is installed in the Hermes venv.
 
 ## Project / resource attributes
 
