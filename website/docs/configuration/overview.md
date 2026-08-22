@@ -25,15 +25,27 @@ So a value set in the env var always wins over `config.yaml`, which always wins 
 
 ## Where does `config.yaml` live?
 
-```
-~/.hermes/plugins/hermes_otel/config.yaml
-```
+Three locations, checked in this order:
 
-A fully-annotated template is at `config.yaml.example` in the same directory — copy and edit:
+| Order | Location | Notes |
+|---|---|---|
+| 1 | `$HERMES_OTEL_CONFIG` | An explicit path. Used even if the file is missing, so a typo surfaces instead of silently falling back. |
+| 2 | `$HERMES_HOME/hermes_otel.yaml` | **Recommended.** Outside the plugin directory, so it survives an upgrade. `$HERMES_HOME` defaults to `~/.hermes`. |
+| 3 | `$HERMES_HOME/plugins/hermes_otel/config.yaml` | The historical location. Still read, but **replaced on every reinstall** — see [Upgrading](/getting-started/installation#upgrading). |
+
+If both 2 and 3 exist, 2 wins and the plugin logs a warning naming the shadowed copy.
+
+A fully-annotated template ships in the repository as `config.yaml.example`:
 
 ```bash
-cp ~/.hermes/plugins/hermes_otel/config.yaml.example \
-   ~/.hermes/plugins/hermes_otel/config.yaml
+curl -o ~/.hermes/hermes_otel.yaml \
+  https://raw.githubusercontent.com/briancaffey/hermes-otel/main/config.yaml.example
+```
+
+Already have one in the plugin directory? Move it somewhere durable:
+
+```bash
+mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
 ```
 
 `config.yaml` is gitignored in the plugin repo (so local endpoints and any inline secrets don't get committed). Only `config.yaml.example` is tracked.

@@ -1,10 +1,15 @@
 # hermes-otel plugin configuration
 # ==============================================================================
 #
-# Copy this file to `config.yaml` in the same directory
-# (~/.hermes/plugins/hermes_otel/config.yaml) and edit to taste.
+# Copy this file to $HERMES_HOME/hermes_otel.yaml (i.e. ~/.hermes/hermes_otel.yaml)
+# and edit to taste:
 #
-#   cp config.yaml.example config.yaml
+#   cp config.yaml.example ~/.hermes/hermes_otel.yaml
+#
+# Keep it OUTSIDE the plugin directory. Upgrading means reinstalling, which
+# replaces ~/.hermes/plugins/hermes_otel/ wholesale — a config kept in there
+# is deleted. The legacy in-plugin path still works; $HERMES_OTEL_CONFIG
+# overrides both.
 #
 # Everything here is optional — the plugin ships with sensible defaults and
 # will fall back to environment-variable-driven single-backend detection when

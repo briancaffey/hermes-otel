@@ -44,9 +44,12 @@ classifiers = [
     "Typing :: Typed",
 ]
 dependencies = [
-    "opentelemetry-api",
-    "opentelemetry-sdk",
-    "opentelemetry-exporter-otlp-proto-http",
+    # Upper bounds per Hermes's plugin dependency policy — `hermes plugins
+    # doctor` warns without them. No lower bound: the plugin uses only
+    # long-stable OTel 1.x APIs.
+    "opentelemetry-api<2",
+    "opentelemetry-sdk<2",
+    "opentelemetry-exporter-otlp-proto-http<2",
 ]
 
 [project.urls]

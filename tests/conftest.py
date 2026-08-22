@@ -24,16 +24,21 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     pytest runs tests in the same context, so it would otherwise bleed
     between tests.
 
-    Also redirects ``DEFAULT_CONFIG_PATH`` to a nonexistent temp location
-    so tests never pick up the user's real ``~/.hermes/plugins/
-    hermes_otel/config.yaml`` (which can define backends and change the
-    init() code path unexpectedly).
+    Also redirects every config location — the durable one, the legacy
+    plugin-directory one, and the ``HERMES_OTEL_CONFIG`` override — to
+    nonexistent temp paths, so tests never pick up the developer's real
+    config (which can define backends and change the init() code path
+    unexpectedly).
     """
     import hermes_otel.plugin_config as plugin_config_mod
     import hermes_otel.tracer as tracer_mod
 
-    fake_path = tmp_path_factory.mktemp("isolated-config") / "nonexistent.yaml"
-    monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", fake_path)
+    isolated = tmp_path_factory.mktemp("isolated-config")
+    monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", isolated / "nonexistent.yaml")
+    monkeypatch.setattr(
+        plugin_config_mod, "DURABLE_CONFIG_PATH", isolated / "nonexistent-durable.yaml"
+    )
+    monkeypatch.delenv(plugin_config_mod.CONFIG_PATH_ENV, raising=False)
 
     def _reset():
         tracer_mod._tracer = None

@@ -24,7 +24,8 @@ Pick one and export it before starting Hermes:
 | LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |
 
 Telemetry shaping (sampling, preview sizes, resource attributes) is optional and
-lives in `config.yaml` next to this file.
+lives in `config.yaml`. Keep it at `$HERMES_HOME/hermes_otel.yaml` rather than in
+this directory — reinstalling the plugin replaces this directory wholesale.
 
 ### Verify
 

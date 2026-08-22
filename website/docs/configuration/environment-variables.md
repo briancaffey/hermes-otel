@@ -64,6 +64,14 @@ Each of these overrides the corresponding field in `config.yaml`. See [`config.y
 | `HERMES_OTEL_DASHBOARD_LIVE` | `dashboard_live` | bool |
 | `HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS` | `dashboard_live_max_spans` | int |
 
+## Paths
+
+| Var | Effect |
+|---|---|
+| `HERMES_OTEL_CONFIG` | Explicit path to the config file. Highest precedence — see [Where does `config.yaml` live?](/configuration/overview). |
+| `HERMES_HOME` | Hermes' home directory (default `~/.hermes`). The plugin resolves its config and plugin directory under it. |
+| `HERMES_OTEL_LIVE_DB` | Path to the live dashboard's SQLite store. Point it outside the plugin directory to keep it across upgrades. |
+
 ## Debug / diagnostics
 
 | Var | Effect |
