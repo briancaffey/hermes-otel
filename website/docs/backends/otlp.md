@@ -47,6 +47,19 @@ backends:
       x-honeycomb-dataset: hermes-agent
 ```
 
+### telemetry.dev
+
+```yaml
+backends:
+  - type: otlp
+    name: telemetry-dev
+    endpoint: https://ingest.telemetry.dev/v1/traces
+    headers:
+      Authorization: Bearer ${TELEMETRY_DEV_API_KEY}
+```
+
+See the dedicated [telemetry.dev](/backends/telemetry) page for endpoints, attribute fit, and troubleshooting.
+
 ### New Relic (OTLP endpoint)
 
 ```yaml
