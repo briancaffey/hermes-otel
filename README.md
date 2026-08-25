@@ -14,6 +14,7 @@ Tested with:
 - **[Grafana LGTM](https://github.com/grafana/docker-otel-lgtm)** (local) — traces + metrics + logs
 - **[Uptrace](https://uptrace.dev)** (self-hosted) — traces + metrics + logs
 - **[OpenObserve](https://openobserve.ai)** (self-hosted) — traces + metrics + logs
+- **[Parseable](https://www.parseable.com)** (cloud or self-hosted) — traces + metrics + logs + agent observability
 - **[Honeycomb](https://www.honeycomb.io/)** (cloud) — traces + metrics + logs — see [HONEYCOMB.md](HONEYCOMB.md)
 - **[W&B Weave](https://docs.wandb.ai/weave/)** (cloud / Dedicated Cloud / self-managed) — traces only
 
@@ -26,6 +27,7 @@ Any OTLP HTTP endpoint should work.
 - For Grafana LGTM see [docker-compose/lgtm.yaml](docker-compose/lgtm.yaml) and [docker-compose/lgtm/README.md](docker-compose/lgtm/README.md)
 - For Uptrace see [docker-compose/uptrace.yaml](docker-compose/uptrace.yaml) and [docker-compose/uptrace/README.md](docker-compose/uptrace/README.md)
 - For OpenObserve see [docker-compose/openobserve.yaml](docker-compose/openobserve.yaml) and [docker-compose/openobserve/README.md](docker-compose/openobserve/README.md)
+- For Parseable see the [Hermes integration guide](https://www.parseable.com/docs/ingest-data/ai-agents/hermes)
 
 ## Installation
 
@@ -213,13 +215,14 @@ path or starve the others — span end is just a non-blocking enqueue. Both
 trace and metrics export run in parallel across all configured backends.
 
 Supported `type` values: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`,
-`otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb`, `weave`. Use `otlp` for any collector
+`otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. Use `otlp` for any collector
 that doesn't have a dedicated type. Backends marked
 traces-only (`langfuse`, `jaeger`, `tempo`, `weave`) are auto-detected and skip
 the metrics reader. Override with `metrics: true|false` per entry if
 needed. See `config.yaml.example` for the full list of fields each type
 accepts — Uptrace takes a `dsn:` for the `uptrace-dsn` header, OpenObserve
-takes `user:` / `password:` for HTTP Basic auth, and Weave takes W&B routing
+takes `user:` / `password:` for HTTP Basic auth, Parseable takes an `api_key`
+and per-signal dataset names, and Weave takes W&B routing
 fields (`entity` / `project`) for `wandb.entity` / `wandb.project`.
 
 ### Full-conversation capture
@@ -366,7 +369,7 @@ export HERMES_OTEL_DEBUG=true
 
 Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
 
-**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Weave (`WANDB_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT`) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
+**Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Parseable (`OTEL_PARSEABLE_ENDPOINT` + `PARSEABLE_API_KEY`) > Weave (`WANDB_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT`) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
 
@@ -570,6 +573,7 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 | [Grafana Tempo](https://grafana.com/oss/tempo/) | traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Grafana LGTM](https://github.com/grafana/docker-otel-lgtm) | traces + metrics + logs | Local (single container) | OSS, no account | ✅ |
 | [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
+| [Parseable](https://www.parseable.com) | traces + metrics + logs | Self-hosted · Cloud | OSS · paid cloud | ✅ |
 | [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
 | [W&B Weave](https://docs.wandb.ai/weave/) | traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account | ✅ |
@@ -579,7 +583,7 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 
 ### Quick picks
 
-- **Fully offline / no account ever:** Phoenix, Langfuse (self-hosted), Jaeger, SigNoz, Grafana Tempo+Mimir, OpenObserve, Uptrace, Elastic APM self-host. All runnable via `docker compose up`.
+- **Fully offline / no account ever:** Phoenix, Langfuse (self-hosted), Jaeger, SigNoz, Grafana Tempo+Mimir, OpenObserve, Parseable, Uptrace, Elastic APM self-host. All runnable locally.
 - **Free SaaS (personal / hobby tier, no credit card):** Langfuse Cloud, LangSmith, SigNoz Cloud, Grafana Cloud, Honeycomb, New Relic. Best if you don't want to run infrastructure.
 - **W&B agent experiment tracking:** W&B Weave, using OTLP trace ingest plus GenAI agent attributes.
 - **Paid only (credit card required after trial):** Datadog, Dynatrace, LangSmith self-hosted (enterprise plan).

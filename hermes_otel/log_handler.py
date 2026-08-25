@@ -135,7 +135,7 @@ def build_log_processors(
     for b in backends:
         if not b.supports_logs:
             continue
-        merged: Dict[str, str] = dict(b.headers or {})
+        merged: Dict[str, str] = dict(b.logs_headers or b.headers or {})
         if extra_headers:
             merged.update(extra_headers)
         endpoint = _derive_logs_endpoint(b.endpoint)

@@ -34,7 +34,7 @@ _TRACES_ONLY = {"langfuse", "jaeger", "tempo", "weave"}
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
 # we'd rather drop logs on the floor than spray 4xx errors at them. Users
 # can override per-backend via the ``logs:`` field in config.yaml.
-_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve", "honeycomb"}
+_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve", "parseable", "honeycomb"}
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
@@ -48,6 +48,7 @@ _DISPLAY_NAMES = {
     "lgtm": "LGTM",
     "uptrace": "Uptrace",
     "openobserve": "OpenObserve",
+    "parseable": "Parseable",
     "honeycomb": "Honeycomb",
     "weave": "W&B Weave",
 }
@@ -69,6 +70,7 @@ _ENV_PRIORITY = [
     "signoz",
     "uptrace",
     "openobserve",
+    "parseable",
     "weave",
     "honeycomb",
     "jaeger",
@@ -90,6 +92,8 @@ class _ResolvedBackend:
     endpoint: str
     display_name: str = "OTLP"
     headers: Optional[Dict[str, str]] = None
+    metrics_headers: Optional[Dict[str, str]] = None
+    logs_headers: Optional[Dict[str, str]] = None
     supports_traces: bool = True
     supports_metrics: bool = True
     supports_logs: bool = False
@@ -371,6 +375,49 @@ def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _resolve_parseable(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Parseable direct OTLP/HTTP ingest for all three signals."""
+    ep = (bc.endpoint or os.getenv("OTEL_PARSEABLE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("parseable requires endpoint")
+    key = _resolve_secret(
+        bc.api_key,
+        bc.api_key_env,
+        ["OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY"],
+    )
+    if not key:
+        raise ValueError("parseable requires api_key")
+
+    traces_dataset = (
+        bc.traces_dataset or os.getenv("PARSEABLE_TRACES_DATASET", "") or "hermes-traces"
+    ).strip()
+    metrics_dataset = (
+        bc.metrics_dataset or os.getenv("PARSEABLE_METRICS_DATASET", "") or "hermes-metrics"
+    ).strip()
+    logs_dataset = (
+        bc.logs_dataset or os.getenv("PARSEABLE_LOGS_DATASET", "") or "hermes-logs"
+    ).strip()
+
+    common = {"X-API-Key": key}
+    trace_headers = {**common, "X-P-Stream": traces_dataset, "X-P-Log-Source": "otel-traces"}
+    metric_headers = {**common, "X-P-Stream": metrics_dataset, "X-P-Log-Source": "otel-metrics"}
+    log_headers = {**common, "X-P-Stream": logs_dataset, "X-P-Log-Source": "otel-logs"}
+    for signal_headers in (trace_headers, metric_headers, log_headers):
+        signal_headers.update(bc.headers or {})
+
+    return _ResolvedBackend(
+        type="parseable",
+        endpoint=ep,
+        display_name=_display(bc, "parseable"),
+        headers=trace_headers,
+        metrics_headers=metric_headers,
+        logs_headers=log_headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("parseable", bc.metrics),
+        supports_logs=_logs_for("parseable", bc.logs),
+    )
+
+
 def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve Honeycomb (SaaS, OTLP/HTTP — traces + metrics + logs).
 
@@ -505,6 +552,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "lgtm": _resolve_lgtm,
     "uptrace": _resolve_uptrace,
     "openobserve": _resolve_openobserve,
+    "parseable": _resolve_parseable,
     "honeycomb": _resolve_honeycomb,
     "weave": _resolve_weave,
 }

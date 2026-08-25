@@ -82,7 +82,7 @@ See [Conversation capture](/configuration/conversation-capture) for a worked exa
 
 ```yaml
 # Attach an OTel LoggingHandler to Python's logging so stdlib logger.info(...)
-# calls ship to any log-capable backend (SigNoz, LGTM, Uptrace, OpenObserve,
+# calls ship to any log-capable backend (SigNoz, LGTM, Uptrace, OpenObserve, Parseable,
 # or any OTLP collector). Every
 # record gets the active span's trace_id/span_id stamped on it automatically.
 # Off by default because attaching to root is invasive.

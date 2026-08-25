@@ -2,7 +2,7 @@
 
 Provides a singleton tracer manager that fans out spans/metrics to one or more
 collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, LGTM, Uptrace,
-OpenObserve, or any other OTLP-compatible collector via the ``otlp`` type).
+OpenObserve, Parseable, or any other OTLP-compatible collector via the ``otlp`` type).
 LangSmith remains a separate, env-var-only single-backend path because it uses
 its own HTTP API rather than OTLP.
 
@@ -513,7 +513,10 @@ class HermesOTelPlugin:
                 if b.supports_metrics and _METRICS_AVAILABLE:
                     metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
                     try:
-                        m_exporter = OTLPMetricExporter(endpoint=metrics_endpoint, headers=hdrs)
+                        metric_hdrs = self._merge_headers(b.metrics_headers or b.headers)
+                        m_exporter = OTLPMetricExporter(
+                            endpoint=metrics_endpoint, headers=metric_hdrs
+                        )
                         reader = PeriodicExportingMetricReader(
                             m_exporter,
                             export_interval_millis=self.config.flush_interval_ms,

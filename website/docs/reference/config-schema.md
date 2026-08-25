@@ -42,12 +42,12 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb`, `weave` |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave` |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP endpoint URL (backend-specific defaults — see below) |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
 | `metrics` | bool | Override metrics-export default for this backend |
-| `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `honeycomb`; off elsewhere) |
+| `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
 | `headers` | map | Per-backend HTTP headers (merged onto top-level `headers`) |
 
 ### Type-specific fields
@@ -114,6 +114,19 @@ Alias over `otlp` with a dedicated display name and all signals on by default. S
 | `logs` | bool | Default: `true` |
 
 Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` container — `tempo` is traces-only and would disable the logs/metrics fan-out.
+
+#### `parseable`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** Parseable ingestor OTLP traces endpoint, ending in `/v1/traces` |
+| `api_key` | string | Parseable API key (inline; discouraged) |
+| `api_key_env` | string | Env var holding the key (falls back to `PARSEABLE_API_KEY` / `OTEL_PARSEABLE_API_KEY`) |
+| `traces_dataset` | string | Traces dataset (default: `hermes-traces`) |
+| `metrics_dataset` | string | Metrics dataset (default: `hermes-metrics`) |
+| `logs_dataset` | string | Logs dataset (default: `hermes-logs`) |
+
+The plugin supplies signal-specific `X-P-Stream` and `X-P-Log-Source` headers automatically. See [Parseable](/backends/parseable).
 
 #### `honeycomb`
 
