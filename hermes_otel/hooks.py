@@ -1299,6 +1299,14 @@ def on_pre_api_request(
 
     if tracer.config.capture_full_prompts:
         messages = kwargs.get("messages")
+        if not messages:
+            request = kwargs.get("request")
+            if isinstance(request, dict):
+                body = request.get("body")
+                if isinstance(body, dict):
+                    messages = body.get("messages")
+        if not messages:
+            messages = kwargs.get("request_messages")
         system_prompt = kwargs.get("system_prompt")
         serialized = _serialize_full(messages)
         if serialized is not None:
@@ -1426,6 +1434,12 @@ def on_post_api_request(
     if tracer.config.capture_full_responses:
         response_content = kwargs.get("response_content")
         response_tool_calls = kwargs.get("response_tool_calls")
+        assistant_message = kwargs.get("assistant_message")
+        if assistant_message is not None:
+            if not response_content:
+                response_content = getattr(assistant_message, "content", None)
+            if not response_tool_calls:
+                response_tool_calls = getattr(assistant_message, "tool_calls", None)
         if response_content:
             response_text = str(response_content)
             attributes["llm.output.content"] = response_text
