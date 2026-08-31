@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.0.0...hermes-otel-v1.0.1) (2026-08-31)
+
+
+### Bug Fixes
+
+* **hooks:** capture full prompt/response payloads on api.* spans ([0f5858f](https://github.com/briancaffey/hermes-otel/commit/0f5858fb590c5147e7ce421a153cbbd310d153d3))
+* **hooks:** capture full prompt/response payloads on api.* spans ([c6b4e01](https://github.com/briancaffey/hermes-otel/commit/c6b4e0144222fd797368a4de0700286ea639af21))
+
 ## [1.0.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v0.11.0...hermes-otel-v1.0.0) (2026-08-22)
 
 
