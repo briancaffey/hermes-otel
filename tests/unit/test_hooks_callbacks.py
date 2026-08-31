@@ -946,6 +946,81 @@ class TestFullCaptureFlags:
         assert "llm.input_messages" not in attrs
         assert "llm.system_prompt" not in attrs
 
+    def test_pre_writes_full_prompt_from_real_core_shape(self, mock_tracer):
+        """Hermes core never sends a bare `messages` kwarg to this hook — it
+        sends `request={"body": {"messages": [...]}}` (documented as the
+        field new consumers should read) and, for back-compat, a raw
+        `request_messages` list. The `messages=` kwarg used by the other
+        tests in this class never occurs in production; this test pins the
+        fallback that actually fires there.
+        """
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        messages = [
+            {"role": "system", "content": "sys"},
+            {"role": "user", "content": "hello"},
+        ]
+        on_pre_api_request(
+            **self._pre_kwargs(
+                request={"method": "POST", "body": {"messages": messages}},
+                system_prompt="the-system-prompt",
+            )
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert attrs["llm.system_prompt"] == "the-system-prompt"
+
+        import json as _json
+
+        assert _json.loads(attrs["llm.input_messages"]) == messages
+        assert _json.loads(attrs["gen_ai.input.messages"]) == messages
+        assert _json.loads(attrs["input.value"]) == messages
+
+    def test_pre_falls_back_to_request_messages_when_request_absent(self, mock_tracer):
+        """Legacy back-compat path: no `request` payload at all, only the
+        raw `request_messages` passthrough some older hosts still send."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        messages = [{"role": "user", "content": "hi"}]
+        on_pre_api_request(**self._pre_kwargs(request_messages=messages))
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+
+        import json as _json
+
+        assert _json.loads(attrs["input.value"]) == messages
+
+    def test_post_writes_full_response_from_real_core_shape(self, mock_tracer):
+        """Hermes core never sends `response_content` / `response_tool_calls`
+        kwargs — it sends the raw `assistant_message` object (`.content` /
+        `.tool_calls`), the same object core itself reads the finish reason
+        from. The `response_content=`/`response_tool_calls=` kwargs used by
+        the other tests in this class never occur in production; this test
+        pins the fallback that actually fires there.
+        """
+        from types import SimpleNamespace
+
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_responses=True)
+        tc = SimpleNamespace(
+            id="call_1",
+            type="function",
+            function=SimpleNamespace(name="tool_search", arguments='{"query":"x"}'),
+        )
+        assistant_message = SimpleNamespace(content="here is my answer", tool_calls=[tc])
+        on_post_api_request(**self._post_kwargs(assistant_message=assistant_message))
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+
+        assert attrs["llm.output.content"] == "here is my answer"
+        assert attrs["output.value"] == "here is my answer"
+
+        import json as _json
+
+        parsed = _json.loads(attrs["llm.output.tool_calls"])
+        assert parsed[0]["id"] == "call_1"
+        assert parsed[0]["function"]["name"] == "tool_search"
+
     def test_post_skips_response_attrs_when_flag_off(self, mock_tracer):
         on_post_api_request(
             **self._post_kwargs(
