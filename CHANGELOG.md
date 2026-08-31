@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.0.1...hermes-otel-v1.1.0) (2026-08-31)
+
+
+### Features
+
+* **backends:** add Parseable backend ([c680169](https://github.com/briancaffey/hermes-otel/commit/c680169457b67895a4f29bf50e6f244e4a9205c3))
+
 ## [1.0.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.0.0...hermes-otel-v1.0.1) (2026-08-31)
 
 
