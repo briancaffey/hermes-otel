@@ -189,6 +189,8 @@
 #   openobserve  — OpenObserve (OSS, single container). Traces + metrics + logs.
 #                  Uses HTTP Basic auth — set `user:` + `password:` (or the
 #                  `*_env` variants) and the plugin builds the header for you.
+#   parseable    — Parseable agent observability. Traces + metrics + logs.
+#                  Uses an API key and routes each signal to its own dataset.
 #   honeycomb    — Honeycomb (SaaS). Traces + metrics + logs. Set `api_key`
 #                  (or `api_key_env`) and `region:` (us|eu); the plugin fills in
 #                  the endpoint and `x-honeycomb-team` header. See HONEYCOMB.md.
@@ -204,8 +206,9 @@
 #
 # When `backends:` is absent or empty, the plugin falls back to single-backend
 # env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
-# OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, OTEL_PHOENIX_ENDPOINT — first
-# match wins). Setting `backends:` takes full control away from env detection.
+# OTEL_PARSEABLE_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT,
+# OTEL_PHOENIX_ENDPOINT — first match wins). Setting `backends:` takes full
+# control away from env detection.
 #
 # LangSmith remains env-var-only because it doesn't speak OTLP; setting
 # LANGSMITH_TRACING=true will short-circuit the `backends:` list entirely.
@@ -243,7 +246,7 @@
 #     headers:
 #       X-Tenant: acme
 #     metrics: true
-#     logs: true       # override the default (on for otlp/signoz/lgtm/uptrace/openobserve/honeycomb)
+#     logs: true       # override default (on for otlp/signoz/lgtm/uptrace/openobserve/parseable/honeycomb)
 
 # ── LGTM quickstart ──────────────────────────────────────────────────────────
 #
@@ -286,6 +289,21 @@
 #     user: root@example.com                  # or user_env: OPENOBSERVE_USER
 #     password_env: OPENOBSERVE_PASSWORD
 #     # stream_name: default                  # optional; defaults to "default"
+# capture_logs: true
+
+# ── Parseable quickstart ─────────────────────────────────────────────────────
+#
+# Direct OTLP/HTTP export to Parseable. Create the three datasets first; tag
+# the traces dataset `agent-observability` to expose it in Parseable Agents.
+# Full guide: https://www.parseable.com/docs/ingest-data/ai-agents/hermes
+#
+# backends:
+#   - type: parseable
+#     endpoint: https://parseable.example.com/v1/traces
+#     api_key_env: PARSEABLE_API_KEY
+#     traces_dataset: hermes-traces
+#     metrics_dataset: hermes-metrics
+#     logs_dataset: hermes-logs
 # capture_logs: true
 
 # ── Honeycomb quickstart ─────────────────────────────────────────────────────

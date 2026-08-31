@@ -462,6 +462,84 @@ class TestOpenObserveBackendType:
         assert rb.headers["stream-name"] == "my-stream"
 
 
+class TestParseableBackendType:
+    """Parseable backend uses signal-specific dataset and source headers."""
+
+    def test_parseable_resolves_all_signal_headers(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="parseable",
+                endpoint="https://parseable.example.com/v1/traces",
+                api_key="p-key",
+            )
+        )
+
+        assert rb.type == "parseable"
+        assert rb.display_name == "Parseable"
+        assert rb.supports_metrics is True
+        assert rb.supports_logs is True
+        assert rb.headers == {
+            "X-API-Key": "p-key",
+            "X-P-Stream": "hermes-traces",
+            "X-P-Log-Source": "otel-traces",
+        }
+        assert rb.metrics_headers["X-P-Stream"] == "hermes-metrics"
+        assert rb.metrics_headers["X-P-Log-Source"] == "otel-metrics"
+        assert rb.logs_headers["X-P-Stream"] == "hermes-logs"
+        assert rb.logs_headers["X-P-Log-Source"] == "otel-logs"
+
+    def test_parseable_custom_datasets_and_headers(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        rb = backends.resolve(
+            BackendConfig(
+                type="parseable",
+                endpoint="https://parseable.example.com/v1/traces",
+                api_key="p-key",
+                traces_dataset="prod-traces",
+                metrics_dataset="prod-metrics",
+                logs_dataset="prod-logs",
+                headers={"X-Tenant": "acme"},
+            )
+        )
+
+        assert rb.headers["X-P-Stream"] == "prod-traces"
+        assert rb.metrics_headers["X-P-Stream"] == "prod-metrics"
+        assert rb.logs_headers["X-P-Stream"] == "prod-logs"
+        assert rb.logs_headers["X-Tenant"] == "acme"
+
+    def test_parseable_requires_endpoint_and_api_key(self):
+        from hermes_otel import backends
+        from hermes_otel.plugin_config import BackendConfig
+
+        with pytest.raises(ValueError, match="endpoint"):
+            backends.resolve(BackendConfig(type="parseable", api_key="p-key"))
+        with pytest.raises(ValueError, match="api_key"):
+            backends.resolve(
+                BackendConfig(
+                    type="parseable",
+                    endpoint="https://parseable.example.com/v1/traces",
+                )
+            )
+
+    def test_parseable_resolves_from_env(self, monkeypatch):
+        from hermes_otel import backends
+
+        monkeypatch.setenv("OTEL_PARSEABLE_ENDPOINT", "https://parseable.example.com/v1/traces")
+        monkeypatch.setenv("PARSEABLE_API_KEY", "env-key")
+        monkeypatch.setenv("PARSEABLE_TRACES_DATASET", "env-traces")
+
+        rb = backends.resolve_from_env()
+
+        assert rb.type == "parseable"
+        assert rb.headers["X-API-Key"] == "env-key"
+        assert rb.headers["X-P-Stream"] == "env-traces"
+
+
 class TestExcludeOTelInternalFilter:
     def _record(self, name: str, level: int = logging.DEBUG) -> logging.LogRecord:
         return logging.LogRecord(

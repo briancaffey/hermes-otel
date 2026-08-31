@@ -88,14 +88,14 @@ class BackendConfig:
     discouraged because the file is plaintext.
     """
 
-    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | honeycomb | weave
+    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | parseable | honeycomb | weave
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
     logs: Optional[bool] = (
-        None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/honeycomb)
+        None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/parseable/honeycomb)
     )
     # Langfuse credentials
     public_key: Optional[str] = None
@@ -115,6 +115,10 @@ class BackendConfig:
     password: Optional[str] = None
     password_env: Optional[str] = None
     stream_name: Optional[str] = None
+    # Parseable dataset routing (one dataset per OTLP signal)
+    traces_dataset: Optional[str] = None
+    metrics_dataset: Optional[str] = None
+    logs_dataset: Optional[str] = None
     # Honeycomb: API key (sent as the ``x-honeycomb-team`` header), optional
     # dataset (``x-honeycomb-dataset``), and ``region`` (``us``|``eu``) used to
     # default the endpoint when one isn't given explicitly.
