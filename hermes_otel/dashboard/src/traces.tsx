@@ -25,6 +25,7 @@ import {
   fmtTokens,
   clip,
   traceAttrs,
+  isMcpKeepalivePing,
   traceSpanCount,
   extractInputPreview,
   extractOutputPreview,
@@ -69,6 +70,7 @@ function LiveTraces() {
   const [selected, setSelected] = useState<LiveTrace | null>(null);
   const [text, setText] = useState("");
   const [errorsOnly, setErrorsOnly] = useState(false);
+  const [showPings, setShowPings] = useState(false);
   const [paused, setPaused] = useState(false);
   const cursor = useRef(0);
 
@@ -91,6 +93,8 @@ function LiveTraces() {
   }, [poll, paused, selected]);
 
   let traces = groupLiveTraces(spans);
+  const pingCount = traces.filter((t) => isMcpKeepalivePing(t.rootName, t.error)).length;
+  if (!showPings) traces = traces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
   const f = text.trim().toLowerCase();
   if (f) traces = traces.filter((t) => t.rootName.toLowerCase().includes(f) || (t.model || "").toLowerCase().includes(f));
   if (errorsOnly) traces = traces.filter((t) => t.error);
@@ -108,6 +112,10 @@ function LiveTraces() {
         <Button variant={errorsOnly ? "default" : "outline"} size="sm" onClick={() => setErrorsOnly((v) => !v)}>
           errors only
         </Button>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+          <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
+          show MCP keepalive pings{pingCount ? ` (${pingCount})` : ""}
+        </label>
         <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
           {paused ? "▶ Resume" : "⏸ Pause"}
         </Button>
@@ -274,6 +282,7 @@ function BackendTraceDetail({ trace, detail, loading, error, onBack }: { trace: 
 function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => void }) {
   const [filters, setFilters] = useState<any>({ lookback: 1, q: "", service: "", rootsOnly: true });
   const [traces, setTraces] = useState<any[] | null>(null);
+  const [showPings, setShowPings] = useState(false);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<any>(null);
@@ -327,15 +336,25 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
 
   if (selected) return <BackendTraceDetail trace={selected} detail={detail} loading={detailLoading} error={detailError} onBack={() => setSelected(null)} />;
 
+  // Same default as the Live views: successful MCP keepalive pings stay out of
+  // the list unless asked for. Backend rows carry status in the attributes.
+  const isPing = (t: any) => isMcpKeepalivePing(t.rootTraceName, traceAttrs(t)["status"] === "error");
+  const pingCount = traces ? traces.filter(isPing).length : 0;
+  const shown = traces && !showPings ? traces.filter((t) => !isPing(t)) : traces;
+
   return (
     <div className="space-y-3">
       <Card>
         <CardContent className="space-y-3 pt-4">
           <StatusBar status={status} onRefresh={onRefresh} />
           <FiltersForm filters={filters} status={status} onChange={setFilters} onSubmit={search} />
-          <div className="flex items-center justify-between">
-            <span className="text-xs text-muted-foreground">{traces == null ? "Not searched yet" : `${traces.length} trace${traces.length === 1 ? "" : "s"}`}</span>
-            <Button onClick={search} disabled={loading} size="sm">{loading ? "Searching…" : "Search"}</Button>
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-xs text-muted-foreground">{shown == null ? "Not searched yet" : `${shown.length} trace${shown.length === 1 ? "" : "s"}`}</span>
+            <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
+              <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
+              show MCP keepalive pings{pingCount ? ` (${pingCount})` : ""}
+            </label>
+            <Button onClick={search} disabled={loading} size="sm" className="ml-auto">{loading ? "Searching…" : "Search"}</Button>
           </div>
         </CardContent>
       </Card>
@@ -345,14 +364,16 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
           <p className="px-1 text-xs text-muted-foreground">Backend unreachable from the dashboard. Use the ⚡ Live source — it reads the in-process store and always works.</p>
         </div>
       ) : null}
-      {traces && traces.length > 0 ? (
+      {shown && shown.length > 0 ? (
         <div className="flex flex-col gap-2">
-          {traces.map((t) => (
+          {shown.map((t) => (
             <BackendTraceCard key={t.traceID || t.traceId} trace={t} onSelect={setSelected} />
           ))}
         </div>
-      ) : traces && traces.length === 0 && !error ? (
-        <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">No traces matched — widen the lookback or run a turn.</div>
+      ) : shown && shown.length === 0 && !error ? (
+        <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
+          {pingCount ? `Only MCP keepalive pings matched (${pingCount} hidden) — tick "show MCP keepalive pings" to see them.` : "No traces matched — widen the lookback or run a turn."}
+        </div>
       ) : null}
     </div>
   );

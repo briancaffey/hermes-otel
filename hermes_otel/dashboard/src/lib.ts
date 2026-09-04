@@ -361,6 +361,15 @@ export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {
   return out.sort((a, b) => b.startNs - a.startNs);
 }
 
+// MCP keepalive pings (issue #62). MCP SDK 2.x records a one-span
+// "MCP send ping" trace per keepalive; the plugin drops the successful ones by
+// default (suppress_mcp_ping_spans), but a user who turns that off still wants
+// them hidden in the list unless asked. Failed pings are never hidden.
+export const MCP_PING_NAME = "MCP send ping";
+export function isMcpKeepalivePing(rootName: string | null | undefined, error: boolean): boolean {
+  return rootName === MCP_PING_NAME && !error;
+}
+
 // Live spans → the same TreeSpan shape the backend waterfall renders.
 export function liveTreeFromSpans(spans: LiveSpan[]): { roots: TreeSpan[]; all: TreeSpan[] } {
   const all: TreeSpan[] = spans.map((s) => ({

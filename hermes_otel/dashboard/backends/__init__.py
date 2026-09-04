@@ -40,14 +40,28 @@ def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
 
 
 def _candidate_config_paths() -> List[Path]:
+    """Where the plugin's config may live, most preferred first.
+
+    Mirrors ``hermes_otel.plugin_config.resolve_config_path`` — the tracer and
+    the dashboard must read the SAME file or the Traces tab silently sees no
+    backends: ``HERMES_OTEL_CONFIG`` > ``$HERMES_HOME/hermes_otel.yaml`` (the
+    documented, reinstall-safe location) > the legacy ``config.yaml`` inside
+    the plugin directory. (Not imported from ``plugin_config`` because this
+    package is loaded by file path as a top-level ``backends`` package.)
+    """
+    paths: List[Path] = []
+    override = os.environ.get("HERMES_OTEL_CONFIG", "").strip()
+    if override:
+        paths.append(Path(override).expanduser())
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    home = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    paths.append(home / "hermes_otel.yaml")
     here = Path(__file__).resolve().parent  # dashboard/backends/
     plugin_root = here.parent.parent  # plugin root (…/hermes_otel/)
-    paths: List[Path] = [plugin_root / "config.yaml"]
-    env_home = os.environ.get("HERMES_HOME", "").strip()
-    if env_home:
-        paths.append(Path(env_home) / "plugins" / "hermes_otel" / "config.yaml")
-    paths.append(Path.home() / ".hermes" / "plugins" / "hermes_otel" / "config.yaml")
-    return paths
+    paths.append(plugin_root / "config.yaml")
+    paths.append(home / "plugins" / "hermes_otel" / "config.yaml")
+    seen: set = set()
+    return [p for p in paths if not (p in seen or seen.add(p))]
 
 
 def resolve_config_path() -> Optional[Path]:
