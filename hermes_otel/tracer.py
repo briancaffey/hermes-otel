@@ -108,8 +108,52 @@ if _OTEL_AVAILABLE:
         def force_flush(self, timeout_millis: int = 30000) -> bool:
             return True
 
+    class _MCPPingFilterProcessor(SpanProcessor):
+        """Delegating SpanProcessor that drops successful MCP keepalive ``ping`` spans.
+
+        MCP Python SDK 2.x (Hermes v0.21.0+) instruments every outbound JSON-RPC
+        request with a CLIENT span on the *global* TracerProvider — the one this
+        plugin installs. Hermes sends ``ping`` on every idle keepalive interval,
+        per MCP connection, so each one surfaces as a standalone single-span
+        ``MCP send ping`` trace that carries no agent activity (#62). Skipping
+        them at ``on_end`` keeps them out of the OTLP exporters *and* the live
+        dashboard store alike. Pings that failed (``StatusCode.ERROR``) are
+        passed through — that is the one case where the span is diagnostic.
+        """
+
+        def __init__(self, inner: SpanProcessor) -> None:
+            self._inner = inner
+
+        def on_start(self, span: Any, parent_context: Any = None) -> None:
+            self._inner.on_start(span, parent_context=parent_context)
+
+        def on_end(self, span: Any) -> None:
+            if _is_mcp_keepalive_ping(span):
+                return
+            self._inner.on_end(span)
+
+        def shutdown(self) -> None:
+            self._inner.shutdown()
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return self._inner.force_flush(timeout_millis)
+
 else:  # pragma: no cover — plugin is unusable without OTel
     _LiveSpanProcessor = None  # type: ignore[assignment, misc]
+    _MCPPingFilterProcessor = None  # type: ignore[assignment, misc]
+
+
+def _is_mcp_keepalive_ping(span: Any) -> bool:
+    """True for a finished MCP ``ping`` request span that did not fail.
+
+    Matches on the SDK's ``mcp.method.name`` attribute, with the span name as
+    a fallback, so it is robust to either changing on its own.
+    """
+    attrs = getattr(span, "attributes", None) or {}
+    if attrs.get("mcp.method.name") != "ping" and getattr(span, "name", None) != "MCP send ping":
+        return False
+    code = getattr(getattr(span, "status", None), "status_code", None)
+    return getattr(code, "name", None) != "ERROR"
 
 
 class _LiveLogNoiseFilter(logging.Filter):
@@ -452,6 +496,14 @@ class HermesOTelPlugin:
                 provider_kwargs["sampler"] = ParentBased(TraceIdRatioBased(self.config.sample_rate))
             provider = TracerProvider(**provider_kwargs)
 
+            def _attach(processor: Any) -> None:
+                # Every processor sits behind the same MCP keepalive filter so
+                # the OTLP backends and the live dashboard agree on what a
+                # trace list looks like. See _MCPPingFilterProcessor.
+                if self.config.suppress_mcp_ping_spans:
+                    processor = _MCPPingFilterProcessor(processor)
+                provider.add_span_processor(processor)
+
             # In-process live store for the zero-config dashboard. Added FIRST so
             # the dashboard renders the agent's activity even with no OTLP
             # backend configured — install the plugin, open the tab, see traces.
@@ -464,7 +516,7 @@ class HermesOTelPlugin:
                     max_rows=self.config.dashboard_live_max_spans,
                 )
                 if store is not None:
-                    provider.add_span_processor(_LiveSpanProcessor(store))
+                    _attach(_LiveSpanProcessor(store))
                     self._live_active = True
                     # Tail agent logs into the live store too (Logs tab), opt-in
                     # via capture_logs so we don't capture the root logger by default.
@@ -504,7 +556,7 @@ class HermesOTelPlugin:
                             max_export_batch_size=self.config.span_batch_max_export_batch_size,
                             export_timeout_millis=self.config.span_batch_export_timeout_ms,
                         )
-                        provider.add_span_processor(processor)
+                        _attach(processor)
                         self._span_processors.append(processor)
                     except Exception as e:
                         logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")

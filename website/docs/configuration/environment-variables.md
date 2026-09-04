@@ -69,6 +69,7 @@ Each of these overrides the corresponding field in `config.yaml`. See [`config.y
 | `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | bool |
 | `HERMES_OTEL_DASHBOARD_LIVE` | `dashboard_live` | bool |
 | `HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS` | `dashboard_live_max_spans` | int |
+| `HERMES_OTEL_SUPPRESS_MCP_PING_SPANS` | `suppress_mcp_ping_spans` | bool |
 
 ## Paths
 

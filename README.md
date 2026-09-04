@@ -392,6 +392,7 @@ llm_input_preview_max_chars: 1200
 llm_output_preview_max_chars: 1200
 capture_previews: true          # false = suppress all input.value / output.value
 capture_sender_id: false        # true = add platform-prefixed user.id to spans
+suppress_mcp_ping_spans: true   # drop successful MCP keepalive "ping" spans (SDK 2.x); failed pings are kept
 project_name: hermes-prod       # supersedes OTEL_PROJECT_NAME
 global_tags:
   team: platform
@@ -417,6 +418,7 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 | `llm_output_preview_max_chars` | `HERMES_OTEL_LLM_OUTPUT_PREVIEW_MAX_CHARS` |
 | `capture_previews` | `HERMES_OTEL_CAPTURE_PREVIEWS` |
 | `capture_sender_id` | `HERMES_OTEL_CAPTURE_SENDER_ID` |
+| `suppress_mcp_ping_spans` | `HERMES_OTEL_SUPPRESS_MCP_PING_SPANS` |
 | `project_name` | `HERMES_OTEL_PROJECT_NAME` |
 | `span_batch_max_queue_size` | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` |
 | `span_batch_schedule_delay_ms` | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` |
@@ -425,6 +427,10 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 | `force_flush_on_session_end` | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` |
 
 `pyyaml` is optional — if not installed, the YAML file is silently skipped and only env vars + defaults apply. Malformed YAML logs a single warning and falls back to defaults.
+
+#### MCP keepalive pings
+
+Hermes v0.21.0 moved to MCP Python SDK 2.x, which instruments every outbound MCP request with an OTel span on the global tracer provider — the one this plugin installs. Hermes sends a `ping` on every idle keepalive interval per MCP connection, so each one used to appear as a standalone one-span `MCP send ping` trace, burying real agent activity in the Live and Traces views. The plugin now drops successful pings before they reach any backend or the live store (`suppress_mcp_ping_spans: true`, the default). Pings that fail keep their error status and are always exported, so MCP connectivity problems stay visible. Set `suppress_mcp_ping_spans: false` (or `HERMES_OTEL_SUPPRESS_MCP_PING_SPANS=false`) to see every ping while debugging a server.
 
 #### Privacy mode
 
