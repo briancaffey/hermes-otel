@@ -140,6 +140,18 @@
 # dashboard_live: true
 # dashboard_live_max_spans: 1000
 
+# ── MCP keepalive pings ───────────────────────────────────────────────────────
+#
+# The MCP Python SDK 2.x (Hermes v0.21.0+) creates an OTel span for every
+# JSON-RPC request it sends — including the `ping` Hermes fires on each idle
+# keepalive interval, per MCP connection. Each ping lands as its own one-span
+# "MCP send ping" trace, which quickly buries real agent activity. True drops
+# the successful pings before they reach any backend or the live dashboard.
+# Failed pings (error status) are always kept — they are the useful ones when
+# debugging MCP connectivity. Set false to see every ping.
+# Also settable via HERMES_OTEL_SUPPRESS_MCP_PING_SPANS.
+# suppress_mcp_ping_spans: true
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than

@@ -209,6 +209,13 @@ class HermesOtelConfig:
     # (ring buffers); set false to disable the in-process store entirely.
     dashboard_live: bool = True
     dashboard_live_max_spans: int = 1000
+    # ── MCP keepalive noise ─────────────────────────────────────────────
+    # MCP Python SDK 2.x (Hermes v0.21.0+) emits a CLIENT span for every
+    # JSON-RPC request, including the periodic keepalive ``ping`` Hermes sends
+    # per MCP connection. Each surfaces as a standalone one-span
+    # "MCP send ping" trace. True (default) drops the successful ones before
+    # they reach any exporter or the live store; failed pings are always kept.
+    suppress_mcp_ping_spans: bool = True
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
@@ -353,6 +360,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "emit_genai_metrics",
         "skill_spans",
         "dashboard_live",
+        "suppress_mcp_ping_spans",
     ):
         if isinstance(value, bool):
             return value
@@ -439,6 +447,7 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("skill_spans", _parse_bool)
     take("dashboard_live", _parse_bool)
     take("dashboard_live_max_spans", _parse_int)
+    take("suppress_mcp_ping_spans", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
     if proj:
