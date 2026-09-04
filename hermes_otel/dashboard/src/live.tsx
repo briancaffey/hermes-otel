@@ -10,6 +10,7 @@ import {
   sessionOf,
   groupLiveTraces,
   liveTreeFromSpans,
+  isMcpKeepalivePing,
   fmtCost,
   fmtInt,
 } from "./lib";
@@ -43,6 +44,7 @@ export function LivePage() {
   const [error, setError] = useState<string | null>(null);
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<LiveTrace | null>(null);
+  const [showPings, setShowPings] = useState(false);
   const cursor = useRef(0);
 
   const poll = useCallback(async () => {
@@ -68,13 +70,18 @@ export function LivePage() {
     return () => clearInterval(id);
   }, [poll, paused, selected]);
 
-  const stats = deriveStats(spans);
-  const traces = groupLiveTraces(spans);
+  // Hidden MCP keepalive pings drop out of the stats and sparkline too, so a
+  // dozen pings never read as "activity".
+  const allTraces = groupLiveTraces(spans);
+  const traces = showPings ? allTraces : allTraces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
+  const hiddenPings = allTraces.length - traces.length;
+  const visibleSpans = showPings ? spans : traces.flatMap((t) => t.spans);
+  const stats = deriveStats(visibleSpans);
   const lastSession = spans.length ? sessionOf(spans[spans.length - 1]) : null;
 
   const now = Date.now();
   const buckets = new Array(50).fill(0);
-  for (const s of spans) {
+  for (const s of visibleSpans) {
     const t = (s.end_time_unix_nano || s.start_time_unix_nano) / 1e6;
     const idx = 49 - Math.floor((now - t) / 2000);
     if (idx >= 0 && idx < 50) buckets[idx]++;
@@ -127,7 +134,7 @@ export function LivePage() {
         <Stat label="Cost" value={fmtCost(stats.cost)} accent="cost" />
         <Stat label="Tokens" value={fmtInt(stats.tokens)} />
         <Stat label="Turns" value={fmtInt(stats.traces)} />
-        <Stat label="Spans" value={fmtInt(spans.length)} />
+        <Stat label="Spans" value={fmtInt(visibleSpans.length)} />
         <Stat label="Errors" value={fmtInt(stats.errors)} accent={stats.errors ? "error" : undefined} />
       </div>
 
@@ -151,7 +158,13 @@ export function LivePage() {
 
       <div className="flex items-center justify-between pt-1">
         <MiniLabel>recent turns</MiniLabel>
-        <span className="text-[11px] text-muted-foreground">click a turn to open its span waterfall</span>
+        <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
+          <label className="inline-flex cursor-pointer items-center gap-1.5">
+            <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
+            show MCP keepalive pings{hiddenPings ? ` (${hiddenPings} hidden)` : ""}
+          </label>
+          <span>click a turn to open its span waterfall</span>
+        </div>
       </div>
 
       <div className="flex flex-col gap-2">
