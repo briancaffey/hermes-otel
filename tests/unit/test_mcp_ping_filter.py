@@ -10,13 +10,14 @@ installs — so every keepalive ``ping`` became a standalone one-span
 from unittest.mock import patch
 
 import pytest
-from hermes_otel.plugin_config import HermesOtelConfig, load_config
-from hermes_otel.tracer import HermesOTelPlugin, _is_mcp_keepalive_ping, _MCPPingFilterProcessor
 from opentelemetry.sdk.resources import Resource
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, Status, StatusCode
+
+from hermes_otel.plugin_config import HermesOtelConfig, load_config
+from hermes_otel.tracer import HermesOTelPlugin, _is_mcp_keepalive_ping, _MCPPingFilterProcessor
 
 # Exactly what mcp/shared/jsonrpc_dispatcher.py emits for a keepalive.
 _PING_ATTRS = {"mcp.method.name": "ping", "jsonrpc.request.id": "42"}
@@ -150,8 +151,13 @@ class TestInitWiring:
 
     def _init_live_only(self, monkeypatch, suppress: bool):
         for var in (
-            "OTEL_PHOENIX_ENDPOINT", "OTEL_EXPORTER_OTLP_ENDPOINT", "OTEL_LANGFUSE_ENDPOINT",
-            "LANGSMITH_TRACING", "OTEL_SIGNOZ_ENDPOINT", "OTEL_JAEGER_ENDPOINT", "OTEL_TEMPO_ENDPOINT",
+            "OTEL_PHOENIX_ENDPOINT",
+            "OTEL_EXPORTER_OTLP_ENDPOINT",
+            "OTEL_LANGFUSE_ENDPOINT",
+            "LANGSMITH_TRACING",
+            "OTEL_SIGNOZ_ENDPOINT",
+            "OTEL_JAEGER_ENDPOINT",
+            "OTEL_TEMPO_ENDPOINT",
         ):
             monkeypatch.delenv(var, raising=False)
         import hermes_otel.live_store as ls
