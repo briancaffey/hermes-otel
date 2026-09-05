@@ -74,10 +74,24 @@ dev = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",
+    # Needed to unit-test plot_profiling.py's chart rendering. Not a runtime
+    # dependency of the plugin itself — see HERMES_PLOT_PROFILING in the README
+    # for the separate, manual install step end users need for real usage.
+    "matplotlib",
 ]
 e2e = [
     "requests",
     "openai",
+]
+gpu-nvidia = [
+    "pynvml",
+]
+# amdsmi on PyPI is an unofficial mirror (not published by AMD). Left unpinned;
+# if it does not work with your GPU or ROCm install, AMD's own docs recommend
+# installing amdsmi from your ROCm SDK directory instead
+# (`/opt/rocm/core-<ver>/share/amd_smi`).
+gpu-amd = [
+    "amdsmi",
 ]
 
 [project.entry-points."hermes.plugin"]

@@ -1826,3 +1826,16 @@ def on_mcp_request_headers(
     sid = session_id or kwargs.get("session_id")
     traceparent = get_current_traceparent(sid)
     return {"traceparent": traceparent} if traceparent else {}
+
+
+# Advanced hardware / per-tool profiling (CPU/GPU). The lifecycle logic lives in
+# profiling_integration.py, which wraps the hooks defined above by name. Wrapped
+# in a guard so a profiling import error can never break hook loading.
+try:
+    import sys as _sys
+
+    from . import profiling_integration as _profiling_integration
+
+    _profiling_integration.install(_sys.modules[__name__])
+except Exception as _profiling_exc:  # pragma: no cover
+    debug_log(f"profiling install failed: {_profiling_exc}")
