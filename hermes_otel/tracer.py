@@ -424,6 +424,15 @@ class HermesOTelPlugin:
         project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name
+        # host.name lets the host/GPU series join the traces they were sampled
+        # alongside (and a Collector's hostmetrics series, if one runs too).
+        if self.config.host_metrics and not attrs.get("host.name"):
+            try:
+                import socket
+
+                attrs["host.name"] = socket.gethostname()
+            except Exception:  # pragma: no cover — never block init on this
+                pass
         return Resource.create(attrs)
 
     @staticmethod

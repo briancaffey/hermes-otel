@@ -157,3 +157,26 @@ class TestLiveStoreMirror:
         _exporter, _reader, plugin = inmemory_otel_with_metrics
         plugin._live_active = False
         plugin._mirror_host_sample(_sample())  # must not raise
+
+
+class TestResourceHostName:
+    def test_host_name_added_when_host_metrics_on(self):
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        plugin = HermesOTelPlugin(HermesOtelConfig(host_metrics=True))
+        attrs = plugin._build_resource([]).attributes
+        assert attrs["host.name"]
+
+    def test_configured_host_name_wins(self):
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        plugin = HermesOTelPlugin(
+            HermesOtelConfig(host_metrics=True, resource_attributes={"host.name": "gpu-box-1"})
+        )
+        assert plugin._build_resource([]).attributes["host.name"] == "gpu-box-1"
+
+    def test_absent_when_host_metrics_off(self):
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        plugin = HermesOTelPlugin(HermesOtelConfig())
+        assert "host.name" not in plugin._build_resource([]).attributes

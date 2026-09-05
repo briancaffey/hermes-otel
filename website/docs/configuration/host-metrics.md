@@ -70,7 +70,7 @@ core busy), as the conventions specify — a single fully-busy core on an
 **plus every child it spawned** (tool subprocesses, MCP servers it launched);
 an external inference server is not a child and is excluded by construction.
 
-The readings are also mirrored into the [live dashboard](/configuration/yaml) store.
+The readings are also mirrored into the [live dashboard](/getting-started/installation) store.
 
 ### Span attributes
 
@@ -114,6 +114,7 @@ If you would rather not sample inside the Hermes process, the OpenTelemetry
 Collector's [`hostmetrics` receiver](https://github.com/open-telemetry/opentelemetry-collector-contrib/tree/main/receiver/hostmetricsreceiver)
 emits the same `process.*` / `system.*` metrics, and NVIDIA's
 [DCGM exporter](https://github.com/NVIDIA/dcgm-exporter) covers GPUs in far
-more detail. The plugin's `host.name` resource attribute joins those series to
-its traces. What the Collector cannot do is stamp the per-tool window on the
+more detail. With `host_metrics` on the plugin sets the `host.name` resource
+attribute (override it under `resource_attributes`), which joins those series
+to its traces. What the Collector cannot do is stamp the per-tool window on the
 span — that part needs to be in-process.
