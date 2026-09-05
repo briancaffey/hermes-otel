@@ -35,12 +35,12 @@ Configuration (env vars): see profiling_env.py for the authoritative list.
   HERMES_POLL_INTERVAL         poll interval seconds (default "0.1")
 """
 
-import os
 import csv
-import sys
 import json
-import time
+import os
 import subprocess
+import sys
+import time
 from datetime import datetime
 from typing import Any, Dict, Optional
 
@@ -51,6 +51,7 @@ from .helpers import truncate_string
 def _debug(msg: str):
     try:
         from .debug_utils import debug_log
+
         debug_log(f"[tool_profiler] {msg}")
     except Exception:
         if os.environ.get("HERMES_PROFILING_DEBUG"):
@@ -58,9 +59,18 @@ def _debug(msg: str):
 
 
 _BREAKDOWN_HEADER = [
-    "turn", "tool_name", "input", "output", "timestamp", "start_time_unix_nano",
-    "elapsed_s", "duration_s", "cpu_avg_pct", "cpu_peak_pct",
-    "gpu_avg_pct", "gpu_peak_pct",
+    "turn",
+    "tool_name",
+    "input",
+    "output",
+    "timestamp",
+    "start_time_unix_nano",
+    "elapsed_s",
+    "duration_s",
+    "cpu_avg_pct",
+    "cpu_peak_pct",
+    "gpu_avg_pct",
+    "gpu_peak_pct",
 ]
 
 # Max length of the JSON-serialized tool args/result stored in the "input"/
@@ -141,6 +151,7 @@ def _ensure_session(session_id: str):
     global _atexit_registered
     if not _atexit_registered:
         import atexit
+
         atexit.register(_stop_all_pollers)
         _atexit_registered = True
 
@@ -166,7 +177,8 @@ def _maybe_start_poller(session_id: str, state: dict):
         # out_dir and which GPU vendor SDK to query.
         state["proc"] = subprocess.Popen(
             [sys.executable, poller_script, state["out_dir"], interval, str(os.getpid())],
-            stdout=devnull, stderr=devnull,
+            stdout=devnull,
+            stderr=devnull,
         )
         _debug(f"metrics poller started (pid={state['proc'].pid}) -> {state['out_dir']}")
     except Exception as e:
@@ -373,8 +385,14 @@ def _slice_column(csv_path: str, value_cols, start_wall: float, end_wall: float)
     return out
 
 
-def record_tool_end(key: str, tool_name: str, session_id: Optional[str] = None,
-                     args: Optional[dict] = None, result: Optional[Any] = None, **kwargs):
+def record_tool_end(
+    key: str,
+    tool_name: str,
+    session_id: Optional[str] = None,
+    args: Optional[dict] = None,
+    result: Optional[Any] = None,
+    **kwargs,
+):
     """Compute per-tool CPU/GPU averages from the timelines and write the CSV row.
 
     `args`/`result` (the same raw tool call arguments and result `on_post_tool_
@@ -401,7 +419,9 @@ def record_tool_end(key: str, tool_name: str, session_id: Optional[str] = None,
         if isinstance(result, (dict, list)):
             tool_output = json.dumps(result)
         else:
-            tool_output = result if isinstance(result, str) else str(result) if result is not None else ""
+            tool_output = (
+                result if isinstance(result, str) else str(result) if result is not None else ""
+            )
     except Exception:
         tool_output = str(result) if result is not None else ""
     tool_output = truncate_string(tool_output, _PREVIEW_MAX_CHARS)
@@ -416,9 +436,7 @@ def record_tool_end(key: str, tool_name: str, session_id: Optional[str] = None,
 
         # Slice the timeline CSVs using wall-clock timestamps
         if state:
-            cpu_data = _slice_column(
-                state.get("cpu_csv", ""), ["cpu_pct"], wall_start, wall_end
-            )
+            cpu_data = _slice_column(state.get("cpu_csv", ""), ["cpu_pct"], wall_start, wall_end)
             cpu_vals = cpu_data["cpu_pct"]
             if cpu_vals:
                 cpu_avg = round(sum(cpu_vals) / len(cpu_vals), 1)
@@ -426,7 +444,9 @@ def record_tool_end(key: str, tool_name: str, session_id: Optional[str] = None,
 
             gpu_data = _slice_column(
                 state.get("gpu_csv", ""),
-                ["gfx_busy_pct"], wall_start, wall_end,
+                ["gfx_busy_pct"],
+                wall_start,
+                wall_end,
             )
             gfx_vals = gpu_data["gfx_busy_pct"]
             if gfx_vals:
@@ -461,9 +481,20 @@ def record_tool_end(key: str, tool_name: str, session_id: Optional[str] = None,
             try:
                 with open(state["breakdown"], "a", newline="") as f:
                     csv.writer(f).writerow(
-                        [turn, tool_name, tool_input, tool_output, start_ts, start_ns,
-                         start_elapsed_str, f"{duration:.2f}", cpu_avg, cpu_peak,
-                         gpu_avg, gpu_peak]
+                        [
+                            turn,
+                            tool_name,
+                            tool_input,
+                            tool_output,
+                            start_ts,
+                            start_ns,
+                            start_elapsed_str,
+                            f"{duration:.2f}",
+                            cpu_avg,
+                            cpu_peak,
+                            gpu_avg,
+                            gpu_peak,
+                        ]
                     )
             except Exception as e:
                 _debug(f"could not append breakdown row: {e}")

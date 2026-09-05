@@ -30,13 +30,13 @@ Runs until SIGTERM/SIGINT, flushing each row so the CSVs can be read while still
 being written. Imports nothing from the hermes plugin.
 """
 
+import csv
 import os
 import re
-import csv
-import sys
-import time
 import signal
 import subprocess
+import sys
+import time
 from datetime import datetime
 
 try:
@@ -66,6 +66,7 @@ def _stop(signum, frame):
 # tick; _aggregate_gpu excludes it from the corresponding aggregate rather than
 # treating it as zero.
 # --------------------------------------------------------------------------- #
+
 
 def _amd_init():
     """Initialize AMD SMI and return its GPU handles, or None if amdsmi is not
@@ -112,7 +113,9 @@ def _amd_cli_snapshot():
     try:
         res = subprocess.run(
             ["rocm-smi", "--showuse", "--showmeminfo", "vram", "--showpower"],
-            capture_output=True, text=True, timeout=2,
+            capture_output=True,
+            text=True,
+            timeout=2,
         )
     except Exception:
         return {}
@@ -123,9 +126,7 @@ def _amd_cli_snapshot():
         if not m:
             continue
         idx, rest = int(m.group(1)), m.group(2)
-        entry = snapshot.setdefault(
-            idx, {"busy_pct": None, "power_w": None, "vram_used_mb": None}
-        )
+        entry = snapshot.setdefault(idx, {"busy_pct": None, "power_w": None, "vram_used_mb": None})
         if "GPU use (%)" in rest:
             try:
                 entry["busy_pct"] = float(rest.split(":")[-1].strip())
@@ -134,7 +135,7 @@ def _amd_cli_snapshot():
         elif "VRAM Total Used Memory" in rest:
             digits = "".join(filter(str.isdigit, rest))
             if digits:
-                entry["vram_used_mb"] = float(digits) / (1024 ** 2)
+                entry["vram_used_mb"] = float(digits) / (1024**2)
         elif "Power (W)" in rest:
             try:
                 entry["power_w"] = float(rest.split(":")[-1].strip())
@@ -169,7 +170,8 @@ def _amd_gpu_stats(handles):
         try:
             activity = amdsmi.amdsmi_get_gpu_activity(handle)
             raw = (
-                activity.get("gfx_activity") if isinstance(activity, dict)
+                activity.get("gfx_activity")
+                if isinstance(activity, dict)
                 else getattr(activity, "gfx_activity", None)
             )
             if raw is not None:
@@ -180,7 +182,8 @@ def _amd_gpu_stats(handles):
         try:
             vram_info = amdsmi.amdsmi_get_gpu_vram_usage(handle)
             raw = (
-                vram_info.get("vram_used") if isinstance(vram_info, dict)
+                vram_info.get("vram_used")
+                if isinstance(vram_info, dict)
                 else getattr(vram_info, "vram_used", None)
             )
             if raw is not None:
@@ -191,7 +194,8 @@ def _amd_gpu_stats(handles):
         try:
             metrics = amdsmi.amdsmi_get_gpu_metrics_info(handle)
             raw = (
-                metrics.get("current_socket_power") if isinstance(metrics, dict)
+                metrics.get("current_socket_power")
+                if isinstance(metrics, dict)
                 else getattr(metrics, "current_socket_power", None)
             )
             if raw not in (None, "N/A"):
@@ -258,7 +262,7 @@ def _nvidia_gpu_stats(handles):
             pass
 
         try:
-            vram_used_mb = pynvml.nvmlDeviceGetMemoryInfo(handle).used / (1024 ** 2)
+            vram_used_mb = pynvml.nvmlDeviceGetMemoryInfo(handle).used / (1024**2)
         except Exception:
             pass
 

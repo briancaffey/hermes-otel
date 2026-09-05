@@ -207,8 +207,16 @@ def _plot_combined(cpu_hermes, cpu_system, gpu, tools, out_dir):
         end = start + _f(r.get("duration_s"))
         ax.axvspan(start, end, alpha=0.2, color="cornflowerblue")
         if label_tools:
-            ax.text(start, 1, r.get("tool_name", ""), rotation=90, fontsize=6,
-                    va="bottom", ha="left", alpha=0.6)
+            ax.text(
+                start,
+                1,
+                r.get("tool_name", ""),
+                rotation=90,
+                fontsize=6,
+                va="bottom",
+                ha="left",
+                alpha=0.6,
+            )
 
     ax.set_title("CPU / GPU utilization vs time (tool windows shaded)")
     ax.set_xlabel("elapsed seconds")

@@ -74,6 +74,10 @@ dev = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",
+    # Needed to unit-test plot_profiling.py's chart rendering. Not a runtime
+    # dependency of the plugin itself — see HERMES_PLOT_PROFILING in the README
+    # for the separate, manual install step end users need for real usage.
+    "matplotlib",
 ]
 e2e = [
     "requests",
