@@ -513,3 +513,43 @@ class TestMissingPyYaml:
         finally:
             if original_yaml is not None:
                 sys.modules["yaml"] = original_yaml
+
+
+class TestHostMetricsConfig:
+    def test_defaults_off(self):
+        cfg = HermesOtelConfig()
+        assert cfg.host_metrics is False
+        assert cfg.host_metrics_gpu == "auto"
+        assert cfg.host_metrics_interval_ms == 1000
+
+    def test_env_overrides(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_HOST_METRICS", "true")
+        monkeypatch.setenv("HERMES_OTEL_HOST_METRICS_GPU", "NVIDIA")
+        monkeypatch.setenv("HERMES_OTEL_HOST_METRICS_INTERVAL_MS", "250")
+        cfg = load_config(path=tmp_path / "nonexistent.yaml")
+        assert cfg.host_metrics is True
+        assert cfg.host_metrics_gpu == "nvidia"
+        assert cfg.host_metrics_interval_ms == 250
+
+    def test_env_invalid_gpu_vendor_ignored(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_HOST_METRICS_GPU", "intel")
+        cfg = load_config(path=tmp_path / "nonexistent.yaml")
+        assert cfg.host_metrics_gpu == "auto"
+
+    def test_yaml_values(self, tmp_path):
+        pytest.importorskip("yaml")
+        path = tmp_path / "hermes_otel.yaml"
+        path.write_text(
+            "host_metrics: true\nhost_metrics_gpu: amd\nhost_metrics_interval_ms: '500'\n"
+        )
+        cfg = load_config(path=path)
+        assert cfg.host_metrics is True
+        assert cfg.host_metrics_gpu == "amd"
+        assert cfg.host_metrics_interval_ms == 500
+
+    def test_yaml_invalid_gpu_vendor_falls_back_to_default(self, tmp_path):
+        pytest.importorskip("yaml")
+        path = tmp_path / "hermes_otel.yaml"
+        path.write_text("host_metrics_gpu: intel\n")
+        cfg = load_config(path=path)
+        assert cfg.host_metrics_gpu == "auto"

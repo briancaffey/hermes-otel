@@ -232,6 +232,9 @@ class HermesOTelPlugin:
         self._gen_ai_client_token_usage = None
         self._gen_ai_client_operation_duration = None
         self._gen_ai_agent_token_usage = None
+        # Host metrics sampler (CPU / GPU), created when config.host_metrics is
+        # on. One per process; started after backend init, stopped at exit.
+        self._host_metrics: Optional[Any] = None
         # Sub-agent delegation registry. Maps a delegated child's session_id to
         # a record about the delegation span opened in the parent on
         # ``subagent_start`` — ``{"span", "context", "role", "parent_session_id"}``
@@ -254,6 +257,13 @@ class HermesOTelPlugin:
     # ── Initialization entry point ───────────────────────────────────────
 
     def init(self, endpoint: str = None) -> bool:
+        """Initialize the backends, then start the host-metrics sampler if enabled."""
+        ok = self._init_backends(endpoint)
+        if ok:
+            self._start_host_metrics()
+        return ok
+
+    def _init_backends(self, endpoint: str = None) -> bool:
         """Initialize one or more backends.
 
         Resolution order:
@@ -661,6 +671,151 @@ class HermesOTelPlugin:
             description="Tokens used per agent invocation (session/turn rollup), by type",
         )
 
+        self._create_host_metric_instruments()
+
+    # ── Host metrics (CPU / GPU) ─────────────────────────────────────────
+
+    def _ensure_host_sampler(self) -> Optional[Any]:
+        """Create (but do not start) the sampler when ``config.host_metrics`` is on."""
+        if not self.config.host_metrics:
+            return None
+        if self._host_metrics is None:
+            from .host_metrics import HostMetricsSampler
+
+            self._host_metrics = HostMetricsSampler(
+                interval_ms=self.config.host_metrics_interval_ms,
+                gpu_vendor=self.config.host_metrics_gpu,
+                on_sample=self._mirror_host_sample,
+            )
+        return self._host_metrics
+
+    def _start_host_metrics(self) -> None:
+        sampler = self._ensure_host_sampler()
+        if sampler is None:
+            return
+        if not sampler.available:
+            logger.warning(
+                "[hermes-otel] ⚠ host_metrics=true but psutil is not importable; "
+                "host metrics disabled"
+            )
+            return
+        if sampler.start():
+            gpu = sampler.gpu_vendor_detected or "none"
+            logger.info(
+                f"[hermes-otel] ✓ Host metrics sampler on "
+                f"(every {self.config.host_metrics_interval_ms} ms, gpu={gpu})"
+            )
+
+    def stop_host_metrics(self) -> None:
+        """Stop the sampler thread and release any GPU SDK (idempotent)."""
+        sampler = self._host_metrics
+        if sampler is not None:
+            try:
+                sampler.stop()
+            except Exception:  # pragma: no cover — shutdown must never raise
+                pass
+
+    @property
+    def host_metrics(self) -> Optional[Any]:
+        """The running sampler, or None when host metrics are off / unavailable."""
+        sampler = self._host_metrics
+        return sampler if sampler is not None and sampler.running else None
+
+    def _mirror_host_sample(self, sample: Any) -> None:
+        """Push each reading into the live store so the built-in dashboard sees it."""
+        if not self._live_active:
+            return
+        try:
+            from .live_store import get_live_store
+
+            store = get_live_store()
+            if store is None:
+                return
+            ts = sample.wall_ns
+            store.add_metric("process.cpu.utilization", sample.process_cpu_total, {}, ts)
+            store.add_metric("system.cpu.utilization", sample.system_cpu_total, {}, ts)
+            gpu = sample.gpu_utilization
+            if gpu is not None:
+                store.add_metric("hw.gpu.utilization", gpu, {}, ts)
+        except Exception:  # pragma: no cover — never break the sampler
+            pass
+
+    def _create_host_metric_instruments(self) -> None:
+        """Register the host/GPU observable instruments (semantic-convention names).
+
+        Each callback reads the sampler's latest reading; the SDK invokes them
+        on every collection, so the export cadence is ``flush_interval_ms``
+        while the sampler keeps its own finer cadence for the per-tool window
+        attributes.
+        """
+        sampler = self._ensure_host_sampler()
+        if sampler is None or self._meter is None:
+            return
+        try:
+            from opentelemetry.metrics import Observation
+        except ImportError:  # pragma: no cover
+            return
+
+        def _cpu(getter):
+            def callback(_options):
+                latest = sampler.latest()
+                if latest is None:
+                    return []
+                modes = getter(latest)
+                return [Observation(v, {"cpu.mode": mode}) for mode, v in modes.items()]
+
+            return callback
+
+        def _gpu(field, extra=None):
+            def callback(_options):
+                latest = sampler.latest()
+                if latest is None:
+                    return []
+                vendor = sampler.gpu_vendor_detected or "unknown"
+                out = []
+                for g in latest.gpus:
+                    value = getattr(g, field)
+                    if value is None:
+                        continue
+                    attrs = {"hw.id": f"gpu{g.index}", "hw.vendor": vendor}
+                    if extra:
+                        attrs.update(extra)
+                    out.append(Observation(value, attrs))
+                return out
+
+            return callback
+
+        self._meter.create_observable_gauge(
+            "process.cpu.utilization",
+            callbacks=[_cpu(lambda s: s.process_cpu)],
+            unit="1",
+            description="CPU utilization of the Hermes process tree, by mode (1 = all cores busy)",
+        )
+        self._meter.create_observable_gauge(
+            "system.cpu.utilization",
+            callbacks=[_cpu(lambda s: s.system_cpu)],
+            unit="1",
+            description="Whole-host CPU utilization, by mode",
+        )
+        self._meter.create_observable_gauge(
+            "hw.gpu.utilization",
+            callbacks=[_gpu("utilization")],
+            unit="1",
+            description="GPU busy ratio per device",
+        )
+        self._meter.create_observable_up_down_counter(
+            "hw.gpu.memory.usage",
+            callbacks=[_gpu("memory_bytes")],
+            unit="By",
+            description="GPU memory in use per device",
+        )
+        self._meter.create_observable_gauge(
+            "hw.power",
+            callbacks=[_gpu("power_w", {"hw.type": "gpu"})],
+            unit="W",
+            description="GPU power draw per device",
+        )
+
     def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
         """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
 
@@ -984,6 +1139,7 @@ class HermesOTelPlugin:
         if self._atexit_registered:
             return
         atexit.register(self._force_flush)
+        atexit.register(self.stop_host_metrics)
         self._atexit_registered = True
 
     @property

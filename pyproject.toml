@@ -74,6 +74,14 @@ dev = [
     "opentelemetry-api",
     "opentelemetry-sdk",
     "opentelemetry-exporter-otlp-proto-http",
+    # host_metrics sampler (optional at runtime; ships with hermes-agent)
+    "psutil",
+]
+# Optional: CPU/GPU host metrics (`host_metrics: true`). psutil ships with
+# hermes-agent already; the GPU SDK is vendor-specific and must match the
+# installed driver stack (see after-install.md), so it is not pinned here.
+host-metrics = [
+    "psutil",
 ]
 e2e = [
     "requests",
