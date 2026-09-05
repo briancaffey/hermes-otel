@@ -16,6 +16,7 @@ internals.
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
 
@@ -103,6 +104,10 @@ class PerSession:
     # on_session_end only receives the platform (e.g. "cli"), so the real
     # provider is captured here for the agent-level GenAI metric dimensions.
     provider: str = ""
+    # 1-based index of the user turn this aggregator covers. Surfaced as the
+    # ``hermes.turn.number`` span attribute so any backend can group or filter
+    # a session's spans by conversation turn. See SessionState.next_turn.
+    turn_number: int = 0
 
 
 class SessionState:
@@ -116,9 +121,17 @@ class SessionState:
     session aggregators.
     """
 
+    # Upper bound on remembered turn counters for sessions whose aggregator has
+    # been drained. A long-lived gateway sees many session ids; the oldest are
+    # evicted first, so a very old session that comes back simply restarts at 1.
+    _MAX_TURN_COUNTERS = 4096
+
     def __init__(self) -> None:
         self._sessions: Dict[str, PerSession] = {}
         self._tool_times: Dict[str, float] = {}
+        # Turn counters outlive the per-turn PerSession (which on_session_end
+        # pops), so continuation turns keep counting: session_id -> last turn.
+        self._turn_counters: "OrderedDict[str, int]" = OrderedDict()
 
     # ── Per-session aggregators ──────────────────────────────────────────
 
@@ -141,6 +154,37 @@ class SessionState:
     def has(self, session_id: str) -> bool:
         return session_id in self._sessions
 
+    # ── Turn numbering ───────────────────────────────────────────────────
+
+    def next_turn(self, session_id: str, reset: bool = False) -> int:
+        """Advance and return the 1-based turn number for ``session_id``.
+
+        Called once per user turn (from ``pre_llm_call``, which Hermes fires
+        once per prompt, before the tool loop). ``reset=True`` (Hermes's
+        ``is_first_turn``) restarts the count at 1 so a reused session id
+        starts fresh. The counter is process-local: a session resumed in a
+        new process (``hermes -r``) restarts at 1.
+        """
+        if not session_id:
+            return 0
+        current = 0 if reset else self._turn_counters.get(session_id, 0)
+        turn = current + 1
+        self._turn_counters[session_id] = turn
+        self._turn_counters.move_to_end(session_id)
+        while len(self._turn_counters) > self._MAX_TURN_COUNTERS:
+            self._turn_counters.popitem(last=False)
+        self.get_or_create(session_id).turn_number = turn
+        return turn
+
+    def turn_number(self, session_id: str) -> int:
+        """Current turn number for ``session_id`` (0 = no turn started yet)."""
+        if not session_id:
+            return 0
+        ps = self._sessions.get(session_id)
+        if ps is not None and ps.turn_number:
+            return ps.turn_number
+        return self._turn_counters.get(session_id, 0)
+
     # ── Tool timings ─────────────────────────────────────────────────────
 
     def record_tool_start(self, key: str, started_at: float) -> None:
@@ -157,3 +201,4 @@ class SessionState:
     def clear(self) -> None:
         self._sessions.clear()
         self._tool_times.clear()
+        self._turn_counters.clear()
