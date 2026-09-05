@@ -79,6 +79,16 @@ e2e = [
     "requests",
     "openai",
 ]
+gpu-nvidia = [
+    "pynvml",
+]
+# amdsmi on PyPI is an unofficial mirror (not published by AMD). Left unpinned;
+# if it does not work with your GPU or ROCm install, AMD's own docs recommend
+# installing amdsmi from your ROCm SDK directory instead
+# (`/opt/rocm/core-<ver>/share/amd_smi`).
+gpu-amd = [
+    "amdsmi",
+]
 
 [project.entry-points."hermes.plugin"]
 hermes_otel = "hermes_otel:register"
