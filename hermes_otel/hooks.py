@@ -851,7 +851,6 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         # Explicit session attrs so backend session queries group this span
         # even when session_id was recovered from turn_id rather than passed.
         attributes.setdefault("session.id", truncate_string(session_id, 200))
-        attributes.setdefault("session_id", truncate_string(session_id, 200))
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
@@ -946,7 +945,6 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         session_id = session_id_from_turn_id(kwargs.get("turn_id"))
     if session_id:
         attributes.setdefault("session.id", truncate_string(session_id, 200))
-        attributes.setdefault("session_id", truncate_string(session_id, 200))
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
