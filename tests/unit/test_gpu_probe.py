@@ -1,9 +1,8 @@
-"""Tests for the standalone CPU/GPU metrics poller (metrics_poller.py).
+"""Tests for the GPU probe (gpu_probe.py).
 
-metrics_poller.py deliberately imports nothing from the hermes plugin so it can
-run as an isolated subprocess, but it is still importable as a module here for
-unit testing. Neither amdsmi nor pynvml are installed in CI, so the AMD/NVIDIA
-SDK calls are exercised via fake modules injected into sys.modules.
+Neither amdsmi nor pynvml are installed in CI, so the AMD/NVIDIA SDK calls are
+exercised via fake modules injected into sys.modules. The ``rocm-smi`` CLI
+fallback is exercised by stubbing ``subprocess.run``.
 """
 
 import os
@@ -14,24 +13,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hermes_otel import metrics_poller as poller
-
-
-# --------------------------------------------------------------------------- #
-# _flag
-# --------------------------------------------------------------------------- #
-class TestFlag:
-    def test_truthy(self, monkeypatch):
-        monkeypatch.setenv("HERMES_CPU_TRACE", "true")
-        assert poller._flag("HERMES_CPU_TRACE") is True
-
-    def test_falsy(self, monkeypatch):
-        monkeypatch.setenv("HERMES_CPU_TRACE", "false")
-        assert poller._flag("HERMES_CPU_TRACE") is False
-
-    def test_unset(self, monkeypatch):
-        monkeypatch.delenv("HERMES_CPU_TRACE", raising=False)
-        assert poller._flag("HERMES_CPU_TRACE") is False
+from hermes_otel import gpu_probe as poller
 
 
 # --------------------------------------------------------------------------- #
@@ -297,25 +279,21 @@ class TestNvidiaInitShutdown:
 # --------------------------------------------------------------------------- #
 class TestDetectGpuVendor:
     def test_forced_amd(self, monkeypatch):
-        monkeypatch.setenv("HERMES_GPU_VENDOR", "amd")
         monkeypatch.setattr(poller, "_amd_init", lambda: ["h0"])
         monkeypatch.setattr(
             poller, "_nvidia_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
         )
-        assert poller._detect_gpu_vendor() == ("amd", ["h0"])
+        assert poller._detect_gpu_vendor("amd") == ("amd", ["h0"])
 
     def test_forced_amd_no_handles(self, monkeypatch):
-        monkeypatch.setenv("HERMES_GPU_VENDOR", "amd")
         monkeypatch.setattr(poller, "_amd_init", lambda: None)
-        assert poller._detect_gpu_vendor() == (None, None)
+        assert poller._detect_gpu_vendor("amd") == (None, None)
 
     def test_forced_nvidia(self, monkeypatch):
-        monkeypatch.setenv("HERMES_GPU_VENDOR", "nvidia")
         monkeypatch.setattr(poller, "_nvidia_init", lambda: ["h0"])
-        assert poller._detect_gpu_vendor() == ("nvidia", ["h0"])
+        assert poller._detect_gpu_vendor("nvidia") == ("nvidia", ["h0"])
 
     def test_auto_prefers_amd(self, monkeypatch):
-        monkeypatch.delenv("HERMES_GPU_VENDOR", raising=False)
         monkeypatch.setattr(poller, "_amd_init", lambda: ["amd0"])
         monkeypatch.setattr(
             poller, "_nvidia_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
@@ -323,13 +301,11 @@ class TestDetectGpuVendor:
         assert poller._detect_gpu_vendor() == ("amd", ["amd0"])
 
     def test_auto_falls_back_to_nvidia(self, monkeypatch):
-        monkeypatch.delenv("HERMES_GPU_VENDOR", raising=False)
         monkeypatch.setattr(poller, "_amd_init", lambda: None)
         monkeypatch.setattr(poller, "_nvidia_init", lambda: ["nv0"])
         assert poller._detect_gpu_vendor() == ("nvidia", ["nv0"])
 
     def test_auto_no_gpu_found(self, monkeypatch):
-        monkeypatch.delenv("HERMES_GPU_VENDOR", raising=False)
         monkeypatch.setattr(poller, "_amd_init", lambda: None)
         monkeypatch.setattr(poller, "_nvidia_init", lambda: None)
         assert poller._detect_gpu_vendor() == (None, None)
@@ -397,237 +373,66 @@ class TestAggregateGpu:
         per_gpu = [{"busy_pct": None, "power_w": None, "vram_used_mb": None}]
         assert poller._aggregate_gpu(per_gpu) == (0.0, 0.0, 0.0)
 
+    # --------------------------------------------------------------------------- #
+    # _cpu_seconds / _clamp_pct
+    # --------------------------------------------------------------------------- #
 
-# --------------------------------------------------------------------------- #
-# _cpu_seconds / _clamp_pct
-# --------------------------------------------------------------------------- #
-class TestCpuSecondsAndClamp:
-    def test_cpu_seconds_sums_user_and_system(self):
-        proc = SimpleNamespace(cpu_times=lambda: SimpleNamespace(user=1.5, system=2.5))
-        assert poller._cpu_seconds(proc) == 4.0
-
-    @pytest.mark.parametrize(
-        "value,expected",
-        [(-5.0, 0.0), (0.0, 0.0), (50.0, 50.0), (100.0, 100.0), (105.0, 100.0)],
-    )
-    def test_clamp_pct(self, value, expected):
-        assert poller._clamp_pct(value) == expected
-
-
-# --------------------------------------------------------------------------- #
-# sample_cpu
-# --------------------------------------------------------------------------- #
-class _FakeNoSuchProcess(Exception):
-    def __init__(self, pid=None):
-        self.pid = pid
-        super().__init__(f"no such process: {pid}")
-
-
-def _fake_psutil_module(cpu_count=1, cpu_percent=0.0, cpu_percent_raises=False):
-    """psutil is an optional dependency and is not installed in this test
-    environment (nor CI) — metrics_poller.psutil is None here. sample_cpu /
-    sample_system_cpu's real logic can only be exercised by swapping in a
-    fake module for the whole ``psutil`` name, not by patching attributes on
-    ``None``."""
-    mod = types.ModuleType("psutil")
-    mod.NoSuchProcess = _FakeNoSuchProcess
-    mod.cpu_count = lambda logical=True: cpu_count
-    if cpu_percent_raises:
-
-        def _cpu_percent(interval=None):
-            raise RuntimeError("boom")
-
-        mod.cpu_percent = _cpu_percent
-    else:
-        mod.cpu_percent = lambda interval=None: cpu_percent
-    return mod
-
-
-class _FakeProc:
-    def __init__(self, pid, user, system, name="proc", cmdline=None, children=None):
-        self.pid = pid
-        self._user = user
-        self._system = system
-        self._name = name
-        self._cmdline = cmdline or [name]
-        self._children = children or []
-
-    def cpu_times(self):
-        return SimpleNamespace(user=self._user, system=self._system)
-
-    def name(self):
-        return self._name
-
-    def cmdline(self):
-        return self._cmdline
-
-    def children(self, recursive=True):
-        return self._children
-
-
-class TestSampleCpu:
-    def test_psutil_none_returns_zero(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", None)
-        assert poller.sample_cpu({}, object()) == 0.0
-
-    def test_root_none_returns_zero(self):
-        assert poller.sample_cpu({}, None) == 0.0
-
-    def test_first_call_primes_baseline(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module())
-        root = _FakeProc(pid=100, user=0.0, system=0.0)
-        monkeypatch.setattr(poller.time, "time", lambda: 1000.0)
-        state = {}
-        assert poller.sample_cpu(state, root) == 0.0
-        assert state["prev"] == {100: 0.0}
-        assert state["wall"] == 1000.0
-
-    def test_second_call_returns_delta_based_pct(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_count=2))
-        root = _FakeProc(pid=100, user=1.0, system=0.0)
-        times = iter([1000.0, 1001.0])
-        monkeypatch.setattr(poller.time, "time", lambda: next(times))
-
-        state = {}
-        poller.sample_cpu(state, root)  # priming call
-
-        root._user = 2.0  # 1 extra CPU-second consumed over the elapsed 1s
-        pct = poller.sample_cpu(state, root)
-        # 1.0s delta / 1.0s elapsed / 2 cores * 100 = 50.0%
-        assert pct == 50.0
-
-    def test_contributors_populated_for_descendants(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_count=1))
-        child = _FakeProc(pid=101, user=0.0, system=0.0, name="child")
-        root = _FakeProc(pid=100, user=0.0, system=0.0, children=[child])
-        times = iter([1000.0, 1001.0])
-        monkeypatch.setattr(poller.time, "time", lambda: next(times))
-
-        state = {}
-        poller.sample_cpu(state, root)
-
-        child._user = 0.5
-        contributors = []
-        poller.sample_cpu(state, root, contributors)
-        assert any(pid == 101 and name == "child" for pid, _pct, name, _cmd in contributors)
-
-    def test_excludes_self_pid_from_children(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_count=1))
-        self_pid = os.getpid()
-        # The poller subprocess appears in root.children(recursive=True); it
-        # must be excluded so its own overhead isn't attributed to hermes.
-        noisy_self = _FakeProc(pid=self_pid, user=99.0, system=99.0, name="self")
-        root = _FakeProc(pid=100, user=0.0, system=0.0, children=[noisy_self])
-        times = iter([1000.0, 1001.0])
-        monkeypatch.setattr(poller.time, "time", lambda: next(times))
-
-        state = {}
-        poller.sample_cpu(state, root)
-        assert self_pid not in state["prev"]
-
-    def test_no_such_process_returns_zero(self, monkeypatch):
-        fake_psutil = _fake_psutil_module()
-        monkeypatch.setattr(poller, "psutil", fake_psutil)
-
-        class _DyingProc(_FakeProc):
-            def children(self, recursive=True):
-                raise fake_psutil.NoSuchProcess(pid=self.pid)
-
-        root = _DyingProc(pid=100, user=0.0, system=0.0)
-        assert poller.sample_cpu({}, root) == 0.0
-
-
-# --------------------------------------------------------------------------- #
-# sample_system_cpu
-# --------------------------------------------------------------------------- #
-class TestSampleSystemCpu:
-    def test_psutil_none_returns_zero(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", None)
-        assert poller.sample_system_cpu() == 0.0
-
-    def test_returns_psutil_cpu_percent(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_percent=33.3))
-        assert poller.sample_system_cpu() == 33.3
-
-    def test_exception_returns_zero(self, monkeypatch):
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_percent_raises=True))
-        assert poller.sample_system_cpu() == 0.0
-
-
-# --------------------------------------------------------------------------- #
-# _open_append
-# --------------------------------------------------------------------------- #
-class TestOpenAppend:
-    def test_new_file_gets_header(self, tmp_path):
-        path = str(tmp_path / "out.csv")
-        fh, writer = poller._open_append(path, ["a", "b"])
-        fh.close()
-        assert (tmp_path / "out.csv").read_text().splitlines() == ["a,b"]
-
-    def test_existing_nonempty_file_keeps_single_header(self, tmp_path):
-        path = str(tmp_path / "out.csv")
-        fh, writer = poller._open_append(path, ["a", "b"])
-        writer.writerow([1, 2])
-        fh.close()
-
-        fh2, writer2 = poller._open_append(path, ["a", "b"])
-        writer2.writerow([3, 4])
-        fh2.close()
-
-        lines = (tmp_path / "out.csv").read_text().splitlines()
-        assert lines == ["a,b", "1,2", "3,4"]
-
-
-# --------------------------------------------------------------------------- #
-# main() — fast, deterministic exit paths only (not the sampling loop itself)
-# --------------------------------------------------------------------------- #
-class TestMain:
-    def test_too_few_args_returns_1(self, monkeypatch, capsys):
-        monkeypatch.setattr(sys, "argv", ["metrics_poller.py", "onlyone"])
-        assert poller.main() == 1
-        assert "usage:" in capsys.readouterr().err
-
-    def test_no_signals_enabled_returns_0_without_looping(self, monkeypatch, tmp_path):
-        for name in ("HERMES_CPU_TRACE", "HERMES_CPU_SYSTEM_WIDE", "HERMES_GPU_SYSTEM_WIDE"):
-            monkeypatch.delenv(name, raising=False)
-        monkeypatch.setattr(poller.signal, "signal", MagicMock())
+    def test_off_skips_detection(self, monkeypatch):
         monkeypatch.setattr(
-            sys, "argv", ["metrics_poller.py", str(tmp_path), "0.1", str(os.getpid())]
+            poller, "_amd_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
         )
-        assert poller.main() == 0
-
-    def test_invalid_interval_and_pid_fall_back_to_defaults(self, monkeypatch, tmp_path):
-        for name in ("HERMES_CPU_TRACE", "HERMES_CPU_SYSTEM_WIDE", "HERMES_GPU_SYSTEM_WIDE"):
-            monkeypatch.delenv(name, raising=False)
-        monkeypatch.setattr(poller.signal, "signal", MagicMock())
         monkeypatch.setattr(
-            sys, "argv", ["metrics_poller.py", str(tmp_path), "not-a-float", "not-an-int"]
+            poller, "_nvidia_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
         )
-        assert poller.main() == 0
+        assert poller._detect_gpu_vendor("off") == (None, None)
 
-    def test_one_full_tick_writes_system_wide_cpu_csv(self, monkeypatch, tmp_path):
-        """Exercise the writer setup + one loop iteration + cleanup, stopping
-        the loop after exactly one tick by having the mocked time.sleep flip
-        _RUNNING off, instead of actually waiting on a real interval."""
-        monkeypatch.setenv("HERMES_CPU_SYSTEM_WIDE", "true")
-        monkeypatch.delenv("HERMES_CPU_TRACE", raising=False)
-        monkeypatch.delenv("HERMES_GPU_SYSTEM_WIDE", raising=False)
-        monkeypatch.setattr(poller, "psutil", _fake_psutil_module(cpu_percent=12.5))
-        monkeypatch.setattr(poller.signal, "signal", MagicMock())
-        monkeypatch.setattr(poller, "_RUNNING", True)
 
-        def _stop_after_one_tick(seconds):
-            poller._RUNNING = False
+# --------------------------------------------------------------------------- #
+# GpuProbe (stateful wrapper used by the host-metrics sampler)
+# --------------------------------------------------------------------------- #
+class TestGpuProbe:
+    def test_no_vendor_reads_empty_and_close_is_safe(self, monkeypatch):
+        monkeypatch.setattr(poller, "_detect_gpu_vendor", lambda forced="auto": (None, None))
+        probe = poller.GpuProbe("auto")
+        assert probe.open() is None
+        assert probe.available is False
+        assert probe.read() == []
+        probe.close()
+        probe.close()
 
-        monkeypatch.setattr(poller.time, "sleep", _stop_after_one_tick)
+    def test_open_is_idempotent_and_read_dispatches(self, monkeypatch):
+        calls = []
         monkeypatch.setattr(
-            sys, "argv", ["metrics_poller.py", str(tmp_path), "0.01", str(os.getpid())]
+            poller,
+            "_detect_gpu_vendor",
+            lambda forced="auto": calls.append(forced) or ("nvidia", ["h0"]),
         )
+        monkeypatch.setattr(
+            poller,
+            "_query_gpus",
+            lambda vendor, handles: [{"busy_pct": 40.0, "power_w": 100.0, "vram_used_mb": 10.0}],
+        )
+        probe = poller.GpuProbe("nvidia")
+        assert probe.open() == "nvidia"
+        assert probe.open() == "nvidia"
+        assert calls == ["nvidia"]
+        assert probe.read()[0]["busy_pct"] == 40.0
 
-        assert poller.main() == 0
+    def test_read_swallows_sdk_errors(self, monkeypatch):
+        monkeypatch.setattr(poller, "_detect_gpu_vendor", lambda forced="auto": ("amd", ["h0"]))
+        monkeypatch.setattr(
+            poller, "_query_gpus", lambda v, h: (_ for _ in ()).throw(RuntimeError("boom"))
+        )
+        probe = poller.GpuProbe()
+        probe.open()
+        assert probe.read() == []
 
-        csv_path = tmp_path / "cpu_system_wide.csv"
-        lines = csv_path.read_text().splitlines()
-        assert lines[0] == "timestamp,start_time_unix_nano,cpu_pct"
-        assert len(lines) == 2  # header + exactly one sampled row
-        assert lines[1].endswith(",12.5")
+    def test_close_releases_vendor(self, monkeypatch):
+        released = []
+        monkeypatch.setattr(poller, "_detect_gpu_vendor", lambda forced="auto": ("amd", ["h0"]))
+        monkeypatch.setattr(poller, "_shutdown_gpu_vendor", lambda v, h: released.append((v, h)))
+        probe = poller.GpuProbe()
+        probe.open()
+        probe.close()
+        assert released == [("amd", ["h0"])]
+        assert probe.available is False

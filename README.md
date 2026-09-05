@@ -473,62 +473,6 @@ Spans are exported via OpenTelemetry's `BatchSpanProcessor`: `span.end()` enqueu
 
 **Crash vs. graceful exit:** up to `schedule_delay_millis` worth of spans may be lost on a hard crash (SIGKILL, OOM). This is the standard OTel trade-off and mirrors every production tracing stack. Graceful shutdown (`hermes gateway stop`, SIGTERM) triggers the atexit flush.
 
-## Advanced hardware profiling (CPU / GPU / tool)
-
-In addition to OTel span export, the plugin can optionally record **CPU, GPU, and per-tool execution telemetry to CSV files** — useful for correlating an agent's tool activity with the hardware it ran on. Sampling happens in a separate OS process (no extra threads inside hermes), and every signal is off
-by default.
-
-Enable it by adding the following to `~/.hermes/.env`:
-
-```bash
-HERMES_CPU_TRACE=true          # captures hermes process-tree CPU % using psutil and saves it in CSV -> cpu_hermes_trace.csv
-HERMES_CPU_SYSTEM_WIDE=true    # captures whole-host CPU % using psutil and saves it in CSV (will be helpful if model runs on CPU) -> cpu_system_wide.csv
-HERMES_GPU_SYSTEM_WIDE=true    # captures system-wide GPU busy/power/VRAM in CSV (will be helpful if model runs on GPU) -> gpu_system_wide.csv
-HERMES_TOOL_TRACE=true         # per-tool CPU/GPU attribution -> tool_execution.csv
-HERMES_GPU_VENDOR=amd          # amd | nvidia (unset = auto-detect)
-HERMES_POLL_INTERVAL=0.1       # CPU/GPU sampling interval in seconds (default 0.1); lower = finer-grained charts, more sampling overhead
-HERMES_PLOT_PROFILING=true     # render the CSVs to PNGs at process exit; it uses matplotlib
-```
-
-With `HERMES_PLOT_PROFILING=true`, matplotlib renders four charts once the
-session ends:
-
-- **Combined timeline** — hermes process-tree CPU, system-wide CPU, and system-wide GPU utilization on one
-  shared axis, with each tool's execution window shaded
-- **Hermes process-tree CPU %** — just the hermes process and its children
-- **System-wide CPU %** — the whole host, for context
-- **System-wide GPU** — busy % / power (W) / VRAM (MB)
-
-**Example output** (AMD MI300X, ROCm):
-
-![Combined CPU/GPU timeline](docs/images/profiling/combined_timeline.png)
-
-![Hermes process-tree CPU](docs/images/profiling/cpu_hermes_trace.png)
-
-![System-wide CPU](docs/images/profiling/cpu_system_wide.png)
-
-![System-wide GPU](docs/images/profiling/gpu_system_wide.png)
-
-PNG generation uses matplotlib, which isn't installed automatically:
-
-```bash
-~/git/hermes-agent/venv/bin/pip install matplotlib
-```
-
-GPU sampling also isn't installed automatically — install whichever vendor SDK
-matches your hardware so `HERMES_GPU_SYSTEM_WIDE` captures as expected:
-
-```bash
-# AMD
-~/git/hermes-agent/venv/bin/pip install amdsmi
-
-# NVIDIA
-~/git/hermes-agent/venv/bin/pip install pynvml
-```
-
-CSVs are written to `<HERMES_PROFILING_OUTPUT_DIR>/<session_id>/` (default
-`./outputs`), one per enabled signal, regardless of whether plotting is on.
-
 ## How it works
 
 Hermes fires lifecycle hooks. This plugin maps them to OTel spans:
