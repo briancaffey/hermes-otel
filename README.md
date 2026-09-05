@@ -420,6 +420,9 @@ Every field can be overridden by env var with prefix `HERMES_OTEL_` (scalars onl
 | `span_batch_max_export_batch_size` | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` |
 | `span_batch_export_timeout_ms` | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` |
 | `force_flush_on_session_end` | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` |
+| `host_metrics` | `HERMES_OTEL_HOST_METRICS` |
+| `host_metrics_gpu` | `HERMES_OTEL_HOST_METRICS_GPU` (`auto` / `amd` / `nvidia` / `off`) |
+| `host_metrics_interval_ms` | `HERMES_OTEL_HOST_METRICS_INTERVAL_MS` |
 
 `pyyaml` is optional — if not installed, the YAML file is silently skipped and only env vars + defaults apply. Malformed YAML logs a single warning and falls back to defaults.
 
@@ -447,6 +450,10 @@ On `on_session_end`, the root session/agent span is enriched with a summary of w
 
 Zero/empty aggregators are omitted rather than emitted as empty strings.
 
+Every span in a turn — the root, `llm.*`, `api.*` and `tool.*` — also carries
+`hermes.turn.number`, the 1-based index of the user prompt within the session,
+so any backend can group or filter a conversation by turn.
+
 ### Tool identity, outcome, skill inference
 
 Each `tool.*` span now also carries:
@@ -472,6 +479,33 @@ Spans are exported via OpenTelemetry's `BatchSpanProcessor`: `span.end()` enqueu
 **Backpressure:** the queue is bounded by `span_batch_max_queue_size` (default 2048). If the agent outruns the exporter, the oldest enqueued spans are dropped — hermes keeps running rather than stalling.
 
 **Crash vs. graceful exit:** up to `schedule_delay_millis` worth of spans may be lost on a hard crash (SIGKILL, OOM). This is the standard OTel trade-off and mirrors every production tracing stack. Graceful shutdown (`hermes gateway stop`, SIGTERM) triggers the atexit flush.
+
+## Host and GPU metrics (opt-in)
+
+Correlate turns and tool calls with the machine they ran on. When
+`host_metrics: true`, a single in-process sampler reads the Hermes process
+tree's CPU, whole-host CPU, and any AMD/NVIDIA GPU on a fixed interval and
+exports the readings **through the same OTel pipeline as everything else** —
+no files, no extra process.
+
+```yaml
+host_metrics: true
+host_metrics_gpu: auto          # auto | amd | nvidia | off
+host_metrics_interval_ms: 1000
+```
+
+| Signal | Where it lands |
+|---|---|
+| `process.cpu.utilization`, `system.cpu.utilization` (by `cpu.mode`) | metrics, on every backend with `metrics: true` |
+| `hw.gpu.utilization`, `hw.gpu.memory.usage`, `hw.power` (per `hw.id`) | metrics |
+| `hermes.tool.cpu.utilization.avg` / `.peak`, `hermes.tool.gpu.utilization.avg` / `.peak` | attributes on each `tool.*` span |
+
+Utilization is a 0..1 ratio normalised by core count, per the OTel semantic
+conventions. CPU is the Hermes process plus its children (tool subprocesses),
+so it is attributable to the tool; GPU is the host's coincident load during the
+tool window. `psutil` ships with hermes-agent; GPU readings need `pynvml`
+(NVIDIA) or `amdsmi` (AMD) in the Hermes venv. Full details, PromQL examples
+and the Collector-based alternative: [Host & GPU metrics](https://briancaffey.github.io/hermes-otel/configuration/host-metrics).
 
 ## How it works
 
@@ -547,6 +581,8 @@ See [docs: MCP trace propagation](website/docs/configuration/mcp-trace-propagati
 | `__init__.py` | Entry point — initializes tracer, registers core hooks (+ session and sub-agent hooks when supported) |
 | `tracer.py` | OTel TracerProvider setup, span lifecycle management, parent/child tracking |
 | `hooks.py` | Hook implementations — maps Hermes events to OTel spans with attributes |
+| `host_metrics.py` | Opt-in CPU/GPU sampler (one thread per process) behind the `process.*` / `system.*` / `hw.*` observable instruments |
+| `gpu_probe.py` | AMD (`amdsmi`) / NVIDIA (`pynvml`) GPU readings with a `rocm-smi` fallback |
 | `debug_utils.py` | Optional debug logging and secret masking |
 | `docker-compose/` | Docker Compose files for Phoenix and Langfuse backends |
 | `tests/unit/` | Unit tests — helpers, SpanTracker, tracer init, hook callbacks |

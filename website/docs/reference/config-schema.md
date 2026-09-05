@@ -29,6 +29,9 @@ Complete schema for `~/.hermes/plugins/hermes_otel/config.yaml`. See [`config.ya
 | `span_batch_schedule_delay_ms` | int | `1000` | Worker wake-up cadence |
 | `span_batch_max_export_batch_size` | int | `512` | Max spans per OTLP POST |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
+| `host_metrics` | bool | `false` | Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics + per-tool utilization attributes; see [Host & GPU metrics](/configuration/host-metrics) |
+| `host_metrics_gpu` | string | `"auto"` | `auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe |
+| `host_metrics_interval_ms` | int | `1000` | Sampling cadence (floor 50 ms) |
 | `global_tags` | map | `{}` | Merged into Resource; overridden by `resource_attributes` on key conflict |
 | `resource_attributes` | map | `{}` | Merged into Resource |
 | `headers` | map | `{}` | Extra HTTP headers on every OTLP request |

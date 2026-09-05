@@ -59,6 +59,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` | `span_batch_max_export_batch_size` | `512` |
 | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` | `span_batch_export_timeout_ms` | `30000` |
 | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` | `force_flush_on_session_end` | `true` |
+| `HERMES_OTEL_HOST_METRICS` | `host_metrics` | `false` |
+| `HERMES_OTEL_HOST_METRICS_GPU` | `host_metrics_gpu` | `auto` |
+| `HERMES_OTEL_HOST_METRICS_INTERVAL_MS` | `host_metrics_interval_ms` | `1000` |
 
 ## Logs
 

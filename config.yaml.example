@@ -140,6 +140,25 @@
 # dashboard_live: true
 # dashboard_live_max_spans: 1000
 
+# ── Host & GPU metrics (opt-in) ───────────────────────────────────────────────
+#
+# Sample the Hermes process tree's CPU, whole-host CPU, and any AMD/NVIDIA GPU
+# on a fixed interval and export the readings through the normal metrics
+# pipeline (semantic-convention names, on every backend with metrics on):
+#   process.cpu.utilization   Gauge 1   by cpu.mode      (hermes + children)
+#   system.cpu.utilization    Gauge 1   by cpu.mode      (whole host)
+#   hw.gpu.utilization        Gauge 1   per hw.id        (needs pynvml / amdsmi)
+#   hw.gpu.memory.usage       UpDownCounter By per hw.id
+#   hw.power                  Gauge W   per hw.id, hw.type=gpu
+# Each tool.* span also gets hermes.tool.cpu.utilization.avg/.peak (and
+# .gpu. when a GPU is probed) for its execution window. One daemon thread per
+# process, nothing on disk. psutil ships with hermes-agent.
+# Also settable via HERMES_OTEL_HOST_METRICS / _HOST_METRICS_GPU /
+# _HOST_METRICS_INTERVAL_MS.
+# host_metrics: false
+# host_metrics_gpu: auto          # auto | amd | nvidia | off
+# host_metrics_interval_ms: 1000  # 100-250 to cover sub-second tool calls
+
 # ── Lifecycle / cleanup ───────────────────────────────────────────────────────
 
 # Orphan-turn sweep TTL. If a session's root span has been open longer than

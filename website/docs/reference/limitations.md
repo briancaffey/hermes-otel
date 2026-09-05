@@ -106,6 +106,27 @@ The plugin deliberately does not put user IDs, session IDs, tool arg values, or 
 
 If you need high-cardinality breakdowns, use traces (where every attribute is fine), not metrics.
 
+## Host metrics are a sampler, not an accountant
+
+`host_metrics` reads the Hermes process tree and the host on a fixed interval.
+Consequences:
+
+- **Per-tool GPU numbers are coincident load.** `hermes.tool.gpu.utilization.*`
+  is the whole host's GPU busy ratio while the tool ran. On an inference host
+  that is mostly *other* work (the model is idle during a tool call), so read
+  it as context, not as the tool's own consumption. CPU, by contrast, is the
+  process tree and *is* attributable.
+- **Short tools omit the attributes.** A tool that starts and finishes between
+  two samples has no window to average; lower `host_metrics_interval_ms` if
+  you need sub-second tools covered.
+- **External inference servers are excluded.** Only children of the Hermes
+  process count toward `process.cpu.utilization`; a model server in its own
+  container is host load (`system.cpu.utilization`, `hw.gpu.*`), by design.
+- **Turn numbers are per process.** `hermes.turn.number` restarts at 1 when a
+  session is resumed in a new process.
+- **No GPU on macOS / without an SDK.** The GPU series are simply absent; the
+  CPU series still work.
+
 ## No cost accounting
 
 The plugin emits token counts; it doesn't convert them to dollars. Cost is model-and-tier specific (prompt tokens vs. completion tokens, cached vs. uncached, provider pricing tiers), and baking a price table into a plugin that has to track every new model release is a losing battle.

@@ -54,8 +54,14 @@ Set at **end** (turn summary):
 | `hermes.turn.skills` | string | Sorted CSV of distinct skill names |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
 | `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` · `timed_out` |
+| `hermes.turn.number` | int | 1-based index of the user prompt within the session |
 
 Empty/zero aggregators are omitted.
+
+`hermes.turn.number` is also set on every `llm.*`, `api.*` and `tool.*` span
+opened during the turn, so a backend can group or filter a session's spans by
+conversation turn without joining to the root. It is counted per process: a
+session resumed in a new process (`hermes -r`) restarts at 1.
 
 ## `llm.*`
 
@@ -137,6 +143,15 @@ Span kind: `TOOL` (OpenInference).
 | `hermes.tool.command` | hermes | string | Inferred shell command (optional) |
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` |
 | `hermes.skill.name` | hermes | string | Inferred skill name (optional) |
+| `hermes.turn.number` | hermes | int | Turn the call belongs to |
+| `hermes.tool.cpu.utilization.avg` | hermes | float | Mean process-tree CPU (0..1) during the call — `host_metrics` only |
+| `hermes.tool.cpu.utilization.peak` | hermes | float | Peak process-tree CPU (0..1) during the call — `host_metrics` only |
+| `hermes.tool.gpu.utilization.avg` | hermes | float | Mean host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |
+| `hermes.tool.gpu.utilization.peak` | hermes | float | Peak host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |
+
+The utilization attributes are absent when host metrics are off or the tool
+finished between two samples. See [Host & GPU metrics](/configuration/host-metrics)
+for what the numbers mean (CPU is attributable to the tool; GPU is coincident host load).
 
 ## `subagent.*`
 
@@ -213,5 +228,21 @@ Notes:
 - **Units follow the spec:** durations are in **seconds** (`gen_ai.client.operation.duration`), whereas the `hermes.*` duration histograms stay in **ms** for backward compatibility.
 - `gen_ai.token.type` is limited to the spec's `input` / `output` enum. Cache and reasoning buckets are subsets already counted in those, so they are not split into the spec metric (the `hermes.tokens.*` metrics retain that breakdown).
 - Dimensions are deliberately low-cardinality — operation, provider, and model only, **never** per-call IDs such as `session_id` — so the metrics stay aggregatable.
+
+### Host & GPU metrics (opt-in)
+
+Emitted only when `host_metrics: true`; observable instruments read the
+in-process sampler's latest reading on each collection. Names follow the OTel
+system / hardware semantic conventions.
+
+| Metric | Type | Unit | Labels |
+|---|---|---|---|
+| `process.cpu.utilization` | Gauge | `1` | `cpu.mode` (`user` / `system`) |
+| `system.cpu.utilization` | Gauge | `1` | `cpu.mode` |
+| `hw.gpu.utilization` | Gauge | `1` | `hw.id`, `hw.vendor` |
+| `hw.gpu.memory.usage` | UpDownCounter | `By` | `hw.id`, `hw.vendor` |
+| `hw.power` | Gauge | `W` | `hw.id`, `hw.vendor`, `hw.type=gpu` |
+
+See [Host & GPU metrics](/configuration/host-metrics).
 - `gen_ai.agent.token.usage` is the per-turn/session rollup recorded at session end; `gen_ai.client.*` are per-API-call.
 - `gen_ai.agent.request.duration` is intentionally **not** emitted yet — there is no reliable per-turn duration signal today (a turn can span multiple API calls); it is deferred until true session-lifecycle timing lands.

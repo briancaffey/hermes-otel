@@ -11,6 +11,9 @@ not into a venv of its own.
 
 Optional: `langsmith` (time-ordered uuid7 run IDs, LangSmith backend) and
 `pyyaml` (enables `config.yaml`; env vars and defaults work without it).
+For `host_metrics: true` (CPU/GPU metrics + per-tool utilization) the sampler
+uses `psutil`, which hermes-agent already installs; GPU readings additionally
+need `pynvml` (NVIDIA) or `amdsmi` matching your ROCm stack (AMD).
 
 ### Point it at a backend
 

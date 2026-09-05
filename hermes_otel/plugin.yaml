@@ -9,8 +9,10 @@ python_dependencies:
   - opentelemetry-api<2
   - opentelemetry-sdk<2
   - opentelemetry-exporter-otlp-proto-http<2
-# Optional: `langsmith` (uuid7 time-ordered run IDs, LangSmith backend) and
-# `pyyaml` (config.yaml parsing; env vars and defaults work without it).
+# Optional: `langsmith` (uuid7 time-ordered run IDs, LangSmith backend),
+# `pyyaml` (config.yaml parsing; env vars and defaults work without it), and
+# for `host_metrics: true`: `psutil` (bundled with hermes-agent) plus `pynvml`
+# or `amdsmi` for GPU readings.
 #
 # Configuration (pick one):
 #   Phoenix:       OTEL_PHOENIX_ENDPOINT

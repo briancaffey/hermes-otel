@@ -84,6 +84,7 @@ Not seeing data? The usual suspects:
 | `emit_genai_metrics` | also emit OTel-standard `gen_ai.*` metric names (default on) |
 | `skill_spans` | emit `skill.<name>` execution-window spans (default on) |
 | `capture_previews` | global privacy kill-switch for input/output previews |
+| `host_metrics` | sample CPU/GPU into `process.*` / `system.*` / `hw.*` metrics and per-tool utilization attributes (default off) |
 | `sample_rate` | head sampling (0–1) for high-volume agents |
 
 ## Going deeper
