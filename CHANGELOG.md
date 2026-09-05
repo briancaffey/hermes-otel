@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.1.1...hermes-otel-v1.2.0) (2026-09-05)
+
+
+### Features
+
+* **skills:** add pr-review skill for maintainer PR reviews ([3d982cb](https://github.com/briancaffey/hermes-otel/commit/3d982cbe7f66ac8e038f10f48bb6efa40d86802d))
+
 ## [1.1.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.1.0...hermes-otel-v1.1.1) (2026-09-04)
 
 
