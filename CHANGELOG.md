@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.2.0...hermes-otel-v1.3.0) (2026-09-06)
+
+
+### Features
+
+* **profiling:** add CPU/GPU/tool execution profiling ([#66](https://github.com/briancaffey/hermes-otel/issues/66)) ([7497441](https://github.com/briancaffey/hermes-otel/commit/7497441ccf156b9ed1f009fefe08935925bd7b42))
+
 ## [1.2.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.1.1...hermes-otel-v1.2.0) (2026-09-05)
 
 
