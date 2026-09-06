@@ -311,6 +311,45 @@ def _session_sender_attributes(tracer, session_id: Optional[str]) -> Dict[str, s
     return _per_session_sender_attributes(ps)
 
 
+def _turn_attributes(tracer, session_id: Optional[str]) -> Dict[str, int]:
+    """Return ``hermes.turn.number`` for the session's current user turn.
+
+    Empty until ``pre_llm_call`` has numbered the turn, so spans that can fire
+    before it (the session root on ``on_session_start``) simply omit it.
+    """
+    turn = tracer.sessions.turn_number(session_id) if session_id else 0
+    return {"hermes.turn.number": turn} if turn else {}
+
+
+def _tool_host_utilization_attributes(tracer, started_at: float, ended_at: float) -> Dict[str, Any]:
+    """Average / peak host utilization while a tool ran (``host_metrics`` only).
+
+    Slices the in-memory ring of the host-metrics sampler by the tool's
+    ``perf_counter`` window. CPU is the Hermes process tree, so it is
+    attributable to the tool (and whatever it spawned); GPU is the whole
+    host's busy ratio during the window — coincident load, not attribution,
+    unless the tool itself drives the GPU. Empty when host metrics are off or
+    the tool finished between two samples.
+    """
+    sampler = tracer.host_metrics
+    if sampler is None:
+        return {}
+    try:
+        stats = sampler.window(started_at, ended_at)
+    except Exception:  # pragma: no cover — never break the hook
+        return {}
+    if stats is None:
+        return {}
+    attrs: Dict[str, Any] = {
+        "hermes.tool.cpu.utilization.avg": round(stats.cpu_avg, 4),
+        "hermes.tool.cpu.utilization.peak": round(stats.cpu_peak, 4),
+    }
+    if stats.gpu_avg is not None:
+        attrs["hermes.tool.gpu.utilization.avg"] = round(stats.gpu_avg, 4)
+        attrs["hermes.tool.gpu.utilization.peak"] = round(stats.gpu_peak or 0.0, 4)
+    return attrs
+
+
 def _gen_ai_attributes(
     session_id: Optional[str],
     operation_name: str,
@@ -706,6 +745,8 @@ def on_session_end(
         attributes["error.type"] = ps.last_error_type
 
     attributes.update(_per_session_sender_attributes(ps))
+    if ps is not None and ps.turn_number:
+        attributes["hermes.turn.number"] = ps.turn_number
 
     # Per-turn summary roll-up
     if ps is not None:
@@ -845,6 +886,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
+        attributes.update(_turn_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
         summary.add_target(target)
@@ -875,8 +917,9 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     debug_log(f"  ending span: key={key}")
 
     start_time = tracer.sessions.pop_tool_start(key)
+    ended_at = time.perf_counter()
     if start_time:
-        duration_ms = (time.perf_counter() - start_time) * 1000
+        duration_ms = (ended_at - start_time) * 1000
         tracer.record_metric(
             "tool_duration",
             duration_ms,
@@ -888,6 +931,8 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         "gen_ai.tool.name": tool_name,
         "gen_ai.tool.call.id": truncate_string(task_id, 200),
     }
+    if start_time:
+        attributes.update(_tool_host_utilization_attributes(tracer, start_time, ended_at))
 
     # Parse the result once
     if isinstance(result, dict):
@@ -934,6 +979,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
+        attributes.update(_turn_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
 
@@ -1097,6 +1143,11 @@ def on_pre_llm_call(
 
     key = f"llm:{session_id}"
 
+    # One pre_llm_call per user prompt (Hermes fires it before the tool loop),
+    # so this is where the turn gets its number. Tool and api spans opened
+    # later in the turn pick it up via _turn_attributes.
+    tracer.sessions.next_turn(session_id, reset=bool(is_first_turn))
+
     # Capture first LLM input for top-level session span
     if session_id:
         ps = tracer.sessions.get_or_create(session_id)
@@ -1121,6 +1172,7 @@ def on_pre_llm_call(
     attributes.update(_provider_attributes(platform))
     attributes.update(_gen_ai_attributes(session_id, "chat", kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(_turn_attributes(tracer, session_id))
 
     if tracer.config.capture_sender_id:
         sender_id = truncate_string(kwargs.get("sender_id"), 200)
@@ -1296,6 +1348,7 @@ def on_pre_api_request(
         attributes["gen_ai.request.max_tokens"] = max_tokens
 
     attributes.update(_session_sender_attributes(tracer, session_id))
+    attributes.update(_turn_attributes(tracer, session_id))
 
     if tracer.config.capture_full_prompts:
         messages = kwargs.get("messages")

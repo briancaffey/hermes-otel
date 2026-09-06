@@ -41,6 +41,10 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     monkeypatch.delenv(plugin_config_mod.CONFIG_PATH_ENV, raising=False)
 
     def _reset():
+        current = tracer_mod._tracer
+        if current is not None:
+            # Never leak a host-metrics sampler thread across tests.
+            current.stop_host_metrics()
         tracer_mod._tracer = None
         tracer_mod._PARENT_STACK.set(None)
 

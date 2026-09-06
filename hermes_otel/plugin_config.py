@@ -209,6 +209,16 @@ class HermesOtelConfig:
     # (ring buffers); set false to disable the in-process store entirely.
     dashboard_live: bool = True
     dashboard_live_max_spans: int = 1000
+    # ── Host metrics (CPU / GPU) ────────────────────────────────────────
+    # Sample the Hermes process tree, the whole host, and any AMD/NVIDIA GPU
+    # on a fixed interval and export the readings as OTel metrics
+    # (process.cpu.utilization, system.cpu.utilization, hw.gpu.*, hw.power) on
+    # every backend that receives metrics, plus per-tool CPU/GPU utilization
+    # attributes on tool spans. Off by default. Needs psutil (ships with
+    # hermes-agent); GPU readings additionally need pynvml or amdsmi.
+    host_metrics: bool = False
+    host_metrics_gpu: str = "auto"  # auto | amd | nvidia | off
+    host_metrics_interval_ms: int = 1000
     # ── MCP keepalive noise ─────────────────────────────────────────────
     # MCP Python SDK 2.x (Hermes v0.21.0+) emits a CLIENT span for every
     # JSON-RPC request, including the periodic keepalive ``ping`` Hermes sends
@@ -360,6 +370,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "emit_genai_metrics",
         "skill_spans",
         "dashboard_live",
+        "host_metrics",
         "suppress_mcp_ping_spans",
     ):
         if isinstance(value, bool):
@@ -389,6 +400,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "span_batch_export_timeout_ms",
         "conversation_history_max_chars",
         "dashboard_live_max_spans",
+        "host_metrics_interval_ms",
     ):
         if isinstance(value, bool):
             return None  # bools are ints in python; reject explicitly
@@ -407,7 +419,17 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None if value is None else str(value).upper()
     if key == "log_attach_logger":
         return None if value is None else str(value)
+    if key == "host_metrics_gpu":
+        return _parse_gpu_vendor(str(value))
     return value
+
+
+_GPU_VENDORS = ("auto", "amd", "nvidia", "off")
+
+
+def _parse_gpu_vendor(value: str) -> Optional[str]:
+    v = (value or "").strip().lower()
+    return v if v in _GPU_VENDORS else None
 
 
 def _load_env_overrides() -> Dict[str, Any]:
@@ -447,6 +469,9 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("skill_spans", _parse_bool)
     take("dashboard_live", _parse_bool)
     take("dashboard_live_max_spans", _parse_int)
+    take("host_metrics", _parse_bool)
+    take("host_metrics_gpu", _parse_gpu_vendor)
+    take("host_metrics_interval_ms", _parse_int)
     take("suppress_mcp_ping_spans", _parse_bool)
 
     proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
