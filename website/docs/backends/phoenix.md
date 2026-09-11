@@ -71,7 +71,8 @@ Phoenix accepts OTLP metrics in addition to traces. The plugin's token/tool/cost
 
 - Check the endpoint includes `/v1/traces` — Phoenix doesn't redirect from the collector root.
 - Confirm the container is listening: `curl -I http://localhost:6006` should return `200`.
-- Turn on debug logging: `export HERMES_OTEL_DEBUG=true`, run a Hermes turn, check `~/.hermes/plugins/hermes_otel/debug.log` for the OTLP POST response.
+- Turn on debug logging: `export HERMES_OTEL_DEBUG=true`, run a Hermes turn,
+  check `$HERMES_HOME/plugins/hermes_otel/debug.log` for the OTLP POST response.
 
 **"Spans are missing input/output previews"**
 

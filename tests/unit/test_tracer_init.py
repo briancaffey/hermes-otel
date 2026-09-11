@@ -1,7 +1,7 @@
 """Tests for HermesOTelPlugin.init() environment detection logic."""
 
 import base64
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock, call, patch
 
 import pytest
 
@@ -75,6 +75,32 @@ class TestInitPhoenix:
                 assert plugin._live_active is True
             finally:
                 ls._LIVE_STORE = None  # don't leak the singleton into other tests
+
+    def test_profile_instances_keep_independent_tracer_resources(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        import hermes_otel.live_store as ls
+
+        default_plugin = HermesOTelPlugin(
+            config=HermesOtelConfig(dashboard_live=True),
+            profile_name="default",
+        )
+        work_plugin = HermesOTelPlugin(
+            config=HermesOtelConfig(dashboard_live=True),
+            profile_name="work",
+        )
+        with patch("hermes_otel.tracer.trace.set_tracer_provider"):
+            try:
+                assert default_plugin.init() is True
+                assert work_plugin.init() is True
+            finally:
+                ls._LIVE_STORE = None
+
+        default_resource = dict(default_plugin.tracer.resource.attributes)
+        work_resource = dict(work_plugin.tracer.resource.attributes)
+        assert default_resource["profile.name"] == "default"
+        assert work_resource["profile.name"] == "work"
+        default_plugin.shutdown()
+        work_plugin.shutdown()
 
     def test_init_with_explicit_endpoint_arg(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -421,6 +447,90 @@ class TestConfigDisabled:
             mock_otlp.assert_not_called()
 
 
+class TestShutdown:
+    def test_releases_profile_resources(self, monkeypatch):
+        plugin = HermesOTelPlugin(
+            config=HermesOtelConfig(capture_logs=True),
+            profile_name="work",
+        )
+        tracer_provider = MagicMock()
+        meter_provider = MagicMock()
+        logger_provider = MagicMock()
+        host_metrics = MagicMock()
+        plugin._tracer_provider = tracer_provider
+        plugin._meter_provider = meter_provider
+        plugin._logger_provider = logger_provider
+        plugin._host_metrics = host_metrics
+        plugin._langsmith = MagicMock()
+        plugin._initialized = True
+        plugin._atexit_registered = True
+
+        with (
+            patch("hermes_otel.log_handler.remove_handler") as remove_handler,
+            patch("hermes_otel.tracer.atexit.unregister") as unregister,
+        ):
+            plugin.shutdown()
+
+        host_metrics.stop.assert_called_once()
+        assert remove_handler.call_args_list == [
+            call(None, plugin.profile_home, kind="otel"),
+        ]
+        tracer_provider.shutdown.assert_called_once()
+        meter_provider.shutdown.assert_called_once()
+        logger_provider.shutdown.assert_called_once()
+        assert unregister.call_count == 2
+        assert plugin.is_enabled is False
+        assert plugin._langsmith is None
+
+    def test_keeps_process_global_providers_alive_on_profile_unload(self):
+        plugin = HermesOTelPlugin(profile_name="default")
+        tracer_provider = MagicMock()
+        meter_provider = MagicMock()
+        plugin._tracer_provider = tracer_provider
+        plugin._tracer_provider_is_global = True
+        plugin._meter_provider = meter_provider
+        plugin._meter_provider_is_global = True
+
+        plugin.shutdown()
+
+        tracer_provider.shutdown.assert_not_called()
+        meter_provider.shutdown.assert_not_called()
+
+
+class TestProfileTracerRegistry:
+    def test_get_tracer_is_keyed_by_active_profile_home(self, monkeypatch, tmp_path):
+        import hermes_otel.tracer as tracer_mod
+
+        active = {"home": tmp_path / "default"}
+        monkeypatch.setattr(tracer_mod, "active_hermes_home", lambda: active["home"])
+
+        default_tracer = tracer_mod.get_tracer(profile_name="default")
+        active["home"] = tmp_path / "profiles" / "work"
+        work_tracer = tracer_mod.get_tracer(profile_name="work")
+
+        assert work_tracer is not default_tracer
+        assert default_tracer.profile_name == "default"
+        assert work_tracer.profile_name == "work"
+        assert default_tracer.profile_home == tmp_path / "default"
+        assert work_tracer.profile_home == tmp_path / "profiles" / "work"
+
+    def test_release_tracer_removes_only_its_profile(self, monkeypatch, tmp_path):
+        import hermes_otel.tracer as tracer_mod
+
+        active = {"home": tmp_path / "default"}
+        monkeypatch.setattr(tracer_mod, "active_hermes_home", lambda: active["home"])
+        default_tracer = tracer_mod.get_tracer(profile_name="default")
+        active["home"] = tmp_path / "profiles" / "work"
+        work_tracer = tracer_mod.get_tracer(profile_name="work")
+        work_tracer.shutdown = MagicMock()
+
+        tracer_mod.release_tracer(work_tracer)
+
+        work_tracer.shutdown.assert_called_once()
+        assert default_tracer in tracer_mod._tracers_by_home.values()
+        assert work_tracer not in tracer_mod._tracers_by_home.values()
+
+
 class TestResourceAttributes:
     def test_resource_attributes_merged(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -453,6 +563,30 @@ class TestResourceAttributes:
         assert attrs["region"] == "us-east-1"
         assert attrs["team"] == "platform"
         assert attrs["openinference.project.name"] == "cfg-project"
+        assert attrs["profile.name"] == "default"
+
+    def test_profile_name_is_added_to_resource(self):
+        plugin = HermesOTelPlugin(
+            config=HermesOtelConfig(dashboard_live=False),
+            profile_name="work",
+        )
+
+        attrs = dict(plugin._build_resource().attributes)
+
+        assert attrs["profile.name"] == "work"
+
+    def test_active_profile_overrides_configured_resource_attribute(self):
+        plugin = HermesOTelPlugin(
+            config=HermesOtelConfig(
+                dashboard_live=False,
+                resource_attributes={"profile.name": "wrong-profile"},
+            ),
+            profile_name="work",
+        )
+
+        attrs = dict(plugin._build_resource().attributes)
+
+        assert attrs["profile.name"] == "work"
 
     def test_resource_attributes_override_global_tags(self, monkeypatch):
         _clear_backend_env(monkeypatch)

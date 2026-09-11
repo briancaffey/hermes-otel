@@ -23,10 +23,12 @@ attribute before adding a new one.
 from __future__ import annotations
 
 import logging
+from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
+from .profile_context import active_hermes_home
 
 try:
     # opentelemetry-sdk emits a DeprecationWarning on LoggingHandler import
@@ -53,6 +55,23 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
 # Marker attribute stamped on handlers we install so idempotent reinstalls
 # can locate and remove prior copies without affecting unrelated handlers.
 _HANDLER_MARKER = "_hermes_otel_log_handler"
+_HANDLER_KIND = "_hermes_otel_log_handler_kind"
+_ORIGINAL_LOG_LEVEL = "_hermes_otel_original_log_level"
+
+
+class _ProfileHomeFilter(logging.Filter):
+    """Keep a profile's root logger handler from exporting sibling-profile logs."""
+
+    def __init__(self, profile_home: str) -> None:
+        super().__init__()
+        self._profile_home = str(Path(profile_home).expanduser().resolve())
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        try:
+            return str(active_hermes_home().resolve()) == self._profile_home
+        except Exception:
+            return False
+
 
 # Loggers whose records we refuse to forward to the OTLP logs pipeline.
 # Two reasons each of these is on the list:
@@ -155,6 +174,7 @@ def install_handler(
     processors: List[Tuple[Any, "_ResolvedBackend"]],
     level: int,
     attach_logger: Optional[str] = None,
+    profile_home: Optional[Path] = None,
 ) -> Optional["LoggerProvider"]:
     """Wire a :class:`LoggerProvider` + :class:`LoggingHandler` onto Python logging.
 
@@ -172,6 +192,7 @@ def install_handler(
         attach_logger: Logger name to attach the handler to. ``None``
             means the root logger (captures everything). Pass e.g.
             ``"hermes_otel"`` to scope capture to plugin logs only.
+        profile_home: Active Hermes home whose records this handler exports.
 
     Returns the ``LoggerProvider`` so the tracer can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are disabled,
@@ -186,16 +207,11 @@ def install_handler(
 
     handler = LoggingHandler(level=level, logger_provider=provider)
     handler.addFilter(_ExcludeOTelInternal())
-    setattr(handler, _HANDLER_MARKER, True)
+    scoped_home = profile_home or active_hermes_home()
+    handler.addFilter(_ProfileHomeFilter(str(scoped_home)))
 
     target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
-    _remove_prior_handlers(target)
-    target.addHandler(handler)
-    # Ensure records actually reach the handler — Python filters at the
-    # logger level before dispatching to handlers, so a root logger left
-    # at WARNING would silently drop INFO/DEBUG even with a DEBUG handler.
-    if target.level == logging.NOTSET or target.level > level:
-        target.setLevel(level)
+    attach_profile_handler(target, handler, scoped_home, kind="otel")
 
     debug_log(
         f"log_handler installed: target={attach_logger or 'root'} "
@@ -204,15 +220,73 @@ def install_handler(
     return provider
 
 
-def _remove_prior_handlers(target: logging.Logger) -> None:
+def _managed_handlers(target: logging.Logger) -> List[logging.Handler]:
+    return [h for h in target.handlers if getattr(h, _HANDLER_MARKER, None)]
+
+
+def _sync_target_level(target: logging.Logger) -> None:
+    """Keep the logger permissive enough for its profile handlers, then restore it."""
+    handlers = _managed_handlers(target)
+    original_level = getattr(target, _ORIGINAL_LOG_LEVEL, None)
+    if handlers:
+        if original_level is None:
+            original_level = target.level
+            setattr(target, _ORIGINAL_LOG_LEVEL, original_level)
+        handler_level = min(handler.level for handler in handlers)
+        if original_level == logging.NOTSET and target.parent is not None:
+            target.setLevel(handler_level)
+        else:
+            target.setLevel(min(original_level, handler_level))
+    elif original_level is not None:
+        target.setLevel(original_level)
+        delattr(target, _ORIGINAL_LOG_LEVEL)
+
+
+def _remove_prior_handlers(
+    target: logging.Logger,
+    profile_home: Path,
+    kind: Optional[str] = None,
+) -> None:
     """Strip any marker-tagged handlers we installed previously.
 
     Only touches handlers we own — leaves the consumer's own handlers
     (stderr, file, syslog, ...) alone.
     """
+    marker = str(profile_home.expanduser().resolve())
     for h in list(target.handlers):
-        if getattr(h, _HANDLER_MARKER, False):
+        installed_for = getattr(h, _HANDLER_MARKER, None)
+        installed_kind = getattr(h, _HANDLER_KIND, None)
+        if (installed_for is True or installed_for == marker) and (
+            kind is None or installed_kind == kind
+        ):
             target.removeHandler(h)
+    _sync_target_level(target)
+
+
+def attach_profile_handler(
+    target: logging.Logger,
+    handler: logging.Handler,
+    profile_home: Path,
+    kind: str,
+) -> None:
+    """Attach one profile-owned handler and maintain the target logger level."""
+    _remove_prior_handlers(target, profile_home, kind=kind)
+    if not _managed_handlers(target) and not hasattr(target, _ORIGINAL_LOG_LEVEL):
+        setattr(target, _ORIGINAL_LOG_LEVEL, target.level)
+    setattr(handler, _HANDLER_MARKER, str(profile_home.expanduser().resolve()))
+    setattr(handler, _HANDLER_KIND, kind)
+    target.addHandler(handler)
+    _sync_target_level(target)
+
+
+def remove_handler(
+    attach_logger: Optional[str],
+    profile_home: Path,
+    kind: Optional[str] = None,
+) -> None:
+    """Remove profile-owned handlers without disturbing sibling profiles."""
+    target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
+    _remove_prior_handlers(target, profile_home, kind=kind)
 
 
 def resolve_level(name: Optional[str], default: int = logging.INFO) -> int:

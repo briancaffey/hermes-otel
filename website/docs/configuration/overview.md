@@ -35,6 +35,15 @@ Three locations, checked in this order:
 
 If both 2 and 3 exist, 2 wins and the plugin logs a warning naming the shadowed copy.
 
+`$HERMES_HOME` is resolved from Hermes' active profile at runtime, including
+context-local profile switches in a multiplex process. A named profile such as
+`work` therefore reads `~/.hermes/profiles/work/hermes_otel.yaml`, while the
+default profile reads `~/.hermes/hermes_otel.yaml`.
+
+`HERMES_OTEL_CONFIG` is an explicit process-wide override. Do not set it when
+profiles in the same multiplex process need different hermes-otel
+configuration.
+
 A fully-annotated template ships in the repository as `config.yaml.example`:
 
 ```bash
@@ -84,7 +93,14 @@ Set `backends:` in `config.yaml` with one or more entries. Env-var detection is 
 
 ## Disabling the plugin without uninstalling
 
-Two options:
+Hermes itself controls whether the plugin is loaded for a profile:
+
+```bash
+hermes -p work plugins enable hermes_otel
+hermes -p personal plugins disable hermes_otel
+```
+
+Once loaded, hermes-otel also has a profile-local kill switch:
 
 ```bash
 export HERMES_OTEL_ENABLED=false     # Env-var kill switch
@@ -96,4 +112,7 @@ Or in `config.yaml`:
 enabled: false
 ```
 
-Either way, `register()` returns early after the kill-switch check. No spans are created, no hooks are attached, no OTel SDK is loaded. Flip it back on to restart.
+With `enabled: false`, `register()` returns early after the kill-switch check.
+No spans are created, no hooks are attached, and no OTel SDK is loaded. The
+environment variable is process-wide; use the profile-local YAML or Hermes'
+native plugin commands when multiplexed profiles need different states.

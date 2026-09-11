@@ -28,11 +28,13 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+from .profile_context import active_hermes_home
+
 
 def _default_db_path() -> str:
-    # Next to this module so the gateway and dashboard processes (both loading
-    # the plugin from the same install dir) resolve the SAME file.
-    return str(Path(__file__).resolve().parent / "live.db")
+    # The gateway and dashboard resolve the same active profile home even when
+    # this package is installed globally as an entry point.
+    return str(active_hermes_home() / "plugins" / "hermes_otel" / "live.db")
 
 
 class LiveStore:
@@ -40,6 +42,7 @@ class LiveStore:
 
     def __init__(self, db_path: Optional[str] = None, max_rows: int = 4000) -> None:
         self.db_path = db_path or _default_db_path()
+        Path(self.db_path).expanduser().parent.mkdir(parents=True, exist_ok=True)
         self.max_rows = max(10, int(max_rows))
         self._local = threading.local()
         self._writes = 0
@@ -170,9 +173,10 @@ class LiveStore:
             pass
 
 
-# Per-process singleton; both processes point at the same SQLite file (default
-# path), so they share data without sharing memory.
+# Per-profile process cache; separate gateway/dashboard processes still point
+# at the same profile-specific SQLite file, so they share data without memory.
 _LIVE_STORE: Optional[LiveStore] = None
+_LIVE_STORES: Dict[str, LiveStore] = {}
 _LIVE_LOCK = threading.Lock()
 
 
@@ -182,7 +186,7 @@ def get_live_store(
     max_rows: int = 4000,
     **_ignored: Any,
 ) -> Optional[LiveStore]:
-    """Return the process-wide :class:`LiveStore`.
+    """Return the active profile's process-local :class:`LiveStore`.
 
     ``create=True`` lazily builds it (the tracer, when ``dashboard_live`` is on).
     The dashboard API calls with ``create=True`` too (read side) so the file is
@@ -190,14 +194,20 @@ def get_live_store(
     SQLite backend can't be opened at all.
     """
     global _LIVE_STORE
-    if _LIVE_STORE is None and create:
-        with _LIVE_LOCK:
-            if _LIVE_STORE is None:
-                try:
-                    _LIVE_STORE = LiveStore(
-                        db_path=db_path or os.environ.get("HERMES_OTEL_LIVE_DB"),
-                        max_rows=max_rows,
-                    )
-                except Exception:  # pragma: no cover
-                    return None
-    return _LIVE_STORE
+    selected_path = db_path or os.environ.get("HERMES_OTEL_LIVE_DB") or _default_db_path()
+    store_key = str(Path(selected_path).expanduser().resolve())
+
+    with _LIVE_LOCK:
+        # Preserve direct singleton injection used by embedders and tests.
+        if _LIVE_STORE is not None and _LIVE_STORE not in _LIVE_STORES.values():
+            _LIVE_STORES[store_key] = _LIVE_STORE
+
+        store = _LIVE_STORES.get(store_key)
+        if store is None and create:
+            try:
+                store = LiveStore(db_path=store_key, max_rows=max_rows)
+                _LIVE_STORES[store_key] = store
+            except Exception:  # pragma: no cover
+                return None
+        _LIVE_STORE = store
+        return store

@@ -103,5 +103,7 @@ Each span carries:
 - **Understand what each span means?** → [Architecture](/architecture/overview)
 
 :::info Something not showing up?
-Enable debug logging — `export HERMES_OTEL_DEBUG=true` — and check `~/.hermes/plugins/hermes_otel/debug.log`. Per-span start/end, parent nesting, token counts, and HTTP payloads all land there.
+Enable debug logging — `export HERMES_OTEL_DEBUG=true` — and check
+`$HERMES_HOME/plugins/hermes_otel/debug.log`. Per-span start/end, parent
+nesting, token counts, and HTTP payloads all land there.
 :::

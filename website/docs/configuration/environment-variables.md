@@ -76,14 +76,14 @@ Each of these overrides the corresponding field in `config.yaml`. See [`config.y
 | Var | Effect |
 |---|---|
 | `HERMES_OTEL_CONFIG` | Explicit path to the config file. Highest precedence — see [Where does `config.yaml` live?](/configuration/overview). |
-| `HERMES_HOME` | Hermes' home directory (default `~/.hermes`). The plugin resolves its config and plugin directory under it. |
-| `HERMES_OTEL_LIVE_DB` | Path to the live dashboard's SQLite store. Point it outside the plugin directory to keep it across upgrades. |
+| `HERMES_HOME` | Hermes' home directory (default `~/.hermes`). The plugin also honors Hermes' context-local home override when serving multiplexed profiles. |
+| `HERMES_OTEL_LIVE_DB` | Process-wide path override for the live dashboard's SQLite store. Leave unset for profile isolation; set it outside the plugin directory to keep it across upgrades. |
 
 ## Debug / diagnostics
 
 | Var | Effect |
 |---|---|
-| `HERMES_OTEL_DEBUG` | `true` enables per-span debug log to `~/.hermes/plugins/hermes_otel/debug.log`. See [Debug logging](/development/debug-logging). |
+| `HERMES_OTEL_DEBUG` | `true` enables per-span debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log`. See [Debug logging](/development/debug-logging). |
 
 ## Boolean parsing
 
@@ -108,5 +108,8 @@ HERMES_OTEL_SAMPLE_RATE=0.25
 Or export them in your shell profile (`~/.bashrc`, `~/.zshrc`) for a global default.
 
 :::tip
-Prefer `~/.hermes/.env` for per-machine config. Per-shell exports are fine for experimentation but drift from what you've committed to `config.yaml`.
+Prefer the active profile's `$HERMES_HOME/.env` for per-profile secrets and
+`$HERMES_HOME/hermes_otel.yaml` for per-profile plugin settings. Per-shell
+exports and `HERMES_OTEL_CONFIG` are process-wide, so multiplexed profiles
+cannot use them for differing values.
 :::

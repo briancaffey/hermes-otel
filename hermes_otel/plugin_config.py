@@ -26,26 +26,18 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
 from .debug_utils import logger
+from .profile_context import active_hermes_home
 
 Scalar = Union[str, int, float, bool]
 
 
 def hermes_home() -> Path:
-    """``$HERMES_HOME`` if set, else ``~/.hermes`` — matching Hermes itself."""
-    raw = os.environ.get("HERMES_HOME", "").strip()
-    return Path(raw).expanduser() if raw else Path.home() / ".hermes"
+    """Return the active profile's Hermes home."""
+    return active_hermes_home()
 
 
 # Environment variable holding an explicit config file path.
 CONFIG_PATH_ENV = "HERMES_OTEL_CONFIG"
-
-# Outside the plugin directory, so it survives `hermes plugins install --force`
-# (which replaces the plugin directory wholesale — see issue #55).
-DURABLE_CONFIG_PATH = hermes_home() / "hermes_otel.yaml"
-
-# The historical location: inside the plugin directory. Still read, so existing
-# installs keep working, but it is wiped by a reinstall.
-DEFAULT_CONFIG_PATH = hermes_home() / "plugins" / "hermes_otel" / "config.yaml"
 
 
 def resolve_config_path() -> Optional[Path]:
@@ -60,7 +52,13 @@ def resolve_config_path() -> Optional[Path]:
     if override:
         return Path(override).expanduser()
 
-    durable, legacy = DURABLE_CONFIG_PATH, DEFAULT_CONFIG_PATH
+    home = hermes_home()
+    # Outside the plugin directory, so it survives
+    # `hermes plugins install --force` (see issue #55).
+    durable = home / "hermes_otel.yaml"
+    # Historical location: still read for compatibility, but replaced on
+    # reinstall because it lives inside the plugin directory.
+    legacy = home / "plugins" / "hermes_otel" / "config.yaml"
     if durable.exists():
         if legacy.exists():
             logger.warning(

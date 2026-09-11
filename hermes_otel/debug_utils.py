@@ -21,7 +21,8 @@ import logging
 import os
 import sys
 
-_DEBUG_LOG = os.path.expanduser("~/.hermes/plugins/hermes_otel/debug.log")
+from .profile_context import active_hermes_home
+
 _DEBUG_ENABLED = os.getenv("HERMES_OTEL_DEBUG", "").strip().lower() in {
     "1",
     "true",
@@ -42,7 +43,8 @@ def debug_log(msg: str) -> None:
     if not _DEBUG_ENABLED:
         return
     try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
+        debug_log_path = active_hermes_home() / "plugins" / "hermes_otel" / "debug.log"
+        with debug_log_path.open("a", encoding="utf-8") as f:
             f.write(f"{msg}\n")
     except Exception:
         pass

@@ -30,14 +30,13 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     config (which can define backends and change the init() code path
     unexpectedly).
     """
+    import hermes_otel.live_store as live_store_mod
     import hermes_otel.plugin_config as plugin_config_mod
     import hermes_otel.tracer as tracer_mod
 
     isolated = tmp_path_factory.mktemp("isolated-config")
-    monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", isolated / "nonexistent.yaml")
-    monkeypatch.setattr(
-        plugin_config_mod, "DURABLE_CONFIG_PATH", isolated / "nonexistent-durable.yaml"
-    )
+    monkeypatch.setattr(live_store_mod, "active_hermes_home", lambda: isolated)
+    monkeypatch.setattr(plugin_config_mod, "active_hermes_home", lambda: isolated)
     monkeypatch.delenv(plugin_config_mod.CONFIG_PATH_ENV, raising=False)
 
     def _reset():
@@ -46,7 +45,10 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
             # Never leak a host-metrics sampler thread across tests.
             current.stop_host_metrics()
         tracer_mod._tracer = None
+        tracer_mod._tracers_by_home.clear()
         tracer_mod._PARENT_STACK.set(None)
+        live_store_mod._LIVE_STORE = None
+        live_store_mod._LIVE_STORES.clear()
 
     _reset()
     yield

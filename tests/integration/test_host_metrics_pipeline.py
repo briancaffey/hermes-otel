@@ -132,9 +132,7 @@ class TestLifecycle:
 
 
 class TestLiveStoreMirror:
-    def test_readings_are_mirrored_when_live_store_active(
-        self, inmemory_otel_with_metrics, monkeypatch
-    ):
+    def test_readings_are_mirrored_when_live_store_active(self, inmemory_otel_with_metrics):
         _exporter, _reader, plugin = inmemory_otel_with_metrics
         seen = []
 
@@ -142,10 +140,8 @@ class TestLiveStoreMirror:
             def add_metric(self, name, value, attrs, ts):
                 seen.append((name, value, ts))
 
-        import hermes_otel.live_store as ls
-
-        monkeypatch.setattr(ls, "get_live_store", lambda: _Store())
         plugin._live_active = True
+        plugin._live_store = _Store()
         plugin._mirror_host_sample(_sample(gpus=[GpuReading(0, 0.75, None, None)]))
         assert seen == [
             ("process.cpu.utilization", 0.3, 1_700_000_000_000_000_000),

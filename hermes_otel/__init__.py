@@ -14,18 +14,24 @@ def register(ctx):
     # does not trigger the relative imports.
     from . import hooks
     from .debug_utils import configure_default_handler, debug_log, logger
-    from .tracer import get_tracer
+    from .profile_context import profile_name_from_context
+    from .tracer import get_tracer, release_tracer
 
     # Install stderr handler on the hermes_otel logger unless the host app
     # has already wired up its own. Keeps the "✓ backend connected" banner
     # visible without forcing downstream apps to configure logging.
     configure_default_handler()
 
-    tracer = get_tracer()
+    tracer = get_tracer(profile_name=profile_name_from_context(ctx))
     tracer.init()
 
     if not tracer.is_enabled:
         return
+
+    try:
+        ctx.on_unload(lambda: release_tracer(tracer))
+    except Exception:
+        debug_log("on_unload unavailable; relying on process-exit cleanup")
 
     # Core hooks (always available)
     ctx.register_hook("pre_tool_call", hooks.on_pre_tool_call)
