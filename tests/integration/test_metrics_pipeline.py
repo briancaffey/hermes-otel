@@ -137,6 +137,54 @@ class TestTokenUsageMetric:
         # 100 (input) + 50 (output) = 150
         assert value == 150
 
+    def test_prompt_cache_metrics_distinguish_reported_usage_from_unknown(
+        self, inmemory_otel_with_metrics
+    ):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(
+            usage={
+                "prompt_tokens": 30,
+                "output_tokens": 5,
+                "cache_read_tokens": 70,
+                "cache_write_tokens": 10,
+                "available_fields": {"cache_read_tokens": True},
+            }
+        )
+
+        tokens = _get_metric(metric_reader, "hermes.prompt_cache.tokens")
+        values = {point.attributes["cache_result"]: point.value for point in _points(tokens)}
+        assert values == {"hit": 70, "miss": 40}
+        assert _get_metric_value(metric_reader, "hermes.prompt_cache.observations") == 1
+
+        _api_call(
+            session_id="unknown",
+            usage={"prompt_tokens": 100, "output_tokens": 5, "cache_read_tokens": 0},
+        )
+
+        values = {point.attributes["cache_result"]: point.value for point in _points(tokens)}
+        assert values == {"hit": 70, "miss": 40}
+        assert _get_metric_value(metric_reader, "hermes.prompt_cache.observations") == 1
+
+    def test_explicit_zero_cache_read_is_an_observed_miss(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(
+            usage={
+                "prompt_tokens": 100,
+                "output_tokens": 5,
+                "cache_read_tokens": 0,
+                "available_fields": {"cache_read_tokens": True},
+            }
+        )
+
+        tokens = _get_metric(metric_reader, "hermes.prompt_cache.tokens")
+        assert [(point.attributes["cache_result"], point.value) for point in _points(tokens)] == [
+            ("miss", 100)
+        ]
+        observations = _get_metric(metric_reader, "hermes.prompt_cache.observations")
+        assert [point.attributes["cache_result"] for point in _points(observations)] == ["miss"]
+
     def test_reasoning_token_type_recorded(self, inmemory_otel_with_metrics):
         _, metric_reader, _ = inmemory_otel_with_metrics
 
