@@ -1,5 +1,7 @@
 """Unit tests for the SQLite-backed live store (zero-config dashboard)."""
 
+from pathlib import Path
+
 import pytest
 
 from hermes_otel.live_store import LiveStore, get_live_store
@@ -108,7 +110,39 @@ class TestLiveStore:
 
         ls._LIVE_STORE = None
         assert get_live_store(create=False) is None
-        a = get_live_store(create=True, db_path=str(tmp_path / "s.db"))
-        b = get_live_store(create=False)
+        db_path = str(tmp_path / "s.db")
+        a = get_live_store(create=True, db_path=db_path)
+        b = get_live_store(create=False, db_path=db_path)
         assert a is b is not None
         ls._LIVE_STORE = None  # cleanup
+
+    def test_stores_are_partitioned_by_active_profile(self, monkeypatch, tmp_path):
+        import hermes_otel.live_store as ls
+
+        default_home = tmp_path / "default"
+        work_home = tmp_path / "profiles" / "work"
+        (default_home / "plugins" / "hermes_otel").mkdir(parents=True)
+        (work_home / "plugins" / "hermes_otel").mkdir(parents=True)
+        active = {"home": default_home}
+        monkeypatch.setattr(ls, "active_hermes_home", lambda: active["home"])
+
+        default_store = get_live_store(create=True)
+        default_store.add_span({"name": "default-span"})
+        active["home"] = work_home
+        work_store = get_live_store(create=True)
+
+        assert work_store is not default_store
+        assert work_store.spans() == []
+        assert [span["name"] for span in default_store.spans()] == ["default-span"]
+
+    def test_default_store_creates_missing_profile_directory(self, monkeypatch, tmp_path):
+        import hermes_otel.live_store as ls
+
+        profile_home = tmp_path / "profiles" / "work"
+        monkeypatch.setattr(ls, "active_hermes_home", lambda: profile_home)
+
+        profile_store = get_live_store(create=True)
+        profile_store.add_span({"name": "created"})
+
+        assert Path(profile_store.db_path).is_file()
+        assert [span["name"] for span in profile_store.spans()] == ["created"]

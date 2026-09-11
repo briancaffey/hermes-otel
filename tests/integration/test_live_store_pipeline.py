@@ -24,13 +24,21 @@ def live_plugin(tmp_path):
     ls._LIVE_STORE = LiveStore(db_path=str(tmp_path / "live.db"))  # fresh tmp store
     store = get_live_store()
 
-    provider = TracerProvider(resource=Resource.create({"service.name": "live-test"}))
+    provider = TracerProvider(
+        resource=Resource.create(
+            {
+                "service.name": "live-test",
+                "profile.name": "work",
+            }
+        )
+    )
     provider.add_span_processor(_LiveSpanProcessor(store))
 
     plugin = HermesOTelPlugin()
     plugin.tracer = provider.get_tracer("live-test")
     plugin._initialized = True
     plugin._live_active = True
+    plugin._live_store = store
     plugin.config = HermesOtelConfig(dashboard_live=True)
 
     prev = tracer_mod._tracer
@@ -65,6 +73,7 @@ class TestLivePipeline:
         assert len(agent["trace_id"]) == 32 and len(agent["span_id"]) == 16
         assert agent["status"] in ("OK", "UNSET")
         assert agent["attributes"].get("hermes.session.kind") == "session"
+        assert agent["attributes"]["profile.name"] == "work"
         # tool span is a child (has a parent in the same trace)
         tool = next(s for s in spans if s["name"] == "tool.bash")
         assert tool["parent_span_id"] is not None

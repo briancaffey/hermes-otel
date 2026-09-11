@@ -18,13 +18,16 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+import threading
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import debug_log, logger
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
+from .profile_context import active_hermes_home
 from .session_state import SessionState
 
 # Re-exported for tests (conftest resets _PARENT_STACK between runs).
@@ -72,6 +75,10 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
         status = span.status.status_code.name  # OK / ERROR / UNSET
     except Exception:
         status = "UNSET"
+    resource = getattr(span, "resource", None)
+    resource_attrs = getattr(resource, "attributes", None) or {}
+    attributes = {k: _attr_value(v) for k, v in resource_attrs.items()}
+    attributes.update({k: _attr_value(v) for k, v in (span.attributes or {}).items()})
     return {
         "trace_id": format(ctx.trace_id, "032x"),
         "span_id": format(ctx.span_id, "016x"),
@@ -81,7 +88,7 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
         "end_time_unix_nano": end,
         "duration_ms": round((end - start) / 1e6, 3) if (end and start) else None,
         "status": status,
-        "attributes": {k: _attr_value(v) for k, v in (span.attributes or {}).items()},
+        "attributes": attributes,
     }
 
 
@@ -229,7 +236,11 @@ class HermesOTelPlugin:
         "agent": "AGENT",
     }
 
-    def __init__(self, config: Optional[HermesOtelConfig] = None):
+    def __init__(
+        self,
+        config: Optional[HermesOtelConfig] = None,
+        profile_name: str = "default",
+    ):
         self.tracer = None
         self.spans = SpanTracker()
         # Per-session aggregators for hook callbacks (token totals, I/O,
@@ -239,6 +250,7 @@ class HermesOTelPlugin:
         self._initialized = False
         # True when the in-process live store (zero-config dashboard) is wired.
         self._live_active = False
+        self._live_store = None
         self._live_log_handler = None
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
         # per backend. The singular ``_span_processor`` / ``_metric_reader``
@@ -247,6 +259,8 @@ class HermesOTelPlugin:
         self._span_processors: List[Any] = []
         self._metric_readers: List[Any] = []
         self._log_processors: List[Any] = []
+        self._tracer_provider = None
+        self._tracer_provider_is_global = False
         self._span_processor = None
         self._metric_reader = None
         self._backend_summaries: List[str] = []
@@ -258,6 +272,7 @@ class HermesOTelPlugin:
         # Metrics
         self._meter = None
         self._meter_provider = None
+        self._meter_provider_is_global = False
         self._session_count = None
         self._token_usage = None
         self._cost_usage = None
@@ -297,6 +312,8 @@ class HermesOTelPlugin:
         # Guards against double-registering the atexit flush handler when
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
+        self.profile_name = profile_name
+        self.profile_home = active_hermes_home()
 
     # ── Initialization entry point ───────────────────────────────────────
 
@@ -468,6 +485,7 @@ class HermesOTelPlugin:
         project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name
+        attrs["profile.name"] = self.profile_name
         # host.name lets the host/GPU series join the traces they were sampled
         # alongside (and a Collector's hostmetrics series, if one runs too).
         if self.config.host_metrics and not attrs.get("host.name"):
@@ -527,6 +545,7 @@ class HermesOTelPlugin:
             # the dashboard renders the agent's activity even with no OTLP
             # backend configured — install the plugin, open the tab, see traces.
             self._live_active = False
+            self._live_store = None
             if self.config.dashboard_live and _LiveSpanProcessor is not None:
                 from .live_store import get_live_store
 
@@ -537,6 +556,7 @@ class HermesOTelPlugin:
                 if store is not None:
                     _attach(_LiveSpanProcessor(store))
                     self._live_active = True
+                    self._live_store = store
                     # Tail agent logs into the live store too (Logs tab), opt-in
                     # via capture_logs so we don't capture the root logger by default.
                     if self.config.capture_logs:
@@ -554,10 +574,14 @@ class HermesOTelPlugin:
                             h.setLevel(lvl)
                             # Filter the chattiest config/probe loggers regardless.
                             h.addFilter(_LiveLogNoiseFilter())
-                            target.addHandler(h)
+                            h.addFilter(_lh._ProfileHomeFilter(str(self.profile_home)))
+                            _lh.attach_profile_handler(
+                                target,
+                                h,
+                                self.profile_home,
+                                kind="live",
+                            )
                             self._live_log_handler = h
-                            if target.level == logging.NOTSET or target.level > lvl:
-                                target.setLevel(lvl)
                         except Exception as e:  # pragma: no cover
                             debug_log(f"live log handler not installed: {e}")
 
@@ -616,7 +640,9 @@ class HermesOTelPlugin:
                 self._metric_reader = self._metric_readers[0]
 
             trace.set_tracer_provider(provider)
-            self.tracer = trace.get_tracer("hermes-otel-plugin")
+            self._tracer_provider = provider
+            self._tracer_provider_is_global = trace.get_tracer_provider() is provider
+            self.tracer = provider.get_tracer("hermes-otel-plugin")
 
             if metric_readers and _METRICS_AVAILABLE:
                 self._meter_provider = MeterProvider(
@@ -624,7 +650,10 @@ class HermesOTelPlugin:
                     metric_readers=metric_readers,
                 )
                 metrics.set_meter_provider(self._meter_provider)
-                self._meter = metrics.get_meter("hermes-otel-plugin")
+                self._meter_provider_is_global = (
+                    metrics.get_meter_provider() is self._meter_provider
+                )
+                self._meter = self._meter_provider.get_meter("hermes-otel-plugin")
                 self._create_metric_instruments()
                 debug_log(f"Metrics initialized for {len(metric_readers)} backend(s)")
 
@@ -778,6 +807,7 @@ class HermesOTelPlugin:
                 sampler.stop()
             except Exception:  # pragma: no cover — shutdown must never raise
                 pass
+            self._host_metrics = None
 
     @property
     def host_metrics(self) -> Optional[Any]:
@@ -790,9 +820,7 @@ class HermesOTelPlugin:
         if not self._live_active:
             return
         try:
-            from .live_store import get_live_store
-
-            store = get_live_store()
+            store = self._live_store
             if store is None:
                 return
             ts = sample.wall_ns
@@ -915,6 +943,7 @@ class HermesOTelPlugin:
             processors=processors,
             level=level,
             attach_logger=self.config.log_attach_logger,
+            profile_home=self.profile_home,
         )
         if self._logger_provider is None:
             return
@@ -934,9 +963,7 @@ class HermesOTelPlugin:
             try:
                 import time as _time
 
-                from .live_store import get_live_store
-
-                store = get_live_store()
+                store = self._live_store
                 if store is not None:
                     store.add_metric(name, value, attributes or {}, _time.time_ns())
             except Exception:  # pragma: no cover — never break the hot path
@@ -1206,6 +1233,69 @@ class HermesOTelPlugin:
         atexit.register(self.stop_host_metrics)
         self._atexit_registered = True
 
+    def shutdown(self) -> None:
+        """Release this profile's handlers, samplers, and telemetry providers."""
+        self.stop_host_metrics()
+
+        target = logging.getLogger(self.config.log_attach_logger or None)
+        if self._live_log_handler is not None:
+            try:
+                from . import log_handler
+
+                log_handler.remove_handler(
+                    self.config.log_attach_logger,
+                    self.profile_home,
+                    kind="live",
+                )
+            except Exception:
+                target.removeHandler(self._live_log_handler)
+            self._live_log_handler = None
+
+        try:
+            from . import log_handler
+
+            log_handler.remove_handler(
+                self.config.log_attach_logger,
+                self.profile_home,
+                kind="otel",
+            )
+        except Exception:
+            pass
+
+        self._force_flush()
+        providers = [self._logger_provider]
+        if not self._meter_provider_is_global:
+            providers.append(self._meter_provider)
+        if not self._tracer_provider_is_global:
+            providers.append(self._tracer_provider)
+        for provider in providers:
+            if provider is not None:
+                try:
+                    provider.shutdown()
+                except Exception:
+                    pass
+        self._logger_provider = None
+        self._meter_provider = None
+        self._tracer_provider = None
+        self._meter_provider_is_global = False
+        self._tracer_provider_is_global = False
+        self._log_processors.clear()
+        self._metric_readers.clear()
+        self._span_processors.clear()
+        self._span_processor = None
+        self._metric_reader = None
+        self._meter = None
+        self._live_store = None
+        self._live_active = False
+        self.tracer = None
+        self._langsmith = None
+
+        if self._atexit_registered:
+            atexit.unregister(self._force_flush)
+            atexit.unregister(self.stop_host_metrics)
+            self._atexit_registered = False
+        self._initialized = False
+
     @property
     def is_enabled(self) -> bool:
         return self._initialized
@@ -1213,11 +1303,39 @@ class HermesOTelPlugin:
 
 # Module-level singleton
 _tracer = None
+_tracers_by_home: Dict[Path, HermesOTelPlugin] = {}
+_tracers_lock = threading.RLock()
 
 
-def get_tracer() -> HermesOTelPlugin:
-    """Get or create the singleton tracer instance."""
+def get_tracer(profile_name: Optional[str] = None) -> HermesOTelPlugin:
+    """Get or create the tracer for the active Hermes profile."""
     global _tracer
-    if _tracer is None:
-        _tracer = HermesOTelPlugin()
-    return _tracer
+    profile_home = active_hermes_home().expanduser().resolve()
+
+    with _tracers_lock:
+        # Preserve direct singleton injection used by embedders and older tests.
+        if _tracer is not None and _tracer not in _tracers_by_home.values():
+            _tracers_by_home[profile_home] = _tracer
+
+        tracer = _tracers_by_home.get(profile_home)
+        if tracer is None:
+            tracer = HermesOTelPlugin(
+                profile_name=profile_name or "default",
+            )
+            _tracers_by_home[profile_home] = tracer
+        elif profile_name is not None and not tracer.is_enabled:
+            tracer.profile_name = profile_name
+        _tracer = tracer
+        return tracer
+
+
+def release_tracer(tracer: HermesOTelPlugin) -> None:
+    """Shut down and forget one profile's tracer instance."""
+    global _tracer
+    with _tracers_lock:
+        for profile_home, candidate in list(_tracers_by_home.items()):
+            if candidate is tracer:
+                del _tracers_by_home[profile_home]
+        if _tracer is tracer:
+            _tracer = None
+    tracer.shutdown()

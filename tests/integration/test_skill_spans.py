@@ -33,7 +33,13 @@ def _load_skill(session_id, skill, task="sk1", tool="skill_view", args=None):
 
 
 class TestSkillSpanBasics:
-    def test_skill_view_opens_span_under_agent_root(self, inmemory_otel_setup):
+    def test_skill_view_opens_span_under_agent_root(
+        self, inmemory_otel_setup, monkeypatch, tmp_path
+    ):
+        from hermes_otel import hooks
+
+        profile_home = tmp_path / "profiles" / "work"
+        monkeypatch.setattr(hooks, "active_hermes_home", lambda: profile_home)
         exporter, _ = inmemory_otel_setup
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
         _load_skill("s1", "axolotl")
@@ -50,6 +56,7 @@ class TestSkillSpanBasics:
         assert attrs["hermes.span_kind"] == "skill"
         assert attrs["gen_ai.skill.name"] == "axolotl"
         assert attrs["hermes.skill.result_status"] == "completed"
+        assert attrs["hermes.skill.path"] == str(profile_home / "skills" / "axolotl")
         # Nested under the turn root, not the tool span.
         assert _parent_span_id(skill) == agent.context.span_id
 

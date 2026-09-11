@@ -146,4 +146,6 @@ Enable debug logging:
 export HERMES_OTEL_DEBUG=true
 ```
 
-Per-backend export attempts, queue depths, and retry counts show up in `~/.hermes/plugins/hermes_otel/debug.log`. See [Debug logging](/development/debug-logging).
+Per-backend export attempts, queue depths, and retry counts show up in
+`$HERMES_HOME/plugins/hermes_otel/debug.log`. See
+[Debug logging](/development/debug-logging).

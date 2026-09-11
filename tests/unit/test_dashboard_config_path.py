@@ -34,7 +34,7 @@ import backends as dash_backends  # noqa: E402
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch, tmp_path):
     monkeypatch.delenv("HERMES_OTEL_CONFIG", raising=False)
-    monkeypatch.setenv("HERMES_HOME", str(tmp_path / "home"))
+    monkeypatch.setattr(dash_backends, "_active_hermes_home", lambda: tmp_path / "home")
     # Keep the legacy in-plugin config.yaml out of the picture.
     monkeypatch.setattr(
         dash_backends,
@@ -79,3 +79,18 @@ def test_env_override_wins(monkeypatch, tmp_path):
 def test_nothing_found(tmp_path):
     assert dash_backends.resolve_config_path() is None
     assert dash_backends.candidate_config_paths()[0] == tmp_path / "home" / "hermes_otel.yaml"
+
+
+def test_switches_with_active_profile(monkeypatch, tmp_path):
+    default_home = tmp_path / "default"
+    work_home = tmp_path / "profiles" / "work"
+    default_home.mkdir(parents=True)
+    work_home.mkdir(parents=True)
+    (default_home / "hermes_otel.yaml").write_text("backends: []\n")
+    (work_home / "hermes_otel.yaml").write_text("backends: []\n")
+    active = {"home": default_home}
+    monkeypatch.setattr(dash_backends, "_active_hermes_home", lambda: active["home"])
+
+    assert dash_backends.resolve_config_path() == default_home / "hermes_otel.yaml"
+    active["home"] = work_home
+    assert dash_backends.resolve_config_path() == work_home / "hermes_otel.yaml"

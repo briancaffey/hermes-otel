@@ -17,10 +17,14 @@ export HERMES_OTEL_DEBUG=true
 Then restart Hermes. The log file is:
 
 ```
-~/.hermes/plugins/hermes_otel/debug.log
+$HERMES_HOME/plugins/hermes_otel/debug.log
 ```
 
-It's append-only — old entries stick around until you delete the file. No rotation; if you use debug mode for long periods, `rm debug.log` occasionally or pipe through `logrotate`.
+`$HERMES_HOME` follows the active profile, so a named profile writes to a path
+such as `~/.hermes/profiles/work/plugins/hermes_otel/debug.log`. The file is
+append-only — old entries stick around until you delete it. No rotation; if you
+use debug mode for long periods, remove it occasionally or pipe through
+`logrotate`.
 
 ## What gets logged
 
@@ -70,7 +74,7 @@ If a secret is logged unredacted, that's a bug — open an issue.
 ```bash
 export HERMES_OTEL_DEBUG=true
 # Run one Hermes turn
-tail -f ~/.hermes/plugins/hermes_otel/debug.log
+tail -f "$HERMES_HOME/plugins/hermes_otel/debug.log"
 ```
 
 Look for:
@@ -100,4 +104,5 @@ unset HERMES_OTEL_DEBUG
 export HERMES_OTEL_DEBUG=false
 ```
 
-Restart Hermes. The file isn't deleted on disable; `rm ~/.hermes/plugins/hermes_otel/debug.log` to clean up.
+Restart Hermes. The file isn't deleted on disable; remove
+`$HERMES_HOME/plugins/hermes_otel/debug.log` to clean up.

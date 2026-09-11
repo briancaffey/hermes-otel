@@ -83,7 +83,13 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 | `service.version` | `hermes-otel` plugin version |
 | `otel.scope.name` | `hermes-otel` |
 | `openinference.project.name` | Same as `service.name` |
+| `profile.name` | Active Hermes profile (`default`, a named profile id, or `custom`) |
 | *plus* any `resource_attributes:` / `global_tags:` from `config.yaml` |
+
+`profile.name` is host-derived and authoritative: a same-named value under
+`resource_attributes` is replaced with the active profile. Because it is a
+Resource attribute rather than a metric label, it identifies traces, metrics,
+and logs without adding a high-cardinality dimension to every instrument.
 
 ## Why dual-convention rather than pick one?
 

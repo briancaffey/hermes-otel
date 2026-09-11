@@ -57,6 +57,7 @@ class TestArtifactContents:
             "span_tracker.py",
             "session_state.py",
             "helpers.py",
+            "profile_context.py",
             "plugin_config.py",
             "backends.py",
             "live_store.py",

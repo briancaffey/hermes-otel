@@ -29,6 +29,8 @@
 
 # Free-form key/value pairs merged into the OTel Resource of every span.
 # Good for deployment tags (env, region, team).
+# `profile.name` is reserved and set automatically from the active Hermes
+# profile so traces, metrics, and logs can be separated in shared backends.
 # resource_attributes:
 #   deployment: prod
 #   region: us-east-1

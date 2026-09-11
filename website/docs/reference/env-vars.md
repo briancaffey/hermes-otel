@@ -77,7 +77,7 @@ See [OTel logs](/configuration/logs) for behavior.
 
 | Var | Value | Effect |
 |---|---|---|
-| `HERMES_OTEL_DEBUG` | `true`/`false` | Enables debug log at `~/.hermes/plugins/hermes_otel/debug.log` |
+| `HERMES_OTEL_DEBUG` | `true`/`false` | Enables debug log at `$HERMES_HOME/plugins/hermes_otel/debug.log` |
 
 ## Boolean accepted values
 

@@ -12,7 +12,6 @@ routed through the tracer singleton so test reset is just
 from __future__ import annotations
 
 import json
-import os
 import time
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, TypedDict
@@ -32,6 +31,7 @@ from .helpers import (
     to_optional_int,
     truncate_string,
 )
+from .profile_context import active_hermes_home
 from .session_state import TurnSummary
 from .tracer import get_tracer
 
@@ -808,11 +808,11 @@ def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: d
     if tracer.spans.has_skill_span(session_id, skill):
         return  # already active this turn — keep the first window open
     key = f"skill:{session_id}:{skill}"
-    home = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
+    home = active_hermes_home()
     attributes: Dict[str, Any] = {
         "hermes.skill.name": skill,
         "hermes.skill.source": source,
-        "hermes.skill.path": os.path.join(home, "skills", skill),
+        "hermes.skill.path": str(home / "skills" / skill),
         "hermes.span_kind": "skill",
         "gen_ai.skill.name": skill,
     }

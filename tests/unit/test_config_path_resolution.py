@@ -9,11 +9,14 @@ durable location outside the plugin directory, plus an explicit env override.
 
 from __future__ import annotations
 
+import sys
+import types
 from pathlib import Path
 
 import pytest
 
 from hermes_otel import plugin_config as pc
+from hermes_otel.profile_context import active_hermes_home
 
 CONFIG = "project_name: from-{}\n"
 
@@ -25,8 +28,7 @@ def locations(tmp_path, monkeypatch):
     (home / "plugins" / "hermes_otel").mkdir(parents=True)
     durable = home / "hermes_otel.yaml"
     legacy = home / "plugins" / "hermes_otel" / "config.yaml"
-    monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", durable)
-    monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", legacy)
+    monkeypatch.setattr(pc, "active_hermes_home", lambda: home)
     monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
     return {"home": home, "durable": durable, "legacy": legacy, "tmp": tmp_path}
 
@@ -77,6 +79,10 @@ class TestResolveConfigPath:
 
 
 class TestHermesHome:
+    @pytest.fixture(autouse=True)
+    def _restore_home_resolver(self, monkeypatch):
+        monkeypatch.setattr(pc, "active_hermes_home", active_hermes_home)
+
     def test_defaults_to_dot_hermes_in_home(self, monkeypatch):
         monkeypatch.delenv("HERMES_HOME", raising=False)
         assert pc.hermes_home() == Path.home() / ".hermes"
@@ -92,6 +98,15 @@ class TestHermesHome:
     def test_blank_hermes_home_falls_back(self, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", "  ")
         assert pc.hermes_home() == Path.home() / ".hermes"
+
+    def test_uses_host_profile_context(self, monkeypatch, tmp_path):
+        profile_home = tmp_path / "profiles" / "work"
+        hermes_constants = types.ModuleType("hermes_constants")
+        hermes_constants.get_hermes_home = lambda: profile_home
+        monkeypatch.setitem(sys.modules, "hermes_constants", hermes_constants)
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path / "default"))
+
+        assert pc.hermes_home() == profile_home
 
 
 class TestLoadConfigUsesResolution:
@@ -112,3 +127,24 @@ class TestLoadConfigUsesResolution:
 
     def test_no_config_anywhere_yields_defaults(self, locations):
         assert pc.load_config().project_name == pc.HermesOtelConfig().project_name
+
+    def test_switches_config_with_active_profile(self, monkeypatch, tmp_path):
+        default_home = tmp_path / "default"
+        work_home = tmp_path / "profiles" / "work"
+        default_home.mkdir(parents=True)
+        work_home.mkdir(parents=True)
+        (default_home / "hermes_otel.yaml").write_text("enabled: false\n")
+        (work_home / "hermes_otel.yaml").write_text(
+            "enabled: true\n"
+            "backends:\n"
+            "  - type: phoenix\n"
+            "    endpoint: http://work:6006/v1/traces\n"
+        )
+        active = {"home": default_home}
+        monkeypatch.setattr(pc, "active_hermes_home", lambda: active["home"])
+
+        assert pc.load_config().enabled is False
+        active["home"] = work_home
+        work_config = pc.load_config()
+        assert work_config.enabled is True
+        assert work_config.backends[0].endpoint == "http://work:6006/v1/traces"

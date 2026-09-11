@@ -10,6 +10,11 @@ A fully-annotated example ships in the repository as `config.yaml.example`. This
 
 Location: `$HERMES_HOME/hermes_otel.yaml` (recommended), or `$HERMES_OTEL_CONFIG`, or the legacy `$HERMES_HOME/plugins/hermes_otel/config.yaml` — see [Where does config.yaml live?](/configuration/overview). Parsed only if `pyyaml` is installed in the Hermes venv.
 
+`$HERMES_HOME` follows the active Hermes profile. For example, profile `work`
+uses `~/.hermes/profiles/work/hermes_otel.yaml`. The explicit
+`HERMES_OTEL_CONFIG` override is process-wide, so leave it unset when
+multiplexed profiles need different files.
+
 ## Project / resource attributes
 
 ```yaml
@@ -23,6 +28,7 @@ global_tags:
   team: platform
 
 # Takes precedence over `global_tags` on key conflict.
+# `profile.name` is reserved and always reflects the active Hermes profile.
 resource_attributes:
   env: prod
   region: us-east-1

@@ -35,6 +35,27 @@ alongside the plugin:
 Hermes deliberately never installs plugin dependencies for you; it prints them at install time and
 leaves the venv to you.
 
+### Named profiles
+
+Plugins are installed and enabled per Hermes profile. To use hermes-otel in a
+named profile, target that profile when installing:
+
+```bash
+hermes -p work plugins install briancaffey/hermes-otel/hermes_otel --enable
+```
+
+Hermes' native `plugins.enabled` / `plugins.disabled` settings decide whether
+the plugin loads for each profile. No hermes-otel-specific profile allowlist is
+needed. Each enabled profile reads its own
+`$HERMES_HOME/hermes_otel.yaml` (for example,
+`~/.hermes/profiles/work/hermes_otel.yaml`) and exports its profile id as the
+OTel Resource attribute `profile.name`.
+
+`hermes profile create work --clone-all` also copies installed plugins and
+their activation config. A plain `--clone` copies configuration but not the
+plugin directory. The live dashboard database is likewise profile-scoped at
+`$HERMES_HOME/plugins/hermes_otel/live.db`.
+
 :::note What actually gets installed
 About 40 files / 500 KB: the Python modules, `plugin.yaml`, the bundled skill and the dashboard tab.
 The docs site, test suite and example Compose stacks stay in the repository — they are development
@@ -67,8 +88,11 @@ mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
 export HERMES_OTEL_LIVE_DB=~/.hermes/hermes_otel.live.db
 ```
 
-`$HERMES_HOME/hermes_otel.yaml` is read automatically — see
+The active profile's `$HERMES_HOME/hermes_otel.yaml` is read automatically — see
 [Where does `config.yaml` live?](/configuration/overview).
+
+`HERMES_OTEL_LIVE_DB` is a process-wide override. Leave it unset when
+multiplexed profiles need isolated live-dashboard data.
 :::
 
 ### Coming from an install made before v0.12

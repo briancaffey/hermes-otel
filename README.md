@@ -40,6 +40,17 @@ subdirectory (~40 files) rather than the whole repository, so docs, tests and th
 Compose stacks never land in `~/.hermes/plugins/`. It unpacks to `~/.hermes/plugins/hermes_otel/`
 either way, and Hermes auto-discovers it via `plugin.yaml`.
 
+For a named profile, run the same command in that profile and enable it there:
+
+```bash
+hermes -p work plugins install briancaffey/hermes-otel/hermes_otel --enable
+```
+
+Hermes controls plugin activation per profile through each profile's
+`plugins.enabled` / `plugins.disabled` config. hermes-otel then reads that
+profile's own `$HERMES_HOME/hermes_otel.yaml` and exports `profile.name` on its
+OTel Resource, so traces, metrics, and logs can be filtered by profile.
+
 The OTel dependencies must then be installed into the **hermes-agent virtual environment**
 (where `hermes` itself runs) — Hermes never installs plugin dependencies for you:
 
@@ -367,13 +378,15 @@ The plugin prints only essential startup messages (backend connected/failed, hoo
 export HERMES_OTEL_DEBUG=true
 ```
 
-Debug output is written to `~/.hermes/plugins/hermes_otel/debug.log` and does not clutter hermes stdout.
+Debug output is written to
+`$HERMES_HOME/plugins/hermes_otel/debug.log` (the active profile) and does not
+clutter hermes stdout.
 
 **Priority order:** LangSmith (if `LANGSMITH_TRACING=true`) > Langfuse (if credentials set) > SigNoz (`OTEL_SIGNOZ_ENDPOINT`) > Uptrace (`OTEL_UPTRACE_ENDPOINT` + DSN) > OpenObserve (`OTEL_OPENOBSERVE_ENDPOINT` + creds) > Parseable (`OTEL_PARSEABLE_ENDPOINT` + `PARSEABLE_API_KEY`) > Weave (`WANDB_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT`) > Honeycomb (`HONEYCOMB_API_KEY`) > Jaeger (`OTEL_JAEGER_ENDPOINT`) > Tempo (`OTEL_TEMPO_ENDPOINT`) > Phoenix (`OTEL_PHOENIX_ENDPOINT`).
 
 ### Shaping knobs — `config.yaml` and `HERMES_OTEL_*` env vars
 
-Backend selection stays env-var-driven (above). For telemetry **shaping** — sampling, preview size, resource attributes, TTL, extra headers — you can also use a YAML file at `~/.hermes/hermes_otel.yaml` (or wherever `HERMES_OTEL_CONFIG` points). The legacy location inside the plugin directory still works, but a reinstall replaces that directory.
+Backend selection stays env-var-driven (above). For telemetry **shaping** — sampling, preview size, resource attributes, TTL, extra headers — you can also use a YAML file at `$HERMES_HOME/hermes_otel.yaml` (for the default profile, `~/.hermes/hermes_otel.yaml`) or wherever `HERMES_OTEL_CONFIG` points. The legacy location inside the active profile's plugin directory still works, but a reinstall replaces that directory.
 
 **Precedence (per-field):** `HERMES_OTEL_*` env var > `config.yaml` value > default.
 

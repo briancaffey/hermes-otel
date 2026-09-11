@@ -36,6 +36,19 @@ def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
     return None
 
 
+def _active_hermes_home() -> Path:
+    """Resolve the active profile home without importing the plugin package."""
+    try:
+        from hermes_constants import get_hermes_home
+
+        return Path(get_hermes_home()).expanduser()
+    except (ImportError, AttributeError):
+        pass
+
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    return Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+
+
 # ── Config loader ──────────────────────────────────────────────────────
 
 
@@ -53,8 +66,7 @@ def _candidate_config_paths() -> List[Path]:
     override = os.environ.get("HERMES_OTEL_CONFIG", "").strip()
     if override:
         paths.append(Path(override).expanduser())
-    env_home = os.environ.get("HERMES_HOME", "").strip()
-    home = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    home = _active_hermes_home()
     paths.append(home / "hermes_otel.yaml")
     here = Path(__file__).resolve().parent  # dashboard/backends/
     plugin_root = here.parent.parent  # plugin root (…/hermes_otel/)

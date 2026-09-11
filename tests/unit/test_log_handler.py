@@ -162,6 +162,8 @@ def clean_root_logger():
     for h in list(root.handlers):
         if getattr(h, log_handler._HANDLER_MARKER, False):
             root.removeHandler(h)
+    if hasattr(root, log_handler._ORIGINAL_LOG_LEVEL):
+        delattr(root, log_handler._ORIGINAL_LOG_LEVEL)
     root.setLevel(saved_level)
     # Preserve handlers the test framework may have added.
     for h in list(root.handlers):
@@ -247,6 +249,29 @@ class TestInstallHandler:
         ]
         assert len(markers) == 1, "should replace, not stack, prior installs"
 
+    def test_keeps_handlers_for_different_profiles(self, clean_root_logger, tmp_path):
+        default_home = tmp_path / "default"
+        work_home = tmp_path / "profiles" / "work"
+        log_handler.install_handler(
+            resource=self._resource(),
+            processors=self._fake_processors(),
+            level=logging.INFO,
+            profile_home=default_home,
+        )
+        log_handler.install_handler(
+            resource=self._resource(),
+            processors=self._fake_processors(),
+            level=logging.INFO,
+            profile_home=work_home,
+        )
+
+        markers = [
+            getattr(h, log_handler._HANDLER_MARKER, None)
+            for h in clean_root_logger.handlers
+            if getattr(h, log_handler._HANDLER_MARKER, None)
+        ]
+        assert markers == [str(default_home.resolve()), str(work_home.resolve())]
+
     def test_raises_target_level_to_match_handler(self, clean_root_logger):
         clean_root_logger.setLevel(logging.ERROR)
         log_handler.install_handler(
@@ -265,6 +290,42 @@ class TestInstallHandler:
         )
         # We only LOWER the effective level — never raise it.
         assert clean_root_logger.level == logging.DEBUG
+
+    def test_named_logger_does_not_inherit_a_higher_parent_level(self, clean_root_logger, tmp_path):
+        clean_root_logger.setLevel(logging.WARNING)
+        target = logging.getLogger("hermes_otel_test_profile_level")
+        target.setLevel(logging.NOTSET)
+        profile_home = tmp_path / "profiles" / "work"
+        try:
+            log_handler.install_handler(
+                resource=self._resource(),
+                processors=self._fake_processors(),
+                level=logging.INFO,
+                attach_logger=target.name,
+                profile_home=profile_home,
+            )
+
+            assert target.level == logging.INFO
+            assert target.isEnabledFor(logging.INFO)
+        finally:
+            log_handler.remove_handler(target.name, profile_home)
+
+        assert target.level == logging.NOTSET
+
+    def test_restores_target_level_after_last_profile_is_removed(self, clean_root_logger, tmp_path):
+        clean_root_logger.setLevel(logging.WARNING)
+        profile_home = tmp_path / "profiles" / "work"
+        log_handler.install_handler(
+            resource=self._resource(),
+            processors=self._fake_processors(),
+            level=logging.DEBUG,
+            profile_home=profile_home,
+        )
+        assert clean_root_logger.level == logging.DEBUG
+
+        log_handler.remove_handler(None, profile_home)
+
+        assert clean_root_logger.level == logging.WARNING
 
 
 # ── OTel-internal filter ────────────────────────────────────────────────────
@@ -576,6 +637,19 @@ class TestExcludeOTelInternalFilter:
         assert f.filter(self._record("hermes_otel.hooks", level=logging.INFO)) is True
         assert f.filter(self._record("hermes.gateway", level=logging.INFO)) is True
         assert f.filter(self._record("myapp.module", level=logging.INFO)) is True
+
+
+class TestProfileHomeFilter:
+    def test_keeps_only_records_from_its_profile(self, monkeypatch, tmp_path):
+        work_home = tmp_path / "profiles" / "work"
+        active = {"home": work_home}
+        monkeypatch.setattr(log_handler, "active_hermes_home", lambda: active["home"])
+        profile_filter = log_handler._ProfileHomeFilter(str(work_home))
+        record = logging.LogRecord("app", logging.INFO, __file__, 1, "test", (), None)
+
+        assert profile_filter.filter(record) is True
+        active["home"] = tmp_path / "profiles" / "personal"
+        assert profile_filter.filter(record) is False
 
 
 # ── tracer wiring ──────────────────────────────────────────────────────────

@@ -11,7 +11,9 @@ class FakeCtx:
     def __init__(self, support_skills: bool = True):
         self.hooks = []
         self.skills = []
+        self.unload_callbacks = []
         self._support_skills = support_skills
+        self.profile_name = "default"
 
     def register_hook(self, name, callback):
         self.hooks.append(name)
@@ -23,6 +25,9 @@ class FakeCtx:
             raise AttributeError("register_skill")
         self.skills.append((name, Path(path), description))
 
+    def on_unload(self, callback):
+        self.unload_callbacks.append(callback)
+
 
 def _enabled_tracer(monkeypatch):
     class _T:
@@ -31,7 +36,10 @@ def _enabled_tracer(monkeypatch):
         def init(self):
             return True
 
-    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: _T())
+        def shutdown(self):
+            pass
+
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda profile_name=None: _T())
 
 
 def test_bundled_skill_file_exists_and_parses():
@@ -51,6 +59,7 @@ def test_register_registers_bundled_skill(monkeypatch):
     # The path it registered must actually exist.
     registered = next(p for n, p, _ in ctx.skills if n == "observability")
     assert registered.exists()
+    assert len(ctx.unload_callbacks) == 1
 
 
 def test_register_is_forward_compatible_without_register_skill(monkeypatch):
@@ -60,4 +69,65 @@ def test_register_is_forward_compatible_without_register_skill(monkeypatch):
     hermes_otel.register(ctx)
     assert ctx.skills == []
     # Hooks still registered — skill failure doesn't abort registration.
+    assert "pre_tool_call" in ctx.hooks
+
+
+def test_register_passes_profile_name_to_tracer(monkeypatch):
+    captured = {}
+
+    class _T:
+        is_enabled = False
+
+        def init(self):
+            return False
+
+    def _get_tracer(profile_name=None):
+        captured["profile_name"] = profile_name
+        return _T()
+
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", _get_tracer)
+    ctx = FakeCtx()
+    ctx.profile_name = "work"
+
+    hermes_otel.register(ctx)
+
+    assert captured["profile_name"] == "work"
+
+
+def test_register_falls_back_for_older_hermes_context(monkeypatch):
+    captured = {}
+
+    class LegacyCtx:
+        pass
+
+    class _T:
+        is_enabled = False
+
+        def init(self):
+            return False
+
+    def _get_tracer(profile_name=None):
+        captured["profile_name"] = profile_name
+        return _T()
+
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", _get_tracer)
+
+    hermes_otel.register(LegacyCtx())
+
+    assert captured["profile_name"] == "default"
+
+
+def test_register_remains_compatible_without_profile_or_unload_api(monkeypatch):
+    class LegacyCtx:
+        def __init__(self):
+            self.hooks = []
+
+        def register_hook(self, name, callback):
+            self.hooks.append(name)
+
+    _enabled_tracer(monkeypatch)
+    ctx = LegacyCtx()
+
+    hermes_otel.register(ctx)
+
     assert "pre_tool_call" in ctx.hooks

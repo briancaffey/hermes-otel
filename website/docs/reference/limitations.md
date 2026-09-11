@@ -76,6 +76,11 @@ Setting `LANGSMITH_TRACING=true` short-circuits the `backends:` list entirely. Y
 
 Why: LangSmith uses its own HTTP Run API rather than OTLP; its transport doesn't fit into the OTel `BatchSpanProcessor` shape.
 
+The same distinction applies to profile identity: `profile.name` is an OTel
+Resource attribute and therefore accompanies OTLP traces, metrics, and logs.
+LangSmith runs do not have an OTel Resource, so they do not receive this
+attribute.
+
 Workaround if you need both: run the OTel Collector and have it route traces to LangSmith's OTLP-compatible beta ingest, if/when LangSmith ships one.
 
 ## Weave is trace-ingest only
@@ -94,9 +99,22 @@ Because `wandb.entity` and `wandb.project` are Resource attributes on the
 shared `TracerProvider`, one Hermes process can route to one Weave project at a
 time. Multiple configured Weave entries must agree on those values.
 
+## Process-global auto-instrumentation in multiplex mode
+
+hermes-otel creates profile-local tracer and meter providers for the spans and
+metrics emitted by its hooks. Third-party libraries that instrument themselves
+through OpenTelemetry's process-global provider, however, can bind only to the
+first provider installed in a multiplex process. Their spans may therefore
+carry the first profile's Resource. That first provider remains alive until
+process exit because OpenTelemetry does not allow replacing it; shutting it
+down on a profile reload would permanently disable MCP and other global
+auto-instrumentation. Run profiles in separate processes when strict isolation
+or per-profile disablement of third-party auto-instrumented spans is required.
+
 ## Debug log has no rotation
 
-Enabling `HERMES_OTEL_DEBUG=true` appends to `~/.hermes/plugins/hermes_otel/debug.log` forever. No rotation, no size cap.
+Enabling `HERMES_OTEL_DEBUG=true` appends to
+`$HERMES_HOME/plugins/hermes_otel/debug.log` forever. No rotation, no size cap.
 
 Deliberate: the debug log is meant for troubleshooting, not routine operation. If you want persistent debug logs, pipe through `logrotate` or rm the file weekly.
 
