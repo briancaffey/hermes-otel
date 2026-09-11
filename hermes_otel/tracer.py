@@ -260,6 +260,8 @@ class HermesOTelPlugin:
         self._meter_provider = None
         self._session_count = None
         self._token_usage = None
+        self._prompt_cache_tokens = None
+        self._prompt_cache_observations = None
         self._cost_usage = None
         self._tool_duration = None
         self._message_count = None
@@ -665,6 +667,16 @@ class HermesOTelPlugin:
             "hermes.token.usage",
             description="Tokens consumed by type",
         )
+        self._prompt_cache_tokens = self._meter.create_counter(
+            "hermes.prompt_cache.tokens",
+            unit="{token}",
+            description="Prompt tokens by cache result",
+        )
+        self._prompt_cache_observations = self._meter.create_counter(
+            "hermes.prompt_cache.observations",
+            unit="{request}",
+            description="Requests with provider-reported prompt-cache usage",
+        )
         self._cost_usage = self._meter.create_counter(
             "hermes.cost.usage",
             description="USD cost per message",
@@ -951,6 +963,12 @@ class HermesOTelPlugin:
             self._session_count.add(1, attrs)
         elif name == "token_usage":
             self._token_usage.add(int(value), attrs)
+        elif name == "prompt_cache_tokens":
+            if self._prompt_cache_tokens is not None:
+                self._prompt_cache_tokens.add(int(value), attrs)
+        elif name == "prompt_cache_observations":
+            if self._prompt_cache_observations is not None:
+                self._prompt_cache_observations.add(1, attrs)
         elif name == "cost_usage":
             self._cost_usage.add(value, attrs)
         elif name == "tool_duration":
