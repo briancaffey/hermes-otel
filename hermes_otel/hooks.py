@@ -882,7 +882,16 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
 
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = kwargs.get("session_id")
+    if not session_id:
+        # Some dispatch paths (subagents, registry tools, batch workers) emit
+        # tool hooks without a session_id. turn_id is "<session_id>:<task_id>:<hex>"
+        # — recover the session so the span joins the session's parent stack
+        # (and therefore its trace) instead of starting an orphan trace.
+        session_id = session_id_from_turn_id(kwargs.get("turn_id"))
     if session_id:
+        # Explicit session attrs so backend session queries group this span
+        # even when session_id was recovered from turn_id rather than passed.
+        attributes.setdefault("session.id", truncate_string(session_id, 200))
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
@@ -975,7 +984,12 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
 
     # Summary roll-up
     session_id = kwargs.get("session_id")
+    if not session_id:
+        # Match on_pre_tool_call: recover the session from turn_id so the
+        # closing span joins the session's parent stack/trace.
+        session_id = session_id_from_turn_id(kwargs.get("turn_id"))
     if session_id:
+        attributes.setdefault("session.id", truncate_string(session_id, 200))
         attributes.update(_gen_ai_attributes(session_id, "execute_tool", kwargs))
         attributes.update(_correlation_attributes(tracer, session_id, kwargs))
         attributes.update(_session_sender_attributes(tracer, session_id))
@@ -1319,6 +1333,13 @@ def on_pre_api_request(
     debug_log(f"  tracer.is_enabled={tracer.is_enabled}")
     if not tracer.is_enabled:
         return
+
+    if not session_id:
+        # Some dispatch paths (subagents, batch workers) emit api hooks without
+        # a session_id. turn_id is "<session_id>:<task_id>:<hex>" — recover the
+        # session so the api span nests in the session's trace instead of
+        # starting an orphan trace.
+        session_id = session_id_from_turn_id(kwargs.get("turn_id"))
 
     tracer.sweep_expired_turns()
 
