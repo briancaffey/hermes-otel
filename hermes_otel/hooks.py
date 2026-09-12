@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 from .debug_utils import debug_log
 from .helpers import (
     classify_approval_choice,
+    classify_floor_block,
     clip_preview,
     coerce_bool,
     detect_skill,
@@ -947,6 +948,19 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     outcome = extract_tool_result_status(result_json) or "completed"
     attributes["hermes.tool.outcome"] = outcome
 
+    # Governance provenance: floor blocks (approvals.deny globs, hardline
+    # list, sudo-stdin guard) never fire the approval hooks — the block dict
+    # is collapsed into this error envelope before post_tool_call sees it.
+    # Mark who blocked directly on the tool span.
+    if outcome == "blocked" and isinstance(result_json, dict):
+        floor = classify_floor_block(
+            result_json.get("error") or result_json.get("output") or ""
+        )
+        if floor:
+            attributes["hermes.approval.choice"] = "denied_by_floor"
+            attributes["hermes.approval.decided_by"] = "hard_floor"
+            attributes["hermes.approval.floor"] = floor
+
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
     error_msg = ""
@@ -1085,13 +1099,16 @@ def on_post_approval_response(
     pk = truncate_string(pattern_key, 200) or "command"
     key = _approval_span_key(session_id, tool_call_id, pk)
 
-    verdict = classify_approval_choice(choice)
+    verdict = classify_approval_choice(choice, kwargs.get("decided_by"))
     attributes: Dict[str, Any] = {
         "hermes.approval.granted": verdict["granted"],
         "hermes.approval.timed_out": verdict["timed_out"],
     }
     if verdict["choice"]:
         attributes["hermes.approval.choice"] = verdict["choice"]
+    if verdict["decided_by"]:
+        # Provenance: human answer vs. smart-guardian (aux LLM) verdict.
+        attributes["hermes.approval.decided_by"] = verdict["decided_by"]
 
     start = tracer.spans.pop_approval_start(key)
     duration_ms = None
