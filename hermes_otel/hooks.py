@@ -829,6 +829,11 @@ def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: d
     debug_log(f"  skill span opened: {skill} (source={source})")
 
 
+def _tool_call_id(task_id: str, kwargs: dict) -> str:
+    """Use Hermes's tool-call id when available, with old-core fallback."""
+    return str(kwargs.get("tool_call_id") or task_id)
+
+
 def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     """Start a tool span before the tool executes."""
     debug_log(f"pre_tool_call fired: tool={tool_name}")
@@ -839,14 +844,15 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
 
     tracer.sweep_expired_turns()
 
-    key = f"{tool_name}:{task_id}"
+    tool_call_id = _tool_call_id(task_id, kwargs)
+    key = f"{tool_name}:{tool_call_id}"
     tracer.sessions.record_tool_start(key, time.perf_counter())
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
-        "gen_ai.tool.call.id": truncate_string(task_id, 200),
+        "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
     }
     preview = _preview(
         json.dumps(args) if args else "{}",
@@ -892,8 +898,6 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_target(target)
         summary.add_command(command)
         summary.add_skill(skill)
-        if skill and tracer.config.skill_spans:
-            _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
 
     tracer.start_span(
         name=f"tool.{tool_name}",
@@ -913,7 +917,8 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     if not tracer.is_enabled:
         return
 
-    key = f"{tool_name}:{task_id}"
+    tool_call_id = _tool_call_id(task_id, kwargs)
+    key = f"{tool_name}:{tool_call_id}"
     debug_log(f"  ending span: key={key}")
 
     start_time = tracer.sessions.pop_tool_start(key)
@@ -929,7 +934,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Build final attributes — OpenInference conventions for Phoenix Info
     attributes: Dict[str, Any] = {
         "gen_ai.tool.name": tool_name,
-        "gen_ai.tool.call.id": truncate_string(task_id, 200),
+        "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
     }
     if start_time:
         attributes.update(_tool_host_utilization_attributes(tracer, start_time, ended_at))
@@ -944,7 +949,12 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
             result_json = {}
 
     # Determine outcome taxonomy
-    outcome = extract_tool_result_status(result_json) or "completed"
+    hook_status = kwargs.get("status")
+    outcome = (
+        hook_status.strip().lower()
+        if isinstance(hook_status, str) and hook_status.strip()
+        else extract_tool_result_status(result_json) or "completed"
+    )
     attributes["hermes.tool.outcome"] = outcome
 
     # Preserve existing error.message attribute when outcome == error
@@ -982,6 +992,17 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         attributes.update(_turn_attributes(tracer, session_id))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
+        skill, skill_source = detect_skill(tool_name, args)
+        if skill and skill_source and tracer.config.skill_spans:
+            # skill_view reports success explicitly; file reads instead succeed
+            # unless Hermes reports a terminal failure through the hook/result.
+            succeeded = (
+                result_json.get("success") is True
+                if skill_source == "skill_view"
+                else outcome not in {"error", "blocked", "timeout", "cancelled"}
+            )
+            if succeeded:
+                _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.

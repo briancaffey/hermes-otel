@@ -1,11 +1,10 @@
 ---
 name: observability
 description: >-
-  Turn on and understand OpenTelemetry observability for THIS Hermes agent via
-  the hermes-otel plugin — choose a backend, configure export, and read the
-  traces, metrics, and logs your agent produces. Use when a user asks "can I see
-  what my agent is doing", "set up tracing/metrics for Hermes", "where do my
-  traces go", or wants to debug agent behavior with telemetry.
+  Configure or query OpenTelemetry for THIS Hermes agent via hermes-otel. Use
+  for historical agent behavior, skill/tool invocation counts, model calls,
+  latency, errors, retries, cost, or questions such as "why did my agent do
+  this?", "how often was this skill read?", and "what is slow?"
 ---
 
 # Observability for your Hermes agent
@@ -24,7 +23,7 @@ as OpenTelemetry spans, metrics, and logs to any OTLP/HTTP backend.
 A trace per turn, shaped like:
 
 ```
-agent                      ← the turn
+agent or cron              ← the turn
 ├── skill.<name>           ← a loaded skill (load → turn end; overlaps OK)
 └── llm.<model>
     └── api.<model>        ← one HTTP round-trip
@@ -45,15 +44,15 @@ dashboards work out of the box.
    ```
 2. **Run a backend.** Easiest local pick: OpenObserve or Grafana LGTM (traces +
    metrics + logs). Phoenix is great for LLM-span inspection (traces only).
-3. **Point the plugin at it** in `~/.hermes/plugins/hermes_otel/config.yaml`
-   (copy from `config.yaml.example`):
+3. **Point the plugin at it** in the durable user configuration file
+   `~/.hermes/hermes_otel.yaml`:
    ```yaml
    project_name: my-hermes
    backends:
      - type: openobserve
        endpoint: http://localhost:5080/api/default/v1/traces
-       user: root@example.com
-       password: Complexpass#123
+       user_env: OPENOBSERVE_USER
+       password_env: OPENOBSERVE_PASSWORD
        metrics: true
    ```
 
@@ -73,6 +72,35 @@ Not seeing data? The usual suspects:
   process exits; widen the time range.
 - **Nothing at all** — check the startup banner connected; check the endpoint
   port and that the backend container is up.
+
+## Analyze existing agent behavior first
+
+When the question is about what Hermes did historically, query the configured
+telemetry backend before searching logs or parsing session dumps. Logs are useful
+for failures that happened before export; they are not the primary usage ledger.
+
+Start by establishing the observed window and denominator. A count without the
+retention window and number of turns is misleading. Skill loads are represented
+by `skill.<name>` spans; `tool.skill_view` counts all skill-loading calls.
+
+Use the configured backend's query UI or API and inspect one narrow trace before
+writing aggregates. Backend-specific query syntax, authentication, and table or
+index names belong in that backend's documentation, not this portable skill.
+
+For frequency analysis:
+
+- Bound every query to an explicit retention window.
+- Project only the span name, timestamp, trace ID, and attributes needed.
+- Count `skill.<name>` spans for individual skill loads.
+- Count `agent` and `cron` root spans for the turn denominator.
+- Avoid fetching full captured prompts or tool results across many spans.
+
+Report the retention window, total turns/traces, and exact span filter with every
+frequency claim. A skill span proves the skill loaded; it does not prove the
+model considered every other skill and rejected it. For missed-invocation
+analysis, compare the root `agent` or `cron` span's input and
+`hermes.turn.skills` fields against the skill catalog, then manually verify
+high-confidence mismatches.
 
 ## Key configuration knobs
 

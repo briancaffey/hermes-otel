@@ -26,9 +26,14 @@ def _one(spans, name):
 def _load_skill(session_id, skill, task="sk1", tool="skill_view", args=None):
     """Fire a pre/post tool pair that loads a skill."""
     args = args if args is not None else {"name": skill}
+    result = '{"success": true}' if tool == "skill_view" else '{"content": "loaded"}'
     on_pre_tool_call(tool_name=tool, args=args, task_id=task, session_id=session_id)
     on_post_tool_call(
-        tool_name=tool, args=args, result="loaded", task_id=task, session_id=session_id
+        tool_name=tool,
+        args=args,
+        result=result,
+        task_id=task,
+        session_id=session_id,
     )
 
 
@@ -65,6 +70,66 @@ class TestSkillSpanBasics:
 
         skill = _one(exporter.get_finished_spans(), "skill.deploy")
         assert dict(skill.attributes)["hermes.skill.source"] == "path_match"
+
+    def test_failed_skill_load_does_not_open_span(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        on_pre_tool_call(
+            tool_name="skill_view",
+            args={"name": "axolotl"},
+            task_id="sk1",
+            session_id="s1",
+        )
+        on_post_tool_call(
+            tool_name="skill_view",
+            args={"name": "axolotl"},
+            result='{"success": false, "error": "missing"}',
+            task_id="sk1",
+            session_id="s1",
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        assert _spans_named(exporter.get_finished_spans(), "skill.axolotl") == []
+
+    def test_parallel_skill_loads_keep_results_with_their_tool_call(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        shared = {"task_id": "task-1", "session_id": "s1"}
+        on_pre_tool_call(
+            tool_name="skill_view", args={"name": "missing"}, tool_call_id="call-a", **shared
+        )
+        on_pre_tool_call(
+            tool_name="skill_view", args={"name": "loaded"}, tool_call_id="call-b", **shared
+        )
+        on_post_tool_call(
+            tool_name="skill_view",
+            args={"name": "missing"},
+            result='{"success": false, "error": "not found"}',
+            tool_call_id="call-a",
+            **shared,
+        )
+        on_post_tool_call(
+            tool_name="skill_view",
+            args={"name": "loaded"},
+            result='{"success": true}',
+            tool_call_id="call-b",
+            **shared,
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        spans = exporter.get_finished_spans()
+        tools = {
+            dict(span.attributes)["gen_ai.tool.call.id"]: span
+            for span in _spans_named(spans, "tool.skill_view")
+        }
+        assert dict(tools["call-a"].attributes)["error.message"] == "not found"
+        assert "error.message" not in tools["call-b"].attributes
+        assert _spans_named(spans, "skill.missing") == []
+        assert len(_spans_named(spans, "skill.loaded")) == 1
 
     def test_interrupted_turn_marks_result_status(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
