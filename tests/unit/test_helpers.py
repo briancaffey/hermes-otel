@@ -167,6 +167,30 @@ class TestInferSkillName:
     def test_target_key(self):
         assert infer_skill_name({"target": "/repo/skills/deployer/README"}) == "deployer"
 
+    def test_categorized_skill_path_preserves_relative_name(self):
+        assert (
+            infer_skill_name(
+                {"path": "/home/user/skills/software-development/code-review/SKILL.md"}
+            )
+            == "software-development/code-review"
+        )
+
+    def test_windows_categorized_skill_path_preserves_relative_name(self):
+        assert (
+            infer_skill_name(
+                {"path": r"C:\Users\me\skills\software-development\code-review\SKILL.md"}
+            )
+            == "software-development/code-review"
+        )
+
+    def test_categorized_skill_view_name_preserves_relative_name(self):
+        from hermes_otel.helpers import detect_skill
+
+        assert detect_skill("skill_view", {"name": "software-development/code-review"}) == (
+            "software-development/code-review",
+            "skill_view",
+        )
+
     def test_no_path_returns_none(self):
         assert infer_skill_name({"command": "ls"}) is None
 
