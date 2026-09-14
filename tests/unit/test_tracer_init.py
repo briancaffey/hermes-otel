@@ -422,6 +422,27 @@ class TestConfigDisabled:
 
 
 class TestResourceAttributes:
+    def test_named_profile_span_is_exported_with_profile_resource(self):
+        from opentelemetry.sdk.trace import TracerProvider
+        from opentelemetry.sdk.trace.export import SimpleSpanProcessor
+        from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
+
+        plugin = HermesOTelPlugin(profile_name="work")
+        exporter = InMemorySpanExporter()
+        provider = TracerProvider(resource=plugin._build_resource())
+        provider.add_span_processor(SimpleSpanProcessor(exporter))
+        plugin.tracer = provider.get_tracer("hermes-otel-test")
+        plugin._initialized = True
+
+        try:
+            plugin.start_span(name="test.profile", key="profile-test", kind="general")
+            plugin.end_span("profile-test")
+
+            (span,) = exporter.get_finished_spans()
+            assert dict(span.resource.attributes)["profile.name"] == "work"
+        finally:
+            provider.shutdown()
+
     def test_profile_name_is_added_to_resource(self):
         plugin = HermesOTelPlugin(profile_name="work")
 
