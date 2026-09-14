@@ -422,6 +422,21 @@ class TestConfigDisabled:
 
 
 class TestResourceAttributes:
+    def test_profile_name_is_added_to_resource(self):
+        plugin = HermesOTelPlugin(profile_name="work")
+
+        attrs = dict(plugin._build_resource().attributes)
+
+        assert attrs["profile.name"] == "work"
+
+    def test_profile_name_cannot_be_overridden_by_config(self):
+        config = HermesOtelConfig(resource_attributes={"profile.name": "wrong-profile"})
+        plugin = HermesOTelPlugin(config=config, profile_name="work")
+
+        attrs = dict(plugin._build_resource().attributes)
+
+        assert attrs["profile.name"] == "work"
+
     def test_resource_attributes_merged(self, monkeypatch):
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")

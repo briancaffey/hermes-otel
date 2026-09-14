@@ -18,6 +18,7 @@ Attributes marked **optional** are only set when the underlying data is availabl
 | `service.version` | `hermes-otel` plugin version |
 | `otel.scope.name` | `hermes-otel` |
 | `openinference.project.name` | Same as `service.name` |
+| `profile.name` | Hermes profile that initialized the plugin (fallback: `default`) |
 | `wandb.entity` | W&B Weave routing (when configured) |
 | `wandb.project` | W&B Weave routing (when configured) |
 | `telemetry.sdk.*` | Set by OTel SDK |

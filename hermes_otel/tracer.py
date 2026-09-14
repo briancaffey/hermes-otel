@@ -229,7 +229,11 @@ class HermesOTelPlugin:
         "agent": "AGENT",
     }
 
-    def __init__(self, config: Optional[HermesOtelConfig] = None):
+    def __init__(
+        self,
+        config: Optional[HermesOtelConfig] = None,
+        profile_name: str = "default",
+    ):
         self.tracer = None
         self.spans = SpanTracker()
         # Per-session aggregators for hook callbacks (token totals, I/O,
@@ -297,6 +301,7 @@ class HermesOTelPlugin:
         # Guards against double-registering the atexit flush handler when
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
+        self.profile_name = profile_name
 
     # ── Initialization entry point ───────────────────────────────────────
 
@@ -468,6 +473,7 @@ class HermesOTelPlugin:
         project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
         if project_name:
             attrs["openinference.project.name"] = project_name
+        attrs["profile.name"] = self.profile_name
         # host.name lets the host/GPU series join the traces they were sampled
         # alongside (and a Collector's hostmetrics series, if one runs too).
         if self.config.host_metrics and not attrs.get("host.name"):
@@ -1215,9 +1221,9 @@ class HermesOTelPlugin:
 _tracer = None
 
 
-def get_tracer() -> HermesOTelPlugin:
+def get_tracer(profile_name: Optional[str] = None) -> HermesOTelPlugin:
     """Get or create the singleton tracer instance."""
     global _tracer
     if _tracer is None:
-        _tracer = HermesOTelPlugin()
+        _tracer = HermesOTelPlugin(profile_name=profile_name or "default")
     return _tracer

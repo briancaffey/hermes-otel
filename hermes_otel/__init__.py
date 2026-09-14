@@ -21,7 +21,8 @@ def register(ctx):
     # visible without forcing downstream apps to configure logging.
     configure_default_handler()
 
-    tracer = get_tracer()
+    profile_name = getattr(ctx, "profile_name", None) or "default"
+    tracer = get_tracer(profile_name=profile_name)
     tracer.init()
 
     if not tracer.is_enabled:

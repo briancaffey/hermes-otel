@@ -1,6 +1,9 @@
 """The plugin self-registers a bundled 'observability' Hermes skill."""
 
 from pathlib import Path
+from types import SimpleNamespace
+
+import pytest
 
 import hermes_otel
 
@@ -12,6 +15,7 @@ class FakeCtx:
         self.hooks = []
         self.skills = []
         self._support_skills = support_skills
+        self.profile_name = "default"
 
     def register_hook(self, name, callback):
         self.hooks.append(name)
@@ -31,7 +35,7 @@ def _enabled_tracer(monkeypatch):
         def init(self):
             return True
 
-    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: _T())
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda profile_name=None: _T())
 
 
 def test_bundled_skill_file_exists_and_parses():
@@ -61,3 +65,20 @@ def test_register_is_forward_compatible_without_register_skill(monkeypatch):
     assert ctx.skills == []
     # Hooks still registered — skill failure doesn't abort registration.
     assert "pre_tool_call" in ctx.hooks
+
+
+@pytest.mark.parametrize(
+    ("ctx", "expected"),
+    [
+        (SimpleNamespace(profile_name="work"), "work"),
+        (SimpleNamespace(), "default"),
+    ],
+)
+def test_register_passes_profile_name_to_tracer(monkeypatch, ctx, expected):
+    import hermes_otel.tracer as tracer_module
+
+    monkeypatch.setattr(tracer_module, "_tracer", None)
+    monkeypatch.setattr(tracer_module.HermesOTelPlugin, "init", lambda self: False)
+    hermes_otel.register(ctx)
+
+    assert tracer_module.get_tracer().profile_name == expected
