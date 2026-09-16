@@ -943,8 +943,16 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         except (json.JSONDecodeError, TypeError):
             result_json = {}
 
-    # Determine outcome taxonomy
-    outcome = extract_tool_result_status(result_json) or "completed"
+    # Prefer Hermes's authoritative lifecycle status for non-success outcomes.
+    # The hook may carry a plain-text result on timeout/error, so deriving only
+    # from result_json would otherwise misclassify it as completed.
+    lifecycle_status = kwargs.get("status")
+    if isinstance(lifecycle_status, str):
+        lifecycle_status = lifecycle_status.strip().lower()
+    if lifecycle_status in {"timeout", "blocked", "cancelled", "error"}:
+        outcome = lifecycle_status
+    else:
+        outcome = extract_tool_result_status(result_json) or "completed"
     attributes["hermes.tool.outcome"] = outcome
 
     # Preserve existing error.message attribute when outcome == error
