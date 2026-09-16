@@ -876,10 +876,10 @@ def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: d
 
 
 # Hermes ``status`` kwarg value -> documented ``hermes.tool.outcome`` value.
+# Success statuses are deliberately absent: they defer to the tool's own
+# result-reported status (see ``_outcome_from_hook_status``).
+_HOOK_STATUS_SUCCESS = frozenset({"ok", "success", "completed", "complete", "done"})
 _HOOK_STATUS_TO_OUTCOME = {
-    "ok": "completed",
-    "success": "completed",
-    "completed": "completed",
     "error": "error",
     "failed": "error",
     "blocked": "blocked",
@@ -893,13 +893,16 @@ _HOOK_STATUS_TO_OUTCOME = {
 def _outcome_from_hook_status(status: Any) -> Optional[str]:
     """Translate Hermes' post_tool_call ``status`` into the outcome taxonomy.
 
-    Returns ``None`` when the hook carried no usable status so the caller can
-    fall back to parsing the tool result.
+    Non-success lifecycle statuses (``timeout``, ``blocked``, ``cancelled``,
+    ``error``) are authoritative and win. Returns ``None`` for a success status
+    or when the hook carried no usable status, so the caller falls back to the
+    tool's own result-reported status (else ``completed``) — that keeps custom
+    outcomes such as ``partial`` that only the tool knows about.
     """
     if not isinstance(status, str):
         return None
     key = status.strip().lower()
-    if not key:
+    if not key or key in _HOOK_STATUS_SUCCESS:
         return None
     return _HOOK_STATUS_TO_OUTCOME.get(key, key)
 
@@ -1025,11 +1028,12 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         except (json.JSONDecodeError, TypeError):
             result_json = {}
 
-    # Determine outcome taxonomy. Hermes' post_tool_call ``status`` kwarg uses
-    # its own vocabulary (``ok`` / ``error`` / ``blocked``); map it onto the
-    # documented hermes.tool.outcome values (``completed`` / ``error`` /
-    # ``timeout`` / ``blocked``) so dashboards keyed on ``completed`` keep
-    # working, and fall back to the result-derived status otherwise.
+    # Determine outcome taxonomy. Hermes' post_tool_call ``status`` kwarg is
+    # authoritative for non-success outcomes (``timeout`` / ``blocked`` /
+    # ``cancelled`` / ``error``) — the result may be plain text there, so
+    # deriving only from result_json would misclassify a timeout as completed
+    # (#72). For a successful call Hermes only says ``ok``, so the tool's own
+    # result status (if any) is kept, else ``completed``.
     outcome = _outcome_from_hook_status(kwargs.get("status")) or (
         extract_tool_result_status(result_json) or "completed"
     )
