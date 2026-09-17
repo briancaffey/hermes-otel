@@ -228,21 +228,29 @@ def _record_prompt_cache_metrics(
 ) -> None:
     """Record cache hit/miss token counters when the provider reported cache usage.
 
-    Hermes normalizes ``prompt_tokens`` to the uncached portion. Cache writes are
-    also misses, so the weighted token hit rate is ``hit / (hit + miss)``.
-    Missing availability metadata is unknown rather than a zero-percent hit rate.
+    Hermes' ``prompt_tokens`` is the *whole* prompt — uncached input + cache
+    reads + cache writes (``CanonicalUsage.prompt_tokens`` in
+    ``agent/usage_pricing.py``). Hits are the cache reads; misses are the rest
+    of the prompt (uncached input and cache writes), so ``hit + miss ==
+    prompt_tokens`` and the weighted token hit rate is ``hit / (hit + miss)``.
+
+    A provider that reports *any* cache accounting (a read or a write) is
+    treated as supporting it, so a cold request that only wrote to the cache is
+    an observed miss rather than "unknown". A request with neither is skipped —
+    Hermes collapses "field absent" and "explicit zero" to ``0`` — unless the
+    forward-compatible ``usage.available_fields`` side channel (proposed in
+    NousResearch/hermes-agent#108249, not yet shipped) says the provider
+    reported ``cache_read_tokens``.
     """
     cache_read = totals["cache_read_tokens"]
-    cache_read_available = isinstance(available_fields, dict) and available_fields.get(
-        "cache_read_tokens"
+    cache_write = totals["cache_write_tokens"]
+    cache_read_available = isinstance(available_fields, dict) and bool(
+        available_fields.get("cache_read_tokens")
     )
-    # A positive count proves that the provider reported the field, including on
-    # Hermes releases predating ``available_fields``. Only an explicit zero needs
-    # the presence bit to avoid treating unsupported metadata as a cache miss.
-    if not cache_read_available and not cache_read:
+    if not (cache_read or cache_write or cache_read_available):
         return
 
-    cache_miss = totals["prompt_tokens"] + totals["cache_write_tokens"]
+    cache_miss = max(0, totals["prompt_tokens"] - cache_read)
     if cache_read:
         tracer.record_metric(
             "prompt_cache_tokens", cache_read, {**base_attrs, "cache_result": "hit"}

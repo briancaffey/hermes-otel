@@ -32,7 +32,8 @@ agent                      ← the turn
         └── subagent.<role>← a delegated child agent
 ```
 
-Plus metrics (token usage, cost, tool/skill counts, durations) under both the
+Plus metrics (token usage, prompt-cache hit/miss, cost, tool/skill counts,
+durations) under both the
 custom `hermes.*` names and the standard OTel GenAI `gen_ai.*` names, so generic
 dashboards work out of the box.
 

@@ -20,27 +20,6 @@ Tested with:
 
 Any OTLP HTTP endpoint should work.
 
-### Prompt-cache hit rate
-
-The plugin exports provider-reported cache usage as two low-cardinality counters:
-
-- `hermes.prompt_cache.tokens`, split by `cache_result=hit|miss`
-- `hermes.prompt_cache.observations`, split by whether each observed request hit or missed
-
-Compute the weighted token hit rate from counter rates (or deltas), not by averaging
-per-request percentages:
-
-```text
-rate(tokens{cache_result="hit"})
-────────────────────────────────────────────────────────
-rate(tokens{cache_result="hit"}) + rate(tokens{cache_result="miss"})
-```
-
-`miss` includes uncached input and cache-write tokens. The metric is omitted when a
-provider did not report cache-read metadata, so unknown support is not rendered as a
-zero-percent hit rate. This requires a Hermes hook payload with
-`usage.available_fields.cache_read_tokens=true`.
-
 - For Phoenix see [docker-compose/phoenix.yaml](docker-compose/phoenix.yaml)
 - For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
 - For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
@@ -536,6 +515,42 @@ so it is attributable to the tool; GPU is the host's coincident load during the
 tool window. `psutil` ships with hermes-agent; GPU readings need `pynvml`
 (NVIDIA) or `amdsmi` (AMD) in the Hermes venv. Full details, PromQL examples
 and the Collector-based alternative: [Host & GPU metrics](https://briancaffey.github.io/hermes-otel/configuration/host-metrics).
+
+## Prompt-cache metrics
+
+Every `post_api_request` records provider-reported prompt-cache usage as two
+low-cardinality counters. Labels are `model`, `provider`, `api_mode` and
+`cache_result` — never a session id.
+
+| Metric | Meaning |
+|---|---|
+| `hermes.prompt_cache.tokens{cache_result="hit"}` | prompt tokens served from the provider cache (cache reads) |
+| `hermes.prompt_cache.tokens{cache_result="miss"}` | the rest of the prompt: uncached input **and** cache-write tokens |
+| `hermes.prompt_cache.observations{cache_result}` | API requests with cache accounting, split by whether they read from the cache (`hit`) or not (`miss`) |
+
+`hit + miss` is the request's whole prompt (Hermes' `prompt_tokens` is uncached
+input + cache reads + cache writes), so the weighted token hit rate is:
+
+```promql
+sum(rate(hermes_prompt_cache_tokens_total{cache_result="hit"}[5m]))
+/
+sum(rate(hermes_prompt_cache_tokens_total[5m]))
+```
+
+Divide counter rates (or deltas) — never average per-request percentages.
+(Prometheus/LGTM append `_total` to counters; OpenObserve keeps the bare name.)
+
+A request is counted when the provider reported *any* cache accounting — a
+cache read or a cache write. Requests with neither are skipped rather than
+counted as a 0 % hit: Hermes collapses "field absent" and "explicit zero" to
+`0`, so they cannot be told apart today. Once Hermes ships
+`usage.available_fields` (proposed in
+[NousResearch/hermes-agent#108249](https://github.com/NousResearch/hermes-agent/pull/108249))
+an explicit-zero cache read is counted as a miss automatically.
+
+The pre-existing `hermes.token.usage` counter carries the same buckets
+(`token_type=input|cacheRead|cacheCreation`) with a `session_id` label;
+`cacheRead / input` on it gives the same rate at higher cardinality.
 
 ## How it works
 
