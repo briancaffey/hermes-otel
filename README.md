@@ -20,6 +20,27 @@ Tested with:
 
 Any OTLP HTTP endpoint should work.
 
+### Prompt-cache hit rate
+
+The plugin exports provider-reported cache usage as two low-cardinality counters:
+
+- `hermes.prompt_cache.tokens`, split by `cache_result=hit|miss`
+- `hermes.prompt_cache.observations`, split by whether each observed request hit or missed
+
+Compute the weighted token hit rate from counter rates (or deltas), not by averaging
+per-request percentages:
+
+```text
+rate(tokens{cache_result="hit"})
+────────────────────────────────────────────────────────
+rate(tokens{cache_result="hit"}) + rate(tokens{cache_result="miss"})
+```
+
+`miss` includes uncached input and cache-write tokens. The metric is omitted when a
+provider did not report cache-read metadata, so unknown support is not rendered as a
+zero-percent hit rate. This requires a Hermes hook payload with
+`usage.available_fields.cache_read_tokens=true`.
+
 - For Phoenix see [docker-compose/phoenix.yaml](docker-compose/phoenix.yaml)
 - For Langfuse see [https://langfuse.com/self-hosting/deployment/docker-compose](https://langfuse.com/self-hosting/deployment/docker-compose)
 - For Langsmith see [https://smith.langchain.com/](https://smith.langchain.com/)
