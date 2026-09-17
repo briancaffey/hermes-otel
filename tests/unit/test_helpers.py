@@ -167,29 +167,55 @@ class TestInferSkillName:
     def test_target_key(self):
         assert infer_skill_name({"target": "/repo/skills/deployer/README"}) == "deployer"
 
-    def test_categorized_skill_path_preserves_relative_name(self):
+    def test_categorized_skill_manifest_resolves_to_bare_name(self):
+        # Hermes names skills by the directory holding SKILL.md, never the category.
         assert (
             infer_skill_name(
                 {"path": "/home/user/skills/software-development/code-review/SKILL.md"}
             )
-            == "software-development/code-review"
+            == "code-review"
         )
 
-    def test_windows_categorized_skill_path_preserves_relative_name(self):
+    def test_windows_categorized_skill_manifest_resolves_to_bare_name(self):
         assert (
             infer_skill_name(
                 {"path": r"C:\Users\me\skills\software-development\code-review\SKILL.md"}
             )
-            == "software-development/code-review"
+            == "code-review"
         )
 
-    def test_categorized_skill_view_name_preserves_relative_name(self):
+    def test_categorized_directory_reference_uses_filesystem(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "software-development" / "code-review"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: code-review\n---\n")
+        assert infer_skill_name({"path": str(skill_dir)}) == "code-review"
+        # Without a filesystem hit the text is ambiguous; legacy first segment wins.
+        assert infer_skill_name({"path": "/nope/skills/software-development/code-review"}) == (
+            "software-development"
+        )
+
+    def test_file_inside_categorized_skill_uses_filesystem(self, tmp_path):
+        # references/x.md gives no textual clue whether the layout is flat or
+        # categorized; the nearest ancestor that holds SKILL.md decides.
+        skill_dir = tmp_path / "skills" / "software-development" / "code-review"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: code-review\n---\n")
+        ref = skill_dir / "references" / "checklist.md"
+        assert infer_skill_name({"path": str(ref)}) == "code-review"
+
+    def test_file_inside_flat_skill_without_filesystem_falls_back_to_first_segment(self):
+        assert infer_skill_name({"path": "/nope/skills/monitor/references/x.md"}) == "monitor"
+
+    def test_skill_view_name_forms_all_reduce_to_bare_name(self):
         from hermes_otel.helpers import detect_skill
 
-        assert detect_skill("skill_view", {"name": "software-development/code-review"}) == (
+        for form in (
+            "code-review",
             "software-development/code-review",
-            "skill_view",
-        )
+            "software-development:code-review",
+            "hermes_otel:code-review",
+        ):
+            assert detect_skill("skill_view", {"name": form}) == ("code-review", "skill_view")
 
     def test_no_path_returns_none(self):
         assert infer_skill_name({"command": "ls"}) is None

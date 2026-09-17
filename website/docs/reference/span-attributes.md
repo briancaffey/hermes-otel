@@ -142,7 +142,7 @@ Span kind: `TOOL` (OpenInference).
 | `hermes.tool.target` | hermes | string | Inferred file path / URL (optional) |
 | `hermes.tool.command` | hermes | string | Inferred shell command (optional) |
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` |
-| `hermes.skill.name` | hermes | string | Inferred skill name (optional) |
+| `hermes.skill.name` | hermes | string | Bare skill name as Hermes names it (`skills/<category>/<name>/SKILL.md` → `<name>`); optional |
 | `hermes.turn.number` | hermes | int | Turn the call belongs to |
 | `hermes.tool.cpu.utilization.avg` | hermes | float | Mean process-tree CPU (0..1) during the call — `host_metrics` only |
 | `hermes.tool.cpu.utilization.peak` | hermes | float | Peak process-tree CPU (0..1) during the call — `host_metrics` only |

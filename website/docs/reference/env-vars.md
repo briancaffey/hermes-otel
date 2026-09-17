@@ -51,6 +51,8 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `HERMES_OTEL_FLUSH_INTERVAL_MS` | `flush_interval_ms` | `60000` (60s) |
 | `HERMES_OTEL_PREVIEW_MAX_CHARS` | `preview_max_chars` | `1200` |
 | `HERMES_OTEL_CAPTURE_PREVIEWS` | `capture_previews` | `true` |
+| `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | `true` |
+| `HERMES_OTEL_DISCOVERY_PROMPT` | `discovery_prompt` | `false` |
 | `HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY` | `capture_conversation_history` | `false` |
 | `HERMES_OTEL_CONVERSATION_HISTORY_MAX_CHARS` | `conversation_history_max_chars` | `20000` |
 | `HERMES_OTEL_PROJECT_NAME` | `project_name` | *(unset)* |

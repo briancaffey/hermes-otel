@@ -293,6 +293,24 @@ class TestOnPostToolCall:
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         assert not mock_tracer.sessions.has_tool_start("bash:t1")
 
+    @pytest.mark.parametrize(
+        "hook_status, expected",
+        [("ok", "completed"), ("error", "error"), ("blocked", "blocked"), ("", "completed")],
+    )
+    def test_hermes_status_maps_onto_outcome_taxonomy(self, mock_tracer, hook_status, expected):
+        # Hermes' post_tool_call status vocabulary is ok/error/blocked; the
+        # documented hermes.tool.outcome values stay completed/error/timeout/blocked.
+        on_post_tool_call(
+            tool_name="bash", args={}, result='{"output": "x"}', task_id="t1", status=hook_status
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == expected
+
+    def test_result_status_wins_when_hook_status_absent(self, mock_tracer):
+        on_post_tool_call(tool_name="bash", args={}, result='{"status": "timeout"}', task_id="t1")
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "timeout"
+
     def test_uses_tool_call_id_to_end_matching_span(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:call-1", 1000.0)
         on_post_tool_call(

@@ -875,6 +875,35 @@ def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: d
     debug_log(f"  skill span opened: {skill} (source={source})")
 
 
+# Hermes ``status`` kwarg value -> documented ``hermes.tool.outcome`` value.
+_HOOK_STATUS_TO_OUTCOME = {
+    "ok": "completed",
+    "success": "completed",
+    "completed": "completed",
+    "error": "error",
+    "failed": "error",
+    "blocked": "blocked",
+    "timeout": "timeout",
+    "timed_out": "timeout",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+}
+
+
+def _outcome_from_hook_status(status: Any) -> Optional[str]:
+    """Translate Hermes' post_tool_call ``status`` into the outcome taxonomy.
+
+    Returns ``None`` when the hook carried no usable status so the caller can
+    fall back to parsing the tool result.
+    """
+    if not isinstance(status, str):
+        return None
+    key = status.strip().lower()
+    if not key:
+        return None
+    return _HOOK_STATUS_TO_OUTCOME.get(key, key)
+
+
 def _tool_call_id(task_id: str, kwargs: dict) -> str:
     """Use Hermes's tool-call id when available, with old-core fallback."""
     return str(kwargs.get("tool_call_id") or task_id)
@@ -943,7 +972,9 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         summary.add_tool(tool_name)
         summary.add_target(target)
         summary.add_command(command)
-        summary.add_skill(skill)
+        # ``summary.add_skill`` happens in on_post_tool_call, once the load is
+        # known to have succeeded, so hermes.turn.skills agrees with the
+        # skill.<name> spans.
 
     tracer.start_span(
         name=f"tool.{tool_name}",
@@ -994,12 +1025,13 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         except (json.JSONDecodeError, TypeError):
             result_json = {}
 
-    # Determine outcome taxonomy
-    hook_status = kwargs.get("status")
-    outcome = (
-        hook_status.strip().lower()
-        if isinstance(hook_status, str) and hook_status.strip()
-        else extract_tool_result_status(result_json) or "completed"
+    # Determine outcome taxonomy. Hermes' post_tool_call ``status`` kwarg uses
+    # its own vocabulary (``ok`` / ``error`` / ``blocked``); map it onto the
+    # documented hermes.tool.outcome values (``completed`` / ``error`` /
+    # ``timeout`` / ``blocked``) so dashboards keyed on ``completed`` keep
+    # working, and fall back to the result-derived status otherwise.
+    outcome = _outcome_from_hook_status(kwargs.get("status")) or (
+        extract_tool_result_status(result_json) or "completed"
     )
     attributes["hermes.tool.outcome"] = outcome
 
@@ -1039,7 +1071,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
         skill, skill_source = detect_skill(tool_name, args)
-        if skill and skill_source and tracer.config.skill_spans:
+        if skill and skill_source:
             # skill_view reports success explicitly; file reads instead succeed
             # unless Hermes reports a terminal failure through the hook/result.
             succeeded = (
@@ -1048,7 +1080,9 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
                 else outcome not in {"error", "blocked", "timeout", "cancelled"}
             )
             if succeeded:
-                _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
+                summary.add_skill(skill)
+                if tracer.config.skill_spans:
+                    _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.

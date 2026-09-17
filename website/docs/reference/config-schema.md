@@ -30,6 +30,8 @@ Complete schema for `~/.hermes/plugins/hermes_otel/config.yaml`. See [`config.ya
 | `span_batch_max_export_batch_size` | int | `512` | Max spans per OTLP POST |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
 | `host_metrics` | bool | `false` | Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics + per-tool utilization attributes; see [Host & GPU metrics](/configuration/host-metrics) |
+| `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
+| `discovery_prompt` | bool | `false` | Register a short system-prompt section advertising the bundled `hermes_otel:observability` skill (changes what the model sees every turn; opt-in) |
 | `host_metrics_gpu` | string | `"auto"` | `auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe |
 | `host_metrics_interval_ms` | int | `1000` | Sampling cadence (floor 50 ms) |
 | `global_tags` | map | `{}` | Merged into Resource; overridden by `resource_attributes` on key conflict |
