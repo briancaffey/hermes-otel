@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.4.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.0...hermes-otel-v1.4.1) (2026-09-17)
+
+
+### Bug Fixes
+
+* make Hermes skill telemetry discoverable and correct ([#76](https://github.com/briancaffey/hermes-otel/issues/76)) ([3319fa0](https://github.com/briancaffey/hermes-otel/commit/3319fa00474b30e8c1756d1c16329225e1dca5b5))
+* **skills:** keep outcome taxonomy, fail-open registration, bare skill names ([#85](https://github.com/briancaffey/hermes-otel/issues/85)) ([ba930f4](https://github.com/briancaffey/hermes-otel/commit/ba930f40842c2dc3caf0fd07dc9674849f4ff21e))
+
 ## [1.4.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.3.0...hermes-otel-v1.4.0) (2026-09-17)
 
 
