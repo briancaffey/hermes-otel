@@ -56,7 +56,7 @@ Fires when the HTTP response is parsed.
 
 - **Span op:** closes the `api.*` span
 - **Attributes set on end:** token counts (both conventions), `gen_ai.response.finish_reason`, `http.duration_ms`
-- **Metrics:** `hermes.tokens.*` counters, `hermes.api.duration` histogram
+- **Metrics:** `hermes.token.usage{token_type}`, `hermes.prompt_cache.tokens{cache_result}`, `hermes.prompt_cache.observations{cache_result}` (see [Prompt-cache metrics](https://github.com/briancaffey/hermes-otel#prompt-cache-metrics)), `hermes.cost.usage`, `hermes.model.usage` counters; `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms
 
 ### `api_request_error`
 

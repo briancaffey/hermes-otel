@@ -137,53 +137,162 @@ class TestTokenUsageMetric:
         # 100 (input) + 50 (output) = 150
         assert value == 150
 
-    def test_prompt_cache_metrics_distinguish_reported_usage_from_unknown(
+    # Prompt-cache counters. Fixtures mirror what Hermes actually sends
+    # (agent/api_request_hooks.py:_usage_summary_for_api_request_hook):
+    # ``input_tokens`` is the uncached portion and ``prompt_tokens`` is the
+    # whole prompt (input + cache_read + cache_write).
+
+    @staticmethod
+    def _cache_points(metric_reader):
+        tokens = {
+            p.attributes["cache_result"]: p.value
+            for p in _points(_get_metric(metric_reader, "hermes.prompt_cache.tokens"))
+        }
+        observations = {
+            p.attributes["cache_result"]: p.value
+            for p in _points(_get_metric(metric_reader, "hermes.prompt_cache.observations"))
+        }
+        return tokens, observations
+
+    def test_prompt_cache_hit_and_miss_split_whole_prompt(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(
+            usage={
+                "input_tokens": 30,
+                "output_tokens": 5,
+                "cache_read_tokens": 70,
+                "cache_write_tokens": 10,
+                "prompt_tokens": 110,
+                "total_tokens": 115,
+            }
+        )
+
+        tokens, observations = self._cache_points(metric_reader)
+        # miss = 30 uncached + 10 written; hit + miss == prompt_tokens
+        assert tokens == {"hit": 70, "miss": 40}
+        assert observations == {"hit": 1}
+
+    def test_prompt_cache_fully_cached_request_reports_100_percent(
         self, inmemory_otel_with_metrics
     ):
         _, metric_reader, _ = inmemory_otel_with_metrics
 
         _api_call(
             usage={
-                "prompt_tokens": 30,
+                "input_tokens": 0,
                 "output_tokens": 5,
-                "cache_read_tokens": 70,
-                "cache_write_tokens": 10,
-                "available_fields": {"cache_read_tokens": True},
+                "cache_read_tokens": 1000,
+                "prompt_tokens": 1000,
             }
         )
 
-        tokens = _get_metric(metric_reader, "hermes.prompt_cache.tokens")
-        values = {point.attributes["cache_result"]: point.value for point in _points(tokens)}
-        assert values == {"hit": 70, "miss": 40}
-        assert _get_metric_value(metric_reader, "hermes.prompt_cache.observations") == 1
+        tokens, observations = self._cache_points(metric_reader)
+        assert tokens == {"hit": 1000}  # no miss point at all
+        assert observations == {"hit": 1}
 
-        _api_call(
-            session_id="unknown",
-            usage={"prompt_tokens": 100, "output_tokens": 5, "cache_read_tokens": 0},
-        )
-
-        values = {point.attributes["cache_result"]: point.value for point in _points(tokens)}
-        assert values == {"hit": 70, "miss": 40}
-        assert _get_metric_value(metric_reader, "hermes.prompt_cache.observations") == 1
-
-    def test_explicit_zero_cache_read_is_an_observed_miss(self, inmemory_otel_with_metrics):
+    def test_prompt_cache_cold_request_with_cache_write_is_an_observed_miss(
+        self, inmemory_otel_with_metrics
+    ):
+        # Observed live (Hermes v0.21.3, claude-sonnet-4.5 via OpenRouter): the
+        # first call of a session writes the cache and reads nothing. The write
+        # proves the provider reports cache accounting, so this is a miss, not
+        # "unknown".
         _, metric_reader, _ = inmemory_otel_with_metrics
 
         _api_call(
             usage={
-                "prompt_tokens": 100,
+                "input_tokens": 10,
+                "output_tokens": 42,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 15409,
+                "prompt_tokens": 15419,
+            }
+        )
+
+        tokens, observations = self._cache_points(metric_reader)
+        assert tokens == {"miss": 15419}
+        assert observations == {"miss": 1}
+
+    def test_prompt_cache_skipped_when_provider_reports_no_cache_accounting(
+        self, inmemory_otel_with_metrics
+    ):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(
+            usage={
+                "input_tokens": 100,
                 "output_tokens": 5,
                 "cache_read_tokens": 0,
+                "prompt_tokens": 100,
+            }
+        )
+
+        tokens, observations = self._cache_points(metric_reader)
+        assert tokens == {} and observations == {}
+        # The plain token counter still records the request.
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 105
+
+    def test_prompt_cache_explicit_zero_via_available_fields_is_a_miss(
+        self, inmemory_otel_with_metrics
+    ):
+        # Forward-compat: NousResearch/hermes-agent#108249 proposes an
+        # ``available_fields`` side channel so an explicit zero can be told
+        # apart from an absent field.
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(
+            usage={
+                "input_tokens": 100,
+                "output_tokens": 5,
+                "cache_read_tokens": 0,
+                "prompt_tokens": 100,
                 "available_fields": {"cache_read_tokens": True},
             }
         )
 
-        tokens = _get_metric(metric_reader, "hermes.prompt_cache.tokens")
-        assert [(point.attributes["cache_result"], point.value) for point in _points(tokens)] == [
-            ("miss", 100)
-        ]
-        observations = _get_metric(metric_reader, "hermes.prompt_cache.observations")
-        assert [point.attributes["cache_result"] for point in _points(observations)] == ["miss"]
+        tokens, observations = self._cache_points(metric_reader)
+        assert tokens == {"miss": 100}
+        assert observations == {"miss": 1}
+
+    def test_prompt_cache_session_regression_matches_token_usage(self, inmemory_otel_with_metrics):
+        # Two-call session captured live on 2026-09-16 (claude-sonnet-4.5 via
+        # OpenRouter). The weighted hit rate from the new counters must equal
+        # cacheRead / input from the pre-existing hermes.token.usage counter.
+        _, metric_reader, _ = inmemory_otel_with_metrics
+
+        _api_call(  # cold: cache write only
+            usage={
+                "input_tokens": 10,
+                "output_tokens": 120,
+                "cache_read_tokens": 0,
+                "cache_write_tokens": 15409,
+                "prompt_tokens": 15419,
+            }
+        )
+        _api_call(  # warm: 98.6% of the prompt served from cache
+            usage={
+                "input_tokens": 5,
+                "output_tokens": 18,
+                "cache_read_tokens": 15409,
+                "cache_write_tokens": 212,
+                "prompt_tokens": 15626,
+            }
+        )
+
+        tokens, observations = self._cache_points(metric_reader)
+        assert tokens == {"hit": 15409, "miss": 15419 + 217}
+        assert observations == {"miss": 1, "hit": 1}
+
+        usage = _get_metric(metric_reader, "hermes.token.usage")
+        by_type = {}
+        for p in _points(usage):
+            by_type[p.attributes["token_type"]] = (
+                by_type.get(p.attributes["token_type"], 0) + p.value
+            )
+        assert tokens["hit"] + tokens["miss"] == by_type["input"]
+        assert tokens["hit"] == by_type["cacheRead"]
+        assert tokens["hit"] / (tokens["hit"] + tokens["miss"]) == pytest.approx(0.4963, abs=1e-4)
 
     def test_reasoning_token_type_recorded(self, inmemory_otel_with_metrics):
         _, metric_reader, _ = inmemory_otel_with_metrics

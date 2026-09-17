@@ -30,6 +30,24 @@ review should be backed by a command you ran, a number you observed, or a line
 in the diff. Never post anything to GitHub unless the maintainer says so — the
 deliverable is a report the maintainer reads *before* deciding.
 
+## 0. Update Hermes Agent first — never review against a stale Hermes
+
+Every hook-contract claim in a PR is checked against the Hermes source, and
+the live run in §5 executes against the installed Hermes. Both must be the
+latest release, or the review can pass on payload fields / semantics that
+upstream has since changed (or reject ones it has since added).
+
+```bash
+hermes update                                   # pulls the latest release into the install dir
+hermes --version                                # note the version + upstream sha for the report
+cd ~/git/hermes-agent && git fetch origin && git status -sb | head -1   # how far HEAD is from origin/main
+git log HEAD..origin/main --format='%h %ad %s' --date=short -- agent/ run_agent.py hermes_cli/ | head
+```
+
+Record the Hermes version and commit in the report. If `hermes update` cannot
+run (offline, dirty tree), say so in the report rather than reviewing silently
+against the old version. Re-run any `grep`-based contract check after updating.
+
 ## 1. Fetch the PR without disturbing the clone
 
 ```bash
