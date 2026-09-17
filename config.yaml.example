@@ -117,16 +117,30 @@
 
 # ── Skill execution-window spans ──────────────────────────────────────────────
 #
-# When the agent loads a skill — via the skill_view tool or a read of a
-# /skills/<name>/ path — the plugin opens a skill.<name> span that runs from
-# load until the turn boundary, nested under the turn's agent span. Skills
-# overlap freely (two loaded in one turn → two concurrent spans). Attributes:
+# When the agent successfully loads a skill — via the skill_view tool or a read
+# of a file under /skills/ — the plugin opens a skill.<name> span that runs from
+# the end of the loading tool call until the turn boundary, nested under the
+# turn's agent span. <name> is always the bare skill name Hermes uses
+# (``skills/<category>/<name>/SKILL.md`` → ``<name>``). Failed loads get no
+# skill span and are not listed in hermes.turn.skills. Skills overlap freely
+# (two loaded in one turn → two concurrent spans). Attributes:
 # hermes.skill.name, hermes.skill.source (skill_view|path_match),
 # hermes.skill.path, hermes.skill.result_status, hermes.span_kind=skill.
 # The hermes.skill.* attribute and skill_inferred counter are unaffected.
 # Set false to keep only those and skip the spans.
 # Also settable via HERMES_OTEL_SKILL_SPANS.
 # skill_spans: true
+
+# ── Telemetry discovery prompt (opt-in) ───────────────────────────────────────
+#
+# Plugin skills do not appear in Hermes' <available_skills> catalog, so by
+# default the model does not know hermes_otel:observability exists. Set true to
+# register a short system-prompt section (~80 tokens, every session) that tells
+# the model telemetry is available and to load that skill for questions about
+# past behaviour, tool/skill usage, latency, errors or cost. Off by default
+# because it changes what the model sees on every turn.
+# Also settable via HERMES_OTEL_DISCOVERY_PROMPT.
+# discovery_prompt: false
 
 # ── Live dashboard (in-process store) ─────────────────────────────────────────
 #

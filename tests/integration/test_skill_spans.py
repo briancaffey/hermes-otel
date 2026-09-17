@@ -91,7 +91,11 @@ class TestSkillSpanBasics:
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
 
-        assert _spans_named(exporter.get_finished_spans(), "skill.axolotl") == []
+        spans = exporter.get_finished_spans()
+        assert _spans_named(spans, "skill.axolotl") == []
+        # The turn summary must agree with the (absent) span.
+        agent = _one(spans, "agent")
+        assert "axolotl" not in dict(agent.attributes).get("hermes.turn.skills", "")
 
     def test_parallel_skill_loads_keep_results_with_their_tool_call(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup

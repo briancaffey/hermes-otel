@@ -80,6 +80,7 @@ def register(ctx):
     # skill_view — and because the plugin instruments skill loads, invoking it
     # emits its own `skill.observability` span (the feature dogfooding itself).
     # Forward-compatible: older Hermes builds may not expose register_skill.
+    skill_registered = False
     try:
         from pathlib import Path
 
@@ -93,22 +94,29 @@ def register(ctx):
                     "Configure and query this agent's OpenTelemetry."
                 ),
             )
+            skill_registered = True
             debug_log("registered bundled skill: hermes_otel:observability")
     except Exception:
         debug_log("register_skill unavailable; skipping bundled observability skill")
 
     # Plugin skills are explicit-load only and therefore do not appear in
-    # Hermes' <available_skills> catalog. Give the model one bounded discovery
-    # hint so it knows telemetry is an available evidence source.
-    try:
-        ctx.register_system_prompt_section(
-            "hermes-otel.discovery",
-            "This Hermes agent exports OpenTelemetry through hermes-otel. For questions about "
-            "past agent behavior—including skill/tool usage, model calls, latency, errors, "
-            "retries, or cost—prefer the exported telemetry over logs or session-file inference. "
-            "Load `hermes_otel:observability` before querying the configured backend.",
-            max_chars=400,
-        )
-        debug_log("registered hermes-otel telemetry discovery prompt")
-    except AttributeError:
-        debug_log("register_system_prompt_section unavailable; skipping telemetry discovery prompt")
+    # Hermes' <available_skills> catalog. Optionally (``discovery_prompt:
+    # true``) give the model one bounded discovery hint so it knows telemetry
+    # is an available evidence source. Off by default: it is a behavioural
+    # directive injected into every session prompt (~80 tokens per turn), and
+    # hermes-otel is observer-only unless the user opts in. Only registered
+    # when the skill it points at actually registered, and never allowed to
+    # raise — Hermes drops the whole plugin if register() fails.
+    if skill_registered and getattr(getattr(tracer, "config", None), "discovery_prompt", False):
+        try:
+            ctx.register_system_prompt_section(
+                "hermes-otel.discovery",
+                "This Hermes agent exports OpenTelemetry through hermes-otel. For questions about "
+                "past agent behavior—including skill/tool usage, model calls, latency, errors, "
+                "retries, or cost—prefer the exported telemetry over logs or session-file inference. "
+                "Load `hermes_otel:observability` before querying the configured backend.",
+                max_chars=400,
+            )
+            debug_log("registered hermes-otel telemetry discovery prompt")
+        except Exception as exc:  # AttributeError on old Hermes, ValueError on policy
+            debug_log(f"skipping telemetry discovery prompt: {exc!r}")

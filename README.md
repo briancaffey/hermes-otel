@@ -469,8 +469,8 @@ Each `tool.*` span now also carries:
 
 - `hermes.tool.target` — first non-empty value under args.`path` / `file_path` / `target` / `url` / `uri`.
 - `hermes.tool.command` — first non-empty value under args.`command` / `cmd`.
-- `hermes.tool.outcome` — one of `completed` · `error` · `timeout` · `blocked` · (explicit `status` field from the result, lowercased). Only `error` maps the span `StatusCode` to `ERROR`; timeouts/blocked stay `OK` so dashboards don't count them as failures.
-- `hermes.skill.name` — inferred from args paths matching `/skills/<name>/`. Does **not** match `/optional-skills/<name>/references/`. Also increments a `hermes.skill.inferred{skill_name, source}` counter so ops can audit hit rates.
+- `hermes.tool.outcome` — one of `completed` · `error` · `timeout` · `blocked` · (explicit `status` field from the result, lowercased). Hermes' own `post_tool_call` `status` (`ok` / `error` / `blocked`) is mapped onto the same values (`ok` → `completed`). Only `error` maps the span `StatusCode` to `ERROR`; timeouts/blocked stay `OK` so dashboards don't count them as failures.
+- `hermes.skill.name` — the bare skill name Hermes uses, inferred from `skill_view` args (`name`, `plugin:name`, `category:name`) or from args paths under `/skills/` (`skills/<category>/<name>/SKILL.md` → `<name>`; other files inside a skill resolve to the nearest directory holding a `SKILL.md`). Does **not** match `/optional-skills/<name>/references/`. Also increments a `hermes.skill.inferred{skill_name, source}` counter so ops can audit hit rates.
 
 ### Orphan-span sweep
 
@@ -584,7 +584,7 @@ Turn 1:
 
 **Sub-agent delegation:** when the agent calls `delegate_task`, the plugin opens a `subagent.{role}` span in the parent trace (via the `subagent_start` / `subagent_stop` hooks) and rejoins the delegated child's own root span underneath it. Without this, child agents export as dozens of disconnected traces. See [Span hierarchy → `subagent.*`](website/docs/architecture/span-hierarchy.md) and the `hermes.subagent.count` / `hermes.subagent.duration` metrics.
 
-**Skill execution windows:** when the agent loads a skill (the `skill_view` tool, or a read of a `/skills/<name>/` file), the plugin opens a `skill.{name}` span that runs until the turn ends — so a trace shows *which skills were active and for how long*, with overlaps. Controlled by `skill_spans` (default on). The plugin also ships a companion Hermes skill, `hermes_otel:observability` (load it with `skill_view`), which explains how to turn on and read this telemetry — and because skill loads are instrumented, opening it emits its own `skill.observability` span. See [Span hierarchy → `skill.*`](website/docs/architecture/span-hierarchy.md#skill).
+**Skill execution windows:** when the agent successfully loads a skill (the `skill_view` tool, or a read of a file under `/skills/`), the plugin opens a `skill.{name}` span that runs from the end of the loading call until the turn ends — so a trace shows *which skills were active and for how long*, with overlaps. Controlled by `skill_spans` (default on). The plugin also ships a companion Hermes skill, `hermes_otel:observability` (load it with `skill_view`), which explains how to turn on and read this telemetry — and because skill loads are instrumented, opening it emits its own `skill.observability` span. See [Span hierarchy → `skill.*`](website/docs/architecture/span-hierarchy.md#skill).
 
 **API errors & retries:** failed provider requests (rate limits, timeouts, 5xx, network errors) close the `api.{model}` span as `ERROR` with an `exception` event and retry metadata (`error.type`, status code, `hermes.retry.count`, `hermes.retryable`), via the `api_request_error` hook — previously these ended `OK` and were invisible. Emits `hermes.api.error.count{error_type,status_class,retryable}` and `hermes.retry.count`.
 

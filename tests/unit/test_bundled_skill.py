@@ -43,9 +43,16 @@ class LegacyCtx:
         self.hooks.append(name)
 
 
-def _enabled_tracer(monkeypatch):
+def _enabled_tracer(monkeypatch, discovery_prompt: bool = False):
+    class _Cfg:
+        pass
+
+    cfg = _Cfg()
+    cfg.discovery_prompt = discovery_prompt
+
     class _T:
         is_enabled = True
+        config = cfg
 
         def init(self):
             return True
@@ -72,8 +79,17 @@ def test_register_registers_bundled_skill(monkeypatch):
     assert registered.exists()
 
 
-def test_register_advertises_telemetry_as_behavioral_evidence(monkeypatch):
+def test_discovery_prompt_is_off_by_default(monkeypatch):
     _enabled_tracer(monkeypatch)
+    ctx = FakeCtx()
+    hermes_otel.register(ctx)
+    # Observer-only by default: no system-prompt section unless opted in.
+    assert ctx.prompt_sections == []
+    assert [name for name, _p, _d in ctx.skills] == ["observability"]
+
+
+def test_discovery_prompt_registers_when_enabled(monkeypatch):
+    _enabled_tracer(monkeypatch, discovery_prompt=True)
     ctx = FakeCtx()
     hermes_otel.register(ctx)
 
@@ -85,29 +101,44 @@ def test_register_advertises_telemetry_as_behavioral_evidence(monkeypatch):
 
 
 def test_register_is_forward_compatible_without_register_skill(monkeypatch):
-    _enabled_tracer(monkeypatch)
+    _enabled_tracer(monkeypatch, discovery_prompt=True)
     ctx = FakeCtx(support_skills=False)
     # Must not raise even though register_skill blows up.
     hermes_otel.register(ctx)
     assert ctx.skills == []
-    assert ctx.prompt_sections[0][0] == "hermes-otel.discovery"
+    # The hint tells the model to load hermes_otel:observability — never
+    # advertise a skill that did not register.
+    assert ctx.prompt_sections == []
     # Hooks still registered — skill failure doesn't abort registration.
     assert "pre_tool_call" in ctx.hooks
 
 
 def test_register_is_forward_compatible_without_prompt_sections(monkeypatch):
-    _enabled_tracer(monkeypatch)
+    _enabled_tracer(monkeypatch, discovery_prompt=True)
     ctx = LegacyCtx()
     hermes_otel.register(ctx)
     assert "pre_tool_call" in ctx.hooks
 
 
-def test_register_does_not_hide_prompt_registration_failures(monkeypatch):
-    _enabled_tracer(monkeypatch)
+@pytest.mark.parametrize(
+    "exc",
+    [
+        AttributeError("register_system_prompt_section"),
+        ValueError("system prompt section 'hermes-otel.discovery' is already registered"),
+        RuntimeError("prompt registry is broken"),
+    ],
+)
+def test_register_fails_open_when_prompt_registration_fails(monkeypatch, exc):
+    """Hermes drops the whole plugin if register() raises — a cosmetic prompt
+    hint must never cost the user their telemetry."""
+    _enabled_tracer(monkeypatch, discovery_prompt=True)
 
     class BrokenPromptCtx(FakeCtx):
         def register_system_prompt_section(self, section_id, content, **kwargs):
-            raise RuntimeError("prompt registry is broken")
+            raise exc
 
-    with pytest.raises(RuntimeError, match="prompt registry is broken"):
-        hermes_otel.register(BrokenPromptCtx())
+    ctx = BrokenPromptCtx()
+    hermes_otel.register(ctx)  # must not raise
+    assert "pre_tool_call" in ctx.hooks
+    assert "post_tool_call" in ctx.hooks
+    assert [name for name, _p, _d in ctx.skills] == ["observability"]

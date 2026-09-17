@@ -203,6 +203,13 @@ class HermesOtelConfig:
     # overlap freely. Set false to keep only the hermes.skill.* attribute and
     # the skill_inferred counter.
     skill_spans: bool = True
+    # ── Telemetry discovery prompt (opt-in) ─────────────────────────────
+    # Register a short system-prompt section (via Hermes'
+    # register_system_prompt_section) telling the model that telemetry is
+    # available and to load the bundled hermes_otel:observability skill for
+    # questions about past behaviour. It changes what the model sees on every
+    # turn (~80 tokens), so it is off unless you opt in.
+    discovery_prompt: bool = False
     # ── Live dashboard (in-process store) ───────────────────────────────
     # Keep a bounded, in-memory window of recent spans + metrics + logs so the
     # built-in dashboard's "Live" mode works with NO external backend. Cheap
@@ -369,6 +376,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         "capture_sender_id",
         "emit_genai_metrics",
         "skill_spans",
+        "discovery_prompt",
         "dashboard_live",
         "host_metrics",
         "suppress_mcp_ping_spans",
@@ -467,6 +475,7 @@ def _load_env_overrides() -> Dict[str, Any]:
     take("capture_sender_id", _parse_bool)
     take("emit_genai_metrics", _parse_bool)
     take("skill_spans", _parse_bool)
+    take("discovery_prompt", _parse_bool)
     take("dashboard_live", _parse_bool)
     take("dashboard_live_max_spans", _parse_int)
     take("host_metrics", _parse_bool)
