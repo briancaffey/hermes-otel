@@ -116,9 +116,9 @@ class SessionState:
     Held by :class:`HermesOTelPlugin` so test reset is just singleton
     re-creation — tests never need to reach into module globals.
 
-    Tool timings are keyed by ``f"{tool_name}:{task_id}"`` (task-scoped,
-    not session-scoped) so they live in their own dict alongside the
-    session aggregators.
+    Tool timings are keyed by ``f"{tool_name}:{tool_call_id}"`` (with the
+    legacy task id as fallback), not session-scoped, so they live in their own
+    dict alongside the session aggregators.
     """
 
     # Upper bound on remembered turn counters for sessions whose aggregator has

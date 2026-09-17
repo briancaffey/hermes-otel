@@ -135,7 +135,7 @@ def extract_tool_result_status(result: Any) -> Optional[str]:
 # Matches /skills/<name>/ and /skills/<name>/SKILL.md etc.
 # Deliberately does NOT match /optional-skills/<name>/references/ or similar
 # overlapping directory layouts.
-_SKILL_PATH_RE = re.compile(r"(?:^|[/\\])skills[/\\]([A-Za-z0-9_\-]+)(?:[/\\]|$)")
+_SKILL_PATH_RE = re.compile(r"(?:^|/)skills/([A-Za-z0-9_./-]+)(?:/|$)")
 
 
 def infer_skill_name(args: Optional[Dict[str, Any]]) -> Optional[str]:
@@ -160,10 +160,18 @@ def infer_skill_name_from_text(text: str) -> Optional[str]:
     """Extract a skill name from a free-form string containing a /skills/ path."""
     if not isinstance(text, str):
         return None
-    match = _SKILL_PATH_RE.search(text)
+    match = _SKILL_PATH_RE.search(text.replace("\\", "/"))
     if not match:
         return None
-    return match.group(1)
+    relative = match.group(1).strip("/")
+    parts = relative.split("/")
+    if parts[-1].lower() == "skill.md":
+        parts.pop()
+    # categorized skills are safely identifiable from their canonical SKILL.md
+    # path; retain the category/name instead of collapsing it to the category.
+    if len(parts) > 1 and relative.lower().endswith("/skill.md"):
+        return "/".join(parts)
+    return parts[0] if parts else None
 
 
 # Argument keys the ``skill_view`` tool may carry the skill name under.
@@ -195,7 +203,7 @@ def detect_skill(tool_name: Optional[str], args: Optional[Dict[str, Any]]):
                 continue
             # The value may be a bare name, a plugin-namespaced name, or (rarely)
             # a /skills/ path — handle all three.
-            name = infer_skill_name_from_text(v) or v.split(":")[-1].split("/")[0].strip()
+            name = infer_skill_name_from_text(v) or v.split(":")[-1].strip("/")
             if name:
                 return name, "skill_view"
     name = infer_skill_name(args)

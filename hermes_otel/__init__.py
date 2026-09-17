@@ -88,8 +88,27 @@ def register(ctx):
             ctx.register_skill(
                 "observability",
                 skill_path,
-                description="Turn on and understand OpenTelemetry observability for this Hermes agent.",
+                description=(
+                    "Use for historical Hermes behavior, skill/tool usage, latency, errors, or cost. "
+                    "Configure and query this agent's OpenTelemetry."
+                ),
             )
             debug_log("registered bundled skill: hermes_otel:observability")
     except Exception:
         debug_log("register_skill unavailable; skipping bundled observability skill")
+
+    # Plugin skills are explicit-load only and therefore do not appear in
+    # Hermes' <available_skills> catalog. Give the model one bounded discovery
+    # hint so it knows telemetry is an available evidence source.
+    try:
+        ctx.register_system_prompt_section(
+            "hermes-otel.discovery",
+            "This Hermes agent exports OpenTelemetry through hermes-otel. For questions about "
+            "past agent behavior—including skill/tool usage, model calls, latency, errors, "
+            "retries, or cost—prefer the exported telemetry over logs or session-file inference. "
+            "Load `hermes_otel:observability` before querying the configured backend.",
+            max_chars=400,
+        )
+        debug_log("registered hermes-otel telemetry discovery prompt")
+    except AttributeError:
+        debug_log("register_system_prompt_section unavailable; skipping telemetry discovery prompt")

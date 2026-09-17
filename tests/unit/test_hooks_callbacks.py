@@ -224,6 +224,12 @@ class TestOnPreToolCall:
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         assert mock_tracer.sessions.has_tool_start("bash:t1")
 
+    def test_uses_tool_call_id_for_key_and_attribute(self, mock_tracer):
+        on_pre_tool_call(tool_name="bash", args={}, task_id="task-1", tool_call_id="call-1")
+        assert mock_tracer.start_span.call_args[1]["key"] == "bash:call-1"
+        assert mock_tracer.start_span.call_args[1]["attributes"]["gen_ai.tool.call.id"] == "call-1"
+        assert mock_tracer.sessions.has_tool_start("bash:call-1")
+
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
         disabled_tracer.start_span.assert_not_called()
@@ -286,6 +292,18 @@ class TestOnPostToolCall:
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         assert not mock_tracer.sessions.has_tool_start("bash:t1")
+
+    def test_uses_tool_call_id_to_end_matching_span(self, mock_tracer):
+        mock_tracer.sessions.record_tool_start("bash:call-1", 1000.0)
+        on_post_tool_call(
+            tool_name="bash",
+            args={},
+            result="output",
+            task_id="task-1",
+            tool_call_id="call-1",
+        )
+        assert mock_tracer.end_span.call_args[0][0] == "bash:call-1"
+        assert mock_tracer.end_span.call_args[1]["attributes"]["gen_ai.tool.call.id"] == "call-1"
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
