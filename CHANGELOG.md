@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.4.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.3.0...hermes-otel-v1.4.0) (2026-09-17)
+
+
+### Features
+
+* **metrics:** export prompt cache hit rate inputs ([#75](https://github.com/briancaffey/hermes-otel/issues/75)) ([304722b](https://github.com/briancaffey/hermes-otel/commit/304722b17c9c4c67085be6a8899dc2d095a50d82))
+
+
+### Bug Fixes
+
+* **metrics:** correct prompt-cache miss arithmetic and presence rule ([#83](https://github.com/briancaffey/hermes-otel/issues/83)) ([bc18ddf](https://github.com/briancaffey/hermes-otel/commit/bc18ddf0af1275758b3cbc0b2944484f79feb995))
+
 ## [1.3.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.2.0...hermes-otel-v1.3.0) (2026-09-06)
 
 
