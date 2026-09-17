@@ -221,21 +221,62 @@ def session_id_from_turn_id(turn_id: Any) -> str:
 
 
 _APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
+# Smart-guardian verdicts arrive as ``smart_<verdict>`` choices with
+# decided_by="aux_llm" (tools/approval_smart.py). smart_approve IS a grant
+# (the tool ran); smart_deny/smart_escalate are not.
+_SMART_GRANT_CHOICES = frozenset({"smart_approve"})
+_SMART_CHOICES = frozenset({"smart_approve", "smart_deny", "smart_escalate"})
 
 
-def classify_approval_choice(choice: Any) -> Dict[str, Any]:
+def classify_approval_choice(choice: Any, decided_by: Any = None) -> Dict[str, Any]:
     """Normalize an approval ``choice`` into telemetry fields.
 
     ``choice`` is one of ``once`` / ``session`` / ``always`` / ``deny`` /
-    ``timeout``. The first three are grants; ``timeout`` is flagged distinctly.
-    A denied or timed-out approval is a legitimate human outcome, not an error.
+    ``timeout``, or a smart-guardian verdict ``smart_approve`` /
+    ``smart_deny`` / ``smart_escalate`` fired with decided_by="aux_llm".
+    Grants (incl. smart_approve) set ``granted``; ``timeout`` is flagged
+    distinctly. A denied or timed-out approval is a legitimate human
+    outcome, not an error.
     """
     c = (choice or "").strip().lower() if isinstance(choice, str) else ""
+    by = (decided_by or "").strip().lower() if isinstance(decided_by, str) else ""
+    granted = c in _APPROVAL_GRANT_CHOICES or c in _SMART_GRANT_CHOICES
     return {
         "choice": c,
-        "granted": c in _APPROVAL_GRANT_CHOICES,
+        "granted": granted,
         "timed_out": c == "timeout",
+        # Who decided: "aux_llm" (smart guardian) vs. the default human
+        # answer. Empty when the caller didn't say.
+        "decided_by": by or ("aux_llm" if c in _SMART_CHOICES else ""),
     }
+
+
+# Floor blocks (approvals.deny globs, hardline list, sudo-stdin guard) never
+# fire the approval hooks — the block dict collapses into the terminal error
+# envelope (status "blocked") before post_tool_call sees it. The message
+# prefix is the stable surface for classifying which floor fired.
+# ponytail: message-prefix matching; if hermes grows a structured
+# floor-reason field, switch to that.
+_FLOOR_SIGNATURES = (
+    ("user-defined deny rule", "deny_rule"),
+    ("hardline", "hardline"),
+    ("sudo -S", "sudo_stdin_guard"),
+)
+
+
+def classify_floor_block(block_message: Any) -> Optional[str]:
+    """Return which governance floor blocked a command, or None.
+
+    ``block_message`` is the terminal error envelope's ``error``/``output``
+    text. Only ``BLOCKED``-prefixed floor messages match; anything else
+    (ordinary command failures) returns None.
+    """
+    if not isinstance(block_message, str) or not block_message.startswith("BLOCKED"):
+        return None
+    for signature, floor in _FLOOR_SIGNATURES:
+        if signature in block_message:
+            return floor
+    return "unknown_floor"
 
 
 # ── Sub-agent / delegation ───────────────────────────────────────────────────

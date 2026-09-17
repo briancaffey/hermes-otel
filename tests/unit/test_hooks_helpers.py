@@ -4,6 +4,7 @@ import pytest
 
 from hermes_otel.helpers import (
     classify_approval_choice,
+    classify_floor_block,
     detect_skill,
     session_id_from_turn_id,
     truncate_string,
@@ -37,13 +38,14 @@ class TestClassifyApprovalChoice:
     def test_grants(self):
         for c in ("once", "session", "always"):
             v = classify_approval_choice(c)
-            assert v == {"choice": c, "granted": True, "timed_out": False}
+            assert v == {"choice": c, "granted": True, "timed_out": False, "decided_by": ""}
 
     def test_deny_is_not_granted_not_timeout(self):
         assert classify_approval_choice("deny") == {
             "choice": "deny",
             "granted": False,
             "timed_out": False,
+            "decided_by": "",
         }
 
     def test_timeout_flagged(self):
@@ -53,6 +55,54 @@ class TestClassifyApprovalChoice:
     def test_empty_or_none(self):
         assert classify_approval_choice(None)["choice"] == ""
         assert classify_approval_choice("")["granted"] is False
+
+    def test_smart_approve_is_grant_by_aux_llm(self):
+        v = classify_approval_choice("smart_approve")
+        assert v["granted"] is True
+        assert v["decided_by"] == "aux_llm"
+
+    def test_smart_deny_not_granted(self):
+        v = classify_approval_choice("smart_deny")
+        assert v["granted"] is False
+        assert v["decided_by"] == "aux_llm"
+
+    def test_smart_escalate_not_granted(self):
+        v = classify_approval_choice("smart_escalate")
+        assert v["granted"] is False
+        assert v["decided_by"] == "aux_llm"
+
+    def test_explicit_decided_by_wins(self):
+        assert classify_approval_choice("once", decided_by="aux_llm")["decided_by"] == "aux_llm"
+
+    def test_human_choice_decided_by_empty(self):
+        assert classify_approval_choice("once")["decided_by"] == ""
+
+
+class TestClassifyFloorBlock:
+    def test_deny_rule(self):
+        msg = ("BLOCKED: this command matches the user-defined deny rule "
+               "'*grc-app*' (approvals.deny in config.yaml).")
+        assert classify_floor_block(msg) == "deny_rule"
+
+    def test_hardline(self):
+        assert classify_floor_block("BLOCKED (hardline): fork bomb.") == "hardline"
+
+    def test_sudo_stdin_guard(self):
+        msg = "BLOCKED: piping detected. Do not pipe passwords to 'sudo -S'."
+        assert classify_floor_block(msg) == "sudo_stdin_guard"
+
+    def test_unknown_blocked_is_still_a_floor(self):
+        assert classify_floor_block("BLOCKED: something else") == "unknown_floor"
+
+    def test_ordinary_error_is_not_a_floor(self):
+        assert classify_floor_block("Command denied: flagged as dangerous.") is None
+
+    def test_command_failure_is_not_a_floor(self):
+        assert classify_floor_block("command not found: foo") is None
+
+    def test_empty_and_none(self):
+        assert classify_floor_block("") is None
+        assert classify_floor_block(None) is None
 
 
 class TestDetectSkill:
