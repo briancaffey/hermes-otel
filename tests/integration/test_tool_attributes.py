@@ -72,6 +72,20 @@ class TestToolOutcomeAttribute:
         span = _span_by_name(exporter.get_finished_spans(), "tool.bash")
         assert span.attributes["hermes.tool.outcome"] == "timeout"
 
+    def test_lifecycle_timeout_overrides_plain_result(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_pre_tool_call(tool_name="terminal", args={}, task_id="t1")
+        on_post_tool_call(
+            tool_name="terminal",
+            args={},
+            result="Error executing tool 'terminal': timed out after 420.0s",
+            task_id="t1",
+            status="timeout",
+            error_type="tool_timeout",
+        )
+        span = _span_by_name(exporter.get_finished_spans(), "tool.terminal")
+        assert span.attributes["hermes.tool.outcome"] == "timeout"
+
     def test_timeout_does_not_flip_span_status_to_error(self, inmemory_otel_setup):
         """Per PRD: only `error` outcome maps to span status ERROR; timeouts stay OK."""
         from opentelemetry.trace import StatusCode
