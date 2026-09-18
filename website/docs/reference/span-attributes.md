@@ -141,7 +141,7 @@ Span kind: `TOOL` (OpenInference).
 | `gen_ai.tool.call.result` | gen_ai | string | Privacy-gated tool result |
 | `hermes.tool.target` | hermes | string | Inferred file path / URL (optional) |
 | `hermes.tool.command` | hermes | string | Inferred shell command (optional) |
-| `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` |
+| `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` · `cancelled` (or a status the tool reported in its result) |
 | `hermes.skill.name` | hermes | string | Bare skill name as Hermes names it (`skills/<category>/<name>/SKILL.md` → `<name>`); optional |
 | `hermes.turn.number` | hermes | int | Turn the call belongs to |
 | `hermes.tool.cpu.utilization.avg` | hermes | float | Mean process-tree CPU (0..1) during the call — `host_metrics` only |

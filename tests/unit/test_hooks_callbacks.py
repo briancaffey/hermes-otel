@@ -295,16 +295,50 @@ class TestOnPostToolCall:
 
     @pytest.mark.parametrize(
         "hook_status, expected",
-        [("ok", "completed"), ("error", "error"), ("blocked", "blocked"), ("", "completed")],
+        [
+            ("ok", "completed"),
+            ("error", "error"),
+            ("blocked", "blocked"),
+            ("timeout", "timeout"),
+            ("cancelled", "cancelled"),
+            ("", "completed"),
+        ],
     )
     def test_hermes_status_maps_onto_outcome_taxonomy(self, mock_tracer, hook_status, expected):
-        # Hermes' post_tool_call status vocabulary is ok/error/blocked; the
-        # documented hermes.tool.outcome values stay completed/error/timeout/blocked.
+        # Hermes' post_tool_call status vocabulary is ok/error/blocked/timeout/
+        # cancelled; the documented hermes.tool.outcome values stay
+        # completed/error/timeout/blocked/cancelled.
         on_post_tool_call(
             tool_name="bash", args={}, result='{"output": "x"}', task_id="t1", status=hook_status
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["hermes.tool.outcome"] == expected
+
+    @pytest.mark.parametrize("result_status", ["partial", "timeout", "blocked"])
+    def test_success_status_defers_to_result_reported_status(self, mock_tracer, result_status):
+        # Hermes only ever says ``ok`` for a call that did not error; a tool that
+        # reports its own status in the result keeps it (README: "explicit
+        # ``status`` field from the result, lowercased").
+        on_post_tool_call(
+            tool_name="bash",
+            args={},
+            result=f'{{"status": "{result_status}"}}',
+            task_id="t1",
+            status="ok",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == result_status
+
+    def test_non_success_lifecycle_status_wins_over_result(self, mock_tracer):
+        on_post_tool_call(
+            tool_name="bash",
+            args={},
+            result='{"status": "completed"}',
+            task_id="t1",
+            status="timeout",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "timeout"
 
     def test_result_status_wins_when_hook_status_absent(self, mock_tracer):
         on_post_tool_call(tool_name="bash", args={}, result='{"status": "timeout"}', task_id="t1")
