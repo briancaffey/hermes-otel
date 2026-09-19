@@ -24,8 +24,16 @@ import json
 import os
 import sqlite3
 import threading
+from pathlib import Path
 import time
 from typing import Any, Dict, List, Optional
+
+LIVE_DB_FILENAME = "hermes_otel_live.db"
+
+
+def default_db_path_for(home: Path) -> str:
+    """The live store file for a given ``HERMES_HOME`` (pure; tests use this)."""
+    return str(Path(home) / LIVE_DB_FILENAME)
 
 
 def _default_db_path() -> str:
@@ -34,11 +42,13 @@ def _default_db_path() -> str:
     Both the gateway and the dashboard process resolve the same ``HERMES_HOME``,
     so they share the file. It used to live next to this module inside the
     plugin directory, which ``hermes plugins install`` wipes on every upgrade
-    and which is read-only for site-packages installs (#100).
+    and which is read-only for site-packages installs (#100). The test suite
+    monkeypatches this function to a temp dir, so tests must not call it to
+    check the default — use :func:`default_db_path_for`.
     """
     from .plugin_config import hermes_home
 
-    return str(hermes_home() / "hermes_otel_live.db")
+    return default_db_path_for(hermes_home())
 
 
 class LiveStore:
