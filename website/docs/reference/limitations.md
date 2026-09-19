@@ -8,14 +8,9 @@ description: "What the plugin doesn't do, why, and what we might fix."
 
 Things to be aware of. Some are upstream constraints; some are plugin-specific trade-offs.
 
-## No full prompt capture (structural)
+## Full prompt capture is opt-in and large
 
-Hermes hooks don't currently expose the **fully-formed prompt** to plugins — the concatenated system message + conversation history + tool results. The `api.*` spans only receive metadata (model, token counts, duration). The raw user message and final assistant response appear on the parent `llm.*` span.
-
-As a partial workaround, enable [conversation capture](/configuration/conversation-capture) — that attaches the message list the model was handed to the `llm.*` span's `input.value` as JSON. That covers ~95% of "what did the model see?" investigations.
-
-If you need the fully-rendered prompt string (after Hermes' own prompt templating), that needs a Hermes change to expose it on the hook payload. File an issue upstream.
-
+By default the `api.*` span carries a preview of the request and the `llm.*` span the latest user turn. The fully-formed prompt (system prompt + message list) and the full response are exported only with `capture_full_prompts: true` / `capture_full_responses: true` (`llm.input_messages`, `llm.system_prompt`, `gen_ai.input.messages`, `llm.output.content`, `gen_ai.output.messages`). They are untruncated and stored on every backend, so expect large spans and think about retention and privacy before turning them on.
 ## Langfuse auth requires both keys
 
 Langfuse's Basic Auth is constructed from the public + secret keys. If only one is set, Langfuse mode won't activate (the plugin logs a warning and falls back to the next backend in priority order).
