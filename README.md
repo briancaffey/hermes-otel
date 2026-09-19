@@ -100,7 +100,7 @@ Docs for the core surfaces: [Gateway Monitoring](https://hermes-agent.nousresear
 | `docker-compose/` | Backend stacks for local development |
 | `dashboard-ui/` | TSX sources for the dashboard tab; `npm run build` writes into `hermes_otel/dashboard/dist/` |
 | `scripts/` | The Hermes plugin security scanner, the docs generators and the catalog-entry renderer CI runs |
-| `docs/` | Assets fetched from outside the repo at a pinned commit (the plugin-catalog banner) |
+| `docs/` | Assets fetched from outside the repo at a pinned commit: the plugin-catalog banner and its HTML source (`make banner` re-renders it) |
 | `marketing/`, `archive/` | Launch video and article; historical design notes |
 
 ## Contributing
