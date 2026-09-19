@@ -211,10 +211,12 @@ class HermesOtelConfig:
     # questions about past behaviour. It changes what the model sees on every
     # turn (~80 tokens), so it is off unless you opt in.
     discovery_prompt: bool = False
-    # ── Live dashboard (in-process store) ───────────────────────────────
-    # Keep a bounded, in-memory window of recent spans + metrics + logs so the
-    # built-in dashboard's "Live" mode works with NO external backend. Cheap
-    # (ring buffers); set false to disable the in-process store entirely.
+    # ── Live dashboard (local store) ────────────────────────────────────
+    # Keep a bounded window of recent spans + metrics + logs in a small SQLite
+    # file ($HERMES_HOME/hermes_otel_live.db, or HERMES_OTEL_LIVE_DB) so the
+    # built-in dashboard's "Live" mode works with NO external backend and the
+    # gateway and dashboard processes see the same data. Each kind keeps its
+    # last dashboard_live_max_spans rows. Set false to disable it entirely.
     dashboard_live: bool = True
     dashboard_live_max_spans: int = 1000
     # ── Host metrics (CPU / GPU) ────────────────────────────────────────

@@ -64,3 +64,20 @@ jobs:
           name: coverage-xml
           path: coverage.xml
           if-no-files-found: warn
+
+  dashboard-dist:
+    # hermes_otel/dashboard/dist/ is committed build output of dashboard-ui/src.
+    # Rebuild it and fail if a PR changed the TSX without rebuilding (#100).
+    name: Dashboard bundle is up to date
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: dashboard-ui/package-lock.json
+      - name: Build
+        run: cd dashboard-ui && npm ci && npm run build
+      - name: Fail on a stale bundle
+        run: git diff --exit-code -- hermes_otel/dashboard/dist

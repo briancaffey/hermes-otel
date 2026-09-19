@@ -17,7 +17,7 @@ const opts = {
   entryPoints: ["src/index.tsx"],
   bundle: true,
   format: "iife", // classic script — the host does not use type=module
-  outfile: "dist/index.js",
+  outfile: "../hermes_otel/dashboard/dist/index.js",
   platform: "browser",
   target: ["es2019"],
   jsx: "transform",
@@ -28,15 +28,15 @@ const opts = {
   legalComments: "none",
   logLevel: "info",
   banner: {
-    js: "/* hermes-otel dashboard — built from dashboard/src (esbuild). Edit the TSX, not this file. */",
+    js: "/* hermes-otel dashboard — built from dashboard-ui/src (esbuild). Edit the TSX, not this file. */",
   },
 };
 
 if (watch) {
   const ctx = await esbuild.context(opts);
   await ctx.watch();
-  console.log("watching dashboard/src …");
+  console.log("watching dashboard-ui/src …");
 } else {
   await esbuild.build(opts);
-  console.log("built dist/index.js");
+  console.log("built hermes_otel/dashboard/dist/index.js");
 }

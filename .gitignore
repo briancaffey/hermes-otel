@@ -5,9 +5,11 @@
 # macOS
 .DS_Store
 
-# Node (dashboard frontend build deps — dist/ IS committed, node_modules is not)
+# Node (dashboard frontend build deps live in dashboard-ui/; the built bundle in
+# hermes_otel/dashboard/dist/ IS committed, node_modules is not)
+dashboard-ui/node_modules/
 node_modules/
-hermes_otel/dashboard/.esbuild/
+dashboard-ui/.esbuild/
 
 # Dashboard live store (shared SQLite ring buffer; runtime, per-machine)
 live.db
@@ -242,8 +244,8 @@ config.yaml.bak*
 config.yaml.backup
 config.yaml.local
 
-# hermes-otel: hermes_otel/dashboard/dist/ is authored JS source, not a build
-# output (no build step — see the header of hermes_otel/dashboard/dist/index.js).
-# Un-ignore it despite the generic `dist/` rule in the Python block above.
+# hermes-otel: hermes_otel/dashboard/dist/ is the committed esbuild output of
+# dashboard-ui/src (`cd dashboard-ui && npm run build`). Un-ignore it despite the
+# generic `dist/` rule in the Python block above.
 !hermes_otel/dashboard/dist/
 !hermes_otel/dashboard/dist/**

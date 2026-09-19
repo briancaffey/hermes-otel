@@ -142,14 +142,15 @@
 # Also settable via HERMES_OTEL_DISCOVERY_PROMPT.
 # discovery_prompt: false
 
-# ── Live dashboard (in-process store) ─────────────────────────────────────────
+# ── Live dashboard (local store) ──────────────────────────────────────────────
 #
 # The built-in dashboard tab has a "Live" mode that renders your agent's recent
-# spans + metrics + logs from a small in-memory ring buffer kept in the plugin
-# process — so the dashboard works the instant you install the plugin, with NO
-# external backend configured. The buffer is bounded and cheap. Set false to
-# disable the in-process store entirely (the dashboard then needs a configured
-# backend to show anything).
+# spans + metrics + logs from a small SQLite file the plugin keeps at
+# $HERMES_HOME/hermes_otel_live.db (override: HERMES_OTEL_LIVE_DB) — so the
+# dashboard works the instant you install the plugin, with NO external backend,
+# and the gateway and dashboard processes share it. Each kind (spans, metrics,
+# logs) keeps its last dashboard_live_max_spans rows. Set false to disable it
+# entirely (the dashboard then needs a configured backend to show anything).
 # Also settable via HERMES_OTEL_DASHBOARD_LIVE / HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS.
 # dashboard_live: true
 # dashboard_live_max_spans: 1000
