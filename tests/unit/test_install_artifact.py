@@ -100,3 +100,44 @@ class TestDeclaredDependencies:
 
     def test_manifest_matches_pyproject(self):
         assert _manifest_python_dependencies() == _pyproject_dependencies()
+
+
+def _pyproject_version() -> str:
+    text = (REPO_ROOT / "pyproject.toml").read_text()
+    match = re.search(r'^version = "([^"]+)"', text, re.M)
+    assert match, "pyproject.toml has no [project] version"
+    return match.group(1)
+
+
+def _manifest_version() -> str:
+    text = (ARTIFACT / "plugin.yaml").read_text()
+    match = re.search(r'^version: "([^"]+)"', text, re.M)
+    assert match, "plugin.yaml has no version"
+    return match.group(1)
+
+
+def _release_version() -> str:
+    import json
+
+    return json.loads((REPO_ROOT / ".release-please-manifest.json").read_text())["."]
+
+
+class TestVersionSingleSource:
+    """#101: pyproject.toml, plugin.yaml and the release manifest must agree.
+
+    release-please (release-type ``python`` + the ``extra-files`` entry for
+    plugin.yaml) bumps all three together; this test catches a hand edit
+    that drifts one of them.
+    """
+
+    def test_shipped_versions_match_release(self):
+        assert _pyproject_version() == _manifest_version() == _release_version()
+
+    def test_release_please_bumps_plugin_manifest(self):
+        import json
+
+        cfg = json.loads((REPO_ROOT / "release-please-config.json").read_text())
+        pkg = cfg["packages"]["."]
+        assert pkg["release-type"] == "python"
+        paths = [f["path"] for f in pkg.get("extra-files", [])]
+        assert "hermes_otel/plugin.yaml" in paths
