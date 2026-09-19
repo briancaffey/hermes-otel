@@ -23,7 +23,7 @@ Fires just before Hermes runs a tool.
 Fires when the tool returns (success, error, timeout, block, or cancel).
 
 - **Span op:** closes the `tool.*` span
-- **Attributes set on end:** `output.value` (result), `hermes.tool.outcome` (a non-success hook `status` — `timeout` / `blocked` / `cancelled` / `error` — is authoritative; otherwise the result's own `status` field if it has one, else `completed`)
+- **Attributes set on end:** `output.value` (result), `hermes.tool.outcome` (a specific non-success hook `status` — `timeout` / `blocked` / `cancelled` — is authoritative; a coarse hook `error` yields to an explicit `blocked` / `timeout` / `cancelled` in the result's `status` field, so governance blocks are not counted as errors; otherwise the result's own `status`, else `completed`)
 - **Span status:** `ERROR` if outcome is `error`, else `OK`
 - **Skill spans:** when the call loaded a skill and succeeded (`skill_view` result `success: true`, or a `/skills/` file read that did not error), opens the `skill.<name>` span and adds the skill to `hermes.turn.skills`; failed loads do neither
 - **Metrics:** `hermes.tool.calls{tool_name, outcome}` counter, `hermes.tool.duration{tool_name, outcome}` histogram

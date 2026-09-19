@@ -1,5 +1,6 @@
 """Tests for all 8 hook callbacks in hooks.py with mocked tracer."""
 
+import json
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -328,6 +329,48 @@ class TestOnPostToolCall:
         )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["hermes.tool.outcome"] == result_status
+
+    @pytest.mark.parametrize(
+        "label, error_text",
+        [
+            ("hardline floor", "BLOCKED (hardline): fork bomb. Do not retry."),
+            ("deny-rule floor", "BLOCKED: this command matches the user-defined deny rule '*x*'."),
+            ("stdin password guard", "BLOCKED: piping detected. Do not pipe passwords."),
+            ("human denial", "BLOCKED: User denied this command. Do not retry."),
+            ("approval timeout", "BLOCKED: Command timed out without user response."),
+        ],
+    )
+    def test_terminal_block_envelope_is_blocked_not_error(self, mock_tracer, label, error_text):
+        # Hermes' terminal tool returns every governance block as
+        # {"error": "BLOCKED...", "status": "blocked"} and derives hook
+        # status="error" from the error key (#106). The explicit result
+        # status is the precise signal.
+        result = json.dumps(
+            {"output": "", "exit_code": -1, "error": error_text, "status": "blocked"}
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={}, result=result, task_id="t1", status="error"
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "blocked", label
+
+    def test_coarse_error_without_result_status_stays_error(self, mock_tracer):
+        on_post_tool_call(
+            tool_name="terminal", args={}, result='{"error": "boom"}', task_id="t1", status="error"
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "error"
+
+    def test_specific_hook_status_beats_result_status(self, mock_tracer):
+        on_post_tool_call(
+            tool_name="terminal",
+            args={},
+            result='{"error": "x", "status": "blocked"}',
+            task_id="t1",
+            status="timeout",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "timeout"
 
     def test_non_success_lifecycle_status_wins_over_result(self, mock_tracer):
         on_post_tool_call(
