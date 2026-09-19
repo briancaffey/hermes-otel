@@ -595,7 +595,7 @@ wheels = [
 
 [[package]]
 name = "hermes-otel"
-version = "1.5.0"
+version = "1.6.0"
 source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },
@@ -607,9 +607,6 @@ dependencies = [
 dev = [
     { name = "black", version = "25.11.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "black", version = "26.3.1", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
-    { name = "opentelemetry-api" },
-    { name = "opentelemetry-exporter-otlp-proto-http" },
-    { name = "opentelemetry-sdk" },
     { name = "psutil" },
     { name = "pytest", version = "8.4.2", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.10'" },
     { name = "pytest", version = "9.0.3", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.10'" },
@@ -639,11 +636,8 @@ requires-dist = [
     { name = "langsmith", marker = "extra == 'langsmith'" },
     { name = "openai", marker = "extra == 'e2e'" },
     { name = "opentelemetry-api", specifier = "<2" },
-    { name = "opentelemetry-api", marker = "extra == 'dev'" },
     { name = "opentelemetry-exporter-otlp-proto-http", specifier = "<2" },
-    { name = "opentelemetry-exporter-otlp-proto-http", marker = "extra == 'dev'" },
     { name = "opentelemetry-sdk", specifier = "<2" },
-    { name = "opentelemetry-sdk", marker = "extra == 'dev'" },
     { name = "psutil", marker = "extra == 'dev'" },
     { name = "psutil", marker = "extra == 'host-metrics'" },
     { name = "pytest", marker = "extra == 'dev'", specifier = ">=8.0" },

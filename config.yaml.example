@@ -57,6 +57,21 @@
 # assistant_response. Keep reasonable — huge previews bloat every span.
 # preview_max_chars: 1200
 
+# Per-category overrides for the cap above (null = use preview_max_chars).
+# Also settable via HERMES_OTEL_TOOL_INPUT_PREVIEW_MAX_CHARS, etc.
+# tool_input_preview_max_chars: null
+# tool_output_preview_max_chars: null
+# llm_input_preview_max_chars: null
+# llm_output_preview_max_chars: null
+
+# Full-fidelity capture (no truncation) of the prompt sent to the model and of
+# the model's response, as llm.input_messages / gen_ai.input.messages and
+# llm.output.content / gen_ai.output.messages. Off by default: large, and it
+# stores your prompts verbatim on every backend. Respects capture_previews.
+# Also settable via HERMES_OTEL_CAPTURE_FULL_PROMPTS / _CAPTURE_FULL_RESPONSES.
+# capture_full_prompts: false
+# capture_full_responses: false
+
 # Global privacy kill switch. When false, ALL input/output previews are
 # suppressed (tool args, tool results, user messages, assistant responses).
 # Metadata (tool names, durations, token counts) is still recorded.
