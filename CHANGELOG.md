@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.7.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.2...hermes-otel-v1.7.0) (2026-09-19)
+
+
+### Features
+
+* plugin-catalog readiness — manifest v2, fail-closed MCP hook, catalog install docs, admission checks in CI ([#139](https://github.com/briancaffey/hermes-otel/issues/139)) ([1a929ae](https://github.com/briancaffey/hermes-otel/commit/1a929ae8b8db514938dd0c7c33c82f836f45dc7d))
+
 ## [1.6.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.1...hermes-otel-v1.6.2) (2026-09-19)
 
 
