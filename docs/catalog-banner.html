@@ -1,0 +1,74 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>hermes-otel catalog banner (1200x600)</title>
+<style>
+  /* Palette from marketing/DESIGN.md. Flat colors, no gradients, radius <= 8px. */
+  :root {
+    --bg: #0d1117;
+    --surface: #161b22;
+    --blue: #58a6ff;
+    --green: #3fb950;
+    --green-dark: #238636;
+    --blue-dark: #1f6feb;
+    --text: #c9d1d9;
+    --muted: #8b949e;
+    --mono: Menlo, "SF Mono", "JetBrains Mono", "Fira Code", "DejaVu Sans Mono", monospace;
+    --sans: Inter, -apple-system, "Helvetica Neue", Arial, sans-serif;
+  }
+  html, body { margin: 0; width: 1200px; height: 600px; background: var(--bg); overflow: hidden; }
+  body { font-family: var(--mono); color: var(--text); position: relative; }
+  .grid {
+    position: absolute; inset: 0; opacity: .55;
+    background-image: linear-gradient(var(--surface) 1px, transparent 1px),
+                      linear-gradient(90deg, var(--surface) 1px, transparent 1px);
+    background-size: 40px 40px;
+  }
+  .wrap { position: absolute; left: 72px; top: 64px; right: 72px; bottom: 56px; }
+  .tag { font-size: 20px; color: var(--muted); letter-spacing: .08em; }
+  .tag b { color: var(--green); font-weight: normal; }
+  h1 { margin: 14px 0 0; font-size: 92px; font-weight: bold; letter-spacing: -.03em; line-height: 1; color: var(--text); }
+  h1 span { color: var(--blue); }
+  .sub { margin-top: 18px; font-family: var(--sans); font-size: 27px; font-weight: 400; color: var(--muted); }
+  .sub b { color: var(--text); font-weight: 500; }
+  .corner { position: absolute; right: 72px; top: 70px; text-align: right; font-size: 15px; line-height: 1.75; color: var(--muted); }
+  .corner em { font-style: normal; color: var(--blue); }
+
+  /* Trace waterfall: one row per span, bars positioned as % of the turn. */
+  .wf { position: absolute; left: 0; right: 0; bottom: 0; display: grid; grid-template-columns: 205px 1fr; row-gap: 11px; font-size: 17px; }
+  .wf .n { color: var(--muted); white-space: nowrap; }
+  .wf .n i { font-style: normal; color: var(--green); }
+  .wf .t { position: relative; height: 22px; background: var(--surface); border-radius: 3px; }
+  .wf .t div { position: absolute; top: 0; bottom: 0; border-radius: 3px; }
+  .wf .t span { position: absolute; right: 0; top: 1px; font-size: 15px; color: var(--muted); }
+  .agent { background: var(--blue); }
+  .llm { background: var(--green); }
+  .api { background: var(--green-dark); }
+  .tool { background: var(--blue-dark); }
+</style>
+</head>
+<body>
+<div class="grid"></div>
+<div class="corner">OTLP/HTTP<br>traces · metrics · logs<br><em>any backend</em><br>one trace per turn · 4.21 s</div>
+<div class="wrap">
+  <div class="tag">$ hermes plugins install <b>hermes-otel</b></div>
+  <h1>hermes<span>-otel</span></h1>
+  <div class="sub">OpenTelemetry for <b>Hermes Agent</b> — every turn becomes one trace</div>
+  <div class="wf">
+    <div class="n">agent</div>
+    <div class="t"><div class="agent" style="left:0;width:100%"></div></div>
+    <div class="n">└ llm.<i>model</i></div>
+    <div class="t"><div class="llm" style="left:3%;width:95%"></div></div>
+    <div class="n">&nbsp;&nbsp;├ api.<i>model</i></div>
+    <div class="t"><div class="api" style="left:3%;width:30%"></div><span>tokens · cost</span></div>
+    <div class="n">&nbsp;&nbsp;│ └ tool.bash</div>
+    <div class="t"><div class="tool" style="left:34%;width:22%"></div><span>completed</span></div>
+    <div class="n">&nbsp;&nbsp;├ approval.<i>rm</i></div>
+    <div class="t"><div class="tool" style="left:57%;width:9%"></div><span>once</span></div>
+    <div class="n">&nbsp;&nbsp;└ api.<i>model</i></div>
+    <div class="t"><div class="api" style="left:67%;width:31%"></div><span>finish: stop</span></div>
+  </div>
+</div>
+</body>
+</html>
