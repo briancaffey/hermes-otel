@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, TypedDict
 from .debug_utils import debug_log, logger
 from .helpers import (
     classify_approval_choice,
+    classify_block_provenance,
     clip_preview,
     coerce_bool,
     detect_skill,
@@ -1136,6 +1137,23 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Determine outcome taxonomy (see _resolve_tool_outcome for the rules).
     outcome = _resolve_tool_outcome(kwargs.get("status"), result_json)
     attributes["hermes.tool.outcome"] = outcome
+
+    # Governance provenance: floor blocks (approvals.deny globs, hardline
+    # list, stdin password guard) never fire the approval hooks — the
+    # block is collapsed into this error envelope before post_tool_call
+    # sees it. Positively classified floors carry who/what blocked on the
+    # tool span; anything unclassifiable stays attribute-free rather than
+    # being guessed into a floor (human denials, timeouts, plugin vetoes
+    # are NOT floors). Correlate to the approval span via
+    # gen_ai.tool.call.id; decided_by on approval spans keeps the
+    # human-vs-smart-guardian distinction (#107).
+    if outcome == "blocked" and isinstance(result_json, dict):
+        blocked_by = classify_block_provenance(
+            result_json.get("error") or result_json.get("output") or ""
+        )
+        if blocked_by:
+            attributes["hermes.tool.blocked_by"] = blocked_by
+            attributes["hermes.tool.decided_by"] = "hard_floor"
 
     # Preserve existing error.message attribute when outcome == error
     has_error = outcome == "error"
