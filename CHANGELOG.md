@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.6.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.0...hermes-otel-v1.6.1) (2026-09-19)
+
+
+### Bug Fixes
+
+* **artifact:** ship only runtime files; keep the live store in HERMES_HOME; verify dist in CI ([#120](https://github.com/briancaffey/hermes-otel/issues/120)) ([c1ca5cd](https://github.com/briancaffey/hermes-otel/commit/c1ca5cdba17a4330e119ee4519195fa509c0dac5))
+
 ## [1.6.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.5.0...hermes-otel-v1.6.0) (2026-09-19)
 
 
