@@ -168,8 +168,10 @@ class TestArtifactHasNoDevFiles:
         build = (ui / "build.mjs").read_text(encoding="utf-8")
         assert "../hermes_otel/dashboard/dist/index.js" in build
 
-    def test_live_store_default_is_outside_the_plugin_dir(self, monkeypatch, tmp_path):
+    def test_live_store_default_is_outside_the_plugin_dir(self, tmp_path):
+        # The root fixture monkeypatches ``_default_db_path`` itself (so real
+        # init() writes to a temp dir); check the pure computation instead.
         from hermes_otel import live_store
 
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        assert live_store._default_db_path() == str(tmp_path / "hermes_otel_live.db")
+        assert live_store.default_db_path_for(tmp_path) == str(tmp_path / "hermes_otel_live.db")
+        assert not live_store.default_db_path_for(tmp_path).startswith(str(ARTIFACT))

@@ -71,9 +71,9 @@ dev = [
     "pyyaml",
     "black",
     "ruff",
-    "opentelemetry-api",
-    "opentelemetry-sdk",
-    "opentelemetry-exporter-otlp-proto-http",
+    # (opentelemetry-* come from [project] dependencies with their <2 pins —
+    # do not re-list them here unbounded, or dev could resolve a 2.x users
+    # cannot install.)
     # host_metrics sampler (optional at runtime; ships with hermes-agent)
     "psutil",
 ]
