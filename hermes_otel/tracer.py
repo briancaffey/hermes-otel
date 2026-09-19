@@ -370,9 +370,10 @@ class HermesOTelPlugin:
     def _init_otlp_from_env(self) -> bool:
         """First-match-wins single-backend init from environment variables.
 
-        Delegates to :mod:`backends` for resolution, then routes through
-        ``_init_otlp`` so the existing unit-test suite (which patches
-        ``_init_otlp``) keeps verifying the routing.
+        Delegates to :mod:`backends` for resolution and hands the fully
+        resolved backend to ``_init_otlp_pipeline`` intact, so env-configured
+        backends keep their logs support, per-signal headers and resource
+        attributes exactly like ``backends:`` entries do (#90).
         """
         rb = _backends.resolve_from_env()
         if rb is None:
@@ -392,11 +393,7 @@ class HermesOTelPlugin:
                 "'backends:' in config.yaml)"
             )
             return False
-        if rb.type == "weave":
-            # Weave routes by Resource attributes, so keep the resolved backend
-            # object intact instead of collapsing it through the legacy wrapper.
-            return self._init_otlp_pipeline([rb])
-        return self._init_otlp(rb.endpoint, headers=rb.headers, backend_name=rb.display_name)
+        return self._init_otlp_pipeline([rb])
 
     def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
         """Turn a yaml ``BackendConfig`` into a ready-to-wire backend.
@@ -411,12 +408,12 @@ class HermesOTelPlugin:
     def _init_otlp(
         self, endpoint: str, headers: Optional[Dict[str, str]] = None, backend_name: str = "OTLP"
     ) -> bool:
-        """Single-backend wrapper around ``_init_otlp_pipeline``.
+        """Single-backend convenience wrapper around ``_init_otlp_pipeline``.
 
-        Preserves the original API for tests and external callers that
-        bypass ``init()`` (e.g. e2e harnesses) and want to wire one
-        backend directly. Internally it just calls the multi-backend
-        pipeline with a list of one.
+        For external callers that bypass ``init()`` (e.g. e2e harnesses) and
+        want to wire one endpoint directly. ``init()`` itself never uses it —
+        the resolved backend from env vars or ``backends:`` goes straight to
+        the pipeline so no capability is lost.
         """
         backend = _ResolvedBackend(
             type=backend_name.lower(),
