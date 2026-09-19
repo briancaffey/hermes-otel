@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
-from .debug_utils import debug_log, logger
+from .debug_utils import close_debug_log, debug_log, logger
 from .helpers import package_version
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
@@ -52,9 +52,33 @@ except ImportError as e:
     # If OTel itself is missing we short-circuit via is_enabled=False before
     # ever returning this; the None is just to keep module-level references valid.
     INVALID_SPAN = None  # type: ignore[assignment]
-    print(
-        f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
+    logger.warning(
+        f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install "
+        "opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
     )
+
+
+def _set_global_once(api_module: Any, kind: str, provider: Any) -> bool:
+    """Install ``provider`` as the OTel global iff no real provider is set yet.
+
+    ``opentelemetry.trace.set_tracer_provider`` / ``metrics.set_meter_provider``
+    accept exactly one call per process (a ``Once``); a second call logs an
+    SDK warning and keeps the first provider. Returns True when installed.
+    """
+    try:
+        getter = getattr(api_module, f"get_{kind}_provider")
+        setter = getattr(api_module, f"set_{kind}_provider")
+        current = getter()
+        # Unset globals are proxy objects (``ProxyTracerProvider`` in trace,
+        # ``_ProxyMeterProvider`` in metrics); anything else is a real provider.
+        if not type(current).__name__.lstrip("_").startswith("Proxy"):
+            debug_log(f"global {kind} provider already set; keeping ours private")
+            return False
+        setter(provider)
+        return True
+    except Exception as e:  # pragma: no cover — never block init on this
+        debug_log(f"could not set global {kind} provider: {e}")
+        return False
 
 
 def _attr_value(v: Any) -> Any:
@@ -222,8 +246,12 @@ _SERVICE_INSTANCE_ID = str(uuid.uuid4())
 class HermesOTelPlugin:
     """OpenTelemetry tracer manager for the Hermes plugin.
 
-    Uses a global TracerProvider set up once at plugin registration.
-    All hooks share this instance via the module-level get_tracer().
+    Owns its ``TracerProvider`` / ``MeterProvider`` / ``LoggerProvider`` and
+    installs them as the OTel globals the first time (the SDK allows setting
+    each global exactly once per process). ``init()`` is idempotent: a second
+    call shuts the previous pipeline down first, so a plugin reload or a
+    reconfigure never leaves orphaned exporter threads behind. All hooks
+    share this instance via the module-level ``get_tracer()``.
     """
 
     _instance: Optional["HermesOTelPlugin"] = None
@@ -247,6 +275,10 @@ class HermesOTelPlugin:
         # True when the in-process live store (zero-config dashboard) is wired.
         self._live_active = False
         self._live_log_handler = None
+        self._live_log_target: Optional[str] = None
+        # Our own provider objects (independent of the OTel globals, which can
+        # only be set once per process — see _init_otlp_pipeline).
+        self._tracer_provider: Optional[Any] = None
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
         # per backend. The singular ``_span_processor`` / ``_metric_reader``
         # attributes are kept as aliases pointing at the first entry so legacy
@@ -288,14 +320,6 @@ class HermesOTelPlugin:
         # Host metrics sampler (CPU / GPU), created when config.host_metrics is
         # on. One per process; started after backend init, stopped at exit.
         self._host_metrics: Optional[Any] = None
-        # Sub-agent delegation registry. Maps a delegated child's session_id to
-        # a record about the delegation span opened in the parent on
-        # ``subagent_start`` — ``{"span", "context", "role", "parent_session_id"}``
-        # — so the child's own root span can rejoin the parent trace on
-        # ``on_session_start``. Process-local: in-process delegation parents the
-        # child root directly under the delegation span (one connected trace);
-        # cross-process delegation degrades to attribute-only correlation.
-        self._subagent_registry: Dict[str, Dict[str, Any]] = {}
         # Config
         self.config: HermesOtelConfig = config if config is not None else load_config()
         # Turn registry for orphan sweep (session_id -> perf_counter start time)
@@ -310,11 +334,108 @@ class HermesOTelPlugin:
     # ── Initialization entry point ───────────────────────────────────────
 
     def init(self, endpoint: str = None) -> bool:
-        """Initialize the backends, then start the host-metrics sampler if enabled."""
+        """Initialize the backends, then start the host-metrics sampler if enabled.
+
+        Idempotent: when a pipeline is already up (plugin reload, reconfigure,
+        tests) it is shut down and flushed first, so exporter threads and log
+        handlers never stack up.
+        """
+        if self._initialized:
+            self.shutdown()
+        self._reset_pipeline_state()
         ok = self._init_backends(endpoint)
         if ok:
             self._start_host_metrics()
         return ok
+
+    @property
+    def _subagent_registry(self) -> Dict[str, Dict[str, Any]]:
+        """Alias of the tracker's delegation registry (kept for introspection)."""
+        return self.spans._subagent_registry
+
+    def _reset_pipeline_state(self) -> None:
+        """Forget every pipeline object from a previous init (not the config)."""
+        self.tracer = None
+        self._tracer_provider = None
+        self._span_processors = []
+        self._metric_readers = []
+        self._log_processors = []
+        self._span_processor = None
+        self._metric_reader = None
+        self._backend_summaries = []
+        self._logger_provider = None
+        self._langsmith = None
+        self._meter = None
+        self._meter_provider = None
+        self._live_active = False
+        self._live_log_handler = None
+        self._live_log_target = None
+
+    def shutdown(self) -> None:
+        """Flush and tear the pipeline down. Idempotent; never raises.
+
+        Force-flushes every processor, shuts down the span processors, metric
+        readers and logger provider (their worker threads exit), stops the
+        host-metrics sampler, detaches both log handlers (restoring the logger
+        level they lowered), ends any still-open spans, drops all per-session
+        state and marks the plugin uninitialized. ``init()`` may be called
+        again afterwards. Registered with ``atexit`` on first init.
+        """
+        # End whatever is still open first so it reaches the exporters, then
+        # flush, then stop the workers.
+        try:
+            self.spans.end_all()
+        except Exception:
+            pass
+        try:
+            self._force_flush()
+        except Exception:
+            pass
+        self.stop_host_metrics()
+        self._host_metrics = None
+        # Shutting the provider down shuts every attached processor down (the
+        # live store's, the MCP filter wrappers', the OTLP batchers').
+        for obj in (self._tracer_provider, self._meter_provider, self._logger_provider):
+            if obj is not None:
+                try:
+                    obj.shutdown()
+                except Exception:
+                    pass
+        if self._tracer_provider is None:
+            # Test fixtures wire processors without a provider of ours.
+            for obj in list(self._span_processors) + list(self._metric_readers):
+                try:
+                    obj.shutdown()
+                except Exception:
+                    pass
+        if self._langsmith is not None:
+            try:
+                self._langsmith.shutdown()
+            except Exception:
+                pass
+        if self._live_log_handler is not None:
+            try:
+                target = logging.getLogger(self._live_log_target or None)
+                target.removeHandler(self._live_log_handler)
+                previous = getattr(self._live_log_handler, "_hermes_otel_previous_level", None)
+                if previous is not None:
+                    target.setLevel(previous)
+            except Exception:
+                pass
+        if self._logger_provider is not None:
+            try:
+                from . import log_handler
+
+                log_handler.uninstall_handler(self.config.log_attach_logger)
+            except Exception:
+                pass
+        self.spans.end_all()
+        self.sessions.clear()
+        self._turn_started_at.clear()
+        self._session_keys.clear()
+        self._reset_pipeline_state()
+        self._initialized = False
+        close_debug_log()
 
     def _init_backends(self, endpoint: str = None) -> bool:
         """Initialize one or more backends.
@@ -325,9 +446,8 @@ class HermesOTelPlugin:
              ``_init_otlp_pipeline``.
           3. Explicit ``endpoint`` arg → single Phoenix backend (via
              ``_init_otlp`` for back-compat).
-          4. Legacy env-var detection (single backend, first match wins):
-             Langfuse → SigNoz → Jaeger → Tempo → Phoenix. Each branch calls
-             ``_init_otlp`` so existing tests that mock it keep working.
+          4. Legacy env-var detection (single backend, first match wins, in
+             the order of ``backends._ENV_PRIORITY``).
 
         Returns True if at least one backend was initialized.
         """
@@ -336,7 +456,7 @@ class HermesOTelPlugin:
             return False
 
         if not self.config.enabled:
-            logger.warning("[hermes-otel] ✗ Disabled via config (enabled=false)")
+            logger.info("[hermes-otel] Disabled via config (enabled=false)")
             return False
 
         # 1. LangSmith short-circuit (legacy compat).
@@ -505,10 +625,15 @@ class HermesOTelPlugin:
         return traces_endpoint
 
     def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        """Layer config.headers on top of per-backend headers."""
-        merged: Dict[str, str] = dict(backend_headers or {})
-        if self.config.headers:
-            merged.update(self.config.headers)
+        """Global ``headers:`` first, the backend's own on top (per-backend wins).
+
+        A conflict must favour the backend: its headers include resolver-built
+        auth (``Authorization`` for Langfuse, ``x-honeycomb-team`` ...), which a
+        global header must never clobber. Same rule in ``log_handler``.
+        """
+        merged: Dict[str, str] = dict(self.config.headers or {})
+        if backend_headers:
+            merged.update(backend_headers)
         return merged or None
 
     def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
@@ -574,6 +699,9 @@ class HermesOTelPlugin:
                             h.addFilter(_LiveLogNoiseFilter())
                             target.addHandler(h)
                             self._live_log_handler = h
+                            self._live_log_target = self.config.log_attach_logger or None
+                            # Remember the level we found so shutdown() can restore it.
+                            h._hermes_otel_previous_level = target.level
                             if target.level == logging.NOTSET or target.level > lvl:
                                 target.setLevel(lvl)
                         except Exception as e:  # pragma: no cover
@@ -613,7 +741,7 @@ class HermesOTelPlugin:
                         metric_readers.append(reader)
                         self._metric_readers.append(reader)
                     except Exception as e:
-                        debug_log(f"{b.display_name} metrics init failed: {e}")
+                        logger.error(f"[hermes-otel] ✗ {b.display_name} metrics init failed: {e}")
 
                 self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
                 logger.info(
@@ -633,16 +761,23 @@ class HermesOTelPlugin:
             if self._metric_readers:
                 self._metric_reader = self._metric_readers[0]
 
-            trace.set_tracer_provider(provider)
-            self.tracer = trace.get_tracer("hermes-otel-plugin")
+            # The OTel globals can be set once per process: on a re-init the
+            # SDK keeps the old (now shut down) provider and logs "Overriding of
+            # current TracerProvider is not allowed". So the tracer / meter we
+            # use always come from OUR provider objects; the globals are set
+            # only while still unset, for third-party code that instruments
+            # through them.
+            self._tracer_provider = provider
+            _set_global_once(trace, "tracer", provider)
+            self.tracer = provider.get_tracer("hermes-otel-plugin")
 
             if metric_readers and _METRICS_AVAILABLE:
                 self._meter_provider = MeterProvider(
                     resource=resource,
                     metric_readers=metric_readers,
                 )
-                metrics.set_meter_provider(self._meter_provider)
-                self._meter = metrics.get_meter("hermes-otel-plugin")
+                _set_global_once(metrics, "meter", self._meter_provider)
+                self._meter = self._meter_provider.get_meter("hermes-otel-plugin")
                 self._create_metric_instruments()
                 debug_log(f"Metrics initialized for {len(metric_readers)} backend(s)")
 
@@ -1112,9 +1247,9 @@ class HermesOTelPlugin:
                     self._langsmith.end_span(
                         run, attributes=attributes, status=status, error_message=error_message
                     )
-                    # Remove from active spans directly (bypass SpanTracker.end_span
-                    # which tries to call .end() — but LangSmith runs are dicts)
-                    self.spans._active_spans.pop(key, None)
+                    # Bypass SpanTracker.end_span (it calls .end(), but LangSmith
+                    # runs are dicts the client closes over HTTP).
+                    self.spans.discard(key)
             else:
                 # OTLP mode — just enqueue. BatchSpanProcessor handles
                 # export asynchronously. on_session_end / atexit flush
@@ -1185,18 +1320,18 @@ class HermesOTelPlugin:
         for key in non_session_keys:
             self.end_span(key, status="ok")
 
-        if session_key in self.spans._active_spans:
+        if self.spans.has_span(session_key):
             self.end_span(
                 session_key,
                 attributes={"hermes.turn.final_status": "timed_out"},
                 status="ok",
             )
-        # Drop any parent stack references — the sweep is a safety net and
-        # subsequent hooks will rebuild state correctly.
-        self.spans._session_parent_stacks.pop(session_id, None)
-        stack = _PARENT_STACK.get()
-        if stack is not None:
-            stack.clear()
+        # Drop the expired session's parent stack, skill spans, delegation
+        # record and aggregator — the sweep is a safety net and later hooks
+        # rebuild state. The ContextVar stack is deliberately untouched: it
+        # belongs to whichever session runs in the *calling* context (#105).
+        self.spans.drop_session(session_id)
+        self.sessions.pop(session_id)
 
     def _force_flush(self):
         """Force export of all buffered spans and metrics across every backend.
@@ -1230,14 +1365,14 @@ class HermesOTelPlugin:
                 pass
 
     def _register_atexit_flush(self) -> None:
-        """Register a single atexit hook that flushes buffered spans/metrics.
+        """Register a single atexit hook that flushes and shuts the pipeline down.
 
-        Idempotent across multiple init() calls (plugin reload, tests).
+        Idempotent across multiple init() calls (plugin reload, tests). atexit
+        runs LIFO, so this fires before the SDK's own per-processor hooks.
         """
         if self._atexit_registered:
             return
-        atexit.register(self._force_flush)
-        atexit.register(self.stop_host_metrics)
+        atexit.register(self.shutdown)
         self._atexit_registered = True
 
     @property

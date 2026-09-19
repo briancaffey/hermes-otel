@@ -34,6 +34,11 @@ def mock_tracer():
     tracer.is_enabled = True
     tracer.spans = MagicMock()
     tracer.spans._active_spans = {}
+    # Hooks ask the tracker, not the dict; keep the answer tied to the dict.
+    tracer.spans.has_span = lambda key: key in tracer.spans._active_spans
+    tracer.spans.get_span = lambda key: tracer.spans._active_spans.get(key)
+    tracer.spans.get_subagent = lambda sid: None
+    tracer.spans.pop_subagent = lambda sid: None
     tracer.sessions = SessionState()
     tracer.config = HermesOtelConfig()
     with patch("hermes_otel.hooks.get_tracer", return_value=tracer):

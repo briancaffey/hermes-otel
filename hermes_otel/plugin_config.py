@@ -14,8 +14,8 @@ Two ways to pick backends:
     configured collectors in parallel without blocking the agent thread.
   * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
     or LangSmith/Langfuse credentials. When ``backends:`` is empty, env-var
-    detection is used and at most one backend is selected (priority is
-    LangSmith > Langfuse > SigNoz > Jaeger > Tempo > Phoenix).
+    detection is used and at most one backend is selected: LangSmith first,
+    then the order of ``backends._ENV_PRIORITY``.
 """
 
 from __future__ import annotations

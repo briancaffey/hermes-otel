@@ -61,6 +61,8 @@ Master switch. `false` → pipeline disabled, no handler installed, no change to
 
 ### `log_level`
 
+When the target logger sits above this level, the plugin lowers it so records reach the handler (a process-wide effect on the root logger) and restores the previous level when the tracer shuts down or re-initializes.
+
 Minimum severity the handler accepts — `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Case-insensitive. Numeric values (e.g. `"20"`) also accepted. Defaults to `INFO`.
 
 Records below this level never reach the OTel pipeline. Python's logger-level filtering still applies first (if the root logger is at WARNING, DEBUG records are never even created); the handler level is an additional cap on top.

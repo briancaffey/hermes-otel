@@ -107,7 +107,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 
 | Var | Value | Effect |
 |---|---|---|
-| `HERMES_OTEL_DEBUG` | `true`/`false` | Enables debug log at `~/.hermes/plugins/hermes_otel/debug.log` |
+| `HERMES_OTEL_DEBUG` | `true`/`false` | Enables the debug log at `$HERMES_HOME/plugins/hermes_otel/debug.log` (`~/.hermes` by default) |
 
 ## Boolean accepted values
 

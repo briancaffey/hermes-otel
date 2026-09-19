@@ -53,6 +53,8 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
 # Marker attribute stamped on handlers we install so idempotent reinstalls
 # can locate and remove prior copies without affecting unrelated handlers.
 _HANDLER_MARKER = "_hermes_otel_log_handler"
+# Logger level before install_handler lowered it, stamped on the handler.
+_PREVIOUS_LEVEL_ATTR = "_hermes_otel_previous_level"
 
 # Loggers whose records we refuse to forward to the OTLP logs pipeline.
 # Two reasons each of these is on the list:
@@ -135,9 +137,11 @@ def build_log_processors(
     for b in backends:
         if not b.supports_logs:
             continue
-        merged: Dict[str, str] = dict(b.logs_headers or b.headers or {})
-        if extra_headers:
-            merged.update(extra_headers)
+        # Global ``headers:`` first, the backend's own on top: per-backend wins
+        # on conflict, which keeps resolver-built auth headers intact. Mirrors
+        # HermesOTelPlugin._merge_headers and the documented precedence.
+        merged: Dict[str, str] = dict(extra_headers or {})
+        merged.update(b.logs_headers or b.headers or {})
         endpoint = _derive_logs_endpoint(b.endpoint)
         try:
             exporter = OTLPLogExporter(endpoint=endpoint, headers=merged or None)
@@ -194,6 +198,9 @@ def install_handler(
     # Ensure records actually reach the handler — Python filters at the
     # logger level before dispatching to handlers, so a root logger left
     # at WARNING would silently drop INFO/DEBUG even with a DEBUG handler.
+    # The previous level is remembered on the handler so ``uninstall_handler``
+    # can put it back (lowering the root logger is a process-wide side effect).
+    setattr(handler, _PREVIOUS_LEVEL_ATTR, target.level)
     if target.level == logging.NOTSET or target.level > level:
         target.setLevel(level)
 
@@ -208,11 +215,21 @@ def _remove_prior_handlers(target: logging.Logger) -> None:
     """Strip any marker-tagged handlers we installed previously.
 
     Only touches handlers we own — leaves the consumer's own handlers
-    (stderr, file, syslog, ...) alone.
+    (stderr, file, syslog, ...) alone. Restores the logger level the
+    handler recorded at install time.
     """
     for h in list(target.handlers):
         if getattr(h, _HANDLER_MARKER, False):
             target.removeHandler(h)
+            previous = getattr(h, _PREVIOUS_LEVEL_ATTR, None)
+            if previous is not None:
+                target.setLevel(previous)
+
+
+def uninstall_handler(attach_logger: Optional[str] = None) -> None:
+    """Remove the handler :func:`install_handler` attached (tracer shutdown)."""
+    target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
+    _remove_prior_handlers(target)
 
 
 def resolve_level(name: Optional[str], default: int = logging.INFO) -> int:

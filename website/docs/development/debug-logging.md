@@ -8,6 +8,8 @@ description: "Turn on HERMES_OTEL_DEBUG=true for per-span start/end, parent nest
 
 The plugin prints only essential startup messages (backend connected / failed, hook count) to stdout. Everything else goes to a debug log file that's off by default.
 
+The path follows `HERMES_HOME` (default `~/.hermes`). The file is opened once per process, line-buffered, and closed when the tracer shuts down.
+
 ## Enabling
 
 ```bash
@@ -17,7 +19,7 @@ export HERMES_OTEL_DEBUG=true
 Then restart Hermes. The log file is:
 
 ```
-~/.hermes/plugins/hermes_otel/debug.log
+$HERMES_HOME/plugins/hermes_otel/debug.log     # ~/.hermes/plugins/hermes_otel/debug.log by default
 ```
 
 It's append-only — old entries stick around until you delete the file. No rotation; if you use debug mode for long periods, `rm debug.log` occasionally or pipe through `logrotate`.

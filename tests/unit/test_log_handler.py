@@ -125,12 +125,12 @@ class TestBuildLogProcessors:
             extra_headers={"X-Global": "b", "X-Both": "global"},
         )
         headers = fake_otlp_exporter.call_args.kwargs["headers"]
-        # Global headers override per-backend on key collision, matches
-        # tracer._merge_headers semantics.
+        # Per-backend headers win on key collision (they carry resolver-built
+        # auth); matches tracer._merge_headers and the documented precedence.
         assert headers == {
             "X-From-Backend": "a",
             "X-Global": "b",
-            "X-Both": "global",
+            "X-Both": "backend",
         }
 
     def test_exporter_failure_is_isolated(self):

@@ -16,6 +16,7 @@ internals.
 
 from __future__ import annotations
 
+import threading
 from collections import OrderedDict
 from dataclasses import dataclass, field
 from typing import Dict, List, Optional, Set
@@ -84,9 +85,8 @@ class PerSession:
     ``on_session_end`` can skip emitting zero-valued token attributes
     when no LLM traffic actually occurred.
 
-    ``io_captured`` mirrors the old ``session_id in _SESSION_IO``
-    behaviour — on_pre_llm_call sets it when the first input is captured,
-    so continuation turns don't overwrite the first user message.
+    ``io_captured`` is set by ``on_pre_llm_call`` when the first input is
+    captured, so continuation turns don't overwrite the first user message.
     """
 
     usage: Dict[str, int] = field(default_factory=_empty_usage)
@@ -116,6 +116,10 @@ class SessionState:
     Held by :class:`HermesOTelPlugin` so test reset is just singleton
     re-creation — tests never need to reach into module globals.
 
+    Hermes dispatches hooks across threads, so every check-then-insert here
+    (``get_or_create``, ``next_turn``'s counter bookkeeping) runs under one
+    re-entrant lock.
+
     Tool timings are keyed by ``f"{tool_name}:{tool_call_id}"`` (with the
     legacy task id as fallback), not session-scoped, so they live in their own
     dict alongside the session aggregators.
@@ -127,6 +131,7 @@ class SessionState:
     _MAX_TURN_COUNTERS = 4096
 
     def __init__(self) -> None:
+        self._lock = threading.RLock()
         self._sessions: Dict[str, PerSession] = {}
         self._tool_times: Dict[str, float] = {}
         # Turn counters outlive the per-turn PerSession (which on_session_end
@@ -137,11 +142,12 @@ class SessionState:
 
     def get_or_create(self, session_id: str) -> PerSession:
         """Return the aggregator for ``session_id``, creating an empty one if missing."""
-        ps = self._sessions.get(session_id)
-        if ps is None:
-            ps = PerSession()
-            self._sessions[session_id] = ps
-        return ps
+        with self._lock:
+            ps = self._sessions.get(session_id)
+            if ps is None:
+                ps = PerSession()
+                self._sessions[session_id] = ps
+            return ps
 
     def peek(self, session_id: str) -> Optional[PerSession]:
         """Return the aggregator if present, otherwise None (no creation)."""
@@ -149,10 +155,17 @@ class SessionState:
 
     def pop(self, session_id: str) -> Optional[PerSession]:
         """Remove and return the aggregator, or None if missing."""
-        return self._sessions.pop(session_id, None)
+        with self._lock:
+            return self._sessions.pop(session_id, None)
 
     def has(self, session_id: str) -> bool:
-        return session_id in self._sessions
+        with self._lock:
+            return session_id in self._sessions
+
+    def active_count(self) -> int:
+        """Number of sessions currently holding an aggregator."""
+        with self._lock:
+            return len(self._sessions)
 
     # ── Turn numbering ───────────────────────────────────────────────────
 
@@ -167,38 +180,44 @@ class SessionState:
         """
         if not session_id:
             return 0
-        current = 0 if reset else self._turn_counters.get(session_id, 0)
-        turn = current + 1
-        self._turn_counters[session_id] = turn
-        self._turn_counters.move_to_end(session_id)
-        while len(self._turn_counters) > self._MAX_TURN_COUNTERS:
-            self._turn_counters.popitem(last=False)
-        self.get_or_create(session_id).turn_number = turn
-        return turn
+        with self._lock:
+            current = 0 if reset else self._turn_counters.get(session_id, 0)
+            turn = current + 1
+            self._turn_counters[session_id] = turn
+            self._turn_counters.move_to_end(session_id)
+            while len(self._turn_counters) > self._MAX_TURN_COUNTERS:
+                self._turn_counters.popitem(last=False)
+            self.get_or_create(session_id).turn_number = turn
+            return turn
 
     def turn_number(self, session_id: str) -> int:
         """Current turn number for ``session_id`` (0 = no turn started yet)."""
         if not session_id:
             return 0
-        ps = self._sessions.get(session_id)
-        if ps is not None and ps.turn_number:
-            return ps.turn_number
-        return self._turn_counters.get(session_id, 0)
+        with self._lock:
+            ps = self._sessions.get(session_id)
+            if ps is not None and ps.turn_number:
+                return ps.turn_number
+            return self._turn_counters.get(session_id, 0)
 
     # ── Tool timings ─────────────────────────────────────────────────────
 
     def record_tool_start(self, key: str, started_at: float) -> None:
-        self._tool_times[key] = started_at
+        with self._lock:
+            self._tool_times[key] = started_at
 
     def pop_tool_start(self, key: str) -> Optional[float]:
-        return self._tool_times.pop(key, None)
+        with self._lock:
+            return self._tool_times.pop(key, None)
 
     def has_tool_start(self, key: str) -> bool:
-        return key in self._tool_times
+        with self._lock:
+            return key in self._tool_times
 
     # ── Bulk reset (used by tests via singleton re-creation) ─────────────
 
     def clear(self) -> None:
-        self._sessions.clear()
-        self._tool_times.clear()
-        self._turn_counters.clear()
+        with self._lock:
+            self._sessions.clear()
+            self._tool_times.clear()
+            self._turn_counters.clear()
