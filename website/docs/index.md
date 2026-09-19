@@ -95,10 +95,20 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
   </Link>
 </div>
 
+## How this relates to Hermes' built-in telemetry
+
+Hermes core ships content-free [gateway monitoring](https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-monitoring) over OTLP (gateway and cron health, no prompts, tool calls or per-run traces) and a bundled Langfuse-only observability plugin. hermes-otel is the run-level plane, and coexists with both:
+
+| | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
+|---|---|---|---|
+| Scope | Gateway/cron health, content-free | Per-run traces | Per-run traces + metrics + logs |
+| Backends | Any OTLP receiver | Langfuse only | 12+ OTLP backends, fan-out |
+| Coexists with hermes-otel | Yes | Yes | |
+
 ## The span hierarchy
 
 ```text
-session.{platform} / cron                 [root, GENERAL]
+agent / cron                              [root, AGENT]
 └── llm.{model}                           [LLM — input, output, total tokens]
     ├── api.{model}                       [LLM — prompt/completion tokens, duration]
     │   └── tool.{name}                   [TOOL — args, result, outcome]

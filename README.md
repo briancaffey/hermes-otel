@@ -39,11 +39,19 @@ Any OTLP/HTTP endpoint works as `type: otlp`. Several can be fed at once, each w
 ## Install
 
 ```bash
-hermes plugins install briancaffey/hermes-otel/hermes_otel
-~/git/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
+hermes plugins install hermes-otel        # from the Hermes plugin catalog
+hermes plugins enable hermes_otel         # the manifest name; installing does not enable
 ```
 
-The trailing `/hermes_otel` is the plugin package inside this repo; Hermes installs just that directory (about 40 files) to `~/.hermes/plugins/hermes_otel/`. The OTel packages must live in the virtualenv that runs `hermes` — Hermes never installs plugin dependencies for you. Details, upgrades and troubleshooting: [Installation](https://briancaffey.github.io/hermes-otel/getting-started/installation).
+Hermes 0.21+ installs the plugin's Python dependencies (the three `opentelemetry-*` packages) into its own virtualenv automatically and re-applies them after every `hermes update`. Restart the gateway afterwards if one is running. `hermes plugins update hermes-otel` moves a catalog install to the newest reviewed commit.
+
+:construction: Until the [catalog listing](https://github.com/briancaffey/hermes-otel/issues/134) is merged, install from this repository instead (same plugin, not yet catalog-reviewed):
+
+```bash
+hermes plugins install briancaffey/hermes-otel/hermes_otel --enable
+```
+
+The trailing `/hermes_otel` is the plugin package inside this repo; Hermes installs just that directory to `~/.hermes/plugins/hermes_otel/`. If you installed with `--no-deps`, set `security.allow_lazy_installs: false`, or run a Hermes older than 0.21, install the dependencies yourself: `<hermes venv>/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt`. Details, upgrades and troubleshooting: [Installation](https://briancaffey.github.io/hermes-otel/getting-started/installation).
 
 ## Configure
 
@@ -68,7 +76,19 @@ Not seeing data? `HERMES_OTEL_DEBUG=true` writes a per-span log — see [debug l
 
 ## How it works
 
-Hermes fires lifecycle hooks; the plugin maps them onto spans, metrics and logs through one `TracerProvider` fanned out to every configured backend, and never blocks the agent: span end is a non-blocking enqueue, exporters run on their own threads, hooks fail open. The turn summary, tool identity inference, orphan sweep and batch export are described under [Architecture](https://briancaffey.github.io/hermes-otel/architecture/overview); the W3C `traceparent` forwarded to MCP servers under [MCP trace propagation](https://briancaffey.github.io/hermes-otel/configuration/mcp-trace-propagation); known gaps under [Limitations](https://briancaffey.github.io/hermes-otel/reference/limitations).
+Hermes fires lifecycle hooks; the plugin maps them onto spans, metrics and logs through one `TracerProvider` fanned out to every configured backend, and never blocks the agent: span end is a non-blocking enqueue, exporters run on their own threads, hooks fail open. The turn summary, tool identity inference, orphan sweep and batch export are described under [Architecture](https://briancaffey.github.io/hermes-otel/architecture/overview); known gaps under [Limitations](https://briancaffey.github.io/hermes-otel/reference/limitations). Linking MCP-server spans into the agent's trace is implemented on the plugin side but waits on Hermes, see [MCP trace propagation](https://briancaffey.github.io/hermes-otel/configuration/mcp-trace-propagation).
+
+## How this relates to Hermes' built-in telemetry
+
+Hermes ships two observability surfaces of its own. hermes-otel is the third, run-level one, and runs alongside both (core's exporter builds private provider objects and never touches the global tracer provider this plugin installs).
+
+| | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
+|---|---|---|---|
+| Scope | Gateway and cron health, content-free by design: no prompts, tool calls, tokens or per-run traces | Per-run traces | Per-run traces (session → LLM → API → tool → sub-agent → approval), GenAI/OpenInference attributes, metrics and logs |
+| Backends | Any OTLP receiver (`monitoring.export.otlp`) | Langfuse only | 12+ OTLP backends, fanned out in parallel |
+| Coexists with hermes-otel | Yes | Yes | |
+
+Docs for the core surfaces: [Gateway Monitoring](https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-monitoring) and the `plugins/observability/langfuse` directory in hermes-agent.
 
 ## Repository layout
 
@@ -79,7 +99,8 @@ Hermes fires lifecycle hooks; the plugin maps them onto spans, metrics and logs 
 | `tests/` | Unit and integration tiers run in CI; `e2e/` and `smoke/` need real backends |
 | `docker-compose/` | Backend stacks for local development |
 | `dashboard-ui/` | TSX sources for the dashboard tab; `npm run build` writes into `hermes_otel/dashboard/dist/` |
-| `scripts/` | The Hermes plugin security scanner and the docs generators CI runs |
+| `scripts/` | The Hermes plugin security scanner, the docs generators and the catalog-entry renderer CI runs |
+| `docs/` | Assets fetched from outside the repo at a pinned commit (the plugin-catalog banner) |
 | `marketing/`, `archive/` | Launch video and article; historical design notes |
 
 ## Contributing

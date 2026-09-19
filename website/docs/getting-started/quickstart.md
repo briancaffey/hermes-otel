@@ -10,19 +10,20 @@ This walks you end-to-end: install the plugin, start a local [Phoenix](https://g
 
 ## 1. Install the plugin
 
-hermes-otel is a [Hermes Agent](https://github.com/nousresearch/hermes-agent) plugin. Install it like any other:
+hermes-otel is a [Hermes Agent](https://github.com/nousresearch/hermes-agent) plugin. From the plugin catalog:
 
 ```bash
-hermes plugins install briancaffey/hermes-otel/hermes_otel
+hermes plugins install hermes-otel
+hermes plugins enable hermes_otel
 ```
 
-This drops the plugin at `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. The OTel runtime still needs to be installed into the Hermes venv itself (the plugin is imported into that process, and Hermes never installs plugin dependencies for you). The plugin ships a requirements file for exactly that:
+Or, until the [catalog listing](https://github.com/briancaffey/hermes-otel/issues/134) is merged, from this repository:
 
 ```bash
-~/git/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
+hermes plugins install briancaffey/hermes-otel/hermes_otel --enable
 ```
 
-That installs `opentelemetry-api`, `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http`. (The installed directory is not a Python package, so `pip install -e` does not work on it.)
+Either way the plugin lands at `~/.hermes/plugins/hermes_otel/`, Hermes auto-discovers it via `plugin.yaml`, and Hermes 0.21+ installs the `opentelemetry-*` packages into its own venv for you. (On older Hermes builds, or after `--no-deps`, run `<hermes venv>/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt` yourself; see [Installation](/getting-started/installation).)
 
 ## 2. Start a local Phoenix
 

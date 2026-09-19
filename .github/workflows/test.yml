@@ -120,3 +120,53 @@ jobs:
           for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks.py; do
             echo "$listing" | grep -q "$f" || { echo "missing from wheel: $f"; exit 1; }
           done
+
+  catalog-admission:
+    # The Hermes plugin catalog gates admission, and every later sha bump, on
+    # `hermes plugins validate --install-deps` at the pinned commit, a
+    # structural check of the entry and a grep for self-updating code
+    # (NousResearch/hermes-agent .github/workflows/plugin-catalog-ci.yml).
+    # Run the same gates here against the latest Hermes release so a red
+    # admission check never shows up first in the upstream PR (#133).
+    name: Catalog admission checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HERMES_HOME: ${{ github.workspace }}/.hermes-home
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          # hermes-agent requires >=3.11,<3.14
+          python-version: "3.11"
+      - name: Install Hermes Agent from main (what the upstream catalog CI installs)
+        # Upstream runs `pip install -e .` on its own checkout, i.e. hermes-agent
+        # main, so the gate is main's validator (`--install-deps` is newer than
+        # the latest tag). The sha is logged for the record.
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          echo "hermes-agent main @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
+          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" pyyaml
+          mkdir -p "$HERMES_HOME"
+          hermes --version
+      - name: hermes plugins validate --install-deps (the catalog gate)
+        run: hermes plugins validate --install-deps ./hermes_otel
+      - name: hermes plugins doctor --ci
+        run: hermes plugins doctor ./hermes_otel --ci
+      - name: Render the catalog entry and run the upstream structural validator
+        run: |
+          set -euo pipefail
+          python scripts/render_catalog_entry.py --sha "$GITHUB_SHA" -o "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
+          cat "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
+          python "$RUNNER_TEMP/hermes-agent/scripts/validate_plugin_catalog.py" "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
+      - name: No self-updating code in the install artifact (catalog rule 3)
+        run: |
+          set -euo pipefail
+          hits=$(grep -rlE 'releases/latest|raw\.githubusercontent\.com' \
+              --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.ts' hermes_otel \
+            | xargs -r grep -lE 'writeTextFile|renamePath|writeFile\(' || true)
+          if [ -n "$hits" ]; then
+            echo "self-updating code in the install artifact: $hits"; exit 1
+          fi
+          echo "no self-updater patterns"

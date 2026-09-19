@@ -53,3 +53,34 @@ jobs:
             git commit -m "chore(release): refresh uv.lock"
           fi
           git push origin "$branch"
+
+      # Every release needs a sha-bump PR in the Hermes plugin catalog
+      # (plugin-catalog/hermes-otel.yaml in NousResearch/hermes-agent) that
+      # updates `sha` and `version` together. Render that file from the
+      # released commit, attach it to the GitHub release and print it in the
+      # job summary so the upstream PR is a file copy (#133).
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        if: ${{ steps.release.outputs.release_created }}
+        with:
+          ref: ${{ steps.release.outputs.sha }}
+      - name: Render the plugin-catalog entry for this release
+        if: ${{ steps.release.outputs.release_created }}
+        env:
+          GH_TOKEN: ${{ secrets.GH_PAT }}
+          TAG: ${{ steps.release.outputs.tag_name }}
+          SHA: ${{ steps.release.outputs.sha }}
+          VERSION: ${{ steps.release.outputs.version }}
+        run: |
+          set -euo pipefail
+          pip install --quiet pyyaml
+          python scripts/render_catalog_entry.py --sha "$SHA" --version "$VERSION" -o hermes-otel.yaml
+          gh release upload "$TAG" hermes-otel.yaml --clobber
+          {
+            echo "## plugin-catalog/hermes-otel.yaml for $TAG"
+            echo
+            echo 'Copy this file into a sha-bump PR against NousResearch/hermes-agent.'
+            echo
+            echo '```yaml'
+            cat hermes-otel.yaml
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
