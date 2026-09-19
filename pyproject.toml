@@ -132,7 +132,7 @@ target-version = ["py39", "py310", "py311", "py312", "py313"]
 # covers .venv, .git, build, dist, etc.
 extend-exclude = '''
 /(
-    video
+    marketing
   | renders
   | hermes_otel\.egg-info
 )/
@@ -143,7 +143,7 @@ line-length = 100
 target-version = "py39"
 extend-exclude = [
     ".venv",
-    "video",
+    "marketing",
     "renders",
     "hermes_otel.egg-info",
 ]
