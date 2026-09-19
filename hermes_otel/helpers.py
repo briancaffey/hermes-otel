@@ -305,6 +305,44 @@ def classify_approval_choice(choice: Any, decided_by: Any = None) -> Dict[str, A
     }
 
 
+# Governance floors (approvals.deny globs, the hardline list, the stdin
+# password guard) never fire the approval hooks — Hermes' terminal tool
+# collapses the block into a ``{"error": "BLOCKED: ...", "status":
+# "blocked"}`` envelope before post_tool_call sees it, so the message text
+# is the only provenance surface. Matching is deliberately conservative:
+# only messages we can POSITIVELY classify yield a floor, everything else
+# returns None (no attributes). Hermes prefixes many non-floor outcomes
+# with ``BLOCKED:`` too (human denials, approval timeouts, notify
+# failures, gateway refusals) — guessing those into floors would corrupt
+# governance dashboards with false attribution.
+_BLOCK_PROVENANCE_SIGNATURES = (
+    ("user-defined deny rule", "deny_rule"),
+    ("hardline", "hardline"),
+    ("Do not pipe passwords", "stdin_password_guard"),
+)
+
+
+def classify_block_provenance(block_message: Any) -> Optional[str]:
+    """Return which governance floor blocked a command, or None.
+
+    ``block_message`` is the terminal error envelope's ``error``/``output``
+    text. Only signatures we positively recognize match — deny-rule globs,
+    the hardline list, and the stdin password guard. Unclassifiable
+    ``BLOCKED`` texts (human denials, approval timeouts, plugin or
+    guardrail vetoes — which surface as plain errors anyway) return None,
+    so the caller emits no provenance rather than wrong provenance.
+    """
+    if not isinstance(block_message, str) or not block_message.strip():
+        return None
+    lowered = block_message.lower()
+    if "blocked" not in lowered:
+        return None
+    for signature, blocked_by in _BLOCK_PROVENANCE_SIGNATURES:
+        if signature.lower() in lowered:
+            return blocked_by
+    return None
+
+
 # ── Sub-agent / delegation ───────────────────────────────────────────────────
 
 # child_status values hermes-agent reports on subagent_stop that indicate a

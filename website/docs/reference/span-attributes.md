@@ -149,6 +149,8 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
 | `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` · `cancelled` (or a status the tool reported in its result) |
+| `hermes.tool.blocked_by` | hermes | string | Which governance floor blocked the call — `deny_rule` · `hardline` · `stdin_password_guard` (optional; only when positively classified, `outcome=blocked`) |
+| `hermes.tool.decided_by` | hermes | string | `hard_floor` on the tool span when a floor (not a human) blocked the call; see also `hermes.approval.decided_by` on `approval.*` spans (optional) |
 | `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional) |
 | `hermes.skill.name`, `hermes.skill.source` | hermes | string | Bare skill name and `skill_view` / `path_match` when the call loaded a skill (optional) |
 | `hermes.tool.cpu.utilization.avg`, `hermes.tool.cpu.utilization.peak` | hermes | float | Process-tree CPU (0..1) during the call — `host_metrics` only |

@@ -4,6 +4,7 @@ import pytest
 
 from hermes_otel.helpers import (
     classify_approval_choice,
+    classify_block_provenance,
     detect_skill,
     session_id_from_turn_id,
     truncate_string,
@@ -75,6 +76,46 @@ class TestClassifyApprovalChoice:
 
     def test_human_choice_decided_by_empty(self):
         assert classify_approval_choice("once")["decided_by"] == ""
+
+
+class TestClassifyBlockProvenance:
+    def test_deny_rule(self):
+        msg = (
+            "BLOCKED: this command matches the user-defined deny rule "
+            "'*grc-app*' (approvals.deny in config.yaml)."
+        )
+        assert classify_block_provenance(msg) == "deny_rule"
+
+    def test_hardline(self):
+        assert classify_block_provenance("BLOCKED (hardline): fork bomb.") == "hardline"
+
+    def test_stdin_password_guard(self):
+        # The guard's message fragment, not the tool name that triggers it.
+        msg = "BLOCKED: piping detected. Do not pipe passwords into the password prompt."
+        assert classify_block_provenance(msg) == "stdin_password_guard"
+
+    def test_unclassifiable_blocked_is_not_a_floor(self):
+        # Over-matching was the #78 review's second finding: human denials,
+        # approval timeouts and plugin/guardrail vetoes also arrive as
+        # BLOCKED-prefixed text. They must NOT be attributed to a floor.
+        for msg in (
+            "BLOCKED: User denied this command. Do not retry.",
+            "BLOCKED: Command timed out without user response.",
+            "BLOCKED: notify-failed, no delivery channel.",
+            "BLOCKED: gateway refused delivery.",
+            "BLOCKED: something else entirely",
+        ):
+            assert classify_block_provenance(msg) is None, msg
+
+    def test_ordinary_error_is_not_a_floor(self):
+        assert classify_block_provenance("Command denied: flagged as dangerous.") is None
+
+    def test_command_failure_is_not_a_floor(self):
+        assert classify_block_provenance("command not found: foo") is None
+
+    def test_empty_and_none(self):
+        assert classify_block_provenance("") is None
+        assert classify_block_provenance(None) is None
 
 
 class TestDetectSkill:

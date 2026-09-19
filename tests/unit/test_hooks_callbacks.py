@@ -361,6 +361,73 @@ class TestOnPostToolCall:
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["hermes.tool.outcome"] == "error"
 
+    @pytest.mark.parametrize(
+        "label, error_text, blocked_by",
+        [
+            (
+                "deny-rule floor",
+                "BLOCKED: this command matches the user-defined deny rule '*x*'.",
+                "deny_rule",
+            ),
+            ("hardline floor", "BLOCKED (hardline): fork bomb. Do not retry.", "hardline"),
+            (
+                "stdin password guard",
+                "BLOCKED: piping detected. Do not pipe passwords into the password prompt.",
+                "stdin_password_guard",
+            ),
+        ],
+    )
+    def test_floor_block_carries_blocked_by_provenance(
+        self, mock_tracer, label, error_text, blocked_by
+    ):
+        # Floors bypass the approval hooks, so the tool span is the only
+        # place the provenance can live (#78 follow-up review).
+        result = json.dumps(
+            {"output": "", "exit_code": -1, "error": error_text, "status": "blocked"}
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={}, result=result, task_id="t1", status="error"
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "blocked", label
+        assert attrs["hermes.tool.blocked_by"] == blocked_by, label
+        assert attrs["hermes.tool.decided_by"] == "hard_floor", label
+
+    @pytest.mark.parametrize(
+        "label, error_text",
+        [
+            ("human denial", "BLOCKED: User denied this command. Do not retry."),
+            ("approval timeout", "BLOCKED: Command timed out without user response."),
+            ("unclassifiable block", "BLOCKED: something else entirely"),
+        ],
+    )
+    def test_non_floor_block_carries_no_provenance(self, mock_tracer, label, error_text):
+        # Over-matching guard (#78 review): anything not positively a floor
+        # must not carry blocked_by/decided_by — no false attribution.
+        result = json.dumps(
+            {"output": "", "exit_code": -1, "error": error_text, "status": "blocked"}
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={}, result=result, task_id="t1", status="error"
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "blocked", label
+        assert "hermes.tool.blocked_by" not in attrs, label
+        assert "hermes.tool.decided_by" not in attrs, label
+
+    def test_error_outcome_never_carries_provenance(self, mock_tracer):
+        # A governance word inside an ordinary error must not mint a floor.
+        on_post_tool_call(
+            tool_name="terminal",
+            args={},
+            result='{"error": "hardline: boom", "status": "error"}',
+            task_id="t1",
+            status="error",
+        )
+        attrs = mock_tracer.end_span.call_args[1]["attributes"]
+        assert attrs["hermes.tool.outcome"] == "error"
+        assert "hermes.tool.blocked_by" not in attrs
+
     def test_specific_hook_status_beats_result_status(self, mock_tracer):
         on_post_tool_call(
             tool_name="terminal",
