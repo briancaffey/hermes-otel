@@ -139,13 +139,14 @@ jobs:
         with:
           # hermes-agent requires >=3.11,<3.14
           python-version: "3.11"
-      - name: Install the latest Hermes Agent release
+      - name: Install Hermes Agent from main (what the upstream catalog CI installs)
+        # Upstream runs `pip install -e .` on its own checkout, i.e. hermes-agent
+        # main, so the gate is main's validator (`--install-deps` is newer than
+        # the latest tag). The sha is logged for the record.
         run: |
           set -euo pipefail
-          tag=$(git ls-remote --tags --refs https://github.com/NousResearch/hermes-agent \
-            | sed 's|.*refs/tags/||' | grep -E '^v[0-9]{4}\.[0-9]+\.[0-9]+$' | sort -V | tail -1)
-          echo "hermes-agent $tag"
-          git clone --quiet --depth 1 --branch "$tag" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          echo "hermes-agent main @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
           pip install --quiet -e "$RUNNER_TEMP/hermes-agent" pyyaml
           mkdir -p "$HERMES_HOME"
           hermes --version
