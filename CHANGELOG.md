@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.6.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.1...hermes-otel-v1.6.2) (2026-09-19)
+
+
+### Documentation
+
+* **config:** one config surface — dataclass-driven loader and generated reference tables ([#126](https://github.com/briancaffey/hermes-otel/issues/126)) ([86383d9](https://github.com/briancaffey/hermes-otel/commit/86383d9db79e6cc30b7184831b5b1462aa7353d6))
+* regenerate the span-attribute reference; rename session.* to agent/cron; fix onboarding ([#127](https://github.com/briancaffey/hermes-otel/issues/127)) ([595ea88](https://github.com/briancaffey/hermes-otel/commit/595ea889c5ce58537850bfd2f08740ea1459041c))
+* slim the README to essentials; move non-plugin files out of the repo root ([#137](https://github.com/briancaffey/hermes-otel/issues/137)) ([625d77e](https://github.com/briancaffey/hermes-otel/commit/625d77e738efca2b4fb94c76c88144bf442ff6cf))
+
 ## [1.6.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.0...hermes-otel-v1.6.1) (2026-09-19)
 
 
