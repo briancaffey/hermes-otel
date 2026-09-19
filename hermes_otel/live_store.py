@@ -24,8 +24,8 @@ import json
 import os
 import sqlite3
 import threading
-from pathlib import Path
 import time
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 LIVE_DB_FILENAME = "hermes_otel_live.db"
