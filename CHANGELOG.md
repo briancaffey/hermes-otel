@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.6.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.5.0...hermes-otel-v1.6.0) (2026-09-19)
+
+
+### Features
+
+* **metrics:** bounded metric labels and per-process service.instance.id ([#115](https://github.com/briancaffey/hermes-otel/issues/115)) ([0a87a9c](https://github.com/briancaffey/hermes-otel/commit/0a87a9ceb4a3c2caa9b3c10e2720b9b6632aa230))
+
+
+### Documentation
+
+* **reference:** add a metrics reference page; remove phantom metric names ([#118](https://github.com/briancaffey/hermes-otel/issues/118)) ([20a2534](https://github.com/briancaffey/hermes-otel/commit/20a25344543035f4a710967626b8fa0a3ea77566))
+
 ## [1.5.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.2...hermes-otel-v1.5.0) (2026-09-19)
 
 
