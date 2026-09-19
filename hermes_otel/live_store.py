@@ -10,7 +10,7 @@ append-only SQLite ``events`` table.
 Design:
 - One append-only ``events`` table: ``seq`` (autoincrement = the cursor), a
   ``kind`` discriminator (span/metric/log), and a JSON ``data`` blob.
-- Bounded: trimmed to the last ``max_rows`` rows (cheap, periodic).
+- Bounded: each kind trimmed to its last ``max_rows`` rows (cheap, periodic).
 - WAL + ``busy_timeout`` so concurrent cross-process read/write is safe.
 - Thread-local connections — Hermes dispatches hooks across executor threads.
 - Public API is cursor-based (``add_*`` / ``spans(since)`` / ``cursor()``) and is
@@ -25,14 +25,20 @@ import os
 import sqlite3
 import threading
 import time
-from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 
 def _default_db_path() -> str:
-    # Next to this module so the gateway and dashboard processes (both loading
-    # the plugin from the same install dir) resolve the SAME file.
-    return str(Path(__file__).resolve().parent / "live.db")
+    """``$HERMES_HOME/hermes_otel_live.db`` (override with ``HERMES_OTEL_LIVE_DB``).
+
+    Both the gateway and the dashboard process resolve the same ``HERMES_HOME``,
+    so they share the file. It used to live next to this module inside the
+    plugin directory, which ``hermes plugins install`` wipes on every upgrade
+    and which is read-only for site-packages installs (#100).
+    """
+    from .plugin_config import hermes_home
+
+    return str(hermes_home() / "hermes_otel_live.db")
 
 
 class LiveStore:
@@ -80,12 +86,13 @@ class LiveStore:
                 (kind, time.time_ns(), json.dumps(data, default=str)),
             )
             self._writes += 1
-            # Trim periodically rather than every insert.
+            # Trim periodically rather than every insert — per kind, so a chatty
+            # logger cannot evict every span (#100).
             if self._writes % 64 == 0:
                 c.execute(
-                    "DELETE FROM events WHERE seq <= "
-                    "(SELECT COALESCE(MAX(seq), 0) FROM events) - ?",
-                    (self.max_rows,),
+                    "DELETE FROM events WHERE kind = ? AND seq NOT IN "
+                    "(SELECT seq FROM events WHERE kind = ? ORDER BY seq DESC LIMIT ?)",
+                    (kind, kind, self.max_rows),
                 )
             c.commit()
         except Exception:  # pragma: no cover

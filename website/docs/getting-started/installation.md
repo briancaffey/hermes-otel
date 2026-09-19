@@ -58,13 +58,13 @@ hermes plugins enable hermes_otel     # --force reinstall leaves it disabled
 ```
 
 :::warning A reinstall replaces the plugin directory
-`--force` swaps the whole directory, so **anything you keep inside it is deleted** — including
-`config.yaml` and the live dashboard's `live.db`. Keep them elsewhere and upgrades stop being
-destructive:
+`--force` swaps the whole directory, so **anything you keep inside it is deleted**. Since 1.7 the
+plugin keeps nothing there by itself: the durable config is `~/.hermes/hermes_otel.yaml` and the live
+dashboard store is `~/.hermes/hermes_otel_live.db` (override with `HERMES_OTEL_LIVE_DB`). If you
+still have a legacy `config.yaml` inside the plugin directory, move it out:
 
 ```bash
 mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
-export HERMES_OTEL_LIVE_DB=~/.hermes/hermes_otel.live.db
 ```
 
 `$HERMES_HOME/hermes_otel.yaml` is read automatically — see

@@ -143,3 +143,33 @@ class TestVersionSingleSource:
         assert pkg["release-type"] == "python"
         paths = [f["path"] for f in pkg.get("extra-files", [])]
         assert "hermes_otel/plugin.yaml" in paths
+
+
+_NON_RUNTIME_SUFFIXES = (".tsx", ".ts", ".mjs", ".map")
+_NON_RUNTIME_NAMES = ("package.json", "package-lock.json", "tsconfig.json", "node_modules")
+
+
+class TestArtifactHasNoDevFiles:
+    """``hermes plugins install`` copies the whole directory, so dev-only files in
+    ``hermes_otel/`` reach every user's plugin dir and Hermes' security scanner (#100)."""
+
+    def test_no_dashboard_sources_or_build_tooling_in_artifact(self):
+        offenders = []
+        for path in ARTIFACT.rglob("*"):
+            if "__pycache__" in path.parts:
+                continue
+            if path.suffix in _NON_RUNTIME_SUFFIXES or path.name in _NON_RUNTIME_NAMES:
+                offenders.append(str(path.relative_to(REPO_ROOT)))
+        assert offenders == [], offenders
+
+    def test_dashboard_sources_live_in_dashboard_ui(self):
+        ui = REPO_ROOT / "dashboard-ui"
+        assert (ui / "build.mjs").exists() and (ui / "src" / "index.tsx").exists()
+        build = (ui / "build.mjs").read_text(encoding="utf-8")
+        assert "../hermes_otel/dashboard/dist/index.js" in build
+
+    def test_live_store_default_is_outside_the_plugin_dir(self, monkeypatch, tmp_path):
+        from hermes_otel import live_store
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        assert live_store._default_db_path() == str(tmp_path / "hermes_otel_live.db")
