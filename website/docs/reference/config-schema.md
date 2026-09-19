@@ -162,7 +162,7 @@ The plugin sets the `wandb-api-key` header automatically. Weave is traces-only b
 
 ## Env var interpolation in `headers:`
 
-Inside any `headers:` value, `${VAR_NAME}` is replaced with the env var's value at startup:
+Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:
 
 ```yaml
 headers:
