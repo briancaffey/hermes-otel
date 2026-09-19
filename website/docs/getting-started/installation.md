@@ -119,7 +119,7 @@ If you'd rather not install the plugin package into the venv, the three runtime 
 
 ## Requirements
 
-- **Python ≥ 3.9** (the plugin tests against 3.11 and 3.13 in CI).
+- **Python ≥ 3.9** (CI tests 3.9, 3.11 and 3.13).
 - **Hermes Agent** with plugin support — modern versions auto-register plugins found under `~/.hermes/plugins/`.
 - **One OTLP-compatible backend** — local via Docker Compose, or a cloud endpoint. See [Backends overview](/backends/overview).
 
@@ -128,9 +128,12 @@ If you'd rather not install the plugin package into the venv, the three runtime 
 When Hermes starts up, the plugin prints a startup banner:
 
 ```text
-[hermes-otel] ✓ Phoenix connected · endpoint=http://localhost:6006/v1/traces
-[hermes-otel] Registered 8 hooks
+[hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
+[hermes-otel] ✓ Live dashboard store active
+[hermes-otel] Registered 13 hooks
 ```
+
+(The hook count depends on the Hermes version; 13 on Hermes 0.21.)
 
 If you see `Registered 0 hooks` or no banner at all:
 

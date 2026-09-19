@@ -35,7 +35,7 @@ The plugin uses `langsmith.uuid7()` if the package is importable, falling back t
 
 ## What you'll see
 
-- Each Hermes turn creates a run tree: `session.*` is the parent run, with `llm.*`, `api.*`, and `tool.*` as child runs.
+- Each Hermes turn creates a run tree: the `agent` (or `cron`) root is the parent run, with `llm.*`, `api.*`, and `tool.*` as child runs.
 - LangSmith's `Inputs` and `Outputs` tabs read from `gen_ai.content.prompt` / `gen_ai.content.completion`.
 - Token counts show up on the `api.*` runs via `gen_ai.usage.*`.
 - Tool call args + results appear as their own runs under the parent LLM run.

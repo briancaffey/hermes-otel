@@ -176,7 +176,8 @@ the yaml file, env-var detection is skipped.
 ### Multi-backend (`config.yaml`)
 
 A fully annotated template lives at [`config.yaml.example`](config.yaml.example)
-in the plugin root. Copy it to `config.yaml` and edit in place:
+in the repository (it is not part of the installed plugin). Copy it to
+`~/.hermes/hermes_otel.yaml` and edit in place:
 
 ```bash
 cp config.yaml.example ~/.hermes/hermes_otel.yaml
@@ -653,7 +654,7 @@ This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work t
 | [OpenObserve](https://openobserve.ai) | traces + metrics + logs | Local (single binary / docker) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
 | [Parseable](https://www.parseable.com) | traces + metrics + logs | Self-hosted · Cloud | OSS · paid cloud | ✅ |
 | [Uptrace](https://uptrace.dev) | traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud | ✅ |
-| [Honeycomb](https://www.honeycomb.io) | traces + metrics | Cloud only | Free tier + paid | 🔲 |
+| [Honeycomb](https://www.honeycomb.io) | traces + metrics + logs | Cloud only | Free tier + paid | ✅ |
 | [W&B Weave](https://docs.wandb.ai/weave/) | traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account | ✅ |
 | [New Relic](https://newrelic.com) | traces + metrics + logs | Cloud only | Free tier (100 GB/mo) + paid | 🔲 |
 | [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) | traces + metrics + logs | Local (docker) · Elastic Cloud | OSS self-host · trial + paid cloud | 🔲 |
@@ -674,7 +675,6 @@ Jaeger, Tempo, and Weave are **traces only** by default. If you want both spans 
 
 ## Current limitations
 
-- **No full prompt capture** — Hermes hooks don't expose the fully-formed prompt (system message + conversation history + tool results) to plugins. API spans only receive metadata (token counts, model, duration). The raw user message and assistant response appear on the parent LLM span.
 - **Langfuse auth** — Requires both public and secret keys; Basic Auth is constructed automatically. If only one key is set, Langfuse mode won't activate.
 - **No gRPC** — Only OTLP over HTTP/JSON is used. gRPC exporters are not included.
 - **Single session per run** — Span tracking is in-memory; if Hermes restarts mid-session, active spans are lost. A TTL-based sweeper finalizes abandoned sessions (see "Orphan-span sweep" above), but the orphaned process's buffered spans still need a graceful `atexit` to flush.

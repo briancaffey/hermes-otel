@@ -8,7 +8,7 @@ description: "How the plugin cleans up stale sessions when on_session_end never 
 
 What happens if Hermes crashes mid-turn, or the host is power-cycled, or the session-end hook never fires for some other reason?
 
-Without cleanup, the root `session.*` span would stay open forever in the plugin's in-memory state, and in the backend UI you'd see a trace that starts but never ends. That's bad both operationally (active-span state leak) and visually (every orphaned turn is a "what's still running??" red herring).
+Without cleanup, the root `agent` / `cron` span would stay open forever in the plugin's in-memory state, and in the backend UI you'd see a trace that starts but never ends. That's bad both operationally (active-span state leak) and visually (every orphaned turn is a "what's still running??" red herring).
 
 The orphan sweep is a simple TTL-based cleanup that runs at the top of **every** `pre_*` hook.
 

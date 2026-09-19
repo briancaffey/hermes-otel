@@ -34,11 +34,11 @@ agent / cron                                  [AGENT]
 - **`approval.*`** — one per dangerous-command approval prompt. Spans the time the agent blocks waiting for a human to approve/deny, correlated to the gated tool via `gen_ai.tool.call.id`. See [`approval.*`](#approval) below.
 - **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
-## `session.*` / `cron`
+## `agent` / `cron`
 
-The root span. Name is derived from the Hermes session kind (`session.cli`, `session.telegram`, `session.discord`, `cron`, etc.).
+The root span of every turn. It is named `agent`, or `cron` when the Hermes session kind is a cron job; the kind itself (`cli`, `telegram`, `discord`, …) is on `hermes.session.kind`.
 
-**Span kind:** `GENERAL` (no OpenInference-specific kind).
+**Span kind:** `AGENT` (OpenInference), `gen_ai.operation.name=invoke_agent`.
 
 Key attributes, set at start:
 

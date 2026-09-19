@@ -58,7 +58,7 @@ UI at http://localhost:3000.
 ## Multi-backend config
 
 ```yaml
-# ~/.hermes/plugins/hermes_otel/config.yaml
+# ~/.hermes/hermes_otel.yaml
 backends:
   - type: langfuse
     public_key_env: LANGFUSE_PUBLIC_KEY
@@ -72,7 +72,7 @@ Secrets should live in env vars (`*_env:` keys). Plaintext `public_key:` / `secr
 
 ## What you'll see
 
-Langfuse groups traces into sessions automatically. hermes-otel's `session.*` root spans show up as top-level traces; nested `llm.*` / `api.*` / `tool.*` appear as observations within.
+Langfuse groups traces into sessions automatically. hermes-otel's `agent` / `cron` root spans show up as top-level traces; nested `llm.*` / `api.*` / `tool.*` appear as observations within.
 
 - **User message** lands on `gen_ai.content.prompt` / `input.value` on the `llm.*` span.
 - **Assistant response** lands on `gen_ai.content.completion` / `output.value`.
