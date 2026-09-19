@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.5.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.2...hermes-otel-v1.5.0) (2026-09-19)
+
+
+### Features
+
+* **config:** expand ${VAR} references in config.yaml header and backend values ([#112](https://github.com/briancaffey/hermes-otel/issues/112)) ([5505adb](https://github.com/briancaffey/hermes-otel/commit/5505adb60847a5b789b6bc9ddf85fb3246cfd075))
+
+
+### Bug Fixes
+
+* **backends:** env-configured backends keep logs, per-signal headers and resource attrs ([#110](https://github.com/briancaffey/hermes-otel/issues/110)) ([9743471](https://github.com/briancaffey/hermes-otel/commit/974347104e042394d1fbfa693446185dd9529f28))
+* **hooks:** fail open on unexpected payload shapes; never raise into the agent loop ([#109](https://github.com/briancaffey/hermes-otel/issues/109)) ([4183bac](https://github.com/briancaffey/hermes-otel/commit/4183bacea037b0d389aa96ebbcea28a9c0077b2e))
+* **release:** single version source — release-please bumps pyproject and plugin.yaml ([#111](https://github.com/briancaffey/hermes-otel/issues/111)) ([2fabc13](https://github.com/briancaffey/hermes-otel/commit/2fabc137827f8c4cc5a168310242a71a0f8bd510))
+
 ## [1.4.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.1...hermes-otel-v1.4.2) (2026-09-19)
 
 
