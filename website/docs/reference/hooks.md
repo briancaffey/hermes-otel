@@ -6,7 +6,7 @@ description: "The Hermes lifecycle hooks this plugin subscribes to, and the span
 
 # Hooks reference
 
-hermes-otel subscribes to a set of Hermes lifecycle hooks. Six (`pre_tool_call` … `post_api_request`) are "always available" on any Hermes version with plugin support. The rest — `api_request_error`, the session hooks, the sub-agent delegation hooks, the approval hooks — are registered conditionally, so older Hermes builds simply register fewer; the startup banner reports the count (13 on Hermes 0.21). `mcp_request_headers` is implemented but waits on an upstream hook (see below).
+hermes-otel subscribes to a set of Hermes lifecycle hooks. Six (`pre_tool_call` … `post_api_request`) are "always available" on any Hermes version with plugin support. The rest — `api_request_error`, the session hooks, the sub-agent delegation hooks, the approval hooks — are registered conditionally, so older Hermes builds simply register fewer; the startup banner reports the count (13 on Hermes 0.21). `mcp_request_headers` is implemented but waits on an upstream hook that no Hermes release fires (see below).
 
 ## Always available
 
@@ -134,7 +134,7 @@ Fires when the human answers (or the prompt times out).
 
 ### `mcp_request_headers` (pending upstream)
 
-Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "13 hooks" count. The plugin side is implemented: if a Hermes build ever exposes this hook, `register()` subscribes and returns the W3C `traceparent` / `tracestate` of the current span so an instrumented MCP server joins the trace — see [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "13 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
 
 ## Hook → span mapping
 

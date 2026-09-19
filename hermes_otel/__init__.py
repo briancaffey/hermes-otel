@@ -54,22 +54,27 @@ def register(ctx):
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
-    # Trace-context propagation to MCP servers. Registered only when the host
-    # Hermes advertises the `mcp_request_headers` hook, so older Hermes builds
-    # don't get an "unknown hook" warning. The hook injects a W3C `traceparent`
-    # onto outbound MCP HTTP requests so MCP-server spans link into the agent's
-    # trace. No-op (returns {}) when no span is active. See get_current_traceparent.
+    # Trace-context propagation to MCP servers. `mcp_request_headers` is not a
+    # hook in any Hermes release (it was proposed upstream in
+    # NousResearch/hermes-agent#52211 and withdrawn because the MCP SDK 2.x
+    # propagates trace context in-protocol), so it is not declared in
+    # plugin.yaml. Register it ONLY when the running Hermes provably lists it
+    # in VALID_HOOKS. When the registry cannot be inspected at all, fail
+    # closed: the catalog validator diffs declared vs. registered hooks and an
+    # undeclared registration fails admission (#130).
     mcp_hooks = 0
     try:
         from hermes_cli.plugins import VALID_HOOKS as _valid_hooks
     except Exception:
         _valid_hooks = None
-    if _valid_hooks is None or "mcp_request_headers" in _valid_hooks:
+    if _valid_hooks is not None and "mcp_request_headers" in _valid_hooks:
         try:
             ctx.register_hook("mcp_request_headers", hooks.on_mcp_request_headers)
             mcp_hooks = 1
         except Exception:
             debug_log("mcp_request_headers hook unavailable")
+    elif _valid_hooks is None:
+        debug_log("hermes_cli.plugins.VALID_HOOKS not importable; skipping mcp_request_headers")
     else:
         debug_log("mcp_request_headers hook not supported by this Hermes; skipping")
 
