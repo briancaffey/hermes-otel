@@ -26,7 +26,7 @@ Fires when the tool returns (success, error, timeout, block, or cancel).
 - **Attributes set on end:** `output.value` (result), `hermes.tool.outcome` (a specific non-success hook `status` — `timeout` / `blocked` / `cancelled` — is authoritative; a coarse hook `error` yields to an explicit `blocked` / `timeout` / `cancelled` in the result's `status` field, so governance blocks are not counted as errors; otherwise the result's own `status`, else `completed`)
 - **Span status:** `ERROR` if outcome is `error`, else `OK`
 - **Skill spans:** when the call loaded a skill and succeeded (`skill_view` result `success: true`, or a `/skills/` file read that did not error), opens the `skill.<name>` span and adds the skill to `hermes.turn.skills`; failed loads do neither
-- **Metrics:** `hermes.tool.calls{tool_name, outcome}` counter, `hermes.tool.duration{tool_name, outcome}` histogram
+- **Metrics:** `hermes.tool.duration{tool_name}` histogram (on end); `hermes.skill.inferred{skill_name, source}` counter (on start) — see [Metrics](/reference/metrics)
 
 ### `pre_llm_call`
 
@@ -57,7 +57,7 @@ Fires when the HTTP response is parsed.
 
 - **Span op:** closes the `api.*` span
 - **Attributes set on end:** token counts (both conventions), `gen_ai.response.finish_reason`, `http.duration_ms`
-- **Metrics:** `hermes.token.usage{token_type}`, `hermes.prompt_cache.tokens{cache_result}`, `hermes.prompt_cache.observations{cache_result}` (see [Prompt-cache metrics](https://github.com/briancaffey/hermes-otel#prompt-cache-metrics)), `hermes.cost.usage`, `hermes.model.usage` counters; `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms
+- **Metrics:** `hermes.token.usage{token_type}`, `hermes.prompt_cache.tokens{cache_result}`, `hermes.prompt_cache.observations{cache_result}` (see [Metrics](/reference/metrics)), `hermes.cost.usage`, `hermes.model.usage` counters; `gen_ai.client.token.usage` and `gen_ai.client.operation.duration` histograms
 
 ### `api_request_error`
 
@@ -66,7 +66,7 @@ Fires when a provider API request **fails** (rate limit, timeout, 5xx, network e
 - **Span op:** closes the in-flight `api.{model}` span (key `api:{task_id}`) as **ERROR** with a recorded `exception` event. Without this hook that span would be left to the orphan sweep and end `OK` — hiding the failure. If no in-flight span exists (error before `pre_api_request`, or already swept) a short-lived `api.error` span is created so the failure is still visible.
 - **Attributes set on end:** `error.type`, `http.response.status_code` + `gen_ai.response.status_code`, `hermes.retry.count`, `hermes.max_retries`, `hermes.retryable`, `llm.response.duration_ms`
 - **Span event:** `exception` (`exception.type`, `exception.message`, `exception.escaped`)
-- **Metrics:** `hermes.api.error.count{error_type, status_class, retryable}` counter; `hermes.retry.count` counter (incremented once per *retryable* failure)
+- **Metrics:** `hermes.api.error.count{error_type, status_class, retryable, model, provider}` counter; `hermes.retry.count{model, provider}` counter (once per *retryable* failure); `gen_ai.client.operation.duration` with `error.type`
 - **Side effect:** records the `error.type` on the session aggregator so `on_session_end` can stamp it on the turn's root span
 
 Only API-level failures become `ERROR`. Tool timeout/blocked outcomes deliberately stay `OK` (see [Limitations](/reference/limitations)) so they don't inflate error rates.
@@ -89,7 +89,7 @@ Fires when the turn is fully complete (assistant has returned its final response
 
 - **Span op:** closes the `session.*` span
 - **Attributes set on end:** the full [turn summary](/architecture/turn-summary) — `hermes.turn.tool_count`, `hermes.turn.tools`, `hermes.turn.tool_targets`, `hermes.turn.tool_commands`, `hermes.turn.tool_outcomes`, `hermes.turn.skill_count`, `hermes.turn.skills`, `hermes.turn.api_call_count`, `hermes.turn.final_status`
-- **Metrics:** `hermes.sessions{kind, final_status}` counter
+- **Metrics:** `hermes.session.count{platform}` counter (on start); `gen_ai.agent.token.usage` per-turn rollup (on end)
 - **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
 
 ### `subagent_start`
@@ -130,7 +130,7 @@ Fires when the human answers (or the prompt times out).
 - **Span op:** closes the `approval.{pattern_key}` span
 - **Attributes set on end:** `hermes.approval.choice` (`once`/`session`/`always`/`deny`/`timeout`), `hermes.approval.granted`, `hermes.approval.timed_out`, `hermes.approval.duration_ms`
 - **Span status:** always `OK` — a denial or timeout is a legitimate human decision, not an error
-- **Metrics:** `hermes.approval.count{choice, pattern_key}` counter, `hermes.approval.duration{choice, pattern_key}` histogram
+- **Metrics:** `hermes.approval.count{choice}` counter, `hermes.approval.duration{choice}` histogram
 
 ## Hook → span mapping
 

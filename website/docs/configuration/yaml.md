@@ -111,7 +111,7 @@ See [OTel logs](/configuration/logs) for the full story, including the loop-avoi
 emit_genai_metrics: true
 ```
 
-See [Span & metric reference](/reference/span-attributes#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
+See the [Metrics reference](/reference/metrics#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
 
 ## Skills
 
