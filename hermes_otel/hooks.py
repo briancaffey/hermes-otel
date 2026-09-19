@@ -1190,13 +1190,16 @@ def on_post_approval_response(
     pk = truncate_string(pattern_key, 200) or "command"
     key = _approval_span_key(session_id, tool_call_id, pk)
 
-    verdict = classify_approval_choice(choice)
+    verdict = classify_approval_choice(choice, kwargs.get("decided_by"))
     attributes: Dict[str, Any] = {
         "hermes.approval.granted": verdict["granted"],
         "hermes.approval.timed_out": verdict["timed_out"],
     }
     if verdict["choice"]:
         attributes["hermes.approval.choice"] = verdict["choice"]
+    if verdict["decided_by"]:
+        # Provenance: human answer vs. smart-guardian (aux LLM) verdict.
+        attributes["hermes.approval.decided_by"] = verdict["decided_by"]
 
     start = tracer.spans.pop_approval_start(key)
     duration_ms = None

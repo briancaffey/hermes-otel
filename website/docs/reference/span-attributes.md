@@ -173,6 +173,17 @@ Span kind: `AGENT` (OpenInference). One per delegated child agent; nests under t
 
 The delegated child's own `agent` root additionally carries `hermes.session.is_subagent=true`, `hermes.subagent.parent_session_id`, and `hermes.subagent.role`.
 
+### `approval.*` span
+
+| Attribute | Convention | Type | Notes |
+|---|---|---|---|
+| `hermes.approval.pattern_key` | hermes | string | Approval rule that gated the command |
+| `hermes.approval.granted` | hermes | bool | `true` for `once` / `session` / `always` / `smart_approve` |
+| `hermes.approval.timed_out` | hermes | bool | `true` when the prompt timed out |
+| `hermes.approval.choice` | hermes | string | `once` · `session` · `always` · `deny` · `timeout` · `smart_approve` · `smart_deny` |
+| `hermes.approval.decided_by` | hermes | string | Who decided an approval: `aux_llm` for smart-guardian verdicts (`smart_approve` / `smart_deny`), empty for a human answer |
+| `hermes.approval.duration_ms` | hermes | float | Human / guardian decision wait time |
+
 ## Metrics (separate from spans)
 
 Emitted via `PeriodicExportingMetricReader` on backends that support OTLP metrics:
