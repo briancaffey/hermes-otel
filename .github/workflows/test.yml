@@ -14,6 +14,8 @@ jobs:
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
         with:
           enable-cache: true
+      - name: Lockfile is up to date
+        run: uv lock --check
       - name: Ruff check
         run: uv run --extra dev ruff check .
       - name: Black format check
@@ -38,7 +40,9 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        python-version: ["3.11", "3.13"]
+        # 3.9 is the declared floor (requires-python); 3.13 the newest. The
+        # full suite passes on 3.9, 3.10, 3.11 and 3.13 locally.
+        python-version: ["3.9", "3.11", "3.13"]
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
       - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
@@ -49,8 +53,10 @@ jobs:
           python-version: ${{ matrix.python-version }}
 
       - name: Run unit and integration tests with coverage
+        # --python pins uv to the matrix interpreter (otherwise it may pick a
+        # managed one and silently test a different version).
         run: >
-          uv run --extra dev pytest
+          uv run --python ${{ matrix.python-version }} --extra dev pytest
           --tb=short -q
           --cov=hermes_otel
           --cov-report=term
@@ -81,3 +87,36 @@ jobs:
         run: cd dashboard-ui && npm ci && npm run build
       - name: Fail on a stale bundle
         run: git diff --exit-code -- hermes_otel/dashboard/dist
+
+  website-build:
+    # deploy-site.yml only builds on push to main; catch a broken docs build
+    # (or a broken link — onBrokenLinks: throw) on the PR instead (#103).
+    name: Docs site builds
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4.4.0
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+      - name: Build
+        run: cd website && npm ci && npm run build
+
+  package:
+    # The setuptools metadata (package-data globs, entry point) is otherwise
+    # never exercised; build the wheel and check the artifact files are in it.
+    name: Wheel builds and contains the plugin files
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+      - name: Build
+        run: uv build
+      - name: Check wheel contents
+        run: |
+          set -e
+          listing=$(unzip -l dist/*.whl)
+          for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks.py; do
+            echo "$listing" | grep -q "$f" || { echo "missing from wheel: $f"; exit 1; }
+          done
