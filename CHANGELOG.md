@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.4.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.1...hermes-otel-v1.4.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* **approvals:** count smart-guardian approvals as grants; export decided_by ([#107](https://github.com/briancaffey/hermes-otel/issues/107)) ([c59bbd4](https://github.com/briancaffey/hermes-otel/commit/c59bbd46fea16fe8ee7ce25648f2682b80d595ee))
+* **hooks:** explicit result status beats a coarse hook error for governance blocks ([#108](https://github.com/briancaffey/hermes-otel/issues/108)) ([a5f896f](https://github.com/briancaffey/hermes-otel/commit/a5f896fb24b885ad6a78bf9552fcffe710e7752f)), closes [#106](https://github.com/briancaffey/hermes-otel/issues/106)
+* **hooks:** preserve lifecycle timeout outcomes ([#86](https://github.com/briancaffey/hermes-otel/issues/86)) ([2b0e278](https://github.com/briancaffey/hermes-otel/commit/2b0e2786f43be6aead1d3760f2f6e35d98ad9fc2))
+
 ## [1.4.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.4.0...hermes-otel-v1.4.1) (2026-09-17)
 
 
