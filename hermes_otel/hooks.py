@@ -567,15 +567,20 @@ def _correlation_attributes(
     session_key = str(session_id) if session_id else ""
     correlation_id = incoming
 
+    # Read-only: this helper runs on every hook, including ones that name
+    # sessions that never start a span here (a delegation's parent id, an API
+    # error), so it must not create aggregators — that leaked a PerSession per
+    # id for the process lifetime (#105). ``_start_session_span`` is the one
+    # writer of ``correlation_id``.
     if session_key:
-        ps = tracer.sessions.get_or_create(session_key)
+        ps = tracer.sessions.peek(session_key)
         if incoming:
-            ps.correlation_id = incoming
-        elif ps.correlation_id:
+            if ps is not None:
+                ps.correlation_id = incoming
+        elif ps is not None and ps.correlation_id:
             correlation_id = ps.correlation_id
         else:
             correlation_id = session_text
-            ps.correlation_id = correlation_id
 
     if not correlation_id:
         return {}
@@ -665,6 +670,14 @@ def _start_session_span(
     span_name = "agent" if kind != "cron" else "cron"
     key = f"session:{session_id}"
 
+    # The root span is where a session's aggregator is born; pin the
+    # correlation id here so every later span in the turn reuses it.
+    ps = tracer.sessions.get_or_create(session_id)
+    if not ps.correlation_id:
+        ps.correlation_id = _extract_correlation_id(extra_kwargs) or truncate_string(
+            session_id, 200
+        )
+
     attributes = {
         "session.id": truncate_string(session_id, 200),
         "session_id": truncate_string(session_id, 200),
@@ -692,7 +705,7 @@ def _start_session_span(
     # has the SpanContext → attach a link instead (best-effort correlation).
     parent_override = None
     links = None
-    record = tracer._subagent_registry.get(session_id)
+    record = tracer.spans.get_subagent(session_id)
     if record:
         attributes["hermes.session.is_subagent"] = True
         if record.get("role"):
@@ -1360,7 +1373,7 @@ def on_pre_llm_call(
     # here with no active session span → llm.* would become the trace
     # root. Synthesize one so every turn is rooted under agent/cron.
     session_key = f"session:{session_id}"
-    if session_id and session_key not in tracer.spans._active_spans:
+    if session_id and not tracer.spans.has_span(session_key):
         _start_session_span(
             session_id,
             model,
@@ -1817,7 +1830,9 @@ def on_api_request_error(
 
     # Remember why this turn failed so on_session_end can surface it on the root.
     if session_id and error_type:
-        tracer.sessions.get_or_create(session_id).last_error_type = error_type
+        ps = tracer.sessions.peek(session_id)
+        if ps is not None:
+            ps.last_error_type = error_type
 
     key = f"api:{task_id}" if task_id else None
     span = tracer.spans.get_span(key) if key else None
@@ -1967,7 +1982,7 @@ def on_subagent_start(
     # Nest under the parent session's in-flight span (api/llm/session). The
     # delegation span is NOT pushed as a parent — the parent session keeps
     # working on its own stack; this span is a side branch that the child
-    # rejoins via _subagent_registry.
+    # rejoins via the tracker's sub-agent registry.
     span = tracer.start_span(
         name=span_name,
         key=key,
@@ -1986,7 +2001,7 @@ def on_subagent_start(
             record["context"] = span.get_span_context()
         except Exception:
             record["context"] = None
-    tracer._subagent_registry[str(child_session_id)] = record
+    tracer.spans.register_subagent(child_session_id, record)
     debug_log(f"  subagent span started: key={key}, name={span_name}")
 
 
@@ -2014,7 +2029,7 @@ def on_subagent_stop(
         debug_log("  subagent_stop: no child_session_id, skipping")
         return
 
-    record = tracer._subagent_registry.pop(str(child_session_id), None)
+    record = tracer.spans.pop_subagent(child_session_id)
     role = (record.get("role") if record else None) or (
         truncate_string(child_role, 200) if child_role else "subagent"
     )

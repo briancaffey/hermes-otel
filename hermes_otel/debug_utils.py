@@ -3,8 +3,10 @@
 Two flavours of output:
 
 * :func:`debug_log` — opt-in via ``HERMES_OTEL_DEBUG=true``. Writes
-  verbose per-span lines to ``~/.hermes/plugins/hermes_otel/debug.log``
-  so they never pollute Hermes' stdout.
+  verbose per-span lines to ``$HERMES_HOME/plugins/hermes_otel/debug.log``
+  (``~/.hermes`` when ``HERMES_HOME`` is unset) so they never pollute
+  Hermes' stdout. The file is opened once, line-buffered, on the first
+  line written.
 
 * The ``hermes_otel`` logger — stock :mod:`logging` for user-visible
   startup / warning / error messages. As a library, we add a
@@ -20,14 +22,18 @@ from __future__ import annotations
 import logging
 import os
 import sys
+import threading
+from typing import Optional, TextIO
 
-_DEBUG_LOG = os.path.expanduser("~/.hermes/plugins/hermes_otel/debug.log")
 _DEBUG_ENABLED = os.getenv("HERMES_OTEL_DEBUG", "").strip().lower() in {
     "1",
     "true",
     "yes",
     "on",
 }
+
+_debug_file: Optional[TextIO] = None
+_debug_lock = threading.Lock()
 
 
 # Module-level logger shared across the plugin. Named "hermes_otel" (not
@@ -37,15 +43,38 @@ logger = logging.getLogger("hermes_otel")
 logger.addHandler(logging.NullHandler())
 
 
+def debug_log_path() -> str:
+    """Where :func:`debug_log` writes: ``$HERMES_HOME/plugins/hermes_otel/debug.log``."""
+    home = os.environ.get("HERMES_HOME", "").strip() or "~/.hermes"
+    return os.path.join(os.path.expanduser(home), "plugins", "hermes_otel", "debug.log")
+
+
 def debug_log(msg: str) -> None:
-    """Write a debug line if debug logging is enabled."""
+    """Write a debug line if debug logging is enabled. Never raises."""
     if not _DEBUG_ENABLED:
         return
+    global _debug_file
     try:
-        with open(_DEBUG_LOG, "a", encoding="utf-8") as f:
-            f.write(f"{msg}\n")
+        with _debug_lock:
+            if _debug_file is None:
+                path = debug_log_path()
+                os.makedirs(os.path.dirname(path), exist_ok=True)
+                _debug_file = open(path, "a", encoding="utf-8", buffering=1)
+            _debug_file.write(f"{msg}\n")
     except Exception:
         pass
+
+
+def close_debug_log() -> None:
+    """Close the debug log file (tracer shutdown); the next line reopens it."""
+    global _debug_file
+    with _debug_lock:
+        f, _debug_file = _debug_file, None
+    if f is not None:
+        try:
+            f.close()
+        except Exception:
+            pass
 
 
 def configure_default_handler() -> None:

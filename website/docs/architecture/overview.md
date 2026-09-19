@@ -107,7 +107,7 @@ Every path below is relative to `hermes_otel/` — the package directory that `h
 | `session_state.py` | Per-session aggregation for turn summary |
 | `plugin_config.py` | Config file + env-var parsing with precedence |
 | `helpers.py` | `_safe_str`, `_to_int`, `_detect_session_kind`, preview clipping |
-| `debug_utils.py` | Optional debug log to `~/.hermes/plugins/hermes_otel/debug.log` |
+| `debug_utils.py` | Optional debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log` |
 | `langsmith_backend.py` | LangSmith-specific translation (not OTLP) |
 
 ## Next

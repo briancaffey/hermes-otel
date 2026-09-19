@@ -13,9 +13,9 @@ Two parent stacks run in parallel:
   threads / async tasks; a :class:`~contextvars.ContextVar` alone cannot
   carry the session span from ``on_session_start`` into subsequent hooks
   when those hooks fire on different workers. The session-keyed stack is
-  shared state (Python's GIL makes ``dict`` / ``list`` ops atomic), so
-  any hook with a ``session_id`` can recover the current parent no
-  matter which thread runs it.
+  shared state guarded by one re-entrant lock: every mutation here is a
+  multi-step read-modify-write (``setdefault(...).append``, pop-then-drop
+  when empty), which the GIL does *not* make atomic.
 
 * ``_PARENT_STACK`` ContextVar — fallback for hooks that fire without
   a ``session_id`` (e.g. synthetic test calls) and for keeping nesting
@@ -25,16 +25,22 @@ Two parent stacks run in parallel:
 
 :meth:`SpanTracker.get_current_parent` prefers the session-keyed stack
 and falls back to the ContextVar.
+
+Span keys are namespaced strings: ``session:<session_id>``,
+``llm:<session_id>``, ``api:<task_id>``, ``<tool_name>:<task_id>``,
+``approval:<session_id>:<tool_call_id>``, ``skill:<session_id>:<name>``
+and ``subagent:<child_session_id>``.
 """
 
 from __future__ import annotations
 
 import contextvars
+import threading
 from typing import Any, Dict, Optional
 
-# Imported lazily — SpanTracker's end_span() only needs these when a
-# real span is being closed, but importing here keeps the module
-# self-contained and fails fast if OTel is missing.
+# Imported at module load on purpose: SpanTracker.end_span() needs Status /
+# StatusCode, and the plugin is unusable without the OTel API anyway, so
+# failing fast here beats a NameError on the first closed span.
 try:
     from opentelemetry.trace import Status, StatusCode
 
@@ -57,10 +63,16 @@ _PARENT_STACK: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
 
 
 class SpanTracker:
-    """Active-span registry + parent-span stack. See module docstring."""
+    """Active-span registry + parent-span stack. See module docstring.
+
+    Every method that touches the shared dicts takes ``self._lock`` (a
+    re-entrant lock, so ``end_all`` can call ``end_span``). The ContextVar
+    stack is per-context and needs no lock.
+    """
 
     def __init__(self):
-        # key = f"{tool_name}:{task_id}" or f"llm:{session_id}" or f"session:{session_id}"
+        self._lock = threading.RLock()
+        # See the module docstring for the key namespaces.
         self._active_spans: Dict[str, Any] = {}
         # session_id -> [parent, ...]. Lives in plain memory so every
         # thread / task that handles a hook for this session sees the
@@ -75,6 +87,14 @@ class SpanTracker:
         # compute the human-wait duration. Flat (not per-session) — keys are
         # already namespaced by session_id + tool_call_id.
         self._approval_starts: Dict[str, float] = {}
+        # Sub-agent delegation registry: delegated child's session_id -> record
+        # about the delegation span opened in the parent on ``subagent_start``
+        # (``{"span", "context", "role", "parent_session_id"}``), so the child's
+        # own root span can rejoin the parent trace on ``on_session_start``.
+        # Process-local: in-process delegation parents the child root directly
+        # under the delegation span (one connected trace); cross-process
+        # delegation degrades to attribute-only correlation.
+        self._subagent_registry: Dict[str, Dict[str, Any]] = {}
 
     def _parent_stack(self) -> list:
         """Return this context's parent span stack, creating it if needed."""
@@ -84,9 +104,37 @@ class SpanTracker:
             _PARENT_STACK.set(stack)
         return stack
 
+    # ── Active spans ─────────────────────────────────────────────────────
+
     def start_span(self, key: str, span) -> None:
         """Store an active span by key."""
-        self._active_spans[key] = span
+        with self._lock:
+            self._active_spans[key] = span
+
+    def get_span(self, key: str):
+        """Get an active span by key."""
+        with self._lock:
+            return self._active_spans.get(key)
+
+    def has_span(self, key: str) -> bool:
+        """True when a span is tracked under ``key``."""
+        with self._lock:
+            return key in self._active_spans
+
+    def discard(self, key: str):
+        """Forget a tracked span without ending it; returns it (or None).
+
+        Used for LangSmith runs, which are plain dicts the tracer closes over
+        HTTP itself rather than via ``span.end()``.
+        """
+        with self._lock:
+            return self._active_spans.pop(key, None)
+
+    def active_count(self) -> int:
+        with self._lock:
+            return len(self._active_spans)
+
+    # ── Parent stacks ────────────────────────────────────────────────────
 
     def push_parent(self, span, session_id: Optional[str] = None) -> None:
         """Mark ``span`` as the current parent.
@@ -97,7 +145,8 @@ class SpanTracker:
         """
         self._parent_stack().append(span)
         if session_id:
-            self._session_parent_stacks.setdefault(session_id, []).append(span)
+            with self._lock:
+                self._session_parent_stacks.setdefault(session_id, []).append(span)
 
     def pop_parent(self, session_id: Optional[str] = None) -> None:
         """Remove the current parent span.
@@ -110,11 +159,12 @@ class SpanTracker:
         if stack:
             stack.pop()
         if session_id:
-            s = self._session_parent_stacks.get(session_id)
-            if s:
-                s.pop()
-                if not s:
-                    self._session_parent_stacks.pop(session_id, None)
+            with self._lock:
+                s = self._session_parent_stacks.get(session_id)
+                if s:
+                    s.pop()
+                    if not s:
+                        self._session_parent_stacks.pop(session_id, None)
 
     def get_session_root(self, session_id: Optional[str] = None):
         """Return the session's *root* span (bottom of the stack), or None.
@@ -124,30 +174,11 @@ class SpanTracker:
         whole turn.
         """
         if session_id:
-            s = self._session_parent_stacks.get(session_id)
-            if s:
-                return s[0]
+            with self._lock:
+                s = self._session_parent_stacks.get(session_id)
+                if s:
+                    return s[0]
         return None
-
-    def has_skill_span(self, session_id: str, skill: str) -> bool:
-        """True when a skill span for ``skill`` is already open this session."""
-        return skill in self._session_skill_spans.get(session_id, {})
-
-    def register_skill_span(self, session_id: str, skill: str, key: str) -> None:
-        """Track an open skill span so it can be closed at the turn boundary."""
-        self._session_skill_spans.setdefault(session_id, {})[skill] = key
-
-    def pop_skill_spans(self, session_id: str) -> Dict[str, str]:
-        """Return and clear all open skill spans for a session (skill -> key)."""
-        return self._session_skill_spans.pop(session_id, {})
-
-    def record_approval_start(self, key: str, started_at: float) -> None:
-        """Stash the start time of an approval wait, keyed by span key."""
-        self._approval_starts[key] = started_at
-
-    def pop_approval_start(self, key: str) -> Optional[float]:
-        """Return and remove an approval's start time, or None if unknown."""
-        return self._approval_starts.pop(key, None)
 
     def get_current_parent(self, session_id: Optional[str] = None):
         """Return the current parent span, or None.
@@ -157,11 +188,83 @@ class SpanTracker:
         the ``session_id``.
         """
         if session_id:
-            s = self._session_parent_stacks.get(session_id)
-            if s:
-                return s[-1]
+            with self._lock:
+                s = self._session_parent_stacks.get(session_id)
+                if s:
+                    return s[-1]
         stack = self._parent_stack()
         return stack[-1] if stack else None
+
+    def drop_session(self, session_id: str) -> None:
+        """Forget every per-session record for ``session_id``.
+
+        Used by the orphan sweep: the session's parent stack, open skill
+        spans and delegation record are dropped so later hooks rebuild state
+        from scratch. The calling context's ContextVar stack is only pruned
+        of *that session's* spans (matched by identity); whatever the caller's
+        own session pushed there stays, because the sweep usually runs from a
+        different, live session's hook.
+        """
+        with self._lock:
+            dropped = self._session_parent_stacks.pop(session_id, None) or []
+            self._session_skill_spans.pop(session_id, None)
+            self._subagent_registry.pop(session_id, None)
+        if dropped:
+            stack = _PARENT_STACK.get()
+            if stack:
+                stack[:] = [sp for sp in stack if not any(sp is d for d in dropped)]
+
+    # ── Skill spans ──────────────────────────────────────────────────────
+
+    def has_skill_span(self, session_id: str, skill: str) -> bool:
+        """True when a skill span for ``skill`` is already open this session."""
+        with self._lock:
+            return skill in self._session_skill_spans.get(session_id, {})
+
+    def register_skill_span(self, session_id: str, skill: str, key: str) -> None:
+        """Track an open skill span so it can be closed at the turn boundary."""
+        with self._lock:
+            self._session_skill_spans.setdefault(session_id, {})[skill] = key
+
+    def pop_skill_spans(self, session_id: str) -> Dict[str, str]:
+        """Return and clear all open skill spans for a session (skill -> key)."""
+        with self._lock:
+            return self._session_skill_spans.pop(session_id, {})
+
+    # ── Approval waits ───────────────────────────────────────────────────
+
+    def record_approval_start(self, key: str, started_at: float) -> None:
+        """Stash the start time of an approval wait, keyed by span key."""
+        with self._lock:
+            self._approval_starts[key] = started_at
+
+    def pop_approval_start(self, key: str) -> Optional[float]:
+        """Return and remove an approval's start time, or None if unknown."""
+        with self._lock:
+            return self._approval_starts.pop(key, None)
+
+    # ── Sub-agent delegation ─────────────────────────────────────────────
+
+    def register_subagent(self, child_session_id: str, record: Dict[str, Any]) -> None:
+        """Remember the delegation span opened for ``child_session_id``."""
+        with self._lock:
+            self._subagent_registry[str(child_session_id)] = record
+
+    def get_subagent(self, child_session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """The delegation record for a child session, or None."""
+        if not child_session_id:
+            return None
+        with self._lock:
+            return self._subagent_registry.get(str(child_session_id))
+
+    def pop_subagent(self, child_session_id: Optional[str]) -> Optional[Dict[str, Any]]:
+        """Remove and return the delegation record, or None."""
+        if not child_session_id:
+            return None
+        with self._lock:
+            return self._subagent_registry.pop(str(child_session_id), None)
+
+    # ── Ending spans ─────────────────────────────────────────────────────
 
     def end_span(
         self,
@@ -178,7 +281,8 @@ class SpanTracker:
             status: ``"ok"`` or ``"error"``. ``None`` skips status-setting.
             error_message: Description attached when ``status == "error"``.
         """
-        span = self._active_spans.pop(key, None)
+        with self._lock:
+            span = self._active_spans.pop(key, None)
         if not span:
             return
 
@@ -194,22 +298,24 @@ class SpanTracker:
 
         span.end()
 
-    def get_span(self, key: str):
-        """Get an active span by key."""
-        return self._active_spans.get(key)
-
     def end_all(self) -> None:
-        """End all remaining spans (cleanup).
+        """End every tracked span and drop all shared state (cleanup).
 
-        Only clears this context's parent stack — other tasks / threads
-        are untouched.
+        Clears the session-keyed stacks, skill spans, approval starts and the
+        delegation registry, plus *this* context's ContextVar stack. Other
+        contexts' ContextVar stacks are unreachable from here and are left
+        as they are.
         """
-        for key in list(self._active_spans.keys()):
+        with self._lock:
+            keys = list(self._active_spans.keys())
+        for key in keys:
             self.end_span(key)
-        self._active_spans.clear()
-        self._session_parent_stacks.clear()
-        self._session_skill_spans.clear()
-        self._approval_starts.clear()
+        with self._lock:
+            self._active_spans.clear()
+            self._session_parent_stacks.clear()
+            self._session_skill_spans.clear()
+            self._approval_starts.clear()
+            self._subagent_registry.clear()
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()

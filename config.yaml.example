@@ -39,7 +39,7 @@
 #   team: platform
 
 # Extra HTTP headers added to every OTLP exporter call across ALL backends.
-# Per-backend headers (under `backends:` below) are merged on top.
+# Per-backend headers (under `backends:` below) are merged on top and win on conflict.
 # headers:
 #   X-Company-Auth: shared-secret
 
