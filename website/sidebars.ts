@@ -86,6 +86,7 @@ const sidebars: SidebarsConfig = {
         'reference/env-vars',
         'reference/config-schema',
         'reference/span-attributes',
+        'reference/metrics',
         'reference/hooks',
         'reference/limitations',
       ],
