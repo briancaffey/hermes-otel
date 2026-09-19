@@ -22,7 +22,7 @@ Pick one and export it before starting Hermes:
 | Backend | Environment |
 |---|---|
 | Phoenix | `OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces` |
-| Grafana LGTM | `OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318/v1/traces` |
+| Grafana LGTM / any OTLP collector | no env-var mode — add `backends: [{type: lgtm, endpoint: http://localhost:4318/v1/traces, metrics: true}]` to `$HERMES_HOME/hermes_otel.yaml` |
 | Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` |
 | LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |
 

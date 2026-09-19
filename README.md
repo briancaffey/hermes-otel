@@ -637,7 +637,7 @@ See [docs: MCP trace propagation](website/docs/configuration/mcp-trace-propagati
 
 ## Roadmap: additional backends
 
-This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work today with no code changes — just point `OTEL_EXPORTER_OTLP_ENDPOINT` at it. The list below tracks backends I plan to formally test, add a `docker-compose/` file for, and (where applicable) cover with a smoke test.
+This plugin speaks plain OTLP/HTTP, so any OTLP-compatible backend should work today with no code changes — add it as `type: otlp` under `backends:` in `~/.hermes/hermes_otel.yaml`. The list below tracks backends I plan to formally test, add a `docker-compose/` file for, and (where applicable) cover with a smoke test.
 
 **Status legend:** ✅ supported & tested · 🟡 should work, not yet tested/documented · 🔲 planned
 

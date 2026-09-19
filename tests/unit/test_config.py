@@ -493,7 +493,7 @@ class TestBackendsYaml:
 
 
 class TestMissingPyYaml:
-    def test_missing_pyyaml_silent_fallback(self, tmp_path, monkeypatch, caplog):
+    def test_missing_pyyaml_warns_and_falls_back(self, tmp_path, monkeypatch, caplog):
         """When pyyaml isn't importable, loading a real yaml file is skipped silently."""
         path = tmp_path / "config.yaml"
         path.write_text("sample_rate: 0.5\n")
@@ -508,7 +508,7 @@ class TestMissingPyYaml:
             with caplog.at_level("WARNING", logger="hermes_otel"):
                 cfg = load_config(path=path)
             # Must NOT warn about missing pyyaml
-            assert "pyyaml" not in caplog.text.lower()
+            assert "pyyaml" in caplog.text.lower()
             assert cfg == HermesOtelConfig()
         finally:
             if original_yaml is not None:

@@ -6,38 +6,55 @@ description: "Complete config.yaml schema, field by field."
 
 # Config schema
 
-Complete schema for `~/.hermes/plugins/hermes_otel/config.yaml`. See [`config.yaml`](/configuration/yaml) for the narrative version.
+Complete schema for `~/.hermes/hermes_otel.yaml` (or a legacy `~/.hermes/plugins/hermes_otel/config.yaml`, or the file named by `HERMES_OTEL_CONFIG`). See [`config.yaml`](/configuration/yaml) for the narrative version.
+
+The field table below is generated from `HermesOtelConfig` by `scripts/gen_config_docs.py`; a test fails if it drifts.
 
 ## Top level
 
+[//]: # (generated:config-fields:start)
+
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | bool | `true` | Master kill switch |
-| `project_name` | string | *(unset)* | Overrides `OTEL_PROJECT_NAME` |
-| `sample_rate` | float \| null | `null` | Parent-based trace ID ratio (0.0–1.0); null = AlwaysOn |
-| `preview_max_chars` | int | `1200` | Cap on preview strings before truncation |
-| `capture_previews` | bool | `true` | false = suppress all input/output previews |
-| `capture_conversation_history` | bool | `false` | Attach full message JSON to llm.* spans |
-| `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
-| `capture_logs` | bool | `false` | Attach OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
-| `log_level` | string | `"INFO"` | Handler level: DEBUG / INFO / WARNING / ERROR / CRITICAL |
-| `log_attach_logger` | string \| null | `null` | Logger to attach to; null = root, "hermes_otel" = scope to plugin |
-| `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL in ms |
-| `flush_interval_ms` | int | `60000` | Metrics export cadence |
-| `force_flush_on_session_end` | bool | `true` | Sync flush every backend at end-of-turn |
-| `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend |
-| `span_batch_schedule_delay_ms` | int | `1000` | Worker wake-up cadence |
+| `enabled` | bool | `true` | Master kill switch; `false` unloads every hook |
+| `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling) |
+| `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed |
+| `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader) |
+| `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response) |
+| `capture_previews` | bool | `true` | `false` suppresses every input/output preview; metadata still recorded |
+| `tool_input_preview_max_chars` | int \| null | `null` | Per-category cap for tool args previews; `null` = `preview_max_chars` |
+| `tool_output_preview_max_chars` | int \| null | `null` | Per-category cap for tool result previews; `null` = `preview_max_chars` |
+| `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars` |
+| `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars` |
+| `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
+| `global_tags` | map | *(unset)* | Merged into the OTel Resource; overridden by `resource_attributes` on key conflict |
+| `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
+| `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
+| `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |
+| `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence |
 | `span_batch_max_export_batch_size` | int | `512` | Max spans per OTLP POST |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
-| `host_metrics` | bool | `false` | Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics + per-tool utilization attributes; see [Host & GPU metrics](/configuration/host-metrics) |
+| `force_flush_on_session_end` | bool | `true` | Synchronously flush every backend at the end of each turn |
+| `capture_conversation_history` | bool | `false` | Attach the full message JSON to `llm.*` spans |
+| `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
+| `capture_full_prompts` | bool | `false` | Full-fidelity prompt capture (`llm.input_messages`, `gen_ai.input.messages`); respects `capture_previews` |
+| `capture_full_responses` | bool | `false` | Full-fidelity response capture (`llm.output.content`, `gen_ai.output.messages`) |
+| `capture_sender_id` | bool | `false` | Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`) |
+| `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
+| `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
+| `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |
+| `emit_genai_metrics` | bool | `true` | Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`) |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
-| `discovery_prompt` | bool | `false` | Register a short system-prompt section advertising the bundled `hermes_otel:observability` skill (changes what the model sees every turn; opt-in) |
+| `discovery_prompt` | bool | `false` | Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in) |
+| `dashboard_live` | bool | `true` | Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode |
+| `dashboard_live_max_spans` | int | `1000` | Rows kept per kind (spans, metrics, logs) in the live store |
+| `host_metrics` | bool | `false` | Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics; see [Host & GPU metrics](/configuration/host-metrics) |
 | `host_metrics_gpu` | string | `"auto"` | `auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe |
-| `host_metrics_interval_ms` | int | `1000` | Sampling cadence (floor 50 ms) |
-| `global_tags` | map | `{}` | Merged into Resource; overridden by `resource_attributes` on key conflict |
-| `resource_attributes` | map | `{}` | Merged into Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (a per-process UUID, so two Hermes processes never share a metric series), `service.version` (plugin version) and `process.pid` |
-| `headers` | map | `{}` | Extra HTTP headers on every OTLP request |
-| `backends` | list | *(unset)* | Multi-backend fan-out; see below |
+| `host_metrics_interval_ms` | int | `1000` | Host sampling cadence (floor 50 ms) |
+| `suppress_mcp_ping_spans` | bool | `true` | Drop successful MCP keepalive `ping` spans before export |
+| `backends` | list | *(unset)* | Multi-backend fan-out list; see the `backends[]` section |
+
+[//]: # (generated:config-fields:end)
 
 When `backends:` is present and non-empty, single-backend env-var detection is skipped.
 
@@ -47,9 +64,9 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `langsmith`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave` |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
-| `endpoint` | string | Full OTLP endpoint URL (backend-specific defaults — see below) |
+| `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
 | `metrics` | bool | Override metrics-export default for this backend |
 | `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
@@ -61,7 +78,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | Default: `http://localhost:6006/v1/traces` |
+| `endpoint` | string | **Required.** e.g. `http://localhost:6006/v1/traces`. Traces only (Phoenix rejects `/v1/metrics`) |
 
 #### `langfuse`
 
@@ -90,13 +107,13 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | OTLP endpoint (default: `http://localhost:4318/v1/traces`). Auto-disables metrics. |
+| `endpoint` | string | **Required.** e.g. `http://localhost:4318/v1/traces`. Traces only (metrics/logs off) |
 
 #### `tempo`
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | OTLP endpoint. Auto-disables metrics. |
+| `endpoint` | string | **Required.** Traces only (metrics/logs off); use `type: lgtm` for the all-in-one Grafana container |
 
 #### `otlp`
 
@@ -119,6 +136,27 @@ Alias over `otlp` with a dedicated display name and all signals on by default. S
 | `logs` | bool | Default: `true` |
 
 Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` container — `tempo` is traces-only and would disable the logs/metrics fan-out.
+
+#### `uptrace`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** OTLP traces endpoint (self-host: `http://localhost:14318/v1/traces`). Also via `OTEL_UPTRACE_ENDPOINT` |
+| `dsn` | string | Uptrace DSN, sent as the `uptrace-dsn` header on every export (inline; discouraged) |
+| `dsn_env` | string | Env var name holding the DSN (falls back to `OTEL_UPTRACE_DSN` / `UPTRACE_DSN`) |
+
+All three signals on by default. See [Uptrace](/backends/uptrace).
+
+#### `openobserve`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** `http://<host>:5080/api/<org>/v1/traces`. Also via `OTEL_OPENOBSERVE_ENDPOINT` |
+| `user` / `user_env` | string | Basic-auth user (falls back to `OTEL_OPENOBSERVE_USER` / `OPENOBSERVE_USER`) |
+| `password` / `password_env` | string | Basic-auth password (falls back to `OTEL_OPENOBSERVE_PASSWORD` / `OPENOBSERVE_PASSWORD`) |
+| `stream_name` | string | Optional stream name (`OTEL_OPENOBSERVE_STREAM`) |
+
+All three signals on by default. See [OpenObserve](/backends/openobserve).
 
 #### `parseable`
 
@@ -184,8 +222,9 @@ For every field, precedence (highest → lowest) is:
 
 On startup the plugin validates the config and:
 
-- Logs a warning and falls back to the default for an invalid value
-- Logs a single warning and uses empty config if YAML parsing fails
-- Silently skips the YAML file if `pyyaml` isn't installed
+- Logs a warning naming the key and keeps the default for a value that cannot be parsed as the field's type (yaml or `HERMES_OTEL_*` env var)
+- Logs a single warning and uses an empty config if the YAML fails to parse
+- Logs a warning and ignores the file if it exists but `pyyaml` is not installed in the Hermes venv
+- Logs a warning and skips a `backends:` entry it cannot resolve (missing endpoint, unknown type)
 
-The plugin never crashes Hermes because of config — at worst, it disables itself with a clear log line.
+The plugin never crashes Hermes because of config — at worst it disables itself with a clear log line.
