@@ -11,13 +11,14 @@ routed through the tracer singleton so test reset is just
 
 from __future__ import annotations
 
+import functools
 import json
 import os
 import time
 from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, TypedDict
 
-from .debug_utils import debug_log
+from .debug_utils import debug_log, logger
 from .helpers import (
     classify_approval_choice,
     clip_preview,
@@ -145,6 +146,8 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
     not an additive bucket, so it is never folded into ``total_tokens``. Returns
     all canonical fields, zero-filled.
     """
+    if not isinstance(usage, dict):
+        usage = _as_dict(usage)
     completion = _to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
     prompt = _to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
     total = _to_int(usage.get("total_tokens", 0)) or (prompt + completion)
@@ -720,6 +723,70 @@ def _start_session_span(
     debug_log(f"  session span started: key={key}, name={span_name}, synthesized={synthesized}")
 
 
+_FAIL_OPEN_WARNED: set = set()
+
+
+def _fail_open(fn):
+    """Never let a telemetry handler raise into the agent loop.
+
+    Hermes catches handler exceptions, but a raise still aborts the handler
+    mid-way (spans left open, parent stacks unbalanced) and logs a warning per
+    call. Catch everything here, log once per (hook, exception type) at
+    WARNING and every occurrence to the debug log, and return None.
+    """
+
+    @functools.wraps(fn)
+    def wrapper(*args, **kwargs):
+        try:
+            return fn(*args, **kwargs)
+        except Exception as exc:  # noqa: BLE001 — fail open by design
+            key = (fn.__name__, type(exc).__name__)
+            debug_log(f"{fn.__name__} failed open: {exc!r}")
+            if key not in _FAIL_OPEN_WARNED:
+                _FAIL_OPEN_WARNED.add(key)
+                logger.warning(
+                    "[hermes-otel] %s raised %s: %s — telemetry for this call was dropped "
+                    "(further occurrences logged at DEBUG only)",
+                    fn.__name__,
+                    type(exc).__name__,
+                    exc,
+                )
+            return None
+
+    return wrapper
+
+
+def _as_dict(value: Any) -> Dict[str, Any]:
+    """Coerce a hook payload field to a dict, never raising.
+
+    Hermes documents ``usage`` / ``error`` as dicts, but SDK objects
+    (pydantic models, dataclasses, SimpleNamespace) and bare strings have been
+    seen. A dict passes through; objects expose ``model_dump`` / ``_asdict`` /
+    ``__dict__``; a non-empty string becomes ``{"message": value}``; anything
+    else is ``{}``.
+    """
+    if isinstance(value, dict):
+        return value
+    if value is None:
+        return {}
+    for attr in ("model_dump", "_asdict"):
+        method = getattr(value, attr, None)
+        if callable(method):
+            try:
+                out = method()
+                if isinstance(out, dict):
+                    return out
+            except Exception:
+                pass
+    if isinstance(value, str):
+        return {"message": value} if value.strip() else {}
+    d = getattr(value, "__dict__", None)
+    if isinstance(d, dict):
+        return dict(d)
+    return {}
+
+
+@_fail_open
 def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     """Start a top-level session span (or cron span) for the entire run."""
     tracer = get_tracer()
@@ -738,6 +805,7 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     )
 
 
+@_fail_open
 def on_session_end(
     session_id: str, completed: bool, interrupted: bool, model: str, platform: str, **kwargs
 ):
@@ -945,8 +1013,10 @@ def _tool_call_id(task_id: str, kwargs: dict) -> str:
     return str(kwargs.get("tool_call_id") or task_id)
 
 
+@_fail_open
 def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     """Start a tool span before the tool executes."""
+    tool_name = str(tool_name or "")
     debug_log(f"pre_tool_call fired: tool={tool_name}")
     tracer = get_tracer()
     debug_log(f"  tracer.is_enabled={tracer.is_enabled}")
@@ -966,7 +1036,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
     }
     preview = _preview(
-        json.dumps(args) if args else "{}",
+        _serialize_full(args) or "{}",
         tracer.config.tool_input_preview_max_chars or tracer.config.preview_max_chars,
     )
     if preview is not None:
@@ -1022,8 +1092,10 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     debug_log(f"  span created: key={key}")
 
 
+@_fail_open
 def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **kwargs):
     """End the tool span and record the result."""
+    tool_name = str(tool_name or "")
     debug_log(f"post_tool_call fired: tool={tool_name}")
     tracer = get_tracer()
     debug_log(f"  tracer.is_enabled={tracer.is_enabled}")
@@ -1058,8 +1130,11 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     else:
         try:
             result_json = json.loads(result) if isinstance(result, str) else {}
-        except (json.JSONDecodeError, TypeError):
+        except (json.JSONDecodeError, TypeError, ValueError):
             result_json = {}
+    if not isinstance(result_json, dict):
+        # A tool may legitimately return a JSON scalar or list ("42", [...]).
+        result_json = {}
 
     # Determine outcome taxonomy (see _resolve_tool_outcome for the rules).
     outcome = _resolve_tool_outcome(kwargs.get("status"), result_json)
@@ -1128,6 +1203,7 @@ def _approval_span_key(session_id: str, tool_call_id: Any, pattern_key: str) -> 
     return f"approval:{session_id}:{tool_call_id or pattern_key or 'cmd'}"
 
 
+@_fail_open
 def on_pre_approval_request(
     command: str = None,
     description: str = None,
@@ -1194,6 +1270,7 @@ def on_pre_approval_request(
     debug_log(f"  approval span opened: key={key}")
 
 
+@_fail_open
 def on_post_approval_response(
     command: str = None,
     description: str = None,
@@ -1243,6 +1320,7 @@ def on_post_approval_response(
     debug_log(f"  approval span ended: key={key}, choice={verdict['choice']}, dur={duration_ms}")
 
 
+@_fail_open
 def on_pre_llm_call(
     session_id: str,
     user_message: str,
@@ -1367,6 +1445,7 @@ def on_pre_llm_call(
     return None  # Don't inject context, just observe
 
 
+@_fail_open
 def on_post_llm_call(
     session_id: str,
     user_message: str,
@@ -1431,6 +1510,7 @@ def on_post_llm_call(
     debug_log("  LLM span ended: status=ok")
 
 
+@_fail_open
 def on_pre_api_request(
     task_id: str,
     session_id: str,
@@ -1518,6 +1598,7 @@ def on_pre_api_request(
     debug_log(f"  API span started: key={key}")
 
 
+@_fail_open
 def on_post_api_request(
     task_id: str,
     session_id: str,
@@ -1560,6 +1641,7 @@ def on_post_api_request(
 
     # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
     # See _usage_attributes for the full attribute list.
+    usage = _as_dict(usage)
     if usage:
         totals = _normalize_usage(usage)
         attributes.update(_usage_attributes(totals))
@@ -1658,6 +1740,7 @@ def on_post_api_request(
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
 
 
+@_fail_open
 def on_api_request_error(
     task_id: str = None,
     session_id: str = None,
@@ -1690,7 +1773,9 @@ def on_api_request_error(
 
     tracer.sweep_expired_turns()
 
-    error = error or {}
+    if isinstance(error, BaseException):
+        error = {"type": type(error).__name__, "message": str(error)}
+    error = _as_dict(error)
     error_type = truncate_string(error.get("type"), 200) if error.get("type") else ""
     error_message = truncate_string(error.get("message") or reason, 500)
     status_class = http_status_class(status_code)
@@ -1804,6 +1889,7 @@ def on_api_request_error(
     debug_log(f"  API error span ended: key={key}, error.type={error_type}, class={status_class}")
 
 
+@_fail_open
 def on_subagent_start(
     parent_session_id: str = None,
     child_session_id: str = None,
@@ -1892,6 +1978,7 @@ def on_subagent_start(
     debug_log(f"  subagent span started: key={key}, name={span_name}")
 
 
+@_fail_open
 def on_subagent_stop(
     parent_session_id: str = None,
     child_session_id: str = None,
@@ -2004,6 +2091,7 @@ def get_current_traceparent(session_id: Optional[str] = None) -> Optional[str]:
     return f"00-{ctx.trace_id:032x}-{ctx.span_id:016x}-{flags}"
 
 
+@_fail_open
 def on_mcp_request_headers(
     server_name: Optional[str] = None,
     tool_name: Optional[str] = None,
