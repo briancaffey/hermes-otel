@@ -6,7 +6,7 @@ description: "The Hermes lifecycle hooks this plugin subscribes to, and the span
 
 # Hooks reference
 
-hermes-otel subscribes to a set of Hermes lifecycle hooks. Six are "always available" on any Hermes version with plugin support. The rest are newer (the session hooks, the sub-agent delegation hooks, and `api_request_error`) and are registered conditionally — older Hermes builds simply register fewer.
+hermes-otel subscribes to a set of Hermes lifecycle hooks. Six (`pre_tool_call` … `post_api_request`) are "always available" on any Hermes version with plugin support. The rest — `api_request_error`, the session hooks, the sub-agent delegation hooks, the approval hooks — are registered conditionally, so older Hermes builds simply register fewer; the startup banner reports the count (13 on Hermes 0.21). `mcp_request_headers` is implemented but waits on an upstream hook (see below).
 
 ## Always available
 
@@ -79,15 +79,15 @@ Registered inside a `try:/except:` because older Hermes versions don't expose th
 
 Fires at the start of a user turn (CLI input, inbound message, cron wake-up).
 
-- **Span op:** `tracker.start("session.{kind}", parent=None)` — this becomes the root of the trace
-- **Attributes set on start:** `hermes.session.kind`, `hermes.session.id`, `session.id`, `user.id`, `openinference.project.name`
+- **Span op:** `tracker.start("agent")` (or `"cron"` for cron sessions), `parent=None` — this becomes the root of the trace
+- **Attributes set on start:** `hermes.session.kind`, `hermes.session_id`, `session.id`, `gen_ai.operation.name=invoke_agent`, `gen_ai.agent.name`, the Weave turn markers; `user.id` / `hermes.sender.id` with `capture_sender_id`. See [Span attributes](/reference/span-attributes#agent--cron-turn-root)
 - **Fallback if not available:** the `llm.*` span becomes the root; turn summary is attached there instead of on a dedicated session root
 
 ### `on_session_end`
 
 Fires when the turn is fully complete (assistant has returned its final response, interrupted, or timed out).
 
-- **Span op:** closes the `session.*` span
+- **Span op:** closes the `agent` / `cron` root span
 - **Attributes set on end:** the full [turn summary](/architecture/turn-summary) — `hermes.turn.tool_count`, `hermes.turn.tools`, `hermes.turn.tool_targets`, `hermes.turn.tool_commands`, `hermes.turn.tool_outcomes`, `hermes.turn.skill_count`, `hermes.turn.skills`, `hermes.turn.api_call_count`, `hermes.turn.final_status`
 - **Metrics:** `hermes.session.count{platform}` counter (on start); `gen_ai.agent.token.usage` per-turn rollup (on end)
 - **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
@@ -132,6 +132,10 @@ Fires when the human answers (or the prompt times out).
 - **Span status:** always `OK` — a denial or timeout is a legitimate human decision, not an error
 - **Metrics:** `hermes.approval.count{choice}` counter, `hermes.approval.duration{choice}` histogram
 
+### `mcp_request_headers` (pending upstream)
+
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "13 hooks" count. The plugin side is implemented: if a Hermes build ever exposes this hook, `register()` subscribes and returns the W3C `traceparent` / `tracestate` of the current span so an instrumented MCP server joins the trace — see [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+
 ## Hook → span mapping
 
 ```text
@@ -150,6 +154,7 @@ subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics
 on_session_end           close agent/cron        + turn summary + force-flush
+mcp_request_headers      (pending upstream; no span) would return traceparent/tracestate for the outbound MCP call
 ```
 
 ## Parallel tool calls

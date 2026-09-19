@@ -38,7 +38,7 @@ export OTEL_PHOENIX_ENDPOINT="https://app.phoenix.arize.com/v1/traces"
 ```
 
 ```yaml
-# ~/.hermes/plugins/hermes_otel/config.yaml
+# ~/.hermes/hermes_otel.yaml
 backends:
   - type: phoenix
     endpoint: https://app.phoenix.arize.com/v1/traces
@@ -50,7 +50,7 @@ backends:
 
 Phoenix is built around LLM-specific spans, so the UI understands the plugin's span types natively:
 
-- **`session.*` / `cron`** spans appear as top-level traces with the turn summary on them (tool count, skills, final status).
+- **`agent` / `cron`** root spans appear as top-level traces with the turn summary on them (tool count, skills, final status).
 - **`llm.*`** spans show the user message in the Input panel and the assistant response in the Output panel (pretty-printed JSON when [conversation capture](/configuration/conversation-capture) is on).
 - **`api.*`** spans carry the token counts (`llm.token_count.prompt`, `llm.token_count.completion`, `llm.token_count.total`), the `finish_reason`, and the HTTP duration.
 - **`tool.*`** spans show the arguments (Input) and the result (Output). Errors map to `StatusCode.ERROR` so the Phoenix error filter works.

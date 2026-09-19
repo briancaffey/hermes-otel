@@ -6,7 +6,7 @@ description: "Rolled-up turn-level attributes on the session root span so dashbo
 
 # Turn summary
 
-At `on_session_end`, the plugin enriches the `session.*` / `cron` root span with a summary of what happened during the turn. Everything a dashboard would otherwise have to JOIN across children to compute is precomputed and attached to the root:
+At `on_session_end`, the plugin enriches the `agent` / `cron` root span with a summary of what happened during the turn. Everything a dashboard would otherwise have to JOIN across children to compute is precomputed and attached to the root:
 
 | Attribute | Type | Meaning |
 |---|---|---|

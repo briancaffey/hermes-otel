@@ -16,32 +16,24 @@ hermes-otel is a [Hermes Agent](https://github.com/nousresearch/hermes-agent) pl
 hermes plugins install briancaffey/hermes-otel/hermes_otel
 ```
 
-This drops the plugin at `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. The OTel runtime still needs to be installed into the Hermes venv itself — that part is a one-liner:
+This drops the plugin at `~/.hermes/plugins/hermes_otel/` and Hermes auto-discovers it via `plugin.yaml`. The OTel runtime still needs to be installed into the Hermes venv itself (the plugin is imported into that process, and Hermes never installs plugin dependencies for you). The plugin ships a requirements file for exactly that:
 
 ```bash
-~/git/hermes-agent/venv/bin/pip install -e ~/.hermes/plugins/hermes_otel
+~/git/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
 ```
 
-Installing the plugin package in editable mode pulls in `opentelemetry-api`, `opentelemetry-sdk`, and `opentelemetry-exporter-otlp-proto-http` as real dependencies.
-
-:::tip
-Prefer the explicit path? The requirements are:
-
-```bash
-~/git/hermes-agent/venv/bin/pip install \
-  opentelemetry-api \
-  opentelemetry-sdk \
-  opentelemetry-exporter-otlp-proto-http
-```
-:::
+That installs `opentelemetry-api`, `opentelemetry-sdk` and `opentelemetry-exporter-otlp-proto-http`. (The installed directory is not a Python package, so `pip install -e` does not work on it.)
 
 ## 2. Start a local Phoenix
 
 Phoenix is the fastest backend to spin up — a single container.
 
+The Compose file lives in the repository, not in the installed plugin, so fetch it first:
+
 ```bash
-cd ~/.hermes/plugins/hermes_otel
-docker compose -f docker-compose/phoenix.yaml up -d
+mkdir -p ~/hermes-otel-backends && cd ~/hermes-otel-backends
+curl -fsSLO https://raw.githubusercontent.com/briancaffey/hermes-otel/main/docker-compose/phoenix.yaml
+docker compose -f phoenix.yaml up -d
 ```
 
 Phoenix is now listening at:
@@ -71,16 +63,19 @@ hermes
 The plugin prints a connection banner on startup:
 
 ```text
-[hermes-otel] ✓ Phoenix connected · endpoint=http://localhost:6006/v1/traces
-[hermes-otel] Registered 8 hooks
+[hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
+[hermes-otel] ✓ Live dashboard store active
+[hermes-otel] Registered 13 hooks
 ```
+
+(The hook count depends on the Hermes version; 13 on Hermes 0.21.)
 
 ## 5. See the trace
 
 Open http://localhost:6006 in a browser. Pick the `hermes-agent` project and you'll see a full span tree:
 
 ```text
-session.cli
+agent
 └── llm.claude-sonnet-4-6
     ├── api.claude-sonnet-4-6    prompt_tokens=312  completion_tokens=84
     │   └── tool.bash            args.command="ls -la ~"   outcome=completed
@@ -93,7 +88,7 @@ Each span carries:
 - Assistant response on `llm.*` as `output.value`
 - Tool arguments + result on `tool.*`
 - Token counts on `api.*`
-- Per-turn summary (tool count, tool names, final status) on `session.*`
+- Per-turn summary (tool count, tool names, final status) on the `agent` root
 
 ## What's next?
 

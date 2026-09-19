@@ -6,184 +6,198 @@ description: "Every attribute the plugin sets, by span type."
 
 # Span attribute reference
 
-Every attribute the plugin may set, grouped by span type. See [Attribute conventions](/architecture/attributes) for the narrative version of the dual-convention mapping.
+Every attribute the plugin may set, grouped by span type. See [Attribute conventions](/architecture/attributes) for the narrative version of the dual-convention mapping (OpenInference `llm.*` / `input.value` for Phoenix **and** OTel GenAI `gen_ai.*` for Langfuse, Weave and generic dashboards).
 
-Attributes marked **optional** are only set when the underlying data is available.
+Attributes marked **optional** are only set when the underlying data is available. Previews (`input.value`, `output.value`, `gen_ai.*.messages`, tool args/results) are gated by `capture_previews` and clipped to `preview_max_chars` (or the per-category cap); the `capture_full_*` flags add the untruncated fields noted below.
+
+A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an attribute this page does not list, or this page lists one the code never sets.
 
 ## Resource (on every span)
 
 | Attribute | Source |
 |---|---|
-| `service.name` | `OTEL_PROJECT_NAME` / `project_name` (fallback: `hermes-agent`) |
-| `service.version` | `hermes-otel` plugin version |
-| `otel.scope.name` | `hermes-otel` |
-| `openinference.project.name` | Same as `service.name` |
-| `wandb.entity` | W&B Weave routing (when configured) |
-| `wandb.project` | W&B Weave routing (when configured) |
-| `telemetry.sdk.*` | Set by OTel SDK |
-| *any* `resource_attributes.*` | From `config.yaml` |
-| *any* `global_tags.*` | From `config.yaml` (overridden by `resource_attributes` on key conflict) |
+| `service.name` | `hermes-agent` (fixed; override via `resource_attributes:`) |
+| `service.instance.id` | UUID generated once per process — keeps two Hermes processes on different metric series |
+| `service.version` | Plugin version, read from the shipped `plugin.yaml` |
+| `process.pid` | Process id |
+| `openinference.project.name` | `project_name` / `OTEL_PROJECT_NAME` (the Phoenix project); optional |
+| `host.name` | Hostname, only when `host_metrics: true` |
+| `wandb.entity`, `wandb.project` | W&B Weave routing (when configured) |
+| `telemetry.sdk.*` | Set by the OTel SDK |
+| *any* `resource_attributes.*` / `global_tags.*` | From the config file; `resource_attributes` wins on key conflict |
 
-## `session.*` / `cron`
+## Every span
 
-Set at **start**:
+| Attribute | Convention | Meaning |
+|---|---|---|
+| `openinference.span.kind` | OpenInference | `AGENT` (root, subagent) · `LLM` (`llm.*`, `api.*`) · `TOOL` (`tool.*`) · `CHAIN` (skill, approval) |
+| `hermes.turn.number` | hermes | 1-based index of the user prompt within the session (per process; `hermes -r` restarts at 1). On the root and on every `llm.*` / `api.*` / `tool.*` span of the turn |
+| `session.id` | OTel | Hermes session id, on the root and on `llm.*` / `api.*` / `subagent.*` |
+| `gen_ai.conversation.id` | gen_ai | Same id, gen_ai spelling, wherever `gen_ai.operation.name` is set |
+| `correlation.id` | hermes | Correlation id Hermes passes on the hook (optional) |
+| `user.id`, `hermes.sender.id` | OTel / hermes | Gateway sender identity — only with `capture_sender_id: true`. `user.id` is `platform:sender` |
+
+## `agent` / `cron` (turn root)
+
+The root span is named `agent`, or `cron` when the session kind is a cron job. Set at **start**:
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `hermes.session.kind` | hermes | string | `cli` · `telegram` · `discord` · `cron` · … |
+| `hermes.session_id` | hermes | string | Session id (pre-existing spelling; `session.id` is the standard one) |
+| `llm.model_name`, `llm.provider` | OpenInference | string | Model / platform the turn started with |
+| `gen_ai.request.model` | gen_ai | string | Model name |
+| `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
+| `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (Weave shows it as the agent) |
+| `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
+| `weave.agent.version` | Weave | string | Plugin version (optional) |
+| `hermes.session.synthesized` | hermes | bool | `true` when the root was created lazily because `on_session_start` never fired (optional) |
+| `hermes.cron.job_id` | hermes | string | Cron job id, `cron` roots only (optional) |
+| `hermes.session.is_subagent` | hermes | bool | `true` on a delegated child's own root (optional) |
+| `hermes.subagent.role`, `hermes.subagent.parent_session_id` | hermes | string | On a delegated child's root (optional) |
+
+Set at **end** (turn summary; empty/zero aggregators are omitted):
 
 | Attribute | Type | Meaning |
 |---|---|---|
-| `hermes.session.kind` | string | `cli` · `telegram` · `discord` · `cron` · ... |
-| `hermes.session.id` | string | Hermes session ID |
-| `session.id` | string | Standard OTel alias |
-| `gen_ai.operation.name` | string | `invoke_agent` |
-| `gen_ai.agent.name` | string | Agent name shown in Weave (`hermes-agent` by default) |
-| `gen_ai.conversation.id` | string | Session/conversation grouping ID |
-| `wandb.thread_id` | string | Weave thread grouping ID |
-| `wandb.is_turn` | bool | Marks the root span as a Weave conversation turn |
-| `weave.agent.version` | string | Plugin package version (optional) |
-| `user.id` | string | Hermes user ID (optional) |
-
-Set at **end** (turn summary):
-
-| Attribute | Type | Meaning |
-|---|---|---|
-| `hermes.turn.tool_count` | int | Distinct tool names invoked |
-| `hermes.turn.tools` | string | Sorted CSV of distinct tool names (≤500 chars) |
-| `hermes.turn.tool_targets` | string | `\|`-joined distinct file paths/URLs |
-| `hermes.turn.tool_commands` | string | `\|`-joined distinct shell commands |
-| `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcome statuses |
-| `hermes.turn.skill_count` | int | Distinct skills inferred |
-| `hermes.turn.skills` | string | Sorted CSV of distinct skill names |
+| `hermes.session.completed`, `hermes.session.interrupted` | bool | Hook payload flags |
+| `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` (also `timed_out` when the orphan sweep closes an abandoned turn) |
+| `hermes.turn.tool_count`, `hermes.turn.tools` | int / string | Distinct tool names (sorted CSV, ≤500 chars) |
+| `hermes.turn.tool_targets`, `hermes.turn.tool_commands` | string | `\|`-joined distinct paths/URLs and shell commands |
+| `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
+| `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
-| `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` · `timed_out` |
-| `hermes.turn.number` | int | 1-based index of the user prompt within the session |
-
-Empty/zero aggregators are omitted.
-
-`hermes.turn.number` is also set on every `llm.*`, `api.*` and `tool.*` span
-opened during the turn, so a backend can group or filter a session's spans by
-conversation turn without joining to the root. It is counted per process: a
-session resumed in a new process (`hermes -r`) restarts at 1.
+| `gen_ai.response.model` | string | Model at turn end |
+| `error.type` | string | Most recent provider error class this turn (optional) |
+| `input.value`, `output.value` | string | First user message / final assistant response of the turn (previews; optional) |
 
 ## `llm.*`
 
-Span kind: `LLM` (OpenInference).
+One per `run_conversation` call (span kind `LLM`).
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `llm.model_name` | OpenInference | string | Model name |
-| `llm.provider` | OpenInference | string | Provider (anthropic, openai, ...) |
-| `gen_ai.request.model` | gen_ai | string | Model name (Langfuse) |
-| `gen_ai.system` | gen_ai | string | Provider (Langfuse) |
-| `input.value` | OpenInference | string | User message OR full conversation JSON |
-| `input.mime_type` | OpenInference | string | `text/plain` OR `application/json` |
-| `output.value` | OpenInference | string | Final assistant response |
-| `output.mime_type` | OpenInference | string | `text/plain` |
-| `gen_ai.input.messages` | gen_ai | string (JSON) | Privacy-gated user message / conversation history for Weave |
-| `gen_ai.output.messages` | gen_ai | string (JSON) | Privacy-gated assistant response for Weave |
-| `gen_ai.content.prompt` | gen_ai | string | User message |
-| `gen_ai.content.completion` | gen_ai | string | Assistant response |
-| `hermes.conversation.message_count` | hermes | int | When conversation capture is on (optional) |
+| `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
+| `gen_ai.request.model` | gen_ai | string | Model name |
+| `gen_ai.operation.name` | gen_ai | string | `chat` |
+| `input.value`, `input.mime_type` | OpenInference | string | User message (`text/plain`) or, with `capture_conversation_history`, the conversation JSON (`application/json`) |
+| `gen_ai.input.messages` | gen_ai | string (JSON) | Same content in the gen_ai message shape |
+| `output.value`, `output.mime_type` | OpenInference | string | Final assistant response |
+| `gen_ai.output.messages` | gen_ai | string (JSON) | Same in the gen_ai shape |
+| `gen_ai.response.model` | gen_ai | string | Model at response time |
+| `hermes.conversation.message_count` | hermes | int | Message count when conversation capture is on (optional) |
 
 ## `api.*`
 
-Span kind: `LLM` (OpenInference).
+One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `gen_ai.request.model` | gen_ai | string | Model name |
-| `llm.model_name` | OpenInference | string | Model name |
-| `llm.provider` | OpenInference | string | Provider |
-| `llm.token_count.prompt` | OpenInference | int | Prompt tokens |
-| `llm.token_count.completion` | OpenInference | int | Completion tokens |
-| `llm.token_count.total` | OpenInference | int | Sum |
-| `llm.token_count.cache_read` | OpenInference | int | Cache read (optional) |
-| `llm.token_count.cache_write` | OpenInference | int | Cache write (optional) |
-| `llm.token_count.completion_details.reasoning` | OpenInference | int | Reasoning/thinking tokens — a subset of completion (optional) |
-| `gen_ai.usage.input_tokens` | gen_ai | int | Prompt tokens |
-| `gen_ai.usage.output_tokens` | gen_ai | int | Completion tokens |
-| `gen_ai.usage.cache_read_input_tokens` | gen_ai | int | Cache read (optional) |
-| `gen_ai.usage.cache_creation_input_tokens` | gen_ai | int | Cache write (optional) |
-| `gen_ai.usage.reasoning.output_tokens` | gen_ai | int | Reasoning/thinking tokens — a subset of output (optional) |
-| `llm.invocation_parameters` | OpenInference | string (JSON) | Request params |
-| `gen_ai.response.finish_reason` | gen_ai | string | `stop`, `tool_use`, `length`, etc. |
-| `http.duration_ms` | hermes | int | Wall-clock HTTP duration |
+| `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
+| `gen_ai.request.model`, `gen_ai.system`, `gen_ai.provider.name` | gen_ai | string | Model / provider (`gen_ai.system` is the legacy spelling Langfuse reads) |
+| `gen_ai.operation.name` | gen_ai | string | `chat` |
+| `llm.api_mode` | hermes | string | `chat_completions` · `anthropic_messages` · `codex_responses` · … |
+| `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
+| `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stream`, `gen_ai.request.reasoning.level`, `gen_ai.request.stop_sequences`, `gen_ai.request.choice.count` | gen_ai | mixed | Request parameters, each only when Hermes passes it (optional) |
+| `input.value`, `input.mime_type` | OpenInference | string | Request preview |
+| `llm.input_messages`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages — `capture_full_prompts: true` only |
+| `llm.system_prompt`, `gen_ai.system_instructions` | both | string | **Full** system prompt — `capture_full_prompts: true` only |
+
+Set at **end** (success):
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `llm.token_count.prompt`, `llm.token_count.completion`, `llm.token_count.total` | OpenInference | int | Whole prompt (incl. cache reads/writes), completion, sum |
+| `llm.token_count.prompt_details.cache_read`, `llm.token_count.prompt_details.cache_write` | OpenInference | int | Cache buckets (optional) |
+| `llm.token_count.completion_details.reasoning` | OpenInference | int | Reasoning tokens, a subset of completion (optional) |
+| `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.total_tokens` | gen_ai | int | Same three totals |
+| `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens` | gen_ai | int | Cache buckets, current spelling (optional) |
+| `gen_ai.usage.cache_read_input_tokens`, `gen_ai.usage.cache_creation_input_tokens` | gen_ai | int | Same values, pre-existing alias kept for older dashboards (optional) |
+| `gen_ai.usage.reasoning.output_tokens` | gen_ai | int | Reasoning tokens (optional) |
+| `gen_ai.response.model`, `gen_ai.response.id` | gen_ai | string | Response model / id (optional) |
+| `gen_ai.response.finish_reasons` | gen_ai | string[] | `["stop"]`, `["tool_use"]`, … |
+| `llm.response.finish_reason` | hermes | string | Same, scalar |
+| `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
+| `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
+| `output.value`, `output.mime_type` | OpenInference | string | Response preview |
+| `llm.output.content`, `llm.output.tool_calls`, `gen_ai.output.messages` | both | string (JSON) | **Full** response — `capture_full_responses: true` only |
 
 ### `api.*` on failure (`api_request_error`)
 
-When the request fails, the span ends with `StatusCode.ERROR`, an `exception`
-event (`exception.type` / `exception.message` / `exception.escaped`), and:
+When the request fails, the span ends with `StatusCode.ERROR`, an `exception` event (`exception.type` / `exception.message` / `exception.escaped`), and:
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
 | `error.type` | OTel | string | Error class reported by Hermes (e.g. `RateLimitError`) |
-| `http.response.status_code` | OTel | int | HTTP status (omitted for network errors) |
-| `gen_ai.response.status_code` | gen_ai | int | Same value, gen_ai spelling |
-| `hermes.retry.count` | hermes | int | Retries attempted so far for this request |
-| `hermes.max_retries` | hermes | int | Configured retry ceiling |
-| `hermes.retryable` | hermes | bool | Whether the error is retryable |
+| `http.response.status_code`, `gen_ai.response.status_code` | OTel / gen_ai | int | HTTP status (omitted for network errors) |
+| `hermes.retry.count`, `hermes.max_retries`, `hermes.retryable` | hermes | int / int / bool | Retry state for this request |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the failed attempt |
 
-The most recent `error.type` is also stamped on the turn's root `agent` span at
-`on_session_end`.
+The most recent `error.type` is also stamped on the turn's root span at `on_session_end`.
 
 ## `tool.*`
 
-Span kind: `TOOL` (OpenInference).
+One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so parallel calls never collide.
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `tool.name` | OpenInference | string | Tool name |
-| `input.value` | OpenInference | string | Tool args (JSON) |
-| `output.value` | OpenInference | string | Tool result |
+| `tool.name`, `gen_ai.tool.name` | both | string | Tool name |
+| `gen_ai.tool.call.id` | gen_ai | string | Hermes `tool_call_id` (falls back to `task_id` on older Hermes) |
 | `gen_ai.operation.name` | gen_ai | string | `execute_tool` |
-| `gen_ai.tool.name` | gen_ai | string | Tool name |
-| `gen_ai.tool.call.id` | gen_ai | string | Tool call/task ID |
-| `gen_ai.tool.call.arguments` | gen_ai | string | Privacy-gated tool args (JSON preview or full capture) |
-| `gen_ai.tool.call.result` | gen_ai | string | Privacy-gated tool result |
-| `hermes.tool.target` | hermes | string | Inferred file path / URL (optional) |
-| `hermes.tool.command` | hermes | string | Inferred shell command (optional) |
+| `input.value`, `gen_ai.tool.call.arguments` | both | string | Tool args (JSON preview; **full** for `mcp_*` tools with `capture_full_prompts`) |
+| `output.value`, `gen_ai.tool.call.result` | both | string | Tool result preview |
+| `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
+| `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
 | `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` · `cancelled` (or a status the tool reported in its result) |
-| `hermes.skill.name` | hermes | string | Bare skill name as Hermes names it (`skills/<category>/<name>/SKILL.md` → `<name>`); optional |
-| `hermes.turn.number` | hermes | int | Turn the call belongs to |
-| `hermes.tool.cpu.utilization.avg` | hermes | float | Mean process-tree CPU (0..1) during the call — `host_metrics` only |
-| `hermes.tool.cpu.utilization.peak` | hermes | float | Peak process-tree CPU (0..1) during the call — `host_metrics` only |
-| `hermes.tool.gpu.utilization.avg` | hermes | float | Mean host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |
-| `hermes.tool.gpu.utilization.peak` | hermes | float | Peak host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |
+| `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional) |
+| `hermes.skill.name`, `hermes.skill.source` | hermes | string | Bare skill name and `skill_view` / `path_match` when the call loaded a skill (optional) |
+| `hermes.tool.cpu.utilization.avg`, `hermes.tool.cpu.utilization.peak` | hermes | float | Process-tree CPU (0..1) during the call — `host_metrics` only |
+| `hermes.tool.gpu.utilization.avg`, `hermes.tool.gpu.utilization.peak` | hermes | float | Host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |
 
-The utilization attributes are absent when host metrics are off or the tool
-finished between two samples. See [Host & GPU metrics](/configuration/host-metrics)
-for what the numbers mean (CPU is attributable to the tool; GPU is coincident host load).
+The utilization attributes are absent when host metrics are off or the tool finished between two samples. See [Host & GPU metrics](/configuration/host-metrics).
+
+## `skill.*`
+
+One per skill that loaded successfully this turn (`skill_spans: true`), nested under the root; opens when the loading tool call ends and closes at turn end.
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `hermes.skill.name`, `gen_ai.skill.name` | both | string | Bare skill name as Hermes names it |
+| `hermes.skill.source` | hermes | string | `skill_view` · `path_match` |
+| `hermes.skill.path` | hermes | string | `$HERMES_HOME/skills/<name>` |
+| `hermes.span_kind` | hermes | string | `skill` |
+| `gen_ai.operation.name` | gen_ai | string | `execute_skill` |
+| `hermes.skill.result_status` | hermes | string | Turn outcome at close (`completed` · `interrupted` · …) |
+
+## `approval.*`
+
+One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<pattern_key>`.
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `hermes.approval.pattern_key`, `hermes.approval.pattern_keys` | hermes | string | Rule(s) that gated the command |
+| `hermes.approval.surface` | hermes | string | `cli` · `telegram` · … (optional) |
+| `hermes.approval.command`, `hermes.approval.description` | hermes | string | Gated command and Hermes' description (previews; optional) |
+| `gen_ai.tool.call.id` | gen_ai | string | Correlates to the gated `tool.*` span (optional) |
+| `hermes.span_kind` | hermes | string | `approval` |
+| `hermes.approval.granted`, `hermes.approval.timed_out` | hermes | bool | Outcome flags |
+| `hermes.approval.choice` | hermes | string | `once` · `session` · `always` · `deny` · `timeout` · `smart_approve` · `smart_deny` · `notify_failed` |
+| `hermes.approval.decided_by` | hermes | string | `aux_llm` for smart-guardian verdicts, empty for a human answer (optional) |
+| `hermes.approval.duration_ms` | hermes | float | Decision wait time |
 
 ## `subagent.*`
 
-Span kind: `AGENT` (OpenInference). One per delegated child agent; nests under the parent turn, with the child's own root span nested beneath it (or linked, cross-process).
+One per delegated child agent (span kind `AGENT`); the child's own root nests beneath it (or is linked, cross-process).
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
-| `gen_ai.agent.name` | gen_ai | string | Child role |
-| `hermes.subagent.role` | hermes | string | Child role |
-| `hermes.subagent.goal` | hermes | string | Delegated goal (preview) |
-| `hermes.subagent.child_session_id` | hermes | string | Child session ID (join key) |
-| `hermes.subagent.parent_session_id` | hermes | string | Parent session ID |
-| `hermes.subagent.parent_turn_id` | hermes | string | Parent turn ID |
-| `hermes.subagent.child_id` | hermes | string | Child sub-agent ID (optional) |
-| `hermes.subagent.status` | hermes | string | Reported `child_status` (on stop) |
-| `hermes.subagent.duration_ms` | hermes | float | Child wall-clock ms (on stop) |
-| `hermes.subagent.summary` | hermes | string | Child result summary (on stop) |
-
-The delegated child's own `agent` root additionally carries `hermes.session.is_subagent=true`, `hermes.subagent.parent_session_id`, and `hermes.subagent.role`.
-
-### `approval.*` span
-
-| Attribute | Convention | Type | Notes |
-|---|---|---|---|
-| `hermes.approval.pattern_key` | hermes | string | Approval rule that gated the command |
-| `hermes.approval.granted` | hermes | bool | `true` for `once` / `session` / `always` / `smart_approve` |
-| `hermes.approval.timed_out` | hermes | bool | `true` when the prompt timed out |
-| `hermes.approval.choice` | hermes | string | `once` · `session` · `always` · `deny` · `timeout` · `smart_approve` · `smart_deny` |
-| `hermes.approval.decided_by` | hermes | string | Who decided an approval: `aux_llm` for smart-guardian verdicts (`smart_approve` / `smart_deny`), empty for a human answer |
-| `hermes.approval.duration_ms` | hermes | float | Human / guardian decision wait time |
+| `gen_ai.operation.name`, `gen_ai.agent.name` | gen_ai | string | `invoke_agent` / child role |
+| `hermes.subagent.role`, `hermes.subagent.goal` | hermes | string | Child role and delegated goal (preview) |
+| `input.value` | OpenInference | string | The goal preview |
+| `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
+| `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
+| `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
 
 ## Metrics
 
-Metrics are documented on their own page: [Metrics reference](/reference/metrics) — every instrument with its kind, unit, labels and the hook that records it, plus the Prometheus-mangled names.
+Metrics are documented on their own page: [Metrics reference](/reference/metrics).

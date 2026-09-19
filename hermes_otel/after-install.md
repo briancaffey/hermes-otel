@@ -35,7 +35,7 @@ this directory — reinstalling the plugin replaces this directory wholesale.
 Start Hermes and look for the banner:
 
 ```text
-[hermes-otel] Phoenix connected - endpoint=http://localhost:6006/v1/traces
+[hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
 [hermes-otel] Registered 13 hooks
 ```
 

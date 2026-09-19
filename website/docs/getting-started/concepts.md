@@ -21,12 +21,12 @@ Hermes emits lifecycle events as it works through a turn. hermes-otel subscribes
 | `pre_tool_call` | Hermes is about to run a tool | Opens `tool.{name}` |
 | `post_tool_call` | Tool finished (or errored) | Closes `tool.{name}`, attaches result |
 | `post_llm_call` | LLM call resolved | Closes `llm.{model}` |
-| `on_session_end` | Turn complete | Closes `session.*`, attaches turn summary, force-flushes |
+| `on_session_end` | Turn complete | Closes the `agent` / `cron` root, attaches turn summary, force-flushes |
 
 Because `pre_*` opens and `post_*` closes, the span tree naturally nests:
 
 ```text
-session.cli
+agent
 └── llm.claude-sonnet-4-6
     ├── api.claude-sonnet-4-6          (round-trip 1: model asks to call a tool)
     │   └── tool.bash                  (tool runs, result returned)
@@ -60,7 +60,7 @@ If the agent outruns the exporter (bounded queue fills up), the oldest spans are
 One span tree, several destinations:
 
 ```yaml
-# ~/.hermes/plugins/hermes_otel/config.yaml
+# ~/.hermes/hermes_otel.yaml
 backends:
   - type: phoenix
     endpoint: http://localhost:6006/v1/traces

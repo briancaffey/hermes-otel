@@ -60,7 +60,7 @@ Tool-span attributes are largely OpenInference-native (the `gen_ai.*` convention
 
 See [Tool identity](/architecture/tool-identity).
 
-## Session / turn metadata (on `session.*`)
+## Session / turn metadata (on the `agent` / `cron` root)
 
 All plugin-specific:
 

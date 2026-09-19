@@ -65,7 +65,7 @@ Hermes fires lifecycle events; the plugin translates each into a span operation:
 | `pre_tool_call` | `tracker.start("tool.{name}", parent=current_api or current_llm)` |
 | `post_tool_call` | Set result / outcome on `tool.*` span, `tracker.end` it |
 | `post_llm_call` | Set output on `llm.*`, `tracker.end` it |
-| `on_session_end` | Compute turn summary, set on `session.*`, `tracker.end`, force-flush |
+| `on_session_end` | Compute turn summary, set on the `agent` / `cron` root, `tracker.end`, force-flush |
 
 All handled by `SpanTracker` (in `span_tracker.py`), which keeps a per-session parent stack so parent/child relationships are correct even when hooks interleave.
 

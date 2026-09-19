@@ -20,7 +20,7 @@ hermes-otel can send the same span tree to several backends in parallel. Every b
 Multi-backend is YAML-only. When `backends:` is set and non-empty, single-backend env-var detection is **skipped entirely** — the YAML takes full control.
 
 ```yaml
-# ~/.hermes/plugins/hermes_otel/config.yaml
+# ~/.hermes/hermes_otel.yaml
 backends:
   - type: phoenix
     endpoint: http://localhost:6006/v1/traces
