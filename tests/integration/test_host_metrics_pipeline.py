@@ -5,6 +5,8 @@ the observable-instrument callbacks and the live-store mirror can be asserted
 deterministically.
 """
 
+from _helpers import metric_points as _points
+
 from hermes_otel.host_metrics import GpuReading, Sample
 from hermes_otel.plugin_config import HermesOtelConfig
 
@@ -19,10 +21,6 @@ def _metric(metric_reader, name):
                 if m.name == name:
                     return m
     return None
-
-
-def _points(metric):
-    return list(metric.data.data_points) if metric is not None else []
 
 
 def _sample(at=1.0, proc=(0.25, 0.05), sys=(0.5, 0.1), gpus=()):

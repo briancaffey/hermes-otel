@@ -7,7 +7,9 @@ from hermes_otel.live_store import LiveStore, get_live_store
 
 @pytest.fixture()
 def store(tmp_path):
-    return LiveStore(db_path=str(tmp_path / "live.db"))
+    s = LiveStore(db_path=str(tmp_path / "live.db"))
+    yield s
+    s.close()
 
 
 class TestLiveStore:
@@ -43,6 +45,7 @@ class TestLiveStore:
         assert 0 < n <= 50 + 64
         # And it kept the NEWEST ones.
         assert s.spans(limit=1)[0]["name"] == "299"
+        s.close()
 
     def test_metric_shape(self, store):
         store.add_metric("hermes.cost.usage", 0.05, {"model": "gpt-4"}, 1234)
@@ -65,9 +68,13 @@ class TestLiveStore:
         db = str(tmp_path / "shared.db")
         writer = LiveStore(db_path=db)
         reader = LiveStore(db_path=db)
-        writer.add_span({"name": "from-gateway"})
-        assert [s["name"] for s in reader.spans()] == ["from-gateway"]
-        assert reader.cursor() == writer.cursor() == 1
+        try:
+            writer.add_span({"name": "from-gateway"})
+            assert [s["name"] for s in reader.spans()] == ["from-gateway"]
+            assert reader.cursor() == writer.cursor() == 1
+        finally:
+            writer.close()
+            reader.close()
 
     def test_live_log_handler_feeds_store(self, store):
         import logging

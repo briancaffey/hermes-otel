@@ -49,21 +49,21 @@ class _RecordingExporter:
 
 
 @pytest.fixture(scope="module")
-def real_init_plugin():
+def real_init_plugin(tmp_path_factory):
     """One real init() per test module — verifies the _init_otlp wiring."""
-    import os
+    from _helpers import clear_backend_env
 
-    # Clear env so Phoenix branch wins deterministically.
-    for var in [
-        "OTEL_PHOENIX_ENDPOINT",
-        "LANGSMITH_TRACING",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY",
-        "OTEL_LANGFUSE_SECRET_API_KEY",
-        "OTEL_SIGNOZ_ENDPOINT",
-        "OTEL_JAEGER_ENDPOINT",
-    ]:
-        os.environ.pop(var, None)
-    os.environ["OTEL_PHOENIX_ENDPOINT"] = "http://fake-collector/v1/traces"
+    import hermes_otel.live_store as live_store_mod
+
+    # Module-scoped, so a MonkeyPatch context (not the function fixture) —
+    # the developer's real OTEL_* vars come back when the module finishes.
+    # This runs BEFORE the per-test autouse reset, so the live-store path must
+    # be redirected here too or init() writes hermes_otel/live.db into the tree.
+    mp = pytest.MonkeyPatch()
+    clear_backend_env(mp)
+    mp.setenv("OTEL_PHOENIX_ENDPOINT", "http://fake-collector/v1/traces")
+    live_dir = tmp_path_factory.mktemp("live-store-module")
+    mp.setattr(live_store_mod, "_default_db_path", lambda: str(live_dir / "live.db"))
 
     cfg = HermesOtelConfig(
         span_batch_schedule_delay_ms=50,
@@ -84,7 +84,11 @@ def real_init_plugin():
         plugin._span_processor.shutdown()
     except Exception:
         pass
-    os.environ.pop("OTEL_PHOENIX_ENDPOINT", None)
+    store = live_store_mod._LIVE_STORE
+    if store is not None:
+        store.close()
+        live_store_mod._LIVE_STORE = None
+    mp.undo()
 
 
 class TestBatchProcessorInstalled:

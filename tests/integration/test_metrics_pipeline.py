@@ -1,6 +1,9 @@
 """Integration tests for metrics recording via InMemoryMetricReader."""
 
 import pytest
+from _helpers import get_metric as _get_metric
+from _helpers import get_metric_value as _get_metric_value
+from _helpers import metric_points as _points
 
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -47,34 +50,6 @@ def _api_call(session_id="s1", model="gpt-4", provider="openai", api_duration=0.
         assistant_content_chars=200,
         assistant_tool_call_count=0,
     )
-
-
-def _points(metric):
-    """All data points for a metric (histogram or counter)."""
-    return list(metric.data.data_points) if metric is not None else []
-
-
-def _get_metric(metric_reader, name):
-    """Extract a metric by name from the InMemoryMetricReader."""
-    data = metric_reader.get_metrics_data()
-    for resource_metrics in data.resource_metrics:
-        for scope_metrics in resource_metrics.scope_metrics:
-            for metric in scope_metrics.metrics:
-                if metric.name == name:
-                    return metric
-    return None
-
-
-def _get_metric_value(metric_reader, name):
-    """Get the total value of a counter metric."""
-    metric = _get_metric(metric_reader, name)
-    if metric is None:
-        return None
-    # Sum data points
-    total = 0
-    for dp in metric.data.data_points:
-        total += dp.value
-    return total
 
 
 class TestSessionCountMetric:

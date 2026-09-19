@@ -4,38 +4,10 @@ import base64
 from unittest.mock import MagicMock, patch
 
 import pytest
+from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
-
-
-def _clear_backend_env(monkeypatch):
-    """Remove all backend env vars so tests start from a clean slate."""
-    for var in [
-        "OTEL_PHOENIX_ENDPOINT",
-        "OTEL_PROJECT_NAME",
-        "LANGSMITH_TRACING",
-        "LANGSMITH_API_KEY",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY",
-        "OTEL_LANGFUSE_SECRET_API_KEY",
-        "OTEL_LANGFUSE_ENDPOINT",
-        "LANGFUSE_PUBLIC_KEY",
-        "LANGFUSE_SECRET_KEY",
-        "LANGFUSE_BASE_URL",
-        "OTEL_SIGNOZ_ENDPOINT",
-        "OTEL_SIGNOZ_INGESTION_KEY",
-        "WANDB_API_KEY",
-        "WANDB_ENTITY",
-        "WANDB_PROJECT",
-        "DEFAULT_WANDB_ENTITY",
-        "DEFAULT_WANDB_PROJECT",
-        "OTEL_WEAVE_ENDPOINT",
-        "OTEL_WEAVE_BASE_URL",
-        "WANDB_OTLP_ENDPOINT",
-        "OTEL_JAEGER_ENDPOINT",
-        "OTEL_TEMPO_ENDPOINT",
-    ]:
-        monkeypatch.delenv(var, raising=False)
 
 
 def _env_backend(mock_pipeline):
@@ -85,6 +57,8 @@ class TestInitPhoenix:
                 assert plugin.is_enabled is True
                 assert plugin._live_active is True
             finally:
+                if ls._LIVE_STORE is not None:
+                    ls._LIVE_STORE.close()
                 ls._LIVE_STORE = None  # don't leak the singleton into other tests
 
     def test_init_with_explicit_endpoint_arg(self, monkeypatch):

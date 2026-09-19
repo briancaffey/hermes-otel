@@ -1,18 +1,12 @@
 """Integration tests for hermes.tool.* and hermes.skill.* attributes on tool spans."""
 
 import pytest
+from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (
     on_post_tool_call,
     on_pre_tool_call,
 )
-
-
-def _span_by_name(spans, name):
-    for s in spans:
-        if s.name == name:
-            return s
-    raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
 
 
 class TestToolTargetAttributes:

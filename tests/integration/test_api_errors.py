@@ -6,6 +6,8 @@ to end OK via the orphan sweep.
 """
 
 import pytest
+from _helpers import span_by_name as _span_by_name
+from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode
 
 from hermes_otel.hooks import (
@@ -17,17 +19,6 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
-
-
-def _spans_by_name(spans, name):
-    return [s for s in spans if s.name == name]
-
-
-def _span_by_name(spans, name):
-    matches = _spans_by_name(spans, name)
-    if not matches:
-        raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
-    return matches[0]
 
 
 def _has_exception_event(span):

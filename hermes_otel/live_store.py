@@ -42,10 +42,23 @@ class LiveStore:
         self.db_path = db_path or _default_db_path()
         self.max_rows = max(10, int(max_rows))
         self._local = threading.local()
+        self._conns: list = []  # every connection ever opened, for close()
+        self._conns_lock = threading.Lock()
         self._writes = 0
         self._init_db()
 
     # ── connection / schema ───────────────────────────────────────────────
+    def close(self) -> None:
+        """Close every connection this store opened, on any thread (idempotent)."""
+        with self._conns_lock:
+            conns, self._conns = self._conns, []
+        for c in conns:
+            try:
+                c.close()
+            except Exception:  # pragma: no cover — never raise on shutdown
+                pass
+        self._local.conn = None
+
     def _conn(self) -> sqlite3.Connection:
         c = getattr(self._local, "conn", None)
         if c is None:
@@ -54,6 +67,8 @@ class LiveStore:
             c.execute("PRAGMA busy_timeout=3000")
             c.execute("PRAGMA synchronous=NORMAL")
             self._local.conn = c
+            with self._conns_lock:
+                self._conns.append(c)
         return c
 
     def _init_db(self) -> None:

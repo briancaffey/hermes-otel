@@ -39,6 +39,8 @@ def live_plugin(tmp_path):
         yield store, plugin
     finally:
         tracer_mod._tracer = prev
+        if ls._LIVE_STORE is not None:
+            ls._LIVE_STORE.close()
         ls._LIVE_STORE = None
         provider.shutdown()
 
