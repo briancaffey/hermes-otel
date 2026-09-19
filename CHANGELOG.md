@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.0...hermes-otel-v1.8.1) (2026-09-19)
+
+
+### Documentation
+
+* add the catalog banner HTML source and a make banner target ([#143](https://github.com/briancaffey/hermes-otel/issues/143)) ([25ef20d](https://github.com/briancaffey/hermes-otel/commit/25ef20ddf4db7ba9e8f77d3a2f6e085a45093d04))
+
 ## [1.8.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.7.0...hermes-otel-v1.8.0) (2026-09-19)
 
 
