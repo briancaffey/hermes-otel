@@ -154,5 +154,5 @@ If the returned JSON includes a `traceID` / `trace_id` field with a 32-char hex 
 - [LGTM stack](/backends/lgtm) — the recommended all-signals local stack for logs.
 - [SigNoz](/backends/signoz) — the other OSS backend with native logs support.
 - [Generic OTLP](/backends/otlp) — pointing at any log-capable OTLP collector.
-- [Env vars reference](/reference/env-vars#logs) — the three env-var overrides.
+- [Env vars reference](/reference/env-vars#hermes_otel_-overrides) — `HERMES_OTEL_CAPTURE_LOGS`, `HERMES_OTEL_LOG_LEVEL`, `HERMES_OTEL_LOG_ATTACH_LOGGER`.
 - [Config schema — top level](/reference/config-schema) — full field reference.

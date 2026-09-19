@@ -20,6 +20,7 @@ Two ways to pick backends:
 
 from __future__ import annotations
 
+import dataclasses
 import os
 import re
 from dataclasses import dataclass, fields, replace
@@ -243,6 +244,42 @@ class HermesOtelConfig:
 # ── Env-var parsers ────────────────────────────────────────────────────────
 
 
+# ── Field kinds, derived from the dataclass ─────────────────────────────
+# One source of truth for "how do I parse this field": both the yaml loader
+# and the HERMES_OTEL_* env loader dispatch on it, and the docs generator
+# (scripts/gen_config_docs.py) renders the reference tables from it. A new
+# field is therefore yaml-loadable, env-overridable and documented (or the
+# tests fail) without touching three hand-maintained lists (#93).
+_SCALAR_KINDS = ("bool", "int", "float", "str")
+
+
+def _field_kind(field: "dataclasses.Field") -> str:
+    ann = (
+        field.type
+        if isinstance(field.type, str)
+        else getattr(field.type, "__name__", str(field.type))
+    )
+    ann = ann.replace("typing.", "")
+    if field.name == "backends":
+        return "backends"
+    if ann.startswith("Optional[Dict") or ann.startswith("Dict"):
+        return "map"
+    for kind in ("bool", "int", "float", "str"):
+        if ann == kind or ann == f"Optional[{kind}]":
+            return kind
+    raise TypeError(f"unsupported config field annotation {field.name}: {ann}")
+
+
+def field_kinds() -> Dict[str, str]:
+    return {f.name: _field_kind(f) for f in dataclasses.fields(HermesOtelConfig)}
+
+
+# Fields whose string value gets extra normalisation.
+_STR_NORMALISERS = {
+    "log_level": lambda v: str(v).upper(),
+}
+
+
 def _parse_bool(value: str) -> Optional[bool]:
     v = value.strip().lower()
     if v in _TRUE_STRINGS:
@@ -272,7 +309,7 @@ def _parse_int(value: str) -> Optional[int]:
 def _load_yaml(path: Path) -> Dict[str, Any]:
     """Load config.yaml if present and pyyaml is available.
 
-    Missing file or missing pyyaml → empty dict (silent).
+    Missing file → empty dict (silent). Missing pyyaml → warn + empty dict.
     Malformed yaml → warn + empty dict (explicit, not silent).
     """
     if not path.exists():
@@ -281,6 +318,10 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
     try:
         import yaml  # type: ignore
     except ImportError:
+        logger.warning(
+            f"[hermes-otel] {path} exists but PyYAML is not installed in the Hermes venv; "
+            "the file is ignored (pip install pyyaml)"
+        )
         return {}
 
     try:
@@ -394,80 +435,56 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
 
 
 def _coerce_from_yaml(key: str, value: Any) -> Any:
-    """Normalize yaml scalar types into the dataclass field types.
+    """Coerce one config.yaml value to its field type (None = ignore).
 
-    yaml.safe_load already returns native python types; we only coerce
-    obvious cases (e.g., stringified int) and pass-through dicts.
+    yaml.safe_load already returns native python types; this only normalises
+    the few ambiguous cases (bool-vs-int, numeric strings) and rejects — with
+    a warning — values that cannot be the field's type.
     """
     if value is None:
         return None
-    if key == "backends":
+    kind = field_kinds().get(key)
+    if kind == "backends":
         return _coerce_backends(value)
-    if key in (
-        "enabled",
-        "capture_previews",
-        "force_flush_on_session_end",
-        "capture_conversation_history",
-        "capture_logs",
-        "capture_full_prompts",
-        "capture_full_responses",
-        "capture_sender_id",
-        "emit_genai_metrics",
-        "skill_spans",
-        "discovery_prompt",
-        "dashboard_live",
-        "host_metrics",
-        "suppress_mcp_ping_spans",
-    ):
+    if kind == "map":
+        if isinstance(value, dict):
+            return {str(k): expand_env_refs(v, where=key) for k, v in value.items()}
+        logger.warning(f"[hermes-otel] config.yaml {key!r} must be a mapping; ignoring")
+        return None
+    parsed = _parse_scalar(kind, key, value)
+    if parsed is None:
+        logger.warning(
+            f"[hermes-otel] config.yaml {key!r}: cannot use {value!r} as {kind}; "
+            "keeping the default"
+        )
+    return parsed
+
+
+def _parse_scalar(kind: Optional[str], key: str, value: Any) -> Any:
+    """Parse a scalar (from yaml or an env string) to ``kind``; None if invalid."""
+    if kind == "bool":
         if isinstance(value, bool):
             return value
-        if isinstance(value, str):
-            parsed = _parse_bool(value)
-            if parsed is not None:
-                return parsed
-        return bool(value)
-    if key == "sample_rate":
-        if isinstance(value, (int, float)):
-            return float(value)
-        if isinstance(value, str):
-            return _parse_float(value)
-        return None
-    if key in (
-        "root_span_ttl_ms",
-        "flush_interval_ms",
-        "preview_max_chars",
-        "tool_input_preview_max_chars",
-        "tool_output_preview_max_chars",
-        "llm_input_preview_max_chars",
-        "llm_output_preview_max_chars",
-        "span_batch_max_queue_size",
-        "span_batch_schedule_delay_ms",
-        "span_batch_max_export_batch_size",
-        "span_batch_export_timeout_ms",
-        "conversation_history_max_chars",
-        "dashboard_live_max_spans",
-        "host_metrics_interval_ms",
-    ):
+        return _parse_bool(str(value))
+    if kind == "int":
         if isinstance(value, bool):
             return None  # bools are ints in python; reject explicitly
         if isinstance(value, int):
             return value
-        if isinstance(value, (float, str)):
-            return _parse_int(str(value))
-        return None
-    if key in ("headers", "global_tags", "resource_attributes"):
-        if isinstance(value, dict):
-            return {str(k): expand_env_refs(v, where=key) for k, v in value.items()}
-        return None
-    if key == "project_name":
-        return None if value is None else str(value)
-    if key == "log_level":
-        return None if value is None else str(value).upper()
-    if key == "log_attach_logger":
-        return None if value is None else str(value)
-    if key == "host_metrics_gpu":
-        return _parse_gpu_vendor(str(value))
-    return value
+        return _parse_int(str(value))
+    if kind == "float":
+        if isinstance(value, bool):
+            return None
+        if isinstance(value, (int, float)):
+            return float(value)
+        return _parse_float(str(value))
+    if kind == "str":
+        text = str(value)
+        if key == "host_metrics_gpu":
+            return _parse_gpu_vendor(text)
+        norm = _STR_NORMALISERS.get(key)
+        return norm(text) if norm else text
+    return None
 
 
 _GPU_VENDORS = ("auto", "amd", "nvidia", "off")
@@ -479,74 +496,30 @@ def _parse_gpu_vendor(value: str) -> Optional[str]:
 
 
 def _load_env_overrides() -> Dict[str, Any]:
-    """Extract per-field overrides from environment variables."""
+    """``HERMES_OTEL_<FIELD>`` for every scalar field (maps and ``backends``
+    are yaml-only). Invalid values warn and are ignored."""
     out: Dict[str, Any] = {}
-
-    def take(key: str, parser):
-        raw = os.getenv(_ENV_PREFIX + key.upper(), "").strip()
+    for key, kind in field_kinds().items():
+        if kind not in _SCALAR_KINDS:
+            continue
+        var = _ENV_PREFIX + key.upper()
+        raw = os.getenv(var, "").strip()
         if not raw:
-            return
-        parsed = parser(raw)
-        if parsed is not None:
-            out[key] = parsed
-
-    take("enabled", _parse_bool)
-    take("sample_rate", _parse_float)
-    take("root_span_ttl_ms", _parse_int)
-    take("flush_interval_ms", _parse_int)
-    take("preview_max_chars", _parse_int)
-    take("tool_input_preview_max_chars", _parse_int)
-    take("tool_output_preview_max_chars", _parse_int)
-    take("llm_input_preview_max_chars", _parse_int)
-    take("llm_output_preview_max_chars", _parse_int)
-    take("capture_previews", _parse_bool)
-    take("span_batch_max_queue_size", _parse_int)
-    take("span_batch_schedule_delay_ms", _parse_int)
-    take("span_batch_max_export_batch_size", _parse_int)
-    take("span_batch_export_timeout_ms", _parse_int)
-    take("force_flush_on_session_end", _parse_bool)
-    take("capture_conversation_history", _parse_bool)
-    take("conversation_history_max_chars", _parse_int)
-    take("capture_logs", _parse_bool)
-    take("capture_full_prompts", _parse_bool)
-    take("capture_full_responses", _parse_bool)
-    take("capture_sender_id", _parse_bool)
-    take("emit_genai_metrics", _parse_bool)
-    take("skill_spans", _parse_bool)
-    take("discovery_prompt", _parse_bool)
-    take("dashboard_live", _parse_bool)
-    take("dashboard_live_max_spans", _parse_int)
-    take("host_metrics", _parse_bool)
-    take("host_metrics_gpu", _parse_gpu_vendor)
-    take("host_metrics_interval_ms", _parse_int)
-    take("suppress_mcp_ping_spans", _parse_bool)
-
-    proj = os.getenv(_ENV_PREFIX + "PROJECT_NAME", "").strip()
-    if proj:
-        out["project_name"] = proj
-
-    level = os.getenv(_ENV_PREFIX + "LOG_LEVEL", "").strip()
-    if level:
-        out["log_level"] = level.upper()
-
-    attach = os.getenv(_ENV_PREFIX + "LOG_ATTACH_LOGGER", "").strip()
-    if attach:
-        out["log_attach_logger"] = attach
-
+            continue
+        parsed = _parse_scalar(kind, key, raw)
+        if parsed is None:
+            logger.warning(f"[hermes-otel] {var}={raw!r} is not a valid {kind}; ignoring it")
+            continue
+        out[key] = parsed
     return out
 
 
-def load_config(
-    path: Optional[Path] = None,
-    env: Optional[Dict[str, str]] = None,
-) -> HermesOtelConfig:
+def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
     """Build a HermesOtelConfig from yaml + env, per-field precedence.
 
     Args:
         path: Explicit config.yaml location. When omitted the file is resolved
               by :func:`resolve_config_path`.
-        env:  Reserved for future use; env is read via os.getenv directly so
-              existing monkeypatch-based tests keep working.
     """
     yaml_path = path if path is not None else resolve_config_path()
     yaml_data = _load_yaml(yaml_path) if yaml_path is not None else {}
