@@ -1,5 +1,5 @@
 name: hermes_otel
-version: "1.0"
+version: "1.4.2"
 description: OpenTelemetry integration - automatically export traces to OTLP endpoints (Phoenix, Langfuse, LangSmith, etc.)
 # Declared for `hermes plugins install`, which prints these at install time.
 # Hermes never installs them for you: they must land in the SAME virtualenv

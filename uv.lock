@@ -595,7 +595,7 @@ wheels = [
 
 [[package]]
 name = "hermes-otel"
-version = "0.1.0"
+version = "1.4.2"
 source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },

@@ -36,7 +36,8 @@ chore(main): release hermes-otel 0.2.0
 
 The PR updates:
 
-- `pyproject.toml` version field
+- `pyproject.toml` version field (release type `python`)
+- `hermes_otel/plugin.yaml` `version` — the number `hermes plugins list` shows (declared under `extra-files`)
 - `CHANGELOG.md` with the commit subjects grouped by type
 - `.release-please-manifest.json` (internal tracking file)
 
@@ -46,7 +47,7 @@ Review the changelog entries — if you want to tweak wording, edit the PR direc
 
 Two files control release-please:
 
-- `release-please-config.json` — bump rules, component structure, tag format
+- `release-please-config.json` — bump rules, component structure, tag format, and the `extra-files` list (plugin.yaml)
 - `.release-please-manifest.json` — current version
 
 ```json

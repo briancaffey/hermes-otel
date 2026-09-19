@@ -2,9 +2,16 @@
   "$schema": "https://raw.githubusercontent.com/googleapis/release-please/main/schemas/config.json",
   "packages": {
     ".": {
-      "release-type": "simple",
+      "release-type": "python",
       "package-name": "hermes-otel",
-      "include-v-in-tag": true
+      "include-v-in-tag": true,
+      "extra-files": [
+        {
+          "type": "yaml",
+          "path": "hermes_otel/plugin.yaml",
+          "jsonpath": "$.version"
+        }
+      ]
     }
   }
 }
