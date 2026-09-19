@@ -1,23 +1,12 @@
 name: hermes_otel
-version: "1.4.2"
-description: OpenTelemetry integration - automatically export traces to OTLP endpoints (Phoenix, Langfuse, LangSmith, etc.)
-# Declared for `hermes plugins install`, which prints these at install time.
-# Hermes never installs them for you: they must land in the SAME virtualenv
-# that runs `hermes`, because the plugin is imported into that process.
-# See after-install.md, or requirements.txt for a pip-installable copy.
+version: 1.5.0
+description: >-
+  OpenTelemetry integration - automatically export traces to OTLP endpoints
+  (Phoenix, Langfuse, LangSmith, etc.)
 python_dependencies:
   - opentelemetry-api<2
   - opentelemetry-sdk<2
   - opentelemetry-exporter-otlp-proto-http<2
-# Optional: `langsmith` (uuid7 time-ordered run IDs, LangSmith backend),
-# `pyyaml` (config.yaml parsing; env vars and defaults work without it), and
-# for `host_metrics: true`: `psutil` (bundled with hermes-agent) plus `pynvml`
-# or `amdsmi` for GPU readings.
-#
-# Configuration (pick one):
-#   Phoenix:       OTEL_PHOENIX_ENDPOINT
-#   Langfuse:      OTEL_LANGFUSE_ENDPOINT + OTEL_LANGFUSE_PUBLIC_API_KEY + OTEL_LANGFUSE_SECRET_API_KEY
-#   LangSmith:     LANGSMITH_TRACING=true + LANGSMITH_API_KEY + LANGSMITH_ENDPOINT + LANGSMITH_PROJECT
 provides_hooks:
   - on_session_start
   - on_session_end
