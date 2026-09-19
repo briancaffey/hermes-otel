@@ -907,6 +907,39 @@ def _outcome_from_hook_status(status: Any) -> Optional[str]:
     return _HOOK_STATUS_TO_OUTCOME.get(key, key)
 
 
+# Result-reported statuses that are more specific than Hermes' coarse
+# ``error`` hook status. Hermes' terminal tool returns every governance block
+# (hard floors, human denials, approval timeouts) as
+# ``{"error": "BLOCKED: ...", "status": "blocked"}`` and then derives hook
+# ``status="error"`` from the ``error`` key; the explicit ``status`` field is
+# the more precise signal and must win (#106).
+_SPECIFIC_NON_SUCCESS_OUTCOMES = frozenset({"blocked", "timeout", "cancelled"})
+
+
+def _resolve_tool_outcome(hook_status: Any, result_json: Any) -> str:
+    """Combine Hermes' lifecycle ``status`` with the tool's own result status.
+
+    Precedence:
+
+    1. A *specific* non-success hook status (``timeout`` / ``blocked`` /
+       ``cancelled``) is authoritative — the result may be plain text there
+       (#72).
+    2. A coarse hook ``error`` yields to an explicit, more specific status the
+       tool reported in its result (``blocked`` / ``timeout`` / ``cancelled``),
+       so governance blocks are not counted as errors (#106); otherwise
+       ``error``.
+    3. A success status (or no status, on older Hermes) defers to the result's
+       own status, else ``completed``.
+    """
+    hook_outcome = _outcome_from_hook_status(hook_status)
+    result_outcome = extract_tool_result_status(result_json)
+    if hook_outcome == "error" and result_outcome in _SPECIFIC_NON_SUCCESS_OUTCOMES:
+        return result_outcome
+    if hook_outcome:
+        return hook_outcome
+    return result_outcome or "completed"
+
+
 def _tool_call_id(task_id: str, kwargs: dict) -> str:
     """Use Hermes's tool-call id when available, with old-core fallback."""
     return str(kwargs.get("tool_call_id") or task_id)
@@ -1028,15 +1061,8 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         except (json.JSONDecodeError, TypeError):
             result_json = {}
 
-    # Determine outcome taxonomy. Hermes' post_tool_call ``status`` kwarg is
-    # authoritative for non-success outcomes (``timeout`` / ``blocked`` /
-    # ``cancelled`` / ``error``) — the result may be plain text there, so
-    # deriving only from result_json would misclassify a timeout as completed
-    # (#72). For a successful call Hermes only says ``ok``, so the tool's own
-    # result status (if any) is kept, else ``completed``.
-    outcome = _outcome_from_hook_status(kwargs.get("status")) or (
-        extract_tool_result_status(result_json) or "completed"
-    )
+    # Determine outcome taxonomy (see _resolve_tool_outcome for the rules).
+    outcome = _resolve_tool_outcome(kwargs.get("status"), result_json)
     attributes["hermes.tool.outcome"] = outcome
 
     # Preserve existing error.message attribute when outcome == error

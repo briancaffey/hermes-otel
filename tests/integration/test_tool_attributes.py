@@ -86,6 +86,27 @@ class TestToolOutcomeAttribute:
         span = _span_by_name(exporter.get_finished_spans(), "tool.terminal")
         assert span.attributes["hermes.tool.outcome"] == "timeout"
 
+    def test_floor_block_keeps_span_status_ok(self, inmemory_otel_setup):
+        """A deny-rule / hardline block is a governance decision, not a failure (#106)."""
+        from opentelemetry.trace import StatusCode
+
+        exporter, _ = inmemory_otel_setup
+        on_pre_tool_call(tool_name="terminal", args={"command": "echo x"}, task_id="t1")
+        on_post_tool_call(
+            tool_name="terminal",
+            args={"command": "echo x"},
+            result=(
+                '{"output": "", "exit_code": -1, "error": "BLOCKED: this command matches '
+                'the user-defined deny rule \'*x*\'.", "status": "blocked"}'
+            ),
+            task_id="t1",
+            status="error",
+            error_type="tool_error",
+        )
+        span = _span_by_name(exporter.get_finished_spans(), "tool.terminal")
+        assert span.attributes["hermes.tool.outcome"] == "blocked"
+        assert span.status.status_code == StatusCode.OK
+
     def test_timeout_does_not_flip_span_status_to_error(self, inmemory_otel_setup):
         """Per PRD: only `error` outcome maps to span status ERROR; timeouts stay OK."""
         from opentelemetry.trace import StatusCode
