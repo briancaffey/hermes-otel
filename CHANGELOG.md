@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.1...hermes-otel-v1.8.2) (2026-09-19)
+
+
+### Bug Fixes
+
+* **tracer:** shutdown() and idempotent init(); stop the PerSession leak; lock shared state; per-backend headers win ([#145](https://github.com/briancaffey/hermes-otel/issues/145)) ([04bccd3](https://github.com/briancaffey/hermes-otel/commit/04bccd39991668a31765dfd0e02bdb7cf5385b92)), closes [#105](https://github.com/briancaffey/hermes-otel/issues/105)
+
 ## [1.8.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.0...hermes-otel-v1.8.1) (2026-09-19)
 
 
