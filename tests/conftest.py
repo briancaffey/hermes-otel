@@ -40,13 +40,45 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     )
     monkeypatch.delenv(plugin_config_mod.CONFIG_PATH_ENV, raising=False)
 
+    # Any real init() writes its live store into a per-test temp dir, never
+    # into hermes_otel/ in the source tree.
+    import hermes_otel.live_store as live_store_mod
+
+    live_dir = tmp_path_factory.mktemp("live-store")
+    monkeypatch.setattr(live_store_mod, "_default_db_path", lambda: str(live_dir / "live.db"))
+    monkeypatch.delenv("HERMES_OTEL_LIVE_DB", raising=False)
+
     def _reset():
         current = tracer_mod._tracer
         if current is not None:
             # Never leak a host-metrics sampler thread across tests.
             current.stop_host_metrics()
+            # Nor exporter worker threads: readers/processors keep retrying
+            # against dead endpoints until shut down.
+            for obj in (
+                list(getattr(current, "_metric_readers", []))
+                + list(getattr(current, "_span_processors", []))
+                + [getattr(current, "_logger_provider", None)]
+            ):
+                try:
+                    if obj is not None:
+                        obj.shutdown()
+                except Exception:
+                    pass
+            handler = getattr(current, "_live_log_handler", None)
+            if handler is not None:
+                import logging
+
+                logging.getLogger().removeHandler(handler)
         tracer_mod._tracer = None
         tracer_mod._PARENT_STACK.set(None)
+        store = live_store_mod._LIVE_STORE
+        if store is not None:
+            try:
+                store.close()
+            except Exception:
+                pass
+        live_store_mod._LIVE_STORE = None
 
     _reset()
     yield

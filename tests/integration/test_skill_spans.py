@@ -1,5 +1,8 @@
 """Integration tests for skill execution-window spans (issue #39)."""
 
+from _helpers import one as _one
+from _helpers import parent_span_id as _parent_span_id
+
 from hermes_otel.hooks import (
     on_post_tool_call,
     on_pre_tool_call,
@@ -9,18 +12,8 @@ from hermes_otel.hooks import (
 from hermes_otel.plugin_config import HermesOtelConfig
 
 
-def _parent_span_id(span):
-    return span.parent.span_id if span.parent is not None else None
-
-
 def _spans_named(spans, name):
     return [s for s in spans if s.name == name]
-
-
-def _one(spans, name):
-    matches = _spans_named(spans, name)
-    assert len(matches) == 1, f"expected exactly one {name!r}, got {[s.name for s in spans]}"
-    return matches[0]
 
 
 def _load_skill(session_id, skill, task="sk1", tool="skill_view", args=None):

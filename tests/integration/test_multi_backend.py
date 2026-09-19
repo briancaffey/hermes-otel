@@ -14,6 +14,7 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import pytest
+from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
@@ -125,26 +126,6 @@ class TestForceFlushFansOut:
 
 
 # ── Pipeline resolution: yaml backends → processors ────────────────────────
-
-
-def _clear_backend_env(monkeypatch):
-    for var in [
-        "OTEL_PHOENIX_ENDPOINT",
-        "OTEL_PROJECT_NAME",
-        "LANGSMITH_TRACING",
-        "LANGSMITH_API_KEY",
-        "OTEL_LANGFUSE_PUBLIC_API_KEY",
-        "OTEL_LANGFUSE_SECRET_API_KEY",
-        "OTEL_LANGFUSE_ENDPOINT",
-        "LANGFUSE_PUBLIC_KEY",
-        "LANGFUSE_SECRET_KEY",
-        "LANGFUSE_BASE_URL",
-        "OTEL_SIGNOZ_ENDPOINT",
-        "OTEL_SIGNOZ_INGESTION_KEY",
-        "OTEL_JAEGER_ENDPOINT",
-        "OTEL_TEMPO_ENDPOINT",
-    ]:
-        monkeypatch.delenv(var, raising=False)
 
 
 class TestConfigBackendsRouting:

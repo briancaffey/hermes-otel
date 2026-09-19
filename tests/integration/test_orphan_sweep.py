@@ -8,18 +8,13 @@ robust to internal-state refactors.
 
 import time
 
+from _helpers import span_by_name as _span_by_name
+
 from hermes_otel.hooks import (
     on_pre_api_request,
     on_session_start,
 )
 from hermes_otel.plugin_config import HermesOtelConfig
-
-
-def _span_by_name(spans, name):
-    for s in spans:
-        if s.name == name:
-            return s
-    raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
 
 
 class TestOrphanSweep:

@@ -1,6 +1,7 @@
 """Integration tests for per-turn summary attributes on the session span."""
 
 import pytest
+from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (
     on_post_api_request,
@@ -12,13 +13,6 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
-
-
-def _span_by_name(spans, name):
-    for s in spans:
-        if s.name == name:
-            return s
-    raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
 
 
 def _run_full_turn(session_id: str, tool_calls):

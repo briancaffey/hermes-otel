@@ -1,5 +1,8 @@
 """Integration tests for human-in-the-loop approval spans (issue #30)."""
 
+from _helpers import one as _one
+from _helpers import parent_span_id as _parent_span_id
+
 from hermes_otel.hooks import (
     on_post_approval_response,
     on_post_tool_call,
@@ -11,16 +14,6 @@ from hermes_otel.hooks import (
 
 SID = "20260626_010101_abc123"
 TURN = f"{SID}:task7:deadbeef"
-
-
-def _parent_span_id(span):
-    return span.parent.span_id if span.parent is not None else None
-
-
-def _one(spans, name):
-    matches = [s for s in spans if s.name == name]
-    assert len(matches) == 1, f"expected one {name!r}, got {[s.name for s in spans]}"
-    return matches[0]
 
 
 # Fixture commands use relative paths on purpose: a recursive-delete literal

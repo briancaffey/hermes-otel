@@ -93,6 +93,7 @@ hermes_otel = "hermes_otel:register"
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+pythonpath = ["tests"]
 markers = [
     "unit: fast tests with no external dependencies",
     "integration: tests using InMemorySpanExporter",

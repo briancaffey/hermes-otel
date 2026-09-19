@@ -9,6 +9,10 @@ when only a SpanContext is available (cross-process), attached via a span link.
 import time
 
 import pytest
+from _helpers import parent_span_id as _parent_span_id
+from _helpers import span_by_name as _span_by_name
+from _helpers import span_where as _span_where
+from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode
 
 from hermes_otel.hooks import (
@@ -23,29 +27,6 @@ from hermes_otel.hooks import (
     on_subagent_start,
     on_subagent_stop,
 )
-
-
-def _spans_by_name(spans, name):
-    return [s for s in spans if s.name == name]
-
-
-def _span_by_name(spans, name):
-    matches = _spans_by_name(spans, name)
-    if not matches:
-        raise ValueError(f"No span named '{name}' in {[s.name for s in spans]}")
-    return matches[0]
-
-
-def _span_where(spans, name, attr, value):
-    for s in spans:
-        if s.name == name and dict(s.attributes).get(attr) == value:
-            return s
-    raise ValueError(f"No '{name}' span with {attr}={value!r}")
-
-
-def _parent_span_id(span):
-    return span.parent.span_id if span.parent is not None else None
-
 
 # ── Helpers to drive parent turn state up to "an API request is in flight" ──
 
