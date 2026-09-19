@@ -21,6 +21,7 @@ Two ways to pick backends:
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
@@ -304,6 +305,36 @@ _ALLOWED_KEYS = {f.name for f in fields(HermesOtelConfig)}
 _BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)}
 
 
+# ``${VAR_NAME}`` references inside config.yaml string values (headers, api
+# keys, endpoints, …) are replaced with the environment variable's value at
+# load time (#92). An unset variable is left as the literal ``${VAR_NAME}`` and
+# warned about once, so a typo fails loudly at the backend instead of
+# silently sending nothing.
+_ENV_REF = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}")
+_ENV_REF_WARNED: set = set()
+
+
+def expand_env_refs(value: Any, *, where: str = "config") -> Any:
+    """Expand ``${VAR}`` references in a string; non-strings pass through."""
+    if not isinstance(value, str) or "${" not in value:
+        return value
+
+    def _sub(match: "re.Match[str]") -> str:
+        name = match.group(0)[2:-1]
+        env_value = os.environ.get(name)
+        if env_value is None:
+            if name not in _ENV_REF_WARNED:
+                _ENV_REF_WARNED.add(name)
+                logger.warning(
+                    f"[hermes-otel] {where}: environment variable {name!r} referenced as "
+                    f"${{{name}}} is not set; leaving the literal value in place"
+                )
+            return match.group(0)
+        return env_value
+
+    return _ENV_REF.sub(_sub, value)
+
+
 def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     """Coerce a yaml ``backends:`` list into a tuple of BackendConfig."""
     if value is None:
@@ -334,7 +365,10 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 continue
             if k == "headers":
                 if isinstance(v, dict):
-                    kwargs[k] = {str(kk): str(vv) for kk, vv in v.items()}
+                    kwargs[k] = {
+                        str(kk): expand_env_refs(str(vv), where=f"backends[{idx}].headers")
+                        for kk, vv in v.items()
+                    }
                 continue
             if k in ("traces", "metrics", "logs"):
                 if isinstance(v, bool):
@@ -346,7 +380,9 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 continue
             if v is None:
                 continue
-            kwargs[k] = str(v) if not isinstance(v, str) else v
+            kwargs[k] = expand_env_refs(
+                str(v) if not isinstance(v, str) else v, where=f"backends[{idx}].{k}"
+            )
         try:
             out.append(BackendConfig(**kwargs))
         except TypeError as e:
@@ -419,7 +455,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None
     if key in ("headers", "global_tags", "resource_attributes"):
         if isinstance(value, dict):
-            return {str(k): v for k, v in value.items()}
+            return {str(k): expand_env_refs(v, where=key) for k, v in value.items()}
         return None
     if key == "project_name":
         return None if value is None else str(value)
