@@ -21,4 +21,3 @@ provides_hooks:
   - subagent_stop
   - pre_approval_request
   - post_approval_response
-  - mcp_request_headers

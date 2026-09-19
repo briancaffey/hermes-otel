@@ -6,7 +6,7 @@ description: "The Hermes lifecycle hooks this plugin subscribes to, and the span
 
 # Hooks reference
 
-hermes-otel subscribes to a set of Hermes lifecycle hooks. Six (`pre_tool_call` … `post_api_request`) are "always available" on any Hermes version with plugin support. The rest — `api_request_error`, the session hooks, the sub-agent delegation hooks, the approval hooks and `mcp_request_headers` — are registered conditionally, so older Hermes builds simply register fewer; the startup banner reports the count (13 on Hermes 0.21).
+hermes-otel subscribes to a set of Hermes lifecycle hooks. Six (`pre_tool_call` … `post_api_request`) are "always available" on any Hermes version with plugin support. The rest — `api_request_error`, the session hooks, the sub-agent delegation hooks, the approval hooks — are registered conditionally, so older Hermes builds simply register fewer; the startup banner reports the count (13 on Hermes 0.21). `mcp_request_headers` is implemented but waits on an upstream hook (see below).
 
 ## Always available
 
@@ -132,12 +132,9 @@ Fires when the human answers (or the prompt times out).
 - **Span status:** always `OK` — a denial or timeout is a legitimate human decision, not an error
 - **Metrics:** `hermes.approval.count{choice}` counter, `hermes.approval.duration{choice}` histogram
 
-### `mcp_request_headers`
+### `mcp_request_headers` (pending upstream)
 
-Fires before each outbound MCP request. The only hook that returns a value: a dict of headers to add. The plugin returns the W3C `traceparent` / `tracestate` of the current span so an MCP server that is itself instrumented joins the trace ([MCP trace propagation](/configuration/mcp-trace-propagation)).
-
-- **Span op:** none
-- **Returns:** `{"traceparent": ..., "tracestate": ...}` (empty when no span is active)
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "13 hooks" count. The plugin side is implemented: if a Hermes build ever exposes this hook, `register()` subscribes and returns the W3C `traceparent` / `tracestate` of the current span so an instrumented MCP server joins the trace — see [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
 
 ## Hook → span mapping
 
@@ -157,7 +154,7 @@ subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics
 on_session_end           close agent/cron        + turn summary + force-flush
-mcp_request_headers      (no span) returns traceparent/tracestate for the outbound MCP call
+mcp_request_headers      (pending upstream; no span) would return traceparent/tracestate for the outbound MCP call
 ```
 
 ## Parallel tool calls
