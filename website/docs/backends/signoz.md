@@ -59,10 +59,12 @@ SigNoz treats the plugin's spans as standard OTel traces. The service-map view l
 
 Metrics flow to the SigNoz metrics UI automatically:
 
-- `hermes.tokens.prompt` / `hermes.tokens.completion` (counters)
-- `hermes.tool.calls` (counter)
-- `hermes.tool.duration` (histogram)
-- `hermes.api.duration` (histogram)
+- `hermes_token_usage_total{token_type="input"|"output"}` (counter)
+- `hermes_model_usage_total` (counter, one per API call)
+- `hermes_tool_duration_milliseconds_*` (histogram)
+- `gen_ai_client_operation_duration_seconds_*` (histogram)
+
+Full list: [Metrics reference](/reference/metrics).
 
 See [Span attributes reference](/reference/span-attributes) for the full list.
 
