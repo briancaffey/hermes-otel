@@ -111,7 +111,9 @@ def _pyproject_version() -> str:
 
 def _manifest_version() -> str:
     text = (ARTIFACT / "plugin.yaml").read_text()
-    match = re.search(r'^version: "([^"]+)"', text, re.M)
+    # release-please's yaml updater writes the value unquoted (``version: 1.5.0``);
+    # a hand edit may quote it. Accept both.
+    match = re.search(r'^version:\s*"?([0-9][^"\s]*)"?\s*$', text, re.M)
     assert match, "plugin.yaml has no version"
     return match.group(1)
 
