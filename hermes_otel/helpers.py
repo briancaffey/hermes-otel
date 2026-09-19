@@ -420,11 +420,24 @@ def http_status_class(status_code: Any) -> str:
 
 @functools.lru_cache(maxsize=1)
 def package_version() -> Optional[str]:
-    """Installed hermes-otel version, or None when not installed as a package.
+    """The plugin's version string, or None if it cannot be determined.
 
-    Cached: ``importlib.metadata.version`` scans ``sys.path`` distributions and
-    this is read on every session start/end and at Resource build time.
+    ``hermes plugins install`` copies the ``hermes_otel/`` directory into
+    ``$HERMES_HOME/plugins`` — it is *not* a pip-installed distribution, so
+    ``importlib.metadata`` knows nothing about it. The shipped ``plugin.yaml``
+    (bumped by release-please) is therefore the primary source; the
+    distribution metadata is the fallback for wheel / editable installs.
+    Cached: this is read on every session start/end and at Resource build.
     """
+    try:
+        manifest = os.path.join(os.path.dirname(os.path.abspath(__file__)), "plugin.yaml")
+        with open(manifest, encoding="utf-8") as fh:
+            for line in fh:
+                found = re.match(r'^version:\s*"?([0-9][^"\s]*)"?\s*$', line)
+                if found:
+                    return found.group(1)
+    except OSError:
+        pass
     try:
         from importlib.metadata import version
 

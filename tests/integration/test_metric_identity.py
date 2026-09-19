@@ -128,6 +128,9 @@ class TestResourceIdentity:
         assert re.fullmatch(r"[0-9a-f-]{36}", res["service.instance.id"])
         assert res["process.pid"] == os.getpid()
         assert res.get("service.version") == package_version()
+        # A plugin-dir install is not a pip distribution: the version must come
+        # from the shipped plugin.yaml, never be None.
+        assert re.fullmatch(r"\d+\.\d+\.\d+", res["service.version"])
 
     def test_user_resource_attributes_override_defaults(self):
         from hermes_otel.plugin_config import HermesOtelConfig
