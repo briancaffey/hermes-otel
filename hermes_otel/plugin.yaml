@@ -1,27 +1,24 @@
 name: hermes_otel
-version: 1.6.2
+version: 1.7.0
 manifest_version: 2
 description: >-
-  OpenTelemetry for Hermes Agent: exports sessions, LLM and API calls, tool calls,
-  sub-agents and approvals as OTLP traces, metrics and logs to Phoenix, Langfuse,
-  SigNoz, Grafana and any OTLP backend.
+  OpenTelemetry for Hermes Agent: exports sessions, LLM and API calls, tool
+  calls, sub-agents and approvals as OTLP traces, metrics and logs to Phoenix,
+  Langfuse, SigNoz, Grafana and any OTLP backend.
 author: Brian Caffey
 license: Apache-2.0
 homepage: https://briancaffey.github.io/hermes-otel/
-tags: [observability, opentelemetry, tracing, metrics, logs]
-# Floor of the Hermes releases this plugin is tested and documented against:
-# 0.21 auto-installs python_dependencies, ships the MCP SDK 2.x ping
-# suppression and the catalog installer. Older builds still load the plugin
-# (newer hooks register defensively) but are unsupported. Parsed strictly by
-# `hermes plugins validate` (#128).
-requires_hermes: ">=0.21"
+tags:
+  - observability
+  - opentelemetry
+  - tracing
+  - metrics
+  - logs
+requires_hermes: '>=0.21'
 python_dependencies:
   - opentelemetry-api<2
   - opentelemetry-sdk<2
   - opentelemetry-exporter-otlp-proto-http<2
-# Must match what register() registers on the running Hermes exactly; the
-# catalog validator diffs the two. mcp_request_headers is deliberately absent:
-# no Hermes release has that hook (#130).
 provides_hooks:
   - on_session_start
   - on_session_end
