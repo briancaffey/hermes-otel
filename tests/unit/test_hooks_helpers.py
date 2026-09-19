@@ -37,13 +37,14 @@ class TestClassifyApprovalChoice:
     def test_grants(self):
         for c in ("once", "session", "always"):
             v = classify_approval_choice(c)
-            assert v == {"choice": c, "granted": True, "timed_out": False}
+            assert v == {"choice": c, "granted": True, "timed_out": False, "decided_by": ""}
 
     def test_deny_is_not_granted_not_timeout(self):
         assert classify_approval_choice("deny") == {
             "choice": "deny",
             "granted": False,
             "timed_out": False,
+            "decided_by": "",
         }
 
     def test_timeout_flagged(self):
@@ -53,6 +54,27 @@ class TestClassifyApprovalChoice:
     def test_empty_or_none(self):
         assert classify_approval_choice(None)["choice"] == ""
         assert classify_approval_choice("")["granted"] is False
+
+    def test_smart_approve_is_grant_by_aux_llm(self):
+        v = classify_approval_choice("smart_approve")
+        assert v["granted"] is True
+        assert v["decided_by"] == "aux_llm"
+
+    def test_smart_deny_not_granted(self):
+        v = classify_approval_choice("smart_deny")
+        assert v["granted"] is False
+        assert v["decided_by"] == "aux_llm"
+
+    def test_smart_escalate_not_granted(self):
+        v = classify_approval_choice("smart_escalate")
+        assert v["granted"] is False
+        assert v["decided_by"] == "aux_llm"
+
+    def test_explicit_decided_by_wins(self):
+        assert classify_approval_choice("once", decided_by="aux_llm")["decided_by"] == "aux_llm"
+
+    def test_human_choice_decided_by_empty(self):
+        assert classify_approval_choice("once")["decided_by"] == ""
 
 
 class TestDetectSkill:
