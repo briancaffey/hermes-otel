@@ -15,7 +15,6 @@ import functools
 import json
 import os
 import time
-from importlib.metadata import PackageNotFoundError, version
 from typing import Any, Dict, List, Optional, TypedDict
 
 from .debug_utils import debug_log, logger
@@ -26,6 +25,7 @@ from .helpers import (
     detect_skill,
     extract_tool_result_status,
     http_status_class,
+    package_version,
     resolve_tool_identity,
     session_id_from_turn_id,
     subagent_span_key,
@@ -415,10 +415,7 @@ def _gen_ai_attributes(
 
 
 def _package_version() -> Optional[str]:
-    try:
-        return version("hermes-otel")
-    except PackageNotFoundError:
-        return None
+    return package_version()
 
 
 def _weave_turn_attributes(
@@ -795,7 +792,7 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         return
 
     tracer.sweep_expired_turns()
-    tracer.record_metric("session_count", 1, {"session_id": session_id})
+    tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
     _start_session_span(
         session_id,
         model,
@@ -1313,7 +1310,8 @@ def on_post_approval_response(
     # A denied or timed-out approval is a valid human outcome, not an error.
     tracer.end_span(key, attributes=attributes, status="ok")
 
-    metric_attrs = {"choice": verdict["choice"] or "unknown", "pattern_key": pk}
+    # ``pattern_key`` is free-form (a command fragment) — never a metric label.
+    metric_attrs = {"choice": verdict["choice"] or "unknown"}
     tracer.record_metric("approval_count", 1, metric_attrs)
     if duration_ms is not None:
         tracer.record_metric("approval_duration", duration_ms, metric_attrs)
@@ -1479,9 +1477,7 @@ def on_post_llm_call(
                 or ""
             )
 
-    tracer.record_metric(
-        "message_count", 1, {"session_id": session_id, "model": model, "provider": platform}
-    )
+    tracer.record_metric("message_count", 1, {"model": model, "provider": platform})
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
@@ -1659,8 +1655,6 @@ def on_post_api_request(
 
         # Record metrics
         metric_attrs: Dict[str, Any] = {"model": model, "provider": provider}
-        if session_id:
-            metric_attrs["session_id"] = session_id
         _record_usage_metrics(tracer, totals, metric_attrs)
         _record_prompt_cache_metrics(
             tracer,

@@ -35,7 +35,7 @@ Complete schema for `~/.hermes/plugins/hermes_otel/config.yaml`. See [`config.ya
 | `host_metrics_gpu` | string | `"auto"` | `auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe |
 | `host_metrics_interval_ms` | int | `1000` | Sampling cadence (floor 50 ms) |
 | `global_tags` | map | `{}` | Merged into Resource; overridden by `resource_attributes` on key conflict |
-| `resource_attributes` | map | `{}` | Merged into Resource |
+| `resource_attributes` | map | `{}` | Merged into Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (a per-process UUID, so two Hermes processes never share a metric series), `service.version` (plugin version) and `process.pid` |
 | `headers` | map | `{}` | Extra HTTP headers on every OTLP request |
 | `backends` | list | *(unset)* | Multi-backend fan-out; see below |
 

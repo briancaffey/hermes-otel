@@ -74,7 +74,7 @@ class TestOnSessionStart:
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"session_id": "s1"})
+        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"platform": "cli"})
 
     def test_includes_session_attributes(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
@@ -630,7 +630,7 @@ class TestOnPostLlmCall:
             platform="cli",
         )
         mock_tracer.record_metric.assert_called_once_with(
-            "message_count", 1, {"session_id": "s1", "model": "gpt-4", "provider": "cli"}
+            "message_count", 1, {"model": "gpt-4", "provider": "cli"}
         )
 
     def test_noop_when_disabled(self, disabled_tracer):

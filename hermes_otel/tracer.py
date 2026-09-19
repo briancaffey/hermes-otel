@@ -19,11 +19,13 @@ import atexit
 import logging
 import os
 import time
+import uuid
 from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import debug_log, logger
+from .helpers import package_version
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 
@@ -210,6 +212,11 @@ class _LiveLogHandler(logging.Handler):
             )
         except Exception:  # pragma: no cover — logging must never raise
             pass
+
+
+# One id per process, generated at import: two Hermes processes exporting to
+# the same backend get distinct Resources and therefore distinct series.
+_SERVICE_INSTANCE_ID = str(uuid.uuid4())
 
 
 class HermesOTelPlugin:
@@ -441,7 +448,19 @@ class HermesOTelPlugin:
             return False
 
     def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
-        attrs: Dict[str, Any] = {"service.name": "hermes-agent"}
+        # Process identity (OTel semconv). ``service.instance.id`` is what keeps
+        # two Hermes processes on one host (gateway + dashboard, two profiles)
+        # from writing the same metric series — without it their independent
+        # cumulative counters interleave into one sawtooth (#79). Users can
+        # still override any of these via resource_attributes.
+        attrs: Dict[str, Any] = {
+            "service.name": "hermes-agent",
+            "service.instance.id": _SERVICE_INSTANCE_ID,
+            "process.pid": os.getpid(),
+        }
+        pkg_version = package_version()
+        if pkg_version:
+            attrs["service.version"] = pkg_version
         if self.config.global_tags:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
