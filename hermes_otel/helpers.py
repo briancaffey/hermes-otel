@@ -6,6 +6,7 @@ the OpenTelemetry SDK dependency tree.
 
 from __future__ import annotations
 
+import functools
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -415,3 +416,18 @@ def http_status_class(status_code: Any) -> str:
     if 100 <= code < 600:
         return f"{code // 100}xx"
     return "other"
+
+
+@functools.lru_cache(maxsize=1)
+def package_version() -> Optional[str]:
+    """Installed hermes-otel version, or None when not installed as a package.
+
+    Cached: ``importlib.metadata.version`` scans ``sys.path`` distributions and
+    this is read on every session start/end and at Resource build time.
+    """
+    try:
+        from importlib.metadata import version
+
+        return version("hermes-otel")
+    except Exception:  # PackageNotFoundError or a broken metadata install
+        return None

@@ -162,4 +162,5 @@ class TestApprovalMetrics:
         assert "hermes.approval.duration" in metrics
         count_pt = next(iter(metrics["hermes.approval.count"].data.data_points))
         assert count_pt.attributes.get("choice") == "once"
-        assert count_pt.attributes.get("pattern_key") == "rm_rf"
+        # pattern_key is free-form command text — never a metric label (#89).
+        assert "pattern_key" not in count_pt.attributes

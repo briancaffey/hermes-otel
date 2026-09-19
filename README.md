@@ -549,7 +549,7 @@ counted as a 0 % hit: Hermes collapses "field absent" and "explicit zero" to
 an explicit-zero cache read is counted as a miss automatically.
 
 The pre-existing `hermes.token.usage` counter carries the same buckets
-(`token_type=input|cacheRead|cacheCreation`) with a `session_id` label;
+(`token_type=input|cacheRead|cacheCreation`);
 `cacheRead / input` on it gives the same rate at higher cardinality.
 
 ## How it works
