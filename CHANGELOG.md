@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.7.0...hermes-otel-v1.8.0) (2026-09-19)
+
+
+### Features
+
+* **tools:** attribute positively-classified floor blocks on the tool span ([#141](https://github.com/briancaffey/hermes-otel/issues/141)) ([1b66847](https://github.com/briancaffey/hermes-otel/commit/1b6684722dc77010556edab640d4c07f03275f6f))
+
 ## [1.7.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.6.2...hermes-otel-v1.7.0) (2026-09-19)
 
 
