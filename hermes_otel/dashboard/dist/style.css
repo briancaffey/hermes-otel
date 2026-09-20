@@ -234,3 +234,112 @@
     animation: none;
   }
 }
+
+/* ── settings tab ──────────────────────────────────────────────────── */
+.otel-settings-list {
+  border-top: 1px solid var(--color-border);
+}
+.otel-settings-row,
+.otel-env-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1.4fr) minmax(0, 1fr) 4.5rem;
+  gap: 0.25rem 1rem;
+  align-items: start;
+  padding: 0.5rem 0.5rem;
+  border-bottom: 1px solid color-mix(in srgb, var(--color-border) 70%, transparent);
+}
+.otel-env-row {
+  grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr) minmax(0, 1.4fr);
+}
+@media (max-width: 640px) {
+  .otel-settings-row,
+  .otel-env-row {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+.otel-settings-row:hover,
+.otel-env-row:hover {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.otel-changed {
+  box-shadow: inset 3px 0 0 var(--color-primary, #34d399);
+}
+.otel-src {
+  display: inline-block;
+  font-size: 10px;
+  line-height: 1.5;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0 0.45rem;
+  border: 1px solid var(--color-border);
+  border-radius: 9999px;
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+}
+.otel-src-default {
+  color: var(--color-muted-foreground);
+}
+.otel-src-env {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
+  background: color-mix(in srgb, #fbbf24 12%, transparent);
+}
+.otel-src-file {
+  color: #38bdf8;
+  border-color: color-mix(in srgb, #38bdf8 55%, transparent);
+  background: color-mix(in srgb, #38bdf8 12%, transparent);
+}
+.otel-pill {
+  display: inline-block;
+  font-size: 11px;
+  line-height: 1.6;
+  padding: 0 0.5rem;
+  border-radius: 9999px;
+  border: 1px solid var(--color-border);
+  color: var(--color-muted-foreground);
+  white-space: nowrap;
+}
+.otel-pill-on {
+  color: #34d399;
+  border-color: color-mix(in srgb, #34d399 55%, transparent);
+  background: color-mix(in srgb, #34d399 12%, transparent);
+}
+.otel-pill-off {
+  color: var(--color-muted-foreground);
+  background: color-mix(in srgb, var(--color-muted) 50%, transparent);
+}
+.otel-pill-auto {
+  color: var(--color-muted-foreground);
+}
+.otel-code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.7rem;
+  padding: 0 0.25rem;
+  border-radius: 0.2rem;
+  background: color-mix(in srgb, var(--color-muted) 60%, transparent);
+  color: var(--color-foreground);
+}
+.otel-unset {
+  font-size: 0.75rem;
+  font-style: italic;
+  color: var(--color-muted-foreground);
+}
+.otel-warn {
+  color: #fbbf24;
+}
+.otel-kv > * + * {
+  margin-top: 0.125rem;
+}
+.otel-backend-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+  gap: 0.5rem;
+}
+.otel-spin {
+  animation: otel-spin 0.9s linear infinite;
+}
+@keyframes otel-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}

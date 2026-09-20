@@ -3,7 +3,8 @@ import { LivePage } from "./live";
 import { TracesPage } from "./traces";
 import { MetricsPage } from "./metrics";
 import { LogsPage } from "./logs";
-import { IconActivity, IconList, IconChart } from "./icons";
+import { SettingsPage } from "./settings";
+import { IconActivity, IconList, IconChart, IconSettings } from "./icons";
 import { readNav, writeNav, NAV_EVENT } from "./nav";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -12,6 +13,7 @@ const TABS = [
   { id: "traces", label: "Traces", Icon: IconList, render: () => <TracesPage /> },
   { id: "metrics", label: "Metrics", Icon: IconChart, render: () => <MetricsPage /> },
   { id: "logs", label: "Logs", Icon: IconList, render: () => <LogsPage /> },
+  { id: "settings", label: "Settings", Icon: IconSettings, render: () => <SettingsPage /> },
 ];
 
 function OtelDashboard() {

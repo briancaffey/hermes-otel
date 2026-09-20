@@ -295,3 +295,48 @@ class TestSearchBarFilters:
         }
         assert f.status == "error" and f.min_duration_ms == 250 and f.free_text == "hello"
         assert f.roots_only is False  # a tool filter matches tool spans
+
+
+class TestSettingsRoute:
+    """``/settings`` serves the settings report; secrets stay masked unless asked."""
+
+    @pytest.fixture()
+    def settings_client(self, tmp_path, monkeypatch):
+        pytest.importorskip("yaml")
+        from hermes_otel import plugin_config as pc
+
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
+        monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", tmp_path / "hermes_otel.yaml")
+        monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", tmp_path / "legacy.yaml")
+        (tmp_path / "hermes_otel.yaml").write_text(
+            "project_name: demo\nbackends:\n  - type: langfuse\n    secret_key: sk-live\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_PROMPTS", "true")
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        return TestClient(app)
+
+    def test_settings_shape_and_masking(self, settings_client):
+        r = settings_client.get("/settings")
+        assert r.status_code == 200
+        body = r.json()
+        assert body["config"]["path"].endswith("hermes_otel.yaml")
+        assert body["config"]["path_source"] == "durable"
+        assert body["counts"]["env"] == 1 and body["counts"]["file"] == 2
+        by_key = {f["key"]: f for f in body["fields"]}
+        assert by_key["capture_full_prompts"]["source"] == "env"
+        assert by_key["project_name"]["source"] == "file"
+        assert "sk-live" not in r.text
+        assert body["capture_summary"]["mode"] == "full"
+        assert any(
+            e["name"] == "HERMES_OTEL_CAPTURE_FULL_PROMPTS" and e["set"] for e in body["env"]
+        )
+        assert body["effective_yaml"].startswith("# hermes-otel effective configuration")
+        assert body["process"]["role"] == "dashboard"
+
+    def test_reveal_shows_secrets(self, settings_client):
+        r = settings_client.get("/settings?reveal=true")
+        assert r.status_code == 200
+        assert "sk-live" in r.json()["config"]["raw"]
