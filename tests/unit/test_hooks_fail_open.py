@@ -34,7 +34,7 @@ def tracer(monkeypatch):
     tr.config.tool_input_preview_max_chars = None
     tr.config.tool_output_preview_max_chars = None
     tr.sessions.pop_tool_start.return_value = 1.0
-    monkeypatch.setattr(hooks, "get_tracer", lambda: tr)
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: tr)
     return tr
 
 
@@ -143,7 +143,7 @@ class TestFailOpenDecorator:
 
         hooks._FAIL_OPEN_WARNED.clear()
         boom = MagicMock(side_effect=ValueError("kaboom"))
-        monkeypatch.setattr(hooks, "_resolve_tool_outcome", boom)
+        monkeypatch.setattr("hermes_otel.hooks.tools._resolve_tool_outcome", boom)
         with caplog.at_level(logging.WARNING, logger="hermes_otel"):
             for _ in range(3):
                 assert on_post_tool_call(tool_name="x", args={}, result="{}", task_id="t") is None

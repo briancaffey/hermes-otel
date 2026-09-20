@@ -170,7 +170,7 @@ ignore = [
 "__init__.py" = ["F401"]
 
 [tool.setuptools]
-packages = ["hermes_otel"]
+packages = ["hermes_otel", "hermes_otel.hooks"]
 
 [tool.setuptools.package-data]
 # Ship everything the installed plugin needs (bundled skill, manifest, and

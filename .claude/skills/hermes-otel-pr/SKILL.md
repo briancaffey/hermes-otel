@@ -34,7 +34,7 @@ relative to `hermes_otel/`:
 |---|---|
 | `plugin.yaml` | Manifest. `provides_hooks:` lists every hook the plugin subscribes to. |
 | `__init__.py` | `register(ctx)` — inits the tracer and registers hook callbacks. |
-| `hooks.py` | Hook callbacks (`on_*`). Stateless; routes through the tracer singleton. |
+| `hooks/` | Hook callbacks (`on_*`), one module per family (`session.py`, `tools.py`, `approval.py`, `llm.py`, `subagent.py`, `propagation.py`). Shared builders in `attributes.py` / `usage.py`; `_fail_open`, `_preview_for`, `_resolve_session_id` in `_common.py`. Stateless; routes through the tracer singleton. `hooks/__init__.py` re-exports everything. |
 | `tracer.py` | `HermesOTelPlugin` singleton: backend init, `start_span`/`end_span`, `record_metric`, metric instruments, orphan sweep, flush. |
 | `span_tracker.py` | Active-span registry + per-session parent stacks (survive cross-thread hook dispatch). |
 | `session_state.py` | Per-session aggregators (`PerSession`, `TurnSummary`). |
@@ -64,7 +64,7 @@ git checkout -b feat/<short-slug>     # or fix/<slug>, docs/<slug>
   Hermes builds may not expose newer hooks — registration must degrade
   gracefully, never raise). If a hook only exists on some Hermes versions, gate
   it on `hermes_cli.plugins.VALID_HOOKS` like `mcp_request_headers` does.
-- **Handlers** in `hooks.py`: signature uses explicit kwargs you need plus
+- **Handlers** in the `hooks/` package (pick the family module): signature uses explicit kwargs you need plus
   `**kwargs` (payloads are additive — always accept unknown fields). First line
   after logging: `tracer = get_tracer(); if not tracer.is_enabled: return`.
   Everything must **fail open** — guard `.get(...)`, never let a telemetry hook

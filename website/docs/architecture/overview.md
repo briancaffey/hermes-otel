@@ -102,11 +102,11 @@ Every path below is relative to `hermes_otel/` — the package directory that `h
 | `plugin.yaml` | Hermes manifest — declares provided hooks |
 | `tracer.py` | TracerProvider setup, exporter + processor wiring, backend resolution |
 | `backends.py` | Per-backend URL / header builders |
-| `hooks.py` | Hook callbacks — each maps a Hermes event to a span operation |
+| `hooks/` | Hook callbacks, one module per hook family (`session`, `tools`, `approval`, `llm`, `subagent`, `propagation`); `attributes.py` and `usage.py` hold the shared attribute and token-usage builders; `_common.py` the fail-open wrapper, preview policy and session resolution |
 | `span_tracker.py` | Per-session parent stack, orphan sweep, end_all |
 | `session_state.py` | Per-session aggregation for turn summary |
 | `plugin_config.py` | Config file + env-var parsing with precedence |
-| `helpers.py` | `_safe_str`, `_to_int`, `_detect_session_kind`, preview clipping |
+| `helpers.py` | Pure functions, no OTel import: string clipping, tool identity, skill detection, outcome and approval classification, `to_int` / `detect_session_kind` / `serialize_full` |
 | `debug_utils.py` | Optional debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log` |
 | `langsmith_backend.py` | LangSmith-specific translation (not OTLP) |
 

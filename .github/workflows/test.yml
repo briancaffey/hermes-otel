@@ -117,7 +117,7 @@ jobs:
         run: |
           set -e
           listing=$(unzip -l dist/*.whl)
-          for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks.py; do
+          for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks/__init__.py hermes_otel/hooks/tools.py; do
             echo "$listing" | grep -q "$f" || { echo "missing from wheel: $f"; exit 1; }
           done
 

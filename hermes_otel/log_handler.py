@@ -27,6 +27,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
+from .helpers import derive_signal_endpoint
 
 try:
     # opentelemetry-sdk emits a DeprecationWarning on LoggingHandler import
@@ -106,14 +107,10 @@ class _ExcludeOTelInternal(logging.Filter):
 def _derive_logs_endpoint(traces_endpoint: str) -> str:
     """Rewrite ``.../v1/traces`` to ``.../v1/logs``.
 
-    Mirrors :meth:`HermesOTelPlugin._derive_metrics_endpoint`. Collectors
-    that follow OTLP/HTTP convention expose the three signals on the same
-    host under different path suffixes; most of the time swapping the
-    suffix is all we need.
+    Thin wrapper over :func:`helpers.derive_signal_endpoint` (kept as the
+    name tests and the tracer's metrics twin refer to).
     """
-    if traces_endpoint.endswith("/v1/traces"):
-        return traces_endpoint[: -len("/v1/traces")] + "/v1/logs"
-    return traces_endpoint
+    return derive_signal_endpoint(traces_endpoint, "logs")
 
 
 # ── Processor construction ──────────────────────────────────────────────────
