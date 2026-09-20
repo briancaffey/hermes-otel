@@ -248,15 +248,18 @@ def on_pre_api_request(
         attributes["gen_ai.request.max_tokens"] = max_tokens
 
     if tracer.config.capture_full_prompts:
-        messages = kwargs.get("messages")
+        # Prefer the raw ``request_messages`` list: it is the exact list sent
+        # to the provider and Hermes does not sanitise it. ``request["body"]``
+        # is the sanitised view, where every string is capped at 8,000 chars
+        # (1,000 once the payload exceeds HERMES_PLUGIN_PAYLOAD_MAX_CHARS) and
+        # ends in ``...[truncated N chars]`` — the opposite of full capture.
+        messages = kwargs.get("request_messages") or kwargs.get("messages")
         if not messages:
             request = kwargs.get("request")
             if isinstance(request, dict):
                 body = request.get("body")
                 if isinstance(body, dict):
                     messages = body.get("messages")
-        if not messages:
-            messages = kwargs.get("request_messages")
         system_prompt = kwargs.get("system_prompt")
         serialized = serialize_full(messages)
         if serialized is not None:
