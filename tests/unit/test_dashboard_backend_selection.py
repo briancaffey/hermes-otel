@@ -244,3 +244,15 @@ class TestOpenObserveMetrics:
             }
         ]
         assert "body LIKE '%o%'" in sql and 'FROM "default"' in sql
+
+
+def test_trace_detail_carries_the_backend_ui_link(client):
+    with (
+        patch("backends.phoenix.PhoenixAdapter.get_trace", return_value={"batches": []}),
+        patch(
+            "backends.phoenix.PhoenixAdapter.trace_url",
+            return_value="http://localhost:6006/projects/P/traces/abc",
+        ),
+    ):
+        r = client.get("/traces/abc", params={"backend": "phx"}).json()
+    assert r["ui_url"] == "http://localhost:6006/projects/P/traces/abc"

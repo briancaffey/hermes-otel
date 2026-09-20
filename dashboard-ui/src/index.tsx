@@ -1,9 +1,10 @@
-import { React, useState, register, sdkOk, cn } from "./sdk";
+import { React, useState, useEffect, register, sdkOk, cn } from "./sdk";
 import { LivePage } from "./live";
 import { TracesPage } from "./traces";
 import { MetricsPage } from "./metrics";
 import { LogsPage } from "./logs";
 import { IconActivity, IconList, IconChart } from "./icons";
+import { readNav, writeNav, NAV_EVENT } from "./nav";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const TABS = [
@@ -14,7 +15,20 @@ const TABS = [
 ];
 
 function OtelDashboard() {
-  const [tab, setTab] = useState("live");
+  const [tab, setTabState] = useState(() => (TABS.some((t) => t.id === readNav().tab) ? (readNav().tab as string) : "live"));
+  const setTab = (id: string) => {
+    setTabState(id);
+    writeNav({ tab: id, trace: "", session: "" });
+  };
+  // The Logs tab (or a session link) asks for the Traces tab with a trace/session.
+  useEffect(() => {
+    const onNav = (e: any) => {
+      const d = e.detail || {};
+      if (d.tab && TABS.some((t) => t.id === d.tab)) setTabState(d.tab);
+    };
+    window.addEventListener(NAV_EVENT, onNav);
+    return () => window.removeEventListener(NAV_EVENT, onNav);
+  }, []);
   const active = TABS.find((t) => t.id === tab) || TABS[0];
   return (
     <div className="otel-root space-y-4">

@@ -11,7 +11,9 @@ from unittest.mock import patch
 _DASHBOARD = Path(__file__).resolve().parent.parent.parent / "hermes_otel" / "dashboard"
 if str(_DASHBOARD) not in sys.path:
     sys.path.insert(0, str(_DASHBOARD))
-if "fastapi" not in sys.modules:
+try:  # the real FastAPI when the dev extra has it; a stub otherwise
+    import fastapi  # noqa: F401
+except ImportError:
     _stub = types.ModuleType("fastapi")
 
     class _StubHTTPException(Exception):
@@ -171,3 +173,44 @@ def test_backend_cards_carry_the_session_id():
     row = {"operation_name": "agent", "hermes_session_id": "s-1", "hermes_turn_number": "2"}
     attrs = openobserve._row_to_card_attrs(row)
     assert attrs["hermes.session_id"] == "s-1" and attrs["hermes.turn.number"] == 2
+
+
+class TestTraceUrls:
+    def test_phoenix_links_to_the_project_trace_page(self):
+        with patch("backends.top_level_config", return_value={}):
+            a = PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
+        a._project_id_cache = "UHJvamVjdDoy"
+        assert a.trace_url("abc") == "http://localhost:6006/projects/UHJvamVjdDoy/traces/abc"
+
+    def test_langfuse_links_through_the_keys_project(self):
+        a = LangfuseAdapter(
+            {
+                "type": "langfuse",
+                "endpoint": "http://localhost:3000",
+                "public_key": "pk",
+                "secret_key": "sk",
+            }
+        )
+        with patch("backends.langfuse.http_get_json", return_value={"data": [{"id": "proj-1"}]}):
+            assert a.trace_url("abc") == "http://localhost:3000/project/proj-1/traces/abc"
+        with patch("backends.langfuse.http_get_json", side_effect=RuntimeError("down")):
+            b = LangfuseAdapter(
+                {
+                    "type": "langfuse",
+                    "endpoint": "http://localhost:3000",
+                    "public_key": "pk",
+                    "secret_key": "sk",
+                }
+            )
+            assert b.trace_url("abc") is None
+
+    def test_openobserve_offers_no_link(self):
+        a = OpenObserveAdapter(
+            {
+                "type": "openobserve",
+                "endpoint": "http://localhost:5080/api/default/v1/traces",
+                "user": "u",
+                "password": "p",
+            }
+        )
+        assert a.trace_url("abc") is None

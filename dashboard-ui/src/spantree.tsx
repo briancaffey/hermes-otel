@@ -6,7 +6,7 @@
 // makes offsets comparable at a glance. Bars are absolutely positioned within
 // the timeline cell by (start−t0)/total and dur/total; gridlines + an axis
 // header give the scale.
-import { React, useState, useMemo, Card, CardHeader, CardTitle, CardContent, Badge, Button, cn } from "./sdk";
+import { React, useState, useMemo, Card, CardHeader, CardContent, Badge, Button, cn } from "./sdk";
 import {
   fmtDurationMs,
   fmtTokens,
@@ -20,6 +20,7 @@ import {
   LiveTrace,
 } from "./lib";
 import { kindIcon, IconChevronRight } from "./icons";
+import { TraceHeader, TraceTabs, SpanSummary, AttrGroups } from "./detail";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 
@@ -94,8 +95,14 @@ function SpanSection({
         </div>
       </div>
       {open ? (
-        <div className="border-t border-border/60 bg-muted/20 px-3 py-3">
-          <AttrTable attrs={span._attrs} />
+        <div className="space-y-3 border-t border-border/60 bg-muted/20 px-3 py-3">
+          <SpanSummary span={span} />
+          <details className="otel-details">
+            <summary className="cursor-pointer text-[11px] font-medium uppercase tracking-wide text-muted-foreground">all attributes</summary>
+            <div className="mt-2">
+              <AttrGroups attrs={span._attrs} />
+            </div>
+          </details>
         </div>
       ) : null}
     </div>
@@ -195,26 +202,28 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
   );
 }
 
-// Full detail for a live trace: header + waterfall.
-export function LiveTraceDetail({ trace, roots, onBack }: { trace: LiveTrace; roots: TreeSpan[]; onBack: () => void }) {
+// Full detail for a live trace: summary header, then Spans / Logs / Raw.
+export function LiveTraceDetail({ trace, roots, onBack, source = "live" }: { trace: LiveTrace; roots: TreeSpan[]; onBack: () => void; source?: string }) {
+  const spans = trace.spans || [];
+  const ids = new Set(spans.map((s) => s.span_id));
+  const root = spans.find((s) => !s.parent_span_id || !ids.has(s.parent_span_id)) || spans[0];
   return (
     <Card>
-      <CardHeader className="otel-space-y-0 flex flex-row items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="truncate">{trace.rootName}</CardTitle>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{trace.service}</span>
-            <span>·</span>
-            <span className="font-mono">{String(trace.traceId).slice(0, 16)}</span>
-            <span>·</span>
-            <span>{fmtDurationMs(trace.durationMs)}</span>
-            {trace.cost ? <span className="text-emerald-400">${trace.cost.toFixed(4)}</span> : null}
-          </div>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>← Back</Button>
+      <CardHeader className="otel-space-y-0">
+        <TraceHeader
+          title={trace.rootName}
+          traceId={String(trace.traceId)}
+          service={trace.service}
+          durationMs={trace.durationMs}
+          rootAttrs={root?.attributes || {}}
+          spansAttrs={spans.map((s) => s.attributes || {})}
+          error={trace.error}
+          source={source}
+          onBack={onBack}
+        />
       </CardHeader>
       <CardContent>
-        <SpanTreeView roots={roots} defaultOpen />
+        <TraceTabs traceId={String(trace.traceId)} source={source} logsAvailable spans={<SpanTreeView roots={roots} defaultOpen />} raw={spans} />
       </CardContent>
     </Card>
   );

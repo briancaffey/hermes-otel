@@ -256,6 +256,26 @@ class LangfuseAdapter(BackendAdapter):
         )
         return {"traces": traces}
 
+    _project_id_cache: Optional[str] = None
+
+    def _project_id(self) -> Optional[str]:
+        if self._project_id_cache:
+            return self._project_id_cache
+        try:
+            data = http_get_json(
+                f"{self.query_url}/api/public/projects", headers=self._headers(), timeout=10.0
+            )
+        except Exception:
+            return None
+        items = data.get("data") if isinstance(data, dict) else None
+        if isinstance(items, list) and items and isinstance(items[0], dict) and items[0].get("id"):
+            self._project_id_cache = str(items[0]["id"])
+        return self._project_id_cache
+
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        pid = self._project_id()
+        return f"{self.query_url}/project/{pid}/traces/{trace_id}" if pid else None
+
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/public/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)

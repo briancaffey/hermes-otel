@@ -295,10 +295,12 @@ export function attrNum(a: Record<string, any>, ...keys: string[]): number | nul
 export const liveTokens = (s: LiveSpan) =>
   attrNum(s.attributes, "gen_ai.usage.total_tokens", "llm.token_count.total");
 export const liveCost = (s: LiveSpan) => attrNum(s.attributes, "hermes.cost.usage");
+// The requested model is the one shown everywhere (cards, header, metrics);
+// the response model appears next to it in the header when it differs (#185).
 export const liveModel = (s: LiveSpan) =>
-  s.attributes["gen_ai.response.model"] ||
   s.attributes["gen_ai.request.model"] ||
   s.attributes["llm.model_name"] ||
+  s.attributes["gen_ai.response.model"] ||
   null;
 export const sessionOf = (s: LiveSpan) =>
   s.attributes["hermes.session_id"] || s.attributes["session_id"] || s.attributes["session.id"] || null;
@@ -489,4 +491,171 @@ export function liveTreeFromSpans(spans: LiveSpan[]): { roots: TreeSpan[]; all: 
   };
   sortRec(roots);
   return { roots, all };
+}
+
+
+// ── trace detail helpers (#185) ──────────────────────────────────────────
+
+export type ChatMessage = { role: string; text: string };
+
+// Messages JSON (OpenInference input.value / llm.input_messages) → a list the
+// detail view renders as a conversation. Anything else → one "user" message.
+export function parseMessages(raw: any): ChatMessage[] {
+  if (raw == null) return [];
+  let value: any = raw;
+  if (typeof raw === "string") {
+    const t = raw.trim();
+    if (!(t.startsWith("[") || t.startsWith("{"))) return [{ role: "user", text: raw }];
+    try {
+      value = JSON.parse(t);
+    } catch {
+      return [{ role: "user", text: raw }];
+    }
+  }
+  if (!Array.isArray(value)) value = [value];
+  const out: ChatMessage[] = [];
+  for (const m of value) {
+    if (!m || typeof m !== "object") continue;
+    const role = String(m.role || m["message.role"] || "user");
+    const c = m.content ?? m["message.content"];
+    let text: string;
+    if (typeof c === "string") text = c;
+    else if (Array.isArray(c)) text = c.map((p: any) => (typeof p === "string" ? p : p?.text ?? JSON.stringify(p))).join("\n");
+    else if (c == null && m.tool_calls) text = JSON.stringify(m.tool_calls, null, 2);
+    else text = c == null ? "" : JSON.stringify(c, null, 2);
+    out.push({ role, text });
+  }
+  return out;
+}
+
+export function prettyJson(raw: any): string {
+  if (raw == null) return "";
+  if (typeof raw !== "string") return JSON.stringify(raw, null, 2);
+  const t = raw.trim();
+  if (t.startsWith("{") || t.startsWith("[")) {
+    try {
+      return JSON.stringify(JSON.parse(t), null, 2);
+    } catch {
+      return raw;
+    }
+  }
+  return raw;
+}
+
+// The duplicate conventions the plugin emits for one fact. The first key
+// present is shown; the others are folded under it in "all attributes".
+const DUPLICATE_GROUPS: string[][] = [
+  ["gen_ai.request.model", "llm.model_name"],
+  ["gen_ai.usage.input_tokens", "llm.token_count.prompt"],
+  ["gen_ai.usage.output_tokens", "llm.token_count.completion"],
+  ["gen_ai.usage.total_tokens", "llm.token_count.total"],
+  ["gen_ai.usage.reasoning.output_tokens", "llm.token_count.completion_details.reasoning"],
+  ["gen_ai.usage.cache_read.input_tokens", "gen_ai.usage.cache_read_input_tokens", "llm.token_count.prompt_details.cache_read"],
+  ["gen_ai.provider.name", "gen_ai.system", "llm.provider"],
+  ["hermes.session_id", "session.id", "session_id", "gen_ai.conversation.id", "wandb.thread_id"],
+  ["openinference.span.kind", "traceloop.span.kind"],
+];
+
+export type AttrGroup = { prefix: string; entries: { key: string; value: any; aliases: string[] }[] };
+
+// Attributes grouped by prefix (gen_ai, llm, hermes, tool, …), duplicate
+// conventions folded, long content keys left to the summary.
+export function groupAttrs(attrs: Record<string, any>): AttrGroup[] {
+  const folded = new Set<string>();
+  const alias: Record<string, string[]> = {};
+  for (const grp of DUPLICATE_GROUPS) {
+    const present = grp.filter((k) => attrs[k] !== undefined && attrs[k] !== null && attrs[k] !== "");
+    if (present.length > 1) {
+      alias[present[0]] = present.slice(1);
+      present.slice(1).forEach((k) => folded.add(k));
+    }
+  }
+  const groups: Record<string, AttrGroup> = {};
+  for (const key of Object.keys(attrs).sort()) {
+    if (folded.has(key)) continue;
+    const prefix = key.includes(".") ? key.split(".")[0] : "other";
+    (groups[prefix] ||= { prefix, entries: [] }).entries.push({ key, value: attrs[key], aliases: alias[key] || [] });
+  }
+  const order = ["hermes", "gen_ai", "llm", "tool", "input", "output", "session", "openinference"];
+  return Object.values(groups).sort((a, b) => {
+    const ia = order.indexOf(a.prefix);
+    const ib = order.indexOf(b.prefix);
+    return (ia < 0 ? 99 : ia) - (ib < 0 ? 99 : ib) || a.prefix.localeCompare(b.prefix);
+  });
+}
+
+export type HeaderFacts = {
+  requestModel: string | null;
+  responseModel: string | null;
+  inputTokens: number | null;
+  outputTokens: number | null;
+  reasoningTokens: number | null;
+  cacheReadTokens: number | null;
+  totalTokens: number | null;
+  cost: number | null;
+  tools: string[];
+  exitReason: string | null;
+  finalStatus: string | null;
+  session: string | null;
+  turn: number | null;
+  platform: string | null;
+};
+
+// Facts for the trace header, read from the ROOT span's attributes (the
+// turn's totals live there), with the api spans as a fallback for tokens.
+export function headerFacts(root: Record<string, any>, spansAttrs: Record<string, any>[] = []): HeaderFacts {
+  const a = root || {};
+  const num = (...keys: string[]) => attrNum(a, ...keys);
+  let totalTokens = num("gen_ai.usage.total_tokens", "llm.token_count.total");
+  let inputTokens = num("gen_ai.usage.input_tokens", "llm.token_count.prompt");
+  let outputTokens = num("gen_ai.usage.output_tokens", "llm.token_count.completion");
+  if (totalTokens == null) {
+    let t = 0;
+    let i = 0;
+    let o = 0;
+    let seen = false;
+    for (const s of spansAttrs) {
+      const v = attrNum(s, "gen_ai.usage.total_tokens", "llm.token_count.total");
+      if (v != null) {
+        t += v;
+        i += attrNum(s, "gen_ai.usage.input_tokens", "llm.token_count.prompt") || 0;
+        o += attrNum(s, "gen_ai.usage.output_tokens", "llm.token_count.completion") || 0;
+        seen = true;
+      }
+    }
+    if (seen) {
+      totalTokens = t;
+      inputTokens = inputTokens ?? i;
+      outputTokens = outputTokens ?? o;
+    }
+  }
+  const toolsRaw = a["hermes.turn.tools"];
+  let tools: string[] = [];
+  if (Array.isArray(toolsRaw)) tools = toolsRaw.map(String);
+  else if (typeof toolsRaw === "string" && toolsRaw.trim()) {
+    try {
+      const parsed = JSON.parse(toolsRaw);
+      tools = Array.isArray(parsed) ? parsed.map(String) : toolsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+    } catch {
+      tools = toolsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+    }
+  }
+  const requestModel = a["gen_ai.request.model"] || a["llm.model_name"] || null;
+  const responseModel = a["gen_ai.response.model"] || null;
+  return {
+    requestModel,
+    responseModel: responseModel && responseModel !== requestModel ? responseModel : null,
+    inputTokens,
+    outputTokens,
+    reasoningTokens: num("gen_ai.usage.reasoning.output_tokens", "llm.token_count.completion_details.reasoning"),
+    cacheReadTokens: num("gen_ai.usage.cache_read.input_tokens", "gen_ai.usage.cache_read_input_tokens", "llm.token_count.prompt_details.cache_read"),
+    totalTokens,
+    cost: num("hermes.cost.usage"),
+    tools,
+    exitReason: a["hermes.turn.exit_reason"] || null,
+    finalStatus: a["hermes.turn.final_status"] || null,
+    session: a["hermes.session_id"] || a["session.id"] || a["session_id"] || null,
+    turn: num("hermes.turn.number"),
+    platform: a["hermes.platform"] || null,
+  };
 }

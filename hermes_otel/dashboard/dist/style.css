@@ -72,6 +72,67 @@
 .otel-w-44 { width: 11rem; }
 .otel-w-56 { width: 14rem; }
 
+.otel-facts-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 0.75rem 1rem;
+}
+.otel-link {
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, currentColor 40%, transparent);
+  text-underline-offset: 2px;
+  cursor: pointer;
+  background: none;
+  border: 0;
+  padding: 0;
+  font: inherit;
+  color: inherit;
+}
+.otel-link:hover {
+  color: var(--color-foreground);
+}
+.otel-pre {
+  margin: 0;
+  max-height: 24rem;
+  overflow: auto;
+  white-space: pre-wrap;
+  word-break: break-word;
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  padding: 0.5rem 0.75rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-card) 40%, transparent);
+}
+.otel-raw {
+  max-height: 40rem;
+}
+.otel-msg {
+  border-left: 3px solid var(--color-border);
+  padding-left: 0.5rem;
+}
+.otel-msg-user {
+  border-left-color: #34d399;
+}
+.otel-msg-assistant {
+  border-left-color: #38bdf8;
+}
+.otel-msg-system {
+  border-left-color: #94a3b8;
+}
+.otel-msg-tool {
+  border-left-color: #fbbf24;
+}
+.otel-details > summary {
+  list-style: none;
+}
+.otel-details > summary::before {
+  content: "▸ ";
+}
+.otel-details[open] > summary::before {
+  content: "▾ ";
+}
+
 /* ── surfaces (theme tokens with alpha) ────────────────────────────── */
 .otel-card-bg {
   background: color-mix(in srgb, var(--color-card) 40%, transparent);

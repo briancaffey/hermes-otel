@@ -8,7 +8,6 @@ import {
   API,
   Card,
   CardHeader,
-  CardTitle,
   CardContent,
   Badge,
   Button,
@@ -38,6 +37,8 @@ import { useSource, withBackend } from "./source";
 import { SourceSelect } from "./sourceselect";
 import { FilterBar, TraceFilters, DEFAULT_FILTERS, liveParams, backendParams, isDefaultFilters } from "./filters";
 import { LiveSessions, BackendSessions, ViewToggle } from "./sessions";
+import { TraceHeader, TraceTabs } from "./detail";
+import { readNav, writeNav, NAV_EVENT, NavState } from "./nav";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 3000;
@@ -54,9 +55,10 @@ function readView(): "turns" | "sessions" {
 // ════════════════════════════════ LIVE SOURCE ════════════════════════════
 // Rows come from the live store's own query (/live/traces, #184): filtering,
 // grouping and totals happen in SQLite, the browser gets one page (#183).
-function LiveTraces({ view }: { view: "turns" | "sessions" }) {
-  const [filters, setFilters] = useState<TraceFilters>(DEFAULT_FILTERS);
-  const [applied, setApplied] = useState<TraceFilters>(DEFAULT_FILTERS);
+function LiveTraces({ view, wanted }: { view: "turns" | "sessions"; wanted: NavState }) {
+  const initial: TraceFilters = { ...DEFAULT_FILTERS, session: wanted.session || "", lookback: wanted.session || wanted.trace ? 168 : DEFAULT_FILTERS.lookback };
+  const [filters, setFilters] = useState<TraceFilters>(initial);
+  const [applied, setApplied] = useState<TraceFilters>(initial);
   const [rows, setRows] = useState<LiveTrace[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -94,6 +96,19 @@ function LiveTraces({ view }: { view: "turns" | "sessions" }) {
     fetchJSON(`${API}/live/traces/${selected.traceId}`)
       .then((r: any) => setDetailSpans(r.spans || []))
       .catch(() => setDetailSpans([]));
+  }, [selected]);
+
+  // ?trace=<id> (a pasted link, or the Logs tab) opens that trace (#185).
+  useEffect(() => {
+    if (!wanted.trace) return;
+    fetchJSON(`${API}/live/traces/${wanted.trace}`)
+      .then((r: any) => {
+        if (r.trace) setSelected({ ...r.trace, spans: r.spans });
+      })
+      .catch(() => setError(`Trace ${wanted.trace} is not in the live store`));
+  }, [wanted.trace]);
+  useEffect(() => {
+    writeNav({ trace: selected ? String(selected.traceId) : "" });
   }, [selected]);
 
   const submit = () => setApplied(filters);
@@ -236,34 +251,41 @@ function BackendTraceCard({ trace, onSelect }: { trace: any; onSelect: (t: any) 
   );
 }
 
-function BackendTraceDetail({ trace, detail, loading, error, onBack }: { trace: any; detail: any; loading: boolean; error: string | null; onBack: () => void }) {
-  const roots = detail ? buildSpanTree(detail.batches || (detail.trace && detail.trace.batches)).roots : [];
+function BackendTraceDetail({ trace, detail, loading, error, onBack, source, status }: { trace: any; detail: any; loading: boolean; error: string | null; onBack: () => void; source: string; status: any }) {
+  const tree = detail ? buildSpanTree(detail.batches || (detail.trace && detail.trace.batches)) : { roots: [], all: [] };
+  const rootSpan = tree.roots[0] || null;
+  const rootAttrs = rootSpan ? rootSpan._attrs : traceAttrs(trace);
+  const durationMs = rootSpan ? rootSpan.durationMs : trace.durationMs;
+  const traceId = String(trace.traceID || trace.traceId);
+  const isError = tree.all.some((s) => (s.status?.code ?? s.status?.statusCode) === 2) || traceAttrs(trace)["status"] === "error";
   return (
     <Card>
-      <CardHeader className="otel-space-y-0 flex flex-row items-start justify-between gap-3">
-        <div className="min-w-0 space-y-1">
-          <CardTitle className="truncate">{trace.rootTraceName || "—"}</CardTitle>
-          <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
-            <span>{trace.rootServiceName || "—"}</span>
-            <span>·</span>
-            <span className="font-mono">{trace.traceID || trace.traceId}</span>
-            <span>·</span>
-            <span>{fmtDurationMs(trace.durationMs)}</span>
-          </div>
-        </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>← Back</Button>
+      <CardHeader className="otel-space-y-0">
+        <TraceHeader
+          title={rootSpan?.name || trace.rootTraceName || "—"}
+          traceId={traceId}
+          service={trace.rootServiceName}
+          durationMs={durationMs}
+          rootAttrs={rootAttrs}
+          spansAttrs={tree.all.map((s) => s._attrs)}
+          error={isError}
+          uiUrl={detail?.ui_url || null}
+          uiLabel={status?.name || status?.type || null}
+          source={source}
+          onBack={onBack}
+        />
       </CardHeader>
       <CardContent>
         {loading ? <div className="py-8 text-center text-sm text-muted-foreground">Loading trace…</div> : null}
         {error ? <ErrorBanner error={error} /> : null}
-        {!loading && !error ? <SpanTreeView roots={roots} /> : null}
+        {!loading && !error ? <TraceTabs traceId={traceId} source={source} logsAvailable={!!status?.logs} spans={<SpanTreeView roots={tree.roots} />} raw={detail} /> : null}
       </CardContent>
     </Card>
   );
 }
 
-function BackendTraces({ status, onRefresh, source, view }: { status: any; onRefresh: () => void; source: string; view: "turns" | "sessions" }) {
-  const [filters, setFilters] = useState<TraceFilters>(DEFAULT_FILTERS);
+function BackendTraces({ status, onRefresh, source, view, wanted }: { status: any; onRefresh: () => void; source: string; view: "turns" | "sessions"; wanted: NavState }) {
+  const [filters, setFilters] = useState<TraceFilters>({ ...DEFAULT_FILTERS, session: wanted.session || "", lookback: wanted.session || wanted.trace ? 168 : DEFAULT_FILTERS.lookback });
   const [traces, setTraces] = useState<any[] | null>(null);
   const [showPings, setShowPings] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -304,6 +326,14 @@ function BackendTraces({ status, onRefresh, source, view }: { status: any; onRef
     setError(null);
   }, [source]);
 
+  // ?trace=<id> opens that trace on this backend (#185).
+  useEffect(() => {
+    if (wanted.trace && status?.configured) setSelected({ traceID: wanted.trace, rootTraceName: "(by id)" });
+  }, [wanted.trace, status?.configured]);
+  useEffect(() => {
+    writeNav({ trace: selected ? String(selected.traceID || selected.traceId) : "" });
+  }, [selected]);
+
   useEffect(() => {
     if (!selected) return;
     setDetail(null);
@@ -330,7 +360,7 @@ function BackendTraces({ status, onRefresh, source, view }: { status: any; onRef
       </Card>
     );
 
-  if (selected) return <BackendTraceDetail trace={selected} detail={detail} loading={detailLoading} error={detailError} onBack={() => setSelected(null)} />;
+  if (selected) return <BackendTraceDetail trace={selected} detail={detail} loading={detailLoading} error={detailError} onBack={() => setSelected(null)} source={source} status={status} />;
 
   // Same default as the Live views: successful MCP keepalive pings stay out of
   // the list unless asked for. Backend rows carry status in the attributes.
@@ -378,7 +408,8 @@ function BackendTraces({ status, onRefresh, source, view }: { status: any; onRef
 // ═══════════════════════════════════ PAGE ════════════════════════════════
 export function TracesPage() {
   const { source, setSource, status, refresh, isLive } = useSource();
-  const [view, setViewState] = useState<"turns" | "sessions">(readView());
+  const [nav, setNav] = useState<NavState>(() => readNav());
+  const [view, setViewState] = useState<"turns" | "sessions">((nav.view as any) || readView());
   const setView = (v: "turns" | "sessions") => {
     try {
       localStorage.setItem(VIEW_KEY, v);
@@ -386,8 +417,27 @@ export function TracesPage() {
       /* ignore */
     }
     setViewState(v);
+    writeNav({ view: v });
   };
 
+  // A navigation request from another tab (the Logs tab's trace ids, a session
+  // link in a header) re-targets this page; the URL was already updated.
+  useEffect(() => {
+    const onNav = (e: any) => {
+      const d: NavState = e.detail || {};
+      if (d.tab && d.tab !== "traces") return;
+      if (d.source) setSource(d.source);
+      if (d.view) setViewState(d.view as any);
+      setNav({ ...d });
+    };
+    window.addEventListener(NAV_EVENT, onNav);
+    return () => window.removeEventListener(NAV_EVENT, onNav);
+  }, [setSource]);
+  useEffect(() => {
+    writeNav({ tab: "traces", source, view });
+  }, [source, view]);
+
+  const key = `${source}:${nav.trace || ""}:${nav.session || ""}`;
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -397,7 +447,7 @@ export function TracesPage() {
         </div>
         {isLive ? <MiniLabel>queried from the in-process store</MiniLabel> : null}
       </div>
-      {isLive ? <LiveTraces view={view} /> : <BackendTraces status={status} onRefresh={refresh} source={source} view={view} />}
+      {isLive ? <LiveTraces key={key} view={view} wanted={nav} /> : <BackendTraces key={key} status={status} onRefresh={refresh} source={source} view={view} wanted={nav} />}
     </div>
   );
 }
