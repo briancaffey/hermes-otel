@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.4](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.3...hermes-otel-v1.8.4) (2026-09-20)
+
+
+### Bug Fixes
+
+* **skills:** take hermes.skill.path from evidence instead of building it from the name ([#151](https://github.com/briancaffey/hermes-otel/issues/151)) ([92379f1](https://github.com/briancaffey/hermes-otel/commit/92379f12a700460aad27898e0c5b6feac42659e2)), closes [#147](https://github.com/briancaffey/hermes-otel/issues/147)
+
 ## [1.8.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.2...hermes-otel-v1.8.3) (2026-09-20)
 
 
