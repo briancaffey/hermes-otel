@@ -187,3 +187,51 @@ class TestQueries:
         assert [x["logger"] for x in store.loggers()] == ["a", "b"] or [
             x["logger"] for x in store.loggers()
         ] == ["b", "a"]
+
+
+class TestLogAttribution:
+    """Log lines are attributed to the single active session via the tracker (#186)."""
+
+    def _root(self, trace_id: int):
+        class Ctx:
+            pass
+
+        class Root:
+            def get_span_context(self):
+                c = Ctx()
+                c.trace_id = trace_id
+                return c
+
+        return Root()
+
+    def test_one_active_session_attributes_the_line(self, store):
+        import logging
+
+        from hermes_otel.span_tracker import SpanTracker
+        from hermes_otel.tracer import _LiveLogHandler
+
+        tracker = SpanTracker()
+        tracker.push_parent(self._root(0xABC), session_id="sess-1")
+        h = _LiveLogHandler(store, tracker=tracker)
+        h.emit(logging.LogRecord("agent.loop", logging.INFO, __file__, 1, "hello", None, None))
+        (rec,) = store.logs()
+        assert rec["session_id"] == "sess-1"
+        assert rec["trace_id"] == format(0xABC, "032x")
+        assert [l["body"] for l in store.query_logs(session="sess-1")] == ["hello"]
+
+    def test_two_active_sessions_stay_unattributed(self, store):
+        import logging
+
+        from hermes_otel.span_tracker import SpanTracker
+        from hermes_otel.tracer import _LiveLogHandler
+
+        tracker = SpanTracker()
+        tracker.push_parent(self._root(1), session_id="a")
+        tracker.push_parent(self._root(2), session_id="b")
+        h = _LiveLogHandler(store, tracker=tracker)
+        h.emit(logging.LogRecord("x", logging.INFO, __file__, 1, "ambiguous", None, None))
+        (rec,) = store.logs()
+        assert rec["session_id"] is None and rec["trace_id"] is None
+        assert tracker.single_active_session() is None
+        tracker.pop_parent(session_id="b")
+        assert tracker.single_active_session()[0] == "a"

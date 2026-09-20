@@ -35,7 +35,7 @@ Rows carry indexed columns (trace id, session id, span name, status, start and e
 - **Live**: cost, tokens, turns, spans and errors for the buffered activity, an activity sparkline, and one card per turn. Tokens and cost are counted once per turn (the root span's totals). Opening a card shows the span waterfall.
 - **Traces**: the same cards with a filter box for the Live source, or the backend search form (native query, service, lookback) for the Backend source. Backend cards show the whole-trace span count when the adapter knows it.
 - **Metrics**: totals, tokens and cost over time, tokens by type, calls by model, tool durations and approvals, from the live store.
-- **Logs**: the in-process log tail with level and text filters. Log lines carry the trace id and session id of the span that was active when they were written.
+- **Logs**: the in-process log tail with level and text filters. A log line carries a trace id and session id when the plugin can attribute it: the span on the logging thread's context, or, failing that, the one session with a turn in flight. With several sessions active at once the line stays unattributed rather than guessed.
 
 Successful MCP keepalive pings are hidden by default in every list (a checkbox shows them).
 

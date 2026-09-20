@@ -249,9 +249,31 @@ class _LiveLogHandler(logging.Handler):
     the dashboard's Logs tab tails the agent's logs with no external backend.
     """
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: Any, tracker: Any = None) -> None:
         super().__init__()
         self._store = store
+        self._tracker = tracker
+
+    def _session_hint(self):
+        tracker = self._tracker
+        if tracker is None:
+            try:
+                tracker = get_tracer().spans
+            except Exception:
+                return None
+        try:
+            found = tracker.single_active_session()
+        except Exception:
+            return None
+        if not found:
+            return None
+        session_id, root = found
+        try:
+            ctx = root.get_span_context()
+            trace_id = format(ctx.trace_id, "032x") if getattr(ctx, "trace_id", 0) else None
+        except Exception:
+            trace_id = None
+        return str(session_id), trace_id
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
@@ -262,12 +284,18 @@ class _LiveLogHandler(logging.Handler):
                 ctx = span.get_span_context() if span is not None else None
                 if ctx is not None and getattr(ctx, "trace_id", 0):
                     trace_id = format(ctx.trace_id, "032x")
-                # The session id lets the Logs tab filter by conversation (#186).
-                attrs = getattr(span, "attributes", None) or {}
-                for key in ("hermes.session_id", "session.id", "session_id"):
-                    if attrs.get(key):
-                        session_id = str(attrs[key])
-                        break
+                    attrs = getattr(span, "attributes", None) or {}
+                    for key in ("hermes.session_id", "session.id", "session_id"):
+                        if attrs.get(key):
+                            session_id = str(attrs[key])
+                            break
+            if trace_id is None:
+                # The plugin's spans live in its tracker, not on this thread's
+                # context: attribute the line to the one active session, if
+                # there is exactly one (#186). Never guess between several.
+                hint = self._session_hint()
+                if hint is not None:
+                    session_id, trace_id = hint
             self._store.add_log(
                 {
                     "level": record.levelname,
