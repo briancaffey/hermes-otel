@@ -1,4 +1,6 @@
-# Developer conveniences. The CI gate itself is documented in CONTRIBUTING.md.
+# Developer conveniences. `make ci` runs the same checks as
+# .github/workflows/test.yml, in the same order, so a green run here is a
+# green run there; CONTRIBUTING.md documents the gate.
 
 # Headless Chrome/Chromium renders docs/catalog-banner.html to the PNG the
 # plugin-catalog card shows (2:1, 1200x600). Override CHROME if autodetection
@@ -13,3 +15,41 @@ banner:
 	  --force-device-scale-factor=$(SCALE) --window-size=1200,600 \
 	  --screenshot="$(abspath docs/catalog-banner.png)" "file://$(abspath docs/catalog-banner.html)" >/dev/null 2>&1
 	@python3 -c 'import struct,sys; d=open("docs/catalog-banner.png","rb").read(24); w,h=struct.unpack(">II", d[16:24]); print("docs/catalog-banner.png:", w, "x", h, "px,", len(open("docs/catalog-banner.png","rb").read())//1024, "KB"); sys.exit(0 if w==2*h else 1)'
+
+# ── The CI gate, locally ───────────────────────────────────────────────
+# Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
+# black), plugin scan, tests with the 85% coverage gate, dashboard bundle
+# up to date + vitest, docs site build, wheel build. `make ci-fast` skips
+# the two npm builds when you did not touch dashboard-ui/ or website/.
+.PHONY: ci ci-fast ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
+ci: ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
+	@echo "✓ ci: every check that GitHub Actions runs passed locally"
+
+ci-fast: ci-lint ci-scan ci-test
+	@echo "✓ ci-fast: lint, scan and tests passed (dashboard/docs/wheel skipped)"
+
+ci-lint:
+	uv lock --check
+	uv run --extra dev ruff check .
+	uv run --extra dev black --check .
+
+ci-scan:
+	uv run --extra dev python scripts/scan_plugin_artifact.py
+
+ci-test:
+	uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85 -q
+
+ci-dashboard:
+	cd dashboard-ui && npm ci --silent && npm run build --silent
+	git diff --exit-code -- hermes_otel/dashboard/dist
+	cd dashboard-ui && npm test --silent
+
+ci-docs:
+	cd website && npm ci --silent && npm run build --silent
+
+ci-wheel:
+	rm -rf dist && uv build --quiet
+	@listing=$$(unzip -l dist/*.whl); \
+	for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks/__init__.py hermes_otel/hooks/tools.py; do \
+	  echo "$$listing" | grep -q "$$f" || { echo "missing from wheel: $$f"; exit 1; }; \
+	done; echo "✓ wheel contains the plugin files"

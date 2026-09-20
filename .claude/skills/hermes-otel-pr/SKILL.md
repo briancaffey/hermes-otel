@@ -113,14 +113,21 @@ status mapping, metrics, two-exporter fan-out, and orphan-sweep where relevant.
 
 ## 4. Run the EXACT CI checks locally — before every push
 
-CI (`.github/workflows/test.yml`) runs four things. Run all four; do not push
-until they pass. The canonical invocation uses `uv` (matches CI):
+`make ci` runs every job of `.github/workflows/test.yml` locally, in order,
+with the same commands: lockfile check, ruff, black, plugin scan, tests with
+the 85% coverage gate, dashboard bundle up to date + vitest, docs build,
+wheel build. Do not push until it passes. `make ci-fast` skips the two npm
+builds when `dashboard-ui/` and `website/` are untouched. The individual
+commands, should you need one:
 
 ```bash
+uv lock --check                              # pyproject and uv.lock agree
 uv run --extra dev ruff check .
 uv run --extra dev black --check .          # ← easy to forget; CI fails without it
 uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85
 python scripts/scan_plugin_artifact.py      # Hermes's own plugin security scanner
+cd dashboard-ui && npm run build && git diff --exit-code -- ../hermes_otel/dashboard/dist && npm test
+cd website && npm run build
 ```
 
 - If `black --check` complains, fix with `uv run --extra dev black .`.

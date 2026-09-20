@@ -6,6 +6,14 @@ on:
   pull_request:
     branches: [main]
 
+# A push that supersedes an in-flight run on the same branch cancels it: the
+# old run's verdict is about a commit nobody will merge, and on the
+# release-please branch the bot's "refresh uv.lock" follow-up otherwise
+# leaves one guaranteed red run behind (#208).
+concurrency:
+  group: ci-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 jobs:
   lint:
     runs-on: ubuntu-latest
