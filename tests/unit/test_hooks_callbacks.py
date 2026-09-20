@@ -1133,6 +1133,33 @@ class TestFullCaptureFlags:
         assert "llm.input_messages" not in attrs
         assert "llm.system_prompt" not in attrs
 
+    def test_pre_prefers_raw_request_messages_over_sanitised_body(self, mock_tracer):
+        """Hermes sends both ``request_messages`` (raw, uncapped) and
+        ``request["body"]["messages"]`` (sanitised: strings capped at 8,000
+        chars, 1,000 past HERMES_PLUGIN_PAYLOAD_MAX_CHARS, ending in
+        ``...[truncated N chars]``). Full capture must take the raw list.
+        """
+        import json as _json
+
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        mock_tracer.config = HermesOtelConfig(capture_full_prompts=True)
+        full = "s" * 14_000
+        raw = [{"role": "system", "content": full}, {"role": "user", "content": "hi"}]
+        clipped = [
+            {"role": "system", "content": full[:1000] + "...[truncated 13000 chars]"},
+            {"role": "user", "content": "hi"},
+        ]
+        on_pre_api_request(
+            **self._pre_kwargs(
+                request={"method": "POST", "body": {"messages": clipped}},
+                request_messages=raw,
+            )
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert _json.loads(attrs["gen_ai.input.messages"]) == raw
+        assert "[truncated" not in attrs["input.value"]
+
     def test_pre_writes_full_prompt_from_real_core_shape(self, mock_tracer):
         """Hermes core never sends a bare `messages` kwarg to this hook — it
         sends `request={"body": {"messages": [...]}}` (documented as the
