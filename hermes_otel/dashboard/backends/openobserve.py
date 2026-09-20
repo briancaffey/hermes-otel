@@ -386,7 +386,46 @@ class OpenObserveAdapter(BackendAdapter):
                     }
                 ],
             }
+        self._attach_span_counts(traces, start_s, end_s)
         return {"traces": list(traces.values())}
+
+    def _attach_span_counts(
+        self, traces: Dict[str, Dict[str, Any]], start_s: int, end_s: int
+    ) -> None:
+        """Add ``spanCount`` (spans per trace) with one grouped query.
+
+        The search query returns one row per trace, so the card would
+        otherwise show "1 spans" for every trace (#179). A failed count
+        query leaves ``spanCount`` unset; the UI then shows no number.
+        """
+        if not traces:
+            return
+        ids = ", ".join(f"'{_sql_escape(t)}'" for t in traces)
+        sql = (
+            f"SELECT trace_id, COUNT(*) AS n FROM {self.stream} "
+            f"WHERE trace_id IN ({ids}) GROUP BY trace_id"
+        )
+        body = {
+            "query": {
+                "sql": sql,
+                "start_time": int(start_s) * 1_000_000,
+                "end_time": int(end_s) * 1_000_000,
+                "size": len(traces),
+            }
+        }
+        url = f"{self.query_url}/api/{self.org}/_search?type=traces"
+        try:
+            data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
+        except Exception:
+            return
+        hits = data.get("hits") if isinstance(data, dict) else None
+        for row in hits or []:
+            if not isinstance(row, dict):
+                continue
+            tid = row.get("trace_id")
+            n = row.get("n")
+            if tid in traces and isinstance(n, (int, float)) and n > 0:
+                traces[tid]["spanCount"] = int(n)
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         where = f"trace_id = '{_sql_escape(trace_id)}'"

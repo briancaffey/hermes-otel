@@ -1,9 +1,9 @@
 {
   "name": "hermes_otel",
   "label": "OTel",
-  "description": "Browse OpenTelemetry traces from the configured collector backend (LGTM/Tempo).",
+  "description": "Live traces, metrics and logs from the in-process store, and trace search on any configured backend with a dashboard adapter (Phoenix, Langfuse, OpenObserve, SigNoz, Uptrace, Jaeger, Tempo/LGTM).",
   "icon": "ChartGantt",
-  "version": "0.1.0",
+  "version": "1.8.7",
   "tab": {
     "path": "/otel",
     "position": "end"

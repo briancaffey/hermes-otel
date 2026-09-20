@@ -38,6 +38,7 @@ import {
 import { categorize, IconCoins, IconChevronRight } from "./icons";
 import { MiniLabel, ErrorBanner } from "./atoms";
 import { SpanTreeView, LiveTraceCard, LiveTraceDetail } from "./spantree";
+import { usePolling } from "./poll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 1500;
@@ -49,15 +50,15 @@ function SourceToggle({ source, onChange, backendOk }: { source: string; onChang
     <button
       onClick={() => onChange(id)}
       className={cn(
-        "border px-3 py-1.5 text-xs font-medium transition-colors",
-        source === id ? "border-border bg-accent text-foreground" : "border-transparent text-muted-foreground hover:text-foreground"
+        "otel-toggle px-3 py-1.5 text-xs font-medium transition-colors",
+        source === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground"
       )}
     >
       {label}
     </button>
   );
   return (
-    <div className="inline-flex border border-border bg-card/40 p-0.5">
+    <div className="otel-card-bg inline-flex border border-border p-0.5">
       <Btn id="live" label="⚡ Live (in-process)" />
       <Btn id="backend" label={backendOk ? "🗄 Backend" : "🗄 Backend (offline)"} />
     </div>
@@ -86,11 +87,7 @@ function LiveTraces() {
   useEffect(() => {
     poll();
   }, [poll]);
-  useEffect(() => {
-    if (paused || selected) return;
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
-  }, [poll, paused, selected]);
+  usePolling(poll, POLL_MS, !paused && !selected);
 
   let traces = groupLiveTraces(spans);
   const pingCount = traces.filter((t) => isMcpKeepalivePing(t.rootName, t.error)).length;
@@ -108,7 +105,7 @@ function LiveTraces() {
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="filter by name / model…" value={text} onChange={(e: any) => setText(e.target.value)} className="h-8 w-56" />
+        <Input placeholder="filter by name / model…" value={text} onChange={(e: any) => setText(e.target.value)} className="otel-w-56 h-8" />
         <Button variant={errorsOnly ? "default" : "outline"} size="sm" onClick={() => setErrorsOnly((v) => !v)}>
           errors only
         </Button>
@@ -147,7 +144,7 @@ function StatusBar({ status, onRefresh }: { status: any; onRefresh: () => void }
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0 flex-1 space-y-1.5">
         <div className="flex items-center gap-2">
-          <span className={cn("h-2.5 w-2.5 rounded-full", configured ? "bg-emerald-400" : "bg-muted-foreground/40")} />
+          <span className={cn("h-2.5 w-2.5 rounded-full", configured ? "otel-pulse-dot" : "bg-muted-foreground/40")} />
           <span className="text-base font-semibold tracking-tight">{configured ? status.name || status.type : "Not configured"}</span>
           {configured && status.type && status.type !== status.name ? <Badge variant="secondary" className="text-[10px] uppercase">{status.type}</Badge> : null}
         </div>
@@ -169,11 +166,12 @@ function StatusBar({ status, onRefresh }: { status: any; onRefresh: () => void }
 }
 
 function FiltersForm({ filters, status, onChange, onSubmit }: { filters: any; status: any; onChange: (f: any) => void; onSubmit: () => void }) {
-  const rawLabel = status?.query_lang_label ? `${status.query_lang_label} filter (optional)` : "Query filter (optional)";
+  const lang: string = status?.query_lang_label || "";
+  const rawLabel = !lang ? "Query filter (optional)" : /filter$/i.test(lang.trim()) ? `${lang} (optional)` : `${lang} filter (optional)`;
   const set = (k: string, v: any) => onChange({ ...filters, [k]: v });
   return (
-    <form className="grid items-end gap-3 md:grid-cols-[minmax(0,2fr)_minmax(0,1fr)_120px_150px]" onSubmit={(e: any) => { e.preventDefault(); onSubmit(); }}>
-      <div className="space-y-1.5 md:col-span-2">
+    <form className="otel-filter-grid" onSubmit={(e: any) => { e.preventDefault(); onSubmit(); }}>
+      <div className="otel-filter-q space-y-1.5">
         <Label htmlFor="otel-q">{rawLabel}</Label>
         <Input id="otel-q" placeholder={status?.raw_placeholder || ""} value={filters.q} onChange={(e: any) => set("q", e.target.value)} />
       </div>
@@ -190,6 +188,7 @@ function FiltersForm({ filters, status, onChange, onSubmit }: { filters: any; st
           <SelectOption value="24">24h</SelectOption>
           <SelectOption value="72">3d</SelectOption>
           <SelectOption value="168">7d</SelectOption>
+          <SelectOption value="720">30d</SelectOption>
         </Select>
       </div>
       <button type="submit" className="hidden" tabIndex={-1} aria-hidden />
@@ -212,7 +211,7 @@ function BackendTraceCard({ trace, onSelect }: { trace: any; onSelect: (t: any) 
   const Icon = cat.Icon;
   return (
     <div
-      className={cn("group flex cursor-pointer items-start gap-3 border bg-card/40 p-3 transition-colors hover:bg-secondary/30", isError ? "border-destructive/30" : "border-border")}
+      className={cn("otel-card-bg otel-hover-parent flex cursor-pointer items-start gap-3 border p-3 transition-colors hover:bg-secondary/30", isError ? "border-destructive/30" : "border-border")}
       role="button"
       tabIndex={0}
       onClick={() => onSelect(trace)}
@@ -231,9 +230,9 @@ function BackendTraceCard({ trace, onSelect }: { trace: any; onSelect: (t: any) 
           {model ? <Badge variant="secondary" className="font-mono text-[10px]">{String(model)}</Badge> : null}
         </div>
         {inP || outP ? (
-          <div className="space-y-0.5 border-l-2 border-border/60 pl-2 text-xs">
-            {inP ? <div className="truncate text-foreground/80"><span className="mr-2 text-[10px] text-muted-foreground">in</span>{inP}</div> : null}
-            {outP ? <div className="truncate text-foreground/80"><span className="mr-2 text-[10px] text-muted-foreground">out</span>{outP}</div> : null}
+          <div className="otel-pl-2 space-y-0.5 border-l-2 border-border/60 text-xs">
+            {inP ? <div className="truncate text-foreground/80"><span className="otel-mr-2 text-[10px] text-muted-foreground">in</span>{inP}</div> : null}
+            {outP ? <div className="truncate text-foreground/80"><span className="otel-mr-2 text-[10px] text-muted-foreground">out</span>{outP}</div> : null}
           </div>
         ) : null}
         <div className="flex flex-wrap items-center gap-x-2 text-xs text-muted-foreground">
@@ -248,7 +247,7 @@ function BackendTraceCard({ trace, onSelect }: { trace: any; onSelect: (t: any) 
         </div>
         <div className="truncate font-mono text-[10px] text-muted-foreground/60">{trace.traceID || trace.traceId}</div>
       </div>
-      <div className="shrink-0 self-center text-muted-foreground opacity-30 group-hover:opacity-90"><IconChevronRight size={16} /></div>
+      <div className="otel-self-center otel-reveal shrink-0 text-muted-foreground"><IconChevronRight size={16} /></div>
     </div>
   );
 }
@@ -257,7 +256,7 @@ function BackendTraceDetail({ trace, detail, loading, error, onBack }: { trace: 
   const roots = detail ? buildSpanTree(detail.batches || (detail.trace && detail.trace.batches)).roots : [];
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+      <CardHeader className="otel-space-y-0 flex flex-row items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <CardTitle className="truncate">{trace.rootTraceName || "—"}</CardTitle>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
@@ -327,8 +326,8 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
           <p>{status?.reason || "No queryable trace backend configured."}</p>
           <p className="text-xs">
             That's fine — the <span className="font-medium text-foreground">⚡ Live</span> source above needs no backend.
-            Add an <span className="font-mono">lgtm</span>/<span className="font-mono">tempo</span> backend to browse
-            historical traces here.
+            Add a backend of a queryable type to browse historical traces here:{" "}
+            <span className="font-mono">{(status?.queryable_types || []).join(", ") || "none available"}</span>.
           </p>
         </CardContent>
       </Card>

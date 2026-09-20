@@ -10,6 +10,11 @@
           "type": "yaml",
           "path": "hermes_otel/plugin.yaml",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "json",
+          "path": "hermes_otel/dashboard/manifest.json",
+          "jsonpath": "$.version"
         }
       ]
     }

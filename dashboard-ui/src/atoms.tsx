@@ -41,7 +41,7 @@ export function Stat({
   const valColor =
     accent === "cost" ? "text-emerald-400" : accent === "error" ? "text-destructive" : "text-foreground";
   return (
-    <div className="border border-border bg-card/40 px-3 py-2.5">
+    <div className="otel-card-bg border border-border px-3 py-2.5">
       <div className={cn("text-xl font-semibold tabular-nums tracking-tight", valColor)}>{value}</div>
       <div className="text-[11px] uppercase tracking-wide text-muted-foreground">{label}</div>
       {sub != null ? <div className="mt-0.5 text-[11px] text-muted-foreground">{sub}</div> : null}
@@ -55,7 +55,7 @@ export function Pulse({ active }: { active: boolean }) {
     <span
       className={cn(
         "inline-block h-2.5 w-2.5 rounded-full",
-        active ? "bg-emerald-400 otel-pulse" : "bg-muted-foreground/40"
+        active ? "otel-pulse-dot otel-pulse" : "bg-muted-foreground/40"
       )}
     />
   );
@@ -117,7 +117,7 @@ export function LineChart({
       <div className="mt-1 flex flex-wrap gap-3">
         {series.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-            <span className="inline-block h-2 w-2 rounded-full" style={{ background: s.color }} />
+            <span className="otel-w-2 inline-block h-2 rounded-full" style={{ background: s.color }} />
             {s.label}
           </span>
         ))}

@@ -87,6 +87,8 @@ jobs:
         run: cd dashboard-ui && npm ci && npm run build
       - name: Fail on a stale bundle
         run: git diff --exit-code -- hermes_otel/dashboard/dist
+      - name: Front-end unit tests (src/lib.ts)
+        run: cd dashboard-ui && npm test
 
   website-build:
     # deploy-site.yml only builds on push to main; catch a broken docs build

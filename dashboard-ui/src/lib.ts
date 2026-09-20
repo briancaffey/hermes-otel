@@ -99,17 +99,17 @@ export function kindOf(name: string, attrs?: Record<string, any>): Kind {
   return "other";
 }
 
-// Tailwind text-color class per kind (host palette → matches the theme).
+// Text-colour class per kind; defined in dist/style.css (the host ships only some of these hues, #180).
 export const KIND_TEXT: Record<Kind, string> = {
-  agent: "text-emerald-400",
-  llm: "text-sky-400",
-  api: "text-cyan-400",
-  tool: "text-amber-400",
-  skill: "text-emerald-300",
-  approval: "text-pink-400",
-  subagent: "text-violet-400",
-  session: "text-emerald-400",
-  cron: "text-violet-400",
+  agent: "otel-c-agent",
+  llm: "otel-c-llm",
+  api: "otel-c-api",
+  tool: "otel-c-tool",
+  skill: "otel-c-skill",
+  approval: "otel-c-approval",
+  subagent: "otel-c-subagent",
+  session: "otel-c-session",
+  cron: "otel-c-cron",
   other: "text-muted-foreground",
 };
 // Bar fill (currentColor via the text class won't reach SVG fill cleanly, so a
@@ -150,14 +150,17 @@ export function traceAttrs(trace: any): Record<string, any> {
   }
   return out;
 }
+// Whole-trace span count. Adapters that know it send ``spanCount``; Tempo
+// sends per-service stats. ``spanSets[0].spans`` is the MATCHED spans (one
+// per trace in roots-only mode), never the trace size, so it is not a
+// fallback (#179): no number beats a wrong one.
 export function traceSpanCount(trace: any): number | null {
+  if (typeof trace.spanCount === "number" && trace.spanCount > 0) return trace.spanCount;
   if (trace.serviceStats) {
     let total = 0;
     for (const k in trace.serviceStats) total += trace.serviceStats[k].spanCount || 0;
     if (total) return total;
   }
-  const ss = trace.spanSets || (trace.spanSet ? [trace.spanSet] : []);
-  if (ss.length && ss[0].spans) return ss[0].spans.length;
   return null;
 }
 
@@ -320,6 +323,33 @@ export type LiveTrace = {
   spans: LiveSpan[];
 };
 
+// Token and cost totals for ONE trace. The ``agent`` root already carries the
+// turn's totals and every ``api.*`` span carries its own call, so summing all
+// spans counted each turn twice (#178). Use the root's figure when it has one;
+// otherwise sum the ``api.*`` spans only (``llm.*`` spans mirror the API spans).
+export function traceTotals(spans: LiveSpan[]): { tokens: number | null; cost: number | null } {
+  const ids = new Set(spans.map((s) => s.span_id));
+  const root = spans.find((s) => !s.parent_span_id || !ids.has(s.parent_span_id)) || null;
+  const pick = (get: (s: LiveSpan) => number | null): number | null => {
+    if (root) {
+      const v = get(root);
+      if (v != null) return v;
+    }
+    let sum = 0;
+    let seen = false;
+    for (const s of spans) {
+      if (!s.name.startsWith("api.")) continue;
+      const v = get(s);
+      if (v != null) {
+        sum += v;
+        seen = true;
+      }
+    }
+    return seen ? sum : null;
+  };
+  return { tokens: pick(liveTokens), cost: pick(liveCost) };
+}
+
 export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {
   const byTrace: Record<string, LiveSpan[]> = {};
   for (const s of spans) (byTrace[s.trace_id] ||= []).push(s);
@@ -330,13 +360,10 @@ export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {
     const root = ss.find((s) => !s.parent_span_id || !ids.has(s.parent_span_id)) || ss[0];
     const startNs = Math.min(...ss.map((s) => s.start_time_unix_nano || 0));
     const endNs = Math.max(...ss.map((s) => s.end_time_unix_nano || s.start_time_unix_nano || 0));
-    let tokens = 0;
-    let cost = 0;
+    const totals = traceTotals(ss);
     let model: string | null = null;
     let error = false;
     for (const s of ss) {
-      tokens += liveTokens(s) || 0;
-      cost += liveCost(s) || 0;
       if (!model) model = liveModel(s);
       if (s.status === "ERROR") error = true;
     }
@@ -351,8 +378,8 @@ export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {
       durationMs: (endNs - startNs) / 1e6,
       spanCount: ss.length,
       model,
-      tokens: tokens || null,
-      cost: cost || null,
+      tokens: totals.tokens,
+      cost: totals.cost,
       error,
       session: sessionOf(root),
       spans: ss,

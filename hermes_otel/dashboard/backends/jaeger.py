@@ -207,6 +207,7 @@ class JaegerAdapter(BackendAdapter):
             traces.append(
                 {
                     "traceID": trace_id,
+                    "spanCount": len(spans),
                     "rootServiceName": service,
                     "rootTraceName": root.get("operationName") or "",
                     "startTimeUnixNano": str(start_ns) if start_ns else "0",

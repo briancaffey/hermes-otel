@@ -208,6 +208,18 @@ class LangfuseAdapter(BackendAdapter):
                 continue
 
             attrs: Dict[str, Any] = {"name": t.get("name") or ""}
+            # The trace list carries the trace's total cost but no token
+            # counts or model; those live on the observations, which
+            # ``get_trace`` fetches. Only report what the list states (#179).
+            total_cost = t.get("totalCost")
+            if (
+                isinstance(total_cost, (int, float))
+                and not isinstance(total_cost, bool)
+                and total_cost > 0
+            ):
+                attrs["hermes.cost.usage"] = float(total_cost)
+            observations = t.get("observations")
+            span_count = len(observations) if isinstance(observations, list) else None
             for k in ("userId", "sessionId", "release", "version"):
                 if t.get(k):
                     attrs[f"langfuse.{k}"] = t[k]
@@ -217,6 +229,7 @@ class LangfuseAdapter(BackendAdapter):
             traces.append(
                 {
                     "traceID": trace_id,
+                    **({"spanCount": span_count} if span_count is not None else {}),
                     "rootServiceName": "langfuse",
                     "rootTraceName": t.get("name") or "",
                     "startTimeUnixNano": str(start_ns) if start_ns else "0",

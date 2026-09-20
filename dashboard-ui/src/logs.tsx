@@ -1,5 +1,6 @@
 import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Button, Input, Select, SelectOption, cn } from "./sdk";
 import { fmtTimeAgo } from "./lib";
+import { usePolling } from "./poll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type LogRec = {
@@ -18,7 +19,7 @@ const LEVEL_CLASS: Record<string, string> = {
   ERROR: "text-destructive",
   WARNING: "text-amber-400",
   WARN: "text-amber-400",
-  INFO: "text-sky-400",
+  INFO: "otel-c-llm",
   DEBUG: "text-muted-foreground",
 };
 const SEVERITY: Record<string, number> = { DEBUG: 10, INFO: 20, WARNING: 30, WARN: 30, ERROR: 40, CRITICAL: 50 };
@@ -46,11 +47,7 @@ export function LogsPage() {
   useEffect(() => {
     poll();
   }, [poll]);
-  useEffect(() => {
-    if (paused) return;
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
-  }, [poll, paused]);
+  usePolling(poll, POLL_MS, !paused);
 
   const f = filter.trim().toLowerCase();
   const min = Number(minLevel);
@@ -90,22 +87,22 @@ export function LogsPage() {
             <SelectOption value="30">Warn+</SelectOption>
             <SelectOption value="40">Error</SelectOption>
           </Select>
-          <Input placeholder="filter…" value={filter} onChange={(e: any) => setFilter(e.target.value)} className="h-8 w-40" />
+          <Input placeholder="filter…" value={filter} onChange={(e: any) => setFilter(e.target.value)} className="otel-w-40 h-8" />
           <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
             {paused ? "▶" : "⏸"}
           </Button>
         </div>
       </div>
-      <div className="overflow-hidden border border-border bg-card/40 font-mono text-xs">
+      <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
         {shown.map((l) => {
           const lvl = (l.level || "INFO").toUpperCase();
           return (
             <div key={l.seq} className="flex items-start gap-2 border-b border-border/60 px-3 py-1 last:border-b-0">
-              <span className="w-14 shrink-0 text-muted-foreground/70">
+              <span className="otel-w-14 shrink-0 text-muted-foreground/70">
                 {l.time_unix_nano ? fmtTimeAgo(l.time_unix_nano) : ""}
               </span>
-              <span className={cn("w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
-              {l.logger ? <span className="w-40 shrink-0 truncate text-muted-foreground" title={l.logger}>{l.logger}</span> : null}
+              <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
+              {l.logger ? <span className="otel-w-40 shrink-0 truncate text-muted-foreground" title={l.logger}>{l.logger}</span> : null}
               <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground/90">{l.body}</span>
               {l.trace_id ? <span className="shrink-0 font-mono text-[10px] text-muted-foreground/60">{String(l.trace_id).slice(0, 8)}</span> : null}
             </div>

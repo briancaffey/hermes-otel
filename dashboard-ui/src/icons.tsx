@@ -64,13 +64,13 @@ export const IconList = (p: IP) =>
 
 // Category → icon + Tailwind text-color, by root span name (trace cards).
 export const CATEGORY: Record<string, { Icon: (p: IP) => any; color: string; label: string | null }> = {
-  llm: { Icon: IconZap, color: "text-sky-400", label: "llm" },
-  tool: { Icon: IconWrench, color: "text-amber-400", label: "tool" },
-  agent: { Icon: IconTerminal, color: "text-emerald-400", label: "agent" },
-  cron: { Icon: IconClock, color: "text-violet-400", label: "cron" },
-  skill: { Icon: IconSparkles, color: "text-emerald-300", label: "skill" },
-  approval: { Icon: IconShield, color: "text-pink-400", label: "approval" },
-  subagent: { Icon: IconUsers, color: "text-violet-400", label: "subagent" },
+  llm: { Icon: IconZap, color: "otel-c-llm", label: "llm" },
+  tool: { Icon: IconWrench, color: "otel-c-tool", label: "tool" },
+  agent: { Icon: IconTerminal, color: "otel-c-agent", label: "agent" },
+  cron: { Icon: IconClock, color: "otel-c-cron", label: "cron" },
+  skill: { Icon: IconSparkles, color: "otel-c-skill", label: "skill" },
+  approval: { Icon: IconShield, color: "otel-c-approval", label: "approval" },
+  subagent: { Icon: IconUsers, color: "otel-c-subagent", label: "subagent" },
   other: { Icon: IconActivity, color: "text-muted-foreground", label: null },
 };
 

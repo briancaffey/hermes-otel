@@ -180,7 +180,7 @@ def _parse_filter(
 @router.get("/traces/search")
 def search_traces(
     limit: int = Query(50, ge=1, le=200),
-    lookback_hours: float = Query(1.0, gt=0, le=168),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
     q: str = Query("", description="Backend-native raw query"),
     service: str = Query(""),
     name_regex: str = Query(""),
