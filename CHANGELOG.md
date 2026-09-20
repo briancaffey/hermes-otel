@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.11.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.10.0...hermes-otel-v1.11.0) (2026-09-20)
+
+
+### Features
+
+* **config:** content_capture setting, full content by default, one copy per payload, truncation markers ([#205](https://github.com/briancaffey/hermes-otel/issues/205)) ([aa7dac3](https://github.com/briancaffey/hermes-otel/commit/aa7dac33bc88d09ce1c25712163db41d6066f542)), closes [#199](https://github.com/briancaffey/hermes-otel/issues/199) [#74](https://github.com/briancaffey/hermes-otel/issues/74)
+* **session:** consume on_session_finalize and on_session_reset — session summary metrics, deterministic cleanup, previous-session links ([#206](https://github.com/briancaffey/hermes-otel/issues/206)) ([e26bebb](https://github.com/briancaffey/hermes-otel/commit/e26bebb301d57beb1aba80785b15a22b8faa09ad)), closes [#29](https://github.com/briancaffey/hermes-otel/issues/29)
+
 ## [1.10.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.9.1...hermes-otel-v1.10.0) (2026-09-20)
 
 
