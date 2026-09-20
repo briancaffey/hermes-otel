@@ -433,6 +433,13 @@ export function TracesPage() {
     window.addEventListener(NAV_EVENT, onNav);
     return () => window.removeEventListener(NAV_EVENT, onNav);
   }, [setSource]);
+  // A pasted link names the source; apply it once on mount (the selector's
+  // remembered choice is the default otherwise).
+  useEffect(() => {
+    const wantedSource = readNav().source;
+    if (wantedSource && wantedSource !== source) setSource(wantedSource);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   useEffect(() => {
     writeNav({ tab: "traces", source, view });
   }, [source, view]);
