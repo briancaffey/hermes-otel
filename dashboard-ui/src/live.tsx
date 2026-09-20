@@ -5,8 +5,6 @@ import {
   kindOf,
   Kind,
   KIND_HEX,
-  liveCost,
-  liveTokens,
   sessionOf,
   groupLiveTraces,
   liveTreeFromSpans,
@@ -16,26 +14,29 @@ import {
 } from "./lib";
 import { Stat, Sparkline, Pulse, MiniLabel, ErrorBanner } from "./atoms";
 import { LiveTraceCard, LiveTraceDetail } from "./spantree";
+import { usePolling } from "./poll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 1500;
 const MAX_KEEP = 1500;
 
-function deriveStats(spans: LiveSpan[]) {
+// Tokens and cost are summed per TRACE (each turn counted once, #178);
+// span-level counters stay per span.
+function deriveStats(traces: LiveTrace[], spans: LiveSpan[]) {
   let cost = 0;
   let tokens = 0;
   let errors = 0;
-  const traces = new Set<string>();
   const byKind: Record<string, number> = {};
+  for (const t of traces) {
+    cost += t.cost || 0;
+    tokens += t.tokens || 0;
+  }
   for (const s of spans) {
-    cost += liveCost(s) || 0;
-    tokens += liveTokens(s) || 0;
     if (s.status === "ERROR") errors++;
-    traces.add(s.trace_id);
     const k = kindOf(s.name, s.attributes);
     byKind[k] = (byKind[k] || 0) + 1;
   }
-  return { cost, tokens, errors, traces: traces.size, byKind };
+  return { cost, tokens, errors, traces: traces.length, byKind };
 }
 
 export function LivePage() {
@@ -64,11 +65,7 @@ export function LivePage() {
   useEffect(() => {
     poll();
   }, [poll]);
-  useEffect(() => {
-    if (paused || selected) return;
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
-  }, [poll, paused, selected]);
+  usePolling(poll, POLL_MS, !paused && !selected);
 
   // Hidden MCP keepalive pings drop out of the stats and sparkline too, so a
   // dozen pings never read as "activity".
@@ -76,7 +73,7 @@ export function LivePage() {
   const traces = showPings ? allTraces : allTraces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
   const hiddenPings = allTraces.length - traces.length;
   const visibleSpans = showPings ? spans : traces.flatMap((t) => t.spans);
-  const stats = deriveStats(visibleSpans);
+  const stats = deriveStats(traces, visibleSpans);
   const lastSession = spans.length ? sessionOf(spans[spans.length - 1]) : null;
 
   const now = Date.now();
@@ -130,7 +127,7 @@ export function LivePage() {
 
       {error ? <ErrorBanner error={error} /> : null}
 
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="otel-kpi-grid">
         <Stat label="Cost" value={fmtCost(stats.cost)} accent="cost" />
         <Stat label="Tokens" value={fmtInt(stats.tokens)} />
         <Stat label="Turns" value={fmtInt(stats.traces)} />
@@ -138,9 +135,9 @@ export function LivePage() {
         <Stat label="Errors" value={fmtInt(stats.errors)} accent={stats.errors ? "error" : undefined} />
       </div>
 
-      <div className="flex items-center gap-4 border border-border bg-card/40 px-3 py-2">
-        <MiniLabel>activity</MiniLabel>
-        <div className="w-44">
+      <div className="otel-card-bg flex items-center gap-4 border border-border px-3 py-2">
+        <MiniLabel>activity · spans per 2 s · last 100 s</MiniLabel>
+        <div className="otel-w-44">
           <Sparkline values={buckets} />
         </div>
         <div className="ml-auto flex flex-wrap gap-3">
@@ -149,7 +146,7 @@ export function LivePage() {
             .slice(0, 7)
             .map((k) => (
               <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="inline-block h-2 w-2 rounded-full" style={{ background: KIND_HEX[k] }} />
+                <span className="otel-w-2 inline-block h-2 rounded-full" style={{ background: KIND_HEX[k] }} />
                 {k} {stats.byKind[k]}
               </span>
             ))}

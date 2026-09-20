@@ -1,9 +1,130 @@
-/* hermes-otel dashboard — minimal scoped CSS.
-   Layout, colour and corners come from the HOST's Tailwind utility classes used
-   throughout the components (so the tab matches Hermes' theme exactly). This file
-   only carries the two things Tailwind can't: the live pulse + row-enter motion.
-   Built from dashboard/src — edit the TSX, not the bundle. */
+/* hermes-otel dashboard — the plugin's own CSS.
+   Colours come from the host's theme tokens (--color-*), so the tab follows
+   every Hermes theme. LAYOUT rules live here on purpose: the host only ships
+   the Tailwind classes its own pages use, so a plugin that leans on classes
+   like `sm:grid-cols-5` reflows whenever Hermes changes (#180). Every
+   `otel-*` class used in dashboard-ui/src is defined in this file;
+   tests/unit/test_dashboard_css_classes.py keeps that true. */
 
+/* ── layout ────────────────────────────────────────────────────────── */
+.otel-kpi-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.5rem;
+}
+@media (min-width: 640px) {
+  .otel-kpi-grid {
+    grid-template-columns: repeat(5, minmax(0, 1fr));
+  }
+}
+.otel-filter-grid {
+  display: grid;
+  align-items: end;
+  gap: 0.75rem;
+}
+@media (min-width: 768px) {
+  .otel-filter-grid {
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 120px 150px;
+  }
+  .otel-filter-q {
+    grid-column: span 2 / span 2;
+  }
+}
+.otel-attr-table {
+  display: grid;
+  grid-template-columns: max-content minmax(0, 1fr);
+  column-gap: 1rem;
+  row-gap: 0.25rem;
+}
+.otel-self-center {
+  align-self: center;
+}
+.otel-mr-2 {
+  margin-right: 0.5rem;
+}
+.otel-root {
+  display: block;
+}
+.otel-pl-2 {
+  padding-left: 0.5rem;
+}
+.otel-space-y-0 > * + * {
+  margin-top: 0;
+}
+.otel-w-2 { width: 0.5rem; }
+.otel-w-12 { width: 3rem; }
+.otel-w-14 { width: 3.5rem; }
+.otel-w-16 { width: 4rem; }
+.otel-w-28 { width: 7rem; }
+.otel-w-40 { width: 10rem; }
+.otel-w-44 { width: 11rem; }
+.otel-w-56 { width: 14rem; }
+
+/* ── surfaces (theme tokens with alpha) ────────────────────────────── */
+.otel-card-bg {
+  background: color-mix(in srgb, var(--color-card) 40%, transparent);
+}
+.otel-track {
+  background: color-mix(in srgb, var(--color-border) 25%, transparent);
+}
+.otel-hoverable:hover {
+  background: color-mix(in srgb, var(--color-accent) 20%, transparent);
+}
+.otel-error-bg {
+  background: color-mix(in srgb, var(--color-destructive) 4%, transparent);
+}
+.otel-reveal {
+  opacity: 0.3;
+}
+.otel-hover-parent:hover .otel-reveal {
+  opacity: 0.9;
+}
+
+/* ── span-kind colours (same hues as KIND_HEX in src/lib.ts) ───────── */
+.otel-c-agent,
+.otel-c-session {
+  color: #34d399;
+}
+.otel-c-llm {
+  color: #38bdf8;
+}
+.otel-c-api {
+  color: #22d3ee;
+}
+.otel-c-tool {
+  color: #fbbf24;
+}
+.otel-c-skill {
+  color: #6ee7b7;
+}
+.otel-c-approval {
+  color: #f472b6;
+}
+.otel-c-subagent,
+.otel-c-cron {
+  color: #a78bfa;
+}
+
+/* ── tabs + source toggle ──────────────────────────────────────────── */
+.otel-tab {
+  margin-bottom: -1px;
+  border-bottom: 2px solid transparent;
+}
+.otel-tab-active {
+  border-bottom-color: var(--color-foreground);
+}
+.otel-toggle {
+  border: 1px solid transparent;
+}
+.otel-toggle-active {
+  border-color: var(--color-border);
+  background: var(--color-accent);
+}
+
+/* ── live pulse ────────────────────────────────────────────────────── */
+.otel-pulse-dot {
+  background: var(--color-success, #34d399);
+}
 @keyframes otel-pulse {
   0% {
     box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success, #34d399) 55%, transparent);

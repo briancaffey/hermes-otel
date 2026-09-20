@@ -27,7 +27,7 @@ export function AttrTable({ attrs }: { attrs: Record<string, any> }) {
   const keys = Object.keys(attrs || {}).sort();
   if (!keys.length) return <div className="text-xs text-muted-foreground">(no attributes)</div>;
   return (
-    <dl className="grid grid-cols-[max-content_1fr] gap-x-4 gap-y-1 text-xs">
+    <dl className="otel-attr-table text-xs">
       {keys.map((k) => {
         const v = attrs[k];
         const rendered = v && typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
@@ -73,14 +73,14 @@ function SpanSection({
   const approval = span._attrs["hermes.approval.choice"];
   const width = Math.min(100 - offsetPct, Math.max(0.8, durPct));
   return (
-    <div className={cn("overflow-hidden border bg-card/40 transition-colors hover:bg-accent/20", isErr ? "border-destructive/40" : "border-border")}>
+    <div className={cn("otel-card-bg otel-hoverable overflow-hidden border transition-colors", isErr ? "border-destructive/40" : "border-border")}>
       {/* flamegraph line: full-width track + a coloured segment (offset → duration) */}
-      <div className="relative h-1.5 w-full bg-border/25" title={`+${fmtDurationMs(startMs)} · ${fmtDurationMs(span.durationMs)}`}>
+      <div className="otel-track relative h-1.5 w-full" title={`+${fmtDurationMs(startMs)} · ${fmtDurationMs(span.durationMs)}`}>
         <div className="absolute inset-y-0" style={{ left: `${offsetPct}%`, width: `${width}%`, minWidth: 2, background: hex }} />
       </div>
       <div className="flex cursor-pointer items-center gap-2 px-3 py-2" style={{ paddingLeft: 12 + depth * 20 }} onClick={onToggle}>
         <span className="w-3 shrink-0 text-xs text-muted-foreground">{hasKids ? (open ? "▾" : "▸") : ""}</span>
-        <span className="inline-block h-2 w-2 shrink-0 rounded-full" style={{ background: hex }} />
+        <span className="otel-w-2 inline-block h-2 shrink-0 rounded-full" style={{ background: hex }} />
         <span className="truncate font-mono text-sm" title={span.name}>
           {span.name}
         </span>
@@ -90,7 +90,7 @@ function SpanSection({
           {tokens ? <span className="tabular-nums">{fmtTokens(tokens)} tok</span> : null}
           {cost ? <span className="tabular-nums text-emerald-400">${Number(cost).toFixed(4)}</span> : null}
           {startMs > 0.5 ? <span className="tabular-nums" title="start offset from trace begin">+{fmtDurationMs(startMs)}</span> : null}
-          <span className="w-14 text-right font-medium tabular-nums text-foreground">{fmtDurationMs(span.durationMs)}</span>
+          <span className="otel-w-14 text-right font-medium tabular-nums text-foreground">{fmtDurationMs(span.durationMs)}</span>
         </div>
       </div>
       {open ? (
@@ -150,8 +150,8 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
   return (
     <div
       className={cn(
-        "group flex cursor-pointer items-start gap-3 border bg-card/40 p-3 transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
-        trace.error ? "border-destructive/30 bg-destructive/[0.04]" : "border-border"
+        "otel-card-bg otel-hover-parent flex cursor-pointer items-start gap-3 border p-3 transition-colors hover:bg-secondary/30 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-ring",
+        trace.error ? "otel-error-bg border-destructive/30" : "border-border"
       )}
       role="button"
       tabIndex={0}
@@ -188,7 +188,7 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
           <span title={fmtAbsTime(trace.startNs)}>{fmtTimeAgo(trace.endNs || trace.startNs)}</span>
         </div>
       </div>
-      <div className="shrink-0 self-center text-muted-foreground opacity-30 transition-opacity group-hover:opacity-90">
+      <div className="otel-self-center otel-reveal shrink-0 text-muted-foreground transition-opacity">
         <IconChevronRight size={16} />
       </div>
     </div>
@@ -199,7 +199,7 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
 export function LiveTraceDetail({ trace, roots, onBack }: { trace: LiveTrace; roots: TreeSpan[]; onBack: () => void }) {
   return (
     <Card>
-      <CardHeader className="flex flex-row items-start justify-between gap-3 space-y-0">
+      <CardHeader className="otel-space-y-0 flex flex-row items-start justify-between gap-3">
         <div className="min-w-0 space-y-1">
           <CardTitle className="truncate">{trace.rootName}</CardTitle>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">

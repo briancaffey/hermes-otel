@@ -394,6 +394,9 @@ class PhoenixAdapter(BackendAdapter):
             traces.append(
                 {
                     "traceID": trace_id,
+                    # Whole-trace span count, so the card never shows the
+                    # matched-span count as if it were the trace size (#179).
+                    "spanCount": int(trace_span_count),
                     "rootServiceName": project_name,
                     "rootTraceName": span.get("name") or "",
                     "startTimeUnixNano": str(start_ns) if start_ns else "0",

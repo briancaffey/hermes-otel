@@ -2,15 +2,17 @@
   "name": "hermes-otel-dashboard",
   "private": true,
   "version": "0.2.0",
-  "description": "Frontend for the hermes-otel dashboard tab. Dev-time build only: `npm run build` writes ../hermes_otel/dashboard/dist/index.js (committed; the install artifact ships only dist/). CI rebuilds and fails if dist/ is stale.",
+  "description": "Frontend for the hermes-otel dashboard tab. Dev-time build only: `npm run build` writes ../hermes_otel/dashboard/dist/index.js (committed; the install artifact ships only dist/). CI rebuilds and fails if dist/ is stale, and runs `npm test` (vitest) over src/lib.ts.",
   "type": "module",
   "scripts": {
     "build": "node build.mjs",
-    "watch": "node build.mjs --watch"
+    "watch": "node build.mjs --watch",
+    "test": "vitest run"
   },
   "devDependencies": {
     "@types/react": "^18.3.0",
     "esbuild": "^0.25.0",
-    "typescript": "^5.7.0"
+    "typescript": "^5.7.0",
+    "vitest": "^3.2.7"
   }
 }

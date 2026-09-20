@@ -1,6 +1,7 @@
 import { React, useState, useEffect, useRef, useCallback, fetchJSON, API } from "./sdk";
 import { fmtCost, fmtInt, fmtDurationMs } from "./lib";
 import { Stat, LineChart, MiniLabel } from "./atoms";
+import { usePolling } from "./poll";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 type Metric = { name: string; value: number; attributes: Record<string, any>; time_unix_nano: number; seq: number };
@@ -14,13 +15,13 @@ function BarList({ rows, fmt, color }: { rows: { label: string; value: number }[
     <div className="space-y-1.5">
       {rows.map((r) => (
         <div key={r.label} className="flex items-center gap-2">
-          <span className="w-28 shrink-0 truncate font-mono text-[11px] text-muted-foreground" title={r.label}>
+          <span className="otel-w-28 shrink-0 truncate font-mono text-[11px] text-muted-foreground" title={r.label}>
             {r.label}
           </span>
           <div className="relative h-4 flex-1 bg-muted/30">
             <div className="absolute inset-y-0 left-0" style={{ width: `${(r.value / max) * 100}%`, background: color || "var(--color-primary, #34d399)" }} />
           </div>
-          <span className="w-16 shrink-0 text-right tabular-nums text-xs">{fmt ? fmt(r.value) : fmtInt(r.value)}</span>
+          <span className="otel-w-16 shrink-0 text-right tabular-nums text-xs">{fmt ? fmt(r.value) : fmtInt(r.value)}</span>
         </div>
       ))}
     </div>
@@ -29,7 +30,7 @@ function BarList({ rows, fmt, color }: { rows: { label: string; value: number }[
 
 function Panel({ title, children }: { title: string; children: any }) {
   return (
-    <div className="border border-border bg-card/40 p-3">
+    <div className="otel-card-bg border border-border p-3">
       <MiniLabel>{title}</MiniLabel>
       <div className="mt-2">{children}</div>
     </div>
@@ -56,10 +57,7 @@ export function MetricsPage() {
   useEffect(() => {
     poll();
   }, [poll]);
-  useEffect(() => {
-    const id = setInterval(poll, POLL_MS);
-    return () => clearInterval(id);
-  }, [poll]);
+  usePolling(poll, POLL_MS, true);
 
   // ── aggregate ──────────────────────────────────────────────────────────
   const sumBy = (name: string, attr?: string) => {
@@ -137,7 +135,7 @@ export function MetricsPage() {
 
   return (
     <div className="space-y-3">
-      <div className="grid grid-cols-2 gap-2 sm:grid-cols-5">
+      <div className="otel-kpi-grid">
         <Stat label="Total tokens" value={fmtInt(totalTokens)} />
         <Stat label="Total cost" value={fmtCost(totalCost)} accent="cost" />
         <Stat label="Model calls" value={fmtInt(metrics.filter((m) => m.name === "model_usage").length)} />
