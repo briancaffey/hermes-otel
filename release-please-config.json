@@ -15,6 +15,11 @@
           "type": "json",
           "path": "hermes_otel/dashboard/manifest.json",
           "jsonpath": "$.version"
+        },
+        {
+          "type": "toml",
+          "path": "uv.lock",
+          "jsonpath": "$.package[?(@.name=='hermes-otel')].version"
         }
       ]
     }

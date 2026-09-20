@@ -149,18 +149,26 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 
 Before opening a PR:
 
-- [ ] `uv run --extra dev pytest` passes locally.
-- [ ] `uv run --extra dev ruff check .` passes (CI will fail otherwise).
-- [ ] `uv run --extra dev black --check .` passes — or apply with `uv run --extra dev black .`.
+- [ ] `make ci` passes locally. It runs exactly what GitHub Actions runs, job
+      for job (lockfile check, ruff, black, plugin scan, tests with the 85%
+      coverage gate, dashboard bundle up to date + vitest, docs build, wheel
+      build), so a green `make ci` is a green pipeline. `make ci-fast` skips the
+      two npm builds when you did not touch `dashboard-ui/` or `website/`.
+- [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
 - [ ] Updated `README.md` or `docs/` if user-visible behavior changed.
 - [ ] Commit message follows Conventional Commits.
 - [ ] No secrets in the diff — `config.yaml` is gitignored; use
       `config.yaml.example` for documentation.
 
-GitHub Actions runs the unit/integration suite + ruff on every PR. E2E
-and smoke tiers are intentionally not run in CI (they need Docker /
-a real Hermes install); maintainers run those locally before releases.
+GitHub Actions runs the same jobs on every PR and on main. E2E and smoke
+tiers are intentionally not run in CI (they need Docker / a real Hermes
+install); maintainers run those locally before releases.
+
+Release PRs are opened by release-please. Its version bump also updates
+`uv.lock` (an `extra-files` entry in `release-please-config.json`), so the
+release branch passes the lockfile check on its first run; a superseded run
+on any branch is cancelled rather than left red.
 
 ## Adding a new backend
 
