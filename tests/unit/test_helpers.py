@@ -7,6 +7,7 @@ from hermes_otel.helpers import (
     extract_tool_result_status,
     infer_skill_name,
     infer_skill_name_from_text,
+    resolve_skill_dir,
     resolve_tool_identity,
 )
 
@@ -234,3 +235,44 @@ class TestInferSkillName:
 
     def test_infer_from_text_non_string(self):
         assert infer_skill_name_from_text(42) is None
+
+
+class TestResolveSkillDir:
+    """hermes.skill.path comes from evidence only (#147)."""
+
+    def test_manifest_path_yields_its_parent_as_written(self):
+        assert (
+            resolve_skill_dir(
+                {"path": "/h/.hermes/skills/software-development/code-review/SKILL.md"}
+            )
+            == "/h/.hermes/skills/software-development/code-review"
+        )
+        assert resolve_skill_dir({"file_path": "skills/monitor/skill.md"}) == "skills/monitor"
+
+    def test_windows_manifest_path(self):
+        assert (
+            resolve_skill_dir({"path": r"C:\Users\me\skills\code-review\SKILL.md"})
+            == "C:/Users/me/skills/code-review"
+        )
+
+    def test_file_inside_skill_resolves_via_filesystem(self, tmp_path):
+        skill_dir = tmp_path / "skills" / "software-development" / "code-review"
+        (skill_dir / "references").mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: code-review\n---\n")
+        ref = skill_dir / "references" / "checklist.md"
+        assert resolve_skill_dir({"path": str(ref)}) == str(skill_dir)
+
+    def test_plugin_bundled_skill_resolves_to_its_real_directory(self, tmp_path):
+        skill_dir = tmp_path / "plugins" / "hermes_otel" / "skills" / "observability"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: observability\n---\n")
+        assert resolve_skill_dir({"path": str(skill_dir / "SKILL.md")}) == str(skill_dir)
+
+    def test_unverifiable_paths_yield_none_not_a_guess(self):
+        # A categorized path with no manifest on disk: the name is ambiguous and
+        # the directory is unknown; nothing is invented.
+        assert resolve_skill_dir({"path": "/nope/skills/software-development/code-review"}) is None
+        assert resolve_skill_dir({"path": "/nope/skills/monitor/references/x.md"}) is None
+        assert resolve_skill_dir({"command": "ls"}) is None
+        assert resolve_skill_dir({"path": "/tmp/regular/file.txt"}) is None
+        assert resolve_skill_dir(None) is None

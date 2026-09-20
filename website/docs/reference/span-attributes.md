@@ -166,7 +166,7 @@ One per skill that loaded successfully this turn (`skill_spans: true`), nested u
 |---|---|---|---|
 | `hermes.skill.name`, `gen_ai.skill.name` | both | string | Bare skill name as Hermes names it |
 | `hermes.skill.source` | hermes | string | `skill_view` · `path_match` |
-| `hermes.skill.path` | hermes | string | `$HERMES_HOME/skills/<name>` |
+| `hermes.skill.path` | hermes | string | Directory holding the skill's `SKILL.md`, as reported by `skill_view` (`skill_dir`) or resolved from the file the tool read; omitted when unknown, never derived from the name (optional) |
 | `hermes.span_kind` | hermes | string | `skill` |
 | `gen_ai.operation.name` | gen_ai | string | `execute_skill` |
 | `hermes.skill.result_status` | hermes | string | Turn outcome at close (`completed` · `interrupted` · …) |

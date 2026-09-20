@@ -148,7 +148,7 @@ are emitted regardless.
 | `hermes.skill.name` | hermes-specific | Skill name |
 | `gen_ai.skill.name` | gen_ai (ext.) | Skill name (GenAI-convention alias) |
 | `hermes.skill.source` | hermes-specific | `skill_view` (canonical) or `path_match` |
-| `hermes.skill.path` | hermes-specific | Conventional `~/.hermes/skills/<name>` location |
+| `hermes.skill.path` | hermes-specific | The skill directory Hermes reported or the read file resolved to (optional) |
 | `hermes.skill.result_status` | hermes-specific | Turn outcome: `completed` · `interrupted` · `incomplete` |
 | `hermes.span_kind` | hermes-specific | `skill` (for UI grouping) |
 

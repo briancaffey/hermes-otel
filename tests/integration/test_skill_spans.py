@@ -16,10 +16,11 @@ def _spans_named(spans, name):
     return [s for s in spans if s.name == name]
 
 
-def _load_skill(session_id, skill, task="sk1", tool="skill_view", args=None):
+def _load_skill(session_id, skill, task="sk1", tool="skill_view", args=None, result=None):
     """Fire a pre/post tool pair that loads a skill."""
     args = args if args is not None else {"name": skill}
-    result = '{"success": true}' if tool == "skill_view" else '{"content": "loaded"}'
+    if result is None:
+        result = '{"success": true}' if tool == "skill_view" else '{"content": "loaded"}'
     on_pre_tool_call(tool_name=tool, args=args, task_id=task, session_id=session_id)
     on_post_tool_call(
         tool_name=tool,
@@ -206,3 +207,48 @@ class TestSkillSpanConfigAndCompat:
         attrs = dict(agent.attributes)
         assert attrs["hermes.turn.skill_count"] == 1
         assert "axolotl" in attrs["hermes.turn.skills"]
+
+
+class TestSkillPathFromEvidence:
+    """hermes.skill.path is reported, never fabricated from the name (#147)."""
+
+    def _end(self, sid):
+        on_session_end(session_id=sid, completed=True, interrupted=False, model="m", platform="cli")
+
+    def test_skill_view_uses_the_directory_hermes_reports(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_session_start(session_id="s1", model="m", platform="cli")
+        _load_skill(
+            "s1",
+            "code-review",
+            result='{"success": true, "name": "code-review", "path": "software-development/code-review/SKILL.md", '
+            '"skill_dir": "/home/u/.hermes/skills/software-development/code-review"}',
+        )
+        self._end("s1")
+        attrs = dict(_one(exporter.get_finished_spans(), "skill.code-review").attributes)
+        assert (
+            attrs["hermes.skill.path"] == "/home/u/.hermes/skills/software-development/code-review"
+        )
+
+    def test_skill_view_without_skill_dir_omits_the_attribute(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_session_start(session_id="s1", model="m", platform="cli")
+        _load_skill("s1", "axolotl")  # result is just {"success": true}
+        self._end("s1")
+        attrs = dict(_one(exporter.get_finished_spans(), "skill.axolotl").attributes)
+        assert "hermes.skill.path" not in attrs
+        assert attrs["hermes.skill.name"] == "axolotl"
+
+    def test_path_match_uses_the_directory_of_the_file_read(self, inmemory_otel_setup, tmp_path):
+        exporter, _ = inmemory_otel_setup
+        skill_dir = tmp_path / "plugins" / "hermes_otel" / "skills" / "observability"
+        skill_dir.mkdir(parents=True)
+        (skill_dir / "SKILL.md").write_text("---\nname: observability\n---\n")
+        on_session_start(session_id="s1", model="m", platform="cli")
+        _load_skill(
+            "s1", "observability", tool="read_file", args={"path": str(skill_dir / "SKILL.md")}
+        )
+        self._end("s1")
+        attrs = dict(_one(exporter.get_finished_spans(), "skill.observability").attributes)
+        assert attrs["hermes.skill.source"] == "path_match"
+        assert attrs["hermes.skill.path"] == str(skill_dir)
