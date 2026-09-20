@@ -8,9 +8,12 @@ description: "What the plugin doesn't do, why, and what we might fix."
 
 Things to be aware of. Some are upstream constraints; some are plugin-specific trade-offs.
 
-## Full prompt capture is opt-in and large
+## Full content capture is the default and large
 
-By default the `api.*` span carries a preview of the request and the `llm.*` span the latest user turn. The fully-formed prompt (system prompt + message list) and the full response are exported only with `capture_full_prompts: true` / `capture_full_responses: true` (`llm.input_messages`, `llm.system_prompt`, `gen_ai.input.messages`, `llm.output.content`, `gen_ai.output.messages`). They are untruncated and stored on every backend, so expect large spans and think about retention and privacy before turning them on.
+`content_capture: full` (the default since 1.11) writes the complete prompt (system prompt and every message) and the complete response onto every `api.*` span, once per attribute convention (`gen_ai.input.messages` and `input.value`; `gen_ai.output.messages` and `output.value`). A turn with several tool rounds repeats the whole prefix on each of its `api.*` spans, so storage grows with the square of the conversation length. The export batch shrinks to 64 spans per POST automatically in this mode. Set `content_capture: preview` to keep only the 1,200-character previews, or `off` to record no content. Backends cap attribute or span sizes differently and some drop oversized spans silently; check your backend's limits before relying on very long prompts.
+
+Hermes itself caps the sanitised copy of the request it hands to plugins (8,000 characters per string, 1,000 past `HERMES_PLUGIN_PAYLOAD_MAX_CHARS`). The plugin reads the raw `request_messages` list instead, so captured messages are whole; a `...[truncated N chars]` marker inside captured content means a payload only the sanitised copy carried.
+
 ## Langfuse auth requires both keys
 
 Langfuse's Basic Auth is constructed from the public + secret keys. If only one is set, Langfuse mode won't activate (the plugin logs a warning and falls back to the next backend in priority order).

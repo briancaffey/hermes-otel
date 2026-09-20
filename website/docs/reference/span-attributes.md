@@ -8,7 +8,7 @@ description: "Every attribute the plugin sets, by span type."
 
 Every attribute the plugin may set, grouped by span type. See [Attribute conventions](/architecture/attributes) for the narrative version of the dual-convention mapping (OpenInference `llm.*` / `input.value` for Phoenix **and** OTel GenAI `gen_ai.*` for Langfuse, Weave and generic dashboards).
 
-Attributes marked **optional** are only set when the underlying data is available. Previews (`input.value`, `output.value`, `gen_ai.*.messages`, tool args/results) are gated by `capture_previews` and clipped to `preview_max_chars` (or the per-category cap); the `capture_full_*` flags add the untruncated fields noted below.
+Attributes marked **optional** are only set when the underlying data is available. Content is governed by `content_capture`: `full` (the default) puts the complete prompt and response on `api.*` spans; previews elsewhere (`input.value`, `output.value`, `gen_ai.*.messages`, tool args/results) are clipped to `preview_max_chars` (or the per-category cap) and carry a `hermes.preview.*` marker when clipped; `off` records no content at all.
 
 A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an attribute this page does not list, or this page lists one the code never sets.
 
@@ -88,6 +88,7 @@ One per `run_conversation` call (span kind `LLM`).
 | `input.value`, `input.mime_type` | OpenInference | string | User message (`text/plain`) or, with `capture_conversation_history`, the conversation JSON (`application/json`) |
 | `gen_ai.input.messages` | gen_ai | string (JSON) | Same content in the gen_ai message shape |
 | `output.value`, `output.mime_type` | OpenInference | string | Final assistant response |
+| `hermes.preview.input.truncated`, `hermes.preview.input.original_chars`, `hermes.preview.output.truncated`, `hermes.preview.output.original_chars` | hermes | bool, int | Set only when the preview was clipped: `true` and the value's original length (optional) |
 | `gen_ai.output.messages` | gen_ai | string (JSON) | Same in the gen_ai shape |
 | `gen_ai.response.model` | gen_ai | string | The response model a provider reported on this turn's API calls; absent when none was reported (never the request model) |
 | `hermes.conversation.message_count` | hermes | int | Message count when conversation capture is on (optional) |
@@ -104,9 +105,9 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | `llm.api_mode` | hermes | string | `chat_completions` · `anthropic_messages` · `codex_responses` · … |
 | `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
 | `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stream`, `gen_ai.request.reasoning.level`, `gen_ai.request.stop_sequences`, `gen_ai.request.choice.count` | gen_ai | mixed | Request parameters, each only when Hermes passes it (optional) |
-| `input.value`, `input.mime_type` | OpenInference | string | Request preview |
-| `llm.input_messages`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages — `capture_full_prompts: true` only |
-| `llm.system_prompt`, `gen_ai.system_instructions` | both | string | **Full** system prompt — `capture_full_prompts: true` only |
+| `input.value`, `input.mime_type`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages, one copy per convention — `content_capture: full` (the default) |
+| `gen_ai.system_instructions` | gen_ai | string | **Full** system prompt: the leading system message, or the Responses API `instructions` — `content_capture: full` |
+| `hermes.content.input_chars` | hermes | int | Size of the captured request JSON — `content_capture: full` |
 
 Set at **end** (success):
 
@@ -124,8 +125,8 @@ Set at **end** (success):
 | `llm.response.finish_reason` | hermes | string | Same, scalar |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
-| `output.value`, `output.mime_type` | OpenInference | string | Response preview |
-| `llm.output.content`, `llm.output.tool_calls`, `gen_ai.output.messages` | both | string (JSON) | **Full** response — `capture_full_responses: true` only |
+| `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
+| `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |
 
 ### `api.*` on failure (`api_request_error`)
 
@@ -149,8 +150,9 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `tool.name`, `gen_ai.tool.name` | both | string | Tool name |
 | `gen_ai.tool.call.id` | gen_ai | string | Hermes `tool_call_id` (falls back to `task_id` on older Hermes) |
 | `gen_ai.operation.name` | gen_ai | string | `execute_tool` |
-| `input.value`, `gen_ai.tool.call.arguments` | both | string | Tool args (JSON preview; **full** for `mcp_*` tools with `capture_full_prompts`) |
+| `input.value`, `gen_ai.tool.call.arguments` | both | string | Tool args (JSON preview; **full** for `mcp_*` tools in `content_capture: full`) |
 | `output.value`, `gen_ai.tool.call.result` | both | string | Tool result preview |
+| `hermes.preview.input.truncated`, `hermes.preview.input.original_chars`, `hermes.preview.output.truncated`, `hermes.preview.output.original_chars` | hermes | bool, int | Set only when the args or result preview was clipped: `true` and the original length (optional) |
 | `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
 | `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
 | `hermes.tool.outcome` | hermes | string | `error` · `timeout` · `blocked` · `cancelled` from Hermes' hook status or the tool's own result status; `completed` means the tool returned and nothing reported a failure |

@@ -17,6 +17,7 @@ export type SettingField = {
   env_invalid: boolean;
   value: any;
   changed: boolean;
+  derived_from?: string[] | null;
 };
 
 export type EnvEntry = {
@@ -172,6 +173,7 @@ export function envCounts(env: EnvEntry[]): { set: number; known: number } {
 /** Short explanation of why a value is what it is, shown under the value. */
 export function sourceNote(f: SettingField): string | null {
   if (f.env_invalid && f.env_var) return `${f.env_var}=${f.env_raw} is not a valid ${f.kind}; ignored`;
+  if (f.derived_from && f.derived_from.length) return `follows ${f.derived_from.join(", ")}`;
   if (f.file_invalid) return `file value "${f.file_value}" is not a valid ${f.kind}; ignored`;
   if (f.source === "env" && f.file_value != null) return `overrides the file's ${fmtSettingValue({ kind: f.kind, value: f.file_value })}`;
   if (f.source === "env" && f.env_var) return `from ${f.env_var}`;

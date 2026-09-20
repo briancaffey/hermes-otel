@@ -64,18 +64,25 @@
 # llm_input_preview_max_chars: null
 # llm_output_preview_max_chars: null
 
-# Full-fidelity capture (no truncation) of the prompt sent to the model and of
-# the model's response, as llm.input_messages / gen_ai.input.messages and
-# llm.output.content / gen_ai.output.messages. Off by default: large, and it
-# stores your prompts verbatim on every backend. Respects capture_previews.
-# Also settable via HERMES_OTEL_CAPTURE_FULL_PROMPTS / _CAPTURE_FULL_RESPONSES.
-# capture_full_prompts: false
-# capture_full_responses: false
+# What of the conversation content is recorded on spans:
+#   full     the complete prompt (system prompt + every message) and the
+#            complete response on every api.* span, unclipped; previews on the
+#            other spans. The default: this is a debugging tool and the data
+#            goes only to the backends you configure. Large: every api.* span
+#            in a turn carries the whole prefix.
+#   preview  clipped previews only (preview_max_chars and the caps above).
+#   off      no prompt, tool or response content at all; metadata only.
+# Quote the value: a bare `off` is YAML for false (accepted, means off).
+# Also settable via HERMES_OTEL_CONTENT_CAPTURE.
+# content_capture: "full"
 
-# Global privacy kill switch. When false, ALL input/output previews are
-# suppressed (tool args, tool results, user messages, assistant responses).
-# Metadata (tool names, durations, token counts) is still recorded.
+# Pre-1.11 spellings, still honoured and kept consistent with content_capture:
+# capture_previews: false is `off`; capture_full_prompts / capture_full_responses
+# true is `full` (set one of them false to keep that side as previews).
 # capture_previews: true
+# capture_full_prompts: true
+# capture_full_responses: true
+
 
 # Platform sender ID capture. When true, gateway sessions add the raw
 # platform sender ID as hermes.sender.id and a backend-neutral user.id
@@ -227,7 +234,7 @@
 
 # span_batch_max_queue_size: 2048          # spans buffered before drops
 # span_batch_schedule_delay_ms: 1000       # worker wake-up cadence
-# span_batch_max_export_batch_size: 512    # spans per HTTP POST
+# span_batch_max_export_batch_size: null   # auto: 512, or 64 when content_capture is full
 # span_batch_export_timeout_ms: 30000      # per-export HTTP timeout
 
 # ── Multi-backend fan-out ─────────────────────────────────────────────────────

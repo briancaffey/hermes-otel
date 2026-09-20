@@ -72,13 +72,14 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_PROJECT_NAME` | `project_name` | string | *(unset)* |
 | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` | `span_batch_max_queue_size` | int | `2048` |
 | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` | `span_batch_schedule_delay_ms` | int | `1000` |
-| `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` | `span_batch_max_export_batch_size` | int | `512` |
+| `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` | `span_batch_max_export_batch_size` | int | `null` |
 | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` | `span_batch_export_timeout_ms` | int | `30000` |
 | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` | `force_flush_on_session_end` | bool | `true` |
 | `HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY` | `capture_conversation_history` | bool | `false` |
 | `HERMES_OTEL_CONVERSATION_HISTORY_MAX_CHARS` | `conversation_history_max_chars` | int | `20000` |
-| `HERMES_OTEL_CAPTURE_FULL_PROMPTS` | `capture_full_prompts` | bool | `false` |
-| `HERMES_OTEL_CAPTURE_FULL_RESPONSES` | `capture_full_responses` | bool | `false` |
+| `HERMES_OTEL_CONTENT_CAPTURE` | `content_capture` | string | `"full"` |
+| `HERMES_OTEL_CAPTURE_FULL_PROMPTS` | `capture_full_prompts` | bool | `true` |
+| `HERMES_OTEL_CAPTURE_FULL_RESPONSES` | `capture_full_responses` | bool | `true` |
 | `HERMES_OTEL_CAPTURE_SENDER_ID` | `capture_sender_id` | bool | `false` |
 | `HERMES_OTEL_CAPTURE_LOGS` | `capture_logs` | bool | `false` |
 | `HERMES_OTEL_LOG_LEVEL` | `log_level` | string | `"INFO"` |

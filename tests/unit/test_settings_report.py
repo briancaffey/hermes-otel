@@ -85,12 +85,25 @@ class TestFieldReports:
         assert by_key["project_name"]["env_var"] == "HERMES_OTEL_PROJECT_NAME"
         assert by_key["capture_full_prompts"]["source"] == "file"
         assert by_key["capture_full_prompts"]["value"] is True
-        assert by_key["capture_full_prompts"]["changed"] is True
+        assert by_key["capture_full_prompts"]["changed"] is False  # full is the default
+        # content_capture was not written but the legacy key decided it.
+        assert by_key["content_capture"]["value"] == "full"
+        assert by_key["content_capture"]["source"] == "file"
+        assert by_key["content_capture"]["derived_from"] == ["capture_full_prompts"]
         assert by_key["enabled"]["source"] == "default"
         assert by_key["enabled"]["changed"] is False
         assert by_key["backends"]["env_var"] is None  # yaml-only field
         assert report["counts"]["env"] == 1
         assert report["counts"]["file"] >= 3
+
+    def test_content_capture_drives_the_legacy_flags_in_the_report(self, home, monkeypatch):
+        monkeypatch.setenv("HERMES_OTEL_CONTENT_CAPTURE", "off")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        assert by_key["content_capture"]["source"] == "env"
+        for key in ("capture_previews", "capture_full_prompts", "capture_full_responses"):
+            assert by_key[key]["value"] is False, key
+            assert by_key[key]["source"] == "env"
+            assert by_key[key]["derived_from"] == ["content_capture"]
 
     def test_invalid_file_and_env_values_are_flagged_not_used(self, home, monkeypatch):
         monkeypatch.setenv("HERMES_OTEL_FLUSH_INTERVAL_MS", "soon")
@@ -250,11 +263,13 @@ class TestRenderings:
 
 class TestCaptureSummary:
     def test_modes(self):
-        assert capture_summary(HermesOtelConfig())["mode"] == "preview"
+        assert capture_summary(HermesOtelConfig())["mode"] == "full"
         assert capture_summary(HermesOtelConfig(capture_previews=False))["mode"] == "off"
-        full = capture_summary(HermesOtelConfig(capture_full_prompts=True))
-        assert full["mode"] == "full" and "full prompts" in full["detail"]
-        both = capture_summary(
-            HermesOtelConfig(capture_full_prompts=True, capture_full_responses=True)
+        preview = capture_summary(
+            HermesOtelConfig(capture_full_prompts=False, capture_full_responses=False)
         )
+        assert preview["mode"] == "preview" and "1200" in preview["detail"]
+        full = capture_summary(HermesOtelConfig(capture_full_responses=False))
+        assert full["mode"] == "full" and full["detail"].startswith("full prompts on")
+        both = capture_summary(HermesOtelConfig())
         assert "full prompts and full responses" in both["detail"]

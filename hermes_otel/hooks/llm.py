@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..debug_utils import debug_log
 from ..helpers import (
@@ -13,7 +13,14 @@ from ..helpers import (
     to_optional_int,
     truncate_string,
 )
-from ._common import _as_dict, _fail_open, _preview_for, get_tracer
+from ._common import (
+    _as_dict,
+    _fail_open,
+    _mark_truncated,
+    _preview_for,
+    _preview_marked,
+    get_tracer,
+)
 from .attributes import (
     _correlation_attributes,
     _gen_ai_attributes,
@@ -44,12 +51,13 @@ from .usage import (
 def _llm_input_attributes(tracer, user_message: Any) -> Dict[str, Any]:
     """``input.value`` + ``gen_ai.input.messages`` for the latest user message."""
     attrs: Dict[str, Any] = {}
-    preview = _preview_for(tracer, "llm_input", user_message)
+    preview, original = _preview_marked(tracer, "llm_input", user_message)
     if preview is not None:
         attrs["input.value"] = preview
         messages = _message_json("user", preview)
         if messages is not None:
             attrs["gen_ai.input.messages"] = messages
+        _mark_truncated(attrs, "input", original)
     return attrs
 
 
@@ -164,7 +172,7 @@ def on_post_llm_call(
     key = f"llm:{session_id}"
     debug_log(f"  ending span: key={key}")
 
-    preview = _preview_for(tracer, "llm_output", assistant_response)
+    preview, original = _preview_marked(tracer, "llm_output", assistant_response)
 
     # Capture last LLM output for top-level session span. Only if the
     # session already has I/O buffered (i.e. pre_llm_call ran) — mirrors
@@ -191,6 +199,7 @@ def on_post_llm_call(
         messages = _message_json("assistant", preview)
         if messages is not None:
             attributes["gen_ai.output.messages"] = messages
+        _mark_truncated(attributes, "output", original)
 
     # Pop parent — tool spans after this won't nest under this LLM call
     tracer.spans.pop_parent(session_id=session_id)
@@ -198,6 +207,34 @@ def on_post_llm_call(
     # Mark as OK — LLM call completed successfully
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log("  LLM span ended: status=ok")
+
+
+def _request_body(kwargs: Dict[str, Any]) -> Dict[str, Any]:
+    request = kwargs.get("request")
+    if isinstance(request, dict) and isinstance(request.get("body"), dict):
+        return request["body"]
+    return {}
+
+
+def _system_prompt(kwargs: Dict[str, Any], messages: Any, body: Dict[str, Any]) -> Optional[str]:
+    """The system prompt: an explicit kwarg, else the leading system message,
+    else the Responses API ``instructions`` field."""
+    explicit = kwargs.get("system_prompt")
+    if explicit:
+        return str(explicit)
+    if isinstance(messages, list):
+        for m in messages:
+            if isinstance(m, dict) and m.get("role") in ("system", "developer"):
+                content = m.get("content")
+                if isinstance(content, list):
+                    content = " ".join(
+                        str(part.get("text", "")) if isinstance(part, dict) else str(part)
+                        for part in content
+                    )
+                return str(content) if content else None
+            break
+    instructions = body.get("instructions") or body.get("system")
+    return str(instructions) if instructions else None
 
 
 @_fail_open
@@ -247,29 +284,27 @@ def on_pre_api_request(
         attributes["llm.request.max_tokens"] = max_tokens
         attributes["gen_ai.request.max_tokens"] = max_tokens
 
-    if tracer.config.capture_full_prompts:
+    if tracer.config.capture_previews and tracer.config.capture_full_prompts:
         # Prefer the raw ``request_messages`` list: it is the exact list sent
         # to the provider and Hermes does not sanitise it. ``request["body"]``
         # is the sanitised view, where every string is capped at 8,000 chars
         # (1,000 once the payload exceeds HERMES_PLUGIN_PAYLOAD_MAX_CHARS) and
         # ends in ``...[truncated N chars]`` — the opposite of full capture.
         messages = kwargs.get("request_messages") or kwargs.get("messages")
+        body = _request_body(kwargs)
         if not messages:
-            request = kwargs.get("request")
-            if isinstance(request, dict):
-                body = request.get("body")
-                if isinstance(body, dict):
-                    messages = body.get("messages")
-        system_prompt = kwargs.get("system_prompt")
+            messages = body.get("messages")
         serialized = serialize_full(messages)
         if serialized is not None:
-            attributes["llm.input_messages"] = serialized
+            # One copy per convention (#74): gen_ai.input.messages for the
+            # OTel GenAI readers, input.value for OpenInference (Phoenix).
             attributes["gen_ai.input.messages"] = serialized
             attributes["input.value"] = serialized
             attributes["input.mime_type"] = "application/json"
+            attributes["hermes.content.input_chars"] = len(serialized)
+        system_prompt = _system_prompt(kwargs, messages, body)
         if system_prompt:
-            attributes["llm.system_prompt"] = str(system_prompt)
-            attributes["gen_ai.system_instructions"] = str(system_prompt)
+            attributes["gen_ai.system_instructions"] = system_prompt
 
     span = tracer.start_span(
         name=f"api.{model}",
@@ -392,7 +427,7 @@ def on_post_api_request(
     if assistant_tool_call_count:
         attributes["llm.response.tool_calls"] = assistant_tool_call_count
 
-    if tracer.config.capture_full_responses:
+    if tracer.config.capture_previews and tracer.config.capture_full_responses:
         response_content = kwargs.get("response_content")
         response_tool_calls = kwargs.get("response_tool_calls")
         assistant_message = kwargs.get("assistant_message")
@@ -401,21 +436,26 @@ def on_post_api_request(
                 response_content = getattr(assistant_message, "content", None)
             if not response_tool_calls:
                 response_tool_calls = getattr(assistant_message, "tool_calls", None)
+        # One assistant message carrying the text and the tool calls it made,
+        # in both conventions, once each (#74).
+        message: Dict[str, Any] = {"role": "assistant"}
         if response_content:
-            response_text = str(response_content)
-            attributes["llm.output.content"] = response_text
-            attributes["gen_ai.output.messages"] = json.dumps(
-                [{"role": "assistant", "content": response_text}], ensure_ascii=False
-            )
-            attributes["output.value"] = response_text
-            attributes["output.mime_type"] = "text/plain"
+            message["content"] = str(response_content)
         tool_calls_serialized = serialize_full(response_tool_calls)
         if tool_calls_serialized is not None:
-            attributes["llm.output.tool_calls"] = tool_calls_serialized
-            if not response_content:
-                attributes["gen_ai.output.messages"] = tool_calls_serialized
+            try:
+                message["tool_calls"] = json.loads(tool_calls_serialized)
+            except Exception:
+                message["tool_calls"] = tool_calls_serialized
+        if len(message) > 1:
+            attributes["gen_ai.output.messages"] = json.dumps([message], ensure_ascii=False)
+            if response_content:
+                attributes["output.value"] = str(response_content)
+                attributes["output.mime_type"] = "text/plain"
+            else:
                 attributes["output.value"] = tool_calls_serialized
                 attributes["output.mime_type"] = "application/json"
+            attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
 
     # Pop parent
     tracer.spans.pop_parent(session_id=session_id)

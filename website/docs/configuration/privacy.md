@@ -14,18 +14,20 @@ Privacy mode is a single knob that does exactly that.
 
 ```yaml
 # config.yaml
-capture_previews: false
+content_capture: "off"
 ```
 
 Or via env var:
 
 ```bash
-export HERMES_OTEL_CAPTURE_PREVIEWS=false
+export HERMES_OTEL_CONTENT_CAPTURE=off
 ```
+
+`capture_previews: false`, the pre-1.11 spelling, still works and means the same thing. The middle setting, `content_capture: preview`, keeps clipped previews (1,200 characters by default) but drops the complete prompts and responses that `full`, the default, records on `api.*` spans.
 
 ## What gets suppressed
 
-When `capture_previews: false`:
+When `content_capture: off`:
 
 - `input.value` on `llm.*` spans (user message)
 - `output.value` on `llm.*` spans (assistant response)
@@ -57,7 +59,7 @@ So you still get a useful operational view: how many tools ran, which tools they
 When privacy mode is active, the plugin prints a one-line banner so it's not a silent setting:
 
 ```text
-[hermes-otel] ▲ Privacy mode: input/output previews suppressed (capture_previews=false)
+[hermes-otel] ⚠ content_capture=off — prompts, tool I/O and responses are not recorded
 ```
 
 If you ever see tool args or user messages in the backend UI that you didn't expect, double-check the banner is present.
@@ -70,7 +72,7 @@ If even command and target are too sensitive for your deployment, file an issue 
 
 ## Interaction with `preview_max_chars`
 
-`preview_max_chars` (default: 1200) is a separate truncation cap. It clips long previews with a `...`. When `capture_previews: false`, `preview_max_chars` becomes a no-op — there's nothing to clip.
+`preview_max_chars` (default: 1200) is a separate truncation cap. It clips long previews with a `...`. In `off` mode `preview_max_chars` becomes a no-op — there's nothing to clip. In `preview` mode a clipped value carries `hermes.preview.<input|output>.truncated = true` and `.original_chars`, so a short-looking value can be told from a clipped one.
 
 ## Verifying
 

@@ -85,6 +85,7 @@ describe("sourceNote", () => {
     expect(sourceNote(field({ source: "env", value: true }))).toBe("from HERMES_OTEL_K");
     expect(sourceNote(field({ kind: "int", env_invalid: true, env_raw: "soon" }))).toBe("HERMES_OTEL_K=soon is not a valid int; ignored");
     expect(sourceNote(field({ kind: "int", file_invalid: true, file_value: "lots" }))).toBe('file value "lots" is not a valid int; ignored');
+    expect(sourceNote(field({ source: "file", derived_from: ["content_capture"] }))).toBe("follows content_capture");
     expect(sourceNote(field({}))).toBeNull();
   });
 });
