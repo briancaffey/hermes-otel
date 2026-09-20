@@ -53,7 +53,11 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
 | `weave.agent.version` | Weave | string | Plugin version (optional) |
-| `hermes.session.synthesized` | hermes | bool | `true` when the root was created lazily because `on_session_start` never fired (optional) |
+| `hermes.session.synthesized` | hermes | bool | `true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hook of the turn (optional) |
+| `hermes.session.previous_id` | hermes | string | The session this one replaced (`/new`, `/reset`); the root also carries a span link (`hermes.link=previous_session`) to that session's last root (optional) |
+| `hermes.session.finalize_reason`, `hermes.session.reset_reason` | hermes | string | Set when a still-open root was closed by `on_session_finalize` / `on_session_reset`, with `hermes.turn.final_status` `finalized` / `reset` (optional) |
+| `hermes.link` | hermes | string | On the span **link** from a replacing session's first root to the old session's last root: `previous_session` |
+| `hermes.session_id`, `hermes.session.turn_count`, `hermes.session.duration_s`, `hermes.session.finalize_reason` / `hermes.session.reset_reason` | hermes | mixed | On the **log record** `on_session_finalize` / `on_session_reset` emit (exported with `capture_logs`), not on a span |
 | `hermes.cron.job_id` | hermes | string | Cron job id, `cron` roots only (optional) |
 | `hermes.session.is_subagent` | hermes | bool | `true` on a delegated child's own root (optional) |
 | `hermes.subagent.role`, `hermes.subagent.parent_session_id` | hermes | string | On a delegated child's root (optional) |

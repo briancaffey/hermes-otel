@@ -17,9 +17,10 @@ internals.
 from __future__ import annotations
 
 import threading
+import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Any, Dict, List, Optional, Set
 
 
 @dataclass
@@ -141,6 +142,16 @@ class SessionState:
         # Turn counters outlive the per-turn PerSession (which on_session_end
         # pops), so continuation turns keep counting: session_id -> last turn.
         self._turn_counters: "OrderedDict[str, int]" = OrderedDict()
+        # Session-level bookkeeping for on_session_finalize / on_session_reset
+        # (#29): when the session's first turn started (wall clock), the span
+        # context of its most recently closed root (so the next session can
+        # link to it), and which session a new one replaced.
+        self._first_seen: "OrderedDict[str, float]" = OrderedDict()
+        self._last_root_context: "OrderedDict[str, Any]" = OrderedDict()
+        self._previous_session: "OrderedDict[str, str]" = OrderedDict()
+        # The session most recently finalized; a reset that names no old
+        # session (the CLI) is taken to replace it.
+        self.last_finalized: Optional[str] = None
 
     # ── Per-session aggregators ──────────────────────────────────────────
 
@@ -191,8 +202,61 @@ class SessionState:
             self._turn_counters.move_to_end(session_id)
             while len(self._turn_counters) > self._MAX_TURN_COUNTERS:
                 self._turn_counters.popitem(last=False)
+            if reset or session_id not in self._first_seen:
+                self._remember(self._first_seen, session_id, time.time())
             self.get_or_create(session_id).turn_number = turn
             return turn
+
+    # ── Session boundaries (#29) ─────────────────────────────────────────
+
+    def _remember(self, table: "OrderedDict[str, Any]", session_id: str, value: Any) -> None:
+        table[session_id] = value
+        table.move_to_end(session_id)
+        while len(table) > self._MAX_TURN_COUNTERS:
+            table.popitem(last=False)
+
+    def first_seen(self, session_id: str) -> Optional[float]:
+        """Wall-clock time the session's first turn started, if seen in this process."""
+        with self._lock:
+            return self._first_seen.get(session_id)
+
+    def remember_root_context(self, session_id: str, context: Any) -> None:
+        """Keep the span context of the session's latest closed root span."""
+        if not session_id or context is None:
+            return
+        with self._lock:
+            self._remember(self._last_root_context, session_id, context)
+
+    def root_context(self, session_id: str) -> Any:
+        with self._lock:
+            return self._last_root_context.get(session_id)
+
+    def set_previous(self, new_session_id: str, old_session_id: str) -> None:
+        """Record that ``new_session_id`` replaced ``old_session_id`` (a reset)."""
+        if not new_session_id or not old_session_id or new_session_id == old_session_id:
+            return
+        with self._lock:
+            self._remember(self._previous_session, new_session_id, old_session_id)
+
+    def previous_session(self, session_id: str) -> Optional[str]:
+        with self._lock:
+            return self._previous_session.get(session_id)
+
+    def drop_session(self, session_id: str) -> Dict[str, Any]:
+        """Forget everything about ``session_id`` and return what was known.
+
+        Called at the session's true end (finalize / reset). The turn counter
+        goes too, so a session id that comes back starts at turn 1. The root
+        context is kept so a later session can still link to it.
+        """
+        with self._lock:
+            ps = self._sessions.pop(session_id, None)
+            turns = self._turn_counters.pop(session_id, 0)
+            if ps is not None and ps.turn_number:
+                turns = max(turns, ps.turn_number)
+            first_seen = self._first_seen.pop(session_id, None)
+            self._previous_session.pop(session_id, None)
+            return {"turns": turns, "first_seen": first_seen, "had_state": ps is not None}
 
     def turn_number(self, session_id: str) -> int:
         """Current turn number for ``session_id`` (0 = no turn started yet)."""
@@ -225,3 +289,7 @@ class SessionState:
             self._sessions.clear()
             self._tool_times.clear()
             self._turn_counters.clear()
+            self._first_seen.clear()
+            self._last_root_context.clear()
+            self._previous_session.clear()
+            self.last_finalized = None

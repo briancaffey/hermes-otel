@@ -375,6 +375,8 @@ class HermesOTelPlugin:
         self._meter = None
         self._meter_provider = None
         self._session_count = None
+        self._session_turns = None
+        self._session_duration = None
         self._token_usage = None
         self._prompt_cache_tokens = None
         self._prompt_cache_observations = None
@@ -899,6 +901,16 @@ class HermesOTelPlugin:
             "hermes.session.count",
             description="Sessions created",
         )
+        self._session_turns = self._meter.create_histogram(
+            "hermes.session.turns",
+            unit="{turn}",
+            description="Turns per session, recorded when the session is finalized",
+        )
+        self._session_duration = self._meter.create_histogram(
+            "hermes.session.duration",
+            unit="s",
+            description="Session length from first turn to finalize",
+        )
         self._token_usage = self._meter.create_counter(
             "hermes.token.usage",
             description="Tokens consumed by type",
@@ -1197,6 +1209,12 @@ class HermesOTelPlugin:
 
         if name == "session_count":
             self._session_count.add(1, attrs)
+        elif name == "session_turns":
+            if self._session_turns is not None:
+                self._session_turns.record(value, attrs)
+        elif name == "session_duration":
+            if self._session_duration is not None:
+                self._session_duration.record(value, attrs)
         elif name == "token_usage":
             self._token_usage.add(int(value), attrs)
         elif name == "prompt_cache_tokens":

@@ -28,6 +28,10 @@ Why: HTTP is simpler to debug (curl works), has fewer moving parts (no protobuf 
 
 If you have a backend that requires gRPC specifically, open an issue — we can add the option with a per-backend switch.
 
+## A session is a group of traces, not one trace
+
+Each user turn is its own trace, rooted at an `agent` / `cron` span; a conversation of ten turns is ten traces sharing `session.id` / `gen_ai.conversation.id` (and `hermes.turn.number` on the root). This is deliberate: the OTel SDK exports a span only when it ends, and a gateway session can stay open for hours, so a session-long root would appear late or never and would break tail sampling and trace timeouts. Phoenix, Langfuse, LangSmith and Weave all group by that attribute. `on_session_finalize` records the session's size (`hermes.session.turns`, `hermes.session.duration`) and `on_session_reset` links a replacing session to the old one; the dashboard's Sessions view groups turns the same way. The turn counter is process-local: a gateway restarted mid-session numbers the next turn 1 again.
+
 ## Single session tracked in memory
 
 The `SpanTracker`'s parent-stack state is in-memory. If Hermes restarts mid-session, any currently-open spans are lost — not exported, not resumable.

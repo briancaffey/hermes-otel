@@ -46,7 +46,7 @@ Start Hermes and look for the banner:
 
 ```text
 [hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
-[hermes-otel] Registered 13 hooks
+[hermes-otel] Registered 15 hooks
 ```
 
 Nothing showing up? `export HERMES_OTEL_DEBUG=true` writes a per-span log to

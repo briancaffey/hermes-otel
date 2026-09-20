@@ -138,7 +138,7 @@ When Hermes starts up, the plugin prints a startup banner:
 ```text
 [hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
 [hermes-otel] ✓ Live dashboard store active
-[hermes-otel] Registered 13 hooks
+[hermes-otel] Registered 15 hooks
 ```
 
 (The hook count depends on the Hermes version; 13 on Hermes 0.21.)

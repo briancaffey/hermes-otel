@@ -16,7 +16,8 @@ Modules:
 * ``_common``      — tracer lookup, ``_fail_open``, previews, session resolution
 * ``attributes``   — the attribute builders every hook shares
 * ``usage``        — token-usage normalization, attributes and metrics
-* ``session``      — ``on_session_start`` / ``on_session_end`` (the turn root)
+* ``session``      — ``on_session_start`` / ``on_session_end`` (the turn root),
+                     ``on_session_finalize`` / ``on_session_reset`` (session boundaries)
 * ``tools``        — ``pre_tool_call`` / ``post_tool_call`` and skill spans
 * ``approval``     — ``pre_approval_request`` / ``post_approval_response``
 * ``llm``          — ``pre/post_llm_call``, ``pre/post_api_request``, ``api_request_error``
@@ -64,7 +65,13 @@ from .llm import (
     on_pre_llm_call,
 )
 from .propagation import get_current_traceparent, on_mcp_request_headers
-from .session import _start_session_span, on_session_end, on_session_start
+from .session import (
+    _start_session_span,
+    on_session_end,
+    on_session_finalize,
+    on_session_reset,
+    on_session_start,
+)
 from .subagent import on_subagent_start, on_subagent_stop
 from .tools import (
     _open_skill_span,
@@ -97,6 +104,8 @@ __all__ = [
     "on_pre_llm_call",
     "on_pre_tool_call",
     "on_session_end",
+    "on_session_finalize",
+    "on_session_reset",
     "on_session_start",
     "on_subagent_start",
     "on_subagent_stop",

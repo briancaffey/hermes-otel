@@ -39,7 +39,7 @@ configurable and nothing breaks: the plugin's handler is dormant.
   carry. That is an upstream change; hermes-otel is the concrete consumer for it.
 
 The hook is therefore **not** declared in `plugin.yaml` and not part of the
-"13 hooks" the startup banner reports on Hermes 0.21. The plugin registers it
+"15 hooks" the startup banner reports on Hermes 0.21. The plugin registers it
 only when the running Hermes lists `mcp_request_headers` in its hook registry;
 when the registry cannot be inspected at all it stays unregistered, so the
 plugin catalog's declared-vs-registered check can never see an undeclared hook.

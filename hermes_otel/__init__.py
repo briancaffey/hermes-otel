@@ -42,6 +42,8 @@ def register(ctx):
     for hook_name, callback in [
         ("on_session_start", hooks.on_session_start),
         ("on_session_end", hooks.on_session_end),
+        ("on_session_finalize", hooks.on_session_finalize),
+        ("on_session_reset", hooks.on_session_reset),
         ("subagent_start", hooks.on_subagent_start),
         ("subagent_stop", hooks.on_subagent_stop),
         ("api_request_error", hooks.on_api_request_error),

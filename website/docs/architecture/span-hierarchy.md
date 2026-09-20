@@ -218,6 +218,10 @@ The child's `agent` root carries `hermes.session.is_subagent=true` plus `hermes.
 
 See [Hooks reference](/reference/hooks#subagent_start) for the rejoin mechanism and the cross-process span-link fallback.
 
+## Sessions
+
+A session is not a span. Every turn is its own trace, and the session is `session.id` / `gen_ai.conversation.id` on each span plus `hermes.turn.number` on the root. `on_session_finalize` closes anything still open, records `hermes.session.turns` and `hermes.session.duration`, and drops the session's state; `on_session_reset` gives the replacing session's first root a `hermes.session.previous_id` attribute and a span link to the old session's last root. See [Limitations](/reference/limitations#a-session-is-a-group-of-traces-not-one-trace) for why.
+
 ## Why this shape?
 
 The tree mirrors the agent's execution structure:
