@@ -12,10 +12,6 @@ import {
   CardContent,
   Badge,
   Button,
-  Input,
-  Label,
-  Select,
-  SelectOption,
   cn,
 } from "./sdk";
 import {
@@ -30,7 +26,6 @@ import {
   extractInputPreview,
   extractOutputPreview,
   buildSpanTree,
-  groupLiveTraces,
   liveTreeFromSpans,
   LiveSpan,
   LiveTrace,
@@ -41,77 +36,121 @@ import { SpanTreeView, LiveTraceCard, LiveTraceDetail } from "./spantree";
 import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
 import { SourceSelect } from "./sourceselect";
+import { FilterBar, TraceFilters, DEFAULT_FILTERS, liveParams, backendParams, isDefaultFilters } from "./filters";
+import { LiveSessions, BackendSessions, ViewToggle } from "./sessions";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
-const POLL_MS = 1500;
-const MAX_KEEP = 1500;
+const POLL_MS = 3000;
+const VIEW_KEY = "hermes_otel.tracesView";
+
+function readView(): "turns" | "sessions" {
+  try {
+    return localStorage.getItem(VIEW_KEY) === "sessions" ? "sessions" : "turns";
+  } catch {
+    return "turns";
+  }
+}
 
 // ════════════════════════════════ LIVE SOURCE ════════════════════════════
-function LiveTraces() {
-  const [spans, setSpans] = useState<LiveSpan[]>([]);
+// Rows come from the live store's own query (/live/traces, #184): filtering,
+// grouping and totals happen in SQLite, the browser gets one page (#183).
+function LiveTraces({ view }: { view: "turns" | "sessions" }) {
+  const [filters, setFilters] = useState<TraceFilters>(DEFAULT_FILTERS);
+  const [applied, setApplied] = useState<TraceFilters>(DEFAULT_FILTERS);
+  const [rows, setRows] = useState<LiveTrace[]>([]);
+  const [total, setTotal] = useState(0);
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const [selected, setSelected] = useState<LiveTrace | null>(null);
-  const [text, setText] = useState("");
-  const [errorsOnly, setErrorsOnly] = useState(false);
+  const [detailSpans, setDetailSpans] = useState<LiveSpan[] | null>(null);
   const [showPings, setShowPings] = useState(false);
   const [paused, setPaused] = useState(false);
-  const cursor = useRef(0);
+  const inflight = useRef(false);
 
-  const poll = useCallback(async () => {
+  const load = useCallback(async () => {
+    if (inflight.current) return;
+    inflight.current = true;
     try {
-      const r = await fetchJSON(`${API}/live/spans?since=${cursor.current}&limit=2000`);
-      cursor.current = Math.max(r.cursor || 0, cursor.current);
-      if (r.spans?.length) setSpans((prev) => [...prev, ...r.spans].slice(-MAX_KEEP));
-    } catch {
-      /* keep last */
+      const r = await fetchJSON(`${API}/live/traces?${liveParams(applied)}`);
+      setRows(r.traces || []);
+      setTotal(r.total || 0);
+      setError(null);
+    } catch (e: any) {
+      setError(String(e?.message || e));
+    } finally {
+      inflight.current = false;
+      setLoading(false);
     }
-  }, []);
+  }, [applied]);
   useEffect(() => {
-    poll();
-  }, [poll]);
-  usePolling(poll, POLL_MS, !paused && !selected);
+    setLoading(true);
+    load();
+  }, [load]);
+  usePolling(load, POLL_MS, !paused && !selected && view === "turns");
 
-  let traces = groupLiveTraces(spans);
-  const pingCount = traces.filter((t) => isMcpKeepalivePing(t.rootName, t.error)).length;
-  if (!showPings) traces = traces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
-  const f = text.trim().toLowerCase();
-  if (f) traces = traces.filter((t) => t.rootName.toLowerCase().includes(f) || (t.model || "").toLowerCase().includes(f));
-  if (errorsOnly) traces = traces.filter((t) => t.error);
+  useEffect(() => {
+    if (!selected) return;
+    setDetailSpans(null);
+    fetchJSON(`${API}/live/traces/${selected.traceId}`)
+      .then((r: any) => setDetailSpans(r.spans || []))
+      .catch(() => setDetailSpans([]));
+  }, [selected]);
+
+  const submit = () => setApplied(filters);
 
   if (selected) {
-    const fresh = groupLiveTraces(spans).find((t) => t.traceId === selected.traceId) || selected;
-    const { roots } = liveTreeFromSpans(fresh.spans);
-    return <LiveTraceDetail trace={fresh} roots={roots} onBack={() => setSelected(null)} />;
+    const spans = detailSpans || [];
+    const { roots } = liveTreeFromSpans(spans);
+    const trace: LiveTrace = { ...selected, spans };
+    return (
+      <div className="space-y-2">
+        {detailSpans === null ? <div className="text-xs text-muted-foreground">Loading spans…</div> : null}
+        <LiveTraceDetail trace={trace} roots={roots} onBack={() => setSelected(null)} />
+      </div>
+    );
   }
+
+  const pingCount = rows.filter((t) => isMcpKeepalivePing(t.rootName, t.error)).length;
+  const shown = showPings ? rows : rows.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
 
   return (
     <div className="space-y-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <Input placeholder="filter by name / model…" value={text} onChange={(e: any) => setText(e.target.value)} className="otel-w-56 h-8" />
-        <Button variant={errorsOnly ? "default" : "outline"} size="sm" onClick={() => setErrorsOnly((v) => !v)}>
-          errors only
-        </Button>
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
-          show MCP keepalive pings{pingCount ? ` (${pingCount})` : ""}
-        </label>
-        <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
-          {paused ? "▶ Resume" : "⏸ Pause"}
-        </Button>
-        <span className="ml-auto text-xs text-muted-foreground">
-          {traces.length} trace{traces.length === 1 ? "" : "s"} · {spans.length} spans buffered
-        </span>
-      </div>
-      {traces.length === 0 ? (
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">No traces yet</div>
-          Run a Hermes turn — each turn appears here as a trace you can open into a span waterfall. No backend needed.
-        </div>
+      <Card>
+        <CardContent className="space-y-3 pt-4">
+          <FilterBar filters={filters} onChange={setFilters} onSubmit={submit} backend={false} busy={loading} />
+        </CardContent>
+      </Card>
+      {error ? <ErrorBanner error={error} /> : null}
+      {view === "sessions" ? (
+        <LiveSessions filters={applied} onSelectTrace={setSelected} />
       ) : (
-        <div className="flex flex-col gap-2">
-          {traces.map((t) => (
-            <LiveTraceCard key={t.traceId} trace={t} onSelect={setSelected} />
-          ))}
-        </div>
+        <>
+          <div className="flex flex-wrap items-center gap-3 text-xs text-muted-foreground">
+            <span>
+              {shown.length} of {total} trace{total === 1 ? "" : "s"}
+              {isDefaultFilters(applied) ? "" : " matching"} in the last {applied.lookback}h
+            </span>
+            <label className="inline-flex cursor-pointer items-center gap-1.5">
+              <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
+              show MCP keepalive pings{pingCount ? ` (${pingCount})` : ""}
+            </label>
+            <Button variant="outline" size="sm" className="ml-auto" onClick={() => setPaused((p) => !p)}>
+              {paused ? "▶ Resume" : "⏸ Pause"}
+            </Button>
+          </div>
+          {shown.length === 0 ? (
+            <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
+              <div className="mb-1 text-base font-medium text-foreground">{total ? "Nothing matched" : "No traces yet"}</div>
+              {total ? "Widen the lookback or clear a filter." : "Run a Hermes turn — each turn appears here as a trace you can open into a span waterfall. No backend needed."}
+            </div>
+          ) : (
+            <div className="flex flex-col gap-2">
+              {shown.map((t) => (
+                <LiveTraceCard key={t.traceId} trace={t} onSelect={setSelected} />
+              ))}
+            </div>
+          )}
+        </>
       )}
     </div>
   );
@@ -138,37 +177,6 @@ function StatusBar({ status, onRefresh }: { status: any; onRefresh: () => void }
       </div>
       <Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>
     </div>
-  );
-}
-
-function FiltersForm({ filters, status, onChange, onSubmit }: { filters: any; status: any; onChange: (f: any) => void; onSubmit: () => void }) {
-  const lang: string = status?.query_lang_label || "";
-  const rawLabel = !lang ? "Query filter (optional)" : /filter$/i.test(lang.trim()) ? `${lang} (optional)` : `${lang} filter (optional)`;
-  const set = (k: string, v: any) => onChange({ ...filters, [k]: v });
-  return (
-    <form className="otel-filter-grid" onSubmit={(e: any) => { e.preventDefault(); onSubmit(); }}>
-      <div className="otel-filter-q space-y-1.5">
-        <Label htmlFor="otel-q">{rawLabel}</Label>
-        <Input id="otel-q" placeholder={status?.raw_placeholder || ""} value={filters.q} onChange={(e: any) => set("q", e.target.value)} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="otel-svc">Service</Label>
-        <Input id="otel-svc" placeholder="any" value={filters.service || ""} onChange={(e: any) => set("service", e.target.value)} />
-      </div>
-      <div className="space-y-1.5">
-        <Label htmlFor="otel-lb">Lookback</Label>
-        <Select id="otel-lb" value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))}>
-          <SelectOption value="0.25">15m</SelectOption>
-          <SelectOption value="1">1h</SelectOption>
-          <SelectOption value="6">6h</SelectOption>
-          <SelectOption value="24">24h</SelectOption>
-          <SelectOption value="72">3d</SelectOption>
-          <SelectOption value="168">7d</SelectOption>
-          <SelectOption value="720">30d</SelectOption>
-        </Select>
-      </div>
-      <button type="submit" className="hidden" tabIndex={-1} aria-hidden />
-    </form>
   );
 }
 
@@ -254,8 +262,8 @@ function BackendTraceDetail({ trace, detail, loading, error, onBack }: { trace: 
   );
 }
 
-function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: () => void; source: string }) {
-  const [filters, setFilters] = useState<any>({ lookback: 1, q: "", service: "", rootsOnly: true });
+function BackendTraces({ status, onRefresh, source, view }: { status: any; onRefresh: () => void; source: string; view: "turns" | "sessions" }) {
+  const [filters, setFilters] = useState<TraceFilters>(DEFAULT_FILTERS);
   const [traces, setTraces] = useState<any[] | null>(null);
   const [showPings, setShowPings] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -270,11 +278,16 @@ function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: 
     setLoading(true);
     setError(null);
     setSelected(null);
+    // A trace id opens that trace directly: no backend can search by id portably.
+    const id = filters.traceId.trim();
+    if (id) {
+      setTraces([{ traceID: id, rootTraceName: "(by id)", spanSets: [] }]);
+      setSelected({ traceID: id, rootTraceName: "(by id)" });
+      setLoading(false);
+      return;
+    }
     try {
-      const p = withBackend(new URLSearchParams({ limit: "50", lookback_hours: String(filters.lookback), roots_only: String(filters.rootsOnly) }), source);
-      if (filters.q?.trim()) p.set("q", filters.q.trim());
-      if (filters.service?.trim()) p.set("service", filters.service.trim());
-      const r = await fetchJSON(`${API}/traces/search?${p}`);
+      const r = await fetchJSON(`${API}/traces/search?${backendParams(filters, source)}`);
       setTraces(r.traces || []);
     } catch (e: any) {
       setError(String(e?.message || e).replace(/^.*?:\s*/, ""));
@@ -309,7 +322,7 @@ function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: 
         <CardContent className="space-y-2 pt-4 text-sm text-muted-foreground">
           <p>{status?.reason || "No queryable trace backend configured."}</p>
           <p className="text-xs">
-            That's fine — the <span className="font-medium text-foreground">⚡ Live</span> source above needs no backend.
+            That's fine — the <span className="font-medium text-foreground">⚡ Live</span> source needs no backend.
             Add a backend of a queryable type to browse historical traces here:{" "}
             <span className="font-mono">{(status?.queryable_types || []).join(", ") || "none available"}</span>.
           </p>
@@ -324,20 +337,20 @@ function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: 
   const isPing = (t: any) => isMcpKeepalivePing(t.rootTraceName, traceAttrs(t)["status"] === "error");
   const pingCount = traces ? traces.filter(isPing).length : 0;
   const shown = traces && !showPings ? traces.filter((t) => !isPing(t)) : traces;
+  const renderCard = (t: any) => <BackendTraceCard key={t.traceID || t.traceId} trace={t} onSelect={setSelected} />;
 
   return (
     <div className="space-y-3">
       <Card>
         <CardContent className="space-y-3 pt-4">
           <StatusBar status={status} onRefresh={onRefresh} />
-          <FiltersForm filters={filters} status={status} onChange={setFilters} onSubmit={search} />
+          <FilterBar filters={filters} onChange={setFilters} onSubmit={search} backend status={status} busy={loading} />
           <div className="flex items-center justify-between gap-3">
             <span className="text-xs text-muted-foreground">{shown == null ? "Not searched yet" : `${shown.length} trace${shown.length === 1 ? "" : "s"}`}</span>
             <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
               <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
               show MCP keepalive pings{pingCount ? ` (${pingCount})` : ""}
             </label>
-            <Button onClick={search} disabled={loading} size="sm" className="ml-auto">{loading ? "Searching…" : "Search"}</Button>
           </div>
         </CardContent>
       </Card>
@@ -348,11 +361,11 @@ function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: 
         </div>
       ) : null}
       {shown && shown.length > 0 ? (
-        <div className="flex flex-col gap-2">
-          {shown.map((t) => (
-            <BackendTraceCard key={t.traceID || t.traceId} trace={t} onSelect={setSelected} />
-          ))}
-        </div>
+        view === "sessions" ? (
+          <BackendSessions traces={shown} renderTrace={renderCard} />
+        ) : (
+          <div className="flex flex-col gap-2">{shown.map(renderCard)}</div>
+        )
       ) : shown && shown.length === 0 && !error ? (
         <div className="border border-dashed border-border px-4 py-8 text-center text-sm text-muted-foreground">
           {pingCount ? `Only MCP keepalive pings matched (${pingCount} hidden) — tick "show MCP keepalive pings" to see them.` : "No traces matched — widen the lookback or run a turn."}
@@ -365,14 +378,26 @@ function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: 
 // ═══════════════════════════════════ PAGE ════════════════════════════════
 export function TracesPage() {
   const { source, setSource, status, refresh, isLive } = useSource();
+  const [view, setViewState] = useState<"turns" | "sessions">(readView());
+  const setView = (v: "turns" | "sessions") => {
+    try {
+      localStorage.setItem(VIEW_KEY, v);
+    } catch {
+      /* ignore */
+    }
+    setViewState(v);
+  };
 
   return (
     <div className="space-y-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <SourceSelect source={source} onChange={setSource} status={status} need="traces" />
-        {isLive ? <MiniLabel>traces assembled from the in-process store</MiniLabel> : null}
+        <div className="flex flex-wrap items-center gap-3">
+          <SourceSelect source={source} onChange={setSource} status={status} need="traces" />
+          <ViewToggle view={view} onChange={setView} />
+        </div>
+        {isLive ? <MiniLabel>queried from the in-process store</MiniLabel> : null}
       </div>
-      {isLive ? <LiveTraces /> : <BackendTraces status={status} onRefresh={refresh} source={source} />}
+      {isLive ? <LiveTraces view={view} /> : <BackendTraces status={status} onRefresh={refresh} source={source} view={view} />}
     </div>
   );
 }

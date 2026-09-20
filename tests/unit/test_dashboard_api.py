@@ -242,3 +242,56 @@ def test_search_traces_without_backend_is_503(monkeypatch):
     with TestClient(app) as c:
         assert c.get("/traces/search").status_code == 503
         assert c.get("/traces/search", params={"lookback_hours": 9000}).status_code == 422
+
+
+class TestSearchBarFilters:
+    """The search bar's fields reach both sources (#183)."""
+
+    def test_live_model_tool_and_duration_filters(self, client):
+        assert client.get("/live/traces", params={"tool": "terminal"}).json()["total"] == 1
+        assert client.get("/live/traces", params={"tool": "write_file"}).json()["total"] == 0
+        assert client.get("/live/traces", params={"model": "nemotron-3-nano"}).json()["total"] == 2
+        assert client.get("/live/traces", params={"model": "gpt-4"}).json()["total"] == 0
+        # turn 1's spans last 4 s, turn 2's 0.4 s
+        assert client.get("/live/traces", params={"min_duration_ms": 3000}).json()["total"] == 1
+        assert client.get("/live/traces", params={"min_duration_ms": 100}).json()["total"] == 2
+        assert client.get("/live/traces", params={"min_duration_ms": 10000}).json()["total"] == 0
+
+    def test_backend_search_passes_attribute_filters(self, monkeypatch):
+        seen = {}
+
+        class Adapter:
+            supports_metrics = False
+            supports_logs = False
+            cfg = {"type": "phoenix", "name": "phx"}
+
+            def search(self, f, start_s, end_s, limit):
+                seen["f"] = f
+                return {"traces": []}
+
+        monkeypatch.setattr(
+            plugin_api, "resolve_adapter", lambda name=None: (Adapter(), [], None, None)
+        )
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            r = c.get(
+                "/traces/search",
+                params={
+                    "model": "m1",
+                    "session": "s1",
+                    "tool": "terminal",
+                    "status": "error",
+                    "min_duration_ms": 250,
+                    "free_text": "hello",
+                },
+            )
+        assert r.status_code == 200
+        f = seen["f"]
+        assert f.attr_equals == {
+            "llm.model_name": "m1",
+            "hermes.session_id": "s1",
+            "tool.name": "terminal",
+        }
+        assert f.status == "error" and f.min_duration_ms == 250 and f.free_text == "hello"
+        assert f.roots_only is False  # a tool filter matches tool spans

@@ -30,6 +30,15 @@
     grid-column: span 2 / span 2;
   }
 }
+.otel-search-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.5rem;
+  align-items: end;
+}
+.otel-span-2 {
+  grid-column: span 2 / span 2;
+}
 .otel-attr-table {
   display: grid;
   grid-template-columns: max-content minmax(0, 1fr);
@@ -38,6 +47,9 @@
 }
 .otel-self-center {
   align-self: center;
+}
+.otel-self-end {
+  align-self: end;
 }
 .otel-mr-2 {
   margin-right: 0.5rem;

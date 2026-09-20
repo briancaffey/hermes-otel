@@ -3,7 +3,8 @@
 // parameter (#177). Remembered per browser in localStorage.
 import { useState, useEffect, useCallback, fetchJSON, API } from "./sdk";
 
-export const LIVE = "live";
+import { LIVE, withBackend } from "./params";
+export { LIVE, withBackend };
 const KEY = "hermes_otel.source";
 
 export type BackendInfo = {
@@ -39,12 +40,6 @@ export function writeSource(v: string): void {
   } catch {
     /* private mode etc. */
   }
-}
-
-/** Append `backend=<name>` to a query string for a backend source (nothing for live). */
-export function withBackend(params: URLSearchParams, source: string): URLSearchParams {
-  if (source && source !== LIVE) params.set("backend", source);
-  return params;
 }
 
 /**

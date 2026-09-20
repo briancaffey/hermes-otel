@@ -435,9 +435,22 @@ class LiveStore:
         kind: Optional[str],
         text: Optional[str],
         trace_id: Optional[str] = None,
+        min_duration_ms: Optional[float] = None,
+        model: Optional[str] = None,
+        tool: Optional[str] = None,
     ):
         where = ["kind='span'"]
         args: List[Any] = []
+        if min_duration_ms:
+            where.append("duration_ms >= ?")
+            args.append(float(min_duration_ms))
+        if model:
+            # attributes carry the model under gen_ai.request.model / llm.model_name
+            where.append("data LIKE ?")
+            args.append(f'%.model%": "%{model}%')
+        if tool:
+            where.append("name = ?")
+            args.append(f"tool.{tool}" if not tool.startswith("tool.") else tool)
         if start_ns:
             where.append("start_ns >= ?")
             args.append(int(start_ns))
@@ -502,10 +515,23 @@ class LiveStore:
         trace_id: Optional[str] = None,
         limit: int = 50,
         offset: int = 0,
+        min_duration_ms: Optional[float] = None,
+        model: Optional[str] = None,
+        tool: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Trace-list rows (newest first) whose spans match every given filter."""
         where, args = self._span_where(
-            start_ns, end_ns, session, status, name, kind, text, trace_id
+            start_ns,
+            end_ns,
+            session,
+            status,
+            name,
+            kind,
+            text,
+            trace_id,
+            min_duration_ms,
+            model,
+            tool,
         )
         try:
             c = self._conn()

@@ -175,6 +175,8 @@ class LangfuseAdapter(BackendAdapter):
             v = f.attr_equals.get(k)
             if v:
                 params[k] = v
+        if f.attr_equals.get("hermes.session_id") and "sessionId" not in params:
+            params["sessionId"] = f.attr_equals["hermes.session_id"]
         if f.free_text and "name" not in params:
             # Best-effort — Langfuse filters name with exact match only.
             params["name"] = f.free_text

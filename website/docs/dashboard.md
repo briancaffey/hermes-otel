@@ -33,7 +33,7 @@ Rows carry indexed columns (trace id, session id, span name, status, start and e
 ## Tabs
 
 - **Live**: cost, tokens, turns, spans and errors for the buffered activity, an activity sparkline, and one card per turn. Tokens and cost are counted once per turn (the root span's totals). Opening a card shows the span waterfall.
-- **Traces**: the same cards with a filter box for the Live source, or the backend search form (native query, service, lookback) for the Backend source. Backend cards show the whole-trace span count when the adapter knows it.
+- **Traces**: one search bar for every source: status, kind, tool, model, session id, minimum duration, free text, trace id and lookback, plus the backend's native query and service as advanced fields. Fields a backend cannot honour are ignored by its adapter. The **Turns** view lists one card per turn; the **Sessions** view groups turns by session id with per-session turns, spans, errors, tokens, cost and tool calls (from the live store's `/live/sessions`, or grouped client-side from a backend's results). Backend cards show the whole-trace span count when the adapter knows it.
 - **Metrics**: totals, tokens and cost over time, tokens by type, calls by model, tool durations and approvals, from the live store.
 - **Logs**: the in-process log tail with level and text filters. A log line carries a trace id and session id when the plugin can attribute it: the span on the logging thread's context, or, failing that, the one session with a turn in flight. With several sessions active at once the line stays unattributed rather than guessed.
 
@@ -63,7 +63,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 |---|---|
 | `GET /live/status` | Whether the store is active and how full it is |
 | `GET /live/spans`, `/live/metrics`, `/live/logs` (`since`, `limit`) | Raw rows after a cursor, for streaming |
-| `GET /live/traces` (`lookback_hours`, `session`, `status`, `name`, `kind`, `text`, `trace_id`, `limit`, `offset`) | One row per trace, newest first, with totals counted once |
+| `GET /live/traces` (`lookback_hours`, `session`, `status`, `name`, `kind`, `text`, `trace_id`, `model`, `tool`, `min_duration_ms`, `limit`, `offset`) | One row per trace, newest first, with totals counted once |
 | `GET /live/traces/{trace_id}` | The trace's spans |
 | `GET /live/sessions` (`lookback_hours`, `limit`) | One row per session: turns, spans, errors, tokens, cost, tool calls |
 | `GET /live/metrics/names` | Every instrument in the store with its point count |
@@ -71,7 +71,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 | `GET /live/logs/search` (`trace_id`, `session`, `min_level`, `logger`, `text`, `lookback_hours`, `limit`) | Filtered log lines, newest first |
 | `GET /live/loggers` | Logger names with counts |
 | `GET /status` (`backend`) | The chosen or default backend, and every configured one with its capabilities (`available[].supported/metrics/logs`) |
-| `GET /traces/search` (`backend`, `q`, `service`, `lookback_hours`, `roots_only`, …) | Backend trace search |
+| `GET /traces/search` (`backend`, `q`, `service`, `lookback_hours`, `roots_only`, `status`, `min_duration_ms`, `free_text`, `name_regex`, `model`, `session`, `tool`) | Backend trace search; `model`/`session`/`tool` become attribute equalities each adapter translates |
 | `GET /traces/{trace_id}` (`backend`) | Backend trace detail as OTLP JSON |
 | `GET /metrics/names`, `/metrics/query` (`backend`, same parameters as the live ones) | Metrics from a backend that serves them, in the live endpoints' shape |
 | `GET /logs/search`, `/loggers` (`backend`, same parameters as the live ones) | Logs from a backend that serves them, in the live record shape |
