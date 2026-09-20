@@ -167,14 +167,15 @@ def infer_skill_name(args: Optional[Dict[str, Any]]) -> Optional[str]:
     return None
 
 
-def _skill_dir_from_filesystem(text: str, parts: List[str]) -> Optional[str]:
+def _skill_dir_on_disk(text: str, parts: List[str]) -> Optional[str]:
     """Walk up from the referenced file to the nearest directory holding SKILL.md.
 
     Only consulted for files *inside* a skill that are not the manifest itself
     (``references/x.md``, ``scripts/run.sh``…), where the path alone cannot say
     whether the layout is flat or categorized. Bounded to the ``/skills/``
     subtree, so at most ``len(parts)`` ``stat`` calls, and only on tool calls
-    that reference a skills path at all.
+    that reference a skills path at all. Returns the directory as written in
+    the argument (absolute when the argument was), or None.
     """
     idx = text.lower().rfind("/skills/")
     if idx < 0:
@@ -186,9 +187,46 @@ def _skill_dir_from_filesystem(text: str, parts: List[str]) -> Optional[str]:
         candidate = root + "/".join(parts[:depth])
         try:
             if os.path.isfile(os.path.join(candidate, "SKILL.md")):
-                return parts[depth - 1]
+                return candidate
         except OSError:  # pragma: no cover — permission oddities: fall through
             continue
+    return None
+
+
+def _skill_dir_from_filesystem(text: str, parts: List[str]) -> Optional[str]:
+    """Bare skill name of the on-disk skill directory containing ``text``, or None."""
+    directory = _skill_dir_on_disk(text, parts)
+    return os.path.basename(directory.rstrip("/")) if directory else None
+
+
+def resolve_skill_dir(args: Optional[Dict[str, Any]]) -> Optional[str]:
+    """The directory holding the ``SKILL.md`` a tool call touched, or None.
+
+    Evidence only, never built from the skill name (#147): the parent directory
+    when the argument names the manifest itself, or the nearest ancestor of the
+    referenced file that holds a ``SKILL.md`` on disk. Categorized skills
+    (``skills/<category>/<name>/``), plugin-bundled skills and skills outside
+    ``HERMES_HOME`` all resolve to their real directory; anything that cannot be
+    verified returns None so the caller omits the attribute.
+    """
+    if not isinstance(args, dict):
+        return None
+    for key in ("path", "file_path", "target"):
+        v = args.get(key)
+        if not isinstance(v, str) or not v.strip():
+            continue
+        normalized = v.replace("\\", "/")
+        match = _SKILL_PATH_RE.search(normalized)
+        if not match:
+            continue
+        parts = [p for p in match.group(1).strip("/").split("/") if p]
+        if not parts:
+            continue
+        if parts[-1].lower() == _SKILL_MANIFEST and len(parts) > 1:
+            return normalized[: normalized.lower().rfind("/" + _SKILL_MANIFEST)]
+        directory = _skill_dir_on_disk(normalized, parts)
+        if directory:
+            return directory
     return None
 
 

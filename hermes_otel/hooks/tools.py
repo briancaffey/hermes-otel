@@ -3,9 +3,8 @@
 from __future__ import annotations
 
 import json
-import os
 import time
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..debug_utils import debug_log
 from ..helpers import (
@@ -14,6 +13,7 @@ from ..helpers import (
     detect_skill,
     extract_tool_result_status,
     outcome_from_hook_status,
+    resolve_skill_dir,
     resolve_tool_identity,
     serialize_full,
     truncate_string,
@@ -27,26 +27,30 @@ from .attributes import (
 )
 
 
-def _open_skill_span(tracer, session_id: str, skill: str, source: str, kwargs: dict) -> None:
+def _open_skill_span(
+    tracer, session_id: str, skill: str, source: str, path: Optional[str] = None
+) -> None:
     """Open an overlapping skill execution-window span (idempotent per turn).
 
     A skill is loaded once (via ``skill_view`` or a ``/skills/`` read) and then
     guides the rest of the turn, so the span opens here and is closed at the
     turn boundary in :func:`on_session_end`. Skills overlap freely — each gets
     its own span keyed by name, nested under the turn root rather than the
-    in-flight tool/LLM span.
+    in-flight tool/LLM span. ``path`` is the skill directory when Hermes or the
+    referenced file told us where it is; the attribute is omitted otherwise
+    rather than guessed from the name (#147).
     """
     if tracer.spans.has_skill_span(session_id, skill):
         return  # already active this turn — keep the first window open
     key = f"skill:{session_id}:{skill}"
-    home = os.environ.get("HERMES_HOME") or os.path.expanduser("~/.hermes")
     attributes: Dict[str, Any] = {
         "hermes.skill.name": skill,
         "hermes.skill.source": source,
-        "hermes.skill.path": os.path.join(home, "skills", skill),
         "hermes.span_kind": "skill",
         "gen_ai.skill.name": skill,
     }
+    if path:
+        attributes["hermes.skill.path"] = truncate_string(path, 500)
     attributes.update(_gen_ai_attributes(session_id, "execute_skill"))
     tracer.start_span(
         name=f"skill.{skill}",
@@ -91,6 +95,19 @@ def _resolve_tool_outcome(hook_status: Any, result_json: Any) -> str:
     if hook_outcome:
         return hook_outcome
     return result_outcome or "completed"
+
+
+def _skill_dir_for(source: str, args: Any, result_json: Dict[str, Any]) -> Optional[str]:
+    """Where the loaded skill lives, from evidence only.
+
+    ``skill_view`` reports the resolved ``skill_dir`` in its result (Hermes
+    ``tools/skills_tool.py``); a path-match load resolves the directory from
+    the file the tool actually read. None when neither says.
+    """
+    if source == "skill_view":
+        reported = result_json.get("skill_dir")
+        return reported if isinstance(reported, str) and reported.strip() else None
+    return resolve_skill_dir(args)
 
 
 def _tool_call_id(task_id: str, kwargs: dict) -> str:
@@ -277,7 +294,13 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
             if succeeded:
                 summary.add_skill(skill)
                 if tracer.config.skill_spans:
-                    _open_skill_span(tracer, session_id, skill, skill_source, kwargs)
+                    _open_skill_span(
+                        tracer,
+                        session_id,
+                        skill,
+                        skill_source,
+                        _skill_dir_for(skill_source, args, result_json),
+                    )
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.
