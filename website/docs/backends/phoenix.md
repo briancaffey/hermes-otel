@@ -65,6 +65,10 @@ See [Attribute conventions](/architecture/attributes) for the full dual-conventi
 
 Phoenix accepts OTLP metrics in addition to traces. The plugin's token/tool/cost metrics flow automatically when Phoenix is selected — no extra config.
 
+## Dashboard
+
+The bundled dashboard's Phoenix adapter shows the project named by `project_name` (on the backend entry, else the top-level key). If that project does not exist on the server the dashboard reports `Phoenix project '…' not found; available: …` instead of quietly showing another project's traces. With no `project_name` configured it shows the first project that has traces and says which one in its status (`project_resolved`, `project_fallback: true`).
+
 ## Troubleshooting
 
 **"No traces show up in Phoenix"**

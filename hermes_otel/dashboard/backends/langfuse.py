@@ -279,11 +279,18 @@ class LangfuseAdapter(BackendAdapter):
                 }
             )
 
-        # Synthesise the root span from the trace itself so the tree has
-        # a top-level node covering the whole turn.
+        # Langfuse traces have no root observation, so a top-level node is
+        # built from the trace record to hold the tree together. It is marked
+        # as synthetic so the UI can label it and nobody mistakes it for a
+        # span the agent emitted (#159); the plugin marks its own lazily
+        # created roots the same way (``hermes.session.synthesized``).
         trace_start = _iso_to_ns(data.get("timestamp"))
         trace_end = max((_iso_to_ns(o.get("endTime")) or 0 for o in observations), default=0)
-        root_attrs: Dict[str, Any] = {"langfuse.trace_id": trace_id}
+        root_attrs: Dict[str, Any] = {
+            "langfuse.trace_id": trace_id,
+            "synthetic": True,
+            "synthetic.reason": "Langfuse traces have no root observation; built from the trace record",
+        }
         for k in ("userId", "sessionId", "release", "version"):
             if data.get(k):
                 root_attrs[f"langfuse.{k}"] = data[k]
