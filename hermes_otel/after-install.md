@@ -17,6 +17,14 @@ Optional: `langsmith` (LangSmith backend, uuid7 run IDs) and `pyyaml`
 `host_metrics: true` uses `psutil` (ships with hermes-agent); GPU readings
 additionally need `pynvml` (NVIDIA) or `amdsmi` matching your ROCm stack.
 
+### What is captured
+
+By default (`content_capture: full`) every model call's complete prompt and
+response go to your backends, unclipped. `content_capture: preview` keeps
+only 1200-character previews; `off` records no content at all. Set it in
+`$HERMES_HOME/hermes_otel.yaml` or with `HERMES_OTEL_CONTENT_CAPTURE`. The
+dashboard's OTel → Settings tab shows what is in force.
+
 ### Point it at a backend
 
 Pick one and export it before starting Hermes:

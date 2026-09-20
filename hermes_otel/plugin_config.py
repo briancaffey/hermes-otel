@@ -161,7 +161,10 @@ class HermesOtelConfig:
     # ── BatchSpanProcessor tunables (Phase 2: non-blocking export) ──────
     span_batch_max_queue_size: int = 2048  # spans buffered before drops
     span_batch_schedule_delay_ms: int = 1000  # worker wake-up cadence
-    span_batch_max_export_batch_size: int = 512  # spans per HTTP POST
+    # None = auto: 512, or 64 when content_capture is "full" (large spans
+    # would otherwise make a single OTLP POST bigger than most receivers
+    # accept). See effective_export_batch_size().
+    span_batch_max_export_batch_size: Optional[int] = None
     span_batch_export_timeout_ms: int = 30_000  # per-export HTTP timeout
     force_flush_on_session_end: bool = True  # flush so UI sees traces promptly
     # ── LLM span input fidelity ─────────────────────────────────────────
@@ -171,14 +174,21 @@ class HermesOtelConfig:
     # flipping this on is the easiest way to see what the model actually saw.
     capture_conversation_history: bool = False
     conversation_history_max_chars: int = 20_000
-    # ── Full-fidelity api.* span capture (opt-in, unredacted) ───────────
-    # Writes the *entire* prompt/system prompt and/or response onto each
-    # ``api.{model}`` span, bypassing ``preview_max_chars``. Off by default
-    # because payloads can be large (multi-MB conversations) and contain
-    # sensitive data. Prefer ``capture_conversation_history`` for the
-    # summary-level LLM span; these flags target the per-request span.
-    capture_full_prompts: bool = False
-    capture_full_responses: bool = False
+    # ── Content capture ─────────────────────────────────────────────────
+    # What of the conversation content is recorded on spans:
+    #   "full"     the complete prompt (system prompt + every message) and
+    #              the complete response on every api.* span, unclipped;
+    #              previews elsewhere. The default: this is a debugging tool
+    #              and the data goes only to backends you configure.
+    #   "preview"  clipped previews only (``preview_max_chars``).
+    #   "off"      no prompt, tool or response content at all; metadata only.
+    # ``capture_previews`` / ``capture_full_prompts`` / ``capture_full_responses``
+    # are the pre-1.11 spellings; load_config keeps them consistent with
+    # ``content_capture`` (see _reconcile_content_capture) and hook code reads
+    # the booleans. ``capture_previews: false`` still means "off".
+    content_capture: str = "full"
+    capture_full_prompts: bool = True
+    capture_full_responses: bool = True
     # Opt-in: platform user identifier from Hermes gateway sessions. Hermes
     # currently exposes this as ``sender_id`` only on pre_llm_call.
     capture_sender_id: bool = False
@@ -282,6 +292,8 @@ def field_kinds() -> Dict[str, str]:
 _STR_NORMALISERS = {
     "log_level": lambda v: str(v).upper(),
 }
+
+CONTENT_CAPTURE_MODES = ("off", "preview", "full")
 
 
 def _parse_bool(value: str) -> Optional[bool]:
@@ -483,9 +495,15 @@ def _parse_scalar(kind: Optional[str], key: str, value: Any) -> Any:
             return float(value)
         return _parse_float(str(value))
     if kind == "str":
+        if key == "content_capture" and isinstance(value, bool):
+            # YAML 1.1 reads a bare ``off`` as false and ``on`` as true.
+            return "off" if not value else "full"
         text = str(value)
         if key == "host_metrics_gpu":
             return _parse_gpu_vendor(text)
+        if key == "content_capture":
+            mode = text.strip().lower()
+            return mode if mode in CONTENT_CAPTURE_MODES else None
         norm = _STR_NORMALISERS.get(key)
         return norm(text) if norm else text
     return None
@@ -537,9 +555,100 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
             values[key] = coerced
 
     values.update(_load_env_overrides())
+    _reconcile_content_capture(values)
 
     # Build config with whatever we have; unset fields fall back to dataclass defaults.
     return replace(HermesOtelConfig(), **values)
+
+
+_LEGACY_CONTENT_KEYS = ("capture_previews", "capture_full_prompts", "capture_full_responses")
+
+
+def _reconcile_content_capture(values: Dict[str, Any]) -> None:
+    """Keep ``content_capture`` and the three legacy booleans consistent.
+
+    ``content_capture`` (yaml or env) wins; the legacy keys are then derived
+    from it and a conflicting legacy value is warned about and dropped.
+    Without ``content_capture``, legacy keys set the mode the way they did
+    before 1.11: ``capture_previews: false`` is ``off``, either full flag
+    ``true`` is ``full``, a full flag explicitly ``false`` (previews on) is
+    ``preview``. Nothing set means the default, ``full``.
+    """
+    legacy = {k: values[k] for k in _LEGACY_CONTENT_KEYS if k in values}
+    mode = values.get("content_capture")
+    if mode is None and legacy:
+        if legacy.get("capture_previews") is False:
+            mode = "off"
+        elif legacy.get("capture_full_prompts") or legacy.get("capture_full_responses"):
+            mode = "full"
+        else:
+            mode = "preview"
+        logger.warning(
+            "[hermes-otel] %s %s deprecated; use content_capture: %s "
+            "(off | preview | full) instead",
+            ", ".join(sorted(legacy)),
+            "is" if len(legacy) == 1 else "are",
+            mode,
+        )
+    if mode is None:
+        return
+    derived = {
+        "off": (False, False, False),
+        "preview": (True, False, False),
+        "full": (True, True, True),
+    }[mode]
+    if "content_capture" in values:
+        for key, want in zip(_LEGACY_CONTENT_KEYS, derived):
+            if key in legacy and legacy[key] != want:
+                logger.warning(
+                    "[hermes-otel] %s=%r conflicts with content_capture: %s; "
+                    "content_capture wins",
+                    key,
+                    legacy[key],
+                    mode,
+                )
+        (
+            values["capture_previews"],
+            values["capture_full_prompts"],
+            values["capture_full_responses"],
+        ) = derived
+    else:
+        values["content_capture"] = mode
+        values.setdefault("capture_previews", derived[0])
+        if mode == "full":
+            # Either flag on means full mode; an explicit false for the other
+            # keeps that side as previews (prompts full, responses preview).
+            values.setdefault("capture_full_prompts", derived[1])
+            values.setdefault("capture_full_responses", derived[2])
+        else:
+            values["capture_full_prompts"], values["capture_full_responses"] = derived[1:]
+
+
+def content_mode(cfg: HermesOtelConfig) -> str:
+    """The mode the hooks actually apply, from the booleans they read."""
+    if not cfg.capture_previews:
+        return "off"
+    if cfg.capture_full_prompts or cfg.capture_full_responses:
+        return "full"
+    return "preview"
+
+
+DEFAULT_EXPORT_BATCH_SIZE = 512
+FULL_CAPTURE_EXPORT_BATCH_SIZE = 64
+
+
+def effective_export_batch_size(cfg: HermesOtelConfig) -> int:
+    """Spans per OTLP POST: the configured value, else 512, else 64 in full mode.
+
+    A full-capture span carries the whole prompt, so 512 of them in one POST
+    can exceed what receivers accept (the OTel Collector's gRPC receiver
+    defaults to 4 MiB). Smaller batches keep every export deliverable.
+    """
+    if cfg.span_batch_max_export_batch_size:
+        return int(cfg.span_batch_max_export_batch_size)
+    return (
+        FULL_CAPTURE_EXPORT_BATCH_SIZE if content_mode(cfg) == "full" else DEFAULT_EXPORT_BATCH_SIZE
+    )
 
 
 # ── Field documentation and grouping ───────────────────────────────────
@@ -554,7 +663,7 @@ FIELD_DOCS = {
     "root_span_ttl_ms": "Orphan-sweep TTL: a turn root older than this with no end hook is closed",
     "flush_interval_ms": "Metrics export cadence (PeriodicExportingMetricReader)",
     "preview_max_chars": "Cap on preview strings (tool args/results, user message, assistant response)",
-    "capture_previews": "`false` suppresses every input/output preview; metadata still recorded",
+    "capture_previews": "Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture`",
     "tool_input_preview_max_chars": "Per-category cap for tool args previews; `null` = `preview_max_chars`",
     "tool_output_preview_max_chars": "Per-category cap for tool result previews; `null` = `preview_max_chars`",
     "llm_input_preview_max_chars": "Per-category cap for LLM input previews; `null` = `preview_max_chars`",
@@ -565,13 +674,14 @@ FIELD_DOCS = {
     "project_name": "`openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME`",
     "span_batch_max_queue_size": "Max buffered spans per backend before drops",
     "span_batch_schedule_delay_ms": "BatchSpanProcessor worker wake-up cadence",
-    "span_batch_max_export_batch_size": "Max spans per OTLP POST",
+    "span_batch_max_export_batch_size": "Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full`",
     "span_batch_export_timeout_ms": "Per-export HTTP timeout",
     "force_flush_on_session_end": "Synchronously flush every backend at the end of each turn",
     "capture_conversation_history": "Attach the full message JSON to `llm.*` spans",
     "conversation_history_max_chars": "JSON cap when conversation capture is on",
-    "capture_full_prompts": "Full-fidelity prompt capture (`llm.input_messages`, `gen_ai.input.messages`); respects `capture_previews`",
-    "capture_full_responses": "Full-fidelity response capture (`llm.output.content`, `gen_ai.output.messages`)",
+    "content_capture": "`full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture)",
+    "capture_full_prompts": "Deprecated: derived from `content_capture`; `false` keeps prompts as previews in `full` mode",
+    "capture_full_responses": "Deprecated: derived from `content_capture`; `false` keeps responses as previews in `full` mode",
     "capture_sender_id": "Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`)",
     "capture_logs": "Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs)",
     "log_level": "Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`",
@@ -599,6 +709,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     (
         "Content capture",
         (
+            "content_capture",
             "capture_previews",
             "preview_max_chars",
             "tool_input_preview_max_chars",

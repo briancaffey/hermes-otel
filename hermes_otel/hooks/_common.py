@@ -8,7 +8,7 @@ tracer in one place (``hermes_otel.tracer.get_tracer``).
 from __future__ import annotations
 
 import functools
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from .. import tracer as _tracer_mod
 from ..debug_utils import debug_log, logger
@@ -114,6 +114,41 @@ def _preview_for(tracer, kind: Optional[str], value: Any) -> Optional[str]:
     if kind is not None:
         limit = getattr(cfg, _PREVIEW_LIMITS[kind], None)
     return clip_preview(value, limit or cfg.preview_max_chars)
+
+
+def _preview_marked(
+    tracer, kind: Optional[str], value: Any
+) -> "Tuple[Optional[str], Optional[int]]":
+    """``_preview_for`` plus the original length when the preview was clipped.
+
+    Returns ``(preview, original_chars)``; ``original_chars`` is None when
+    nothing was cut, so a short-looking value can be told from a clipped one.
+    """
+    preview = _preview_for(tracer, kind, value)
+    if preview is None or not preview.endswith("..."):
+        return preview, None
+    try:
+        original = len(value if isinstance(value, str) else str(value))
+    except Exception:
+        return preview, None
+    return preview, original if original > len(preview) else None
+
+
+def _mark_truncated(
+    attributes: Dict[str, Any], direction: str, original_chars: Optional[int]
+) -> None:
+    """``hermes.preview.<direction>.truncated`` / ``.original_chars`` when clipped."""
+    if original_chars is None:
+        return
+    truncated_key, chars_key = _TRUNCATION_KEYS[direction]
+    attributes[truncated_key] = True
+    attributes[chars_key] = original_chars
+
+
+_TRUNCATION_KEYS = {
+    "input": ("hermes.preview.input.truncated", "hermes.preview.input.original_chars"),
+    "output": ("hermes.preview.output.truncated", "hermes.preview.output.original_chars"),
+}
 
 
 def _resolve_session_id(

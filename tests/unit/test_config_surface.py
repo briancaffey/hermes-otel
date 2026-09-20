@@ -33,6 +33,8 @@ class TestEnvOverrides:
             raw, expected = "nvidia", "nvidia"
         if name == "log_level":
             raw, expected = "debug", "DEBUG"
+        if name == "content_capture":
+            raw, expected = "preview", "preview"
         monkeypatch.setenv(f"HERMES_OTEL_{name.upper()}", raw)
         cfg = load_config(path=tmp_path / "nonexistent.yaml")
         assert getattr(cfg, name) == expected, name
@@ -72,6 +74,8 @@ class TestYamlCoercion:
             raw, expected = "amd", "amd"
         if name == "log_level":
             raw, expected = "warning", "WARNING"
+        if name == "content_capture":
+            raw, expected = "preview", "preview"
         path = tmp_path / "hermes_otel.yaml"
         path.write_text(f"{name}: {raw}\n")
         assert getattr(load_config(path=path), name) == expected

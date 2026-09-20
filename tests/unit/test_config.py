@@ -1,5 +1,6 @@
 """Tests for plugin_config.py — HermesOtelConfig loader precedence."""
 
+import logging
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ import pytest
 from hermes_otel.plugin_config import (
     BackendConfig,
     HermesOtelConfig,
+    content_mode,
+    effective_export_batch_size,
     load_config,
 )
 
@@ -146,7 +149,7 @@ class TestBatchProcessorTunables:
         cfg = load_config(path=tmp_path / "missing.yaml")
         assert cfg.span_batch_max_queue_size == 2048
         assert cfg.span_batch_schedule_delay_ms == 1000
-        assert cfg.span_batch_max_export_batch_size == 512
+        assert cfg.span_batch_max_export_batch_size is None  # auto: 512, or 64 in full mode
         assert cfg.span_batch_export_timeout_ms == 30_000
         assert cfg.force_flush_on_session_end is True
 
@@ -325,11 +328,89 @@ class TestCaptureConversationHistory:
         assert cfg.conversation_history_max_chars == 4096
 
 
-class TestCaptureFullFlags:
-    def test_defaults_off(self, tmp_path):
+class TestContentCapture:
+    """``content_capture`` is the source of truth; the legacy booleans follow it."""
+
+    def test_default_is_full(self, tmp_path):
         cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.content_capture == "full"
+        assert cfg.capture_previews is True
+        assert cfg.capture_full_prompts is True
+        assert cfg.capture_full_responses is True
+        assert content_mode(cfg) == "full"
+
+    @pytest.mark.parametrize(
+        "raw,mode,flags",
+        [
+            ("full", "full", (True, True, True)),
+            ("preview", "preview", (True, False, False)),
+            ("off", "off", (False, False, False)),
+            ("OFF", "off", (False, False, False)),
+        ],
+    )
+    def test_env_sets_mode_and_legacy_flags(self, monkeypatch, tmp_path, raw, mode, flags):
+        monkeypatch.setenv("HERMES_OTEL_CONTENT_CAPTURE", raw)
+        cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.content_capture == mode
+        assert (cfg.capture_previews, cfg.capture_full_prompts, cfg.capture_full_responses) == flags
+        assert content_mode(cfg) == mode
+
+    def test_invalid_mode_warns_and_keeps_default(self, monkeypatch, tmp_path, caplog):
+        monkeypatch.setenv("HERMES_OTEL_CONTENT_CAPTURE", "lots")
+        with caplog.at_level(logging.WARNING, logger="hermes_otel"):
+            cfg = load_config(path=tmp_path / "missing.yaml")
+        assert cfg.content_capture == "full"
+        assert any("HERMES_OTEL_CONTENT_CAPTURE" in r.getMessage() for r in caplog.records)
+
+    @pytest.mark.parametrize(
+        "yaml_text,mode,flags",
+        [
+            ("content_capture: off\n", "off", (False, False, False)),  # bare off = YAML false
+            ("content_capture: on\n", "full", (True, True, True)),
+            ("content_capture: 'preview'\n", "preview", (True, False, False)),
+            ("capture_previews: false\n", "off", (False, False, False)),
+            ("capture_full_prompts: true\n", "full", (True, True, True)),
+            ("capture_full_prompts: false\n", "preview", (True, False, False)),
+            (
+                "capture_full_prompts: true\ncapture_full_responses: false\n",
+                "full",
+                (True, True, False),
+            ),
+            ("content_capture: off\ncapture_full_prompts: true\n", "off", (False, False, False)),
+        ],
+    )
+    def test_yaml_modes_and_legacy_keys(self, tmp_path, yaml_text, mode, flags):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text(yaml_text)
+        cfg = load_config(path=path)
+        assert cfg.content_capture == mode
+        assert (cfg.capture_previews, cfg.capture_full_prompts, cfg.capture_full_responses) == flags
+
+    def test_legacy_keys_warn_deprecated(self, monkeypatch, tmp_path, caplog):
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_PROMPTS", "true")
+        with caplog.at_level(logging.WARNING, logger="hermes_otel"):
+            load_config(path=tmp_path / "missing.yaml")
+        assert any(
+            "deprecated" in r.getMessage() and "content_capture: full" in r.getMessage()
+            for r in caplog.records
+        )
+
+    def test_conflict_warns_and_content_capture_wins(self, monkeypatch, tmp_path, caplog):
+        monkeypatch.setenv("HERMES_OTEL_CONTENT_CAPTURE", "preview")
+        monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_PROMPTS", "true")
+        with caplog.at_level(logging.WARNING, logger="hermes_otel"):
+            cfg = load_config(path=tmp_path / "missing.yaml")
         assert cfg.capture_full_prompts is False
-        assert cfg.capture_full_responses is False
+        assert any("conflicts with content_capture" in r.getMessage() for r in caplog.records)
+
+    def test_export_batch_size_auto(self, tmp_path, monkeypatch):
+        assert effective_export_batch_size(load_config(path=tmp_path / "missing.yaml")) == 64
+        monkeypatch.setenv("HERMES_OTEL_CONTENT_CAPTURE", "preview")
+        assert effective_export_batch_size(load_config(path=tmp_path / "missing.yaml")) == 512
+        monkeypatch.setenv("HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE", "100")
+        assert effective_export_batch_size(load_config(path=tmp_path / "missing.yaml")) == 100
 
     def test_env_toggle(self, monkeypatch, tmp_path):
         monkeypatch.setenv("HERMES_OTEL_CAPTURE_FULL_PROMPTS", "true")

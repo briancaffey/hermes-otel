@@ -32,7 +32,13 @@ from .debug_utils import (
     remove_sdk_log_forwarding,
 )
 from .helpers import derive_signal_endpoint, package_version
-from .plugin_config import BackendConfig, HermesOtelConfig, load_config
+from .plugin_config import (
+    BackendConfig,
+    HermesOtelConfig,
+    content_mode,
+    effective_export_batch_size,
+    load_config,
+)
 from .session_state import SessionState
 
 # Re-exported for tests (conftest resets _PARENT_STACK between runs).
@@ -792,7 +798,7 @@ class HermesOTelPlugin:
                             exporter,
                             max_queue_size=self.config.span_batch_max_queue_size,
                             schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
-                            max_export_batch_size=self.config.span_batch_max_export_batch_size,
+                            max_export_batch_size=effective_export_batch_size(self.config),
                             export_timeout_millis=self.config.span_batch_export_timeout_ms,
                         )
                         _attach(processor)
@@ -859,9 +865,15 @@ class HermesOTelPlugin:
             self._initialized = True
             self._register_atexit_flush()
 
-            if not self.config.capture_previews:
+            mode = content_mode(self.config)
+            if mode == "off":
                 logger.warning(
-                    "[hermes-otel] ⚠ capture_previews=false — input/output values suppressed"
+                    "[hermes-otel] ⚠ content_capture=off — prompts, tool I/O and responses are not recorded"
+                )
+            elif mode == "full":
+                logger.info(
+                    "[hermes-otel] ✓ content_capture=full — complete prompts and responses on every "
+                    "api.* span (set content_capture: preview or off to reduce)"
                 )
             if len(self._span_processors) > 1:
                 logger.info(

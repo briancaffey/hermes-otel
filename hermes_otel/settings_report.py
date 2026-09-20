@@ -27,6 +27,7 @@ from .plugin_config import (
     FIELD_GROUPS,
     BackendConfig,
     HermesOtelConfig,
+    content_mode,
     field_kinds,
     hermes_home,
 )
@@ -280,9 +281,39 @@ def field_reports(
                     entry["source"] = "env"
 
         values[key] = value
-        entry["value"] = _display_value(kind, key, value, reveal, raw_backends)
-        entry["changed"] = value != default
+        entry["derived_from"] = None
         reports.append(entry)
+
+    # content_capture and the legacy booleans are kept consistent by the
+    # loader; mirror that so the tab shows what the hooks apply, and say
+    # which key decided it.
+    explicit = {r["key"]: values[r["key"]] for r in reports if r["source"] != "default"}
+    reconciled = dict(explicit)
+    pc._reconcile_content_capture(reconciled)
+    by_key = {r["key"]: r for r in reports}
+    if "content_capture" in explicit:
+        # content_capture wins: every legacy flag is derived from it, even one
+        # that is also written in the file or the environment.
+        driver = ["content_capture"]
+        derived_keys = list(pc._LEGACY_CONTENT_KEYS)
+    else:
+        driver = [k for k in pc._LEGACY_CONTENT_KEYS if k in explicit]
+        derived_keys = [
+            k for k in ("content_capture",) + pc._LEGACY_CONTENT_KEYS if k not in explicit
+        ]
+    for key in ("content_capture",) + pc._LEGACY_CONTENT_KEYS:
+        if key in reconciled:
+            values[key] = reconciled[key]
+    if driver:
+        for key in derived_keys:
+            if key in reconciled:
+                by_key[key]["source"] = by_key[driver[0]]["source"]
+                by_key[key]["derived_from"] = driver
+
+    for entry in reports:
+        key, kind = entry["key"], entry["kind"]
+        entry["value"] = _display_value(kind, key, values[key], reveal, raw_backends)
+        entry["changed"] = values[key] != getattr(defaults, key)
 
     return reports, dataclasses.replace(defaults, **values)
 
@@ -557,9 +588,12 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     unknown = [
         {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc._ALLOWED_KEYS
     ]
+    # Counts are of values written somewhere; a field derived from another
+    # (content_capture and its legacy flags) is not counted twice.
+    written = [r for r in reports if not r.get("derived_from")]
     counts = {
-        "env": sum(1 for r in reports if r["source"] == "env"),
-        "file": sum(1 for r in reports if r["source"] == "file"),
+        "env": sum(1 for r in written if r["source"] == "env"),
+        "file": sum(1 for r in written if r["source"] == "file"),
         "default": sum(1 for r in reports if r["source"] == "default"),
         "changed": sum(1 for r in reports if r["changed"]),
     }
@@ -601,17 +635,18 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
 
 def capture_summary(cfg: HermesOtelConfig) -> Dict[str, Any]:
     """One line for the tab header: what leaves the machine, content-wise."""
-    if not cfg.capture_previews:
-        mode, detail = "off", "no prompt, tool or response content is recorded"
-    elif cfg.capture_full_prompts or cfg.capture_full_responses:
+    mode = content_mode(cfg)
+    if mode == "off":
+        detail = "no prompt, tool or response content is recorded"
+    elif mode == "full":
         parts = []
         if cfg.capture_full_prompts:
             parts.append("full prompts")
         if cfg.capture_full_responses:
             parts.append("full responses")
-        mode, detail = "full", " and ".join(parts) + " on every api.* span, unclipped"
+        detail = " and ".join(parts) + " on every api.* span, unclipped"
     else:
-        mode, detail = "preview", f"previews clipped at {cfg.preview_max_chars} characters"
+        detail = f"previews clipped at {cfg.preview_max_chars} characters"
     return {
         "mode": mode,
         "detail": detail,

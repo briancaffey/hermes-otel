@@ -21,7 +21,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed |
 | `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader) |
 | `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response) |
-| `capture_previews` | bool | `true` | `false` suppresses every input/output preview; metadata still recorded |
+| `capture_previews` | bool | `true` | Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture` |
 | `tool_input_preview_max_chars` | int \| null | `null` | Per-category cap for tool args previews; `null` = `preview_max_chars` |
 | `tool_output_preview_max_chars` | int \| null | `null` | Per-category cap for tool result previews; `null` = `preview_max_chars` |
 | `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars` |
@@ -32,13 +32,14 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |
 | `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence |
-| `span_batch_max_export_batch_size` | int | `512` | Max spans per OTLP POST |
+| `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full` |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
 | `force_flush_on_session_end` | bool | `true` | Synchronously flush every backend at the end of each turn |
 | `capture_conversation_history` | bool | `false` | Attach the full message JSON to `llm.*` spans |
 | `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
-| `capture_full_prompts` | bool | `false` | Full-fidelity prompt capture (`llm.input_messages`, `gen_ai.input.messages`); respects `capture_previews` |
-| `capture_full_responses` | bool | `false` | Full-fidelity response capture (`llm.output.content`, `gen_ai.output.messages`) |
+| `content_capture` | string | `"full"` | `full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture) |
+| `capture_full_prompts` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps prompts as previews in `full` mode |
+| `capture_full_responses` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps responses as previews in `full` mode |
 | `capture_sender_id` | bool | `false` | Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`) |
 | `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |

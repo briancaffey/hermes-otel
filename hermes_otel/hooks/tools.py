@@ -18,7 +18,13 @@ from ..helpers import (
     serialize_full,
     truncate_string,
 )
-from ._common import _fail_open, _preview_for, _resolve_session_id, get_tracer
+from ._common import (
+    _fail_open,
+    _mark_truncated,
+    _preview_marked,
+    _resolve_session_id,
+    get_tracer,
+)
 from .attributes import (
     _gen_ai_attributes,
     _session_context_attributes,
@@ -149,10 +155,11 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         "gen_ai.tool.name": tool_name,
         "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
     }
-    preview = _preview_for(tracer, "tool_input", serialize_full(args) or "{}")
+    preview, original = _preview_marked(tracer, "tool_input", serialize_full(args) or "{}")
     if preview is not None:
         attributes["input.value"] = preview
         attributes["gen_ai.tool.call.arguments"] = preview
+        _mark_truncated(attributes, "input", original)
     if (
         tracer.config.capture_previews
         and tool_name.startswith("mcp_")
@@ -261,10 +268,11 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
             attributes["error.message"] = error_msg
 
     # OpenInference output value — Phoenix shows this in Info
-    preview = _preview_for(tracer, "tool_output", result)
+    preview, original = _preview_marked(tracer, "tool_output", result)
     if preview is not None:
         attributes["output.value"] = preview
         attributes["gen_ai.tool.call.result"] = preview
+        _mark_truncated(attributes, "output", original)
     if (
         tracer.config.capture_previews
         and tool_name.startswith("mcp_")

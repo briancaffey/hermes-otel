@@ -1,88 +1,61 @@
 ---
 sidebar_position: 6
 title: "Conversation capture"
-description: "Capture the full message list the model actually saw on the llm.* span — system prompt + history + tool results as JSON."
+description: "content_capture: full (the default), preview or off — what of the prompts, tool I/O and responses lands on spans, and how to see the complete conversation the model saw."
 ---
 
 # Conversation capture
 
-By default, the `llm.*` span's `input.value` is just the **latest user turn**. That's the obvious thing to show in a UI, but it's not *what the model actually saw* — the model was given the system prompt, the full conversation history, and all tool results in addition to that last user message.
-
-Turning on `capture_conversation_history` attaches the full message list (as JSON) to the `llm.*` span. Indispensable for debugging "why did the model do that?" questions.
-
-## Enabling it
+One setting decides how much of the conversation content the plugin records:
 
 ```yaml
-# config.yaml
-capture_conversation_history: true
-conversation_history_max_chars: 40000   # safety cap
+# hermes_otel.yaml
+content_capture: "full"     # full (default) · preview · off
 ```
 
-Or via env var:
+Or `HERMES_OTEL_CONTENT_CAPTURE=full|preview|off`. Quote the value in YAML: a bare `off` is YAML for `false` (the plugin accepts it and reads it as `off`, but `"off"` is clearer).
 
-```bash
-export HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY=true
-```
+| Mode | `api.*` spans (one per model call) | `llm.*`, `tool.*`, `approval.*`, `subagent.*` spans | Use it when |
+|---|---|---|---|
+| **`full`** (default) | The complete request as sent to the provider (system prompt, every message, every tool result) and the complete response, unclipped | Clipped previews (`preview_max_chars`, 1200 by default) | You own the backend and want to answer "what did the model actually see and say?" |
+| `preview` | No content | Clipped previews, with `hermes.preview.*.truncated` markers when clipped | Storage or bandwidth is tight |
+| `off` | No content | No content; names, timings, tokens and status only | Content must not leave the process, see [Privacy mode](/configuration/privacy) |
 
-## What gets set
+The dashboard's **Settings** tab shows the mode in force and where it was set.
 
-On every `llm.*` span:
+## What `full` writes
 
-| Attribute | Type | Example |
-|---|---|---|
-| `input.value` | string | `[{"role":"system","content":"You are..."},{"role":"user","content":"..."}, ...]` |
-| `input.mime_type` | string | `application/json` |
-| `hermes.conversation.message_count` | int | `12` |
+On every `api.*` span, once per attribute convention so both Phoenix (OpenInference) and Langfuse or any OTel GenAI reader render it, and never a third copy:
 
-Backends that recognise `input.mime_type=application/json` pretty-print the JSON:
+| Attribute | Content |
+|---|---|
+| `gen_ai.input.messages`, `input.value` (`input.mime_type: application/json`) | The message list exactly as sent: system prompt first, then the history, tool calls and tool results |
+| `gen_ai.system_instructions` | The system prompt on its own: the leading `system` message, or the Responses API `instructions` |
+| `gen_ai.output.messages`, `output.value` | The assistant's reply: its text (`text/plain`) and, inside the one assistant message, the tool calls it made; tool calls alone become the JSON `output.value` |
+| `hermes.content.input_chars`, `hermes.content.output_chars` | Sizes, so a backend can chart payload growth without parsing the payload |
 
-- **Phoenix:** JSON view in the Input panel, fully expandable.
-- **Langfuse:** syntax-highlighted JSON blob.
-- **SigNoz / Jaeger / Tempo:** raw JSON string — readable but not folded.
-
-## Respects `capture_previews`
-
-When `capture_previews: false` (privacy mode), conversation capture is also suppressed. The two interact cleanly — you don't need to remember to turn this off when you enable privacy mode.
-
-## Respects `preview_max_chars`? Not exactly
-
-The cap on conversation history is **its own field** — `conversation_history_max_chars` — not `preview_max_chars`. The reasoning: conversation JSON is orders of magnitude larger than a single tool input preview, so sharing the same cap would either truncate individual messages uselessly or balloon the size of normal previews.
-
-Default cap is 20,000 characters (≈20 KB UTF-8), which is roughly 5k tokens of conversation. Long conversations get clipped with a trailing `...` on whatever message the cap lands in the middle of.
-
-Bump it for complex agents:
-
-```yaml
-conversation_history_max_chars: 100000   # 100 KB
-```
-
-## Why only on `llm.*`?
-
-`api.*` spans are per-HTTP-request. A single turn can include multiple `api.*` round-trips (one to get tool calls, another to get the final response after tool results). The conversation history changes between them (tool results get appended), so attaching it to `api.*` spans would double or triple the data with mostly-overlapping payloads.
-
-The parent `llm.*` span represents the whole turn end-to-end. Attaching conversation history there keeps it in one place.
-
-## Performance
-
-Conversation capture adds a JSON serialisation + size check on every `pre_llm_call` hook. For a 10-message conversation at ~200 tokens each, that's ~10 ms of serialisation — negligible next to a network round-trip to the model. Not a concern.
-
-The backend impact is bigger: every trace is now carrying ~20 KB of JSON it didn't carry before. On Langfuse Cloud's free tier (500 MB/mo), that's ~25k turns before you hit the limit. Size accordingly.
-
-## Full prompts and responses on `api.*` spans
-
-`capture_conversation_history` shows the turn on the `llm.*` span, clipped at `conversation_history_max_chars`. To see exactly what each API call sent and received, with no cap at all, turn on the two full-capture flags:
-
-```yaml
-# config.yaml
-capture_full_prompts: true      # llm.input_messages / gen_ai.input.messages, llm.system_prompt
-capture_full_responses: true    # llm.output.content / gen_ai.output.messages, llm.output.tool_calls
-```
-
-Or via env vars: `HERMES_OTEL_CAPTURE_FULL_PROMPTS=true` and `HERMES_OTEL_CAPTURE_FULL_RESPONSES=true`.
-
-Every `api.*` span then carries the complete message list the provider received (system prompt, history, tool results) and the complete response. Intermediate calls inside a tool loop are included, so "why did the model call that tool?" is answerable from the span that made the call. Phoenix and Langfuse render these in their Input and Output panels.
+Intermediate calls inside a tool loop are included, so "why did the model call that tool?" is answerable from the span that made the call. Phoenix shows the messages in its Input and Output panels; Langfuse in the observation's input and output.
 
 Two things to know:
 
-- **Nothing is clipped by the plugin.** Hermes hands the hook both a sanitised copy of the request, where long strings are cut and end in `...[truncated N chars]`, and the raw `request_messages` list it actually sent. The plugin reads the raw list, so a 15,000-character system prompt arrives whole. If you ever see a `[truncated N chars]` marker inside a captured message, it came from a Hermes hook payload the plugin had no uncapped alternative for; raise `HERMES_PLUGIN_PAYLOAD_MAX_CHARS` in Hermes's environment.
-- **It is large and verbatim.** Each `api.*` span in a turn repeats the whole prefix, and it is stored on every configured backend. Both flags respect `capture_previews: false`. See [Limitations](../reference/limitations.md#full-prompt-capture-is-opt-in-and-large) and [Privacy mode](./privacy.md).
+- **Nothing is clipped by the plugin.** Hermes hands the hook both a sanitised copy of the request, where long strings are cut and end in `...[truncated N chars]`, and the raw `request_messages` list it actually sent. The plugin reads the raw list, so a 15,000-character system prompt arrives whole. A `[truncated N chars]` marker inside captured content means the value came through a payload only the sanitised copy carried; raise `HERMES_PLUGIN_PAYLOAD_MAX_CHARS` in Hermes's environment.
+- **It is large and verbatim.** Each `api.*` span in a turn repeats the whole prefix, so a long turn stores the conversation several times over, and it is stored on every configured backend. The export batch drops to 64 spans per POST automatically (`span_batch_max_export_batch_size` overrides). See [Limitations](/reference/limitations#full-content-capture-is-the-default-and-large).
+
+Tool spans keep previews in every mode: in `full` mode the complete tool result is already inside the next `api.*` span's message list, as the model saw it. MCP tool spans (`mcp_*`) are the exception and carry their full arguments and result.
+
+## Previews and the truncation markers
+
+Outside `api.*` spans, content is a preview: ANSI stripped, whitespace collapsed, clipped at `preview_max_chars` (or the per-category `tool_input_preview_max_chars`, `tool_output_preview_max_chars`, `llm_input_preview_max_chars`, `llm_output_preview_max_chars`). When a preview was clipped the span also carries `hermes.preview.input.truncated: true` and `hermes.preview.input.original_chars` (or `output`), so a short-looking value is distinguishable from a clipped one.
+
+## The turn on the `llm.*` span
+
+`capture_conversation_history: true` additionally attaches the conversation as Hermes held it at the start of the turn to the `llm.*` span (`input.value` as JSON, capped at `conversation_history_max_chars`, 20,000 by default). It predates `content_capture: full` and is mostly redundant with it; keep it for backends where you look at the turn span rather than the per-call spans.
+
+```yaml
+capture_conversation_history: true
+conversation_history_max_chars: 40000
+```
+
+## The pre-1.11 keys
+
+`capture_previews`, `capture_full_prompts` and `capture_full_responses` still work and are kept consistent with `content_capture`: `capture_previews: false` is `off`; either full flag `true` is `full`; a full flag `false` while the other is `true` keeps that side as previews. When `content_capture` is set it wins and a conflicting legacy key is warned about. New configs should use `content_capture` only.
