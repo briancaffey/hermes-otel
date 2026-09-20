@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.6](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.5...hermes-otel-v1.8.6) (2026-09-20)
+
+
+### Bug Fixes
+
+* **debug:** record export results and the SDK's export errors in debug.log; describe the log truthfully ([#171](https://github.com/briancaffey/hermes-otel/issues/171)) ([ab17131](https://github.com/briancaffey/hermes-otel/commit/ab17131016bc71660f865c67c0bc8bd9982d862b))
+
 ## [1.8.5](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.4...hermes-otel-v1.8.5) (2026-09-20)
 
 
