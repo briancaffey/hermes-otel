@@ -1,7 +1,7 @@
 ---
 sidebar_position: 4
 title: "Debug logging"
-description: "Turn on HERMES_OTEL_DEBUG=true for per-span start/end, parent nesting, token counts, and HTTP payloads in a dedicated log file."
+description: "Turn on HERMES_OTEL_DEBUG=true for hook firings, span start/end, token counts, export results and the SDK's export errors in a dedicated log file."
 ---
 
 # Debug logging
@@ -26,44 +26,46 @@ It's append-only — old entries stick around until you delete the file. No rota
 
 ## What gets logged
 
-With debug enabled, every hook logs:
+Lines have no timestamps and no log levels; they are written in the order things happen. Four kinds:
+
+**Hook firings and span lifecycle**, one block per hook (indented lines belong to the hook above them):
 
 ```text
-[2026-04-19 14:12:33.104] pre_tool_call tool=bash session_id=abc123 parent=api.claude-sonnet-4-6 args={"command": "ls -la"}
-[2026-04-19 14:12:33.812] post_tool_call tool=bash duration_ms=708 outcome=completed result_len=1284
+on_session_start fired: session=20260919_214809_50196a, platform=cli
+start_span: agent (key=session:20260919_214809_50196a, kind=AGENT)
+  session span started: key=session:20260919_214809_50196a, name=agent, synthesized=False
+pre_api_request fired: model=anthropic/claude-sonnet-4.5, provider=openrouter, session=20260919_214809_50196a
+start_span: api.anthropic/claude-sonnet-4.5 (key=api:186e0321-5a60-48b2-9160-5d5bf213e9f9, kind=LLM)
+post_tool_call fired: tool=terminal
+  span ended: status=ok, outcome=completed
+post_api_request fired: model=anthropic/claude-sonnet-4.5, finish=tool_calls
+  API span ended: status=ok, tokens=14691
+  session span ended: key=session:20260919_214809_50196a, status=ok
 ```
 
-Span lifecycle events:
+**Export results**, one line per batch each OTLP span or log exporter sends, with the backend's display name, the batch size and the SDK's result:
 
 ```text
-[2026-04-19 14:12:33.104] span.start name=tool.bash span_id=0x3a7b parent_span_id=0xff12 trace_id=0x0001...
-[2026-04-19 14:12:33.812] span.end name=tool.bash duration_ms=708 attr_count=18
+export Phoenix: 12 span(s) -> SUCCESS
+export Langfuse: 1 span(s) -> FAILURE
+export SigNoz logs: 4 record(s) -> SUCCESS
 ```
 
-OTLP export attempts:
+**The SDK's own warnings and errors**, copied from the `opentelemetry` Python loggers (they are otherwise not shown anywhere). This is where the *reason* for a `FAILURE` is:
 
 ```text
-[2026-04-19 14:12:34.001] export backend=phoenix batch=12 spans duration=42ms status=200
-[2026-04-19 14:12:34.245] export backend=langfuse batch=12 spans duration=1284ms status=200
+[sdk] opentelemetry.exporter.otlp.proto.http.trace_exporter ERROR: Failed to export span batch code: 404, reason: Not Found
 ```
 
-Queue warnings:
+Metric batches have no `export …` line of their own; a failing metrics endpoint shows up here as `Failed to export metrics batch …`.
 
-```text
-[2026-04-19 14:12:40.123] ▲ phoenix queue full — dropped 5 spans (queue_size=2048)
-```
+**Fail-open reports**: a hook that raised is caught, and the line `<hook> failed open: <exception>` records it (the same event is logged once per hook and exception type at WARNING on the `hermes_otel` logger).
 
-And the OTLP request bodies, redacted for secrets:
+## What is not in the file
 
-```text
-[2026-04-19 14:12:34.001] POST http://localhost:6006/v1/traces body={"resourceSpans": [...]} headers={"Authorization": "Bearer ***REDACTED***"}
-```
-
-## Secret masking
-
-The debug logger passes any header value matching a known secret-carrying name (`Authorization`, `api_key`, `x-honeycomb-team`, `signoz-ingestion-key`, etc.) through a masker. Only the first 4 and last 4 characters of the value are logged; the middle is replaced with `***`.
-
-If a secret is logged unredacted, that's a bug — open an issue.
+- **No HTTP bodies or headers.** The plugin never writes the OTLP payload, the endpoint's response body, or any header. There is therefore nothing to redact: API keys and tokens cannot appear in this file.
+- **No prompt, tool-argument or tool-result text.** Hook lines carry tool names, model names, ids, statuses and token counts (`usage={...}` on `post_api_request` is the token dict). The one way user text can enter the file is inside an exception's message when a hook fails open.
+- **No queue depths.** The batch queue is internal to the SDK's `BatchSpanProcessor`; when it overflows, the SDK logs a warning, which arrives as an `[sdk] … WARNING` line.
 
 ## Typical workflows
 
@@ -75,24 +77,24 @@ export HERMES_OTEL_DEBUG=true
 tail -f ~/.hermes/plugins/hermes_otel/debug.log
 ```
 
-Look for:
+Look for, in this order:
 
-- `export backend=... status=...` — is the export succeeding?
-- `▲ queue full` — the queue is overwhelmed
-- `span.end` count ≈ what you expect from the turn's tool calls
-- No `span.start` / `span.end` at all? Check `pre_*` hook lines — the hooks might not be firing
+- `<hook> fired:` lines — are the hooks firing at all? None means the plugin is not registered (check `hermes plugins list`).
+- `start_span:` / `span ended:` lines — are spans being created and closed?
+- `export <backend>: … -> SUCCESS` — did the batch leave the process and did the backend accept it? A `FAILURE` is always followed or preceded by an `[sdk] … ERROR` line with the HTTP status and reason (`405 Method Not Allowed` and `404 Not Found` mean the endpoint path is wrong; `401` means the credentials are).
+- No `export` line at all after the turn ended — the batch has not been sent yet (the processor flushes on `on_session_end` when `force_flush_on_session_end` is on, else every `span_batch_schedule_delay_ms`).
 
 ### "Wrong parent/child nesting"
 
-Look for `span.start` lines; verify `parent_span_id` matches the expected parent's `span_id` from a previous `span.start`. Misnesting usually means the `SpanTracker` parent stack is confused — often because of an error path that skipped a `post_*` hook.
+Follow the `start_span:` lines and the `<kind> span started: key=…` lines beneath them; the key names the session, LLM, API or tool span, and the order shows which span was open when the next one started. Misnesting usually means an error path skipped a `post_*` hook, which shows as a missing `span ended:` line.
 
 ### "Token counts are zero"
 
-Find the `post_api_request` log line; check the `usage=` field. If it's missing or `{}`, the provider didn't return usage data (some streaming responses don't). Not a plugin bug.
+Find the `ending span: key=api:…, usage={...}` line under `post_api_request`. If `usage` is `{}` or missing the provider did not return usage data (some streaming responses don't). Not a plugin bug.
 
 ## Performance impact
 
-The debug log writes synchronously via Python's `logging` module with a `FileHandler`. Write latency is a few hundred microseconds per call — cheap, but not free. On very high-throughput deployments, debug logging can add 1-5% overhead. Turn it off when you're done debugging.
+`debug_log` is a plain buffered write to one file handle opened on first use (no `logging` module in the path). Measured with `timeit` over 20 000 lines: about 2.4 µs per line with debug on, and about 40 ns per call with it off (one boolean check). A busy turn writes a few hundred lines. Turn it off when you're done debugging.
 
 ## Disabling
 

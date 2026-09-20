@@ -75,7 +75,7 @@ The bundled dashboard's Phoenix adapter shows the project named by `project_name
 
 - Check the endpoint includes `/v1/traces` — Phoenix doesn't redirect from the collector root.
 - Confirm the container is listening: `curl -I http://localhost:6006` should return `200`.
-- Turn on debug logging: `export HERMES_OTEL_DEBUG=true`, run a Hermes turn, check `~/.hermes/plugins/hermes_otel/debug.log` for the OTLP POST response.
+- Turn on debug logging: `export HERMES_OTEL_DEBUG=true`, run a Hermes turn, check `~/.hermes/plugins/hermes_otel/debug.log` for the `export Phoenix: … -> SUCCESS|FAILURE` line and, on failure, the `[sdk] … Failed to export span batch code: <status>` line with the reason.
 
 **"Spans are missing input/output previews"**
 
