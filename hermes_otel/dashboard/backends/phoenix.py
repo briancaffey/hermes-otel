@@ -419,6 +419,12 @@ class PhoenixAdapter(BackendAdapter):
             )
         return {"traces": traces}
 
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        project_id = self._resolve_project_id()
+        if not project_id:
+            return None
+        return f"{self.query_url}/projects/{project_id}/traces/{trace_id}"
+
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         project_id = self._resolve_project_id()
         if not project_id:

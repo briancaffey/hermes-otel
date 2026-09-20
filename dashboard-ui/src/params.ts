@@ -88,3 +88,18 @@ export function backendParams(f: TraceFilters, source: string, limit = 50): URLS
   return p;
 }
 
+
+// ── logs tab (#186) ──────────────────────────────────────────────────────
+export type LogFilters = { minLevel: string; logger: string; session: string; traceId: string; text: string; lookback: number };
+export const DEFAULT_LOG_FILTERS: LogFilters = { minLevel: "0", logger: "", session: "", traceId: "", text: "", lookback: 1 };
+
+export function logParams(f: LogFilters, source: string, limit: number): URLSearchParams {
+  const p = withBackend(new URLSearchParams({ lookback_hours: String(f.lookback), limit: String(limit) }), source);
+  if (Number(f.minLevel) > 0) p.set("min_level", f.minLevel);
+  if (f.logger.trim()) p.set("logger", f.logger.trim());
+  if (f.session.trim()) p.set("session", f.session.trim());
+  if (f.traceId.trim()) p.set("trace_id", f.traceId.trim());
+  if (f.text.trim()) p.set("text", f.text.trim());
+  return p;
+}
+

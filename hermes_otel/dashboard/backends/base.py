@@ -134,6 +134,11 @@ class BackendAdapter:
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         raise NotImplementedError
 
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        """Link to this trace in the backend's own UI, when the adapter knows
+        the route (#185). ``None`` means no link is offered; never a guess."""
+        return None
+
     # ── metrics (same shapes as the live store's endpoints) ───────────
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         """``[{name, count?, lastTs?}]`` for instruments with data in the window."""

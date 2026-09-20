@@ -232,6 +232,9 @@ class JaegerAdapter(BackendAdapter):
         )
         return {"traces": traces}
 
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        return f"{self.query_url}/trace/{trace_id}"
+
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)

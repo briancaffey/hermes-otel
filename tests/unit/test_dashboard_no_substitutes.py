@@ -14,7 +14,9 @@ _HERE = Path(__file__).resolve().parent.parent.parent
 _DASHBOARD = _HERE / "hermes_otel" / "dashboard"
 if str(_DASHBOARD) not in sys.path:
     sys.path.insert(0, str(_DASHBOARD))
-if "fastapi" not in sys.modules:
+try:  # the real FastAPI when the dev extra has it; a stub otherwise
+    import fastapi  # noqa: F401
+except ImportError:
     _stub = types.ModuleType("fastapi")
 
     class _StubHTTPException(Exception):

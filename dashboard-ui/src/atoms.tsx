@@ -92,13 +92,17 @@ export function LineChart({
   series,
   height = 120,
   labels,
+  fmt,
 }: {
   series: { label: string; color: string; points: number[] }[];
   height?: number;
   labels?: string[];
+  fmt?: (n: number) => string;
 }) {
   const n = Math.max(1, ...series.map((s) => s.points.length));
-  const max = Math.max(1, ...series.flatMap((s) => s.points));
+  const rawMax = Math.max(...series.flatMap((s) => s.points), 0);
+  const max = rawMax > 0 ? rawMax : 1;
+  const fmtY = (v: number) => (fmt ? fmt(v) : v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : v.toFixed(v < 10 && v !== Math.round(v) ? 2 : 0));
   const W = 100;
   const path = (pts: number[]) =>
     pts
@@ -114,7 +118,9 @@ export function LineChart({
           <path key={s.label} d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1} vectorEffect="non-scaling-stroke" />
         ))}
       </svg>
-      <div className="mt-1 flex flex-wrap gap-3">
+      <div className="mt-1 flex flex-wrap items-center gap-3">
+        <span className="text-[10px] tabular-nums text-muted-foreground/70" title="y-axis maximum">max {fmtY(rawMax)}</span>
+        {labels && labels.length ? <span className="text-[10px] tabular-nums text-muted-foreground/70">{labels.join(" · ")}</span> : null}
         {series.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
             <span className="otel-w-2 inline-block h-2 rounded-full" style={{ background: s.color }} />

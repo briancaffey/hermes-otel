@@ -427,7 +427,15 @@ def search_traces(
 def get_trace(trace_id: str, backend: str = Query("")) -> Dict[str, Any]:
     if not trace_id or not trace_id.replace("-", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid trace id")
-    return _adapter_for(backend).get_trace(trace_id)
+    adapter = _adapter_for(backend)
+    out = adapter.get_trace(trace_id)
+    try:
+        ui_url = adapter.trace_url(trace_id)
+    except Exception:
+        ui_url = None
+    if isinstance(out, dict) and ui_url:
+        out["ui_url"] = ui_url
+    return out
 
 
 # ── backend metrics and logs (#182): same shapes as the live endpoints ───
