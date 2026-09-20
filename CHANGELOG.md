@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.8](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.7...hermes-otel-v1.8.8) (2026-09-20)
+
+
+### Bug Fixes
+
+* **dashboard:** count each turn once, own the tab's CSS, real span counts, small copy fixes ([#191](https://github.com/briancaffey/hermes-otel/issues/191)) ([63e0e76](https://github.com/briancaffey/hermes-otel/commit/63e0e76e435457fbc954f8de0d41e560ec0e77e7)), closes [#178](https://github.com/briancaffey/hermes-otel/issues/178) [#179](https://github.com/briancaffey/hermes-otel/issues/179) [#180](https://github.com/briancaffey/hermes-otel/issues/180) [#188](https://github.com/briancaffey/hermes-otel/issues/188)
+
 ## [1.8.7](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.6...hermes-otel-v1.8.7) (2026-09-20)
 
 
