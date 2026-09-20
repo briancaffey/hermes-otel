@@ -76,6 +76,9 @@ dev = [
     # cannot install.)
     # host_metrics sampler (optional at runtime; ships with hermes-agent)
     "psutil",
+    # dashboard API tests (the Hermes dashboard provides FastAPI at runtime)
+    "fastapi",
+    "httpx",
 ]
 # Optional: CPU/GPU host metrics (`host_metrics: true`). psutil ships with
 # hermes-agent already; the GPU SDK is vendor-specific and must match the

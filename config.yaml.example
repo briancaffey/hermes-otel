@@ -164,11 +164,16 @@
 # $HERMES_HOME/hermes_otel_live.db (override: HERMES_OTEL_LIVE_DB) — so the
 # dashboard works the instant you install the plugin, with NO external backend,
 # and the gateway and dashboard processes share it. Each kind (spans, metrics,
-# logs) keeps its last dashboard_live_max_spans rows. Set false to disable it
-# entirely (the dashboard then needs a configured backend to show anything).
-# Also settable via HERMES_OTEL_DASHBOARD_LIVE / HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS.
+# logs) keeps its last dashboard_live_max_spans rows, and rows older than
+# dashboard_live_retention_hours are dropped too (0 = only the row cap). It is
+# a recent-activity buffer, not a record: configure a backend for history.
+# Set dashboard_live: false to disable it entirely (the dashboard then needs a
+# configured backend to show anything). Also settable via
+# HERMES_OTEL_DASHBOARD_LIVE / HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS /
+# HERMES_OTEL_DASHBOARD_LIVE_RETENTION_HOURS.
 # dashboard_live: true
 # dashboard_live_max_spans: 1000
+# dashboard_live_retention_hours: 168
 
 # ── Host & GPU metrics (opt-in) ───────────────────────────────────────────────
 #

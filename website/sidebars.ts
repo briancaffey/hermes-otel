@@ -13,6 +13,7 @@ const sidebars: SidebarsConfig = {
         'getting-started/concepts',
       ],
     },
+    'dashboard',
     {
       type: 'category',
       label: 'Backends',

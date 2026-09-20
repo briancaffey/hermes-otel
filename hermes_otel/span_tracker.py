@@ -195,6 +195,20 @@ class SpanTracker:
         stack = self._parent_stack()
         return stack[-1] if stack else None
 
+    def single_active_session(self):
+        """``(session_id, root_span)`` when exactly one session has a turn in
+        flight, else ``None``.
+
+        Log lines are written on the agent's threads, where the plugin's spans
+        are not on the OpenTelemetry context, so ``trace.get_current_span()``
+        sees nothing. With one active session (the CLI, or a quiet gateway)
+        the line can be attributed to that session's root span without
+        guessing; with several it stays unattributed rather than wrong.
+        """
+        with self._lock:
+            live = [(sid, st[0]) for sid, st in self._session_parent_stacks.items() if st]
+        return live[0] if len(live) == 1 else None
+
     def drop_session(self, session_id: str) -> None:
         """Forget every per-session record for ``session_id``.
 

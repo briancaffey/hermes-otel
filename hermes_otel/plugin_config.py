@@ -220,6 +220,10 @@ class HermesOtelConfig:
     # last dashboard_live_max_spans rows. Set false to disable it entirely.
     dashboard_live: bool = True
     dashboard_live_max_spans: int = 1000
+    # Rows older than this are dropped from the live store as well (0 = keep
+    # until the row cap evicts them). The store is a recent-activity buffer for
+    # the dashboard, not a record: configure a backend for history (#184).
+    dashboard_live_retention_hours: float = 168.0
     # ── Host metrics (CPU / GPU) ────────────────────────────────────────
     # Sample the Hermes process tree, the whole host, and any AMD/NVIDIA GPU
     # on a fixed interval and export the readings as OTel metrics

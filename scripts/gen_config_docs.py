@@ -59,6 +59,7 @@ FIELD_DOCS = {
     "discovery_prompt": "Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in)",
     "dashboard_live": "Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode",
     "dashboard_live_max_spans": "Rows kept per kind (spans, metrics, logs) in the live store",
+    "dashboard_live_retention_hours": "Rows older than this are dropped from the live store (`0` = only the row cap applies)",
     "host_metrics": "Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics; see [Host & GPU metrics](/configuration/host-metrics)",
     "host_metrics_gpu": "`auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe",
     "host_metrics_interval_ms": "Host sampling cadence (floor 50 ms)",

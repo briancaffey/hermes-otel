@@ -249,18 +249,53 @@ class _LiveLogHandler(logging.Handler):
     the dashboard's Logs tab tails the agent's logs with no external backend.
     """
 
-    def __init__(self, store: Any) -> None:
+    def __init__(self, store: Any, tracker: Any = None) -> None:
         super().__init__()
         self._store = store
+        self._tracker = tracker
+
+    def _session_hint(self):
+        tracker = self._tracker
+        if tracker is None:
+            try:
+                tracker = get_tracer().spans
+            except Exception:
+                return None
+        try:
+            found = tracker.single_active_session()
+        except Exception:
+            return None
+        if not found:
+            return None
+        session_id, root = found
+        try:
+            ctx = root.get_span_context()
+            trace_id = format(ctx.trace_id, "032x") if getattr(ctx, "trace_id", 0) else None
+        except Exception:
+            trace_id = None
+        return str(session_id), trace_id
 
     def emit(self, record: logging.LogRecord) -> None:
         try:
             trace_id = None
+            session_id = None
             if _OTEL_AVAILABLE:
                 span = trace.get_current_span()
                 ctx = span.get_span_context() if span is not None else None
                 if ctx is not None and getattr(ctx, "trace_id", 0):
                     trace_id = format(ctx.trace_id, "032x")
+                    attrs = getattr(span, "attributes", None) or {}
+                    for key in ("hermes.session_id", "session.id", "session_id"):
+                        if attrs.get(key):
+                            session_id = str(attrs[key])
+                            break
+            if trace_id is None:
+                # The plugin's spans live in its tracker, not on this thread's
+                # context: attribute the line to the one active session, if
+                # there is exactly one (#186). Never guess between several.
+                hint = self._session_hint()
+                if hint is not None:
+                    session_id, trace_id = hint
             self._store.add_log(
                 {
                     "level": record.levelname,
@@ -268,6 +303,7 @@ class _LiveLogHandler(logging.Handler):
                     "body": record.getMessage(),
                     "time_unix_nano": int(record.created * 1e9),
                     "trace_id": trace_id,
+                    "session_id": session_id,
                 }
             )
         except Exception:  # pragma: no cover — logging must never raise
@@ -711,6 +747,7 @@ class HermesOTelPlugin:
                 store = get_live_store(
                     create=True,
                     max_rows=self.config.dashboard_live_max_spans,
+                    retention_hours=self.config.dashboard_live_retention_hours,
                 )
                 if store is not None:
                     _attach(_LiveSpanProcessor(store))
