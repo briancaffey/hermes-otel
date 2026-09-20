@@ -19,10 +19,11 @@ Sign up at [cloud.langfuse.com](https://cloud.langfuse.com), create a project, a
 ```bash
 export OTEL_LANGFUSE_PUBLIC_API_KEY="pk-lf-..."
 export OTEL_LANGFUSE_SECRET_API_KEY="sk-lf-..."
-# Optional — defaults to EU cloud
-export OTEL_LANGFUSE_ENDPOINT="https://cloud.langfuse.com/api/public/otel"
+# Optional — defaults to EU cloud. A root URL, ".../api/public/otel" or the
+# full ".../api/public/otel/v1/traces" all work; the plugin completes the path.
+export OTEL_LANGFUSE_ENDPOINT="https://cloud.langfuse.com/api/public/otel/v1/traces"
 # US region:
-# export OTEL_LANGFUSE_ENDPOINT="https://us.cloud.langfuse.com/api/public/otel"
+# export OTEL_LANGFUSE_ENDPOINT="https://us.cloud.langfuse.com/api/public/otel/v1/traces"
 ```
 
 **Option B — Langfuse-standard env vars from their docs:**
@@ -50,7 +51,7 @@ Pre-seeded test keys:
 ```bash
 export OTEL_LANGFUSE_PUBLIC_API_KEY="lf_pk_hermes_dev"
 export OTEL_LANGFUSE_SECRET_API_KEY="lf_sk_hermes_dev"
-export OTEL_LANGFUSE_ENDPOINT="http://localhost:3000/api/public/otel"
+export OTEL_LANGFUSE_ENDPOINT="http://localhost:3000"   # completed to /api/public/otel/v1/traces
 ```
 
 UI at http://localhost:3000.
@@ -96,7 +97,11 @@ Langfuse traces have no root observation, so the bundled dashboard builds one to
 **"Auth failed / 401 from Langfuse"**
 
 - You need *both* keys (public + secret). Langfuse won't authenticate with only one.
-- If using `LANGFUSE_BASE_URL`, don't append `/api/public/otel` yourself — the plugin does it. If you want full control, use `OTEL_LANGFUSE_ENDPOINT` instead.
+- `LANGFUSE_BASE_URL` / `base_url` take the site root; `OTEL_LANGFUSE_ENDPOINT` / `endpoint` accept the root, `…/api/public/otel` or the full `…/api/public/otel/v1/traces` — every form is completed to the traces URL (a root URL used to be posted to as-is and answered `405`).
+
+**"Nothing arrives and there is no error"**
+
+- The OTLP exporter's failures (a `405` or `401` from Langfuse) are logged by the `opentelemetry` Python logger, not the plugin's debug log ([#167](https://github.com/briancaffey/hermes-otel/issues/167)). Run Hermes with `PYTHONWARNINGS`/logging at WARNING for `opentelemetry.exporter` to see them, or export one span with the SDK directly to confirm the URL and keys.
 
 **"Spans show up but without message content"**
 

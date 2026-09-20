@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import base64
 import os
+import urllib.parse
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
@@ -171,6 +172,37 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+_LANGFUSE_OTEL_PATH = "/api/public/otel"
+
+
+def _langfuse_traces_url(endpoint: str) -> str:
+    """Normalise a Langfuse ``endpoint`` to the full OTLP traces URL.
+
+    The OTLP/HTTP span exporter posts to exactly the URL it is given, so a
+    Langfuse endpoint must end in ``/api/public/otel/v1/traces``. Accept the
+    three forms people actually write and complete them:
+
+    * ``https://host`` / ``https://host/`` → ``https://host/api/public/otel/v1/traces``
+    * ``https://host/api/public/otel``     → ``…/api/public/otel/v1/traces``
+    * ``https://host/api/public/otel/v1/traces`` → unchanged
+
+    Before this, a root URL or the ``/api/public/otel`` form (the one the docs
+    used to show) posted to the wrong path and every export died with a 405
+    that only the ``opentelemetry`` logger saw.
+    """
+    ep = endpoint.strip().rstrip("/")
+    if ep.endswith("/v1/traces"):
+        return ep
+    if ep.endswith(_LANGFUSE_OTEL_PATH):
+        return ep + "/v1/traces"
+    parsed = urllib.parse.urlsplit(ep)
+    if parsed.path in ("", "/"):
+        return ep + _LANGFUSE_OTEL_PATH + "/v1/traces"
+    # Some other path (a reverse proxy prefix): trust it but complete the
+    # standard suffix if it is missing.
+    return ep + "/v1/traces"
+
+
 def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
     pub = _resolve_secret(
         bc.public_key,
@@ -189,6 +221,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
         root = base if base else "https://cloud.langfuse.com"
         ep = f"{root}/api/public/otel/v1/traces"
+    ep = _langfuse_traces_url(ep)
     auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth}",
