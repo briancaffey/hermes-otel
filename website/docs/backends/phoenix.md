@@ -8,7 +8,7 @@ description: "Run Phoenix locally in Docker or send to Arize AX cloud — LLM-na
 
 [Arize Phoenix](https://github.com/Arize-ai/phoenix) is an open-source LLM observability platform with a tracing UI built around the [OpenInference](https://arize.com/docs/phoenix/reference/openinference) span convention. It runs as a single container, takes ~5 seconds to start, and pretty-prints JSON previews.
 
-**Signals:** traces + metrics. **Deployment:** local (single container) or Arize AX cloud. **Cost:** OSS (self-host) / commercial (cloud).
+**Signals:** traces only. **Deployment:** local (single container) or Arize AX cloud. **Cost:** OSS (self-host) / commercial (cloud).
 
 ## Local (Docker)
 
@@ -61,9 +61,9 @@ Phoenix uses [OpenInference](https://arize.com/docs/phoenix/reference/openinfere
 
 See [Attribute conventions](/architecture/attributes) for the full dual-convention table.
 
-## Metrics
+## Metrics and logs
 
-Phoenix accepts OTLP metrics in addition to traces. The plugin's token/tool/cost metrics flow automatically when Phoenix is selected — no extra config.
+Phoenix ingests traces only: its server answers `405` on `/v1/metrics` and `/v1/logs` (checked against `arizephoenix/phoenix:latest`). The plugin therefore creates no metrics or logs exporter for a `phoenix` entry, and the startup banner reads `✓ Phoenix at … (traces only)`. Token, tool and cost metrics need a second backend that takes OTLP metrics ([SigNoz](/backends/signoz), [LGTM](/backends/lgtm), [OpenObserve](/backends/openobserve)) via [multi-backend fan-out](/backends/multi-backend); Phoenix computes token totals and cost from the span attributes itself. If you front Phoenix with a collector that does accept metrics, set `metrics: true` on the entry explicitly.
 
 ## Troubleshooting
 

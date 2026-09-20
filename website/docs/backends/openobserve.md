@@ -125,7 +125,7 @@ backends:
 capture_logs: true
 ```
 
-Traces fan out to both, metrics to both, logs only to OpenObserve (Phoenix doesn't accept OTLP logs).
+Traces fan out to both; metrics and logs go only to OpenObserve (Phoenix ingests traces only).
 
 ## Troubleshooting
 

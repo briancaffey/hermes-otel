@@ -81,7 +81,7 @@ Resource attributes. The dedicated `type: weave` backend therefore disables
 OTLP metrics and logs by default.
 
 If you need `hermes.*` metrics or OTel logs next to Weave traces, fan out to
-Weave plus a metrics/logs-capable backend such as Phoenix, SigNoz, LGTM, or
+Weave plus a metrics/logs-capable backend such as SigNoz, LGTM, or
 OpenObserve. The bundled dashboard also does not query Weave; use Weave's UI
 for W&B traces and point the dashboard at a local backend.
 

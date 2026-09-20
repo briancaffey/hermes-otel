@@ -100,7 +100,7 @@ backends:
 capture_logs: true
 ```
 
-With the above, traces go to both LGTM and Phoenix; metrics go to both (both accept OTLP metrics); logs go only to LGTM (Phoenix doesn't accept OTLP logs, so the plugin skips it automatically).
+With the above, traces go to both LGTM and Phoenix; metrics and logs go only to LGTM (Phoenix ingests traces only, so the plugin skips it for both automatically).
 
 ## Production usage
 

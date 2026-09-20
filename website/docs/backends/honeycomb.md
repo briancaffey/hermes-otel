@@ -113,7 +113,7 @@ backends:
 capture_logs: true
 ```
 
-Traces fan out to both, metrics to both, logs only to Honeycomb (Phoenix doesn't accept OTLP logs — the plugin skips it automatically). See [Multi-backend fan-out](/backends/multi-backend).
+Traces fan out to both; metrics and logs go only to Honeycomb (Phoenix ingests traces only — the plugin skips it automatically). See [Multi-backend fan-out](/backends/multi-backend).
 
 ## Limitations
 
