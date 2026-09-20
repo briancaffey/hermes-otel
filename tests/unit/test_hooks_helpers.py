@@ -128,9 +128,13 @@ class TestDetectSkill:
         got = detect_skill("read", {"path": "/h/.hermes/skills/bar/SKILL.md"})
         assert got == ("bar", "path_match")
 
-    def test_skill_view_with_path_value(self):
-        got = detect_skill("skill_view", {"name": "x/.hermes/skills/baz/refs.md"})
+    def test_skill_view_with_manifest_path_value(self):
+        got = detect_skill("skill_view", {"name": "x/.hermes/skills/baz/SKILL.md"})
         assert got == ("baz", "skill_view")
+
+    def test_skill_view_with_unverifiable_path_value_is_not_guessed(self):
+        # Neither the category nor the file name is a skill name (#157).
+        assert detect_skill("skill_view", {"name": "x/.hermes/skills/baz/refs.md"}) == (None, None)
 
     def test_non_skill_tool(self):
         assert detect_skill("bash", {"command": "ls"}) == (None, None)

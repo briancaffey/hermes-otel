@@ -15,7 +15,7 @@ Every `tool.*` span carries the raw args and result — but that's a big JSON bl
 | `hermes.tool.target` | First non-empty args.`path` · `file_path` · `target` · `url` · `uri` | `/home/user/config.yaml` |
 | `hermes.tool.command` | First non-empty args.`command` · `cmd` | `ls -la ~/Downloads` |
 | `hermes.tool.outcome` | Result classification | `completed` · `error` · `timeout` · `blocked` |
-| `hermes.skill.name` | Inferred from args paths matching `/skills/<name>/` | `git-workflow` |
+| `hermes.skill.name` | The `skill_view` argument, or the directory holding the `SKILL.md` a tool read (verified on disk) | `git-workflow` |
 
 All are optional — if the input doesn't have them (e.g. a tool with no `path` arg), they're not set.
 
@@ -76,8 +76,9 @@ Why timeouts and blocks don't map to `ERROR`: they're expected operational condi
 A skill is detected from a tool call two ways, and the name is attached as `hermes.skill.name` with a `hermes.skill.source` of:
 
 - **`skill_view`** — the canonical signal. The `skill_view` tool carries the skill name as an *argument* (`{"name": "git-workflow"}`), so it's read directly. A plugin-namespaced name (`plugin:git-workflow`) is reduced to the bare name.
-- **`path_match`** — any tool with a path arg matching `/skills/<name>/`:
-  - Matches: `/home/user/.hermes/skills/git-workflow/reference.md` → `git-workflow`
+- **`path_match`** — any tool with a path arg under a `/skills/` directory:
+  - The manifest itself: `/home/user/.hermes/skills/git-workflow/SKILL.md` → `git-workflow` (its parent directory; a categorized `skills/<category>/git-workflow/SKILL.md` gives the same).
+  - A file inside a skill: `/home/user/.hermes/skills/git-workflow/reference.md` → the nearest ancestor that holds a `SKILL.md` **on disk**. The path text alone cannot tell a flat layout from a categorized one, so when no `SKILL.md` is found nothing is reported rather than a guess (the first segment used to be emitted, which named the category for categorized skills).
   - Does **not** match: `/home/user/.hermes/optional-skills/ai-tools/references/foo.md` (explicit exclusion — `optional-skills/*/references/` is for reference material, not skill invocation)
 
 Also increments a Prometheus-style counter (and, unless `skill_spans` is off, opens a [`skill.*` span](/architecture/span-hierarchy#skill)):

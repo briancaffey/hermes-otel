@@ -154,12 +154,17 @@ def _extract_correlation_id(extra_kwargs: dict) -> str:
 def _correlation_attributes(
     tracer, session_id: Optional[str], extra_kwargs: dict
 ) -> Dict[str, str]:
-    """Build stable correlation attributes for a hook callback.
+    """``correlation.id`` for a hook callback, only when a host supplied one.
 
     Preference order:
     1. Incoming correlation ID supplied by the host app/hook kwargs.
-    2. Previously resolved per-session correlation ID.
-    3. The Hermes session ID as deterministic fallback.
+    2. The correlation ID already recorded for the session (so every span of
+       a session carries the id the host passed at its start).
+
+    There is no session-id fallback: Hermes 0.21 passes no correlation id on
+    any hook, and a copy of ``session.id`` under this name read as an upstream
+    request identity that never existed (#154). ``session.id`` /
+    ``gen_ai.conversation.id`` already group a session's spans.
 
     Read-only: this runs on every hook, including ones that name sessions that
     never start a span here (a delegation's parent id, an API error), so it
@@ -177,8 +182,6 @@ def _correlation_attributes(
                 ps.correlation_id = incoming
         elif ps is not None and ps.correlation_id:
             correlation_id = ps.correlation_id
-        else:
-            correlation_id = truncate_string(session_id, _ID_MAX)
 
     if not correlation_id:
         return {}

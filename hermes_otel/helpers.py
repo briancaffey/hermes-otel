@@ -249,9 +249,11 @@ def infer_skill_name_from_text(text: str) -> Optional[str]:
     if len(parts) == 1:
         return parts[0]
     # Anything else (``<cat>/<name>``, ``<name>/references/x.md``, …) is
-    # ambiguous from the text alone: ask the filesystem which directory holds
-    # SKILL.md; fall back to the flat-layout assumption (first component).
-    return _skill_dir_from_filesystem(normalized, parts) or parts[0]
+    # ambiguous from the text alone: only the filesystem can say which
+    # directory holds SKILL.md. When it cannot, there is no name to report —
+    # the first segment used to be emitted, which named the *category* for
+    # categorized skills (#157).
+    return _skill_dir_from_filesystem(normalized, parts)
 
 
 # Argument keys the ``skill_view`` tool may carry the skill name under.
@@ -281,14 +283,16 @@ def detect_skill(tool_name: Optional[str], args: Optional[Dict[str, Any]]):
             v = args.get(key)
             if not isinstance(v, str) or not v.strip():
                 continue
-            # The value may be a bare name, a plugin-namespaced name, or (rarely)
-            # a /skills/ path — handle all three.
             # The value may be a bare name, a namespaced ``plugin:name`` /
-            # ``category:name``, a ``category/name`` form, or (rarely) a
-            # /skills/ path — all reduce to the bare skill name.
-            name = (
-                infer_skill_name_from_text(v) or v.split(":")[-1].strip("/").split("/")[-1].strip()
-            )
+            # ``category:name``, or a ``category/name`` form — Hermes' own
+            # qualified-name syntax, whose last segment is the skill name. A
+            # ``/skills/`` path is only accepted when it resolves to a manifest
+            # (on disk or by naming SKILL.md); a path that does not is not
+            # guessed at (#157).
+            if "/skills/" in v.replace("\\", "/").lower():
+                name = infer_skill_name_from_text(v)
+            else:
+                name = v.split(":")[-1].strip("/").split("/")[-1].strip()
             if name:
                 return name, "skill_view"
     name = infer_skill_name(args)

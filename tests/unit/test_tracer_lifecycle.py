@@ -112,7 +112,7 @@ class TestPerSessionLeak:
     def test_correlation_helper_is_read_only(self, inmemory_otel_setup):
         _, plugin = inmemory_otel_setup
         attrs = hooks._correlation_attributes(plugin, "ghost", {})
-        assert attrs == {"correlation.id": "ghost"}
+        assert attrs == {}  # no host id, no invented one (#154)
         assert not plugin.sessions.has("ghost")
 
     def test_session_start_pins_the_correlation_id(self, inmemory_otel_setup):
