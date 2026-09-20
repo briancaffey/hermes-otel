@@ -139,22 +139,39 @@ def _instantiate(b: Dict[str, Any]) -> Optional[BackendAdapter]:
         return None
 
 
-def resolve_adapter() -> (
-    Tuple[Optional[BackendAdapter], List[Dict[str, Any]], Optional[Path], Optional[str]]
-):
-    """Pick the active adapter following the locked precedence rules.
+def backend_label(b: Dict[str, Any]) -> str:
+    """The name a backend entry is addressed by (``name``, else ``type``)."""
+    return str(b.get("name") or b.get("type") or "")
 
-    1. Try ``query_backend`` pin (by ``name`` or ``type``).
-    2. Silently fall through to the first configured backend whose type
-       has a registered adapter.
-    3. Return ``(None, ...)`` only when nothing matches.
+
+def _match(b: Dict[str, Any], wanted: str) -> bool:
+    return backend_label(b) == wanted or b.get("type") == wanted
+
+
+def resolve_adapter(
+    name: Optional[str] = None,
+) -> Tuple[Optional[BackendAdapter], List[Dict[str, Any]], Optional[Path], Optional[str]]:
+    """Pick the adapter for a request.
+
+    1. ``name`` (a request's ``backend=`` parameter), matched against the
+       entry's ``name`` or ``type``. A name that matches no configured entry
+       raises ``KeyError`` listing the configured names (#177); a match
+       whose type has no adapter returns ``(None, ...)``.
+    2. Otherwise the ``query_backend`` pin, by ``name`` or ``type``.
+    3. Otherwise the first configured backend whose type has an adapter.
+    4. ``(None, ...)`` only when nothing matches.
     """
     cfg_path, backends, pin = load_config()
 
+    if name:
+        for b in backends:
+            if _match(b, name):
+                return _instantiate(b), backends, cfg_path, pin
+        raise KeyError(", ".join(backend_label(b) for b in backends) or "(none configured)")
+
     if pin:
         for b in backends:
-            name_or_type = b.get("name") or b.get("type")
-            if name_or_type == pin or b.get("type") == pin:
+            if _match(b, pin):
                 adapter = _instantiate(b)
                 if adapter is not None:
                     return adapter, backends, cfg_path, pin

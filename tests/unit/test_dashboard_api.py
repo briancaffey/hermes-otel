@@ -236,7 +236,7 @@ class TestCursorEndpointsStillWork:
 
 
 def test_search_traces_without_backend_is_503(monkeypatch):
-    monkeypatch.setattr(plugin_api, "resolve_adapter", lambda: (None, [], None, None))
+    monkeypatch.setattr(plugin_api, "resolve_adapter", lambda name=None: (None, [], None, None))
     app = FastAPI()
     app.include_router(plugin_api.router)
     with TestClient(app) as c:

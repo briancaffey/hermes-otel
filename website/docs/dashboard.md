@@ -39,17 +39,21 @@ Rows carry indexed columns (trace id, session id, span name, status, start and e
 
 Successful MCP keepalive pings are hidden by default in every list (a checkbox shows them).
 
+## Choosing the source
+
+Every tab has a **source** selector: `Live (in-process)` plus one entry per configured backend. Entries whose type has no adapter, or that cannot serve what the tab shows (metrics, logs), are listed but disabled with the reason. The choice is remembered per browser. The API takes the same choice as a `backend=<name or type>` query parameter on `/status`, `/traces/search`, `/traces/{id}`, `/metrics/*` and `/logs/*`; an unknown name is a `400` listing the configured names, and a backend without the capability is a `503`.
+
+Without a selection (or a parameter), `query_backend: <name or type>` in `hermes_otel.yaml` chooses the default backend, else the first configured one with an adapter.
+
 ## Which backends can the tab query?
 
-| Backend type | Search | Detail | Notes |
-|---|---|---|---|
-| `phoenix` | yes | yes | GraphQL on the Phoenix port; honours `project_name` and never substitutes another project |
-| `openobserve` | yes | yes | SQL over the traces stream; needs `user` and `password` |
-| `langfuse` | yes | yes | Public API; a synthetic root marked `synthetic: true` holds the observations together |
-| `signoz`, `uptrace`, `jaeger`, `tempo` / `lgtm` | yes | yes | Native query APIs |
-| any other type | no | no | Shown as read-only in the status bar; use the Live source |
-
-With several backends configured, `query_backend: <name or type>` in `hermes_otel.yaml` chooses which one the tab queries; otherwise the first one with an adapter is used. The status bar lists every configured backend.
+| Backend type | Trace search and detail | Metrics | Logs | Notes |
+|---|---|---|---|---|
+| `phoenix` | yes | no | no | GraphQL on the Phoenix port; honours `project_name` and never substitutes another project |
+| `openobserve` | yes | yes | yes | SQL over the traces, metrics and logs streams; needs `user` and `password`. Counters arrive cumulative and are shown as increases per bucket |
+| `langfuse` | yes | no | no | Public API; a synthetic root marked `synthetic: true` holds the observations together |
+| `lgtm` / `tempo`, `signoz`, `uptrace`, `jaeger` | yes | no | no | Native query APIs for traces; metrics and logs from these are not wired yet (#194) |
+| any other type | no | no | no | Shown as unavailable in the selector; use the Live source |
 
 ## API
 
@@ -66,9 +70,11 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 | `GET /live/metrics/query` (`name`, `group_by`, `agg`, `lookback_hours`, `bucket_s`) | Time buckets for one instrument, optionally split by an attribute |
 | `GET /live/logs/search` (`trace_id`, `session`, `min_level`, `logger`, `text`, `lookback_hours`, `limit`) | Filtered log lines, newest first |
 | `GET /live/loggers` | Logger names with counts |
-| `GET /status` | The active query backend and every configured one |
-| `GET /traces/search` (`q`, `service`, `lookback_hours`, `roots_only`, …) | Backend trace search |
-| `GET /traces/{trace_id}` | Backend trace detail as OTLP JSON |
+| `GET /status` (`backend`) | The chosen or default backend, and every configured one with its capabilities (`available[].supported/metrics/logs`) |
+| `GET /traces/search` (`backend`, `q`, `service`, `lookback_hours`, `roots_only`, …) | Backend trace search |
+| `GET /traces/{trace_id}` (`backend`) | Backend trace detail as OTLP JSON |
+| `GET /metrics/names`, `/metrics/query` (`backend`, same parameters as the live ones) | Metrics from a backend that serves them, in the live endpoints' shape |
+| `GET /logs/search`, `/loggers` (`backend`, same parameters as the live ones) | Logs from a backend that serves them, in the live record shape |
 
 ## Troubleshooting
 

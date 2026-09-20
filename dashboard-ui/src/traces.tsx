@@ -39,31 +39,12 @@ import { categorize, IconCoins, IconChevronRight } from "./icons";
 import { MiniLabel, ErrorBanner } from "./atoms";
 import { SpanTreeView, LiveTraceCard, LiveTraceDetail } from "./spantree";
 import { usePolling } from "./poll";
+import { useSource, withBackend } from "./source";
+import { SourceSelect } from "./sourceselect";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 1500;
 const MAX_KEEP = 1500;
-
-// ── source toggle ──────────────────────────────────────────────────────-─
-function SourceToggle({ source, onChange, backendOk }: { source: string; onChange: (s: string) => void; backendOk: boolean }) {
-  const Btn = ({ id, label }: { id: string; label: string }) => (
-    <button
-      onClick={() => onChange(id)}
-      className={cn(
-        "otel-toggle px-3 py-1.5 text-xs font-medium transition-colors",
-        source === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {label}
-    </button>
-  );
-  return (
-    <div className="otel-card-bg inline-flex border border-border p-0.5">
-      <Btn id="live" label="⚡ Live (in-process)" />
-      <Btn id="backend" label={backendOk ? "🗄 Backend" : "🗄 Backend (offline)"} />
-    </div>
-  );
-}
 
 // ════════════════════════════════ LIVE SOURCE ════════════════════════════
 function LiveTraces() {
@@ -140,6 +121,7 @@ function LiveTraces() {
 function StatusBar({ status, onRefresh }: { status: any; onRefresh: () => void }) {
   if (!status) return null;
   const configured = status.configured;
+  const caps = [configured ? "traces" : null, status.metrics ? "metrics" : null, status.logs ? "logs" : null].filter(Boolean);
   return (
     <div className="flex items-start justify-between gap-3">
       <div className="min-w-0 flex-1 space-y-1.5">
@@ -147,18 +129,12 @@ function StatusBar({ status, onRefresh }: { status: any; onRefresh: () => void }
           <span className={cn("h-2.5 w-2.5 rounded-full", configured ? "otel-pulse-dot" : "bg-muted-foreground/40")} />
           <span className="text-base font-semibold tracking-tight">{configured ? status.name || status.type : "Not configured"}</span>
           {configured && status.type && status.type !== status.name ? <Badge variant="secondary" className="text-[10px] uppercase">{status.type}</Badge> : null}
+          {caps.map((c) => (
+            <Badge key={c} variant="secondary" className="text-[10px]">{c}</Badge>
+          ))}
+          {status.query_backend_pin && status.query_backend_pin === status.active ? <span className="text-[10px] text-muted-foreground">default (query_backend)</span> : null}
         </div>
         {configured && status.query_url ? <div className="truncate font-mono text-xs text-muted-foreground">{status.query_url}</div> : null}
-        {status.backends?.length ? (
-          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
-            {status.backends.map((b: any, i: number) => (
-              <Badge key={i} variant={b.supported ? "default" : "secondary"} className="text-[10px]">
-                {b.name}
-                {b.supported ? "" : " · read-only"}
-              </Badge>
-            ))}
-          </div>
-        ) : null}
       </div>
       <Button variant="outline" size="sm" onClick={onRefresh}>Refresh</Button>
     </div>
@@ -278,7 +254,7 @@ function BackendTraceDetail({ trace, detail, loading, error, onBack }: { trace: 
   );
 }
 
-function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => void }) {
+function BackendTraces({ status, onRefresh, source }: { status: any; onRefresh: () => void; source: string }) {
   const [filters, setFilters] = useState<any>({ lookback: 1, q: "", service: "", rootsOnly: true });
   const [traces, setTraces] = useState<any[] | null>(null);
   const [showPings, setShowPings] = useState(false);
@@ -295,7 +271,7 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
     setError(null);
     setSelected(null);
     try {
-      const p = new URLSearchParams({ limit: "50", lookback_hours: String(filters.lookback), roots_only: String(filters.rootsOnly) });
+      const p = withBackend(new URLSearchParams({ limit: "50", lookback_hours: String(filters.lookback), roots_only: String(filters.rootsOnly) }), source);
       if (filters.q?.trim()) p.set("q", filters.q.trim());
       if (filters.service?.trim()) p.set("service", filters.service.trim());
       const r = await fetchJSON(`${API}/traces/search?${p}`);
@@ -306,18 +282,26 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
     } finally {
       setLoading(false);
     }
-  }, [filters, status]);
+  }, [filters, status, source]);
+
+  // A new source means a new result set.
+  useEffect(() => {
+    setTraces(null);
+    setSelected(null);
+    setError(null);
+  }, [source]);
 
   useEffect(() => {
     if (!selected) return;
     setDetail(null);
     setDetailError(null);
     setDetailLoading(true);
-    fetchJSON(`${API}/traces/${selected.traceID || selected.traceId}`)
+    const p = withBackend(new URLSearchParams(), source);
+    fetchJSON(`${API}/traces/${selected.traceID || selected.traceId}?${p}`)
       .then(setDetail)
       .catch((e: any) => setDetailError(String(e?.message || e)))
       .finally(() => setDetailLoading(false));
-  }, [selected]);
+  }, [selected, source]);
 
   if (!status?.configured)
     return (
@@ -380,21 +364,15 @@ function BackendTraces({ status, onRefresh }: { status: any; onRefresh: () => vo
 
 // ═══════════════════════════════════ PAGE ════════════════════════════════
 export function TracesPage() {
-  const [source, setSource] = useState("live");
-  const [status, setStatus] = useState<any>(null);
-
-  const loadStatus = useCallback(() => {
-    fetchJSON(`${API}/status`).then(setStatus).catch(() => setStatus({ configured: false, reason: "status unavailable" }));
-  }, []);
-  useEffect(() => loadStatus(), [loadStatus]);
+  const { source, setSource, status, refresh, isLive } = useSource();
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
-        <SourceToggle source={source} onChange={setSource} backendOk={!!status?.configured} />
-        {source === "live" ? <MiniLabel>traces assembled from the in-process store</MiniLabel> : null}
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <SourceSelect source={source} onChange={setSource} status={status} need="traces" />
+        {isLive ? <MiniLabel>traces assembled from the in-process store</MiniLabel> : null}
       </div>
-      {source === "live" ? <LiveTraces /> : <BackendTraces status={status} onRefresh={loadStatus} />}
+      {isLive ? <LiveTraces /> : <BackendTraces status={status} onRefresh={refresh} source={source} />}
     </div>
   );
 }

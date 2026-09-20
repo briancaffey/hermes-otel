@@ -25,7 +25,7 @@ import json
 import os
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib import error as _urlerror
 from urllib import request as _urlrequest
 
@@ -107,6 +107,11 @@ class BackendAdapter:
     handles: "frozenset[str]" = frozenset()
     query_lang_label: str = "query"
     raw_placeholder: str = ""
+    # Capabilities beyond traces (#182). An adapter that stores metrics or
+    # logs sets these and implements the matching methods; the API advertises
+    # them in /status so the UI offers only what works.
+    supports_metrics: bool = False
+    supports_logs: bool = False
 
     def __init__(self, cfg: Dict[str, Any]):
         self.cfg = cfg
@@ -119,6 +124,8 @@ class BackendAdapter:
             "name": self.cfg.get("name") or self.cfg.get("type"),
             "query_lang_label": self.query_lang_label,
             "raw_placeholder": self.raw_placeholder,
+            "metrics": self.supports_metrics,
+            "logs": self.supports_logs,
         }
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
@@ -126,6 +133,109 @@ class BackendAdapter:
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         raise NotImplementedError
+
+    # ── metrics (same shapes as the live store's endpoints) ───────────
+    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        """``[{name, count?, lastTs?}]`` for instruments with data in the window."""
+        raise NotImplementedError
+
+    def metrics_query(
+        self,
+        name: str,
+        start_s: int,
+        end_s: int,
+        bucket_s: int,
+        group_by: Optional[str] = None,
+        agg: str = "sum",
+    ) -> Dict[str, Any]:
+        """``{name, agg, bucketS, buckets: [ns...], series: {label: [v|null...]}, points}``."""
+        raise NotImplementedError
+
+    # ── logs (same record shape as the live store: level, logger, body, ─
+    # ── time_unix_nano, trace_id, session_id) ────────────────────────────
+    def logs_search(
+        self, f: "LogFilter", start_s: int, end_s: int, limit: int
+    ) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+    def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        raise NotImplementedError
+
+
+@dataclass
+class LogFilter:
+    """Portable log filter; adapters honour what they can."""
+
+    trace_id: Optional[str] = None
+    session: Optional[str] = None
+    min_level: int = 0  # python logging numbers: 20 INFO, 30 WARNING, 40 ERROR
+    logger: Optional[str] = None
+    text: Optional[str] = None
+
+
+def bucketize(
+    points: Iterable[Tuple[int, float, str]],
+    start_ns: int,
+    end_ns: int,
+    bucket_s: int,
+    agg: str = "sum",
+) -> Dict[str, Any]:
+    """Fold ``(ts_ns, value, label)`` points into the live store's bucket shape.
+
+    Shared by the backend adapters so every source renders identically.
+    """
+    bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
+    start_ns = int(start_ns) - int(start_ns) % bucket_ns
+    n = max(1, int((int(end_ns) - start_ns) // bucket_ns) + 1)
+    series: Dict[str, List[List[float]]] = {}
+    count = 0
+    for ts, value, label in points:
+        count += 1
+        idx = int((int(ts) - start_ns) // bucket_ns)
+        if idx < 0 or idx >= n:
+            continue
+        series.setdefault(label or "_", [[] for _ in range(n)])[idx].append(float(value))
+
+    def reduce(vals: List[float]) -> Optional[float]:
+        if not vals:
+            return None
+        if agg == "count":
+            return float(len(vals))
+        if agg == "avg":
+            return sum(vals) / len(vals)
+        if agg == "max":
+            return max(vals)
+        if agg == "last":
+            return vals[-1]
+        return sum(vals)
+
+    return {
+        "agg": agg,
+        "bucketS": int(bucket_s),
+        "buckets": [start_ns + i * bucket_ns for i in range(n)],
+        "series": {label: [reduce(v) for v in vals] for label, vals in series.items()},
+        "points": count,
+    }
+
+
+def counter_increases(
+    samples: Iterable[Tuple[int, float, str]],
+) -> List[Tuple[int, float, str]]:
+    """Turn cumulative counter samples into per-sample increases.
+
+    OTLP counters arrive cumulative (the exporter's temporality); a bucketed
+    "tokens per 15 s" chart needs the increase between consecutive samples of
+    the same series. A drop (process restart) counts the new value in full.
+    """
+    last: Dict[str, float] = {}
+    out: List[Tuple[int, float, str]] = []
+    for ts, value, label in sorted(samples, key=lambda p: (p[2], p[0])):
+        prev = last.get(label)
+        inc = value if prev is None or value < prev else value - prev
+        if prev is not None:
+            out.append((ts, inc, label))
+        last[label] = value
+    return out
 
 
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──
