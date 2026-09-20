@@ -85,7 +85,7 @@ class TestOnSessionStart:
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
         assert attrs["session_id"] == "s1"
-        assert attrs["correlation.id"] == "s1"
+        assert "correlation.id" not in attrs  # Hermes passes none; nothing is invented (#154)
         assert attrs["llm.model_name"] == "gpt-4o"
         assert attrs["llm.provider"] == "telegram"
         assert attrs["gen_ai.conversation.id"] == "s1"
@@ -496,7 +496,7 @@ class TestOnPreLlmCall:
         assert kw["name"] == "llm.gpt-4"
         assert kw["key"] == "llm:s1"
         assert kw["kind"] == "llm"
-        assert kw["attributes"]["correlation.id"] == "s1"
+        assert "correlation.id" not in kw["attributes"]  # none passed, none invented (#154)
 
     def test_reuses_session_correlation_id_on_child_span(self, mock_tracer):
         mock_tracer.spans._active_spans["session:s1"] = MagicMock()

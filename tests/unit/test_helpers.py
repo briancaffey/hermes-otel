@@ -162,11 +162,21 @@ class TestInferSkillName:
     def test_does_not_match_optional_skills_references(self):
         assert infer_skill_name({"path": "/optional-skills/monitor/references/x.md"}) is None
 
-    def test_file_path_key(self):
-        assert infer_skill_name({"file_path": "/x/skills/builder/tool.py"}) == "builder"
+    def test_file_path_key(self, tmp_path):
+        skill = tmp_path / "skills" / "builder"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: builder\n---\n")
+        assert infer_skill_name({"file_path": str(skill / "tool.py")}) == "builder"
 
-    def test_target_key(self):
-        assert infer_skill_name({"target": "/repo/skills/deployer/README"}) == "deployer"
+    def test_target_key(self, tmp_path):
+        skill = tmp_path / "skills" / "deployer"
+        skill.mkdir(parents=True)
+        (skill / "SKILL.md").write_text("---\nname: deployer\n---\n")
+        assert infer_skill_name({"target": str(skill / "README")}) == "deployer"
+
+    def test_file_inside_unverifiable_skill_is_not_named(self):
+        # No SKILL.md reachable: flat or categorized cannot be told apart (#157).
+        assert infer_skill_name({"file_path": "/x/skills/builder/tool.py"}) is None
 
     def test_categorized_skill_manifest_resolves_to_bare_name(self):
         # Hermes names skills by the directory holding SKILL.md, never the category.
@@ -190,10 +200,8 @@ class TestInferSkillName:
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("---\nname: code-review\n---\n")
         assert infer_skill_name({"path": str(skill_dir)}) == "code-review"
-        # Without a filesystem hit the text is ambiguous; legacy first segment wins.
-        assert infer_skill_name({"path": "/nope/skills/software-development/code-review"}) == (
-            "software-development"
-        )
+        # Without a filesystem hit the text is ambiguous: no name, not the category (#157).
+        assert infer_skill_name({"path": "/nope/skills/software-development/code-review"}) is None
 
     def test_file_inside_categorized_skill_uses_filesystem(self, tmp_path):
         # references/x.md gives no textual clue whether the layout is flat or
@@ -204,8 +212,10 @@ class TestInferSkillName:
         ref = skill_dir / "references" / "checklist.md"
         assert infer_skill_name({"path": str(ref)}) == "code-review"
 
-    def test_file_inside_flat_skill_without_filesystem_falls_back_to_first_segment(self):
-        assert infer_skill_name({"path": "/nope/skills/monitor/references/x.md"}) == "monitor"
+    def test_file_inside_skill_without_filesystem_is_not_guessed(self):
+        # A flat layout would make "monitor" right and a categorized one wrong;
+        # the text cannot tell, so nothing is reported (#157).
+        assert infer_skill_name({"path": "/nope/skills/monitor/references/x.md"}) is None
 
     def test_skill_view_name_forms_all_reduce_to_bare_name(self):
         from hermes_otel.helpers import detect_skill
@@ -228,7 +238,10 @@ class TestInferSkillName:
         assert infer_skill_name(None) is None
 
     def test_infer_from_text_helper(self):
-        assert infer_skill_name_from_text("cat /skills/hello/x") == "hello"
+        assert infer_skill_name_from_text("cat /skills/hello/SKILL.md") == "hello"
+        assert infer_skill_name_from_text("cat /skills/hello") == "hello"
+        # A file inside an unverifiable skill directory is not guessed (#157).
+        assert infer_skill_name_from_text("cat /skills/hello/x") is None
 
     def test_infer_from_text_miss(self):
         assert infer_skill_name_from_text("no match here") is None

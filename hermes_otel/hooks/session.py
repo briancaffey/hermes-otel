@@ -47,12 +47,10 @@ def _start_session_span(
     key = f"session:{session_id}"
 
     # The root span is where a session's aggregator is born; pin the
-    # correlation id here so every later span in the turn reuses it.
+    # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
     if not ps.correlation_id:
-        ps.correlation_id = _extract_correlation_id(extra_kwargs) or truncate_string(
-            session_id, 200
-        )
+        ps.correlation_id = _extract_correlation_id(extra_kwargs)
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))

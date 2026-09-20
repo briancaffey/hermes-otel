@@ -131,7 +131,9 @@ class TestTurnSummaryBasic:
             "s1",
             [
                 ("read", {"path": "/repo/skills/monitor/SKILL.md"}, "ok"),
-                ("read", {"path": "/repo/skills/deployer/index.md"}, "ok"),
+                # A file inside a skill only counts when SKILL.md is found on disk
+                # (#157); a manifest path is unambiguous.
+                ("read", {"path": "/repo/skills/deployer/SKILL.md"}, "ok"),
             ],
         )
         agent = _span_by_name(exporter.get_finished_spans(), "agent")
