@@ -38,7 +38,7 @@ try:
     # if the SDK handler is actually removed (not just deprecated).
     from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
     from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExporter, LogExportResult
     from opentelemetry.sdk.resources import Resource
 
     _LOGS_AVAILABLE = True
@@ -48,6 +48,8 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
     LoggerProvider = None  # type: ignore[assignment]
     LoggingHandler = None  # type: ignore[assignment]
     BatchLogRecordProcessor = None  # type: ignore[assignment]
+    LogExporter = object  # type: ignore[assignment,misc]
+    LogExportResult = None  # type: ignore[assignment]
     Resource = None  # type: ignore[assignment]
 
 
@@ -116,6 +118,35 @@ def _derive_logs_endpoint(traces_endpoint: str) -> str:
 # ── Processor construction ──────────────────────────────────────────────────
 
 
+class _LoggingLogExporter(LogExporter):  # type: ignore[misc]
+    """Delegating log exporter that records each batch's outcome in the debug log (#167)."""
+
+    def __init__(self, inner: Any, backend_name: str) -> None:
+        self._inner = inner
+        self._name = backend_name
+
+    def export(self, batch: Any) -> Any:
+        count = len(batch) if hasattr(batch, "__len__") else "?"
+        try:
+            result = self._inner.export(batch)
+        except Exception as e:  # pragma: no cover — exporter raised instead of returning
+            debug_log(
+                f"export {self._name} logs: {count} record(s) -> FAILURE ({type(e).__name__}: {e})"
+            )
+            return LogExportResult.FAILURE
+        debug_log(
+            f"export {self._name} logs: {count} record(s) -> {getattr(result, 'name', result)}"
+        )
+        return result
+
+    def shutdown(self) -> None:
+        self._inner.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        flush = getattr(self._inner, "force_flush", None)
+        return flush(timeout_millis) if flush else True
+
+
 def build_log_processors(
     backends: List[_ResolvedBackend],
     extra_headers: Optional[Dict[str, str]] = None,
@@ -141,7 +172,9 @@ def build_log_processors(
         merged.update(b.logs_headers or b.headers or {})
         endpoint = _derive_logs_endpoint(b.endpoint)
         try:
-            exporter = OTLPLogExporter(endpoint=endpoint, headers=merged or None)
+            exporter = _LoggingLogExporter(
+                OTLPLogExporter(endpoint=endpoint, headers=merged or None), b.display_name
+            )
             processors.append((BatchLogRecordProcessor(exporter), b))
         except Exception as e:
             logger.error(f"[hermes-otel] ✗ {b.display_name} logs init failed: {e}")

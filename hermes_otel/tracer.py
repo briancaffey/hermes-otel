@@ -24,7 +24,13 @@ from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
-from .debug_utils import close_debug_log, debug_log, logger
+from .debug_utils import (
+    close_debug_log,
+    debug_log,
+    install_sdk_log_forwarding,
+    logger,
+    remove_sdk_log_forwarding,
+)
 from .helpers import derive_signal_endpoint, package_version
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
@@ -41,7 +47,7 @@ try:
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor
+    from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
 
     _OTEL_AVAILABLE = True
@@ -110,6 +116,38 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
 
 
 if _OTEL_AVAILABLE:
+
+    class _LoggingSpanExporter(SpanExporter):
+        """Delegating exporter that records every batch's outcome in the debug log.
+
+        ``BatchSpanProcessor`` swallows the exporter's result; the SDK only logs
+        failures to its own logger. One line per batch (``export Phoenix: 12
+        span(s) -> SUCCESS``) makes "did my spans leave the process, and did
+        the backend take them?" answerable from ``debug.log`` alone (#167).
+        """
+
+        def __init__(self, inner: Any, backend_name: str) -> None:
+            self._inner = inner
+            self._name = backend_name
+
+        def export(self, spans: Any) -> Any:
+            count = len(spans) if hasattr(spans, "__len__") else "?"
+            try:
+                result = self._inner.export(spans)
+            except Exception as e:  # pragma: no cover — exporter raised instead of returning
+                debug_log(
+                    f"export {self._name}: {count} span(s) -> FAILURE ({type(e).__name__}: {e})"
+                )
+                return SpanExportResult.FAILURE
+            debug_log(f"export {self._name}: {count} span(s) -> {getattr(result, 'name', result)}")
+            return result
+
+        def shutdown(self) -> None:
+            self._inner.shutdown()
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            flush = getattr(self._inner, "force_flush", None)
+            return flush(timeout_millis) if flush else True
 
     class _LiveSpanProcessor(SpanProcessor):
         """SpanProcessor that mirrors finished spans into the in-process LiveStore."""
@@ -340,6 +378,8 @@ class HermesOTelPlugin:
         if self._initialized:
             self.shutdown()
         self._reset_pipeline_state()
+        # Debug mode also captures what the SDK's exporters log (#167).
+        install_sdk_log_forwarding()
         ok = self._init_backends(endpoint)
         if ok:
             self._start_host_metrics()
@@ -431,6 +471,7 @@ class HermesOTelPlugin:
         self._session_keys.clear()
         self._reset_pipeline_state()
         self._initialized = False
+        remove_sdk_log_forwarding()
         close_debug_log()
 
     def _init_backends(self, endpoint: str = None) -> bool:
@@ -707,7 +748,9 @@ class HermesOTelPlugin:
                 hdrs = self._merge_headers(b.headers)
                 if b.supports_traces:
                     try:
-                        exporter = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
+                        exporter = _LoggingSpanExporter(
+                            OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs), b.display_name
+                        )
                         processor = BatchSpanProcessor(
                             exporter,
                             max_queue_size=self.config.span_batch_max_queue_size,
