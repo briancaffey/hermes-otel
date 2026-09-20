@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.9.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.9.0...hermes-otel-v1.9.1) (2026-09-20)
+
+
+### Bug Fixes
+
+* **llm:** read the raw request_messages for full prompt capture, not Hermes's sanitised body ([#200](https://github.com/briancaffey/hermes-otel/issues/200)) ([7ea8b31](https://github.com/briancaffey/hermes-otel/commit/7ea8b31c878974de6b2e4e1bdea396e6c6f72943))
+
 ## [1.9.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.8...hermes-otel-v1.9.0) (2026-09-20)
 
 
