@@ -88,6 +88,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_DISCOVERY_PROMPT` | `discovery_prompt` | bool | `false` |
 | `HERMES_OTEL_DASHBOARD_LIVE` | `dashboard_live` | bool | `true` |
 | `HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS` | `dashboard_live_max_spans` | int | `1000` |
+| `HERMES_OTEL_DASHBOARD_LIVE_RETENTION_HOURS` | `dashboard_live_retention_hours` | float | `168.0` |
 | `HERMES_OTEL_HOST_METRICS` | `host_metrics` | bool | `false` |
 | `HERMES_OTEL_HOST_METRICS_GPU` | `host_metrics_gpu` | string | `"auto"` |
 | `HERMES_OTEL_HOST_METRICS_INTERVAL_MS` | `host_metrics_interval_ms` | int | `1000` |

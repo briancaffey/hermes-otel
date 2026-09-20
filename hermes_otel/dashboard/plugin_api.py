@@ -106,6 +106,146 @@ def live_logs(
     return {"live": True, "logs": store.logs(since=since, limit=limit), "cursor": store.cursor()}
 
 
+# ── live store: server-side queries (#184) ───────────────────────────────
+#
+# The cursor endpoints above ship raw rows for the streaming views. These
+# filter, group and bucket in SQLite so the browser gets one page of results
+# (traces, sessions, buckets, log lines) instead of the whole buffer.
+
+
+def _window(
+    lookback_hours: float, start_s: Optional[int], end_s: Optional[int]
+) -> "tuple[int, int]":
+    end = int(end_s) if end_s else int(time.time())
+    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
+    return start * 1_000_000_000, end * 1_000_000_000
+
+
+@router.get("/live/traces")
+def live_traces(
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
+    session: str = Query(""),
+    status: str = Query("", description="'ok' or 'error'"),
+    name: str = Query("", description="substring of a span name"),
+    kind: str = Query("", description="agent, cron, tool, llm, api, subagent, approval"),
+    text: str = Query("", description="substring anywhere in a span's attributes"),
+    trace_id: str = Query(""),
+    limit: int = Query(50, ge=1, le=500),
+    offset: int = Query(0, ge=0),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "traces": [], "total": 0}
+    start_ns, end_ns = _window(lookback_hours, start_s, end_s)
+    out = store.query_traces(
+        start_ns=start_ns,
+        end_ns=end_ns,
+        session=session.strip() or None,
+        status=status.strip().lower() or None,
+        name=name.strip() or None,
+        kind=kind.strip().lower() or None,
+        text=text.strip() or None,
+        trace_id=trace_id.strip() or None,
+        limit=limit,
+        offset=offset,
+    )
+    return {"live": True, **out}
+
+
+@router.get("/live/traces/{trace_id}")
+def live_trace(trace_id: str) -> Dict[str, Any]:
+    if not trace_id or not trace_id.replace("-", "").isalnum():
+        raise HTTPException(status_code=400, detail="Invalid trace id")
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "trace": None, "spans": []}
+    out = store.trace(trace_id)
+    if out["trace"] is None:
+        raise HTTPException(status_code=404, detail="Trace not in the live store")
+    return {"live": True, **out}
+
+
+@router.get("/live/sessions")
+def live_sessions(
+    lookback_hours: float = Query(24.0, gt=0, le=8760),
+    limit: int = Query(50, ge=1, le=500),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "sessions": []}
+    start_ns, end_ns = _window(lookback_hours, None, None)
+    return {"live": True, **store.sessions(start_ns=start_ns, end_ns=end_ns, limit=limit)}
+
+
+@router.get("/live/metrics/names")
+def live_metric_names() -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "names": []}
+    return {"live": True, "names": store.metric_names()}
+
+
+@router.get("/live/metrics/query")
+def live_metrics_query(
+    name: str = Query(..., min_length=1),
+    group_by: str = Query("", description="attribute to split series by"),
+    agg: str = Query("sum", pattern="^(sum|count|avg|max|last)$"),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
+    bucket_s: int = Query(15, ge=1, le=86400),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "buckets": [], "series": {}}
+    start_ns, end_ns = _window(lookback_hours, start_s, end_s)
+    return {
+        "live": True,
+        **store.metric_buckets(
+            name, start_ns, end_ns, bucket_s, group_by=group_by.strip() or None, agg=agg
+        ),
+    }
+
+
+@router.get("/live/logs/search")
+def live_logs_search(
+    trace_id: str = Query(""),
+    session: str = Query(""),
+    min_level: int = Query(0, ge=0, le=50),
+    logger: str = Query(""),
+    text: str = Query(""),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+    limit: int = Query(300, ge=1, le=2000),
+) -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "logs": []}
+    start_ns, end_ns = _window(lookback_hours, None, None)
+    return {
+        "live": True,
+        "logs": store.query_logs(
+            trace_id=trace_id.strip() or None,
+            session=session.strip() or None,
+            level_min=min_level or None,
+            logger=logger.strip() or None,
+            text=text.strip() or None,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            limit=limit,
+        ),
+    }
+
+
+@router.get("/live/loggers")
+def live_loggers() -> Dict[str, Any]:
+    store = _get_live_store()
+    if store is None:
+        return {"live": False, "loggers": []}
+    return {"live": True, "loggers": store.loggers()}
+
+
 @router.get("/status")
 def status() -> Dict[str, Any]:
     """Report the active query backend + every configured backend."""

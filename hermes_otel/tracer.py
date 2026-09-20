@@ -256,11 +256,18 @@ class _LiveLogHandler(logging.Handler):
     def emit(self, record: logging.LogRecord) -> None:
         try:
             trace_id = None
+            session_id = None
             if _OTEL_AVAILABLE:
                 span = trace.get_current_span()
                 ctx = span.get_span_context() if span is not None else None
                 if ctx is not None and getattr(ctx, "trace_id", 0):
                     trace_id = format(ctx.trace_id, "032x")
+                # The session id lets the Logs tab filter by conversation (#186).
+                attrs = getattr(span, "attributes", None) or {}
+                for key in ("hermes.session_id", "session.id", "session_id"):
+                    if attrs.get(key):
+                        session_id = str(attrs[key])
+                        break
             self._store.add_log(
                 {
                     "level": record.levelname,
@@ -268,6 +275,7 @@ class _LiveLogHandler(logging.Handler):
                     "body": record.getMessage(),
                     "time_unix_nano": int(record.created * 1e9),
                     "trace_id": trace_id,
+                    "session_id": session_id,
                 }
             )
         except Exception:  # pragma: no cover — logging must never raise
@@ -711,6 +719,7 @@ class HermesOTelPlugin:
                 store = get_live_store(
                     create=True,
                     max_rows=self.config.dashboard_live_max_spans,
+                    retention_hours=self.config.dashboard_live_retention_hours,
                 )
                 if store is not None:
                     _attach(_LiveSpanProcessor(store))
