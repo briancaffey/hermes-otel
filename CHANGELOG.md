@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.2...hermes-otel-v1.8.3) (2026-09-20)
+
+
+### Documentation
+
+* **releasing:** correct which commit types cut a release ([#149](https://github.com/briancaffey/hermes-otel/issues/149)) ([05838f7](https://github.com/briancaffey/hermes-otel/commit/05838f731af54b9cfbfbead330d0ca4df69aa9ce))
+
 ## [1.8.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.1...hermes-otel-v1.8.2) (2026-09-19)
 
 
