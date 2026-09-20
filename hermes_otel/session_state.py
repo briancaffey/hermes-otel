@@ -104,6 +104,10 @@ class PerSession:
     # on_session_end only receives the platform (e.g. "cli"), so the real
     # provider is captured here for the agent-level GenAI metric dimensions.
     provider: str = ""
+    # The last response model a provider reported on this session's API calls
+    # (``response_model`` on post_api_request). Empty when none was reported;
+    # never defaulted to the request model (#155).
+    response_model: str = ""
     # 1-based index of the user turn this aggregator covers. Surfaced as the
     # ``hermes.turn.number`` span attribute so any backend can group or filter
     # a session's spans by conversation turn. See SessionState.next_turn.

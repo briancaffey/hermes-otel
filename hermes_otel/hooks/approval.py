@@ -43,13 +43,14 @@ def on_pre_approval_request(
     tracer.sweep_expired_turns()
 
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
-    pk = truncate_string(pattern_key, 200) or "command"
+    # No pattern key reported → plain ``approval`` span without the attribute;
+    # a placeholder key would read like a real rule (#155).
+    pk = truncate_string(pattern_key, 200) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
-    attributes: Dict[str, Any] = {
-        "hermes.approval.pattern_key": pk,
-        "hermes.span_kind": "approval",
-    }
+    attributes: Dict[str, Any] = {"hermes.span_kind": "approval"}
+    if pk:
+        attributes["hermes.approval.pattern_key"] = pk
     if tool_call_id:
         # Correlates the approval to the tool span / call it gates.
         attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, 200)
@@ -71,7 +72,7 @@ def on_pre_approval_request(
 
     tracer.spans.record_approval_start(key, time.perf_counter())
     tracer.start_span(
-        name=f"approval.{pk}",
+        name=f"approval.{pk}" if pk else "approval",
         key=key,
         kind="general",
         attributes=attributes,
@@ -101,7 +102,7 @@ def on_post_approval_response(
         return
 
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
-    pk = truncate_string(pattern_key, 200) or "command"
+    pk = truncate_string(pattern_key, 200) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
     verdict = classify_approval_choice(choice, kwargs.get("decided_by"))

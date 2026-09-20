@@ -54,13 +54,14 @@ def _provider_attributes(provider: Any) -> Dict[str, str]:
     }
 
 
-def _model_attributes(model: Any, provider: Any, gen_ai_provider: Any = None) -> Dict[str, str]:
-    """Model / provider identity in both conventions.
+def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
+    """Model / provider identity in both conventions, from real data only.
 
-    ``llm.model_name`` / ``llm.provider`` (OpenInference), ``gen_ai.request.model``
-    and the ``gen_ai.provider.name`` / ``gen_ai.system`` pair. ``provider`` is
-    what OpenInference sees (the platform on session spans); ``gen_ai_provider``
-    overrides the GenAI pair when the real LLM provider is known separately.
+    ``llm.model_name`` + ``gen_ai.request.model`` when the model is known;
+    ``llm.provider`` + the ``gen_ai.provider.name`` / ``gen_ai.system`` pair only
+    when ``provider`` is the actual LLM provider (``openrouter``, ``anthropic``
+    …). The Hermes *platform* (``cli``, ``telegram``) is never a provider; it
+    goes under ``hermes.platform`` via :func:`_platform_attributes` (#153).
     """
     attrs: Dict[str, str] = {}
     if model:
@@ -68,8 +69,22 @@ def _model_attributes(model: Any, provider: Any, gen_ai_provider: Any = None) ->
         attrs["gen_ai.request.model"] = truncate_string(model, _ID_MAX)
     if provider:
         attrs["llm.provider"] = truncate_string(provider, _PROVIDER_MAX)
-    attrs.update(_provider_attributes(gen_ai_provider or provider))
+        attrs.update(_provider_attributes(provider))
     return attrs
+
+
+def _platform_attributes(platform: Any) -> Dict[str, str]:
+    """``hermes.platform``: the Hermes surface a turn ran on (``cli``, ``telegram`` …)."""
+    if not platform:
+        return {}
+    return {"hermes.platform": truncate_string(platform, _PROVIDER_MAX)}
+
+
+def _response_model_attributes(response_model: Any) -> Dict[str, str]:
+    """``gen_ai.response.model`` only when a provider actually reported one (#155)."""
+    if not response_model:
+        return {}
+    return {"gen_ai.response.model": truncate_string(response_model, _ID_MAX)}
 
 
 def _metric_model_labels(model: Any, provider: Any) -> Dict[str, str]:

@@ -22,6 +22,7 @@ from .attributes import (
     _metric_model_labels,
     _model_attributes,
     _provider_attributes,
+    _response_model_attributes,
     _sender_attributes,
     _serialize_conversation_history,
     _session_context_attributes,
@@ -92,10 +93,13 @@ def on_pre_llm_call(
             ps.io["input"] = _preview_for(tracer, "llm_input", user_message) or ""
             ps.io_captured = True
 
-    # OpenInference attributes — Phoenix Info panel
+    # OpenInference attributes — Phoenix Info panel. The provider is only
+    # known once an API call has reported it (continuation turns); the
+    # platform is not a provider (#153).
+    known = tracer.sessions.peek(session_id) if session_id else None
     attributes: Dict[str, Any] = {}
     attributes.update(_session_identity_attributes(session_id))
-    attributes.update(_model_attributes(model, platform))
+    attributes.update(_model_attributes(model, known.provider if known else None))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_turn_attributes(tracer, session_id))
@@ -165,19 +169,20 @@ def on_post_llm_call(
     # Capture last LLM output for top-level session span. Only if the
     # session already has I/O buffered (i.e. pre_llm_call ran) — mirrors
     # prior behaviour where we never wrote output without a matching input.
-    if session_id:
-        ps = tracer.sessions.peek(session_id)
-        if ps is not None and ps.io_captured:
-            ps.io["output"] = preview or ""
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    if ps is not None and ps.io_captured:
+        ps.io["output"] = preview or ""
 
-    tracer.record_metric("message_count", 1, _metric_model_labels(model, platform))
+    # Provider / response model: what this turn's API calls reported, never
+    # the platform or the request model (#153, #155).
+    provider = ps.provider if ps is not None else ""
+    tracer.record_metric("message_count", 1, _metric_model_labels(model, provider))
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {}
     attributes.update(_session_identity_attributes(session_id))
-    if model:
-        attributes["gen_ai.response.model"] = truncate_string(model, 200)
-    attributes.update(_provider_attributes(platform))
+    attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
+    attributes.update(_provider_attributes(provider))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:
@@ -308,9 +313,8 @@ def on_post_api_request(
     attributes: Dict[str, Any] = {}
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_provider_attributes(provider))
-    response_model_value = response_model or model
-    if response_model_value:
-        attributes["gen_ai.response.model"] = truncate_string(response_model_value, 200)
+    # Only a reported response model; the request model is not a response (#155).
+    attributes.update(_response_model_attributes(response_model))
     response_id = kwargs.get("response_id") or kwargs.get("id")
     if response_id:
         attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
@@ -331,10 +335,12 @@ def on_post_api_request(
             for field in _USAGE_FIELDS:
                 ps.usage[field] += totals[field]
             ps.usage_updated = True
-            # Remember the real LLM provider — on_session_end only sees the
-            # platform, so the agent-level metric would otherwise mislabel it.
+            # Remember the real LLM provider and the reported response model —
+            # on_session_end only sees the platform and the request model.
             if provider:
                 ps.provider = provider
+            if response_model:
+                ps.response_model = truncate_string(response_model, 200)
 
         # Record metrics
         _record_usage_metrics(tracer, totals, model_labels)
@@ -351,7 +357,7 @@ def on_post_api_request(
                 tracer,
                 "gen_ai.client.token.usage",
                 totals,
-                _genai_metric_dims(model, provider, response_model_value),
+                _genai_metric_dims(model, provider, response_model),
             )
 
         cost = usage.get("cost")
@@ -372,7 +378,7 @@ def on_post_api_request(
             tracer.record_metric(
                 "gen_ai.client.operation.duration",
                 api_duration,
-                _genai_metric_dims(model, provider, response_model_value),
+                _genai_metric_dims(model, provider, response_model),
             )
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason

@@ -43,12 +43,14 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `hermes.session.kind` | hermes | string | `cli` · `telegram` · `discord` · `cron` · … |
+| `hermes.session.kind` | hermes | string | `session` · `cron` (from Hermes' `session_type` / `origin` / `run_type` when a host passes one; Hermes 0.21 passes none, so `cron` comes from a cron platform and everything else is `session`) |
 | `hermes.session_id` | hermes | string | Session id (pre-existing spelling; `session.id` is the standard one) |
-| `llm.model_name`, `llm.provider` | OpenInference | string | Model / platform the turn started with |
+| `llm.model_name` | OpenInference | string | Model the turn started with |
+| `hermes.platform` | hermes | string | The Hermes surface the turn ran on: `cli` · `telegram` · `discord` · `cron` · … (never reported as a provider) |
+| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
-| `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (Weave shows it as the agent) |
+| `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
 | `weave.agent.version` | Weave | string | Plugin version (optional) |
 | `hermes.session.synthesized` | hermes | bool | `true` when the root was created lazily because `on_session_start` never fired (optional) |
@@ -61,7 +63,9 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | Attribute | Type | Meaning |
 |---|---|---|
 | `hermes.session.completed`, `hermes.session.interrupted` | bool | Hook payload flags |
-| `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` (also `timed_out` when the orphan sweep closes an abandoned turn) |
+| `hermes.turn.final_status` | hermes | string | `completed` · `interrupted` · `failed` · `incomplete` · `timed_out` — from Hermes' `completed` / `interrupted` / `failed` flags (`timed_out` from the orphan sweep) |
+| `hermes.session.failed` | hermes | bool | Hermes' `failed` flag on `on_session_end` |
+| `hermes.turn.exit_reason` | hermes | string | Hermes' `turn_exit_reason` (`interrupted_by_user`, `guardrail_halt`, `context_compression_timeout`, `max_iterations_reached(n/m)` …), when reported |
 | `hermes.turn.tool_count`, `hermes.turn.tools` | int / string | Distinct tool names (sorted CSV, ≤500 chars) |
 | `hermes.turn.tool_targets`, `hermes.turn.tool_commands` | string | `\|`-joined distinct paths/URLs and shell commands |
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
@@ -77,14 +81,15 @@ One per `run_conversation` call (span kind `LLM`).
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
+| `llm.model_name` | OpenInference | string | Model |
+| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider reported by this turn's API calls; absent on the first call before any API request reported one |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
 | `input.value`, `input.mime_type` | OpenInference | string | User message (`text/plain`) or, with `capture_conversation_history`, the conversation JSON (`application/json`) |
 | `gen_ai.input.messages` | gen_ai | string (JSON) | Same content in the gen_ai message shape |
 | `output.value`, `output.mime_type` | OpenInference | string | Final assistant response |
 | `gen_ai.output.messages` | gen_ai | string (JSON) | Same in the gen_ai shape |
-| `gen_ai.response.model` | gen_ai | string | Model at response time |
+| `gen_ai.response.model` | gen_ai | string | The response model a provider reported on this turn's API calls; absent when none was reported (never the request model) |
 | `hermes.conversation.message_count` | hermes | int | Message count when conversation capture is on (optional) |
 
 ## `api.*`
@@ -114,7 +119,7 @@ Set at **end** (success):
 | `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.cache_creation.input_tokens` | gen_ai | int | Cache buckets, current spelling (optional) |
 | `gen_ai.usage.cache_read_input_tokens`, `gen_ai.usage.cache_creation_input_tokens` | gen_ai | int | Same values, pre-existing alias kept for older dashboards (optional) |
 | `gen_ai.usage.reasoning.output_tokens` | gen_ai | int | Reasoning tokens (optional) |
-| `gen_ai.response.model`, `gen_ai.response.id` | gen_ai | string | Response model / id (optional) |
+| `gen_ai.response.model`, `gen_ai.response.id` | gen_ai | string | Response model / id, only when the provider reported them (optional) |
 | `gen_ai.response.finish_reasons` | gen_ai | string[] | `["stop"]`, `["tool_use"]`, … |
 | `llm.response.finish_reason` | hermes | string | Same, scalar |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
@@ -148,7 +153,7 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `output.value`, `gen_ai.tool.call.result` | both | string | Tool result preview |
 | `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
 | `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
-| `hermes.tool.outcome` | hermes | string | `completed` · `error` · `timeout` · `blocked` · `cancelled` (or a status the tool reported in its result) |
+| `hermes.tool.outcome` | hermes | string | `error` · `timeout` · `blocked` · `cancelled` from Hermes' hook status or the tool's own result status; `completed` means the tool returned and nothing reported a failure |
 | `hermes.tool.blocked_by` | hermes | string | Which governance floor blocked the call — `deny_rule` · `hardline` · `stdin_password_guard` (optional; only when positively classified, `outcome=blocked`) |
 | `hermes.tool.decided_by` | hermes | string | `hard_floor` on the tool span when a floor (not a human) blocked the call; see also `hermes.approval.decided_by` on `approval.*` spans (optional) |
 | `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional) |
@@ -177,7 +182,7 @@ One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `hermes.approval.pattern_key`, `hermes.approval.pattern_keys` | hermes | string | Rule(s) that gated the command |
+| `hermes.approval.pattern_key`, `hermes.approval.pattern_keys` | hermes | string | Hermes' approval pattern key, when reported (the span is then `approval.<key>`, else `approval`) |
 | `hermes.approval.surface` | hermes | string | `cli` · `telegram` · … (optional) |
 | `hermes.approval.command`, `hermes.approval.description` | hermes | string | Gated command and Hermes' description (previews; optional) |
 | `gen_ai.tool.call.id` | gen_ai | string | Correlates to the gated `tool.*` span (optional) |
@@ -193,8 +198,8 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
-| `gen_ai.operation.name`, `gen_ai.agent.name` | gen_ai | string | `invoke_agent` / child role |
-| `hermes.subagent.role`, `hermes.subagent.goal` | hermes | string | Child role and delegated goal (preview) |
+| `gen_ai.operation.name`, `gen_ai.agent.name` | gen_ai | string | `invoke_agent` / child role (`gen_ai.agent.name` absent when no role was reported) |
+| `hermes.subagent.role`, `hermes.subagent.goal` | hermes | string | Child role (only when Hermes reports one; the span is then `subagent.<role>`, else `subagent`) and delegated goal (preview) |
 | `input.value` | OpenInference | string | The goal preview |
 | `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |

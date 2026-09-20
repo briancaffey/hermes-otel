@@ -18,7 +18,7 @@ At `on_session_end`, the plugin enriches the `agent` / `cron` root span with a s
 | `hermes.turn.skill_count` | int | Distinct skills inferred |
 | `hermes.turn.skills` | string | Sorted CSV of distinct skill names |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired during the turn |
-| `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` · `timed_out` |
+| `hermes.turn.final_status` | string | `completed` · `interrupted` · `failed` · `incomplete` (from Hermes' flags on `on_session_end`; `timed_out` from the orphan sweep) |
 
 Empty / zero aggregators are **omitted** rather than emitted as empty strings — so a turn that didn't call any tools simply won't have `hermes.turn.tool_count` on it.
 

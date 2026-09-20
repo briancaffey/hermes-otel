@@ -15,7 +15,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | Metric | Kind | Unit | Labels | Recorded by |
 |---|---|---|---|---|
 | `hermes.session.count` | Counter | — | `platform` | `session_start` |
-| `hermes.message.count` | Counter | — | `model`, `provider` | `post_llm_call` (one per completed assistant message) |
+| `hermes.message.count` | Counter | — | `model`, `provider` (the provider the turn's API calls reported; absent before any did) | `post_llm_call` (one per completed assistant message) |
 | `hermes.model.usage` | Counter | — | `model`, `provider` | `post_api_request` (one per API call) |
 | `hermes.token.usage` | Counter | — | `model`, `provider`, `token_type` = `input` · `output` · `cacheRead` · `cacheCreation` · `reasoning` | `post_api_request` |
 | `hermes.prompt_cache.tokens` | Counter | `{token}` | `model`, `provider`, `api_mode`, `cache_result` = `hit` · `miss` | `post_api_request` (only when the provider reported cache accounting) |
@@ -27,7 +27,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.approval.duration` | Histogram | `ms` | `choice` | `post_approval_response` (human / guardian decision wait) |
 | `hermes.api.error.count` | Counter | — | `error_type`, `status_class` = `2xx` … `5xx` · `network` · `other`, `retryable` = `true` · `false` · `unknown`, `model`, `provider` | `api_request_error` |
 | `hermes.retry.count` | Counter | — | `model`, `provider` | `api_request_error` (once per *retryable* failure) |
-| `hermes.subagent.count` | Counter | — | `role`, `status` = `ok` · `error`, `child_status` (Hermes' reported status, lower-cased; absent when not reported) | `subagent_stop` |
+| `hermes.subagent.count` | Counter | — | `role` (`unknown` when Hermes reported none), `status` = `ok` · `error`, `child_status` (Hermes' reported status, lower-cased; absent when not reported) | `subagent_stop` |
 | `hermes.subagent.duration` | Histogram | `ms` | `role` | `subagent_stop` |
 
 `token_type` semantics: `input` is the **whole** prompt (uncached + cache reads + cache writes, Hermes' `prompt_tokens`); `cacheRead` / `cacheCreation` are subsets of it; `reasoning` is a subset of `output`. So the prompt-cache hit rate from this counter alone is `rate(cacheRead) / rate(input)`.

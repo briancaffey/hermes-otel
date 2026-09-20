@@ -42,15 +42,18 @@ def on_subagent_start(
         debug_log("  subagent_start: no child_session_id, skipping")
         return
 
-    role = truncate_string(child_role, 200) if child_role else "subagent"
-    span_name = f"subagent.{role}"
+    # No role reported → plain ``subagent`` span with no role attribute; a
+    # placeholder role would be indistinguishable from a real one (#155).
+    role = truncate_string(child_role, 200) if child_role else ""
+    span_name = f"subagent.{role}" if role else "subagent"
 
     attributes: Dict[str, Any] = {
         "gen_ai.operation.name": "invoke_agent",
-        "gen_ai.agent.name": role,
-        "hermes.subagent.role": role,
         "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
     }
+    if role:
+        attributes["gen_ai.agent.name"] = role
+        attributes["hermes.subagent.role"] = role
     attributes.update(_session_identity_attributes(parent_session_id))
     if parent_session_id:
         attributes["hermes.subagent.parent_session_id"] = truncate_string(parent_session_id, 200)
@@ -82,7 +85,7 @@ def on_subagent_start(
 
     record: Dict[str, Any] = {
         "span": span,
-        "role": role,
+        "role": role or None,
         "parent_session_id": parent_session_id,
     }
     if span is not None and hasattr(span, "get_span_context"):
@@ -120,7 +123,7 @@ def on_subagent_stop(
 
     record = tracer.spans.pop_subagent(child_session_id)
     role = (record.get("role") if record else None) or (
-        truncate_string(child_role, 200) if child_role else "subagent"
+        truncate_string(child_role, 200) if child_role else ""
     )
 
     status = subagent_status_to_span_status(child_status)
@@ -147,13 +150,15 @@ def on_subagent_stop(
     # Metrics. ``status`` stays the coarse ok|error (existing dashboards filter
     # on it); ``child_status`` carries what Hermes reported, lower-cased — a
     # bounded set (completed / failed / timeout ...), so still low cardinality.
-    metric_attrs: Dict[str, Any] = {"role": role, "status": status}
+    metric_attrs: Dict[str, Any] = {"role": role or "unknown", "status": status}
     if reported:
         metric_attrs["child_status"] = reported.strip().lower()[:60]
     tracer.record_metric("subagent_count", 1, metric_attrs)
     if duration_ms is not None:
         try:
-            tracer.record_metric("subagent_duration", float(duration_ms), {"role": role})
+            tracer.record_metric(
+                "subagent_duration", float(duration_ms), {"role": role or "unknown"}
+            )
         except (TypeError, ValueError):
             pass
     debug_log(f"  subagent span ended: key={key}, status={status}")
