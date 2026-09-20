@@ -45,6 +45,8 @@ hermes plugins enable hermes_otel         # the manifest name; installing does n
 
 Hermes 0.21+ installs the plugin's Python dependencies (the three `opentelemetry-*` packages) into its own virtualenv automatically and re-applies them after every `hermes update`. Restart the gateway afterwards if one is running. `hermes plugins update hermes-otel` moves a catalog install to the newest reviewed commit.
 
+**What leaves your machine.** Span data, including prompts, tool arguments and tool output as previews clipped to 1200 characters by default, goes only to the OTLP backends you configure. With none configured the plugin keeps a local SQLite store under `$HERMES_HOME` for the dashboard and sends nothing. `capture_previews: false` drops the content and keeps the structure; see [Privacy mode](https://briancaffey.github.io/hermes-otel/configuration/privacy).
+
 :construction: Until the [catalog listing](https://github.com/briancaffey/hermes-otel/issues/134) is merged, install from this repository instead (same plugin, not yet catalog-reviewed):
 
 ```bash

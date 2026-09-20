@@ -46,9 +46,30 @@ class TestManifestV2:
         assert spec == ">=0.21"
 
     def test_description_fits_a_catalog_card(self):
+        # Upstream entries end with a "Disclosure — ..." sentence (what the
+        # plugin sends where, installs and stores); catalog review adds one
+        # when it is missing. Measured across the 22 catalog entries carrying
+        # one on 2026-09-20: summary 61-365 chars, whole description 199-597.
         desc = " ".join(_manifest()["description"].split())
-        assert len(desc) <= 200, len(desc)
         assert desc.startswith("OpenTelemetry for Hermes Agent")
+        assert desc.count("Disclosure — ") == 1, desc
+        summary = desc.split("Disclosure — ")[0]
+        assert len(summary) <= 200, len(summary)
+        assert len(desc) <= 600, len(desc)
+        assert desc.endswith("."), desc
+
+    def test_disclosure_states_what_leaves_the_machine(self):
+        disclosure = " ".join(_manifest()["description"].split()).split("Disclosure — ")[1]
+        for fact in (
+            "prompts",
+            "tool arguments",
+            "tool output",
+            "backends you configure",
+            "SQLite",
+            "$HERMES_HOME",
+            "opentelemetry-exporter-otlp-proto-http",
+        ):
+            assert fact in disclosure, fact
 
     def test_mcp_request_headers_not_declared(self):
         # Not a hook in any Hermes release; declaring it would make the
