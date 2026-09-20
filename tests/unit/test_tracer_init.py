@@ -82,7 +82,7 @@ class TestInitLangfuse:
             assert plugin.init() is True
             mock_otlp.assert_called_once()
             rb = _env_backend(mock_otlp)
-            assert rb.endpoint == "https://langfuse.example.com/api/public/otel"
+            assert rb.endpoint == "https://langfuse.example.com/api/public/otel/v1/traces"
             assert rb.display_name == "Langfuse"
             headers = rb.headers
             expected_auth = base64.b64encode(b"pk-lf-test:sk-lf-test").decode()
