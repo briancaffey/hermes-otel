@@ -182,7 +182,8 @@ def on_post_llm_call(
     attributes: Dict[str, Any] = {}
     attributes.update(_session_identity_attributes(session_id))
     attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
-    attributes.update(_provider_attributes(provider))
+    # Both conventions for the provider (llm.provider + the gen_ai pair).
+    attributes.update(_model_attributes(None, provider))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:

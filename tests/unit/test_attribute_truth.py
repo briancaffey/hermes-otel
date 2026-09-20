@@ -102,9 +102,8 @@ class TestProviderIsNeverThePlatform:
         _end("s")
         llm = dict(_one(exporter.get_finished_spans(), "llm.m").attributes)
         # The pre-call attributes had no provider; the post-call ones report what the API said.
-        assert llm["gen_ai.provider.name"] == "openrouter"
+        assert llm["gen_ai.provider.name"] == llm["llm.provider"] == "openrouter"
         assert llm["gen_ai.response.model"] == "m-v2"
-        assert llm.get("llm.provider") != "cli"
 
     def test_message_count_label_is_the_real_provider(self, inmemory_otel_setup):
         _, plugin = inmemory_otel_setup
