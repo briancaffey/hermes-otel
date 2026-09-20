@@ -19,12 +19,14 @@ release-please reads commit messages. The bump is determined automatically:
 
 | Commit prefix | Bump |
 |---|---|
-| `fix:` | Patch (0.1.0 → 0.1.1) |
-| `feat:` | Minor (0.1.0 → 0.2.0) |
-| `feat!:` or `BREAKING CHANGE:` in body | Major (0.1.0 → 1.0.0) |
-| `chore:`, `refactor:`, `docs:`, `test:` | No bump |
+| `fix:`, `perf:`, `docs:`, `deps:`, `revert:` | Patch (1.8.0 → 1.8.1) |
+| `feat:` | Minor (1.8.0 → 1.9.0) |
+| `feat!:` or `BREAKING CHANGE:` in body | Major (1.8.0 → 2.0.0) |
+| `refactor:`, `chore:`, `ci:`, `test:`, `build:`, `style:` | No bump, no release PR (release-please logs "No user facing commits found") |
 
-So `feat(backends): add honeycomb` → minor bump + changelog entry under "Features". `fix(hooks): avoid double-ending span` → patch bump + entry under "Bug Fixes".
+So `feat(backends): add honeycomb` → minor bump + changelog entry under "Features". `fix(hooks): avoid double-ending span` → patch bump + entry under "Bug Fixes". A docs-only merge still cuts a patch release (its entry lands under "Documentation").
+
+The hidden types are excluded from the changelog *and* from the bump decision, so a `refactor:` that changes something users can observe (a new span attribute, a metric label) ships only with the next visible commit. Prefer a `fix:` / `feat:` title in that case, or add a `Release-As: X.Y.Z` footer to the commit body to force the release.
 
 ## The Release PR
 
