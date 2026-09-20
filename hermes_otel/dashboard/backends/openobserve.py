@@ -44,6 +44,8 @@ _CARD_ATTR_KEYS = (
     "input.value",
     "output.value",
     "llm.output.content",
+    "hermes.session_id",
+    "hermes.turn.number",
 )
 
 

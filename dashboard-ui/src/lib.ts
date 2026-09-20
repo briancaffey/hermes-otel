@@ -305,9 +305,12 @@ export const sessionOf = (s: LiveSpan) =>
 
 // ── assemble TRACES from flat live spans (so the live store powers a real ──
 // trace browser + waterfall, no external backend needed) ──────────────────
+// One trace-list row. Built in the browser from buffered spans
+// (groupLiveTraces, which fills root/spans) or returned by the live store's
+// /live/traces query (#184), where the spans come later from /live/traces/{id}.
 export type LiveTrace = {
   traceId: string;
-  root: LiveSpan;
+  root?: LiveSpan;
   rootName: string;
   rootKind: Kind;
   service: string;
@@ -320,8 +323,71 @@ export type LiveTrace = {
   cost: number | null;
   error: boolean;
   session: string | null;
-  spans: LiveSpan[];
+  spans?: LiveSpan[];
+  turn?: number | null;
+  platform?: string | null;
 };
+
+// ── sessions: group trace rows by session id (#187) ──────────────────────
+export type SessionRow = {
+  session: string;
+  turns: number;
+  spans: number | null;
+  errors: number;
+  tokens: number | null;
+  cost: number | null;
+  toolCalls: number | null;
+  startNs: number;
+  endNs: number;
+  model: string | null;
+  platform: string | null;
+  traceIds: string[];
+};
+
+// Session id of a BACKEND card (adapters put it on the card attributes).
+export function sessionOfCard(trace: any): string | null {
+  const a = traceAttrs(trace);
+  return a["hermes.session_id"] || a["langfuse.sessionId"] || a["session.id"] || a["session_id"] || null;
+}
+
+// Group backend search results client-side. Tokens/cost come from each card's
+// root attributes (already the turn's totals), so nothing is counted twice.
+export function groupBySession(traces: any[]): SessionRow[] {
+  const by: Record<string, SessionRow> = {};
+  for (const t of traces) {
+    const sid = sessionOfCard(t);
+    if (!sid) continue;
+    const a = traceAttrs(t);
+    const start = Number(t.startTimeUnixNano || 0);
+    const end = start + Number(t.durationMs || 0) * 1e6;
+    const tok = attrNum(a, "gen_ai.usage.total_tokens", "llm.token_count.total");
+    const cost = attrNum(a, "hermes.cost.usage");
+    const spanCount = traceSpanCount(t);
+    const row = (by[sid] ||= {
+      session: sid,
+      turns: 0,
+      spans: 0,
+      errors: 0,
+      tokens: null,
+      cost: null,
+      toolCalls: null,
+      startNs: start,
+      endNs: end,
+      model: a["llm.model_name"] || a["gen_ai.request.model"] || null,
+      platform: a["hermes.platform"] || null,
+      traceIds: [],
+    });
+    row.turns += 1;
+    row.spans = spanCount == null || row.spans == null ? null : row.spans + spanCount;
+    if (a["status"] === "error" || a["error.type"]) row.errors += 1;
+    if (tok != null) row.tokens = (row.tokens || 0) + tok;
+    if (cost != null) row.cost = (row.cost || 0) + cost;
+    row.startNs = Math.min(row.startNs, start);
+    row.endNs = Math.max(row.endNs, end);
+    row.traceIds.push(t.traceID || t.traceId);
+  }
+  return Object.values(by).sort((x, y) => y.endNs - x.endNs);
+}
 
 // Token and cost totals for ONE trace. The ``agent`` root already carries the
 // turn's totals and every ``api.*`` span carries its own call, so summing all

@@ -164,12 +164,18 @@ def live_traces(
     trace_id: str = Query(""),
     limit: int = Query(50, ge=1, le=500),
     offset: int = Query(0, ge=0),
+    min_duration_ms: Optional[int] = Query(None, ge=0),
+    model: str = Query("", description="substring of the model name"),
+    tool: str = Query("", description="tool name (tool.<name> spans)"),
 ) -> Dict[str, Any]:
     store = _get_live_store()
     if store is None:
         return {"live": False, "traces": [], "total": 0}
     start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     out = store.query_traces(
+        min_duration_ms=min_duration_ms or None,
+        model=model.strip() or None,
+        tool=tool.strip() or None,
         start_ns=start_ns,
         end_ns=end_ns,
         session=session.strip() or None,
@@ -353,10 +359,24 @@ def _parse_filter(
     status_in: str,
     free_text: str,
     roots_only: bool,
+    model: str = "",
+    session: str = "",
+    tool: str = "",
 ) -> StructuredFilter:
+    # Attribute equality the search bar offers (#183); adapters translate the
+    # keys they know (Phoenix filterCondition, OpenObserve columns, TraceQL,
+    # Langfuse's sessionId) and drop the rest.
+    attr_equals: Dict[str, str] = {}
+    if model.strip():
+        attr_equals["llm.model_name"] = model.strip()
+    if session.strip():
+        attr_equals["hermes.session_id"] = session.strip()
+    if tool.strip():
+        attr_equals["tool.name"] = tool.strip()
     return StructuredFilter(
         service=service.strip() or None,
         name_regex=name_regex.strip() or None,
+        attr_equals=attr_equals,
         min_duration_ms=min_duration_ms if (min_duration_ms and min_duration_ms > 0) else None,
         status=status_in.strip().lower() or None,
         free_text=free_text.strip() or None,
@@ -379,12 +399,27 @@ def search_traces(
     backend: str = Query(
         "", description="Configured backend name or type (default: the pinned/first one)"
     ),
+    model: str = Query("", description="exact model name (llm.model_name)"),
+    session: str = Query("", description="exact session id (hermes.session_id)"),
+    tool: str = Query("", description="exact tool name (tool.name); implies roots_only=false"),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend)
 
     end_s = int(time.time())
     start_s = end_s - int(lookback_hours * 3600)
-    f = _parse_filter(q, service, name_regex, min_duration_ms, status, free_text, roots_only)
+    # A tool filter matches tool spans, which are never roots.
+    f = _parse_filter(
+        q,
+        service,
+        name_regex,
+        min_duration_ms,
+        status,
+        free_text,
+        roots_only and not tool.strip(),
+        model,
+        session,
+        tool,
+    )
     return adapter.search(f, start_s, end_s, limit)
 
 

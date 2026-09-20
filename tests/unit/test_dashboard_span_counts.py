@@ -147,3 +147,27 @@ def test_lookback_cap_allows_a_year():
     # plugin_api needs the real FastAPI (APIRouter, Query); read the source.
     src = (_DASHBOARD / "plugin_api.py").read_text(encoding="utf-8")
     assert "lookback_hours: float = Query(1.0, gt=0, le=8760)" in src
+
+
+def test_langfuse_maps_the_generic_session_key():
+    a = LangfuseAdapter(
+        {
+            "type": "langfuse",
+            "endpoint": "http://localhost:3000",
+            "public_key": "pk",
+            "secret_key": "sk",
+        }
+    )
+    f = StructuredFilter(attr_equals={"hermes.session_id": "s-9"})
+    assert a._list_params(f, 0, 10, 5)["sessionId"] == "s-9"
+
+
+def test_backend_cards_carry_the_session_id():
+    from backends import openobserve, phoenix, tempo
+
+    assert "hermes.session_id" in phoenix._CARD_ATTR_KEYS
+    assert ".hermes.session_id" in tempo._CARD_SELECT_ATTRS
+    assert "hermes.session_id" in openobserve._CARD_ATTR_KEYS
+    row = {"operation_name": "agent", "hermes_session_id": "s-1", "hermes_turn_number": "2"}
+    attrs = openobserve._row_to_card_attrs(row)
+    assert attrs["hermes.session_id"] == "s-1" and attrs["hermes.turn.number"] == 2

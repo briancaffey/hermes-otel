@@ -91,6 +91,8 @@ _CARD_ATTR_KEYS = frozenset(
         "llm.output.content",
         "status",
         "name",
+        "hermes.session_id",
+        "hermes.turn.number",
     }
 )
 

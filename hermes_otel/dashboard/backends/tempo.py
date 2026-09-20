@@ -44,6 +44,8 @@ _CARD_SELECT_ATTRS = (
     ".input.value",
     ".output.value",
     ".llm.output.content",
+    ".hermes.session_id",
+    ".hermes.turn.number",
     "status",
     "name",
 )
