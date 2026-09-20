@@ -8,7 +8,7 @@ last output, per-turn summary — is buffered here keyed by ``session_id``
 and flushed onto the top-level span during ``on_session_end``.
 
 Previously these lived as four parallel module-level dicts in
-``hooks.py``. Consolidating into ``SessionState`` makes reset trivial
+the hooks module. Consolidating into ``SessionState`` makes reset trivial
 (tests get a fresh ``SessionState`` whenever the tracer singleton is
 re-created) and removes the need for tests to reach into module
 internals.

@@ -32,7 +32,7 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 |---|---|---|
 | `openinference.span.kind` | OpenInference | `AGENT` (root, subagent) · `LLM` (`llm.*`, `api.*`) · `TOOL` (`tool.*`) · `CHAIN` (skill, approval) |
 | `hermes.turn.number` | hermes | 1-based index of the user prompt within the session (per process; `hermes -r` restarts at 1). On the root and on every `llm.*` / `api.*` / `tool.*` span of the turn |
-| `session.id` | OTel | Hermes session id, on the root and on `llm.*` / `api.*` / `subagent.*` |
+| `session.id` | OTel | Hermes session id, on the root and on `llm.*` / `api.*` / `tool.*` / `subagent.*` |
 | `gen_ai.conversation.id` | gen_ai | Same id, gen_ai spelling, wherever `gen_ai.operation.name` is set |
 | `correlation.id` | hermes | Correlation id Hermes passes on the hook (optional) |
 | `user.id`, `hermes.sender.id` | OTel / hermes | Gateway sender identity — only with `capture_sender_id: true`. `user.id` is `platform:sender` |

@@ -1,12 +1,13 @@
 """Pure-function helpers shared across hermes-otel modules.
 
-Kept separate from hooks.py so unit tests can import without pulling in
+Kept separate from the hooks package so unit tests can import without pulling in
 the OpenTelemetry SDK dependency tree.
 """
 
 from __future__ import annotations
 
 import functools
+import json
 import os
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -349,7 +350,6 @@ def classify_block_provenance(block_message: Any) -> Optional[str]:
 # clean finish. Anything explicitly failure-like maps to an error span; unknown
 # / empty values default to OK so a missing status never inflates error rates
 # (mirrors the tool-outcome policy in on_post_tool_call).
-_SUBAGENT_OK_STATUSES = frozenset({"ok", "completed", "complete", "success", "succeeded", "done"})
 _SUBAGENT_ERROR_STATUSES = frozenset(
     {"error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out"}
 )
@@ -482,3 +482,146 @@ def package_version() -> Optional[str]:
         return version("hermes-otel")
     except Exception:  # PackageNotFoundError or a broken metadata install
         return None
+
+
+# ── Hook payload helpers ─────────────────────────────────────────────────────
+# Pure functions the hook callbacks share. No OTel import, so they are unit
+# testable on their own (moved out of the hooks package in #104).
+
+
+def to_int(value: Any) -> int:
+    """Best-effort integer conversion for usage counters (never raises)."""
+    if isinstance(value, bool) or value is None:
+        return 0
+    if isinstance(value, (int, float)):
+        return int(value)
+    if isinstance(value, str):
+        text = value.strip()
+        if not text:
+            return 0
+        try:
+            return int(float(text))
+        except ValueError:
+            return 0
+    return 0
+
+
+def optional_number(value: Any) -> Optional[float]:
+    """``float(value)`` or None for bools, None, empty and unparsable input."""
+    if isinstance(value, bool) or value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
+    """Classify a run as ``session``, ``cron`` or a host-supplied kind.
+
+    First non-empty of ``session_type`` / ``origin`` / ``run_type`` wins;
+    otherwise ``cron`` when the platform, source or trigger mentions cron or a
+    cron job id is present; else ``session``.
+    """
+    for key in ("session_type", "origin", "run_type"):
+        value = kwargs.get(key)
+        if value:
+            return str(value)
+    for candidate in (platform, kwargs.get("source"), kwargs.get("trigger")):
+        if candidate and "cron" in str(candidate).lower():
+            return "cron"
+    if kwargs.get("job_id") or kwargs.get("cron_job_id"):
+        return "cron"
+    return "session"
+
+
+# Hermes ``status`` kwarg value -> documented ``hermes.tool.outcome`` value.
+# Success statuses are deliberately absent: they defer to the tool's own
+# result-reported status (see ``outcome_from_hook_status``).
+_HOOK_STATUS_SUCCESS = frozenset({"ok", "success", "completed", "complete", "done"})
+HOOK_STATUS_TO_OUTCOME = {
+    "error": "error",
+    "failed": "error",
+    "blocked": "blocked",
+    "timeout": "timeout",
+    "timed_out": "timeout",
+    "cancelled": "cancelled",
+    "canceled": "cancelled",
+}
+# Every outcome that counts as "the tool did not complete"; one definition
+# for the skill-load check and any future consumer.
+FAILURE_OUTCOMES = frozenset(HOOK_STATUS_TO_OUTCOME.values())
+
+
+def outcome_from_hook_status(status: Any) -> Optional[str]:
+    """Translate Hermes' post_tool_call ``status`` into the outcome taxonomy.
+
+    Non-success lifecycle statuses (``timeout``, ``blocked``, ``cancelled``,
+    ``error``) are authoritative and win. Returns ``None`` for a success status
+    or when the hook carried no usable status, so the caller falls back to the
+    tool's own result-reported status (else ``completed``) — that keeps custom
+    outcomes such as ``partial`` that only the tool knows about.
+    """
+    if not isinstance(status, str):
+        return None
+    key = status.strip().lower()
+    if not key or key in _HOOK_STATUS_SUCCESS:
+        return None
+    return HOOK_STATUS_TO_OUTCOME.get(key, key)
+
+
+def json_default(obj: Any) -> Any:
+    """Fallback for :func:`json.dumps` on objects handed through the api hook.
+
+    Hermes-agent emits ``tool_calls`` as ``SimpleNamespace`` (nested, with a
+    ``.function`` sub-namespace). json.dumps calls this recursively for any
+    non-serialisable object, so returning ``__dict__`` flattens each layer.
+    """
+    if hasattr(obj, "__dict__") and obj.__dict__:
+        return obj.__dict__
+    return str(obj)
+
+
+def serialize_full(value: Any) -> Optional[str]:
+    """JSON-serialise ``value`` in full (no truncation), or None when empty.
+
+    Used for ``capture_full_prompts`` / ``capture_full_responses``: the whole
+    point is fidelity, so no ``preview_max_chars``. None on empty or
+    unserialisable input so the caller can skip the attribute.
+    """
+    if value is None or value == "" or value == [] or value == {}:
+        return None
+    try:
+        return json.dumps(value, ensure_ascii=False, default=json_default)
+    except Exception:
+        try:
+            return str(value)
+        except Exception:
+            return None
+
+
+def clip_joined(items: List[str], sep: str, limit: int = 500) -> str:
+    """Join ``items`` with ``sep``, capped to ``limit`` chars with a ``...`` tail.
+
+    Unlike :func:`clip_preview` this keeps whitespace as-is (turn summaries
+    list raw commands) and returns ``""`` rather than None for no items.
+    """
+    if not items:
+        return ""
+    joined = sep.join(items)
+    if len(joined) <= limit:
+        return joined
+    if limit <= 3:
+        return "." * limit
+    return joined[: limit - 3] + "..."
+
+
+def derive_signal_endpoint(traces_endpoint: str, signal: str) -> str:
+    """Rewrite ``.../v1/traces`` to ``.../v1/<signal>`` (``metrics`` / ``logs``).
+
+    OTLP/HTTP collectors expose the three signals on one host under different
+    path suffixes; any other endpoint shape is returned unchanged.
+    """
+    if traces_endpoint.endswith("/v1/traces"):
+        return traces_endpoint[: -len("/v1/traces")] + f"/v1/{signal}"
+    return traces_endpoint

@@ -4,7 +4,9 @@ import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-CODE = [REPO_ROOT / "hermes_otel" / "hooks.py", REPO_ROOT / "hermes_otel" / "tracer.py"]
+CODE = sorted((REPO_ROOT / "hermes_otel" / "hooks").glob("*.py")) + [
+    REPO_ROOT / "hermes_otel" / "tracer.py"
+]
 DOC = REPO_ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 
 _NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host)\.[a-z_][a-z0-9_.]*"

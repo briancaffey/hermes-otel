@@ -41,7 +41,7 @@ def mock_tracer():
     tracer.spans.pop_subagent = lambda sid: None
     tracer.sessions = SessionState()
     tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
+    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
         yield tracer
 
 
@@ -53,7 +53,7 @@ def disabled_tracer():
     tracer = MagicMock()
     tracer.is_enabled = False
     tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.hooks.get_tracer", return_value=tracer):
+    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
         yield tracer
 
 

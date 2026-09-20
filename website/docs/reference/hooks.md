@@ -161,4 +161,4 @@ mcp_request_headers      (pending upstream; no span) would return traceparent/tr
 
 When the model emits multiple tool calls in a single response, Hermes fires `pre_tool_call` / `post_tool_call` for each in sequence (or in parallel, depending on the Hermes version). The plugin handles both: each tool span gets its own `span.start` / `span.end`, and they're all children of the same `api.*` parent.
 
-See `hooks.py` for the actual callback implementations and the `SpanTracker` class for the parent-stack management.
+See the `hermes_otel/hooks/` package for the callback implementations (one module per hook family) and the `SpanTracker` class for the parent-stack management.

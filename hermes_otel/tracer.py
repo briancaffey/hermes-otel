@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import close_debug_log, debug_log, logger
-from .helpers import package_version
+from .helpers import derive_signal_endpoint, package_version
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 
@@ -45,10 +45,8 @@ try:
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
 
     _OTEL_AVAILABLE = True
-    _METRICS_AVAILABLE = True
 except ImportError as e:
     _OTEL_AVAILABLE = False
-    _METRICS_AVAILABLE = False
     # If OTel itself is missing we short-circuit via is_enabled=False before
     # ever returning this; the None is just to keep module-level references valid.
     INVALID_SPAN = None  # type: ignore[assignment]
@@ -288,7 +286,6 @@ class HermesOTelPlugin:
         self._log_processors: List[Any] = []
         self._span_processor = None
         self._metric_reader = None
-        self._backend_summaries: List[str] = []
         # LoggerProvider created when capture_logs is on and at least one
         # log-capable backend is wired up. None otherwise.
         self._logger_provider: Optional[Any] = None
@@ -362,7 +359,6 @@ class HermesOTelPlugin:
         self._log_processors = []
         self._span_processor = None
         self._metric_reader = None
-        self._backend_summaries = []
         self._logger_provider = None
         self._langsmith = None
         self._meter = None
@@ -620,9 +616,7 @@ class HermesOTelPlugin:
     @staticmethod
     def _derive_metrics_endpoint(traces_endpoint: str) -> str:
         """Phoenix/SigNoz use /v1/traces and /v1/metrics on the same host."""
-        if traces_endpoint.endswith("/v1/traces"):
-            return traces_endpoint[: -len("/v1/traces")] + "/v1/metrics"
-        return traces_endpoint
+        return derive_signal_endpoint(traces_endpoint, "metrics")
 
     def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
         """Global ``headers:`` first, the backend's own on top (per-backend wins).
@@ -727,7 +721,7 @@ class HermesOTelPlugin:
                         logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
                         continue
 
-                if b.supports_metrics and _METRICS_AVAILABLE:
+                if b.supports_metrics:
                     metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
                     try:
                         metric_hdrs = self._merge_headers(b.metrics_headers or b.headers)
@@ -743,7 +737,6 @@ class HermesOTelPlugin:
                     except Exception as e:
                         logger.error(f"[hermes-otel] ✗ {b.display_name} metrics init failed: {e}")
 
-                self._backend_summaries.append(f"{b.display_name} → {b.endpoint}")
                 logger.info(
                     f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
                     + (" (query only)" if not b.supports_traces else "")
@@ -771,7 +764,7 @@ class HermesOTelPlugin:
             _set_global_once(trace, "tracer", provider)
             self.tracer = provider.get_tracer("hermes-otel-plugin")
 
-            if metric_readers and _METRICS_AVAILABLE:
+            if metric_readers:
                 self._meter_provider = MeterProvider(
                     resource=resource,
                     metric_readers=metric_readers,

@@ -23,7 +23,7 @@ merged PR. It's written down in two places that stay in sync:
 2. **Implement** following the plugin's conventions:
    - New hook → add to `provides_hooks` in `plugin.yaml` and register it in
      `__init__.py` inside the forward-compatible `try/except` loop.
-   - Handlers in `hooks.py` accept `**kwargs` and **fail open** (guard on
+   - Handlers in the `hooks/` package accept `**kwargs` and **fail open** (guard on
      `tracer.is_enabled`, never raise into the agent loop).
    - Emit **dual-convention** attributes (OpenInference for Phoenix + `gen_ai.*`
      for Langfuse). Put pure logic in `helpers.py` so it's testable without OTel.

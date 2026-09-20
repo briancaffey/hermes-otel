@@ -45,7 +45,7 @@ CI fails if coverage falls below 85%.
 
 Cover:
 
-- Helper functions: `_safe_str`, `_to_int`, `_detect_session_kind`
+- Helper functions (`helpers.py`): `truncate_string`, `clip_preview`, `to_int`, `detect_session_kind`, tool identity, skill and outcome classification
 - `SpanTracker` class: span lifecycle, parent stack, `end_all`
 - `HermesOTelPlugin.init()`: environment detection, backend priority
 - `NoopSpan` graceful degradation when OTel is unavailable
@@ -91,7 +91,7 @@ Exercise the complete production pipeline:
 
 ```text
 OpenAI SDK  -->  hermes API server  -->  LLM  -->  OTEL plugin  -->  Langfuse
-                 (port 8642)                        (hooks.py)       (port 3000)
+                 (port 8642)                        (hooks/)       (port 3000)
      \                                                                   /
       `--- pytest sends chat here                 pytest queries here ---`
 ```
