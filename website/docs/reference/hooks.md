@@ -85,12 +85,28 @@ Fires at the start of a user turn (CLI input, inbound message, cron wake-up).
 
 ### `on_session_end`
 
-Fires when the turn is fully complete (assistant has returned its final response, interrupted, or timed out).
+Fires when the turn is fully complete (assistant has returned its final response, interrupted, or timed out). Despite the name it fires **once per turn**, not once per session; the session's true end is `on_session_finalize` below.
 
 - **Span op:** closes the `agent` / `cron` root span
 - **Attributes set on end:** the full [turn summary](/architecture/turn-summary) — `hermes.turn.tool_count`, `hermes.turn.tools`, `hermes.turn.tool_targets`, `hermes.turn.tool_commands`, `hermes.turn.tool_outcomes`, `hermes.turn.skill_count`, `hermes.turn.skills`, `hermes.turn.api_call_count`, `hermes.turn.final_status`
 - **Metrics:** `hermes.session.count{platform}` counter (on start); `gen_ai.agent.token.usage` per-turn rollup (on end)
 - **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
+
+### `on_session_finalize`
+
+Fires once, at the session's true end: CLI exit, `/new` or `/reset`, a gateway session expiring, a TUI session closing. Payload: `session_id`, `platform`, `reason` (`session_boundary`, `shutdown`, `new_session`, …).
+
+- **Span op:** none of its own. A session is not a span: backends export a span only when it ends, and a gateway session can live for hours, so each turn stays its own trace and the session is the `session.id` / `gen_ai.conversation.id` attribute on every span. If a turn's `agent` / `cron` root is still open (a turn in flight, or an orphan), it is closed with `hermes.session.finalize_reason` and `hermes.turn.final_status=finalized`.
+- **Metrics:** `hermes.session.turns{platform, reason}` histogram (turns the session had) and `hermes.session.duration{platform, reason}` histogram (seconds from its first turn); nothing is recorded for a session this process never saw a turn of, which happens when a gateway restarts before expiry fires.
+- **Log:** one `INFO` line, `session <id> finalized (<reason>): N turn(s) over Ns`, with `hermes.session_id`, `hermes.session.turn_count`, `hermes.session.duration_s` and `hermes.session.finalize_reason` as attributes, exported when `capture_logs` is on.
+- **Side effects:** every per-session record (aggregator, turn counter, parent stack, open skill spans, delegation record) is dropped, so a session id that comes back starts at turn 1; the span context of the session's last root is kept so a replacing session can link to it; every backend is force-flushed regardless of `force_flush_on_session_end`.
+
+### `on_session_reset`
+
+Fires when a new session replaces an old one (`/new`, `/reset`). The gateway passes `session_id` (the new one), `old_session_id`, `new_session_id`, `platform` and `reason`; the CLI passes only the new `session_id` after having fired `on_session_finalize` for the old one.
+
+- **Span op:** the old session, when still known, is finalized as above with `hermes.session.reset_reason` on any open root. The new session's first root carries `hermes.session.previous_id` and an OTel span **link** (attribute `hermes.link=previous_session`) to the old session's last root, so `/new` chains are discoverable from either end in backends that render links.
+- **Fallback:** with no old id and no previously finalized session in this process, only the new session is noted; nothing is emitted.
 
 ### `subagent_start`
 
@@ -134,7 +150,7 @@ Fires when the human answers (or the prompt times out).
 
 ### `mcp_request_headers` (pending upstream)
 
-Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "13 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "15 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
 
 ## Hook → span mapping
 
@@ -153,7 +169,9 @@ post_llm_call            close llm.{model}
 subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics
-on_session_end           close agent/cron        + turn summary + force-flush
+on_session_end           close agent/cron        + turn summary + force-flush   (per turn)
+on_session_finalize      close agent/cron if open + session turns/duration metrics + drop state + flush
+on_session_reset         finalize old session    + previous_id and link on the new session's first root
 mcp_request_headers      (pending upstream; no span) would return traceparent/tracestate for the outbound MCP call
 ```
 

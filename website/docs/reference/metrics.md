@@ -15,6 +15,8 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | Metric | Kind | Unit | Labels | Recorded by |
 |---|---|---|---|---|
 | `hermes.session.count` | Counter | — | `platform` | `session_start` |
+| `hermes.session.turns` | Histogram | `{turn}` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: turns the finished session had |
+| `hermes.session.duration` | Histogram | `s` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: seconds from the session's first turn to its end |
 | `hermes.message.count` | Counter | — | `model`, `provider` (the provider the turn's API calls reported; absent before any did) | `post_llm_call` (one per completed assistant message) |
 | `hermes.model.usage` | Counter | — | `model`, `provider` | `post_api_request` (one per API call) |
 | `hermes.token.usage` | Counter | — | `model`, `provider`, `token_type` = `input` · `output` · `cacheRead` · `cacheCreation` · `reasoning` | `post_api_request` |

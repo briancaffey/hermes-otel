@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+import time
+from typing import Any, Dict, Optional
 
-from ..debug_utils import debug_log
+from ..debug_utils import debug_log, logger
 from ..helpers import detect_session_kind, truncate_string
 from ._common import _fail_open, get_tracer
 from .attributes import (
@@ -92,6 +93,17 @@ def _start_session_span(
             parent_override = span_obj
         elif record.get("context") is not None and Link is not None:
             links = [Link(record["context"])]
+
+    # Session chaining (#29): a session that replaced another (``/new``,
+    # ``/reset``, expiry) names it and links to its last root span.
+    previous = tracer.sessions.previous_session(session_id)
+    if previous:
+        attributes["hermes.session.previous_id"] = truncate_string(previous, 200)
+        prev_ctx = tracer.sessions.root_context(previous)
+        if prev_ctx is not None and Link is not None:
+            links = list(links or []) + [
+                Link(prev_ctx, attributes={"hermes.link": "previous_session"})
+            ]
 
     span = tracer.start_span(
         name=span_name,
@@ -218,6 +230,7 @@ def on_session_end(
                 status="ok",
             )
 
+    _remember_root(tracer, session_id)
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
     tracer.unregister_turn(session_id)
@@ -230,3 +243,137 @@ def on_session_end(
         tracer._force_flush()
 
     debug_log(f"  session span ended: key={key}, status={status}")
+
+
+# ── Session boundaries: on_session_finalize / on_session_reset (#29) ─────
+#
+# Hermes fires on_session_end after every turn and on_session_finalize once,
+# at the session's true end (CLI exit, gateway expiry, /new, /reset);
+# on_session_reset announces the session that takes over. A session is not
+# modelled as one long-lived span (backends export a span only when it ends,
+# and a gateway session can live for hours); each turn stays its own trace,
+# grouped by session.id / gen_ai.conversation.id. These hooks close whatever
+# is still open, record the session's size and length, drop the per-session
+# state deterministically, and chain the replacing session to the old one.
+
+
+def _remember_root(tracer, session_id: str) -> None:
+    """Keep the root span's context so a replacing session can link to it."""
+    try:
+        root = tracer.spans.get_session_root(session_id)
+        if root is not None and hasattr(root, "get_span_context"):
+            tracer.sessions.remember_root_context(session_id, root.get_span_context())
+    except Exception:
+        pass
+
+
+_FINAL_STATUS = {"finalize": "finalized", "reset": "reset"}
+_REASON_KEY = {"finalize": "hermes.session.finalize_reason", "reset": "hermes.session.reset_reason"}
+
+
+def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, event: str) -> None:
+    """Close an open root, emit the session summary, drop the session's state."""
+    key = f"session:{session_id}"
+    closed_root = tracer.spans.has_span(key)
+    if closed_root:
+        # A turn still in flight (or an orphan) at the session's end: close it
+        # as finalized rather than leaving it to the TTL sweep.
+        if tracer.config.skill_spans:
+            for _name, skill_key in tracer.spans.pop_skill_spans(session_id).items():
+                tracer.end_span(
+                    skill_key, attributes={"hermes.skill.result_status": event}, status="ok"
+                )
+        _remember_root(tracer, session_id)
+        tracer.spans.pop_parent(session_id=session_id)
+        tracer.end_span(
+            key,
+            attributes={
+                _REASON_KEY[event]: truncate_string(reason, 120),
+                "hermes.turn.final_status": _FINAL_STATUS[event],
+            },
+            status="ok",
+        )
+
+    known = tracer.sessions.drop_session(session_id)
+    tracer.spans.drop_session(session_id)
+    tracer.unregister_turn(session_id)
+    tracer.sessions.last_finalized = session_id
+
+    turns = int(known.get("turns") or 0)
+    first_seen = known.get("first_seen")
+    duration_s = max(0.0, time.time() - first_seen) if first_seen else None
+    if not (turns or first_seen or known.get("had_state") or closed_root):
+        # A session this process never saw a turn of (a gateway expiry sweep
+        # after a restart): nothing to summarise, nothing to log.
+        debug_log(f"  session {session_id} unknown here; nothing to finalize")
+        return
+    if turns or first_seen:
+        labels = {"platform": platform or "unknown", "reason": truncate_string(reason, 60)}
+        tracer.record_metric("session_turns", turns, labels)
+        if duration_s is not None:
+            tracer.record_metric("session_duration", duration_s, labels)
+    logger.info(
+        "[hermes-otel] session %s %s (%s): %d turn(s)%s",
+        session_id,
+        _FINAL_STATUS[event],
+        reason,
+        turns,
+        f" over {duration_s:.1f}s" if duration_s is not None else "",
+        extra={
+            "hermes.session_id": session_id,
+            "hermes.session.turn_count": turns,
+            "hermes.session.duration_s": duration_s if duration_s is not None else 0.0,
+            _REASON_KEY[event]: reason,
+        },
+    )
+    # The authoritative flush: nothing of this session should wait for the
+    # batcher after its end.
+    tracer._force_flush()
+
+
+@_fail_open
+def on_session_finalize(
+    session_id: Optional[str] = None, platform: str = "", reason: str = "", **kwargs
+):
+    """The session's true end (CLI exit, gateway expiry, ``/new``): close, summarise, forget."""
+    tracer = get_tracer()
+    debug_log(f"on_session_finalize fired: session={session_id}, reason={reason}")
+    if not tracer.is_enabled or not session_id:
+        return
+    _finalize_session(tracer, session_id, platform, reason or "finalize", event="finalize")
+
+
+@_fail_open
+def on_session_reset(
+    session_id: Optional[str] = None,
+    reason: str = "",
+    platform: str = "",
+    old_session_id: Optional[str] = None,
+    new_session_id: Optional[str] = None,
+    **kwargs,
+):
+    """A new session replaces an old one (``/new``, ``/reset``): finalize the old
+    one if it is still known and chain the new one to it."""
+    tracer = get_tracer()
+    debug_log(
+        f"on_session_reset fired: session={session_id}, old={old_session_id}, new={new_session_id}, reason={reason}"
+    )
+    if not tracer.is_enabled:
+        return
+    new_id = new_session_id or session_id
+    old_id = old_session_id
+    if not old_id and tracer.sessions.last_finalized and tracer.sessions.last_finalized != new_id:
+        # The CLI finalizes the old session first and names only the new one here.
+        old_id = tracer.sessions.last_finalized
+    if (
+        old_id
+        and old_id != new_id
+        and (
+            tracer.spans.has_span(f"session:{old_id}")
+            or tracer.sessions.peek(old_id) is not None
+            or tracer.sessions.turn_number(old_id)
+        )
+    ):
+        _finalize_session(tracer, old_id, platform, reason or "reset", event="reset")
+    if new_id and old_id:
+        tracer.sessions.set_previous(new_id, old_id)
