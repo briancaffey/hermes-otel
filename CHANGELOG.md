@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.8.5](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.4...hermes-otel-v1.8.5) (2026-09-20)
+
+
+### Bug Fixes
+
+* **attributes:** no correlation.id without a host-supplied one; no skill name guessed from the path text ([#163](https://github.com/briancaffey/hermes-otel/issues/163)) ([72e9be5](https://github.com/briancaffey/hermes-otel/commit/72e9be513e74389681b878bcda01e9eae3eea862)), closes [#154](https://github.com/briancaffey/hermes-otel/issues/154) [#157](https://github.com/briancaffey/hermes-otel/issues/157)
+* **attributes:** report the provider, response model and turn outcome Hermes actually gave; never the platform or a placeholder ([#162](https://github.com/briancaffey/hermes-otel/issues/162)) ([c421e5c](https://github.com/briancaffey/hermes-otel/commit/c421e5c71edf85f38e47adfd0ca53047508c2767))
+* **backends:** complete any Langfuse endpoint to the OTLP traces URL ([#169](https://github.com/briancaffey/hermes-otel/issues/169)) ([2fb5456](https://github.com/briancaffey/hermes-otel/commit/2fb54564c9ef1a187302e2edeaf53951a4306636))
+* **backends:** Phoenix is traces-only by default; stop claiming it takes OTLP metrics ([#164](https://github.com/briancaffey/hermes-otel/issues/164)) ([824a5d3](https://github.com/briancaffey/hermes-otel/commit/824a5d30b60b9b8d3b3d2ad906f6dda247d3e9a7)), closes [#160](https://github.com/briancaffey/hermes-otel/issues/160)
+* **dashboard:** map OpenObserve columns back to the plugin's real attribute names ([#165](https://github.com/briancaffey/hermes-otel/issues/165)) ([c1d05df](https://github.com/briancaffey/hermes-otel/commit/c1d05df1c582be88a343895c06a1fdb1b61756eb)), closes [#158](https://github.com/briancaffey/hermes-otel/issues/158)
+* **dashboard:** never show a substitute Phoenix project; mark the Langfuse synthetic root ([#166](https://github.com/briancaffey/hermes-otel/issues/166)) ([4650b65](https://github.com/briancaffey/hermes-otel/commit/4650b65619e5fced496aca10782fed7e69d7d552)), closes [#159](https://github.com/briancaffey/hermes-otel/issues/159)
+
 ## [1.8.4](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.3...hermes-otel-v1.8.4) (2026-09-20)
 
 
