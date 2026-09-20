@@ -13,6 +13,10 @@ hermes-otel has two moving parts:
 
 Since Hermes 0.21 the second part is automatic: `hermes plugins install` and `hermes plugins enable` read `python_dependencies` from `plugin.yaml`, install them into Hermes' venv under a constraints file built from Hermes' own lock, and re-apply them after every `hermes update`. Hermes' lock already pins the OTel SDK its optional `otlp` extra uses, so the plugin's `<2` requirements resolve against it.
 
+## What leaves your machine
+
+Span data, including prompts, tool arguments and tool output as previews clipped to 1200 characters by default, goes only to the OTLP backends you configure. With none configured the plugin keeps a local SQLite store under `$HERMES_HOME` for the dashboard and sends nothing. The catalog entry's description says the same thing in one sentence. `capture_previews: false` drops the content and keeps the structure ([Privacy mode](/configuration/privacy)); the three `opentelemetry-*` packages are the only things installed into the Hermes venv.
+
 ## From the plugin catalog
 
 ```bash

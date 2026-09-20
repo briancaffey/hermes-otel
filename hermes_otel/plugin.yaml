@@ -4,7 +4,12 @@ manifest_version: 2
 description: >-
   OpenTelemetry for Hermes Agent: exports sessions, LLM and API calls, tool
   calls, sub-agents and approvals as OTLP traces, metrics and logs to Phoenix,
-  Langfuse, SigNoz, Grafana and any OTLP backend.
+  Langfuse, SigNoz, Grafana and any OTLP backend. Disclosure — sends span
+  data, including prompts, tool arguments and tool output as previews clipped
+  to 1200 characters by default, only to the OTLP backends you configure; with
+  none configured it keeps a local SQLite store under $HERMES_HOME and sends
+  nothing; installs opentelemetry-api, opentelemetry-sdk and
+  opentelemetry-exporter-otlp-proto-http into the Hermes venv.
 author: Brian Caffey
 license: Apache-2.0
 homepage: https://briancaffey.github.io/hermes-otel/
