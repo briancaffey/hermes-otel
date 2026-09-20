@@ -13,6 +13,8 @@ from .attributes import (
     _gen_ai_attributes,
     _model_attributes,
     _per_session_sender_attributes,
+    _platform_attributes,
+    _response_model_attributes,
     _session_identity_attributes,
     _summary_attributes,
     _weave_turn_attributes,
@@ -56,7 +58,11 @@ def _start_session_span(
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
-    attributes.update(_model_attributes(model, platform, extra_kwargs.get("provider")))
+    attributes.update(_platform_attributes(platform))
+    # Hermes passes no provider on on_session_start; a host that does is honoured.
+    # Otherwise the provider lands on the root at on_session_end, once the
+    # turn's API calls have reported it (#153).
+    attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
     attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
@@ -129,20 +135,30 @@ def on_session_end(
         return
 
     key = f"session:{session_id}"
-    attributes: Dict[str, Any] = {
-        "hermes.session.completed": bool(completed),
-        "hermes.session.interrupted": bool(interrupted),
-    }
-    attributes.update(_model_attributes(model, platform, kwargs.get("provider")))
-    if model:
-        attributes["gen_ai.response.model"] = truncate_string(model, 200)
-    attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
-    attributes.update(_weave_turn_attributes(session_id, kwargs))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    # Hermes reports these on the same hook; the plugin used to ignore them and
+    # compute its own status (#156).
+    failed = bool(kwargs.get("failed"))
+    exit_reason = kwargs.get("turn_exit_reason")
 
     # Drain the aggregators in one shot. Everything this session buffered
     # — I/O, usage totals, turn summary — comes back in a single PerSession.
     ps = tracer.sessions.pop(session_id)
+
+    attributes: Dict[str, Any] = {
+        "hermes.session.completed": bool(completed),
+        "hermes.session.interrupted": bool(interrupted),
+        "hermes.session.failed": failed,
+    }
+    if exit_reason:
+        attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
+    attributes.update(_platform_attributes(platform))
+    # Provider: what this turn's API calls reported, else what the host passed.
+    provider = (ps.provider if ps is not None else "") or kwargs.get("provider")
+    attributes.update(_model_attributes(model, provider))
+    attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
+    attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
+    attributes.update(_weave_turn_attributes(session_id, kwargs))
+    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     if ps is not None and ps.io_captured:
         if ps.io.get("input"):
@@ -172,7 +188,14 @@ def on_session_end(
     if ps is not None and ps.turn_number:
         attributes["hermes.turn.number"] = ps.turn_number
 
-    final_status = "completed" if completed else "interrupted" if interrupted else "incomplete"
+    if failed:
+        final_status = "failed"
+    elif completed:
+        final_status = "completed"
+    elif interrupted:
+        final_status = "interrupted"
+    else:
+        final_status = "incomplete"
     if ps is not None:
         summary = ps.turn_summary
         if summary.final_status is None:
@@ -181,7 +204,9 @@ def on_session_end(
     else:
         attributes["hermes.turn.final_status"] = final_status
 
-    status = "ok" if completed or interrupted else "error"
+    # Only failures are ERROR: a reported failure, or a turn that neither
+    # completed nor was interrupted. Interruptions are user actions.
+    status = "error" if failed or not (completed or interrupted) else "ok"
 
     # Close any skill execution-window spans opened this turn. Done before the
     # root is popped/ended so they close as children of the still-open root.

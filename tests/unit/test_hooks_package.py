@@ -120,9 +120,15 @@ class TestAttributeBuilders:
         assert attrs["llm.provider"] == attrs["gen_ai.provider.name"] == "p" * 120 + "..."
         assert attrs["gen_ai.system"] == attrs["gen_ai.provider.name"]
         assert attributes._model_attributes(None, None) == {}
-        # The GenAI pair may name the real provider while llm.provider keeps the platform.
-        attrs = attributes._model_attributes("m", "telegram", "openrouter")
-        assert attrs["llm.provider"] == "telegram" and attrs["gen_ai.provider.name"] == "openrouter"
+        # Model without a provider: no provider keys at all, never a placeholder.
+        assert attributes._model_attributes("m") == {
+            "llm.model_name": "m",
+            "gen_ai.request.model": "m",
+        }
+        assert attributes._platform_attributes("telegram") == {"hermes.platform": "telegram"}
+        assert attributes._platform_attributes("") == {}
+        assert attributes._response_model_attributes("") == {}
+        assert attributes._response_model_attributes("r") == {"gen_ai.response.model": "r"}
 
     def test_metric_labels_omit_unknowns(self):
         assert attributes._metric_model_labels("m", None) == {"model": "m"}

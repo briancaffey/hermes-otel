@@ -75,7 +75,7 @@ One per logical model turn. Name is `llm.{model}` (e.g. `llm.claude-sonnet-4-6`)
 | Attribute | Convention | Meaning |
 |---|---|---|
 | `llm.model_name` | OpenInference | Model name |
-| `llm.provider` | OpenInference | Provider (anthropic, openai, etc.) |
+| `llm.provider` | OpenInference | The LLM provider reported by the turn's API calls (`openrouter`, `anthropic`); absent until one reports it |
 | `input.value` | OpenInference | User message *or* full conversation history (see below) |
 | `input.mime_type` | OpenInference | `text/plain` or `application/json` |
 | `output.value` | OpenInference | Final assistant response |

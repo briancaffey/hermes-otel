@@ -87,12 +87,15 @@ class TestOnSessionStart:
         assert attrs["session_id"] == "s1"
         assert attrs["correlation.id"] == "s1"
         assert attrs["llm.model_name"] == "gpt-4o"
-        assert attrs["llm.provider"] == "telegram"
+        # The platform is not a provider (#153): it has its own key and the
+        # provider attributes stay absent until an API call reports one.
+        assert attrs["hermes.platform"] == "telegram"
+        assert "llm.provider" not in attrs
+        assert "gen_ai.provider.name" not in attrs
+        assert "gen_ai.system" not in attrs
         assert attrs["gen_ai.conversation.id"] == "s1"
         assert attrs["gen_ai.operation.name"] == "invoke_agent"
         assert attrs["gen_ai.request.model"] == "gpt-4o"
-        assert attrs["gen_ai.provider.name"] == "telegram"
-        assert attrs["gen_ai.system"] == "telegram"
 
     def test_incoming_correlation_id_wins(self, mock_tracer):
         on_session_start(
@@ -701,9 +704,8 @@ class TestOnPostLlmCall:
             model="gpt-4",
             platform="cli",
         )
-        mock_tracer.record_metric.assert_called_once_with(
-            "message_count", 1, {"model": "gpt-4", "provider": "cli"}
-        )
+        # No API call reported a provider yet; the platform is not one (#153).
+        mock_tracer.record_metric.assert_called_once_with("message_count", 1, {"model": "gpt-4"})
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_post_llm_call(
