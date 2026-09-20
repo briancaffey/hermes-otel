@@ -83,18 +83,20 @@ Enable debug logging:
 export HERMES_OTEL_DEBUG=true
 ```
 
-Each export attempt logs:
+With `HERMES_OTEL_DEBUG=true`, each batch a backend's exporter sends writes one line to `debug.log`:
 
 ```text
-[hermes-otel] phoenix export: batch=487 spans, duration=42ms, status=200
-[hermes-otel] langfuse export: batch=487 spans, duration=1284ms, status=200
+export Phoenix: 487 span(s) -> SUCCESS
+export Langfuse: 487 span(s) -> FAILURE
 ```
 
-A dropped-span warning looks like:
+When the queue is full the SDK drops the oldest span and logs a warning, which the debug log copies as:
 
 ```text
-[hermes-otel] ▲ phoenix queue full — dropped 12 spans
+[sdk] opentelemetry.sdk._shared_internal WARNING: Queue full, dropping …
 ```
+
+Nothing is printed to stdout for either; see [Debug logging](/development/debug-logging).
 
 ## Don't tune what you don't need to
 
