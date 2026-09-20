@@ -44,6 +44,16 @@ if "fastapi" not in sys.modules:
 
 from backends.base import StructuredFilter  # noqa: E402
 
+
+@pytest.fixture(autouse=True)
+def _no_developer_config():
+    """Adapters read the top-level ``project_name`` from the developer's real
+    hermes_otel.yaml otherwise; with #159 a configured project the fake
+    project list lacks is a 404, so every test here must start from no config."""
+    with patch("backends.top_level_config", return_value={}):
+        yield
+
+
 # ── Phoenix ────────────────────────────────────────────────────────────
 
 
@@ -51,7 +61,10 @@ from backends.base import StructuredFilter  # noqa: E402
 def phoenix_adapter():
     from backends.phoenix import PhoenixAdapter
 
-    return PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
+    # Never read the developer's real hermes_otel.yaml: a configured
+    # project_name that the fake project list lacks is now a 404 (#159).
+    with patch("backends.top_level_config", return_value={}):
+        return PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
 
 
 def _phoenix_project_list_response() -> Dict[str, Any]:

@@ -87,6 +87,10 @@ Langfuse keys off `gen_ai.*`. The plugin emits that alongside the OpenInference 
 
 Langfuse doesn't accept OTLP metrics — it's trace-only. The plugin auto-skips the metrics exporter when Langfuse is the sole backend. If you want token/tool/cost metrics too, fan out to a metrics-capable backend in parallel; see [Multi-backend](/backends/multi-backend).
 
+## Dashboard
+
+Langfuse traces have no root observation, so the bundled dashboard builds one top-level node per trace from the trace record to hold the tree together. That node carries `synthetic: true` and a `synthetic.reason`, so it is never mistaken for a span the agent emitted; the observations below it are Langfuse's own.
+
 ## Troubleshooting
 
 **"Auth failed / 401 from Langfuse"**

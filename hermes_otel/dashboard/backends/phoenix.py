@@ -122,10 +122,17 @@ class PhoenixAdapter(BackendAdapter):
         # Optional bearer token for self-hosted Phoenix with auth.
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
         self._project_id_cache: Optional[str] = None
+        # The project actually being shown, and whether it was chosen by
+        # fallback (no project configured) rather than by name (#159).
+        self.resolved_project_name: Optional[str] = None
+        self.project_fallback: bool = False
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_url"] = self.query_url
+        base["project_name"] = self.project_name
+        base["project_resolved"] = self.resolved_project_name
+        base["project_fallback"] = self.project_fallback
         return base
 
     # ── GraphQL helpers ───────────────────────────────────────────────
@@ -162,14 +169,30 @@ class PhoenixAdapter(BackendAdapter):
             for p in projects:
                 if p.get("name") == self.project_name:
                     self._project_id_cache = p["id"]
+                    self.resolved_project_name = p.get("name")
+                    self.project_fallback = False
                     return self._project_id_cache
+            # A configured project that does not exist is an error, not an
+            # invitation to show some other project's traces under its name
+            # (#159). Say what exists so the typo is easy to spot.
+            from fastapi import HTTPException
 
-        # Fallback: first project that has traces; else first project.
-        for p in projects:
-            if p.get("hasTraces"):
-                self._project_id_cache = p["id"]
-                return self._project_id_cache
-        self._project_id_cache = projects[0]["id"]
+            available = ", ".join(sorted(str(p.get("name")) for p in projects)) or "none"
+            raise HTTPException(
+                status_code=404,
+                detail=(
+                    f"Phoenix project {self.project_name!r} not found at {self.query_url}; "
+                    f"available: {available}"
+                ),
+            )
+
+        # No project configured: show the first project that has traces (else
+        # the first project) and report which one in status() so the choice
+        # is visible.
+        chosen = next((p for p in projects if p.get("hasTraces")), projects[0])
+        self._project_id_cache = chosen["id"]
+        self.resolved_project_name = chosen.get("name")
+        self.project_fallback = True
         return self._project_id_cache
 
     # ── Filter translation ───────────────────────────────────────────

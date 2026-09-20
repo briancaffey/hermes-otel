@@ -65,6 +65,10 @@ See [Attribute conventions](/architecture/attributes) for the full dual-conventi
 
 Phoenix ingests traces only: its server answers `405` on `/v1/metrics` and `/v1/logs` (checked against `arizephoenix/phoenix:latest`). The plugin therefore creates no metrics or logs exporter for a `phoenix` entry, and the startup banner reads `✓ Phoenix at … (traces only)`. Token, tool and cost metrics need a second backend that takes OTLP metrics ([SigNoz](/backends/signoz), [LGTM](/backends/lgtm), [OpenObserve](/backends/openobserve)) via [multi-backend fan-out](/backends/multi-backend); Phoenix computes token totals and cost from the span attributes itself. If you front Phoenix with a collector that does accept metrics, set `metrics: true` on the entry explicitly.
 
+## Dashboard
+
+The bundled dashboard's Phoenix adapter shows the project named by `project_name` (on the backend entry, else the top-level key). If that project does not exist on the server the dashboard reports `Phoenix project '…' not found; available: …` instead of quietly showing another project's traces. With no `project_name` configured it shows the first project that has traces and says which one in its status (`project_resolved`, `project_fallback: true`).
+
 ## Troubleshooting
 
 **"No traces show up in Phoenix"**
