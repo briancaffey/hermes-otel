@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.9.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.8...hermes-otel-v1.9.0) (2026-09-20)
+
+
+### Features
+
+* **dashboard:** indexed live store with server-side queries; dashboard docs page and API tests ([#193](https://github.com/briancaffey/hermes-otel/issues/193)) ([1aa01d2](https://github.com/briancaffey/hermes-otel/commit/1aa01d202bcf66e58475cf946b43ee23159d97ef))
+* **dashboard:** one search bar for every source, and a Sessions view ([#197](https://github.com/briancaffey/hermes-otel/issues/197)) ([01ef037](https://github.com/briancaffey/hermes-otel/commit/01ef037c64061e0c9761dfca22789dc6adbe5247))
+* **dashboard:** pick any configured backend per request; metrics and logs from backends that serve them ([#196](https://github.com/briancaffey/hermes-otel/issues/196)) ([87d360e](https://github.com/briancaffey/hermes-otel/commit/87d360e8fe53fcb4a59beccaab1704fc14c54e6d))
+* **dashboard:** trace detail with summaries and links, metrics explorer, searchable logs ([#198](https://github.com/briancaffey/hermes-otel/issues/198)) ([1fe15c9](https://github.com/briancaffey/hermes-otel/commit/1fe15c9e53c26309c65e82a93510b2152e70bb05))
+
 ## [1.8.8](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.7...hermes-otel-v1.8.8) (2026-09-20)
 
 
