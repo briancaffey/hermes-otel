@@ -16,7 +16,10 @@ from urllib import parse as _urlparse
 from . import register
 from .base import (
     BackendAdapter,
+    LogFilter,
     StructuredFilter,
+    bucketize,
+    counter_increases,
     http_post_json,
     otlp_attrs_from_dict,
     otlp_status,
@@ -237,6 +240,10 @@ class OpenObserveAdapter(BackendAdapter):
     handles = frozenset({"openobserve", "openobserver"})
     query_lang_label = "SQL WHERE"
     raw_placeholder = "llm_model_name = 'gpt-4'"
+    # OpenObserve keeps every OTLP metric as its own stream (``type=metrics``)
+    # and logs in a logs stream, both queryable with the same SQL API (#182).
+    supports_metrics = True
+    supports_logs = True
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
@@ -426,6 +433,189 @@ class OpenObserveAdapter(BackendAdapter):
             n = row.get("n")
             if tid in traces and isinstance(n, (int, float)) and n > 0:
                 traces[tid]["spanCount"] = int(n)
+
+    # ── metrics (#182) ───────────────────────────────────────────────
+    #
+    # The plugin's exporter names streams ``hermes_<instrument>`` for its own
+    # counters and ``gen_ai_client_token_usage`` etc. for the semconv ones.
+    # Histograms arrive split into ``_sum`` / ``_count`` / ``_bucket`` streams;
+    # counters arrive cumulative, so per-bucket values are increases between
+    # consecutive samples of a series.
+
+    def _search(
+        self, sql: str, start_s: int, end_s: int, size: int, stream_type: str
+    ) -> List[Dict[str, Any]]:
+        url = f"{self.query_url}/api/{self.org}/_search?type={stream_type}"
+        body = {
+            "query": {
+                "sql": sql,
+                "start_time": int(start_s) * 1_000_000,
+                "end_time": int(end_s) * 1_000_000,
+                "size": int(size),
+            }
+        }
+        data = http_post_json(url, body, headers=self._headers(), timeout=60.0)
+        hits = data.get("hits") if isinstance(data, dict) else None
+        return [h for h in hits or [] if isinstance(h, dict)]
+
+    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        url = f"{self.query_url}/api/{self.org}/streams?type=metrics"
+        from .base import http_get_json
+
+        data = http_get_json(url, headers=self._headers(), timeout=30.0)
+        out: List[Dict[str, Any]] = []
+        for s in (data.get("list") if isinstance(data, dict) else None) or []:
+            name = s.get("name") if isinstance(s, dict) else None
+            if not name or name.startswith("otel_sdk_"):
+                continue
+            if name.endswith(("_bucket", "_min", "_max")):
+                continue  # histogram internals; _sum and _count stay
+            docs = ((s.get("stats") or {}).get("doc_num")) if isinstance(s, dict) else None
+            out.append({"name": name, "count": int(docs or 0)})
+        return out
+
+    def metrics_query(
+        self,
+        name: str,
+        start_s: int,
+        end_s: int,
+        bucket_s: int,
+        group_by: Optional[str] = None,
+        agg: str = "sum",
+    ) -> Dict[str, Any]:
+        stream = name.replace('"', "")
+        rows = self._search(
+            f'SELECT * FROM "{stream}" ORDER BY _timestamp ASC LIMIT 10000',
+            start_s,
+            end_s,
+            10000,
+            "metrics",
+        )
+        cumulative = any(
+            str(r.get("aggregation_temporality", "")).endswith("CUMULATIVE")
+            and str(r.get("is_monotonic")) == "true"
+            for r in rows[:1]
+        )
+        # Series identity is every label except the OTel/OpenObserve bookkeeping columns.
+        skip = {
+            "_timestamp",
+            "value",
+            "__hash__",
+            "__name__",
+            "aggregation_temporality",
+            "flag",
+            "is_monotonic",
+            "start_time",
+            "instrumentation_library_name",
+            "instrumentation_library_version",
+            "telemetry_sdk_language",
+            "telemetry_sdk_name",
+            "telemetry_sdk_version",
+            "service_instance_id",
+            "process_pid",
+            "exemplars",
+        }
+        samples = []
+        for r in rows:
+            v = _maybe_num(r.get("value"))
+            if not isinstance(v, (int, float)):
+                continue
+            ident = "|".join(f"{k}={r[k]}" for k in sorted(r) if k not in skip)
+            samples.append((int(r.get("_timestamp") or 0) * 1000, float(v), ident))
+        if cumulative:
+            samples = counter_increases(samples)
+
+        # Collapse the series identity to the requested group_by label.
+        def label_of(ident: str) -> str:
+            if not group_by:
+                return "_"
+            for part in ident.split("|"):
+                k, _, val = part.partition("=")
+                if k == group_by or k == group_by.replace(".", "_"):
+                    return val
+            return "—"
+
+        points = [(ts, v, label_of(ident)) for ts, v, ident in samples]
+        out = bucketize(
+            points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, agg
+        )
+        out["name"] = name
+        out["cumulative"] = cumulative
+        return out
+
+    # ── logs (#182) ──────────────────────────────────────────────────
+
+    _LOG_STREAM_DEFAULT = "default"
+
+    def _log_stream(self) -> str:
+        return str(self.cfg.get("logs_stream") or self._LOG_STREAM_DEFAULT)
+
+    @staticmethod
+    def _level_name(row: Dict[str, Any]) -> str:
+        sev = row.get("severity") or row.get("severity_text") or row.get("level") or "INFO"
+        return str(sev).upper()
+
+    def logs_search(
+        self, f: LogFilter, start_s: int, end_s: int, limit: int
+    ) -> List[Dict[str, Any]]:
+        where: List[str] = []
+        if f.trace_id:
+            where.append(f"trace_id = '{_sql_escape(f.trace_id)}'")
+        if f.session:
+            where.append(f"session_id = '{_sql_escape(f.session)}'")
+        if f.logger:
+            where.append(f"instrumentation_library_name = '{_sql_escape(f.logger)}'")
+        if f.text:
+            where.append(f"body LIKE '%{_sql_escape(f.text)}%'")
+        sql = f'SELECT * FROM "{self._log_stream()}"'
+        if where:
+            sql += " WHERE " + " AND ".join(where)
+        sql += f" ORDER BY _timestamp DESC LIMIT {int(limit) * 3}"
+        rows = self._search(sql, start_s, end_s, int(limit) * 3, "logs")
+        levels = {
+            "DEBUG": 10,
+            "INFO": 20,
+            "WARNING": 30,
+            "WARN": 30,
+            "ERROR": 40,
+            "CRITICAL": 50,
+            "FATAL": 50,
+        }
+        out: List[Dict[str, Any]] = []
+        for r in rows:
+            level = self._level_name(r)
+            if f.min_level and levels.get(level, 20) < f.min_level:
+                continue
+            out.append(
+                {
+                    "level": level,
+                    # The OTLP logs exporter records the Python logger name as
+                    # the instrumentation scope; that is the column OpenObserve keeps.
+                    "logger": r.get("instrumentation_library_name") or r.get("logger_name") or "",
+                    "body": r.get("body") or "",
+                    "time_unix_nano": int(r.get("_timestamp") or 0) * 1000,
+                    "trace_id": r.get("trace_id"),
+                    "session_id": r.get("session_id") or r.get("hermes_session_id"),
+                }
+            )
+            if len(out) >= limit:
+                break
+        return out
+
+    def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        rows = self._search(
+            f'SELECT instrumentation_library_name AS logger, COUNT(*) AS n FROM "{self._log_stream()}" '
+            "GROUP BY instrumentation_library_name ORDER BY n DESC LIMIT 200",
+            start_s,
+            end_s,
+            200,
+            "logs",
+        )
+        return [
+            {"logger": r.get("logger") or "", "count": int(r.get("n") or 0)}
+            for r in rows
+            if r.get("logger")
+        ]
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         where = f"trace_id = '{_sql_escape(trace_id)}'"

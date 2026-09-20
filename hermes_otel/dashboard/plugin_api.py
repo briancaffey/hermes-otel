@@ -25,13 +25,43 @@ if str(_HERE) not in sys.path:
 
 from backends import (  # noqa: E402  (after the path shim above)
     adapters,
+    backend_label,  # noqa: E402
     candidate_config_paths,
     find_adapter_class,
     resolve_adapter,
 )
-from backends.base import StructuredFilter  # noqa: E402
+from backends.base import LogFilter, StructuredFilter  # noqa: E402
 
 router = APIRouter()
+
+
+def _adapter_for(backend: str, need: str = "traces"):
+    """The adapter a request asked for (``backend=``), or the default one.
+
+    400 for a name that is not configured, 503 when nothing queryable is
+    configured or the chosen backend lacks the capability (#177, #182).
+    """
+    try:
+        adapter, backends, _, _ = resolve_adapter(backend.strip() or None)
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown backend {backend!r}; configured: {e.args[0]}"
+        )
+    if adapter is None:
+        if backend.strip():
+            raise HTTPException(
+                status_code=503, detail=f"Backend {backend!r} has no dashboard adapter for its type"
+            )
+        raise HTTPException(status_code=503, detail="No trace backend configured")
+    if need == "metrics" and not adapter.supports_metrics:
+        raise HTTPException(
+            status_code=503, detail=f"Backend {backend_label(adapter.cfg)!r} does not serve metrics"
+        )
+    if need == "logs" and not adapter.supports_logs:
+        raise HTTPException(
+            status_code=503, detail=f"Backend {backend_label(adapter.cfg)!r} does not serve logs"
+        )
+    return adapter
 
 
 def _get_live_store():
@@ -247,20 +277,34 @@ def live_loggers() -> Dict[str, Any]:
 
 
 @router.get("/status")
-def status() -> Dict[str, Any]:
-    """Report the active query backend + every configured backend."""
-    adapter, backends, cfg_path, pin = resolve_adapter()
+def status(
+    backend: str = Query("", description="Backend name or type to report on")
+) -> Dict[str, Any]:
+    """Report the active query backend + every configured backend.
+
+    ``available`` lists every entry with its capabilities so the UI builds
+    its source selector from the server's view, not from the yaml (#177).
+    """
+    try:
+        adapter, backends, cfg_path, pin = resolve_adapter(backend.strip() or None)
+    except KeyError as e:
+        raise HTTPException(
+            status_code=400, detail=f"Unknown backend {backend!r}; configured: {e.args[0]}"
+        )
     queryable_types = sorted({t for cls in adapters() for t in cls.handles})
 
-    backend_list = [
-        {
+    def _caps(b: Dict[str, Any]) -> Dict[str, Any]:
+        cls = find_adapter_class(b.get("type", ""))
+        return {
             "type": b.get("type"),
-            "name": b.get("name") or b.get("type"),
+            "name": backend_label(b),
             "endpoint": b.get("endpoint"),
-            "supported": find_adapter_class(b.get("type", "")) is not None,
+            "supported": cls is not None,
+            "metrics": bool(cls is not None and cls.supports_metrics),
+            "logs": bool(cls is not None and cls.supports_logs),
         }
-        for b in backends
-    ]
+
+    backend_list = [_caps(b) for b in backends]
 
     if adapter is None:
         if cfg_path is None:
@@ -281,6 +325,8 @@ def status() -> Dict[str, Any]:
             "configured": False,
             "reason": reason,
             "backends": backend_list,
+            "available": backend_list,
+            "active": None,
             "queryable_types": queryable_types,
             "config_path": str(cfg_path) if cfg_path else None,
             "query_backend_pin": pin,
@@ -290,6 +336,8 @@ def status() -> Dict[str, Any]:
     return {
         "configured": True,
         "backends": backend_list,
+        "available": backend_list,
+        "active": backend_label(adapter.cfg),
         "queryable_types": queryable_types,
         "config_path": str(cfg_path) if cfg_path else None,
         "query_backend_pin": pin,
@@ -328,10 +376,11 @@ def search_traces(
     status: str = Query("", description="'ok' or 'error'"),
     free_text: str = Query(""),
     roots_only: bool = Query(True, description="Restrict matches to root spans"),
+    backend: str = Query(
+        "", description="Configured backend name or type (default: the pinned/first one)"
+    ),
 ) -> Dict[str, Any]:
-    adapter, _, _, _ = resolve_adapter()
-    if adapter is None:
-        raise HTTPException(status_code=503, detail="No trace backend configured")
+    adapter = _adapter_for(backend)
 
     end_s = int(time.time())
     start_s = end_s - int(lookback_hours * 3600)
@@ -340,10 +389,79 @@ def search_traces(
 
 
 @router.get("/traces/{trace_id}")
-def get_trace(trace_id: str) -> Dict[str, Any]:
+def get_trace(trace_id: str, backend: str = Query("")) -> Dict[str, Any]:
     if not trace_id or not trace_id.replace("-", "").isalnum():
         raise HTTPException(status_code=400, detail="Invalid trace id")
-    adapter, _, _, _ = resolve_adapter()
-    if adapter is None:
-        raise HTTPException(status_code=503, detail="No trace backend configured")
-    return adapter.get_trace(trace_id)
+    return _adapter_for(backend).get_trace(trace_id)
+
+
+# ── backend metrics and logs (#182): same shapes as the live endpoints ───
+
+
+@router.get("/metrics/names")
+def backend_metric_names(
+    backend: str = Query(""),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+) -> Dict[str, Any]:
+    adapter = _adapter_for(backend, "metrics")
+    end_s = int(time.time())
+    return {
+        "backend": backend_label(adapter.cfg),
+        "names": adapter.metric_names(end_s - int(lookback_hours * 3600), end_s),
+    }
+
+
+@router.get("/metrics/query")
+def backend_metrics_query(
+    name: str = Query(..., min_length=1),
+    backend: str = Query(""),
+    group_by: str = Query(""),
+    agg: str = Query("sum", pattern="^(sum|count|avg|max|last)$"),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+    bucket_s: int = Query(15, ge=1, le=86400),
+) -> Dict[str, Any]:
+    adapter = _adapter_for(backend, "metrics")
+    end_s = int(time.time())
+    start_s = end_s - int(lookback_hours * 3600)
+    out = adapter.metrics_query(
+        name, start_s, end_s, bucket_s, group_by=group_by.strip() or None, agg=agg
+    )
+    return {"backend": backend_label(adapter.cfg), **out}
+
+
+@router.get("/logs/search")
+def backend_logs_search(
+    backend: str = Query(""),
+    trace_id: str = Query(""),
+    session: str = Query(""),
+    min_level: int = Query(0, ge=0, le=50),
+    logger: str = Query(""),
+    text: str = Query(""),
+    lookback_hours: float = Query(1.0, gt=0, le=8760),
+    limit: int = Query(300, ge=1, le=2000),
+) -> Dict[str, Any]:
+    adapter = _adapter_for(backend, "logs")
+    end_s = int(time.time())
+    f = LogFilter(
+        trace_id=trace_id.strip() or None,
+        session=session.strip() or None,
+        min_level=min_level,
+        logger=logger.strip() or None,
+        text=text.strip() or None,
+    )
+    return {
+        "backend": backend_label(adapter.cfg),
+        "logs": adapter.logs_search(f, end_s - int(lookback_hours * 3600), end_s, limit),
+    }
+
+
+@router.get("/loggers")
+def backend_loggers(
+    backend: str = Query(""), lookback_hours: float = Query(24.0, gt=0, le=8760)
+) -> Dict[str, Any]:
+    adapter = _adapter_for(backend, "logs")
+    end_s = int(time.time())
+    return {
+        "backend": backend_label(adapter.cfg),
+        "loggers": adapter.loggers(end_s - int(lookback_hours * 3600), end_s),
+    }
