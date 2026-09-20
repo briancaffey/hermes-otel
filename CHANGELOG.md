@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.8.7](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.6...hermes-otel-v1.8.7) (2026-09-20)
+
+
+### Documentation
+
+* **manifest:** add the catalog disclosure sentence to the plugin description ([#175](https://github.com/briancaffey/hermes-otel/issues/175)) ([272748b](https://github.com/briancaffey/hermes-otel/commit/272748be4966086330c7ce3b67c4989a21818ce3)), closes [#174](https://github.com/briancaffey/hermes-otel/issues/174)
+
 ## [1.8.6](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.8.5...hermes-otel-v1.8.6) (2026-09-20)
 
 
