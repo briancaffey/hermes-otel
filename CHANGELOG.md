@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.10.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.9.1...hermes-otel-v1.10.0) (2026-09-20)
+
+
+### Features
+
+* **dashboard:** Settings tab with every setting's value, source and description, raw and effective YAML, and the environment ([#203](https://github.com/briancaffey/hermes-otel/issues/203)) ([839ef83](https://github.com/briancaffey/hermes-otel/commit/839ef8335cbe8237af061a43c8b0c2383ca38b93)), closes [#202](https://github.com/briancaffey/hermes-otel/issues/202)
+
+
+### Documentation
+
+* dashboard page (tab and route), README pointer. ([839ef83](https://github.com/briancaffey/hermes-otel/commit/839ef8335cbe8237af061a43c8b0c2383ca38b93))
+
 ## [1.9.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.9.0...hermes-otel-v1.9.1) (2026-09-20)
 
 
