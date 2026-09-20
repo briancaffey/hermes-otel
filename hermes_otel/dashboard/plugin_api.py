@@ -64,27 +64,53 @@ def _adapter_for(backend: str, need: str = "traces"):
     return adapter
 
 
+def _plugin_module(name: str):
+    """Import ``hermes_otel.<name>``, adding the plugins dir to sys.path if needed.
+
+    The Hermes plugin loader imports this API file by path, so ``hermes_otel``
+    may not be importable yet; the package's parent (…/plugins) is added
+    defensively. Returns None when the import fails either way.
+    """
+    import importlib
+
+    try:
+        return importlib.import_module(f"hermes_otel.{name}")
+    except Exception:
+        pkg_parent = _HERE.parent.parent
+        if str(pkg_parent) not in sys.path:
+            sys.path.insert(0, str(pkg_parent))
+        try:
+            return importlib.import_module(f"hermes_otel.{name}")
+        except Exception:
+            return None
+
+
 def _get_live_store():
     """Return the in-process LiveStore the tracer feeds, or None.
 
     Must import the SAME ``hermes_otel.live_store`` module the tracer uses so
-    the singleton is shared (the dashboard runs in the same process). The
-    plugin package's parent is added to sys.path defensively in case this API
-    module was loaded before ``hermes_otel`` was importable.
+    the singleton is shared (the dashboard runs in the same process).
     """
-    try:
-        from hermes_otel.live_store import get_live_store
-    except Exception:
-        pkg_parent = _HERE.parent.parent  # …/plugins  (so `hermes_otel` resolves)
-        if str(pkg_parent) not in sys.path:
-            sys.path.insert(0, str(pkg_parent))
-        try:
-            from hermes_otel.live_store import get_live_store
-        except Exception:
-            return None
+    mod = _plugin_module("live_store")
+    if mod is None:
+        return None
     # create=True: the dashboard runs in a SEPARATE process from the gateway, so
     # it opens the shared SQLite store itself (reading what the gateway writes).
-    return get_live_store(create=True)
+    return mod.get_live_store(create=True)
+
+
+@router.get("/settings")
+def settings(
+    reveal: bool = Query(False, description="Show credential values instead of masking them"),
+) -> Dict[str, Any]:
+    """Every plugin setting with its value, default, source and description,
+    the config file (raw and as an effective YAML), and the environment
+    variables the plugin honours. See ``hermes_otel.settings_report``.
+    """
+    mod = _plugin_module("settings_report")
+    if mod is None:
+        raise HTTPException(status_code=503, detail="hermes_otel package not importable")
+    return mod.build_settings_report(reveal=reveal)
 
 
 @router.get("/live/status")

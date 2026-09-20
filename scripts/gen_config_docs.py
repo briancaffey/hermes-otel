@@ -20,52 +20,9 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
-from hermes_otel.plugin_config import HermesOtelConfig, field_kinds  # noqa: E402
+from hermes_otel.plugin_config import FIELD_DOCS, HermesOtelConfig, field_kinds  # noqa: E402
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
-
-# One line per field. A field without an entry fails the test — that is the
-# point: adding a knob means documenting it.
-FIELD_DOCS = {
-    "enabled": "Master kill switch; `false` unloads every hook",
-    "sample_rate": "Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling)",
-    "root_span_ttl_ms": "Orphan-sweep TTL: a turn root older than this with no end hook is closed",
-    "flush_interval_ms": "Metrics export cadence (PeriodicExportingMetricReader)",
-    "preview_max_chars": "Cap on preview strings (tool args/results, user message, assistant response)",
-    "capture_previews": "`false` suppresses every input/output preview; metadata still recorded",
-    "tool_input_preview_max_chars": "Per-category cap for tool args previews; `null` = `preview_max_chars`",
-    "tool_output_preview_max_chars": "Per-category cap for tool result previews; `null` = `preview_max_chars`",
-    "llm_input_preview_max_chars": "Per-category cap for LLM input previews; `null` = `preview_max_chars`",
-    "llm_output_preview_max_chars": "Per-category cap for LLM output previews; `null` = `preview_max_chars`",
-    "headers": "Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these",
-    "global_tags": "Merged into the OTel Resource; overridden by `resource_attributes` on key conflict",
-    "resource_attributes": "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
-    "project_name": "`openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME`",
-    "span_batch_max_queue_size": "Max buffered spans per backend before drops",
-    "span_batch_schedule_delay_ms": "BatchSpanProcessor worker wake-up cadence",
-    "span_batch_max_export_batch_size": "Max spans per OTLP POST",
-    "span_batch_export_timeout_ms": "Per-export HTTP timeout",
-    "force_flush_on_session_end": "Synchronously flush every backend at the end of each turn",
-    "capture_conversation_history": "Attach the full message JSON to `llm.*` spans",
-    "conversation_history_max_chars": "JSON cap when conversation capture is on",
-    "capture_full_prompts": "Full-fidelity prompt capture (`llm.input_messages`, `gen_ai.input.messages`); respects `capture_previews`",
-    "capture_full_responses": "Full-fidelity response capture (`llm.output.content`, `gen_ai.output.messages`)",
-    "capture_sender_id": "Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`)",
-    "capture_logs": "Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs)",
-    "log_level": "Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`",
-    "log_attach_logger": "Logger to attach to; `null` = root, `hermes_otel` = the plugin only",
-    "emit_genai_metrics": "Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`)",
-    "skill_spans": "Open a `skill.<name>` span on each successful skill load, closed at turn end",
-    "discovery_prompt": "Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in)",
-    "dashboard_live": "Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode",
-    "dashboard_live_max_spans": "Rows kept per kind (spans, metrics, logs) in the live store",
-    "dashboard_live_retention_hours": "Rows older than this are dropped from the live store (`0` = only the row cap applies)",
-    "host_metrics": "Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics; see [Host & GPU metrics](/configuration/host-metrics)",
-    "host_metrics_gpu": "`auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe",
-    "host_metrics_interval_ms": "Host sampling cadence (floor 50 ms)",
-    "suppress_mcp_ping_spans": "Drop successful MCP keepalive `ping` spans before export",
-    "backends": "Multi-backend fan-out list; see the `backends[]` section",
-}
 
 _TYPE_LABEL = {
     "bool": "bool",
