@@ -112,7 +112,7 @@ backends:
 capture_logs: true
 ```
 
-Traces fan out to both, metrics to both, logs only to Uptrace (Phoenix doesn't accept OTLP logs — the plugin skips it automatically).
+Traces fan out to both; metrics and logs go only to Uptrace (Phoenix ingests traces only — the plugin skips it automatically).
 
 ## Troubleshooting
 

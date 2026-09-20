@@ -28,7 +28,11 @@ from typing import Callable, Dict, List, Optional
 from .plugin_config import BackendConfig
 
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
-_TRACES_ONLY = {"langfuse", "jaeger", "tempo", "weave"}
+# Phoenix answers 405 on /v1/metrics and /v1/logs (arizephoenix/phoenix:latest
+# and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
+# traces only (#160). A collector in front of it can still take metrics:
+# set ``metrics: true`` on the entry explicitly.
+_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and

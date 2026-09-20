@@ -149,8 +149,9 @@ class TestConfigBackendsRouting:
             assert plugin.init() is True
 
         assert len(plugin._span_processors) == 2
-        # Phoenix supports metrics; Jaeger doesn't → exactly 1 metric reader.
-        assert len(plugin._metric_readers) == 1
+        # Neither Phoenix (405 on /v1/metrics, #160) nor Jaeger takes metrics
+        # by default → no metric reader at all.
+        assert len(plugin._metric_readers) == 0
         # Singular aliases point at the first entry.
         assert plugin._span_processor is plugin._span_processors[0]
 
@@ -158,7 +159,7 @@ class TestConfigBackendsRouting:
         _clear_backend_env(monkeypatch)
         cfg = HermesOtelConfig(
             backends=(
-                BackendConfig(type="phoenix", endpoint="http://a/v1/traces"),
+                BackendConfig(type="lgtm", endpoint="http://a/v1/traces"),
                 BackendConfig(type="signoz", endpoint="http://b/v1/traces"),
                 BackendConfig(type="otlp", endpoint="http://c/v1/traces", name="MyCollector"),
             ),

@@ -12,7 +12,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 
 | Backend | Signals | Deployment | Account / cost |
 |---|---|---|---|
-| **[Phoenix](/backends/phoenix)** | Traces + metrics | Local (single container) · Arize AX cloud | OSS, no account · commercial cloud |
+| **[Phoenix](/backends/phoenix)** | Traces only | Local (single container) · Arize AX cloud | OSS, no account · commercial cloud |
 | **[Langfuse](/backends/langfuse)** | Traces | Local (docker compose) · Cloud | OSS, no account · free tier + paid |
 | **[LangSmith](/backends/langsmith)** | Traces | Cloud only (self-host = enterprise) | Free personal tier · paid tiers |
 | **[SigNoz](/backends/signoz)** | Traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud |
@@ -36,7 +36,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 → [Langfuse](/backends/langfuse) — polished UI for LLM traces, free cloud tier, robust self-host.
 
 **"I want traces *and* the token/tool/cost metrics dashboard"**
-→ [Phoenix](/backends/phoenix) or [SigNoz](/backends/signoz) — both accept OTLP metrics as well as traces.
+→ [SigNoz](/backends/signoz), [LGTM](/backends/lgtm) or [OpenObserve](/backends/openobserve) — they accept OTLP metrics as well as traces (Phoenix does not).
 
 **"I want all three signals — traces, metrics, AND logs — in Grafana, in one container"**
 → [Grafana LGTM](/backends/lgtm) — `grafana/otel-lgtm` bundles Grafana + Tempo + Loki + Mimir + a collector. Pair with `capture_logs: true` and you get [trace-id-correlated logs](/configuration/logs) out of the box.
@@ -86,7 +86,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | telemetry.dev | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
-If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to Phoenix / SigNoz / LGTM alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
+If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to SigNoz / LGTM / OpenObserve alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
 
 ## Selecting a single backend
 

@@ -233,7 +233,7 @@
 # unreachable collector never blocks the agent or starves the others.
 #
 # Supported `type` values:
-#   phoenix      — Arize Phoenix (local or cloud). Traces + metrics.
+#   phoenix      — Arize Phoenix (local or cloud). Traces only (405 on /v1/metrics).
 #   langfuse     — Langfuse. Traces only (no OTLP metrics support upstream).
 #   signoz       — SigNoz (self-hosted or cloud). Traces + metrics + logs.
 #   jaeger       — Jaeger. Traces only.
@@ -388,7 +388,7 @@
 #
 # W&B Weave ingests OTLP traces at https://trace.wandb.ai/otel/v1/traces and
 # routes them by OTel Resource attributes `wandb.entity` and `wandb.project`.
-# It is traces-only by default; keep metrics/logs in Phoenix, LGTM, SigNoz, etc.
+# It is traces-only by default; keep metrics/logs in LGTM, SigNoz, OpenObserve, etc.
 #
 # backends:
 #   - type: weave

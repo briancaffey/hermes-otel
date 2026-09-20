@@ -63,7 +63,7 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
 <div className="backend-grid">
   <Link className="backend-card" to="/backends/phoenix">
     <div className="backend-card__name">Phoenix</div>
-    <div className="backend-card__desc">Arize's OSS LLM observability platform. Local docker or Arize AX cloud. Traces + metrics.</div>
+    <div className="backend-card__desc">Arize's OSS LLM observability platform. Local docker or Arize AX cloud. Traces only.</div>
   </Link>
   <Link className="backend-card" to="/backends/langfuse">
     <div className="backend-card__name">Langfuse</div>
