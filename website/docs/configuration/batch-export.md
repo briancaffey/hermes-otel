@@ -55,7 +55,7 @@ span_batch_schedule_delay_ms: 250   # wake 4× per second
 force_flush_on_session_end: true     # already default — flushes at end-of-turn
 ```
 
-The `force_flush_on_session_end` path is the most impactful for UI latency: it synchronously flushes every backend's queue at `on_session_end`, so the full trace appears in the backend the instant the turn finishes.
+The `force_flush_on_session_end` path is the most impactful for UI latency: at `on_session_end` it flushes every backend's span queue so the full trace appears in the backend within a moment of the turn finishing. The flush runs on one background thread with a 500 ms timeout per backend and coalesces (a second turn ending while one flush is in progress does not queue another), so an unreachable collector costs nothing on the agent's thread. Metrics and logs are left to their periodic readers; process exit still flushes everything synchronously.
 
 ### "Hermes shutdown takes forever"
 

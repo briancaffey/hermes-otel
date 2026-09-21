@@ -90,7 +90,7 @@ Fires when the turn is fully complete (assistant has returned its final response
 - **Span op:** closes the `agent` / `cron` root span
 - **Attributes set on end:** the full [turn summary](/architecture/turn-summary) — `hermes.turn.tool_count`, `hermes.turn.tools`, `hermes.turn.tool_targets`, `hermes.turn.tool_commands`, `hermes.turn.tool_outcomes`, `hermes.turn.skill_count`, `hermes.turn.skills`, `hermes.turn.api_call_count`, `hermes.turn.final_status`
 - **Metrics:** `hermes.session.count{platform}` counter (on start); `gen_ai.agent.token.usage` per-turn rollup (on end)
-- **Side effects:** if `force_flush_on_session_end: true` (default), synchronously force-flushes every `BatchSpanProcessor` so the trace appears in the backend UI immediately
+- **Side effects:** if `force_flush_on_session_end: true` (default), force-flushes every `BatchSpanProcessor` from a background thread (500 ms per backend, coalesced) so the trace appears in the backend UI promptly without the agent loop waiting on a collector
 
 ### `on_session_finalize`
 
@@ -170,7 +170,7 @@ subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics
 on_session_end           close agent/cron        + turn summary + force-flush   (per turn)
-on_session_finalize      close agent/cron if open + session turns/duration metrics + drop state + flush
+on_session_finalize      close agent/cron if open + session turns/duration metrics + drop state + background flush
 on_session_reset         finalize old session    + previous_id and link on the new session's first root
 mcp_request_headers      (pending upstream; no span) would return traceparent/tracestate for the outbound MCP call
 ```

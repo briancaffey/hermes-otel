@@ -12,6 +12,9 @@ from __future__ import annotations
 
 import json
 import os
+import queue
+import threading
+import time
 import urllib.error
 import urllib.request
 import uuid
@@ -57,11 +60,78 @@ def _coerce_int(value) -> Optional[int]:
 class LangSmithBackend:
     """Manages span export to LangSmith via its HTTP Run API."""
 
-    def __init__(self, api_key: str, endpoint: str, project: str, workspace: Optional[str] = None):
+    # Runs are shipped by one daemon worker over a bounded queue (#91), the
+    # same model as BatchSpanProcessor: a hook never waits on LangSmith. When
+    # the queue is full the newest request is dropped and counted.
+    QUEUE_SIZE = 2000
+
+    def __init__(
+        self,
+        api_key: str,
+        endpoint: str,
+        project: str,
+        workspace: Optional[str] = None,
+        sync: bool = False,
+    ):
         self.api_key = api_key
         self.endpoint = endpoint.rstrip("/")
         self.project = project
         self.workspace = workspace
+        self.sync = sync
+        self.dropped = 0
+        self._queue: "queue.Queue[tuple]" = queue.Queue(maxsize=self.QUEUE_SIZE)
+        self._worker: Optional[threading.Thread] = None
+        self._stop = threading.Event()
+
+    # ── Worker ───────────────────────────────────────────────────────────
+
+    def _submit(self, method: str, path: str, payload: dict) -> None:
+        if self.sync:
+            (self._post if method == "POST" else self._patch)(path, payload)
+            return
+        try:
+            self._queue.put_nowait((method, path, payload))
+        except queue.Full:
+            self.dropped += 1
+            debug_log(
+                f"LangSmith queue full; dropped {method} {path} (total dropped {self.dropped})"
+            )
+            return
+        self._ensure_worker()
+
+    def _ensure_worker(self) -> None:
+        if self._worker is not None and self._worker.is_alive():
+            return
+        if self._stop.is_set():
+            return
+        t = threading.Thread(target=self._worker_loop, name="hermes-otel-langsmith", daemon=True)
+        self._worker = t
+        t.start()
+
+    def _worker_loop(self) -> None:
+        while not self._stop.is_set():
+            try:
+                method, path, payload = self._queue.get(timeout=0.25)
+            except queue.Empty:
+                continue
+            try:
+                (self._post if method == "POST" else self._patch)(path, payload)
+            except Exception as e:  # pragma: no cover — never kill the worker
+                debug_log(f"LangSmith {method} {path} raised: {e}")
+            finally:
+                self._queue.task_done()
+
+    def flush(self, timeout: float = 10.0) -> bool:
+        """Wait until every queued request has been sent. False on timeout."""
+        deadline = time.monotonic() + timeout
+        while self._queue.unfinished_tasks and time.monotonic() < deadline:
+            time.sleep(0.01)
+        return self._queue.unfinished_tasks == 0
+
+    def shutdown(self, timeout: float = 2.0) -> None:
+        """Drain what can be drained within ``timeout`` and stop the worker."""
+        self.flush(timeout=timeout)
+        self._stop.set()
 
     @classmethod
     def from_env(cls) -> Optional["LangSmithBackend"]:
@@ -163,8 +233,7 @@ class LangSmithBackend:
             if parent_run and isinstance(parent_run, dict) and "id" in parent_run:
                 payload["parent_run_id"] = parent_run["id"]
 
-            if not self._post("/runs", payload):
-                return None
+            self._submit("POST", "/runs", payload)
 
             run_obj = {
                 "id": run_id_str,
@@ -246,7 +315,7 @@ class LangSmithBackend:
                     f"total={payload.get('total_tokens')}"
                 )
 
-            self._patch(f"/runs/{run_id}", payload)
+            self._submit("PATCH", f"/runs/{run_id}", payload)
 
         except Exception as e:
             debug_log(f"Error ending LangSmith span (run_id={run_id[:8]}...): {e}")
