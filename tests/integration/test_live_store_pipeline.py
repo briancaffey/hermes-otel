@@ -79,7 +79,7 @@ class TestLivePipeline:
         assert plugin._meter is None
         hooks.on_session_start(session_id="s2", model="gpt-4", platform="cli")
         names = [m["name"] for m in store.metrics()]
-        assert "session_count" in names
+        assert "hermes.session.count" in names  # the OTLP name, as the backends see it (#95)
 
     def test_incremental_cursor(self, live_plugin):
         store, _ = live_plugin

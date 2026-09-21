@@ -28,6 +28,8 @@ The gateway process writes every finished span, every metric point and (when `ca
 
 Every key also has a `HERMES_OTEL_*` environment variable, see [Environment variables](/reference/env-vars). For history beyond the buffer, configure a backend.
 
+Metrics in the live store carry the same names as the OTLP instruments (`hermes.token.usage`, `gen_ai.client.token.usage`, …), so a name in the Metrics tab's explorer means the same thing for the Live source and for a backend; a Prometheus-style backend shows them as `hermes_token_usage`.
+
 Rows carry indexed columns (trace id, session id, span name, status, start and end time, log level, logger, metric name) so the tab filters, groups and buckets in SQLite and the browser receives one page of results. The file's schema is versioned; a file written by a plugin release before 1.9 is recreated on first open.
 
 ## Tabs

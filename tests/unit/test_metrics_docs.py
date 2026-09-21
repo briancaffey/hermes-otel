@@ -13,12 +13,18 @@ _PHANTOMS = ("hermes.tokens.", "hermes.api.duration", "hermes.sessions", "hermes
 
 
 def _instrument_names() -> set:
+    """Every OTLP instrument name the plugin can emit: the instrument table
+    plus the host-metrics observables created in ``_create_host_metric_instruments``."""
+    from hermes_otel.tracer import _INSTRUMENTS
+
+    names = {spec.name for spec in _INSTRUMENTS.values()}
     src = TRACER.read_text(encoding="utf-8")
-    body = src[src.index("def _create_metric_instruments") :]
+    body = src[src.index("def _create_host_metric_instruments") :]
     body = body[: body.index("\n    def ", 10)]
-    return set(
+    names.update(
         re.findall(r'create_(?:counter|histogram|observable_[a-z_]+)\(\s*"([a-z_.]+)"', body)
     )
+    return names
 
 
 def test_every_instrument_is_documented():

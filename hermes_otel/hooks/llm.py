@@ -391,13 +391,12 @@ def on_post_api_request(
         )
 
         # OTel GenAI spec token-usage histogram (dual-write; low cardinality).
-        if tracer.config.emit_genai_metrics:
-            _record_genai_token_usage(
-                tracer,
-                "gen_ai.client.token.usage",
-                totals,
-                _genai_metric_dims(model, provider, response_model),
-            )
+        _record_genai_token_usage(
+            tracer,
+            "gen_ai.client.token.usage",
+            totals,
+            _genai_metric_dims(model, provider, response_model),
+        )
 
         cost = usage.get("cost")
         if cost:
@@ -413,12 +412,11 @@ def on_post_api_request(
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
         # OTel GenAI spec operation-duration histogram — in SECONDS (the spec
         # unit), unlike the ms hermes.* histograms.
-        if tracer.config.emit_genai_metrics:
-            tracer.record_metric(
-                "gen_ai.client.operation.duration",
-                api_duration,
-                _genai_metric_dims(model, provider, response_model),
-            )
+        tracer.record_metric(
+            "gen_ai.client.operation.duration",
+            api_duration,
+            _genai_metric_dims(model, provider, response_model),
+        )
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason
         attributes["gen_ai.response.finish_reasons"] = [finish_reason]
@@ -596,7 +594,7 @@ def on_api_request_error(
 
     # OTel GenAI spec operation-duration on the failure path, tagged with
     # error.type so success/error durations are queryable from one histogram.
-    if api_duration and tracer.config.emit_genai_metrics:
+    if api_duration:
         duration_dims = _genai_metric_dims(model, provider)
         duration_dims["error.type"] = error_type or "unknown"
         tracer.record_metric("gen_ai.client.operation.duration", api_duration, duration_dims)

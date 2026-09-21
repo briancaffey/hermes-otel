@@ -20,6 +20,7 @@ import logging
 import os
 import time
 import uuid
+from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
@@ -211,6 +212,150 @@ else:  # pragma: no cover — plugin is unusable without OTel
     _MCPPingFilterProcessor = None  # type: ignore[assignment, misc]
 
 
+# ── Metric instruments ──────────────────────────────────────────────────
+# One table drives both instrument creation and ``record_metric`` (#95): the
+# hook-side key, the OTLP name every backend and the live store see, the
+# instrument kind, the unit, the description, how the value is applied, and
+# whether the instrument is part of the OTel GenAI conventions (gated by
+# ``emit_genai_metrics``). ``value`` modes: ``one`` adds 1 per call, ``int``
+# adds ``int(value)``, ``float`` adds ``value``, ``record`` records a
+# histogram point (as an int when the unit is ``{token}``).
+
+
+@dataclass(frozen=True)
+class InstrumentSpec:
+    name: str
+    kind: str  # counter | histogram
+    unit: str
+    description: str
+    value: str  # one | int | float | record
+    genai: bool = False
+
+
+_INSTRUMENTS: Dict[str, InstrumentSpec] = {
+    "session_count": InstrumentSpec(
+        "hermes.session.count", "counter", "{session}", "Sessions created", "one"
+    ),
+    "session_turns": InstrumentSpec(
+        "hermes.session.turns",
+        "histogram",
+        "{turn}",
+        "Turns per session, recorded when the session is finalized",
+        "record",
+    ),
+    "session_duration": InstrumentSpec(
+        "hermes.session.duration",
+        "histogram",
+        "s",
+        "Session length from first turn to finalize",
+        "record",
+    ),
+    "token_usage": InstrumentSpec(
+        "hermes.token.usage", "counter", "{token}", "Tokens consumed by type", "int"
+    ),
+    "prompt_cache_tokens": InstrumentSpec(
+        "hermes.prompt_cache.tokens", "counter", "{token}", "Prompt tokens by cache result", "int"
+    ),
+    "prompt_cache_observations": InstrumentSpec(
+        "hermes.prompt_cache.observations",
+        "counter",
+        "{request}",
+        "Requests with provider-reported prompt-cache usage",
+        "one",
+    ),
+    "cost_usage": InstrumentSpec(
+        "hermes.cost.usage", "counter", "USD", "USD cost per message", "float"
+    ),
+    "tool_duration": InstrumentSpec(
+        "hermes.tool.duration", "histogram", "ms", "Tool execution time", "record"
+    ),
+    "message_count": InstrumentSpec(
+        "hermes.message.count", "counter", "{message}", "Completed assistant messages", "one"
+    ),
+    "model_usage": InstrumentSpec(
+        "hermes.model.usage", "counter", "{message}", "Messages per model and provider", "one"
+    ),
+    "skill_inferred": InstrumentSpec(
+        "hermes.skill.inferred",
+        "counter",
+        "{hit}",
+        "Skill-name inference hits on tool spans",
+        "one",
+    ),
+    "subagent_count": InstrumentSpec(
+        "hermes.subagent.count",
+        "counter",
+        "{run}",
+        "Delegated sub-agent runs by role and status",
+        "one",
+    ),
+    "subagent_duration": InstrumentSpec(
+        "hermes.subagent.duration",
+        "histogram",
+        "ms",
+        "Delegated sub-agent wall-clock duration",
+        "record",
+    ),
+    "api_error_count": InstrumentSpec(
+        "hermes.api.error.count",
+        "counter",
+        "{request}",
+        "Failed provider API requests by error type / status class",
+        "one",
+    ),
+    "retry_count": InstrumentSpec(
+        "hermes.retry.count", "counter", "{attempt}", "Provider API retry attempts", "int"
+    ),
+    "approval_count": InstrumentSpec(
+        "hermes.approval.count",
+        "counter",
+        "{prompt}",
+        "Human-in-the-loop approval prompts by choice / pattern",
+        "one",
+    ),
+    "approval_duration": InstrumentSpec(
+        "hermes.approval.duration",
+        "histogram",
+        "ms",
+        "Human-decision wait time on approval prompts",
+        "record",
+    ),
+    # OTel GenAI semantic-convention instruments, emitted alongside the
+    # hermes.* ones so generic GenAI dashboards work without per-user config.
+    # Units follow the spec: {token} for tokens, s for durations.
+    "gen_ai.client.token.usage": InstrumentSpec(
+        "gen_ai.client.token.usage",
+        "histogram",
+        "{token}",
+        "Number of tokens used per client (LLM) operation, by type",
+        "record",
+        genai=True,
+    ),
+    "gen_ai.client.operation.duration": InstrumentSpec(
+        "gen_ai.client.operation.duration",
+        "histogram",
+        "s",
+        "Duration of client (LLM) operations",
+        "record",
+        genai=True,
+    ),
+    "gen_ai.agent.token.usage": InstrumentSpec(
+        "gen_ai.agent.token.usage",
+        "histogram",
+        "{token}",
+        "Tokens used per agent invocation (session/turn rollup), by type",
+        "record",
+        genai=True,
+    ),
+}
+
+
+def metric_otlp_name(key: str) -> str:
+    """The OTLP instrument name for a hook-side metric key (the key itself when unknown)."""
+    spec = _INSTRUMENTS.get(key)
+    return spec.name if spec else key
+
+
 def _is_mcp_keepalive_ping(span: Any) -> bool:
     """True for a finished MCP ``ping`` request span that did not fail.
 
@@ -374,28 +519,7 @@ class HermesOTelPlugin:
         # Metrics
         self._meter = None
         self._meter_provider = None
-        self._session_count = None
-        self._session_turns = None
-        self._session_duration = None
-        self._token_usage = None
-        self._prompt_cache_tokens = None
-        self._prompt_cache_observations = None
-        self._cost_usage = None
-        self._tool_duration = None
-        self._message_count = None
-        self._model_usage = None
-        self._skill_inferred_counter = None
-        self._subagent_count = None
-        self._subagent_duration = None
-        self._api_error_count = None
-        self._retry_count = None
-        self._approval_count = None
-        self._approval_duration = None
-        # OTel GenAI semantic-convention instruments (dual-write alongside the
-        # hermes.* ones above).
-        self._gen_ai_client_token_usage = None
-        self._gen_ai_client_operation_duration = None
-        self._gen_ai_agent_token_usage = None
+        self._instruments: Dict[str, Any] = {}
         # Host metrics sampler (CPU / GPU), created when config.host_metrics is
         # on. One per process; started after backend init, stopped at exit.
         self._host_metrics: Optional[Any] = None
@@ -894,107 +1018,25 @@ class HermesOTelPlugin:
             return False
 
     def _create_metric_instruments(self) -> None:
-        """Create the shared metric instruments on ``self._meter``."""
+        """Create every instrument in ``_INSTRUMENTS`` on ``self._meter``.
+
+        One that fails to create is left out rather than aborting the rest;
+        ``record_metric`` skips keys without an instrument.
+        """
         if self._meter is None:
             return
-        self._session_count = self._meter.create_counter(
-            "hermes.session.count",
-            description="Sessions created",
-        )
-        self._session_turns = self._meter.create_histogram(
-            "hermes.session.turns",
-            unit="{turn}",
-            description="Turns per session, recorded when the session is finalized",
-        )
-        self._session_duration = self._meter.create_histogram(
-            "hermes.session.duration",
-            unit="s",
-            description="Session length from first turn to finalize",
-        )
-        self._token_usage = self._meter.create_counter(
-            "hermes.token.usage",
-            description="Tokens consumed by type",
-        )
-        self._prompt_cache_tokens = self._meter.create_counter(
-            "hermes.prompt_cache.tokens",
-            unit="{token}",
-            description="Prompt tokens by cache result",
-        )
-        self._prompt_cache_observations = self._meter.create_counter(
-            "hermes.prompt_cache.observations",
-            unit="{request}",
-            description="Requests with provider-reported prompt-cache usage",
-        )
-        self._cost_usage = self._meter.create_counter(
-            "hermes.cost.usage",
-            description="USD cost per message",
-        )
-        self._tool_duration = self._meter.create_histogram(
-            "hermes.tool.duration",
-            unit="ms",
-            description="Tool execution time",
-        )
-        self._message_count = self._meter.create_counter(
-            "hermes.message.count",
-            description="Completed assistant messages",
-        )
-        self._model_usage = self._meter.create_counter(
-            "hermes.model.usage",
-            description="Messages per model and provider",
-        )
-        self._skill_inferred_counter = self._meter.create_counter(
-            "hermes.skill.inferred",
-            description="Skill-name inference hits on tool spans",
-        )
-        self._subagent_count = self._meter.create_counter(
-            "hermes.subagent.count",
-            description="Delegated sub-agent runs by role and status",
-        )
-        self._subagent_duration = self._meter.create_histogram(
-            "hermes.subagent.duration",
-            unit="ms",
-            description="Delegated sub-agent wall-clock duration",
-        )
-        self._api_error_count = self._meter.create_counter(
-            "hermes.api.error.count",
-            description="Failed provider API requests by error type / status class",
-        )
-        self._retry_count = self._meter.create_counter(
-            "hermes.retry.count",
-            description="Provider API retry attempts",
-        )
-        self._approval_count = self._meter.create_counter(
-            "hermes.approval.count",
-            description="Human-in-the-loop approval prompts by choice / pattern",
-        )
-        self._approval_duration = self._meter.create_histogram(
-            "hermes.approval.duration",
-            unit="ms",
-            description="Human-decision wait time on approval prompts",
-        )
-
-        # ── OTel GenAI semantic-convention metrics ──────────────────────────
-        # Spec-named instruments emitted in addition to the hermes.* ones, so
-        # generic OTel-GenAI dashboards/alerts work without per-user config.
-        # Units follow the spec exactly: {token} for token counts, s (seconds)
-        # for durations — note hermes.tool.duration / hermes.subagent.duration
-        # stay in ms for backward compatibility.
-        self._gen_ai_client_token_usage = self._meter.create_histogram(
-            "gen_ai.client.token.usage",
-            unit="{token}",
-            description="Number of tokens used per client (LLM) operation, by type",
-        )
-        self._gen_ai_client_operation_duration = self._meter.create_histogram(
-            "gen_ai.client.operation.duration",
-            unit="s",
-            description="Duration of client (LLM) operations",
-        )
-        self._gen_ai_agent_token_usage = self._meter.create_histogram(
-            "gen_ai.agent.token.usage",
-            unit="{token}",
-            description="Tokens used per agent invocation (session/turn rollup), by type",
-        )
-
+        for key, spec in _INSTRUMENTS.items():
+            try:
+                factory = (
+                    self._meter.create_histogram
+                    if spec.kind == "histogram"
+                    else self._meter.create_counter
+                )
+                self._instruments[key] = factory(
+                    spec.name, unit=spec.unit, description=spec.description
+                )
+            except Exception as e:  # pragma: no cover — defensive
+                logger.warning(f"[hermes-otel] could not create metric {spec.name}: {e}")
         self._create_host_metric_instruments()
 
     # ── Host metrics (CPU / GPU) ─────────────────────────────────────────
@@ -1186,10 +1228,18 @@ class HermesOTelPlugin:
             f"(attached to {target}, level={self.config.log_level.upper()})"
         )
 
-    def record_metric(self, name: str, value: float, attributes: dict = None, bucket: str = None):
-        """Record a metric value."""
-        # Mirror into the live store BEFORE the meter guard so live metrics work
-        # even with no OTLP backend (no MeterProvider) — the zero-config path.
+    def record_metric(self, name: str, value: float, attributes: dict = None):
+        """Record one point for the hook-side key ``name`` (see ``_INSTRUMENTS``).
+
+        The live store gets the point first, under the OTLP name, so the
+        dashboard and the backends agree; it works with no MeterProvider at
+        all (the zero-config path). GenAI-convention instruments are gated by
+        ``emit_genai_metrics`` here, once, rather than at every call site.
+        """
+        spec = _INSTRUMENTS.get(name)
+        if spec is not None and spec.genai and not self.config.emit_genai_metrics:
+            return
+        otlp_name = spec.name if spec is not None else name
         if self._live_active:
             try:
                 import time as _time
@@ -1198,69 +1248,25 @@ class HermesOTelPlugin:
 
                 store = get_live_store()
                 if store is not None:
-                    store.add_metric(name, value, attributes or {}, _time.time_ns())
+                    store.add_metric(otlp_name, value, attributes or {}, _time.time_ns())
             except Exception:  # pragma: no cover — never break the hot path
                 pass
 
-        if not self._meter:
+        instrument = self._instruments.get(name) if self._meter else None
+        if instrument is None or spec is None:
             return
-
         attrs = dict(attributes or {})
-
-        if name == "session_count":
-            self._session_count.add(1, attrs)
-        elif name == "session_turns":
-            if self._session_turns is not None:
-                self._session_turns.record(value, attrs)
-        elif name == "session_duration":
-            if self._session_duration is not None:
-                self._session_duration.record(value, attrs)
-        elif name == "token_usage":
-            self._token_usage.add(int(value), attrs)
-        elif name == "prompt_cache_tokens":
-            if self._prompt_cache_tokens is not None:
-                self._prompt_cache_tokens.add(int(value), attrs)
-        elif name == "prompt_cache_observations":
-            if self._prompt_cache_observations is not None:
-                self._prompt_cache_observations.add(1, attrs)
-        elif name == "cost_usage":
-            self._cost_usage.add(value, attrs)
-        elif name == "tool_duration":
-            self._tool_duration.record(value, attrs)
-        elif name == "message_count":
-            self._message_count.add(1, attrs)
-        elif name == "model_usage":
-            self._model_usage.add(1, attrs)
-        elif name == "skill_inferred":
-            if self._skill_inferred_counter is not None:
-                self._skill_inferred_counter.add(1, attrs)
-        elif name == "subagent_count":
-            if self._subagent_count is not None:
-                self._subagent_count.add(1, attrs)
-        elif name == "subagent_duration":
-            if self._subagent_duration is not None:
-                self._subagent_duration.record(value, attrs)
-        elif name == "api_error_count":
-            if self._api_error_count is not None:
-                self._api_error_count.add(1, attrs)
-        elif name == "retry_count":
-            if self._retry_count is not None:
-                self._retry_count.add(int(value), attrs)
-        elif name == "approval_count":
-            if self._approval_count is not None:
-                self._approval_count.add(1, attrs)
-        elif name == "approval_duration":
-            if self._approval_duration is not None:
-                self._approval_duration.record(value, attrs)
-        elif name == "gen_ai.client.token.usage":
-            if self._gen_ai_client_token_usage is not None:
-                self._gen_ai_client_token_usage.record(int(value), attrs)
-        elif name == "gen_ai.client.operation.duration":
-            if self._gen_ai_client_operation_duration is not None:
-                self._gen_ai_client_operation_duration.record(value, attrs)
-        elif name == "gen_ai.agent.token.usage":
-            if self._gen_ai_agent_token_usage is not None:
-                self._gen_ai_agent_token_usage.record(int(value), attrs)
+        try:
+            if spec.value == "record":
+                instrument.record(int(value) if spec.unit == "{token}" else value, attrs)
+            elif spec.value == "one":
+                instrument.add(1, attrs)
+            elif spec.value == "int":
+                instrument.add(int(value), attrs)
+            else:
+                instrument.add(value, attrs)
+        except Exception:  # pragma: no cover — never break the hot path
+            pass
 
     def start_span(
         self,
