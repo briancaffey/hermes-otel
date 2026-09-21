@@ -51,6 +51,7 @@ def store(tmp_path):
 class TestSchema:
     def test_columns_are_extracted_and_indexed(self, store):
         store.add_span(_span("t1", "agent", "r", None, {"hermes.session_id": "s1"}, status="ERROR"))
+        store.flush()  # rows are batched (#91); a raw connection sees committed rows only
         c = sqlite3.connect(store.db_path)
         row = c.execute(
             "SELECT trace_id, span_id, session_id, name, status, start_ns, end_ns FROM events"

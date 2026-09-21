@@ -181,8 +181,9 @@ class TestPatch:
 
 class TestStartSpan:
     def _backend(self):
+        # sync=True: send inline so the mocked urlopen can be inspected right away.
         return LangSmithBackend(
-            api_key="key", endpoint="https://api.smith.com", project="test-proj"
+            api_key="key", endpoint="https://api.smith.com", project="test-proj", sync=True
         )
 
     def test_creates_run_and_returns_dict(self):
@@ -238,11 +239,13 @@ class TestStartSpan:
         payload = _captured_payload(mock)
         assert "parent_run_id" not in payload
 
-    def test_returns_none_on_http_error(self):
+    def test_returns_run_even_when_http_fails(self):
+        """The POST is queued, not awaited (#91): the run object comes back so
+        the parent chain stays intact; the failure is only logged."""
         backend = self._backend()
         with _mock_urlopen_error(400):
             result = backend.start_span("llm.gpt-4", "llm:s1", kind="llm")
-        assert result is None
+        assert result is not None and "id" in result
 
 
 # ── end_span ─────────────────────────────────────────────────────────────────
@@ -250,8 +253,9 @@ class TestStartSpan:
 
 class TestEndSpan:
     def _backend(self):
+        # sync=True: send inline so the mocked urlopen can be inspected right away.
         return LangSmithBackend(
-            api_key="key", endpoint="https://api.smith.com", project="test-proj"
+            api_key="key", endpoint="https://api.smith.com", project="test-proj", sync=True
         )
 
     def test_patches_run_with_end_time(self):
@@ -361,3 +365,40 @@ class TestEndSpan:
         run = {"id": "abc", "run_type": "llm"}
         with _mock_urlopen_error(500, "Server Error"):
             backend.end_span(run, attributes={"output.value": "x"})
+
+
+class TestWorkerQueue:
+    """Async mode: requests go through one daemon worker and a bounded queue."""
+
+    def test_start_and_end_return_before_the_request_is_sent(self):
+        import threading
+
+        gate = threading.Event()
+        seen = []
+
+        def slow_urlopen(req, timeout=None):
+            gate.wait(2)
+            seen.append(req.method)
+            resp = MagicMock()
+            resp.read.return_value = b""
+            resp.__enter__ = lambda s: s
+            resp.__exit__ = MagicMock(return_value=False)
+            return resp
+
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
+        with patch("hermes_otel.langsmith_backend.urllib.request.urlopen", slow_urlopen):
+            run = backend.start_span("llm.gpt-4", "llm:s1", kind="llm")
+            backend.end_span(run, attributes={"output.value": "x"})
+            assert run is not None and seen == []  # nothing sent yet, nothing waited on
+            gate.set()
+            assert backend.flush(timeout=5) is True
+        assert seen == ["POST", "PATCH"]
+        backend.shutdown()
+
+    def test_full_queue_drops_and_counts(self):
+        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.com", project="p")
+        backend._stop.set()  # no worker: the queue only fills
+        for _ in range(backend.QUEUE_SIZE + 5):
+            backend._submit("POST", "/runs", {})
+        assert backend.dropped == 5
+        assert backend._queue.qsize() == backend.QUEUE_SIZE

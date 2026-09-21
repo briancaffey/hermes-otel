@@ -167,6 +167,12 @@ class HermesOtelConfig:
     span_batch_max_export_batch_size: Optional[int] = None
     span_batch_export_timeout_ms: int = 30_000  # per-export HTTP timeout
     force_flush_on_session_end: bool = True  # flush so UI sees traces promptly
+    # How long the hook thread waits for that background flush to finish
+    # before the turn returns to Hermes, in ms. Bounded and coalesced: a
+    # healthy backend receives the turn in well under it, a stuck one costs at
+    # most this much per turn. 0 = do not wait. A one-shot ``hermes -z`` exits
+    # right after the turn, so the wait is what gets its spans out.
+    force_flush_wait_ms: int = 500
     # ── LLM span input fidelity ─────────────────────────────────────────
     # Opt-in: serialise the full conversation_history onto the llm span's
     # input.value so the UI shows every message instead of just the last
@@ -676,7 +682,8 @@ FIELD_DOCS = {
     "span_batch_schedule_delay_ms": "BatchSpanProcessor worker wake-up cadence",
     "span_batch_max_export_batch_size": "Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full`",
     "span_batch_export_timeout_ms": "Per-export HTTP timeout",
-    "force_flush_on_session_end": "Synchronously flush every backend at the end of each turn",
+    "force_flush_on_session_end": "Flush every backend's span queue at the end of each turn, from a background thread (500 ms per backend, coalesced)",
+    "force_flush_wait_ms": "How long the turn waits for that background flush before returning to Hermes; `0` = do not wait",
     "capture_conversation_history": "Attach the full message JSON to `llm.*` spans",
     "conversation_history_max_chars": "JSON cap when conversation capture is on",
     "content_capture": "`full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture)",
@@ -727,6 +734,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
         "Export and batching",
         (
             "force_flush_on_session_end",
+            "force_flush_wait_ms",
             "flush_interval_ms",
             "root_span_ttl_ms",
             "span_batch_max_queue_size",

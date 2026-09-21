@@ -87,7 +87,7 @@ A slow backend backs up its own queue only. The agent's hot path is unaffected.
 
 Two shutdown paths:
 
-- **Graceful** — `on_session_end` runs, `force_flush_on_session_end: true` synchronously drains each queue. Plus an `atexit` handler on process exit drains whatever's left.
+- **Graceful** — `on_session_end` runs, `force_flush_on_session_end: true` drains each span queue from a background thread (500 ms per backend, coalesced). Plus an `atexit` handler on process exit synchronously drains whatever's left, metrics and logs included.
 - **Hard crash** — no atexit, no force-flush. Up to `schedule_delay_ms` of spans can be lost (default: 1 second's worth).
 
 This is the standard OTel trade-off and matches every production tracing stack — the alternative is blocking on every span end, which defeats the purpose.

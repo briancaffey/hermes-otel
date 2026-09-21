@@ -3,8 +3,9 @@ name: CI
 on:
   push:
     branches: [main]
+  # Every pull request, whatever it targets: a PR stacked on another PR's
+  # branch gets the same checks as one against main.
   pull_request:
-    branches: [main]
 
 # A push that supersedes an in-flight run on the same branch cancels it: the
 # old run's verdict is about a commit nobody will merge, and on the

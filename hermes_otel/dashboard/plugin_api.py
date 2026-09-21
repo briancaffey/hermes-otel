@@ -172,9 +172,15 @@ def live_logs(
 def _window(
     lookback_hours: float, start_s: Optional[int], end_s: Optional[int]
 ) -> "tuple[int, int]":
-    end = int(end_s) if end_s else int(time.time())
-    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
-    return start * 1_000_000_000, end * 1_000_000_000
+    # The default window ends now, to the nanosecond: a row written a fraction
+    # of a second ago must not fall outside a window truncated to the second.
+    end_ns = int(end_s) * 1_000_000_000 if end_s else time.time_ns()
+    start_ns = (
+        int(start_s) * 1_000_000_000
+        if start_s
+        else end_ns - int(lookback_hours * 3600) * 1_000_000_000
+    )
+    return start_ns, end_ns
 
 
 @router.get("/live/traces")
