@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.12.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.11.0...hermes-otel-v1.12.0) (2026-09-21)
+
+
+### Features
+
+* **metrics:** table-driven instruments, units on every counter, OTLP names in the live store ([#210](https://github.com/briancaffey/hermes-otel/issues/210)) ([abeba16](https://github.com/briancaffey/hermes-otel/commit/abeba16da464b1649011d6ae36e9251002b37635)), closes [#95](https://github.com/briancaffey/hermes-otel/issues/95)
+
+
+### Performance Improvements
+
+* **hooks:** take the turn-end flush, LangSmith HTTP and live-store commits off the hook thread ([#213](https://github.com/briancaffey/hermes-otel/issues/213)) ([f3e5bab](https://github.com/briancaffey/hermes-otel/commit/f3e5babadf556f784e1a7efb46b19c8b25cd03f1))
+
 ## [1.11.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.10.0...hermes-otel-v1.11.0) (2026-09-20)
 
 
