@@ -24,10 +24,15 @@ _DUAL_USE = {"hermes.retry.count"}
 
 
 def _metric_names() -> set:
+    """Instrument names are metrics, not span attributes: the instrument table
+    plus the host-metrics observables created in ``_create_host_metric_instruments``."""
+    from hermes_otel.tracer import _INSTRUMENTS
+
     src = (REPO_ROOT / "hermes_otel" / "tracer.py").read_text(encoding="utf-8")
-    body = src[src.index("def _create_metric_instruments") :]
+    body = src[src.index("def _create_host_metric_instruments") :]
     body = body[: body.index("\n    def ", 10)]
-    instruments = set(
+    instruments = {spec.name for spec in _INSTRUMENTS.values()}
+    instruments.update(
         re.findall(r'create_(?:counter|histogram|observable_[a-z_]+)\(\s*"([a-z_.]+)"', body)
     )
     return (instruments - _DUAL_USE) | {

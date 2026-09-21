@@ -3,7 +3,7 @@
 // (13989 + 14268 + 14381 = 42,638 tokens), two tool calls, one llm span and
 // the agent root that carries the turn total.
 import { describe, expect, it } from "vitest";
-import { groupLiveTraces, traceTotals, traceSpanCount, LiveSpan } from "../src/lib";
+import { groupLiveTraces, traceTotals, traceSpanCount, LiveSpan, metricOtlpName } from "../src/lib";
 
 const T = "daaf7828a1b2c3d4e5f60718293a4b5c";
 function span(name: string, id: string, parent: string | null, attrs: Record<string, any> = {}, start = 0, end = 1): LiveSpan {
@@ -68,5 +68,15 @@ describe("traceSpanCount (#179)", () => {
   });
   it("shows nothing rather than the matched-span count", () => {
     expect(traceSpanCount({ spanSets: [{ spans: [{}], matched: 1 }] })).toBeNull();
+  });
+});
+
+describe("metricOtlpName", () => {
+  it("maps Prometheus-style names back to the OTLP name", () => {
+    expect(metricOtlpName("hermes_token_usage")).toBe("hermes.token.usage");
+    expect(metricOtlpName("hermes_tool_duration_sum")).toBe("hermes.tool.duration");
+    expect(metricOtlpName("hermes_prompt_cache_tokens")).toBe("hermes.prompt_cache.tokens");
+    expect(metricOtlpName("hermes.session.count")).toBe("hermes.session.count");
+    expect(metricOtlpName("process.cpu.utilization")).toBe("process.cpu.utilization");
   });
 });

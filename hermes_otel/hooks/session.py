@@ -181,14 +181,13 @@ def on_session_end(
         # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
         # Prefer the provider captured from this session's API calls over the
         # platform, so the dimension matches the gen_ai.client.* metrics.
-        if tracer.config.emit_genai_metrics:
-            agent_provider = ps.provider or kwargs.get("provider") or platform
-            _record_genai_token_usage(
-                tracer,
-                "gen_ai.agent.token.usage",
-                ps.usage,
-                _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
-            )
+        agent_provider = ps.provider or kwargs.get("provider") or platform
+        _record_genai_token_usage(
+            tracer,
+            "gen_ai.agent.token.usage",
+            ps.usage,
+            _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
+        )
 
     # Surface the last API error's type on the root so a failed turn shows why.
     if ps is not None and ps.last_error_type:

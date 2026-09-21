@@ -659,3 +659,13 @@ export function headerFacts(root: Record<string, any>, spansAttrs: Record<string
     platform: a["hermes.platform"] || null,
   };
 }
+
+
+/** A Prometheus-style metric name (hermes_tool_duration_sum) as the OTLP name
+ *  the plugin emits (hermes.tool.duration). OTLP names pass through. */
+export function metricOtlpName(n: string): string {
+  if (n.includes(".")) return n;
+  const base = n.replace(/_(sum|count|bucket|total)$/, "");
+  if (base.startsWith("hermes_prompt_cache_")) return "hermes.prompt_cache." + base.slice("hermes_prompt_cache_".length);
+  return base.replace(/_/g, ".");
+}

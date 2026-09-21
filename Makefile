@@ -39,9 +39,15 @@ ci-scan:
 ci-test:
 	uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85 -q
 
+# CI compares the committed bundle with a fresh build. Locally the bundle
+# may be rebuilt but not yet committed, so compare the working tree's bundle
+# with what a fresh build produces: a change means it was stale.
 ci-dashboard:
-	cd dashboard-ui && npm ci --silent && npm run build --silent
-	git diff --exit-code -- hermes_otel/dashboard/dist
+	@before=$$(cat hermes_otel/dashboard/dist/index.js hermes_otel/dashboard/dist/style.css | shasum); \
+	(cd dashboard-ui && npm ci --silent && npm run build --silent) || exit 1; \
+	after=$$(cat hermes_otel/dashboard/dist/index.js hermes_otel/dashboard/dist/style.css | shasum); \
+	if [ "$$before" != "$$after" ]; then echo "dashboard bundle was stale and has been rebuilt: commit hermes_otel/dashboard/dist and rerun"; exit 1; fi; \
+	echo "✓ dashboard bundle is up to date"
 	cd dashboard-ui && npm test --silent
 
 ci-docs:

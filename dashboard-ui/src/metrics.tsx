@@ -2,7 +2,7 @@
 // plus curated panels, all served by the bucket query endpoints (live store
 // or a backend that serves metrics). Nothing is aggregated in the browser.
 import { React, useState, useEffect, useCallback, useMemo, fetchJSON, API, Input, Select, SelectOption, Button } from "./sdk";
-import { fmtCost, fmtInt, fmtDurationMs, fmtAbsTime } from "./lib";
+import { fmtCost, fmtInt, fmtDurationMs, fmtAbsTime, metricOtlpName } from "./lib";
 import { Stat, LineChart, MiniLabel, ErrorBanner } from "./atoms";
 import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
@@ -13,19 +13,27 @@ const POLL_MS = 15000;
 
 type Buckets = { name: string; agg: string; bucketS: number; buckets: number[]; series: Record<string, (number | null)[]>; points: number; cumulative?: boolean };
 
-// Units for the instruments the plugin emits (#95 tracks the names themselves).
+// Units for the instruments the plugin emits, by OTLP name. The live store
+// records the same names as the backends since #95; a Prometheus-style name
+// (hermes_token_usage, hermes_tool_duration_sum) is normalised in unit().
 const UNITS: Record<string, string> = {
-  token_usage: "tokens",
-  cost_usage: "USD",
-  model_usage: "calls",
-  tool_duration: "ms",
-  approval_count: "approvals",
-  message_count: "messages",
-  session_count: "sessions",
-  prompt_cache_tokens: "tokens",
-  prompt_cache_observations: "observations",
-  api_error_count: "errors",
-  retry_count: "retries",
+  "hermes.token.usage": "tokens",
+  "hermes.cost.usage": "USD",
+  "hermes.model.usage": "calls",
+  "hermes.tool.duration": "ms",
+  "hermes.approval.count": "approvals",
+  "hermes.approval.duration": "ms",
+  "hermes.message.count": "messages",
+  "hermes.session.count": "sessions",
+  "hermes.session.turns": "turns",
+  "hermes.session.duration": "s",
+  "hermes.prompt_cache.tokens": "tokens",
+  "hermes.prompt_cache.observations": "observations",
+  "hermes.api.error.count": "errors",
+  "hermes.retry.count": "retries",
+  "hermes.subagent.count": "runs",
+  "hermes.subagent.duration": "ms",
+  "hermes.skill.inferred": "hits",
   "gen_ai.client.token.usage": "tokens",
   "gen_ai.client.operation.duration": "s",
   "gen_ai.agent.token.usage": "tokens",
@@ -158,12 +166,12 @@ export function MetricsPage() {
       setError(null);
       const have = new Set(list.map((n) => n.name));
       const want: [string, string, string, string][] = [
-        ["tokens", isLive ? "token_usage" : "hermes_token_usage", "token_type", "sum"],
-        ["cost", isLive ? "cost_usage" : "hermes_cost_usage", "", "sum"],
-        ["calls", isLive ? "model_usage" : "hermes_model_usage", "model", isLive ? "count" : "sum"],
-        ["tools", isLive ? "tool_duration" : "hermes_tool_duration_sum", "tool_name", isLive ? "avg" : "sum"],
-        ["approvals", isLive ? "approval_count" : "hermes_approval_count", "choice", isLive ? "count" : "sum"],
-        ["cache", isLive ? "prompt_cache_tokens" : "hermes_prompt_cache_tokens", "token_type", "sum"],
+        ["tokens", isLive ? "hermes.token.usage" : "hermes_token_usage", "token_type", "sum"],
+        ["cost", isLive ? "hermes.cost.usage" : "hermes_cost_usage", "", "sum"],
+        ["calls", isLive ? "hermes.model.usage" : "hermes_model_usage", "model", isLive ? "count" : "sum"],
+        ["tools", isLive ? "hermes.tool.duration" : "hermes_tool_duration_sum", "tool_name", isLive ? "avg" : "sum"],
+        ["approvals", isLive ? "hermes.approval.count" : "hermes_approval_count", "choice", isLive ? "count" : "sum"],
+        ["cache", isLive ? "hermes.prompt_cache.tokens" : "hermes_prompt_cache_tokens", "token_type", "sum"],
         ["cpu", "process.cpu.utilization", "", "avg"],
         ["gpu", "hw.gpu.utilization", "", "avg"],
       ];
@@ -200,13 +208,13 @@ export function MetricsPage() {
   const cache = panels.cache || null;
   const totalTokens = seriesTotal(tokens);
   const totalCost = seriesTotal(cost);
-  // Cache-read share: the token_usage series carries a cacheRead token type
-  // next to input; prompt_cache_tokens (when recorded) is the same fact.
+  // Cache-read share: the hermes.token.usage series carries a cacheRead token
+  // type next to input; hermes.prompt_cache.tokens (when recorded) is the same fact.
   const tokenRows = useMemo(() => totalsByLabel(tokens), [tokens]);
   const cacheRows = useMemo(() => totalsByLabel(cache), [cache]);
   const cacheRead = tokenRows.find((r) => /cache/i.test(r.label))?.value ?? cacheRows.find((r) => /read|hit/i.test(r.label))?.value ?? null;
   const cacheAll = tokenRows.find((r) => r.label === "input")?.value ?? cacheRows.reduce((a, r) => a + r.value, 0);
-  const unit = (n: string) => UNITS[n] || UNITS[n.replace(/^hermes_/, "").replace(/_/g, ".")] || UNITS[n.replace(/^hermes_/, "")] || "";
+  const unit = (n: string) => UNITS[n] || UNITS[metricOtlpName(n)] || "";
 
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
