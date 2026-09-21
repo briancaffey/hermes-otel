@@ -23,11 +23,10 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from fastapi import HTTPException
-
 from . import register
 from .base import (
     BackendAdapter,
+    HTTPException,
     StructuredFilter,
     http_get_json,
     otlp_attrs_from_dict,

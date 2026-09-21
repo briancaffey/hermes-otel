@@ -148,11 +148,11 @@ class PhoenixAdapter(BackendAdapter):
             body["variables"] = variables
         resp = http_post_json(self.graphql_url, body, headers=headers, timeout=15.0)
         if not isinstance(resp, dict):
-            from fastapi import HTTPException
+            from .base import HTTPException
 
             raise HTTPException(status_code=502, detail="Phoenix returned non-object")
         if resp.get("errors"):
-            from fastapi import HTTPException
+            from .base import HTTPException
 
             msg = "; ".join(e.get("message", "?") for e in resp["errors"])
             raise HTTPException(status_code=502, detail=f"Phoenix GraphQL error: {msg}")
@@ -177,7 +177,7 @@ class PhoenixAdapter(BackendAdapter):
             # A configured project that does not exist is an error, not an
             # invitation to show some other project's traces under its name
             # (#159). Say what exists so the typo is easy to spot.
-            from fastapi import HTTPException
+            from .base import HTTPException
 
             available = ", ".join(sorted(str(p.get("name")) for p in projects)) or "none"
             raise HTTPException(

@@ -14,6 +14,7 @@ const sidebars: SidebarsConfig = {
       ],
     },
     'dashboard',
+    'skill',
     {
       type: 'category',
       label: 'Backends',
