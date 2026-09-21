@@ -1,8 +1,39 @@
-# hermes-otel
+<p align="center">
+  <a href="https://briancaffey.github.io/hermes-otel/">
+    <img src="docs/catalog-banner.png" alt="hermes-otel — OpenTelemetry for Hermes Agent: every turn becomes one trace" width="100%">
+  </a>
+</p>
 
-OpenTelemetry plugin for [Hermes Agent](https://github.com/nousresearch/hermes-agent). Every Hermes turn — model calls, API requests, tool calls, skill loads, approvals, delegated sub-agents — becomes one OTel trace, with token / cost / latency metrics and (optionally) logs, exported to any OTLP/HTTP backend.
+<p align="center">
+  <a href="https://github.com/briancaffey/hermes-otel/actions/workflows/test.yml"><img src="https://github.com/briancaffey/hermes-otel/actions/workflows/test.yml/badge.svg" alt="CI"></a>
+  <a href="https://github.com/briancaffey/hermes-otel/actions/workflows/deploy-site.yml"><img src="https://github.com/briancaffey/hermes-otel/actions/workflows/deploy-site.yml/badge.svg" alt="Docs site"></a>
+  <a href="https://github.com/briancaffey/hermes-otel/releases"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbriancaffey%2Fhermes-otel%2Fmain%2Fpyproject.toml&amp;query=%24.project.version&amp;prefix=v&amp;label=version&amp;color=3fb950" alt="Version"></a>
+  <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.9%E2%80%933.13-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9 to 3.13"></a>
+  <a href="https://opentelemetry.io/docs/specs/otlp/"><img src="https://img.shields.io/badge/OpenTelemetry-OTLP%2FHTTP-425cc7?logo=opentelemetry&amp;logoColor=white" alt="OpenTelemetry OTLP/HTTP"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/github/license/briancaffey/hermes-otel?color=58a6ff" alt="License: Apache-2.0"></a>
+</p>
 
-**Docs:** [briancaffey.github.io/hermes-otel](https://briancaffey.github.io/hermes-otel/) · [Quickstart](https://briancaffey.github.io/hermes-otel/getting-started/quickstart) · [Backends](https://briancaffey.github.io/hermes-otel/backends/overview) · [Configuration](https://briancaffey.github.io/hermes-otel/configuration/overview) · [Reference](https://briancaffey.github.io/hermes-otel/reference/span-attributes)
+<p align="center">
+  <b>OpenTelemetry plugin for <a href="https://github.com/nousresearch/hermes-agent">Hermes Agent</a>.</b><br>
+  Every Hermes turn — model calls, API requests, tool calls, skill loads, approvals, delegated sub-agents — becomes one OTel trace,
+  with token / cost / latency metrics and (optionally) logs, exported to any OTLP/HTTP backend.
+</p>
+
+<p align="center">
+  <a href="https://briancaffey.github.io/hermes-otel/"><b>Documentation</b></a>
+  &nbsp;·&nbsp;
+  <a href="https://briancaffey.github.io/hermes-otel/getting-started/quickstart">Quickstart</a>
+  &nbsp;·&nbsp;
+  <a href="https://briancaffey.github.io/hermes-otel/backends/overview">Backends</a>
+  &nbsp;·&nbsp;
+  <a href="https://briancaffey.github.io/hermes-otel/configuration/overview">Configuration</a>
+  &nbsp;·&nbsp;
+  <a href="https://briancaffey.github.io/hermes-otel/reference/span-attributes">Reference</a>
+  &nbsp;·&nbsp;
+  <a href="CHANGELOG.md">Changelog</a>
+</p>
+
+<br>
 
 ## What a turn looks like
 
