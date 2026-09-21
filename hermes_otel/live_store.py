@@ -219,11 +219,30 @@ class LiveStore:
         self._conns: list = []  # every connection ever opened, for close()
         self._conns_lock = threading.Lock()
         self._writes = 0
+        # Writes are buffered and committed in one transaction by a daemon
+        # thread every ``flush_interval_s`` or ``batch_rows`` rows (#91), so a
+        # hook never pays a disk commit. Readers flush first, so a process
+        # reads its own writes; another process sees them within the interval.
+        self.flush_interval_s = 0.25
+        self.batch_rows = 64
+        self._pending: List[tuple] = []
+        self._pending_lock = threading.Lock()
+        self._flush_lock = threading.Lock()
+        self._wake = threading.Event()
+        self._stop = threading.Event()
+        self._writer: Optional[threading.Thread] = None
         self._init_db()
 
     # ── connection / schema ───────────────────────────────────────────────
     def close(self) -> None:
-        """Close every connection this store opened, on any thread (idempotent)."""
+        """Flush pending rows, stop the writer and close every connection (idempotent)."""
+        self._stop.set()
+        self._wake.set()
+        writer = self._writer
+        if writer is not None and writer.is_alive() and writer is not threading.current_thread():
+            writer.join(timeout=2.0)
+        self._writer = None
+        self.flush()
         with self._conns_lock:
             conns, self._conns = self._conns, []
         for c in conns:
@@ -287,32 +306,82 @@ class LiveStore:
     def _insert(
         self, kind: str, data: Dict[str, Any], ts: Optional[int] = None, **cols: Any
     ) -> None:
+        """Queue one row; the writer thread commits it with its batch."""
         try:
-            c = self._conn()
-            names = ["kind", "ts", "data"] + list(cols)
-            values = [kind, int(ts or time.time_ns()), json.dumps(data, default=str)] + list(
-                cols.values()
+            row = (
+                kind,
+                int(ts or time.time_ns()),
+                json.dumps(data, default=str),
+                tuple(cols.keys()),
+                tuple(cols.values()),
             )
-            c.execute(
-                f"INSERT INTO events({', '.join(names)}) VALUES({', '.join('?' * len(names))})",
-                values,
-            )
-            self._writes += 1
-            # Trim periodically rather than every insert: per kind, so a chatty
-            # logger cannot evict every span (#100), and by age (#184).
-            if self._writes % 64 == 0:
-                c.execute(
-                    "DELETE FROM events WHERE kind = ? AND seq NOT IN "
-                    "(SELECT seq FROM events WHERE kind = ? ORDER BY seq DESC LIMIT ?)",
-                    (kind, kind, self.max_rows),
-                )
-                if self.retention_ns:
-                    c.execute(
-                        "DELETE FROM events WHERE ts < ?", (time.time_ns() - self.retention_ns,)
-                    )
-            c.commit()
         except Exception:  # pragma: no cover
-            pass
+            return
+        with self._pending_lock:
+            self._pending.append(row)
+            n = len(self._pending)
+        self._ensure_writer()
+        if n >= self.batch_rows:
+            self._wake.set()
+
+    def _ensure_writer(self) -> None:
+        if self._writer is not None and self._writer.is_alive():
+            return
+        if self._stop.is_set():
+            return
+        t = threading.Thread(target=self._writer_loop, name="hermes-otel-live-store", daemon=True)
+        self._writer = t
+        t.start()
+
+    def _writer_loop(self) -> None:
+        while not self._stop.is_set():
+            self._wake.wait(self.flush_interval_s)
+            self._wake.clear()
+            self.flush()
+
+    def flush(self) -> int:
+        """Commit every pending row in one transaction. Returns rows written.
+
+        Serialised with the writer thread: a caller that flushes before a read
+        waits for a batch the writer is committing, then commits the rest, so
+        the read that follows sees every row queued before it.
+        """
+        written = 0
+        with self._flush_lock:
+            with self._pending_lock:
+                rows, self._pending = self._pending, []
+            if not rows:
+                return 0
+            try:
+                c = self._conn()
+                kinds = set()
+                for kind, ts, data, names, values in rows:
+                    cols = ["kind", "ts", "data"] + list(names)
+                    c.execute(
+                        f"INSERT INTO events({', '.join(cols)}) VALUES({', '.join('?' * len(cols))})",
+                        [kind, ts, data] + list(values),
+                    )
+                    kinds.add(kind)
+                    written += 1
+                before, self._writes = self._writes, self._writes + written
+                # Trim every 64 writes, as before: per kind, so a chatty logger
+                # cannot evict every span (#100), and by age (#184).
+                if before // 64 != self._writes // 64:
+                    for kind in kinds:
+                        c.execute(
+                            "DELETE FROM events WHERE kind = ? AND seq NOT IN "
+                            "(SELECT seq FROM events WHERE kind = ? ORDER BY seq DESC LIMIT ?)",
+                            (kind, kind, self.max_rows),
+                        )
+                    if self.retention_ns:
+                        c.execute(
+                            "DELETE FROM events WHERE ts < ?",
+                            (time.time_ns() - self.retention_ns,),
+                        )
+                c.commit()
+            except Exception:  # pragma: no cover
+                pass
+        return written
 
     def add_span(self, span: Dict[str, Any]) -> None:
         attrs = span.get("attributes") or {}
@@ -373,6 +442,7 @@ class LiveStore:
         return out
 
     def _query(self, kind: str, since: int, limit: int) -> List[Dict[str, Any]]:
+        self.flush()
         try:
             c = self._conn()
             rows = c.execute(
@@ -393,6 +463,7 @@ class LiveStore:
         return self._query("log", since, limit)
 
     def cursor(self) -> int:
+        self.flush()
         try:
             r = self._conn().execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
             return int(r[0]) if r else 0
@@ -400,6 +471,7 @@ class LiveStore:
             return 0
 
     def stats(self) -> Dict[str, int]:
+        self.flush()
         try:
             c = self._conn()
             counts = {
@@ -416,6 +488,8 @@ class LiveStore:
         }
 
     def clear(self) -> None:
+        with self._pending_lock:
+            self._pending.clear()
         try:
             c = self._conn()
             c.execute("DELETE FROM events")
@@ -483,6 +557,7 @@ class LiveStore:
         return " AND ".join(where), args
 
     def spans_for_traces(self, trace_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
+        self.flush()
         """All stored spans of the given traces, grouped by trace id."""
         out: Dict[str, List[Dict[str, Any]]] = {t: [] for t in trace_ids}
         if not trace_ids:
@@ -519,6 +594,7 @@ class LiveStore:
         model: Optional[str] = None,
         tool: Optional[str] = None,
     ) -> Dict[str, Any]:
+        self.flush()
         """Trace-list rows (newest first) whose spans match every given filter."""
         where, args = self._span_where(
             start_ns,
@@ -555,6 +631,7 @@ class LiveStore:
         return {"traces": traces, "total": total}
 
     def trace(self, trace_id: str) -> Dict[str, Any]:
+        self.flush()
         spans = self.spans_for_traces([trace_id]).get(trace_id) or []
         if not spans:
             return {"trace": None, "spans": []}
@@ -566,6 +643,7 @@ class LiveStore:
         end_ns: Optional[int] = None,
         limit: int = 50,
     ) -> Dict[str, Any]:
+        self.flush()
         """One row per session id: turns, span/error counts, totals, first/last."""
         where, args = self._span_where(start_ns, end_ns, None, None, None, None, None)
         try:
@@ -625,6 +703,7 @@ class LiveStore:
         return {"sessions": rows}
 
     def metric_names(self) -> List[Dict[str, Any]]:
+        self.flush()
         try:
             rows = (
                 self._conn()
@@ -646,6 +725,7 @@ class LiveStore:
         group_by: Optional[str] = None,
         agg: str = "sum",
     ) -> Dict[str, Any]:
+        self.flush()
         """Aggregate one instrument into fixed time buckets, optionally per attribute value."""
         bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
         start_ns = int(start_ns) - int(start_ns) % bucket_ns
@@ -709,6 +789,7 @@ class LiveStore:
         end_ns: Optional[int] = None,
         limit: int = 300,
     ) -> List[Dict[str, Any]]:
+        self.flush()
         where = ["kind='log'"]
         args: List[Any] = []
         if trace_id:
@@ -746,6 +827,7 @@ class LiveStore:
         return self._rows_to_dicts(rows)  # newest first
 
     def loggers(self) -> List[Dict[str, Any]]:
+        self.flush()
         try:
             rows = (
                 self._conn()

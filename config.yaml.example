@@ -222,11 +222,17 @@
 # Metrics export interval (how often the PeriodicExportingMetricReader flushes).
 # flush_interval_ms: 60000
 
-# Flush every BatchSpanProcessor synchronously at end-of-session so the
-# backend UI sees the full trace immediately instead of waiting for the
-# next scheduled export cycle. Set false to rely entirely on the background
-# batcher (better throughput, slightly higher UI latency).
+# Flush every backend's span queue when a turn ends, so the trace shows up in
+# the UI right away instead of after span_batch_schedule_delay_ms. Runs on a
+# background thread with a 500 ms timeout per backend and coalesces, so a slow
+# or unreachable collector never stalls the agent. Metrics and logs export on
+# their own schedule; process exit flushes everything.
 # force_flush_on_session_end: true
+# How long the turn waits for that flush before returning to Hermes, in ms.
+# A healthy backend needs far less; a stuck one costs at most this much per
+# turn. 0 = do not wait (a one-shot `hermes -z` may then exit before its
+# spans are sent).
+# force_flush_wait_ms: 500
 
 # ── BatchSpanProcessor tunables (non-blocking export) ─────────────────────────
 # Each backend gets its own processor with these settings. Defaults are fine

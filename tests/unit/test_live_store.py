@@ -70,6 +70,7 @@ class TestLiveStore:
         reader = LiveStore(db_path=db)
         try:
             writer.add_span({"name": "from-gateway"})
+            writer.flush()  # the writer batches (#91); the reader sees committed rows
             assert [s["name"] for s in reader.spans()] == ["from-gateway"]
             assert reader.cursor() == writer.cursor() == 1
         finally:

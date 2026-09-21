@@ -34,7 +34,8 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence |
 | `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full` |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
-| `force_flush_on_session_end` | bool | `true` | Synchronously flush every backend at the end of each turn |
+| `force_flush_on_session_end` | bool | `true` | Flush every backend's span queue at the end of each turn, from a background thread (500 ms per backend, coalesced) |
+| `force_flush_wait_ms` | int | `500` | How long the turn waits for that background flush before returning to Hermes; `0` = do not wait |
 | `capture_conversation_history` | bool | `false` | Attach the full message JSON to `llm.*` spans |
 | `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
 | `content_capture` | string | `"full"` | `full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture) |

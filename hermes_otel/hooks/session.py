@@ -239,7 +239,13 @@ def on_session_end(
     # Honors config.force_flush_on_session_end for users who'd rather let
     # the batcher do its thing even at turn boundaries.
     if tracer.config.force_flush_on_session_end:
-        tracer._force_flush()
+        # From a background thread, waited on for at most force_flush_wait_ms:
+        # a healthy collector gets the turn before the hook returns (a one-shot
+        # run may exit right after), a stuck one costs a bounded wait (#91).
+        tracer.flush_async()
+        wait_ms = tracer.config.force_flush_wait_ms
+        if wait_ms and wait_ms > 0:
+            tracer.flush_wait(timeout_s=wait_ms / 1000.0)
 
     debug_log(f"  session span ended: key={key}, status={status}")
 
@@ -326,8 +332,12 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
         },
     )
     # The authoritative flush: nothing of this session should wait for the
-    # batcher after its end.
-    tracer._force_flush()
+    # batcher after its end. Background, like the turn-end flush; process
+    # exit still flushes synchronously through atexit.
+    tracer.flush_async()
+    wait_ms = tracer.config.force_flush_wait_ms
+    if wait_ms and wait_ms > 0:
+        tracer.flush_wait(timeout_s=wait_ms / 1000.0)
 
 
 @_fail_open

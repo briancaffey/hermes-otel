@@ -31,7 +31,7 @@ from hermes_otel.hooks import (
     on_session_start,
 )
 from hermes_otel.langsmith_backend import LangSmithBackend
-from hermes_otel.tracer import HermesOTelPlugin
+from hermes_otel.tracer import HermesOTelPlugin, get_tracer
 
 
 class _RecordingUrlopen:
@@ -159,6 +159,8 @@ class TestLangSmithPluginFlow:
             model="gpt-4",
             platform="cli",
         )
+        # Requests leave through the worker thread (#91); wait for them.
+        assert get_tracer()._langsmith.flush(timeout=5)
 
     def test_posts_one_run_per_span(self, langsmith_plugin):
         """Each start_span → one POST /runs; 4 spans = 4 creates."""

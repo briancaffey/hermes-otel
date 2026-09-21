@@ -18,6 +18,7 @@ from __future__ import annotations
 import atexit
 import logging
 import os
+import threading
 import time
 import uuid
 from dataclasses import dataclass
@@ -172,9 +173,16 @@ if _OTEL_AVAILABLE:
                 pass
 
         def shutdown(self) -> None:
-            pass
+            try:
+                self._store.flush()
+            except Exception:  # pragma: no cover
+                pass
 
         def force_flush(self, timeout_millis: int = 30000) -> bool:
+            try:
+                self._store.flush()
+            except Exception:  # pragma: no cover
+                pass
             return True
 
     class _MCPPingFilterProcessor(SpanProcessor):
@@ -533,6 +541,8 @@ class HermesOTelPlugin:
         # Guards against double-registering the atexit flush handler when
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
+        self._flush_executor: Any = None
+        self._flush_pending = threading.Event()
 
     # ── Initialization entry point ───────────────────────────────────────
 
@@ -587,14 +597,22 @@ class HermesOTelPlugin:
         """
         # End whatever is still open first so it reaches the exporters, then
         # flush, then stop the workers.
+        debug_log(f"shutdown: begin (flush pending={self._flush_pending.is_set()})")
         try:
             self.spans.end_all()
         except Exception:
             pass
         try:
+            self.flush_wait(timeout_s=2.0)
             self._force_flush()
         except Exception:
             pass
+        executor, self._flush_executor = self._flush_executor, None
+        if executor is not None:
+            try:
+                executor.shutdown(wait=False)
+            except Exception:
+                pass
         self.stop_host_metrics()
         self._host_metrics = None
         # Shutting the provider down shuts every attached processor down (the
@@ -1442,36 +1460,75 @@ class HermesOTelPlugin:
         self.spans.drop_session(session_id)
         self.sessions.pop(session_id)
 
-    def _force_flush(self):
-        """Force export of all buffered spans and metrics across every backend.
+    def _force_flush(self, timeout_millis: int = 2000, providers: bool = True):
+        """Force export of buffered spans (and, with ``providers``, metrics and logs).
 
-        Called:
-          - at the end of each session (so UI sees traces promptly)
-          - on process shutdown via atexit (so graceful exit loses nothing)
-        Per-span flushing is deliberately NOT done — it would defeat the
-        whole purpose of the BatchSpanProcessor queue.
+        Synchronous. Called on process shutdown via atexit so a graceful exit
+        loses nothing; the turn-end flush goes through :meth:`flush_async`
+        instead. Per-span flushing is deliberately NOT done — it would defeat
+        the whole purpose of the BatchSpanProcessor queue.
         """
-        # Iterate over the multi-backend list when present, otherwise fall
-        # back to the singular alias (set up by test fixtures that bypass
-        # ``_init_otlp_pipeline``).
         processors = self._span_processors or (
             [self._span_processor] if self._span_processor else []
         )
         for processor in processors:
             try:
-                processor.force_flush(timeout_millis=2000)
+                processor.force_flush(timeout_millis=timeout_millis)
             except Exception:
                 pass
+        if not providers:
+            return
         if self._meter_provider:
             try:
-                self._meter_provider.force_flush(timeout_millis=2000)
+                self._meter_provider.force_flush(timeout_millis=timeout_millis)
             except Exception:
                 pass
         if self._logger_provider:
             try:
-                self._logger_provider.force_flush(timeout_millis=2000)
+                self._logger_provider.force_flush(timeout_millis=timeout_millis)
             except Exception:
                 pass
+
+    def flush_async(self, timeout_millis: int = 500) -> bool:
+        """Flush every span processor from a background thread (#91).
+
+        The turn-end flush used to run on the hook thread, inside the agent
+        loop, with a 2 s timeout per backend: one unreachable collector stalled
+        every turn end by up to 2 s × (backends + 2). Now one worker thread
+        flushes the span processors with a short timeout; the metric and log
+        providers are left to their periodic readers. Flushes coalesce: a
+        request while one is queued is a no-op. Returns whether one was queued.
+        """
+        if self._flush_pending.is_set():
+            return False
+        self._flush_pending.set()
+
+        def run() -> None:
+            debug_log("background flush: start")
+            try:
+                self._force_flush(timeout_millis=timeout_millis, providers=False)
+            finally:
+                self._flush_pending.clear()
+                debug_log("background flush: done")
+
+        try:
+            executor = self._flush_executor
+            if executor is None:
+                from concurrent.futures import ThreadPoolExecutor
+
+                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hermes-otel-flush")
+                self._flush_executor = executor
+            executor.submit(run)
+            return True
+        except Exception:
+            self._flush_pending.clear()
+            return False
+
+    def flush_wait(self, timeout_s: float = 5.0) -> None:
+        """Wait for a queued background flush to finish (tests, shutdown)."""
+        deadline = time.perf_counter() + timeout_s
+        while self._flush_pending.is_set() and time.perf_counter() < deadline:
+            time.sleep(0.005)
 
     def _register_atexit_flush(self) -> None:
         """Register a single atexit hook that flushes and shuts the pipeline down.
