@@ -1340,7 +1340,9 @@ def cmd_sql(args: argparse.Namespace, out: TextIO) -> int:
             cur = c.execute(query)
             cols = [d[0] for d in cur.description or []]
             rows = cur.fetchmany(args.limit) if args.limit else cur.fetchall()
-        except sqlite3.Error as exc:
+        except (sqlite3.Error, sqlite3.Warning) as exc:
+            # Python 3.9 raises sqlite3.Warning (not an Error) for a second
+            # statement in the string; newer versions raise ProgrammingError.
             raise CliError(f"sqlite: {exc}")
     finally:
         c.close()
