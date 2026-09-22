@@ -91,3 +91,57 @@ class TestLivePipeline:
         )
         fresh = store.spans(since=cur)
         assert any(s["name"] == "agent" for s in fresh)
+
+
+class TestRootSpanCommitsImmediately:
+    """A one-shot `hermes -z` exits without atexit, so the turn's last spans
+    must be on disk the moment the root span ends, not on the writer thread's
+    next tick (#215)."""
+
+    def test_root_span_end_is_committed_without_flush(self, live_plugin):
+        import sqlite3
+
+        store, _ = live_plugin
+        hooks.on_session_start(session_id="s9", model="gpt-4", platform="cli")
+        hooks.on_pre_tool_call(
+            tool_name="bash", args={"command": "ls"}, task_id="t9", session_id="s9"
+        )
+        hooks.on_post_tool_call(
+            tool_name="bash", args={}, result="ok", task_id="t9", session_id="s9"
+        )
+        hooks.on_session_end(
+            session_id="s9", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        # A raw connection sees only committed rows; do NOT call store.flush().
+        raw = sqlite3.connect(store.db_path)
+        try:
+            names = sorted(r[0] for r in raw.execute("SELECT name FROM events WHERE kind='span'"))
+        finally:
+            raw.close()
+        assert "agent" in names and "tool.bash" in names
+
+    def test_child_span_end_stays_batched(self, live_plugin):
+        import sqlite3
+
+        store, plugin = live_plugin
+        hooks.on_session_start(session_id="s8", model="gpt-4", platform="cli")
+        hooks.on_pre_tool_call(
+            tool_name="bash", args={"command": "ls"}, task_id="t8", session_id="s8"
+        )
+        hooks.on_post_tool_call(
+            tool_name="bash", args={}, result="ok", task_id="t8", session_id="s8"
+        )
+        # The tool span (a child) is queued, not necessarily committed yet: the
+        # hot path pays no disk commit (#91). Either state is acceptable here;
+        # the invariant is that flush() makes it visible.
+        store.flush()
+        raw = sqlite3.connect(store.db_path)
+        try:
+            names = [r[0] for r in raw.execute("SELECT name FROM events WHERE kind='span'")]
+        finally:
+            raw.close()
+        assert "tool.bash" in names and "agent" not in names
+        hooks.on_session_end(
+            session_id="s8", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )

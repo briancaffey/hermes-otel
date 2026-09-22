@@ -284,7 +284,7 @@ class OpenObserveAdapter(BackendAdapter):
 
     def _headers(self) -> Dict[str, str]:
         if not (self.user and self.password):
-            from fastapi import HTTPException
+            from .base import HTTPException
 
             raise HTTPException(
                 status_code=502,

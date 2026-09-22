@@ -16,11 +16,10 @@ from __future__ import annotations
 from typing import Any, Dict
 from urllib import parse as _urlparse
 
-from fastapi import HTTPException
-
 from . import register
 from .base import (
     BackendAdapter,
+    HTTPException,
     StructuredFilter,
     http_get_json,
     rewrite_host_for_docker,

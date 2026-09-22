@@ -169,6 +169,12 @@ if _OTEL_AVAILABLE:
         def on_end(self, span: Any) -> None:
             try:
                 self._store.add_span(_serialize_span(span))
+                if getattr(span, "parent", None) is None:
+                    # A root span ending is the end of a turn. Commit now rather
+                    # than on the writer thread's next tick: a one-shot process
+                    # (`hermes -z`) exits without running atexit, and the turn's
+                    # last spans would otherwise never reach the file (#215).
+                    self._store.flush()
             except Exception:  # pragma: no cover — never break the SDK export path
                 pass
 

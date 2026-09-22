@@ -29,7 +29,21 @@ from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib import error as _urlerror
 from urllib import request as _urlrequest
 
-from fastapi import HTTPException
+try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
+    from fastapi import HTTPException
+except ImportError:  # pragma: no cover - exercised in test_query_cli via sys.modules
+
+    class HTTPException(Exception):  # type: ignore[no-redef]
+        """Stdlib stand-in with FastAPI's ``status_code`` / ``detail`` fields."""
+
+        def __init__(self, status_code: int = 500, detail: str = "") -> None:
+            super().__init__(detail)
+            self.status_code = status_code
+            self.detail = detail
+
+        def __str__(self) -> str:
+            return f"{self.status_code}: {self.detail}"
+
 
 # ── Docker-host rewrite shim ────────────────────────────────────────────
 
