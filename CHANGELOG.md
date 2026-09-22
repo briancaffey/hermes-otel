@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.13.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.12.0...hermes-otel-v1.13.0) (2026-09-22)
+
+
+### Features
+
+* **skill:** terminal query tool behind hermes_otel:observability: trace trees, sessions, stats, metrics, logs, SQL ([#216](https://github.com/briancaffey/hermes-otel/issues/216)) ([e7358ca](https://github.com/briancaffey/hermes-otel/commit/e7358ca105e513fc3d7ff49165e359ab253c603b))
+
 ## [1.12.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.11.0...hermes-otel-v1.12.0) (2026-09-21)
 
 
