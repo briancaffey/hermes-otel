@@ -8,7 +8,7 @@ description: "Every metric the plugin emits — name, kind, unit, labels, and wh
 
 Every instrument the plugin creates, exactly as named in `tracer._create_metric_instruments`. Metrics reach every backend with `metrics: true` through one shared `MeterProvider` (`flush_interval_ms` controls the export cadence). Backends that speak only traces (Phoenix, Jaeger, Tempo, Langfuse, Weave) ignore them.
 
-**Label policy.** Labels are bounded: model, provider, platform, tool name, skill name, outcome, choice, error class. Never a session id, task id, tool-call id or free text — per-session analysis belongs on spans (`session.id`). Each process also carries its own `service.instance.id` resource attribute, so two Hermes processes exporting to one backend never write the same series (see [Config schema → `resource_attributes`](/reference/config-schema)).
+**Label policy.** Labels are bounded: model, provider, platform, profile (`profile`, the Hermes profile that ran the turn, on every metric; see [profiles](/configuration/profiles)), tool name, skill name, outcome, choice, error class. Never a session id, task id, tool-call id or free text — per-session analysis belongs on spans (`session.id`). Each process also carries its own `service.instance.id` resource attribute, so two Hermes processes exporting to one backend never write the same series (see [Config schema → `resource_attributes`](/reference/config-schema)).
 
 ## `hermes.*` metrics
 

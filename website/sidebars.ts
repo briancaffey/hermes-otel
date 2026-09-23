@@ -53,6 +53,7 @@ const sidebars: SidebarsConfig = {
         'configuration/logs',
         'configuration/mcp-trace-propagation',
         'configuration/host-metrics',
+        'configuration/profiles',
       ],
     },
     {

@@ -15,6 +15,7 @@ from .attributes import (
     _model_attributes,
     _per_session_sender_attributes,
     _platform_attributes,
+    _profile_attributes,
     _response_model_attributes,
     _session_identity_attributes,
     _summary_attributes,
@@ -58,6 +59,7 @@ def _start_session_span(
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
     attributes.update(_platform_attributes(platform))
+    attributes.update(_profile_attributes(tracer))
     # Hermes passes no provider on on_session_start; a host that does is honoured.
     # Otherwise the provider lands on the root at on_session_end, once the
     # turn's API calls have reported it (#153).
@@ -162,6 +164,7 @@ def on_session_end(
     if exit_reason:
         attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
     attributes.update(_platform_attributes(platform))
+    attributes.update(_profile_attributes(tracer))
     # Provider: what this turn's API calls reported, else what the host passed.
     provider = (ps.provider if ps is not None else "") or kwargs.get("provider")
     attributes.update(_model_attributes(model, provider))

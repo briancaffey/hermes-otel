@@ -22,6 +22,7 @@ import threading
 import time
 import uuid
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 from . import backends as _backends
@@ -34,6 +35,7 @@ from .debug_utils import (
     remove_sdk_log_forwarding,
 )
 from .helpers import derive_signal_endpoint, package_version
+from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .plugin_config import (
     BackendConfig,
     HermesOtelConfig,
@@ -539,6 +541,14 @@ class HermesOTelPlugin:
         self._host_metrics: Optional[Any] = None
         # Config
         self.config: HermesOtelConfig = config if config is not None else load_config()
+        # The home and profile this instance serves. Captured here, while the
+        # profile's scope is active (Hermes imports the plugin once per
+        # profile, inside that profile's home override), so a multiplexed
+        # gateway stamps every profile's spans and metrics with its own name
+        # and background threads (which do not inherit the override) never
+        # need to resolve it again (#70).
+        self.hermes_home: Path = resolve_hermes_home()
+        self.profile_name: str = resolve_profile_name()
         # Turn registry for orphan sweep (session_id -> perf_counter start time)
         self._turn_started_at: Dict[str, float] = {}
         # Map session_id -> set of active span keys, so the orphan sweep
@@ -562,6 +572,8 @@ class HermesOTelPlugin:
         if self._initialized:
             self.shutdown()
         self._reset_pipeline_state()
+        self.hermes_home = resolve_hermes_home()
+        self.profile_name = resolve_profile_name()
         # Debug mode also captures what the SDK's exporters log (#167).
         install_sdk_log_forwarding()
         ok = self._init_backends(endpoint)
@@ -810,6 +822,10 @@ class HermesOTelPlugin:
         pkg_version = package_version()
         if pkg_version:
             attrs["service.version"] = pkg_version
+        # Which Hermes profile produced this telemetry (#70). A resource
+        # attribute so backends can split traces and metrics per agent even
+        # where span attributes are not filterable; also on the root span.
+        attrs["hermes.profile"] = self.profile_name
         if self.config.global_tags:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
@@ -1264,6 +1280,9 @@ class HermesOTelPlugin:
         if spec is not None and spec.genai and not self.config.emit_genai_metrics:
             return
         otlp_name = spec.name if spec is not None else name
+        # ``profile`` is a bounded label (one value per plugin instance), so
+        # a backend can split every series by agent (#70).
+        attributes = {"profile": self.profile_name, **(attributes or {})}
         if self._live_active:
             try:
                 import time as _time

@@ -47,6 +47,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.session_id` | hermes | string | Session id (pre-existing spelling; `session.id` is the standard one) |
 | `llm.model_name` | OpenInference | string | Model the turn started with |
 | `hermes.platform` | hermes | string | The Hermes surface the turn ran on: `cli` · `telegram` · `discord` · `cron` · … (never reported as a provider) |
+| `hermes.profile` | hermes | string | The Hermes profile that ran the turn: `default`, the profile id under `~/.hermes/profiles/`, or `custom`. Also a resource attribute and the `profile` label on every metric ([profiles](/configuration/profiles)) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |

@@ -50,9 +50,14 @@ logger.addHandler(logging.NullHandler())
 
 
 def debug_log_path() -> str:
-    """Where :func:`debug_log` writes: ``$HERMES_HOME/plugins/hermes_otel/debug.log``."""
-    home = os.environ.get("HERMES_HOME", "").strip() or "~/.hermes"
-    return os.path.join(os.path.expanduser(home), "plugins", "hermes_otel", "debug.log")
+    """Where :func:`debug_log` writes: ``<hermes home>/plugins/hermes_otel/debug.log``.
+
+    The home is the profile's own under a multiplexed gateway (#70), see
+    :mod:`hermes_otel.hermes_home`; ``$HERMES_HOME`` / ``~/.hermes`` otherwise.
+    """
+    from .hermes_home import resolve_hermes_home
+
+    return os.path.join(str(resolve_hermes_home()), "plugins", "hermes_otel", "debug.log")
 
 
 def debug_log(msg: str) -> None:

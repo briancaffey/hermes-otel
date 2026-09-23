@@ -107,7 +107,11 @@ class TestFinalize:
                         points.setdefault(m.name, []).append(dp)
         turns = points["hermes.session.turns"][0]
         assert turns.sum == 3 and turns.count == 1
-        assert dict(turns.attributes) == {"platform": "cli", "reason": "session_boundary"}
+        assert dict(turns.attributes) == {
+            "platform": "cli",
+            "reason": "session_boundary",
+            "profile": "default",
+        }
         duration = points["hermes.session.duration"][0]
         assert duration.count == 1 and 0 <= duration.sum < 60
         assert dict(duration.attributes)["reason"] == "session_boundary"

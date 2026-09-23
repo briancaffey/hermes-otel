@@ -31,7 +31,7 @@ You can run the same script yourself; on a default install it is at `~/.hermes/p
 
 | Command | Shows |
 |---|---|
-| `status` | the live store's path and fill (spans, metric points, logs, oldest to newest), the config file in use, every configured backend and whether it can be queried from here |
+| `status` | the Hermes home and profile the tool resolved, the live store's path and fill (spans, metric points, logs, oldest to newest), the config file in use, every configured backend and whether it can be queried from here |
 | `traces` | recent turns, one row each: when, root, session, model, duration, tokens, cost, spans, status |
 | `trace last` · `trace last-2` · `trace <id>` | one turn as the span tree: tree guides, duration, a waterfall bar, and a one-line summary per span kind |
 | `span <span-id>` | every attribute of one span |

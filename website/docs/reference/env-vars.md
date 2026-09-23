@@ -103,7 +103,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | Var | Effect |
 |---|---|
 | `HERMES_OTEL_CONFIG` | Explicit path to the config file; highest precedence — see [Where does the config live?](/configuration/overview) |
-| `HERMES_HOME` | Hermes' home (default `~/.hermes`); the plugin resolves `hermes_otel.yaml` and the live store under it |
+| `HERMES_HOME` | Hermes' home (default `~/.hermes`); the plugin resolves `hermes_otel.yaml`, the live store and the debug log under it. Inside a multiplexed gateway each profile's plugin uses that profile's home instead, via Hermes's own resolver ([profiles](/configuration/profiles)) |
 | `HERMES_OTEL_LIVE_DB` | Path of the live dashboard's SQLite store (default `$HERMES_HOME/hermes_otel_live.db`) |
 
 ## Debug

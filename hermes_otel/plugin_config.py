@@ -33,9 +33,15 @@ Scalar = Union[str, int, float, bool]
 
 
 def hermes_home() -> Path:
-    """``$HERMES_HOME`` if set, else ``~/.hermes`` — matching Hermes itself."""
-    raw = os.environ.get("HERMES_HOME", "").strip()
-    return Path(raw).expanduser() if raw else Path.home() / ".hermes"
+    """The Hermes home this plugin instance belongs to.
+
+    Hermes's scope-aware resolver when Hermes is importable (so each profile
+    of a multiplexed gateway gets its own home, #70), else ``$HERMES_HOME``
+    or ``~/.hermes``. See :mod:`hermes_otel.hermes_home`.
+    """
+    from .hermes_home import resolve_hermes_home
+
+    return resolve_hermes_home()
 
 
 # Environment variable holding an explicit config file path.

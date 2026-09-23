@@ -115,6 +115,7 @@ _KNOWN_ATTRIBUTES = (
     "hermes.cron.job_id",
     "hermes.max_retries",
     "hermes.platform",
+    "hermes.profile",
     "hermes.retry.count",
     "hermes.retryable",
     "hermes.sender.id",
