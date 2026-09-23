@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.14.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.13.0...hermes-otel-v1.14.0) (2026-09-23)
+
+
+### Features
+
+* **profiles:** resolve the home per profile, stamp hermes.profile on spans, metrics and the resource ([#218](https://github.com/briancaffey/hermes-otel/issues/218)) ([4f7063c](https://github.com/briancaffey/hermes-otel/commit/4f7063cb7abb44d193967e9151e30d635c7ea246)), closes [#70](https://github.com/briancaffey/hermes-otel/issues/70)
+
 ## [1.13.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.12.0...hermes-otel-v1.13.0) (2026-09-22)
 
 
