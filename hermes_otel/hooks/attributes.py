@@ -73,6 +73,12 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
     return attrs
 
 
+def _profile_attributes(tracer: Any) -> Dict[str, str]:
+    """``hermes.profile``: the Hermes profile this plugin instance serves (#70)."""
+    name = getattr(tracer, "profile_name", None)
+    return {"hermes.profile": truncate_string(str(name), _PROVIDER_MAX)} if name else {}
+
+
 def _platform_attributes(platform: Any) -> Dict[str, str]:
     """``hermes.platform``: the Hermes surface a turn ran on (``cli``, ``telegram`` …)."""
     if not platform:

@@ -114,9 +114,9 @@ class TestNoHighCardinalityLabels:
         _, metric_reader, _ = inmemory_otel_with_metrics
         _full_turn()
         labels = {n: a for n, a in _all_points(metric_reader)}
-        assert labels["hermes.session.count"] == {"platform": "cli"}
-        assert set(labels["hermes.message.count"]) == {"model", "provider"}
-        assert set(labels["hermes.approval.count"]) == {"choice"}
+        assert labels["hermes.session.count"] == {"platform": "cli", "profile": "default"}
+        assert set(labels["hermes.message.count"]) == {"model", "provider", "profile"}
+        assert set(labels["hermes.approval.count"]) == {"choice", "profile"}
 
 
 class TestResourceIdentity:

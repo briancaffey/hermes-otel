@@ -33,7 +33,7 @@ python3 ${HERMES_SKILL_DIR}/scripts/otel.py <command> [options]
 
 | Command | Shows |
 |---|---|
-| `status` | where the live store is and how full it is, the config file, every configured backend and whether it can be queried from here |
+| `status` | which Hermes home and profile this is, where the live store is and how full it is, the config file, every configured backend and whether it can be queried from here |
 | `traces` | recent turns, one row each: when, root, session, model, duration, tokens, cost, spans, status |
 | `trace last` · `trace last-2` · `trace <id>` | one turn as the span tree with a duration column, a waterfall bar and a one-line summary per span |
 | `span <span-id>` | every attribute of one span (full prompts, tool arguments, results) |

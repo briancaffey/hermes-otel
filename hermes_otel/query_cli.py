@@ -25,7 +25,6 @@ from __future__ import annotations
 
 import argparse
 import json
-import os
 import re
 import shutil
 import sqlite3
@@ -744,8 +743,11 @@ def _emit_json(obj: Any, out: TextIO) -> None:
 
 def cmd_status(args: argparse.Namespace, out: TextIO) -> int:
     path = getattr(args, "db", None) or _default_db_path()
+    from .hermes_home import resolve_hermes_home, resolve_profile_name
+
     info: Dict[str, Any] = {
-        "hermes_home": os.environ.get("HERMES_HOME") or str(Path.home() / ".hermes"),
+        "hermes_home": str(resolve_hermes_home()),
+        "profile": resolve_profile_name(),
         "live_store": {"path": path, "exists": Path(path).exists()},
         "backends": [],
         "config_file": None,
@@ -793,7 +795,7 @@ def cmd_status(args: argparse.Namespace, out: TextIO) -> int:
         _emit_json(info, out)
         return 0
     ls = info["live_store"]
-    out.write(f"HERMES_HOME   {info['hermes_home']}\n")
+    out.write(f"hermes home   {info['hermes_home']}  (profile: {info['profile']})\n")
     out.write(f"live store    {ls['path']}\n")
     if ls["exists"]:
         out.write(

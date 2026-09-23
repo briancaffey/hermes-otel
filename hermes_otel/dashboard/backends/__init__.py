@@ -39,6 +39,21 @@ def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
 # ── Config loader ──────────────────────────────────────────────────────
 
 
+def _hermes_home() -> Path:
+    """Hermes's scope-aware home (the profile's own inside a multiplexed
+    gateway, #70) when Hermes is importable, else ``$HERMES_HOME`` / ``~/.hermes``."""
+    try:
+        from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
+
+        home = get_hermes_home()
+        if home:
+            return Path(home)
+    except Exception:
+        pass
+    env_home = os.environ.get("HERMES_HOME", "").strip()
+    return Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+
+
 def _candidate_config_paths() -> List[Path]:
     """Where the plugin's config may live, most preferred first.
 
@@ -53,8 +68,7 @@ def _candidate_config_paths() -> List[Path]:
     override = os.environ.get("HERMES_OTEL_CONFIG", "").strip()
     if override:
         paths.append(Path(override).expanduser())
-    env_home = os.environ.get("HERMES_HOME", "").strip()
-    home = Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
+    home = _hermes_home()
     paths.append(home / "hermes_otel.yaml")
     here = Path(__file__).resolve().parent  # dashboard/backends/
     plugin_root = here.parent.parent  # plugin root (…/hermes_otel/)
