@@ -136,6 +136,21 @@
 # IDs). Set false to emit only the hermes.* metrics.
 # Also settable via HERMES_OTEL_EMIT_GENAI_METRICS.
 # emit_genai_metrics: true
+#
+# Metric temporality for OTLP export (#233). Unset = the SDK default
+# (cumulative, or OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE). Set
+# `delta` for Datadog, New Relic and Logfire style backends; a backend entry's
+# own `metrics_temporality:` wins, and signoz / uptrace entries default to delta.
+# metrics_temporality: cumulative
+#
+# Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential`
+# (base-2 exponential histograms; Prometheus native histograms, Datadog,
+# New Relic, Uptrace).
+# metrics_histogram: explicit
+#
+# Distinct values a label such as `model` or `tool_name` may take per process
+# before the rest fold into `other` (the Python SDK has no cardinality limit).
+# metrics_label_limit: 100
 
 # ── Skill execution-window spans ──────────────────────────────────────────────
 #
@@ -232,7 +247,7 @@
 # A healthy backend needs far less; a stuck one costs at most this much per
 # turn. 0 = do not wait (a one-shot `hermes -z` may then exit before its
 # spans are sent).
-# force_flush_wait_ms: 500
+# force_flush_wait_ms: 1500
 
 # ── BatchSpanProcessor tunables (non-blocking export) ─────────────────────────
 # Each backend gets its own processor with these settings. Defaults are fine

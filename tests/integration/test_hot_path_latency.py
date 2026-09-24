@@ -133,18 +133,24 @@ class TestTurnEndFlush:
         plugin.flush_wait(timeout_s=5)
         assert slow.force_flush.call_count == 2
 
-    def test_background_flush_skips_metric_and_log_providers(self, stuck_plugin):
+    def test_background_flush_covers_metric_and_log_providers_off_the_hook_thread(
+        self, stuck_plugin
+    ):
+        # Since #233 the background flush also flushes the metric and log
+        # providers: a one-shot ``hermes -z`` never reaches the 60 s metric
+        # tick nor atexit, so this flush is the only metric export it gets.
+        # It still runs on the worker thread, never on the hook thread.
         exporter, plugin = stuck_plugin
         plugin._meter_provider = MagicMock()
         plugin._logger_provider = MagicMock()
         plugin.flush_async()
         plugin.flush_wait(timeout_s=5)
-        plugin._meter_provider.force_flush.assert_not_called()
-        plugin._logger_provider.force_flush.assert_not_called()
-        # Shutdown still flushes them synchronously.
-        plugin._force_flush(timeout_millis=10)
         plugin._meter_provider.force_flush.assert_called_once()
         plugin._logger_provider.force_flush.assert_called_once()
+        # Shutdown still flushes them synchronously (a second call).
+        plugin._force_flush(timeout_millis=10)
+        assert plugin._meter_provider.force_flush.call_count == 2
+        assert plugin._logger_provider.force_flush.call_count == 2
 
     def test_no_flush_when_disabled(self, stuck_plugin):
         exporter, plugin = stuck_plugin

@@ -30,6 +30,10 @@ EXPECTED_KEYS = {
     "retry_count",
     "approval_count",
     "approval_duration",
+    # seconds-based successors (#233)
+    "tool_duration_s",
+    "approval_wait_s",
+    "subagent_run_s",
     "gen_ai.client.token.usage",
     "gen_ai.client.operation.duration",
     "gen_ai.agent.token.usage",

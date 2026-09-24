@@ -130,4 +130,5 @@ def on_post_approval_response(
     tracer.record_metric("approval_count", 1, metric_attrs)
     if duration_ms is not None:
         tracer.record_metric("approval_duration", duration_ms, metric_attrs)
+        tracer.record_metric("approval_wait_s", duration_ms / 1000.0, dict(metric_attrs))
     debug_log(f"  approval span ended: key={key}, choice={verdict['choice']}, dur={duration_ms}")

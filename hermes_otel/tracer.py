@@ -23,7 +23,7 @@ import time
 import uuid
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
 from .backends import _TRACES_ONLY, _ResolvedBackend
@@ -246,11 +246,76 @@ class InstrumentSpec:
     description: str
     value: str  # one | int | float | record
     genai: bool = False
+    # Explicit histogram bucket boundaries (#233). The SDK default is a
+    # millisecond-scale list, wrong for every seconds and token histogram.
+    boundaries: Optional[Tuple[float, ...]] = None
+    # The labels this instrument may carry; anything else is dropped by a
+    # View so a stray attribute can never fan a series out. ``profile`` is
+    # always allowed (added by record_metric).
+    labels: Tuple[str, ...] = ()
+    # Superseded by a seconds instrument; documented as deprecated.
+    deprecated: bool = False
+
+
+# Bucket boundaries. The seconds/token lists are the ones the OTel GenAI
+# conventions specify; the human-timescale list is the spec's
+# ``gen_ai.invoke_workflow.duration`` list reused for sessions and approvals;
+# the millisecond lists keep the deprecated ``ms`` histograms readable until
+# they are removed (2.0).
+_B_OP_SECONDS = (
+    0.01,
+    0.02,
+    0.04,
+    0.08,
+    0.16,
+    0.32,
+    0.64,
+    1.28,
+    2.56,
+    5.12,
+    10.24,
+    20.48,
+    40.96,
+    81.92,
+)
+_B_TOKENS = (
+    1,
+    4,
+    16,
+    64,
+    256,
+    1024,
+    4096,
+    16384,
+    65536,
+    262144,
+    1048576,
+    4194304,
+    16777216,
+    67108864,
+)
+_B_HUMAN_SECONDS = (1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200)
+_B_SMALL_COUNTS = (1, 2, 4, 8, 16, 32, 64, 128)
+_B_TOOL_MS = (1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000)
+_B_WAIT_MS = (100, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000)
+_B_RUN_MS = (1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 1800000)
+_MODEL_LABELS = ("model", "provider")
+_GENAI_LABELS = (
+    "gen_ai.operation.name",
+    "gen_ai.provider.name",
+    "gen_ai.request.model",
+    "gen_ai.response.model",
+)
 
 
 _INSTRUMENTS: Dict[str, InstrumentSpec] = {
     "session_count": InstrumentSpec(
-        "hermes.session.count", "counter", "{session}", "Sessions created", "one"
+        "hermes.session.count",
+        "counter",
+        "{session}",
+        "Sessions created",
+        "one",
+        labels=("platform",),
     ),
     "session_turns": InstrumentSpec(
         "hermes.session.turns",
@@ -258,6 +323,8 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{turn}",
         "Turns per session, recorded when the session is finalized",
         "record",
+        boundaries=_B_SMALL_COUNTS,
+        labels=("platform", "reason"),
     ),
     "session_duration": InstrumentSpec(
         "hermes.session.duration",
@@ -265,12 +332,24 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "s",
         "Session length from first turn to finalize",
         "record",
+        boundaries=_B_HUMAN_SECONDS,
+        labels=("platform", "reason"),
     ),
     "token_usage": InstrumentSpec(
-        "hermes.token.usage", "counter", "{token}", "Tokens consumed by type", "int"
+        "hermes.token.usage",
+        "counter",
+        "{token}",
+        "Tokens consumed by type",
+        "int",
+        labels=_MODEL_LABELS + ("token_type",),
     ),
     "prompt_cache_tokens": InstrumentSpec(
-        "hermes.prompt_cache.tokens", "counter", "{token}", "Prompt tokens by cache result", "int"
+        "hermes.prompt_cache.tokens",
+        "counter",
+        "{token}",
+        "Prompt tokens by cache result",
+        "int",
+        labels=_MODEL_LABELS + ("api_mode", "cache_result"),
     ),
     "prompt_cache_observations": InstrumentSpec(
         "hermes.prompt_cache.observations",
@@ -278,18 +357,36 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{request}",
         "Requests with provider-reported prompt-cache usage",
         "one",
+        labels=_MODEL_LABELS + ("api_mode", "cache_result"),
     ),
     "cost_usage": InstrumentSpec(
-        "hermes.cost.usage", "counter", "USD", "USD cost per message", "float"
+        "hermes.cost.usage", "counter", "USD", "USD cost per message", "float", labels=_MODEL_LABELS
     ),
     "tool_duration": InstrumentSpec(
-        "hermes.tool.duration", "histogram", "ms", "Tool execution time", "record"
+        "hermes.tool.duration",
+        "histogram",
+        "ms",
+        "Tool execution time",
+        "record",
+        boundaries=_B_TOOL_MS,
+        labels=("tool_name", "gen_ai.tool.name"),
+        deprecated=True,
     ),
     "message_count": InstrumentSpec(
-        "hermes.message.count", "counter", "{message}", "Completed assistant messages", "one"
+        "hermes.message.count",
+        "counter",
+        "{message}",
+        "Completed assistant messages",
+        "one",
+        labels=_MODEL_LABELS,
     ),
     "model_usage": InstrumentSpec(
-        "hermes.model.usage", "counter", "{message}", "Messages per model and provider", "one"
+        "hermes.model.usage",
+        "counter",
+        "{message}",
+        "Messages per model and provider",
+        "one",
+        labels=_MODEL_LABELS,
     ),
     "skill_inferred": InstrumentSpec(
         "hermes.skill.inferred",
@@ -297,6 +394,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{hit}",
         "Skill-name inference hits on tool spans",
         "one",
+        labels=("skill_name", "source"),
     ),
     "subagent_count": InstrumentSpec(
         "hermes.subagent.count",
@@ -304,6 +402,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{run}",
         "Delegated sub-agent runs by role and status",
         "one",
+        labels=("role", "status", "child_status"),
     ),
     "subagent_duration": InstrumentSpec(
         "hermes.subagent.duration",
@@ -311,6 +410,9 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "ms",
         "Delegated sub-agent wall-clock duration",
         "record",
+        boundaries=_B_RUN_MS,
+        labels=("role",),
+        deprecated=True,
     ),
     "api_error_count": InstrumentSpec(
         "hermes.api.error.count",
@@ -318,9 +420,15 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{request}",
         "Failed provider API requests by error type / status class",
         "one",
+        labels=("error_type", "status_class", "retryable") + _MODEL_LABELS,
     ),
     "retry_count": InstrumentSpec(
-        "hermes.retry.count", "counter", "{attempt}", "Provider API retry attempts", "int"
+        "hermes.retry.count",
+        "counter",
+        "{attempt}",
+        "Provider API retry attempts",
+        "int",
+        labels=_MODEL_LABELS,
     ),
     "approval_count": InstrumentSpec(
         "hermes.approval.count",
@@ -328,6 +436,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{prompt}",
         "Human-in-the-loop approval prompts by choice / pattern",
         "one",
+        labels=("choice",),
     ),
     "approval_duration": InstrumentSpec(
         "hermes.approval.duration",
@@ -335,6 +444,39 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "ms",
         "Human-decision wait time on approval prompts",
         "record",
+        boundaries=_B_WAIT_MS,
+        labels=("choice",),
+        deprecated=True,
+    ),
+    # Seconds-based successors of the ``ms`` histograms above (#233). The
+    # ``ms`` ones stay for one minor release, marked deprecated, then go in 2.0.
+    "tool_duration_s": InstrumentSpec(
+        "gen_ai.execute_tool.duration",
+        "histogram",
+        "s",
+        "Duration of a single tool execution (OTel GenAI convention)",
+        "record",
+        genai=True,
+        boundaries=_B_OP_SECONDS,
+        labels=("gen_ai.tool.name", "error.type"),
+    ),
+    "approval_wait_s": InstrumentSpec(
+        "hermes.approval.wait.duration",
+        "histogram",
+        "s",
+        "Human / guardian decision wait time on approval prompts",
+        "record",
+        boundaries=_B_HUMAN_SECONDS,
+        labels=("choice",),
+    ),
+    "subagent_run_s": InstrumentSpec(
+        "hermes.subagent.run.duration",
+        "histogram",
+        "s",
+        "Delegated sub-agent wall-clock duration",
+        "record",
+        boundaries=_B_HUMAN_SECONDS,
+        labels=("role",),
     ),
     # OTel GenAI semantic-convention instruments, emitted alongside the
     # hermes.* ones so generic GenAI dashboards work without per-user config.
@@ -346,6 +488,8 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "Number of tokens used per client (LLM) operation, by type",
         "record",
         genai=True,
+        boundaries=_B_TOKENS,
+        labels=("gen_ai.token.type",) + _GENAI_LABELS,
     ),
     "gen_ai.client.operation.duration": InstrumentSpec(
         "gen_ai.client.operation.duration",
@@ -354,6 +498,8 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "Duration of client (LLM) operations",
         "record",
         genai=True,
+        boundaries=_B_OP_SECONDS,
+        labels=_GENAI_LABELS + ("error.type",),
     ),
     "gen_ai.agent.token.usage": InstrumentSpec(
         "gen_ai.agent.token.usage",
@@ -362,8 +508,106 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "Tokens used per agent invocation (session/turn rollup), by type",
         "record",
         genai=True,
+        boundaries=_B_TOKENS,
+        labels=("gen_ai.token.type",) + _GENAI_LABELS,
     ),
 }
+
+
+def metric_views(histogram: str = "explicit") -> List[Any]:
+    """One ``View`` per instrument: the label allow-list and, for histograms
+    with ``histogram="explicit"``, the bucket boundaries (#233).
+
+    With ``exponential`` the boundaries are left to the readers' preferred
+    aggregation (a View's aggregation would override every reader's).
+    """
+    if not _OTEL_AVAILABLE:
+        return []
+    from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
+
+    views: List[Any] = []
+    for spec in _INSTRUMENTS.values():
+        kwargs: Dict[str, Any] = {
+            "instrument_name": spec.name,
+            "attribute_keys": set(spec.labels) | {"profile"},
+        }
+        if spec.kind == "histogram" and spec.boundaries and histogram != "exponential":
+            kwargs["aggregation"] = ExplicitBucketHistogramAggregation(
+                boundaries=list(spec.boundaries)
+            )
+        views.append(View(**kwargs))
+    return views
+
+
+def metric_temporality_map(temporality: Optional[str]) -> Optional[Dict[Any, Any]]:
+    """``preferred_temporality`` for an ``OTLPMetricExporter`` (#233).
+
+    ``delta`` follows the OTLP exporter spec's ``delta`` preference: delta for
+    counters, histograms and observable counters, cumulative for up-down
+    counters and gauges. ``cumulative`` is cumulative for everything. ``None``
+    leaves the SDK default (``OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE``
+    or cumulative).
+    """
+    if not temporality or not _OTEL_AVAILABLE:
+        return None
+    from opentelemetry.sdk.metrics import (
+        Counter,
+        Histogram,
+        ObservableCounter,
+        ObservableGauge,
+        ObservableUpDownCounter,
+        UpDownCounter,
+    )
+    from opentelemetry.sdk.metrics.export import AggregationTemporality
+
+    delta = AggregationTemporality.DELTA
+    cumulative = AggregationTemporality.CUMULATIVE
+    if temporality == "delta":
+        return {
+            Counter: delta,
+            Histogram: delta,
+            ObservableCounter: delta,
+            UpDownCounter: cumulative,
+            ObservableUpDownCounter: cumulative,
+            ObservableGauge: cumulative,
+        }
+    return {
+        Counter: cumulative,
+        Histogram: cumulative,
+        ObservableCounter: cumulative,
+        UpDownCounter: cumulative,
+        ObservableUpDownCounter: cumulative,
+        ObservableGauge: cumulative,
+    }
+
+
+def metric_preferred_aggregation(histogram: str) -> Optional[Dict[Any, Any]]:
+    """``preferred_aggregation`` for an exporter: exponential histograms on request."""
+    if histogram != "exponential" or not _OTEL_AVAILABLE:
+        return None
+    from opentelemetry.sdk.metrics import Histogram
+    from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation
+
+    return {Histogram: ExponentialBucketHistogramAggregation()}
+
+
+# Labels whose value space is open (any model slug, tool or skill name, free
+# text reason). record_metric folds values past ``metrics_label_limit`` into
+# ``other`` because the Python SDK has no cardinality limit of its own.
+_CAPPED_LABELS = frozenset(
+    {
+        "model",
+        "gen_ai.request.model",
+        "gen_ai.response.model",
+        "tool_name",
+        "gen_ai.tool.name",
+        "skill_name",
+        "reason",
+        "role",
+        "child_status",
+        "error_type",
+    }
+)
 
 
 def metric_otlp_name(key: str) -> str:
@@ -548,6 +792,8 @@ class HermesOTelPlugin:
         # and background threads (which do not inherit the override) never
         # need to resolve it again (#70).
         self.hermes_home: Path = resolve_hermes_home()
+        self._label_values: Dict[str, set] = {}
+        self._label_cap_logged: set = set()
         self.profile_name: str = resolve_profile_name()
         # Turn registry for orphan sweep (session_id -> perf_counter start time)
         self._turn_started_at: Dict[str, float] = {}
@@ -572,6 +818,8 @@ class HermesOTelPlugin:
         if self._initialized:
             self.shutdown()
         self._reset_pipeline_state()
+        self._label_values = {}
+        self._label_cap_logged = set()
         self.hermes_home = resolve_hermes_home()
         self.profile_name = resolve_profile_name()
         # Debug mode also captures what the SDK's exporters log (#167).
@@ -977,9 +1225,17 @@ class HermesOTelPlugin:
                     metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
                     try:
                         metric_hdrs = self._merge_headers(b.metrics_headers or b.headers)
+                        temporality = b.metrics_temporality or self.config.metrics_temporality
                         m_exporter = OTLPMetricExporter(
-                            endpoint=metrics_endpoint, headers=metric_hdrs
+                            endpoint=metrics_endpoint,
+                            headers=metric_hdrs,
+                            preferred_temporality=metric_temporality_map(temporality),
+                            preferred_aggregation=metric_preferred_aggregation(
+                                self.config.metrics_histogram
+                            ),
                         )
+                        if temporality:
+                            debug_log(f"metrics temporality for {b.display_name}: {temporality}")
                         reader = PeriodicExportingMetricReader(
                             m_exporter,
                             export_interval_millis=self.config.flush_interval_ms,
@@ -1020,6 +1276,7 @@ class HermesOTelPlugin:
                 self._meter_provider = MeterProvider(
                     resource=resource,
                     metric_readers=metric_readers,
+                    views=metric_views(self.config.metrics_histogram),
                 )
                 _set_global_once(metrics, "meter", self._meter_provider)
                 self._meter = self._meter_provider.get_meter("hermes-otel-plugin")
@@ -1268,6 +1525,29 @@ class HermesOTelPlugin:
             f"(attached to {target}, level={self.config.log_level.upper()})"
         )
 
+    def _bound_labels(self, attributes: Dict[str, Any]) -> Dict[str, Any]:
+        """Fold an open-ended label's values past ``metrics_label_limit`` into ``other``."""
+        limit = int(getattr(self.config, "metrics_label_limit", 100) or 0)
+        if limit <= 0:
+            return attributes
+        seen = self._label_values
+        for key in _CAPPED_LABELS.intersection(attributes):
+            value = str(attributes[key])
+            known = seen.setdefault(key, set())
+            if value in known:
+                continue
+            if len(known) < limit:
+                known.add(value)
+            else:
+                attributes[key] = "other"
+                if key not in self._label_cap_logged:
+                    self._label_cap_logged.add(key)
+                    debug_log(
+                        f"metric label {key!r} reached metrics_label_limit={limit}; "
+                        "further values fold into 'other'"
+                    )
+        return attributes
+
     def record_metric(self, name: str, value: float, attributes: dict = None):
         """Record one point for the hook-side key ``name`` (see ``_INSTRUMENTS``).
 
@@ -1283,6 +1563,7 @@ class HermesOTelPlugin:
         # ``profile`` is a bounded label (one value per plugin instance), so
         # a backend can split every series by agent (#70).
         attributes = {"profile": self.profile_name, **(attributes or {})}
+        attributes = self._bound_labels(attributes)
         if self._live_active:
             try:
                 import time as _time
@@ -1501,8 +1782,11 @@ class HermesOTelPlugin:
                 processor.force_flush(timeout_millis=timeout_millis)
             except Exception:
                 pass
-        if not providers:
-            return
+        if providers:
+            self._force_flush_providers(timeout_millis)
+
+    def _force_flush_providers(self, timeout_millis: int = 2000) -> None:
+        """Flush the metric and log providers (their readers export synchronously)."""
         if self._meter_provider:
             try:
                 self._meter_provider.force_flush(timeout_millis=timeout_millis)
@@ -1520,8 +1804,9 @@ class HermesOTelPlugin:
         The turn-end flush used to run on the hook thread, inside the agent
         loop, with a 2 s timeout per backend: one unreachable collector stalled
         every turn end by up to 2 s × (backends + 2). Now one worker thread
-        flushes the span processors with a short timeout; the metric and log
-        providers are left to their periodic readers. Flushes coalesce: a
+        flushes the span processors, then the metric and log providers, with a
+        short timeout (the providers were left to their periodic readers until
+        #233, which left one-shot runs with no metrics at all). Flushes coalesce: a
         request while one is queued is a no-op. Returns whether one was queued.
         """
         if self._flush_pending.is_set():
@@ -1530,8 +1815,23 @@ class HermesOTelPlugin:
 
         def run() -> None:
             debug_log("background flush: start")
+            # Spans AND the metric / log providers (#233): a one-shot
+            # ``hermes -z`` exits without atexit and never reaches the 60 s
+            # metric tick, so the turn-end flush is the only export a
+            # short-lived run gets. The providers flush on their own thread,
+            # concurrently with the span processors, so the whole flush takes
+            # about one export round-trip rather than the sum of them and fits
+            # inside the hook's bounded ``force_flush_wait_ms``.
+            providers_thread = threading.Thread(
+                target=self._force_flush_providers,
+                args=(timeout_millis,),
+                name="hermes-otel-flush-providers",
+                daemon=True,
+            )
             try:
+                providers_thread.start()
                 self._force_flush(timeout_millis=timeout_millis, providers=False)
+                providers_thread.join(timeout=max(0.05, timeout_millis / 1000.0 * 2))
             finally:
                 self._flush_pending.clear()
                 debug_log("background flush: done")
