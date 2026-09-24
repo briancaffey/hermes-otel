@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.15.0...hermes-otel-v1.15.1) (2026-09-24)
+
+
+### Bug Fixes
+
+* **dashboard:** widen the metrics range select so "last 1h · 4 buckets" is not truncated ([#236](https://github.com/briancaffey/hermes-otel/issues/236)) ([f3e3a75](https://github.com/briancaffey/hermes-otel/commit/f3e3a752ea7346009c28ff0661c5082b82824837))
+
 ## [1.15.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.14.0...hermes-otel-v1.15.0) (2026-09-24)
 
 
