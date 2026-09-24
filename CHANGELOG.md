@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.15.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.14.0...hermes-otel-v1.15.0) (2026-09-24)
+
+
+### Features
+
+* **metrics:** spec bucket boundaries, per-backend temporality, seconds histograms, label allow-list and cap ([#234](https://github.com/briancaffey/hermes-otel/issues/234)) ([6822eeb](https://github.com/briancaffey/hermes-otel/commit/6822eeb5d74c46ab713d2f376214846dfd5ea399)), closes [#233](https://github.com/briancaffey/hermes-otel/issues/233)
+
 ## [1.14.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.13.0...hermes-otel-v1.14.0) (2026-09-23)
 
 
