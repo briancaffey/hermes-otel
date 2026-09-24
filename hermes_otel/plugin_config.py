@@ -102,6 +102,7 @@ class BackendConfig:
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
+    metrics_temporality: Optional[str] = None  # cumulative | delta; None = type preset / top-level
     logs: Optional[bool] = (
         None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/parseable/honeycomb)
     )
@@ -178,7 +179,9 @@ class HermesOtelConfig:
     # healthy backend receives the turn in well under it, a stuck one costs at
     # most this much per turn. 0 = do not wait. A one-shot ``hermes -z`` exits
     # right after the turn, so the wait is what gets its spans out.
-    force_flush_wait_ms: int = 500
+    # 1500 since #233: the flush now includes the metric and log providers,
+    # and a one-shot `hermes -z` exits the moment this wait returns.
+    force_flush_wait_ms: int = 1500
     # ── LLM span input fidelity ─────────────────────────────────────────
     # Opt-in: serialise the full conversation_history onto the llm span's
     # input.value so the UI shows every message instead of just the last
@@ -221,6 +224,20 @@ class HermesOtelConfig:
     # addition to the custom hermes.* metrics, so generic OTel-GenAI
     # dashboards/alerts work out of the box. Set false for hermes.* only.
     emit_genai_metrics: bool = True
+    # Metric aggregation temporality sent to OTLP backends (#233). ``None`` =
+    # auto: the OTel SDK default (``OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE``
+    # when set, else cumulative). ``delta`` for Datadog-style backends. A
+    # backend entry's own ``metrics_temporality`` wins over this default, and
+    # backend types with a known preference (SigNoz, Uptrace) default to it.
+    metrics_temporality: Optional[str] = None
+    # Histogram aggregation: ``explicit`` (spec bucket boundaries per instrument)
+    # or ``exponential`` (base-2 exponential histograms; needs a backend that
+    # accepts them, e.g. Prometheus native histograms, Datadog, New Relic).
+    metrics_histogram: str = "explicit"
+    # Distinct values a label such as ``model`` or ``tool_name`` may take per
+    # process before further values are folded into ``other`` (the Python SDK
+    # has no cardinality limit of its own). ``0`` disables the cap.
+    metrics_label_limit: int = 100
     # ── Skill execution-window spans ────────────────────────────────────
     # Emit a skill:<name> span when the agent loads a skill (via skill_view
     # or a /skills/ path), spanning from load to the turn boundary. Skills
@@ -568,12 +585,49 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
 
     values.update(_load_env_overrides())
     _reconcile_content_capture(values)
+    _reconcile_metrics_settings(values)
 
     # Build config with whatever we have; unset fields fall back to dataclass defaults.
     return replace(HermesOtelConfig(), **values)
 
 
 _LEGACY_CONTENT_KEYS = ("capture_previews", "capture_full_prompts", "capture_full_responses")
+
+
+VALID_TEMPORALITIES = ("cumulative", "delta")
+VALID_HISTOGRAMS = ("explicit", "exponential")
+
+
+def normalize_temporality(value: Any, where: str = "metrics_temporality") -> Optional[str]:
+    """``cumulative`` / ``delta`` (case-insensitive) or ``None``; anything else warns and is dropped."""
+    if value is None:
+        return None
+    text = str(value).strip().lower()
+    if not text:
+        return None
+    if text in VALID_TEMPORALITIES:
+        return text
+    logger.warning(
+        f"[hermes-otel] {where}={value!r} is not one of {'/'.join(VALID_TEMPORALITIES)}; ignoring"
+    )
+    return None
+
+
+def _reconcile_metrics_settings(values: Dict[str, Any]) -> None:
+    if "metrics_temporality" in values:
+        values["metrics_temporality"] = normalize_temporality(values["metrics_temporality"])
+    hist = str(values.get("metrics_histogram", "explicit") or "explicit").strip().lower()
+    if hist not in VALID_HISTOGRAMS:
+        logger.warning(
+            f"[hermes-otel] metrics_histogram={values.get('metrics_histogram')!r} is not one of "
+            f"{'/'.join(VALID_HISTOGRAMS)}; using explicit"
+        )
+        hist = "explicit"
+    values["metrics_histogram"] = hist
+    try:
+        values["metrics_label_limit"] = max(0, int(values.get("metrics_label_limit", 100)))
+    except (TypeError, ValueError):
+        values["metrics_label_limit"] = 100
 
 
 def _reconcile_content_capture(values: Dict[str, Any]) -> None:
@@ -689,7 +743,7 @@ FIELD_DOCS = {
     "span_batch_max_export_batch_size": "Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full`",
     "span_batch_export_timeout_ms": "Per-export HTTP timeout",
     "force_flush_on_session_end": "Flush every backend's span queue at the end of each turn, from a background thread (500 ms per backend, coalesced)",
-    "force_flush_wait_ms": "How long the turn waits for that background flush before returning to Hermes; `0` = do not wait",
+    "force_flush_wait_ms": "How long the turn waits for that background flush (spans, then metrics and logs on a second thread) before returning to Hermes; a one-shot run exits right after, so this bounds what it exports; `0` = do not wait",
     "capture_conversation_history": "Attach the full message JSON to `llm.*` spans",
     "conversation_history_max_chars": "JSON cap when conversation capture is on",
     "content_capture": "`full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture)",
@@ -700,6 +754,9 @@ FIELD_DOCS = {
     "log_level": "Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`",
     "log_attach_logger": "Logger to attach to; `null` = root, `hermes_otel` = the plugin only",
     "emit_genai_metrics": "Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`)",
+    "metrics_temporality": "Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins",
+    "metrics_histogram": "Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it)",
+    "metrics_label_limit": "Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap)",
     "skill_spans": "Open a `skill.<name>` span on each successful skill load, closed at turn end",
     "discovery_prompt": "Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in)",
     "dashboard_live": "Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode",
@@ -751,7 +808,15 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ),
     (
         "Spans and metrics",
-        ("emit_genai_metrics", "skill_spans", "suppress_mcp_ping_spans", "discovery_prompt"),
+        (
+            "emit_genai_metrics",
+            "metrics_temporality",
+            "metrics_histogram",
+            "metrics_label_limit",
+            "skill_spans",
+            "suppress_mcp_ping_spans",
+            "discovery_prompt",
+        ),
     ),
     ("Logs", ("capture_logs", "log_level", "log_attach_logger")),
     ("Dashboard", ("dashboard_live", "dashboard_live_max_spans", "dashboard_live_retention_hours")),

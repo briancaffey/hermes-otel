@@ -35,7 +35,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full` |
 | `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
 | `force_flush_on_session_end` | bool | `true` | Flush every backend's span queue at the end of each turn, from a background thread (500 ms per backend, coalesced) |
-| `force_flush_wait_ms` | int | `500` | How long the turn waits for that background flush before returning to Hermes; `0` = do not wait |
+| `force_flush_wait_ms` | int | `1500` | How long the turn waits for that background flush (spans, then metrics and logs on a second thread) before returning to Hermes; a one-shot run exits right after, so this bounds what it exports; `0` = do not wait |
 | `capture_conversation_history` | bool | `false` | Attach the full message JSON to `llm.*` spans |
 | `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
 | `content_capture` | string | `"full"` | `full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture) |
@@ -46,6 +46,9 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |
 | `emit_genai_metrics` | bool | `true` | Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`) |
+| `metrics_temporality` | string \| null | *(unset)* | Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins |
+| `metrics_histogram` | string | `"explicit"` | Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it) |
+| `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap) |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
 | `discovery_prompt` | bool | `false` | Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in) |
 | `dashboard_live` | bool | `true` | Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode |
@@ -72,6 +75,7 @@ Shared fields (all optional unless noted):
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
 | `metrics` | bool | Override metrics-export default for this backend |
+| `metrics_temporality` | string | `cumulative` or `delta` for this backend's metric reader; overrides the top-level default and the type preset (`signoz`, `uptrace` → `delta`) |
 | `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
 | `headers` | map | Per-backend HTTP headers (merged onto top-level `headers`) |
 

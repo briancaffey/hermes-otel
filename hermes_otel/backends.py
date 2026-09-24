@@ -21,12 +21,13 @@ type to ``_ENV_PRIORITY``.
 from __future__ import annotations
 
 import base64
+import dataclasses
 import os
 import urllib.parse
 from dataclasses import dataclass
 from typing import Callable, Dict, List, Optional
 
-from .plugin_config import BackendConfig
+from .plugin_config import BackendConfig, normalize_temporality
 
 # Backend types whose collectors do not accept OTLP metrics. Pure traces.
 # Phoenix answers 405 on /v1/metrics and /v1/logs (arizephoenix/phoenix:latest
@@ -103,6 +104,9 @@ class _ResolvedBackend:
     supports_metrics: bool = True
     supports_logs: bool = False
     resource_attributes: Optional[Dict[str, str]] = None
+    # ``cumulative`` / ``delta`` for this backend's metric reader; ``None`` =
+    # the top-level ``metrics_temporality`` or the SDK default (#233).
+    metrics_temporality: Optional[str] = None
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -608,7 +612,24 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
     resolver = _RESOLVERS.get(t)
     if resolver is None:
         raise ValueError(f"unknown backend type {bc.type!r}")
-    return resolver(bc)
+    rb = resolver(bc)
+    temporality = normalize_temporality(
+        bc.metrics_temporality, where=f"backends[{bc.name or t}].metrics_temporality"
+    ) or _TEMPORALITY_PRESETS.get(t)
+    if temporality and rb.metrics_temporality != temporality:
+        rb = dataclasses.replace(rb, metrics_temporality=temporality)
+    return rb
+
+
+# Backend types whose docs ask for delta temporality (#233): SigNoz
+# "recommends delta for Counter, Async Counter, and Histogram"; Uptrace
+# "Prefer delta metrics temporality". Prometheus-family backends (LGTM,
+# OpenObserve) and Honeycomb take the SDK default. An explicit
+# ``metrics_temporality`` on the entry always wins over the preset.
+_TEMPORALITY_PRESETS: Dict[str, str] = {
+    "signoz": "delta",
+    "uptrace": "delta",
+}
 
 
 def resolve_from_env() -> Optional[_ResolvedBackend]:

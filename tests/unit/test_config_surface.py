@@ -33,6 +33,10 @@ class TestEnvOverrides:
             raw, expected = "nvidia", "nvidia"
         if name == "log_level":
             raw, expected = "debug", "DEBUG"
+        if name == "metrics_temporality":
+            raw, expected = "delta", "delta"
+        if name == "metrics_histogram":
+            raw, expected = "exponential", "exponential"
         if name == "content_capture":
             raw, expected = "preview", "preview"
         monkeypatch.setenv(f"HERMES_OTEL_{name.upper()}", raw)
@@ -74,6 +78,10 @@ class TestYamlCoercion:
             raw, expected = "amd", "amd"
         if name == "log_level":
             raw, expected = "warning", "WARNING"
+        if name == "metrics_temporality":
+            raw, expected = "delta", "delta"
+        if name == "metrics_histogram":
+            raw, expected = "exponential", "exponential"
         if name == "content_capture":
             raw, expected = "preview", "preview"
         path = tmp_path / "hermes_otel.yaml"

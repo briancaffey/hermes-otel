@@ -291,11 +291,12 @@ class TestOnPostToolCall:
     def test_records_tool_duration_metric(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
-        mock_tracer.record_metric.assert_called_once()
-        name, _value, attrs = mock_tracer.record_metric.call_args[0]
-        assert name == "tool_duration"
-        assert attrs["tool_name"] == "bash"
-        assert attrs["gen_ai.tool.name"] == "bash"
+        # The deprecated ms histogram and its seconds successor (#233).
+        calls = {c.args[0]: c.args for c in mock_tracer.record_metric.call_args_list}
+        assert set(calls) == {"tool_duration", "tool_duration_s"}
+        assert calls["tool_duration"][2] == {"tool_name": "bash", "gen_ai.tool.name": "bash"}
+        assert calls["tool_duration_s"][2] == {"gen_ai.tool.name": "bash"}
+        assert calls["tool_duration_s"][1] == pytest.approx(calls["tool_duration"][1] / 1000.0)
 
     def test_cleans_up_start_time(self, mock_tracer):
         mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)

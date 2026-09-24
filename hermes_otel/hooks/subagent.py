@@ -159,6 +159,9 @@ def on_subagent_stop(
             tracer.record_metric(
                 "subagent_duration", float(duration_ms), {"role": role or "unknown"}
             )
+            tracer.record_metric(
+                "subagent_run_s", float(duration_ms) / 1000.0, {"role": role or "unknown"}
+            )
         except (TypeError, ValueError):
             pass
     debug_log(f"  subagent span ended: key={key}, status={status}")

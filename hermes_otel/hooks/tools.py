@@ -226,6 +226,9 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         tracer.record_metric(
             "tool_duration", duration_ms, {"tool_name": tool_name, "gen_ai.tool.name": tool_name}
         )
+        tracer.record_metric(
+            "tool_duration_s", duration_ms / 1000.0, {"gen_ai.tool.name": tool_name}
+        )
 
     # Build final attributes — OpenInference conventions for Phoenix Info
     attributes: Dict[str, Any] = {

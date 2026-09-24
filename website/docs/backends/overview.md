@@ -88,6 +88,24 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to SigNoz / LGTM / OpenObserve alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
 
+## Metrics and your backend
+
+Two metric settings depend on the backend (since 1.15; details on the [metrics reference](/reference/metrics)):
+
+| Backend | Temporality it wants | Preset | Exponential histograms |
+|---|---|---|---|
+| Grafana LGTM, Tempo-side Prometheus, Mimir | cumulative (delta is dropped unless `otlp-deltatocumulative` is on) | cumulative (default) | Prometheus 3.8+ native histograms; Mimir only with native-histogram ingestion enabled |
+| OpenObserve | cumulative works; delta handling undocumented | cumulative (default) | not documented |
+| SigNoz | recommends delta; exponential histograms are delta-only and self-hosted-only | `delta` | self-hosted only |
+| Uptrace | prefers delta, converts cumulative | `delta` | recommended |
+| Honeycomb | either | cumulative (default) | not verified |
+| Parseable, generic `otlp` | depends on the collector behind it | cumulative (default) | depends |
+| Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
+
+Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
+
+**Short-lived runs.** `hermes -z` exports metrics once, when it exits. A single cumulative point from a fresh process counts as zero on Datadog and New Relic (they treat the first point as a baseline) and goes stale after five minutes on Prometheus; the same run exported as delta counts in full on every delta-capable backend. Long-lived gateways are unaffected either way.
+
 ## Selecting a single backend
 
 Single-backend selection is env-var-driven. First match wins:
