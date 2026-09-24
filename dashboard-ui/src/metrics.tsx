@@ -220,7 +220,7 @@ export function MetricsPage() {
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-3">
         <SourceSelect source={source} onChange={setSource} status={status} need="metrics" />
-        <Select value={String(range.hours)} onValueChange={(v: string) => setRange(RANGES.find((r) => String(r.hours) === v) || RANGES[1])} className="otel-w-28 h-8">
+        <Select value={String(range.hours)} onValueChange={(v: string) => setRange(RANGES.find((r) => String(r.hours) === v) || RANGES[1])} className="otel-w-56 h-8">
           {RANGES.map((r) => (
             <SelectOption key={r.label} value={String(r.hours)}>
               {rangeLabel(r)}
