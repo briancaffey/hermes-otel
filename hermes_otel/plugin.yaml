@@ -1,5 +1,5 @@
 name: hermes_otel
-version: 1.15.1
+version: 1.16.0
 manifest_version: 2
 description: >-
   OpenTelemetry for Hermes Agent: sessions, LLM and API calls, tool calls,

@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.16.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.15.1...hermes-otel-v1.16.0) (2026-09-25)
+
+
+### Features
+
+* **dashboard:** backend cards link to the backend UI and separate type support from export state ([#241](https://github.com/briancaffey/hermes-otel/issues/241)) ([10dda25](https://github.com/briancaffey/hermes-otel/commit/10dda257683cdcca2d206b0cd6db6fc1c2daaa98))
+
 ## [1.15.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.15.0...hermes-otel-v1.15.1) (2026-09-24)
 
 
