@@ -3,7 +3,7 @@
   "label": "OTel",
   "description": "Live traces, metrics and logs from the in-process store, and trace search on any configured backend with a dashboard adapter (Phoenix, Langfuse, OpenObserve, SigNoz, Uptrace, Jaeger, Tempo/LGTM).",
   "icon": "ChartGantt",
-  "version": "1.15.1",
+  "version": "1.16.0",
   "tab": {
     "path": "/otel",
     "position": "end"
