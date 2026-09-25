@@ -29,14 +29,74 @@ export type EnvEntry = {
   maps_to: string | null;
 };
 
+export type SignalState = {
+  supported: boolean; // the backend type accepts this OTLP signal
+  configured: "on" | "off" | "auto"; // what the entry says
+  exported: boolean; // what the plugin wires (backends.resolve)
+};
+
 export type BackendSummary = {
   type: string;
   name: string;
-  signals: Record<string, "on" | "off" | "auto">;
+  display_type: string;
+  known_type: boolean;
+  docs_path: string | null;
+  ui: { url: string | null; source: "file" | "derived" | null; note: string };
+  signals: Record<string, SignalState>;
+  metrics_temporality: { value: string; source: string };
   fields: Record<string, any>;
+  query_fields: Record<string, any>;
   headers: Record<string, any> | null;
   credentials: { field: string; set: boolean; source: string | null; value?: string }[];
 };
+
+/** What the dashboard's /status says it can query from a backend. */
+export type QueryCapability = { supported: boolean; metrics: boolean; logs: boolean };
+
+export const SIGNALS = ["traces", "metrics", "logs"] as const;
+
+export type SignalPill = { label: string; cls: "on" | "off" | "na" | "forced"; title: string };
+
+/** One signal pill on a backend card: support by the type and the export state, with the why. */
+export function signalPill(signal: string, s: SignalState, typeName: string): SignalPill {
+  const how = s.configured === "auto" ? "by default" : `${signal}: ${s.configured === "on"} in the config file`;
+  if (s.exported && s.supported) {
+    return { label: `${signal} on`, cls: "on", title: `${typeName} accepts OTLP ${signal}; exported (${how})` };
+  }
+  if (s.exported) {
+    return {
+      label: `${signal} forced`,
+      cls: "forced",
+      title: `${typeName} does not accept OTLP ${signal}, but the entry sets ${signal}: true; exports fail unless a collector fronts it`,
+    };
+  }
+  if (s.supported) {
+    return { label: `${signal} off`, cls: "off", title: `${typeName} accepts OTLP ${signal}; not exported (${how})` };
+  }
+  return { label: `${signal} n/a`, cls: "na", title: `${typeName} does not accept OTLP ${signal}; not exported` };
+}
+
+/** "dashboard queries traces, metrics" line; null when /status was unavailable. */
+export function queryCapabilityLine(q: QueryCapability | undefined, typeName: string): { text: string; title: string } | null {
+  if (!q) return null;
+  if (!q.supported) {
+    return {
+      text: "not queryable from this dashboard",
+      title: `no query adapter for ${typeName}; the Traces, Metrics and Logs tabs use the Live source or another backend`,
+    };
+  }
+  const what = ["traces", ...(q.metrics ? ["metrics"] : []), ...(q.logs ? ["logs"] : [])];
+  return {
+    text: `dashboard queries ${what.join(", ")}`,
+    title: `the Traces${q.metrics ? ", Metrics" : ""}${q.logs ? ", Logs" : ""} tab${what.length > 1 ? "s" : ""} can read from this backend`,
+  };
+}
+
+/** The type badge is shown only when it adds something to the name. */
+export function showTypeBadge(b: Pick<BackendSummary, "name" | "type" | "display_type">): boolean {
+  const n = b.name.toLowerCase();
+  return n !== b.type.toLowerCase() && n !== b.display_type.toLowerCase();
+}
 
 export type SettingsReport = {
   resolved_at: number;

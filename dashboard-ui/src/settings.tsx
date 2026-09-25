@@ -5,11 +5,17 @@
 import { React, useState, useEffect, useCallback, useMemo, fetchJSON, API, Button, Input, Badge, cn } from "./sdk";
 import { fmtAbsTime, fmtTimeAgo } from "./lib";
 import { MiniLabel, ErrorBanner, Stat } from "./atoms";
-import { IconRefresh, IconCopy, IconCheck } from "./icons";
+import { IconRefresh, IconCopy, IconCheck, IconExternal } from "./icons";
+import type { SourceStatus } from "./source";
 import {
   SettingsReport,
   SettingField,
   BackendSummary,
+  QueryCapability,
+  SIGNALS,
+  signalPill,
+  queryCapabilityLine,
+  showTypeBadge,
   DOCS_BASE,
   renderDescription,
   filterFields,
@@ -117,52 +123,126 @@ function FieldRow({ f }: { f: SettingField }) {
   );
 }
 
-function BackendCard({ b }: { b: BackendSummary }) {
-  const sig = (s: string) => {
-    const v = b.signals[s];
-    const pill = { on: "otel-pill-on", off: "otel-pill-off", auto: "otel-pill-auto" }[v] || "otel-pill-auto";
-    return (
-      <span key={s} className={cn("otel-pill", pill)} title={`${s}: ${v}`}>
-        {s} {v}
-      </span>
-    );
-  };
+function Row({ k, children, title }: { k: string; children: any; title?: string }) {
   return (
-    <div className="otel-card-bg border border-border px-3 py-2.5">
+    <>
+      <span className="text-muted-foreground" title={title}>
+        {k}
+      </span>
+      <span className="min-w-0 break-all">{children}</span>
+    </>
+  );
+}
+
+const stop = (e: any) => e.stopPropagation();
+
+/** One configured backend. The whole card opens the backend's UI in a new
+ *  window when the report could name it (an explicit `ui_url`, or a derivation
+ *  it explains in the tooltip); inner links stop the click from bubbling. */
+function BackendCard({ b, q }: { b: BackendSummary; q?: QueryCapability }) {
+  const href = b.ui.url;
+  const open = () => {
+    if (href) window.open(href, "_blank", "noopener,noreferrer");
+  };
+  const query = queryCapabilityLine(q, b.display_type);
+  const metricsOn = b.signals.metrics?.exported;
+  return (
+    <div
+      className={cn("otel-card-bg border border-border px-3 py-2.5", href ? "otel-backend-card" : "")}
+      onClick={href ? open : undefined}
+      onKeyDown={href ? (e: any) => (e.key === "Enter" ? open() : undefined) : undefined}
+      role={href ? "link" : undefined}
+      tabIndex={href ? 0 : undefined}
+      title={href ? `${b.ui.note} · opens ${href} in a new window` : b.ui.note}
+    >
       <div className="flex flex-wrap items-center gap-2">
-        <span className="text-sm font-medium">{b.name}</span>
-        {b.name !== b.type ? <Badge variant="secondary" className="text-[10px] uppercase">{b.type}</Badge> : null}
-        <span className="ml-auto flex gap-1">{["traces", "metrics", "logs"].map(sig)}</span>
+        {href ? (
+          <a className="otel-backend-name" href={href} target="_blank" rel="noreferrer noopener" onClick={stop}>
+            {b.name}
+            <IconExternal size={12} className="otel-backend-ext" />
+          </a>
+        ) : (
+          <span className="text-sm font-medium">{b.name}</span>
+        )}
+        {showTypeBadge(b) ? <Badge variant="secondary" className="text-[10px] uppercase">{b.display_type}</Badge> : null}
+        {b.docs_path ? (
+          <a
+            className="otel-link text-[11px] text-muted-foreground"
+            href={DOCS_BASE + b.docs_path}
+            target="_blank"
+            rel="noreferrer"
+            onClick={stop}
+            title={`${b.display_type} backend docs`}
+          >
+            docs
+          </a>
+        ) : null}
+        <span className="ml-auto flex flex-wrap gap-1">
+          {SIGNALS.map((sig) => {
+            const st = b.signals[sig];
+            if (!st) return null;
+            const pill = signalPill(sig, st, b.display_type);
+            return (
+              <span key={sig} className={cn("otel-pill", `otel-pill-${pill.cls}`)} title={pill.title}>
+                {pill.label}
+              </span>
+            );
+          })}
+        </span>
       </div>
+      {query ? (
+        <div className="mt-1 text-[11px] text-muted-foreground" title={query.title}>
+          {query.text}
+        </div>
+      ) : null}
       <div className="otel-attr-table mt-2 text-xs">
         {Object.entries(b.fields).map(([k, v]) => (
-          <React.Fragment key={k}>
-            <span className="text-muted-foreground">{k}</span>
-            <span className="font-mono break-all">{String(v)}</span>
-          </React.Fragment>
+          <Row key={k} k={k}>
+            <span className="font-mono">{String(v)}</span>
+          </Row>
+        ))}
+        <Row k="ui" title="the link the card opens; set ui_url on the entry to override">
+          {href ? (
+            <>
+              <a className="otel-link font-mono" href={href} target="_blank" rel="noreferrer noopener" onClick={stop}>
+                {href}
+              </a>
+              <span className="text-muted-foreground"> · {b.ui.source === "file" ? "ui_url" : "derived"}</span>
+            </>
+          ) : (
+            <span className="otel-unset">{b.ui.note}</span>
+          )}
+        </Row>
+        {metricsOn ? (
+          <Row k="temporality" title="aggregation temporality of this backend's metric reader">
+            <span className="font-mono">{b.metrics_temporality.value}</span>
+            <span className="text-muted-foreground"> · {b.metrics_temporality.source}</span>
+          </Row>
+        ) : null}
+        {Object.entries(b.query_fields || {}).map(([k, v]) => (
+          <Row key={`q-${k}`} k={k} title="read by the dashboard's query adapter, not by the exporter">
+            <span className="font-mono">{String(v)}</span>
+            <span className="text-muted-foreground"> · query</span>
+          </Row>
         ))}
         {b.headers
           ? Object.entries(b.headers).map(([k, v]) => (
-              <React.Fragment key={`h-${k}`}>
-                <span className="text-muted-foreground">header {k}</span>
-                <span className="font-mono break-all">{String(v)}</span>
-              </React.Fragment>
+              <Row key={`h-${k}`} k={`header ${k}`}>
+                <span className="font-mono">{String(v)}</span>
+              </Row>
             ))
           : null}
         {b.credentials.map((c) => (
-          <React.Fragment key={c.field}>
-            <span className="text-muted-foreground">{c.field}</span>
-            <span className="min-w-0">
-              {c.set ? (
-                <>
-                  <span className="font-mono break-all">{c.value ?? "set"}</span>
-                  <span className="text-muted-foreground"> · {c.source}</span>
-                </>
-              ) : (
-                <span className="otel-warn">{c.source || "not set"}</span>
-              )}
-            </span>
-          </React.Fragment>
+          <Row key={c.field} k={c.field}>
+            {c.set ? (
+              <>
+                <span className="font-mono">{c.value ?? "set"}</span>
+                <span className="text-muted-foreground"> · {c.source}</span>
+              </>
+            ) : (
+              <span className="otel-warn">{c.source || "not set"}</span>
+            )}
+          </Row>
         ))}
       </div>
     </div>
@@ -243,9 +323,15 @@ export function SettingsPage() {
   const [changedOnly, setChangedOnly] = useState(false);
   const [rawMode, setRawMode] = useState<"file" | "effective">("file");
   const [showUnset, setShowUnset] = useState(false);
+  // What the dashboard can query from each backend (adapter present, metrics,
+  // logs) comes from /status, the same view the source selector uses.
+  const [status, setStatus] = useState<SourceStatus | null>(null);
 
   const load = useCallback(async () => {
     setLoading(true);
+    fetchJSON(`${API}/status`)
+      .then((st: SourceStatus) => setStatus(st))
+      .catch(() => setStatus(null));
     try {
       const r = await fetchJSON(`${API}/settings?reveal=${reveal ? "true" : "false"}`);
       setReport(r);
@@ -271,6 +357,11 @@ export function SettingsPage() {
     return out;
   }, [fields]);
   const cap = report?.capture_summary;
+  const queryCaps = useMemo(() => {
+    const out: Record<string, QueryCapability> = {};
+    for (const a of status?.available || []) out[a.name] = { supported: a.supported, metrics: a.metrics, logs: a.logs };
+    return out;
+  }, [status]);
 
   return (
     <div className="space-y-3">
@@ -365,7 +456,7 @@ export function SettingsPage() {
                       {backends.length ? (
                         <div className="otel-backend-grid">
                           {backends.map((b, i) => (
-                            <BackendCard key={`${b.name}-${i}`} b={b} />
+                            <BackendCard key={`${b.name}-${i}`} b={b} q={queryCaps[b.name]} />
                           ))}
                         </div>
                       ) : (

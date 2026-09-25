@@ -297,6 +297,10 @@
 # (for example Tempo query URL) while trace export still goes through an OTel
 # Collector entry. `trace: false` is accepted as a friendly alias.
 #
+# `ui_url:` links the entry's card in the dashboard's Settings tab to the
+# backend's web UI (needed where the UI is not on the OTLP origin, e.g.
+# Grafana for `lgtm`, Jaeger's :16686, SigNoz's :8080).
+#
 # When `backends:` is absent or empty, the plugin falls back to single-backend
 # env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
 # OTEL_PARSEABLE_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT,

@@ -99,6 +99,10 @@ class BackendConfig:
     type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | parseable | honeycomb | weave
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # OTLP HTTP traces URL
+    # Where this backend's web UI lives, for the dashboard's Settings tab to
+    # link to. Optional: when unset the tab derives it from ``endpoint`` for
+    # the types whose UI shares the OTLP origin (Phoenix, Langfuse, ...).
+    ui_url: Optional[str] = None
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
