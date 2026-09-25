@@ -97,6 +97,12 @@ backends:
 `trace: false` is accepted as a friendly alias for `traces: false`; use the
 plural spelling in new configs to match `metrics` and `logs`.
 
+The dashboard's Settings tab shows each entry as a card that opens the
+backend's web UI. Add `ui_url: https://grafana.example.com` to an entry when
+the UI is not on the OTLP endpoint's origin (Grafana for `lgtm` / `tempo`, a
+Jaeger or SigNoz container on its own port); see
+[the dashboard docs](/dashboard#tabs).
+
 Legacy metrics-only example:
 
 ```yaml

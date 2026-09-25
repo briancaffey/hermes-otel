@@ -311,6 +311,16 @@
 .otel-pill-auto {
   color: var(--color-muted-foreground);
 }
+.otel-pill-na {
+  color: var(--color-muted-foreground);
+  border-style: dashed;
+  opacity: 0.7;
+}
+.otel-pill-forced {
+  color: #fbbf24;
+  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
+  background: color-mix(in srgb, #fbbf24 12%, transparent);
+}
 .otel-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
   font-size: 0.7rem;
@@ -334,6 +344,31 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 0.5rem;
+}
+.otel-backend-card {
+  cursor: pointer;
+  transition: border-color 0.15s, background-color 0.15s;
+}
+.otel-backend-card:hover,
+.otel-backend-card:focus-visible {
+  border-color: var(--color-primary, #34d399);
+  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
+  outline: none;
+}
+.otel-backend-name {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.875rem;
+  font-weight: 500;
+  color: var(--color-foreground);
+}
+.otel-backend-name:hover {
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.otel-backend-ext {
+  color: var(--color-muted-foreground);
 }
 .otel-spin {
   animation: otel-spin 0.9s linear infinite;

@@ -12,6 +12,9 @@ import {
   pathSourceLabel,
   renderDescription,
   sourceNote,
+  signalPill,
+  queryCapabilityLine,
+  showTypeBadge,
 } from "../src/settings-lib";
 
 const field = (over: Partial<SettingField>): SettingField => ({
@@ -120,5 +123,45 @@ describe("pathSourceLabel", () => {
     expect(pathSourceLabel("durable")).toBe("$HERMES_HOME/hermes_otel.yaml");
     expect(pathSourceLabel("legacy")).toContain("legacy");
     expect(pathSourceLabel("none")).toBe("no config file");
+  });
+});
+
+describe("backend cards", () => {
+  it("tells unsupported from switched off from forced", () => {
+    expect(signalPill("metrics", { supported: true, configured: "auto", exported: true }, "SigNoz")).toMatchObject({
+      label: "metrics on",
+      cls: "on",
+    });
+    expect(signalPill("metrics", { supported: false, configured: "auto", exported: false }, "Phoenix")).toMatchObject({
+      label: "metrics n/a",
+      cls: "na",
+    });
+    expect(signalPill("logs", { supported: true, configured: "off", exported: false }, "LGTM")).toMatchObject({
+      label: "logs off",
+      cls: "off",
+    });
+    const forced = signalPill("metrics", { supported: false, configured: "on", exported: true }, "Jaeger");
+    expect(forced.cls).toBe("forced");
+    expect(forced.title).toContain("does not accept OTLP metrics");
+    expect(signalPill("traces", { supported: true, configured: "on", exported: true }, "Phoenix").title).toContain(
+      "traces: true in the config file"
+    );
+  });
+
+  it("summarises what the dashboard can query", () => {
+    expect(queryCapabilityLine(undefined, "Phoenix")).toBeNull();
+    expect(queryCapabilityLine({ supported: false, metrics: false, logs: false }, "OTLP")?.text).toBe(
+      "not queryable from this dashboard"
+    );
+    expect(queryCapabilityLine({ supported: true, metrics: false, logs: false }, "Phoenix")?.text).toBe("dashboard queries traces");
+    expect(queryCapabilityLine({ supported: true, metrics: true, logs: true }, "OpenObserve")?.text).toBe(
+      "dashboard queries traces, metrics, logs"
+    );
+  });
+
+  it("shows the type badge only when the name does not already say it", () => {
+    expect(showTypeBadge({ name: "signoz", type: "signoz", display_type: "SigNoz" })).toBe(false);
+    expect(showTypeBadge({ name: "SigNoz", type: "signoz", display_type: "SigNoz" })).toBe(false);
+    expect(showTypeBadge({ name: "phoenix-lan", type: "phoenix", display_type: "Phoenix" })).toBe(true);
   });
 });

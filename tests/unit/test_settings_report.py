@@ -154,7 +154,11 @@ class TestSecrets:
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "should-not-apply-to-phoenix")
         backends = {b["name"]: b for b in build_settings_report()["fields"][-1]["value"]}
         assert backends["phx"]["credentials"] == []
-        assert backends["phx"]["signals"] == {"traces": "auto", "metrics": "off", "logs": "auto"}
+        assert backends["phx"]["signals"]["metrics"] == {
+            "supported": False,
+            "configured": "off",
+            "exported": False,
+        }
         lf = {c["field"]: c for c in backends["langfuse"]["credentials"]}
         assert lf["public_key"]["source"] == "file (inline)"
         assert lf["public_key"]["value"] == MASK
@@ -273,3 +277,148 @@ class TestCaptureSummary:
         assert full["mode"] == "full" and full["detail"].startswith("full prompts on")
         both = capture_summary(HermesOtelConfig())
         assert "full prompts and full responses" in both["detail"]
+
+
+CARDS_YAML = """\
+metrics_temporality: delta
+backends:
+  - type: phoenix
+    endpoint: http://localhost:6006/v1/traces
+  - type: langfuse
+    base_url: http://localhost:3000
+    public_key: pk
+    secret_key: sk
+  - type: openobserve
+    endpoint: http://localhost:5080/api/default/v1/traces
+    user: root@example.com
+    password: pw
+    metrics_temporality: cumulative
+  - type: jaeger
+    name: jaeger-docker
+    endpoint: http://localhost:4318/v1/traces
+  - type: jaeger
+    name: jaeger-query
+    endpoint: http://localhost:4318/v1/traces
+    query_port: 16686
+  - type: jaeger
+    name: jaeger-proxied
+    endpoint: https://jaeger.example.com/v1/traces
+    metrics: true
+  - type: lgtm
+    endpoint: http://localhost:4318/v1/traces
+    ui_url: http://localhost:3000/explore
+    logs: false
+  - type: signoz
+    endpoint: http://localhost:4318/v1/traces
+  - type: otlp
+    name: collector
+    endpoint: http://collector:4318/v1/traces
+  - type: honeycomb
+    api_key: hc
+    region: eu
+  - type: weave
+    api_key: wb
+    entity: acme
+    project: agents
+"""
+
+
+class TestBackendCards:
+    """The per-backend summary the Settings tab renders as cards."""
+
+    @pytest.fixture()
+    def cards(self, home):
+        (home / "hermes_otel.yaml").write_text(CARDS_YAML, encoding="utf-8")
+        report = build_settings_report()
+        return {b["name"]: b for b in report["fields"][-1]["value"]}
+
+    def test_type_support_is_separate_from_the_entry_override(self, cards):
+        phx = cards["phoenix"]["signals"]
+        assert phx["traces"] == {"supported": True, "configured": "auto", "exported": True}
+        assert phx["metrics"] == {"supported": False, "configured": "auto", "exported": False}
+        assert phx["logs"] == {"supported": False, "configured": "auto", "exported": False}
+        oo = cards["openobserve"]["signals"]
+        assert oo["metrics"]["supported"] and oo["metrics"]["exported"]
+        assert oo["logs"]["supported"] and oo["logs"]["exported"]
+        # Forced on where the type does not accept the signal (a collector in front).
+        forced = cards["jaeger-proxied"]["signals"]["metrics"]
+        assert forced == {"supported": False, "configured": "on", "exported": True}
+        # Switched off where the type would accept it.
+        off = cards["lgtm"]["signals"]["logs"]
+        assert off == {"supported": True, "configured": "off", "exported": False}
+
+    def test_signal_report_matches_the_resolver(self, cards):
+        """The card's exported flags are exactly what backends.resolve wires."""
+        from hermes_otel import backends as b
+
+        for name, bc in {
+            "phoenix": pc.BackendConfig(type="phoenix", endpoint="http://x/v1/traces"),
+            "jaeger-proxied": pc.BackendConfig(
+                type="jaeger", endpoint="http://x/v1/traces", metrics=True
+            ),
+            "lgtm": pc.BackendConfig(type="lgtm", endpoint="http://x/v1/traces", logs=False),
+        }.items():
+            rb = b.resolve(bc)
+            sig = cards[name]["signals"]
+            assert sig["traces"]["exported"] is rb.supports_traces
+            assert sig["metrics"]["exported"] is rb.supports_metrics
+            assert sig["logs"]["exported"] is rb.supports_logs
+
+    def test_display_type_and_docs(self, cards):
+        assert cards["signoz"]["display_type"] == "SigNoz"
+        assert cards["signoz"]["docs_path"] == "/backends/signoz"
+        assert cards["collector"]["display_type"] == "OTLP"
+        assert cards["weave"]["display_type"] == "W&B Weave"
+        assert all(c["known_type"] for c in cards.values())
+
+    def test_ui_link_derived_where_the_ui_shares_the_otlp_origin(self, cards):
+        assert cards["phoenix"]["ui"]["url"] == "http://localhost:6006"
+        assert cards["phoenix"]["ui"]["source"] == "derived"
+        assert cards["langfuse"]["ui"]["url"] == "http://localhost:3000"
+        assert cards["openobserve"]["ui"]["url"] == "http://localhost:5080"
+
+    def test_ui_link_never_guesses_a_port(self, cards):
+        docker = cards["jaeger-docker"]["ui"]
+        assert docker["url"] is None and "ui_url" in docker["note"]
+        assert cards["jaeger-query"]["ui"]["url"] == "http://localhost:16686"
+        assert cards["jaeger-proxied"]["ui"]["url"] == "https://jaeger.example.com"
+        assert cards["signoz"]["ui"]["url"] is None
+        assert cards["collector"]["ui"]["url"] is None
+
+    def test_ui_link_from_the_file_wins(self, cards):
+        assert cards["lgtm"]["ui"] == {
+            "url": "http://localhost:3000/explore",
+            "source": "file",
+            "note": "ui_url from the config file",
+        }
+
+    def test_saas_ui_links(self, cards):
+        assert cards["honeycomb"]["ui"]["url"] == "https://ui.eu1.honeycomb.io"
+        assert cards["weave"]["ui"]["url"] == "https://wandb.ai/acme/agents/weave"
+
+    def test_temporality_names_the_rule_that_set_it(self, cards):
+        assert cards["signoz"]["metrics_temporality"] == {"value": "delta", "source": "type preset"}
+        assert cards["openobserve"]["metrics_temporality"] == {
+            "value": "cumulative",
+            "source": "entry",
+        }
+        assert cards["collector"]["metrics_temporality"] == {
+            "value": "delta",
+            "source": "top-level metrics_temporality",
+        }
+
+    def test_temporality_default_without_top_level(self, home):
+        (home / "hermes_otel.yaml").write_text(
+            "backends:\n  - type: lgtm\n    endpoint: http://l:4318/v1/traces\n", encoding="utf-8"
+        )
+        (card,) = build_settings_report()["fields"][-1]["value"]
+        assert card["metrics_temporality"] == {"value": "cumulative", "source": "SDK default"}
+
+    def test_query_fields_and_effective_yaml_round_trip(self, cards, home):
+        assert cards["jaeger-query"]["query_fields"] == {"query_port": 16686}
+        assert cards["phoenix"]["query_fields"] == {}
+        text = build_settings_report()["effective_yaml"]
+        assert "query_port: 16686" in text
+        assert "ui_url: http://localhost:3000/explore" in text
+        assert "metrics_temporality: cumulative" in text
+        assert "logs: false" in text

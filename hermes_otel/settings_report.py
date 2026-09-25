@@ -18,9 +18,11 @@ import os
 import re
 import sys
 import time
+import urllib.parse
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
+from . import backends as _backends
 from . import plugin_config as pc
 from .plugin_config import (
     FIELD_DOCS,
@@ -155,23 +157,180 @@ def _credential_report(
     return out
 
 
-def _backend_summary(bc: BackendConfig, raw: Dict[str, Any], reveal: bool) -> Dict[str, Any]:
-    signals = {
-        s: ("on" if v is True else "off" if v is False else "auto")
-        for s, v in (("traces", bc.traces), ("metrics", bc.metrics), ("logs", bc.logs))
-    }
+# Keys the dashboard's query adapters read from a backend entry that are not
+# ``BackendConfig`` fields (the loader drops them; the adapters read the raw
+# yaml). Shown on the Settings card so a ``query_port`` is not invisible.
+_QUERY_FIELDS = ("query_port", "project_name", "service_name", "project_id", "org", "logs_stream")
+
+# Where each type's web UI lives relative to its OTLP endpoint, for the card's
+# link when the entry sets no ``ui_url``:
+#   origin   the UI is served on the OTLP endpoint's scheme://host:port
+#            (Phoenix :6006, Langfuse :3000, OpenObserve :5080, Uptrace :14318,
+#            Parseable :8000 all serve UI and ingest on one port)
+#   proxied  the UI normally sits on another port (Jaeger :16686, SigNoz :8080,
+#            Grafana :3000 vs OTLP :4318), so the origin is used only when the
+#            endpoint names no port, i.e. a reverse-proxied hostname such as
+#            https://jaeger.example.com; ``query_port`` is honoured for the
+#            types whose query API and UI share a port (Jaeger, SigNoz)
+#   fixed    a SaaS UI at a known address (Honeycomb, W&B Weave)
+#   None     nothing to derive (a generic OTLP collector has no UI)
+_UI_RULES: Dict[str, Optional[str]] = {
+    "phoenix": "origin",
+    "langfuse": "origin",
+    "openobserve": "origin",
+    "uptrace": "origin",
+    "parseable": "origin",
+    "jaeger": "proxied",
+    "signoz": "proxied",
+    "tempo": "proxied",
+    "lgtm": "proxied",
+    "honeycomb": "fixed",
+    "weave": "fixed",
+    "otlp": None,
+}
+_UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
+_HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
+_WEAVE_UI = "https://wandb.ai"
+_LANGFUSE_CLOUD = "https://cloud.langfuse.com"
+
+
+def _origin(url: Optional[str]) -> Optional[str]:
+    """``scheme://host[:port]`` of a URL, or ``None`` when it has no host."""
+    if not url or not isinstance(url, str):
+        return None
+    parts = urllib.parse.urlsplit(url.strip())
+    if not parts.scheme or not parts.netloc:
+        return None
+    return f"{parts.scheme}://{parts.netloc}"
+
+
+def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
+    """The backend's web UI URL for the card, with where it came from.
+
+    ``{"url": str|None, "source": "file"|"derived"|None, "note": str}``; the note
+    explains the derivation (or why there is no link) and is shown as the
+    link's tooltip. Never a guess: when the UI's port cannot be known from the
+    endpoint the link is omitted and the note says to set ``ui_url``.
+    """
+    t = (bc.type or "").strip().lower()
+    human = _backends.display_name(t)
+    if bc.ui_url and bc.ui_url.strip():
+        return {"url": bc.ui_url.strip(), "source": "file", "note": "ui_url from the config file"}
+    hint = "set ui_url on this entry to link the card to the UI"
+    rule = _UI_RULES.get(t)
+    if rule == "origin":
+        src = bc.endpoint or (bc.base_url if t == "langfuse" else None)
+        origin = _origin(src) or (_LANGFUSE_CLOUD if t == "langfuse" and not src else None)
+        if origin:
+            return {
+                "url": origin,
+                "source": "derived",
+                "note": f"derived from the endpoint: {human} serves its UI on the OTLP origin",
+            }
+        return {
+            "url": None,
+            "source": None,
+            "note": f"no endpoint to derive a UI link from; {hint}",
+        }
+    if rule == "proxied":
+        parts = urllib.parse.urlsplit((bc.endpoint or "").strip())
+        query_port = raw.get("query_port") if t in _UI_QUERY_PORT_TYPES else None
+        if parts.scheme and parts.hostname and query_port:
+            return {
+                "url": f"{parts.scheme}://{parts.hostname}:{query_port}",
+                "source": "derived",
+                "note": f"derived from query_port: the {human} UI is served on its query port",
+            }
+        if parts.scheme and parts.netloc and parts.port is None:
+            return {
+                "url": f"{parts.scheme}://{parts.netloc}",
+                "source": "derived",
+                "note": "derived from the endpoint host (no port, so a reverse proxy is assumed "
+                "to serve the UI there)",
+            }
+        return {
+            "url": None,
+            "source": None,
+            "note": f"the {human} UI is on a different port than OTLP ingest; {hint}",
+        }
+    if rule == "fixed":
+        if t == "honeycomb":
+            region = (bc.region or "us").strip().lower()
+            url = _HONEYCOMB_UI.get(region, _HONEYCOMB_UI["us"])
+            return {
+                "url": url,
+                "source": "derived",
+                "note": f"the Honeycomb UI for region {region}",
+            }
+        base = _origin(bc.base_url) or _WEAVE_UI
+        entity = getattr(bc, "entity", None) or ""
+        project = getattr(bc, "project", None) or ""
+        if entity and project:
+            return {
+                "url": f"{base}/{entity}/{project}/weave",
+                "source": "derived",
+                "note": "the Weave page of the entry's entity and project",
+            }
+        return {
+            "url": base,
+            "source": "derived",
+            "note": "the W&B home; set entity and project to link the Weave page",
+        }
+    return {"url": None, "source": None, "note": f"a generic OTLP collector has no UI; {hint}"}
+
+
+def _signal_report(bc: BackendConfig) -> Dict[str, Dict[str, Any]]:
+    """Per signal: whether the type accepts it, what the entry says, and the
+    resulting export state. Mirrors ``backends._traces_for`` and friends."""
+    support = _backends.signal_support(bc.type or "")
+    out: Dict[str, Dict[str, Any]] = {}
+    for signal, override in (("traces", bc.traces), ("metrics", bc.metrics), ("logs", bc.logs)):
+        supported = support[signal]
+        exported = supported if override is None else bool(override)
+        out[signal] = {
+            "supported": supported,
+            "configured": "auto" if override is None else ("on" if override else "off"),
+            "exported": exported,
+        }
+    return out
+
+
+def _temporality_report(bc: BackendConfig, top_level: Optional[str]) -> Dict[str, Any]:
+    """The temporality this backend's metric reader gets, and which rule set it."""
+    entry = (bc.metrics_temporality or "").strip().lower()
+    if entry:
+        return {"value": entry, "source": "entry"}
+    preset = _backends.preset_temporality(bc.type or "")
+    if preset:
+        return {"value": preset, "source": "type preset"}
+    if top_level:
+        return {"value": str(top_level).strip().lower(), "source": "top-level metrics_temporality"}
+    return {"value": "cumulative", "source": "SDK default"}
+
+
+def _backend_summary(
+    bc: BackendConfig, raw: Dict[str, Any], reveal: bool, top_temporality: Optional[str] = None
+) -> Dict[str, Any]:
+    t = (bc.type or "").strip().lower()
     fields = {f: getattr(bc, f) for f in _PLAIN_BACKEND_FIELDS if getattr(bc, f) is not None}
-    type_fallbacks = _TYPE_CREDENTIALS.get((bc.type or "").lower(), {})
+    type_fallbacks = _TYPE_CREDENTIALS.get(t, {})
     credentials = []
     for f in _ALL_CREDENTIAL_FIELDS:
         fallbacks = type_fallbacks.get(f, ())
         if getattr(bc, f, None) or getattr(bc, f"{f}_env", None) or _any_env_set(fallbacks):
             credentials.append(_credential_report(bc, f, raw, reveal, fallbacks))
+    query_fields = {k: raw[k] for k in _QUERY_FIELDS if raw.get(k) not in (None, "")}
     return {
         "type": bc.type,
         "name": bc.name or bc.type,
-        "signals": signals,
+        "display_type": _backends.display_name(t),
+        "known_type": t in _backends.KNOWN_TYPES,
+        "docs_path": f"/backends/{t}" if t in _backends.KNOWN_TYPES else None,
+        "ui": _ui_link(bc, raw),
+        "signals": _signal_report(bc),
+        "metrics_temporality": _temporality_report(bc, top_temporality),
         "fields": fields,
+        "query_fields": query_fields,
         "headers": _display_map(bc.headers, reveal),
         "credentials": credentials,
     }
@@ -184,14 +343,24 @@ def _any_env_set(names: Tuple[str, ...]) -> bool:
 # ── Fields ────────────────────────────────────────────────────────────────
 
 
-def _display_value(kind: str, key: str, value: Any, reveal: bool, raw_backends: Any) -> Any:
+def _display_value(
+    kind: str,
+    key: str,
+    value: Any,
+    reveal: bool,
+    raw_backends: Any,
+    top_temporality: Optional[str] = None,
+) -> Any:
     if value is None:
         return None
     if kind == "backends":
         raws = raw_backends if isinstance(raw_backends, list) else []
         return [
             _backend_summary(
-                bc, raws[i] if i < len(raws) and isinstance(raws[i], dict) else {}, reveal
+                bc,
+                raws[i] if i < len(raws) and isinstance(raws[i], dict) else {},
+                reveal,
+                top_temporality,
             )
             for i, bc in enumerate(value)
         ]
@@ -312,7 +481,9 @@ def field_reports(
 
     for entry in reports:
         key, kind = entry["key"], entry["kind"]
-        entry["value"] = _display_value(kind, key, values[key], reveal, raw_backends)
+        entry["value"] = _display_value(
+            kind, key, values[key], reveal, raw_backends, values.get("metrics_temporality")
+        )
         entry["changed"] = values[key] != getattr(defaults, key)
 
     return reports, dataclasses.replace(defaults, **values)
@@ -546,9 +717,15 @@ def _backend_as_yaml(b: Dict[str, Any]) -> Dict[str, Any]:
     if b.get("name") and b["name"] != b["type"]:
         out["name"] = b["name"]
     out.update(b.get("fields") or {})
+    if b.get("ui", {}).get("source") == "file":
+        out["ui_url"] = b["ui"]["url"]
     for signal, state in (b.get("signals") or {}).items():
-        if state != "auto":
-            out[signal] = state == "on"
+        configured = state.get("configured") if isinstance(state, dict) else state
+        if configured != "auto":
+            out[signal] = configured == "on"
+    if b.get("metrics_temporality", {}).get("source") == "entry":
+        out["metrics_temporality"] = b["metrics_temporality"]["value"]
+    out.update(b.get("query_fields") or {})
     if b.get("headers"):
         out["headers"] = b["headers"]
     for c in b.get("credentials") or []:
