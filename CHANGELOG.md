@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.16.0...hermes-otel-v1.17.0) (2026-09-26)
+
+
+### Features
+
+* **dashboard:** metrics and logs adapters for SigNoz, Uptrace and LGTM, keyset-paged logs ([#243](https://github.com/briancaffey/hermes-otel/issues/243)) ([f4a138b](https://github.com/briancaffey/hermes-otel/commit/f4a138b497393375d8b414e29c4ea0dd8e8412f2))
+
 ## [1.16.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.15.1...hermes-otel-v1.16.0) (2026-09-25)
 
 
