@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.17.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.17.0...hermes-otel-v1.17.1) (2026-09-26)
+
+
+### Bug Fixes
+
+* **logs:** stamp exported log records with the active span's trace context; turn-batch tests; adapter fixes ([#247](https://github.com/briancaffey/hermes-otel/issues/247)) ([78e3f3d](https://github.com/briancaffey/hermes-otel/commit/78e3f3d1118fc761b693636d37e2a706cae51a4b))
+
 ## [1.17.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.16.0...hermes-otel-v1.17.0) (2026-09-26)
 
 
