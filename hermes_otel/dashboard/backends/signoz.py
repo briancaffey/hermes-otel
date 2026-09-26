@@ -28,11 +28,13 @@ from .base import (
     bucketize,
     http_get_json,
     http_post_json,
+    log_end_ns,
     ns_from_any,
     otlp_attrs_from_dict,
     otlp_status,
     resolve_env_or_literal,
     rewrite_host_for_docker,
+    strictly_older,
 )
 
 _DEFAULT_SIGNOZ_PORT = 3301
@@ -472,6 +474,11 @@ class SigNozAdapter(BackendAdapter):
             )
         if f.text:
             items.append({"key": _column("body"), "op": "contains", "value": f.text})
+        if f.before_ns:
+            # Keyset paging at nanosecond precision (``timestamp`` is a ns column).
+            items.append(
+                {"key": _column("timestamp", "int64"), "op": "<", "value": int(f.before_ns)}
+            )
         return items
 
     def logs_search(
@@ -485,8 +492,12 @@ class SigNozAdapter(BackendAdapter):
             orderBy=[{"columnName": "timestamp", "order": "desc"}],
             limit=int(limit),
         )
-        data = self._query_range(_composite(query, "list", start_s, end_s, 60))
-        return [_log_record(entry) for entry in _extract_v4_list_entries(data)]
+        body = _composite(query, "list", start_s, end_s, 60)
+        # The window end is in ms; the filter item above cuts at the exact
+        # nanosecond, so end at the ms that holds the cursor.
+        body["end"] = log_end_ns(end_s, f) // 1_000_000 + (1 if f.before_ns else 0)
+        data = self._query_range(body)
+        return strictly_older([_log_record(e) for e in _extract_v4_list_entries(data)], f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         query = _builder_query(

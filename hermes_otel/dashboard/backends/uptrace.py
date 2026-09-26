@@ -35,10 +35,12 @@ from .base import (
     StructuredFilter,
     bucketize,
     http_get_json,
+    log_end_ns,
     otlp_attrs_from_dict,
     otlp_status,
     resolve_env_or_literal,
     rewrite_host_for_docker,
+    strictly_older,
 )
 from .openobserve import _dotted
 
@@ -339,15 +341,27 @@ class UptraceAdapter(BackendAdapter):
         if f.logger:
             clauses.append(f'where otel_library_name = "{_esc(f.logger)}"')
         params: List[Tuple[str, Any]] = [("system", s) for s in log_systems_for(f.min_level)]
-        params += [("sort_by", "_time"), ("sort_desc", "true"), ("limit", int(limit))]
+        # Uptrace floors ``time_lt`` to the SECOND (ClickHouse toDateTime), so
+        # end at the next whole second above the cursor and ask for enough
+        # rows to cover that second; strictly_older() then cuts the page at
+        # the cursor itself.
+        if f.before_ns:
+            end_ms = (log_end_ns(end_s, f) // 1_000_000_000 + 1) * 1000
+            fetch = int(limit) + 500
+        else:
+            end_ms, fetch = _ms(end_s), int(limit)
+        params += [("sort_by", "_time"), ("sort_desc", "true"), ("limit", fetch)]
         if clauses:
             params.append(("query", " | ".join(clauses)))
         if f.text:
             params.append(("search", f.text))
-        data = self._get(self._tracing("/spans"), start_s, end_s, params)
-        return [
+        query = [("time_gte", _ms(start_s)), ("time_lt", end_ms), *params]
+        url = f"{self.query_url}{_API}{self._tracing('/spans')}?{_urlparse.urlencode(query)}"
+        data = http_get_json(url, headers=self._headers(), timeout=20.0)
+        rows = [
             _log_record(sp) for sp in (data.get("spans") if isinstance(data, dict) else None) or []
         ]
+        return strictly_older(rows, f)[: int(limit)]
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         data = self._get(

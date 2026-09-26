@@ -25,6 +25,7 @@ from .base import (
     otlp_status,
     resolve_env_or_literal,
     rewrite_host_for_docker,
+    strictly_older,
 )
 
 _DEFAULT_OO_PORT = 5080
@@ -582,6 +583,8 @@ class OpenObserveAdapter(BackendAdapter):
             where.append(f"instrumentation_library_name = '{_sql_escape(f.logger)}'")
         if f.text:
             where.append(f"body LIKE '%{_sql_escape(f.text)}%'")
+        if f.before_ns:
+            where.append(f"_timestamp < {int(f.before_ns) // 1000}")  # µs column
         sql = f'SELECT * FROM "{self._log_stream()}"'
         if where:
             sql += " WHERE " + " AND ".join(where)
@@ -615,7 +618,7 @@ class OpenObserveAdapter(BackendAdapter):
             )
             if len(out) >= limit:
                 break
-        return out
+        return strictly_older(out, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         rows = self._search(

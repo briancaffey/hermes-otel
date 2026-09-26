@@ -788,6 +788,7 @@ class LiveStore:
         start_ns: Optional[int] = None,
         end_ns: Optional[int] = None,
         limit: int = 300,
+        before_ns: Optional[int] = None,
     ) -> List[Dict[str, Any]]:
         self.flush()
         where = ["kind='log'"]
@@ -813,6 +814,10 @@ class LiveStore:
         if end_ns:
             where.append("ts <= ?")
             args.append(int(end_ns))
+        if before_ns:
+            # Keyset paging: the page after the one that ended at ``before_ns``.
+            where.append("ts < ?")
+            args.append(int(before_ns))
         try:
             rows = (
                 self._conn()

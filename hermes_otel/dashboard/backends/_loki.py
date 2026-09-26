@@ -12,7 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from .base import LogFilter, http_get_json
+from .base import LogFilter, http_get_json, log_end_ns, strictly_older
 
 DEFAULT_SELECTOR = '{service_name=~".+"}'
 
@@ -70,7 +70,9 @@ def logs_search(
     params = {
         "query": logql_for(f, selector),
         "start": int(start_s) * 1_000_000_000,
-        "end": int(end_s) * 1_000_000_000,
+        # Loki's end is exclusive and nanosecond-precise, so the cursor maps
+        # straight onto it.
+        "end": log_end_ns(end_s, f),
         "limit": int(limit),
         "direction": "backward",
     }
@@ -82,7 +84,7 @@ def logs_search(
         for ts_ns, line in stream.get("values") or []:
             out.append(_record(labels, ts_ns, line))
     out.sort(key=lambda r: r["time_unix_nano"], reverse=True)
-    return out[: int(limit)]
+    return strictly_older(out, f)[: int(limit)]
 
 
 def loggers(
