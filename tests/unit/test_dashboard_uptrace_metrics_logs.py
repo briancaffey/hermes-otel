@@ -302,7 +302,7 @@ class TestLogs:
         p = _params(fake_http[-1][0])
         assert p["system"] == ["log:warn", "log:error", "log:fatal", "log:panic"]
         assert p["query"] == [
-            'where _trace_id = "03868e38b99ed06e70d95b46b1a57b82" | where hermes_session_id = "20260924_203458_4a4dea" | where otel_library_name = "hermes_otel"'
+            'where service_name = "hermes-agent" | where _trace_id = "03868e38b99ed06e70d95b46b1a57b82" | where hermes_session_id = "20260924_203458_4a4dea" | where otel_library_name = "hermes_otel"'
         ]
         assert (p["search"], p["limit"], p["sort_by"]) == (["finalized"], ["5"], ["_time"])
         assert logs[0] == {
@@ -322,7 +322,9 @@ class TestLogs:
     def test_no_level_means_all_log_systems(self, adapter, fake_http):
         adapter.logs_search(LogFilter(), 0, 60, 10)
         p = _params(fake_http[-1][0])
-        assert p["system"] == ["log:all"] and "query" not in p and "search" not in p
+        # Only the service scope remains (Uptrace's own DEBUG lines share the project).
+        assert p["system"] == ["log:all"] and "search" not in p
+        assert p["query"] == ['where service_name = "hermes-agent"']
         assert up.log_systems_for(40) == [
             "log:error",
             "log:fatal",

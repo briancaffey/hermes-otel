@@ -16,6 +16,7 @@ and raises a clear error when the UI actually tries to query.
 
 from __future__ import annotations
 
+import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
@@ -252,6 +253,16 @@ class SigNozAdapter(BackendAdapter):
             )
         for k, v in f.attr_equals.items():
             items.append({"key": {"key": k, "type": "tag"}, "op": "=", "value": str(v)})
+        if f.free_text:
+            # The captured prompt of an api span; SigNoz's builder has no OR
+            # across keys, so this searches the one attribute every turn has.
+            items.append(
+                {
+                    "key": {"key": "input.value", "type": "tag"},
+                    "op": "contains",
+                    "value": f.free_text,
+                }
+            )
         if f.roots_only:
             items.append(
                 {
@@ -596,6 +607,51 @@ def _ns_from_row(row: Dict[str, Any]) -> Optional[int]:
     return None
 
 
+_REF_SPAN = re.compile(r"SpanId=([0-9a-fA-F]*)")
+
+
+def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
+    """Rows of the columns/events trace shape as the older ``spans`` dicts.
+
+    Columns seen: ``__time`` (ms), ``SpanId``, ``TraceId``, ``ServiceName``,
+    ``Name``, ``Kind``, ``DurationNano``, ``TagsKeys`` / ``TagsValues``,
+    ``References`` (``"{TraceId=…, SpanId=<parent>, RefType=CHILD_OF}"``
+    strings; an empty SpanId marks the root), ``HasError``,
+    ``StatusMessage``, ``StatusCodeString``, ``SpanKind``.
+    """
+    cols = [str(c) for c in entry.get("columns") or []]
+    out: List[Dict[str, Any]] = []
+    for row in entry.get("events") or []:
+        if not isinstance(row, list):
+            continue
+        r = dict(zip(cols, row))
+        parent = None
+        for ref in r.get("References") or []:
+            if "CHILD_OF" in str(ref):
+                m = _REF_SPAN.search(str(ref))
+                parent = (m.group(1) or None) if m else None
+                break
+        keys, values = r.get("TagsKeys") or [], r.get("TagsValues") or []
+        tags = (
+            dict(zip(keys, values)) if isinstance(keys, list) and isinstance(values, list) else {}
+        )
+        out.append(
+            {
+                "spanID": r.get("SpanId"),
+                "traceID": r.get("TraceId"),
+                "parentSpanID": parent,
+                "name": r.get("Name"),
+                "serviceName": r.get("ServiceName"),
+                "timestamp": r.get("__time"),
+                "durationNano": r.get("DurationNano"),
+                "kind": r.get("Kind"),
+                "hasError": bool(r.get("HasError")),
+                "tagMap": tags,
+            }
+        )
+    return out
+
+
 def _signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
     """Translate SigNoz's trace response shape into OTLP batches.
 
@@ -605,6 +661,17 @@ def _signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
       timestamp, durationNano, tagMap/tagsMap: {...}}]}``
     * ``{data: {spans: [...]}}``
     """
+    if isinstance(data, list):
+        # Current SigNoz (v0.90+): ``[{columns: [...], events: [[...], ...]}]``,
+        # one row per span with the columns named in ``columns``.
+        data = {
+            "spans": [
+                sp
+                for entry in data
+                if isinstance(entry, dict) and entry.get("columns")
+                for sp in _signoz_rows_to_spans(entry)
+            ]
+        }
     if not isinstance(data, dict):
         return {"batches": []}
     spans_raw = data.get("spans")

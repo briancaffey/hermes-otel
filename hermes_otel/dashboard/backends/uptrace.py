@@ -178,6 +178,7 @@ class UptraceAdapter(BackendAdapter):
             or None
         )
         self.project_id = int(cfg.get("project_id") or 1)
+        self.service_name = str(cfg.get("service_name") or "hermes-agent")
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -233,6 +234,8 @@ class UptraceAdapter(BackendAdapter):
             parts.append(f"where _duration >= {int(f.min_duration_ms)}ms")
         for k, v in f.attr_equals.items():
             parts.append(f'where {k.replace(".", "_")} = "{_esc(str(v))}"')
+        if f.free_text:
+            parts.append(f'where input_value contains "{_esc(f.free_text)}"')
         if f.raw and f.raw.strip():
             parts.append(f.raw.strip())
         return " | ".join(parts)
@@ -333,7 +336,10 @@ class UptraceAdapter(BackendAdapter):
     def logs_search(
         self, f: LogFilter, start_s: int, end_s: int, limit: int
     ) -> List[Dict[str, Any]]:
-        clauses: List[str] = []
+        # Uptrace writes its own DEBUG lines ("metric not found", ...) into
+        # the same project; keep the tab to the agent's service (the entry's
+        # ``service_name``, default ``hermes-agent``).
+        clauses: List[str] = [f'where service_name = "{_esc(self.service_name)}"']
         if f.trace_id:
             clauses.append(f'where _trace_id = "{_esc(f.trace_id)}"')
         if f.session:

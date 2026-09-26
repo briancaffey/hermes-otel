@@ -650,3 +650,91 @@ class TestTracerLogsPipelineWiring:
         plugin._logger_provider = MagicMock()
         plugin._force_flush()
         plugin._logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
+
+
+class TestSpanContextStamper:
+    """Records logged off the OTel context get the active span's ids (#186 policy)."""
+
+    @pytest.fixture()
+    def pipeline(self):
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk._logs.export import InMemoryLogExporter, SimpleLogRecordProcessor
+        from opentelemetry.sdk.resources import Resource
+
+        exporter = InMemoryLogExporter()
+        holder: dict = {"found": None}
+        provider = LoggerProvider(resource=Resource.create({}))
+        provider.add_log_record_processor(log_handler.SpanContextStamper(lambda: holder["found"]))
+        provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+        handler = LoggingHandler(level=logging.INFO, logger_provider=provider)
+        lg = logging.getLogger("test.stamper")
+        lg.setLevel(logging.INFO)
+        lg.propagate = False
+        lg.addHandler(handler)
+        try:
+            yield lg, exporter, holder
+        finally:
+            lg.removeHandler(handler)
+
+    @pytest.fixture()
+    def span(self):
+        from opentelemetry.sdk.trace import TracerProvider
+
+        tracer = TracerProvider().get_tracer("t")
+        s = tracer.start_span("session.abc")
+        try:
+            yield s
+        finally:
+            s.end()
+
+    def test_stamps_trace_span_and_session(self, pipeline, span):
+        lg, exporter, holder = pipeline
+        holder["found"] = ("sess-1", span)
+        lg.info("tool terminal completed")
+        (rec,) = exporter.get_finished_logs()
+        ctx = span.get_span_context()
+        assert rec.log_record.trace_id == ctx.trace_id
+        assert rec.log_record.span_id == ctx.span_id
+        assert rec.log_record.trace_flags == ctx.trace_flags
+        assert rec.log_record.attributes["hermes.session_id"] == "sess-1"
+
+    def test_leaves_unattributed_without_an_active_session(self, pipeline):
+        lg, exporter, holder = pipeline
+        holder["found"] = None
+        lg.info("gateway housekeeping")
+        (rec,) = exporter.get_finished_logs()
+        assert not rec.log_record.trace_id
+        assert "hermes.session_id" not in (rec.log_record.attributes or {})
+
+    def test_keeps_a_record_logged_inside_a_current_span(self, pipeline, span):
+        from opentelemetry import trace as otel_trace
+        from opentelemetry.sdk.trace import TracerProvider
+
+        lg, exporter, holder = pipeline
+        holder["found"] = ("sess-1", span)  # would stamp this if it ran
+        tracer = TracerProvider().get_tracer("t")
+        with tracer.start_as_current_span("current") as current:
+            lg.info("inside a current span")
+        (rec,) = exporter.get_finished_logs()
+        assert rec.log_record.trace_id == current.get_span_context().trace_id
+        assert rec.log_record.trace_id != span.get_span_context().trace_id
+        assert otel_trace.get_current_span() is otel_trace.INVALID_SPAN
+
+    def test_install_handler_registers_the_stamper_first(
+        self, clean_root_logger, fake_otlp_exporter
+    ):
+        from opentelemetry.sdk.resources import Resource
+
+        from hermes_otel.backends import _ResolvedBackend
+
+        backend = _ResolvedBackend(type="otlp", endpoint="http://x/v1/traces", supports_logs=True)
+        processors = log_handler.build_log_processors([backend])
+        provider = log_handler.install_handler(
+            resource=Resource.create({}),
+            processors=processors,
+            level=logging.INFO,
+            context_resolver=lambda: None,
+        )
+        assert provider is not None
+        first = provider._multi_log_record_processor._log_record_processors[0]
+        assert isinstance(first, log_handler.SpanContextStamper)

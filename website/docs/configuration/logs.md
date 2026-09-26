@@ -53,6 +53,14 @@ In Grafana, Loki's built-in derived field picks the `trace_id` up automatically 
 
 No app-side context plumbing required. The stdlib `logging` module is the integration point.
 
+### Where the ids come from
+
+Hermes' loggers write from the agent's own threads, where the plugin's spans are not on the OpenTelemetry context, so the SDK's handler alone would export every record with an empty `trace_id`. The plugin therefore stamps each record itself, from its span tracker, with the same policy the live store's Logs tab uses: when exactly one session has a turn in flight, the record gets that session's innermost open span (the tool or LLM span if one is open, else the turn's root) and a `hermes.session_id` attribute; when several sessions are active at once (a busy gateway), the record stays unattributed rather than attributed to the wrong turn. A record logged inside a span that *is* current on its thread keeps that span's ids. Lines logged between turns (startup banners, gateway housekeeping) carry no trace id.
+
+### One-shot runs export no logs
+
+`hermes -z "..."` disables Python logging for the whole process (`logging.disable(CRITICAL)`), before any handler can see a record, so a one-shot run exports traces and metrics but never logs. To exercise the logs signal from a script, use `hermes chat -Q --yolo -q "..."` (the gateway and the interactive CLI keep logging on).
+
 ## Fields
 
 ### `capture_logs`

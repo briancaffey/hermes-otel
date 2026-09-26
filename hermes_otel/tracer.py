@@ -1514,6 +1514,7 @@ class HermesOTelPlugin:
             processors=processors,
             level=level,
             attach_logger=self.config.log_attach_logger,
+            context_resolver=self.active_span_for_logs,
         )
         if self._logger_provider is None:
             return
@@ -1524,6 +1525,24 @@ class HermesOTelPlugin:
             f"[hermes-otel] ✓ Logs → {len(processors)} backend(s) "
             f"(attached to {target}, level={self.config.log_level.upper()})"
         )
+
+    def active_span_for_logs(self) -> Optional[Tuple[str, Any]]:
+        """``(session_id, span)`` a log record written now should be correlated with.
+
+        The innermost open span of the single session with a turn in flight
+        (its root when nothing is nested), else ``None``: with several sessions
+        active a line is left unattributed rather than attributed wrongly, the
+        policy the live store's handler already follows (#186).
+        """
+        try:
+            found = self.spans.single_active_session()
+        except Exception:
+            return None
+        if not found:
+            return None
+        session_id, root = found
+        span = self.spans.get_current_parent(str(session_id)) or root
+        return str(session_id), span
 
     def _bound_labels(self, attributes: Dict[str, Any]) -> Dict[str, Any]:
         """Fold an open-ended label's values past ``metrics_label_limit`` into ``other``."""

@@ -851,6 +851,33 @@ class LiveStore:
 # path), so they share data without sharing memory.
 _LIVE_STORE: Optional[LiveStore] = None
 _LIVE_LOCK = threading.Lock()
+# Read-side stores by file, for a dashboard that serves several profiles from
+# one process (#70): each profile has its own ``hermes_otel_live.db``.
+_STORES_BY_PATH: Dict[str, LiveStore] = {}
+
+
+def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
+    """The live store of the Hermes home in force for the caller.
+
+    In the dashboard, Hermes resolves the home per request (``?profile=``), so
+    the Live source must open that profile's file rather than the one the
+    process opened first. The process singleton is reused when it already
+    points at the same file; other files get one reader each, kept for the
+    life of the process. ``None`` when the file cannot be opened.
+    """
+    path = os.environ.get("HERMES_OTEL_LIVE_DB") or _default_db_path()
+    current = _LIVE_STORE
+    if current is not None and str(getattr(current, "db_path", "")) == path:
+        return current
+    with _LIVE_LOCK:
+        store = _STORES_BY_PATH.get(path)
+        if store is None and create:
+            try:
+                store = LiveStore(db_path=path)
+            except Exception:  # pragma: no cover
+                return None
+            _STORES_BY_PATH[path] = store
+    return store
 
 
 def get_live_store(
