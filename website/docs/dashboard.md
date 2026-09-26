@@ -60,7 +60,8 @@ Without a selection (or a parameter), `query_backend: <name or type>` in `hermes
 | `phoenix` | yes | no | no | GraphQL on the Phoenix port; honours `project_name` and never substitutes another project |
 | `openobserve` | yes | yes | yes | SQL over the traces, metrics and logs streams; needs `user` and `password`. Counters arrive cumulative and are shown as increases per bucket |
 | `langfuse` | yes | no | no | Public API; a synthetic root marked `synthetic: true` holds the observations together |
-| `lgtm` / `tempo`, `signoz`, `uptrace`, `jaeger` | yes | no | no | Native query APIs for traces; metrics and logs from these are not wired yet (#194) |
+| `signoz` | yes | yes | yes | Query-builder API (`/api/v4/query_range`) for all three signals; needs `api_key`. Counters are shown as the increase per bucket; logs filter on `trace_id`, `hermes.session_id`, the logger (`scope_name`), severity and body text |
+| `lgtm` / `tempo`, `uptrace`, `jaeger` | yes | no | no | Native query APIs for traces; metrics and logs from these are not wired yet (#194) |
 | any other type | no | no | no | Shown as unavailable in the selector; use the Live source |
 
 ## API
