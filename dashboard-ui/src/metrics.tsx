@@ -238,7 +238,7 @@ export function MetricsPage() {
         {header}
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
           <div className="mb-1 text-base font-medium text-foreground">This source does not serve metrics</div>
-          Pick the Live source, or a backend whose adapter serves metrics (OpenObserve).
+          Pick the Live source, or a backend whose adapter serves metrics (OpenObserve, SigNoz, Uptrace, LGTM).
         </div>
       </div>
     );

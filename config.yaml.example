@@ -330,12 +330,17 @@
 #     endpoint: http://localhost:4328/v1/traces
 #     # SigNoz Cloud requires an ingestion key; self-hosted ignores the header.
 #     ingestion_key_env: OTEL_SIGNOZ_INGESTION_KEY
+#     # Dashboard / skill read path (traces, metrics, logs): the UI/API port
+#     # and an API key (current SigNoz issues them from a service account).
+#     # query_port: 3301
+#     # api_key_env: SIGNOZ_API_KEY
 #
 #   - type: jaeger
 #     endpoint: http://localhost:4318/v1/traces
 #
 #   - type: tempo
 #     endpoint: http://localhost:3200/v1/traces
+#     # query_port: 3200            # dashboard read path (Tempo query API)
 #
 #   - type: otlp
 #     name: my-custom-collector
@@ -353,6 +358,13 @@
 # backends:
 #   - type: lgtm
 #     endpoint: http://localhost:4318/v1/traces
+#     # Dashboard / skill read path. With the compose stack nothing is needed:
+#     # Tempo :3200, Prometheus :9090 and Loki :3100 on the same host are
+#     # assumed. Elsewhere, name them (`off` disables a signal):
+#     # query_port: 3200
+#     # prometheus_url: http://prometheus:9090
+#     # metrics_match: '{__name__=~"hermes_.*"}'   # keep a shared Prometheus's list short
+#     # loki_url: http://loki:3100
 # capture_logs: true
 #
 # Do NOT use `type: tempo` for the LGTM stack — that's for standalone Tempo
@@ -371,6 +383,11 @@
 #     # throwaway-local — use `dsn_env:` instead of inline `dsn:`.
 #     dsn_env: UPTRACE_DSN
 #     # dsn: http://project1_secret@localhost:14318?grpc=14317
+#     # Dashboard / skill read path: Uptrace 2's query API wants a USER token
+#     # (Settings → API tokens), not the DSN's project token.
+#     # user_token_env: UPTRACE_USER_TOKEN
+#     # query_port: 14318
+#     # project_id: 1
 # capture_logs: true
 
 # ── OpenObserve quickstart ───────────────────────────────────────────────────

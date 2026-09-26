@@ -136,7 +136,7 @@ export function LogsPage() {
         {header}
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
           <div className="mb-1 text-base font-medium text-foreground">This source does not serve logs</div>
-          Pick the Live source, or a backend whose adapter serves logs (OpenObserve).
+          Pick the Live source, or a backend whose adapter serves logs (OpenObserve, SigNoz, Uptrace, LGTM).
         </div>
       </div>
     );
