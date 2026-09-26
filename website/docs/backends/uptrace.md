@@ -86,6 +86,33 @@ Navigation → Metrics. Query with PromQL over any `hermes_*` metric the plugin 
 **Logs:**
 Navigation → Logs. When `capture_logs: true` is on, every `logger.info(...)` from hermes or the plugin lands here with the active span's `trace_id` and `span_id` attached — click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs) for the full story.
 
+## Dashboard
+
+The bundled dashboard's Uptrace adapter (and the `observability` skill with
+`--source uptrace`) reads traces, **metrics and logs** back through Uptrace 2's
+`/internal/v1` API. That API is authenticated with a **user token**, not the
+project token inside the DSN, so the backend entry needs one more key:
+
+```yaml
+  - type: uptrace
+    endpoint: http://localhost:14318/v1/traces
+    dsn_env: UPTRACE_DSN
+    user_token_env: UPTRACE_USER_TOKEN   # Settings → API tokens, or the seeded user_tokens entry
+    # query_port: 443                    # when the API sits behind an HTTPS ingress
+    # project_id: 1
+```
+
+Metrics go through MQL (`metric=<name>&alias=$m` plus `$m group by model`,
+`sum($m)`, `avg($m)`, `max($m)`, `count($m)`); a counter only supports its
+per-interval sum, so the other aggregates fall back to it. Logs are the span
+store's `log:*` systems: `--level` narrows the systems, `--trace`, `--session`
+and `--logger` become `where` clauses on `_trace_id`, `hermes_session_id` and
+`otel_library_name`, and `--text` uses Uptrace's search. The logger list is the
+`otel_library_name` attribute's values with counts.
+
+Timestamps on this API are milliseconds and attribute keys are flattened with
+underscores; the adapter maps them back to the documented dotted names.
+
 ## Rotating the DSN
 
 The seeded token `project1_secret` is fine for local dev; change it before exposing the stack anywhere:

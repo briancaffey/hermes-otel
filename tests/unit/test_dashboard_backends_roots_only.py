@@ -377,15 +377,54 @@ class TestUptraceRootsOnly:
             }
         )
 
-    def test_uql_includes_parent_id_empty_clause(self):
+    # Uptrace 2's API has no filterable parent-id column (``_parent_id = ""``
+    # is rejected), so roots are kept client-side from the ``parentId`` field
+    # of each row; the UQL itself never mentions a parent.
+    def test_uql_never_filters_on_parent(self):
         adapter = self._adapter()
-        uql = adapter._build_uql(StructuredFilter(roots_only=True))
-        assert 'where span.parent_id = ""' in uql
+        for roots_only in (True, False):
+            assert "parent" not in adapter._build_uql(StructuredFilter(roots_only=roots_only))
 
-    def test_uql_omits_parent_clause_when_roots_only_false(self):
+    def test_roots_only_drops_child_rows_client_side(self, monkeypatch):
+        from backends import uptrace as up
+
         adapter = self._adapter()
-        uql = adapter._build_uql(StructuredFilter(roots_only=False))
-        assert "parent_id" not in uql
+        adapter.token = "t"
+        rows = {
+            "spans": [
+                {
+                    "id": "c",
+                    "traceId": "T",
+                    "parentId": "r",
+                    "name": "api.x",
+                    "time": 2000.0,
+                    "duration": 1,
+                    "attrs": {},
+                },
+                {
+                    "id": "r",
+                    "traceId": "T",
+                    "name": "agent",
+                    "time": 1000.0,
+                    "duration": 5,
+                    "attrs": {},
+                },
+                {
+                    "id": "c2",
+                    "traceId": "T2",
+                    "parentId": "zz",
+                    "name": "tool.t",
+                    "time": 3000.0,
+                    "duration": 1,
+                    "attrs": {},
+                },
+            ]
+        }
+        monkeypatch.setattr(up, "http_get_json", lambda url, headers=None, timeout=0: rows)
+        roots = adapter.search(StructuredFilter(roots_only=True), 0, 10, 10)["traces"]
+        assert [(t["traceID"], t["rootTraceName"]) for t in roots] == [("T", "agent")]
+        widened = adapter.search(StructuredFilter(roots_only=False), 0, 10, 10)["traces"]
+        assert sorted(t["traceID"] for t in widened) == ["T", "T2"]
 
 
 # ── Jaeger ─────────────────────────────────────────────────────────────
@@ -525,12 +564,40 @@ class TestOrderingNewestFirst:
         order = body["compositeQuery"]["builderQueries"]["A"]["orderBy"]
         assert order == [{"columnName": "timestamp", "order": "desc"}]
 
-    def test_uptrace_uql_ends_with_order_by_desc(self):
-        from backends.uptrace import UptraceAdapter
+    def test_uptrace_asks_for_time_desc_and_sorts_newest_first(self, monkeypatch):
+        from backends import uptrace as up
 
-        adapter = UptraceAdapter({"type": "uptrace", "dsn": "http://secret@localhost:14318"})
-        uql = adapter._build_uql(StructuredFilter())
-        assert "order by span.time desc" in uql
+        adapter = up.UptraceAdapter({"type": "uptrace", "dsn": "http://secret@localhost:14318"})
+        adapter.token = "t"
+        seen = {}
+
+        def fake_get(url, headers=None, timeout=0):
+            seen["url"] = url
+            return {
+                "spans": [
+                    {
+                        "id": "a",
+                        "traceId": "old",
+                        "name": "agent",
+                        "time": 1000.0,
+                        "duration": 1,
+                        "attrs": {},
+                    },
+                    {
+                        "id": "b",
+                        "traceId": "new",
+                        "name": "agent",
+                        "time": 2000.0,
+                        "duration": 1,
+                        "attrs": {},
+                    },
+                ]
+            }
+
+        monkeypatch.setattr(up, "http_get_json", fake_get)
+        traces = adapter.search(StructuredFilter(), 0, 10, 10)["traces"]
+        assert "sort_by=_time" in seen["url"] and "sort_desc=true" in seen["url"]
+        assert [t["traceID"] for t in traces] == ["new", "old"]
 
     def test_openobserve_sql_has_order_by_desc(self):
         from backends.openobserve import OpenObserveAdapter
