@@ -246,6 +246,22 @@ def otlp_attrs_to_dict(attrs: Any) -> Dict[str, Any]:
     return out
 
 
+def _status_code(code: Any) -> Optional[int]:
+    """OTLP status code as an int: Tempo returns the enum name (``STATUS_CODE_OK``)."""
+    if isinstance(code, bool):
+        return None
+    if isinstance(code, int):
+        return code
+    text = str(code or "").strip().upper()
+    if text.endswith("ERROR"):
+        return 2
+    if text.endswith("OK"):
+        return 1
+    if text.isdigit():
+        return int(text)
+    return None
+
+
 def spans_from_otlp(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
     """The adapters' ``{"batches": [...]}`` trace → live-store-shaped span dicts."""
     spans: List[Dict[str, Any]] = []
@@ -256,7 +272,7 @@ def spans_from_otlp(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
                 start = int(sp.get("startTimeUnixNano") or 0)
                 end = int(sp.get("endTimeUnixNano") or 0)
                 status = sp.get("status") or {}
-                code = status.get("code") if isinstance(status, dict) else None
+                code = _status_code(status.get("code") if isinstance(status, dict) else None)
                 attrs = otlp_attrs_to_dict(sp.get("attributes"))
                 if resource.get("service.name") and "service.name" not in attrs:
                     attrs["service.name"] = resource["service.name"]

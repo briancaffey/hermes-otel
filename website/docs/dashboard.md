@@ -53,6 +53,8 @@ Every tab has a **source** selector: `Live (in-process)` plus one entry per conf
 
 Without a selection (or a parameter), `query_backend: <name or type>` in `hermes_otel.yaml` chooses the default backend, else the first configured one with an adapter.
 
+A dashboard that serves several profiles (`?profile=<name>`) reads each profile's own config and live store: the Live source, the backend list and the Settings tab all follow the profile of the page.
+
 ## Which backends can the tab query?
 
 | Backend type | Trace search and detail | Metrics | Logs | Notes |

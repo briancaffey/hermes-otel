@@ -96,6 +96,14 @@ Because `wandb.entity` and `wandb.project` are Resource attributes on the
 shared `TracerProvider`, one Hermes process can route to one Weave project at a
 time. Multiple configured Weave entries must agree on those values.
 
+## Logs correlate by the single active session
+
+Log records are stamped with a trace id from the plugin's span tracker, not from the OpenTelemetry context (Hermes' loggers run on threads where the plugin's spans are never current). With one session in flight every record maps to that turn's innermost open span; with several sessions active at once the records stay unattributed. Lines logged between turns never carry a trace id. See [OTel logs](/configuration/logs#where-the-ids-come-from).
+
+## One-shot runs (`hermes -z`) export no logs
+
+Hermes disables Python logging for a one-shot run before the plugin's handler can see a record, so `-z` exports spans and metrics only. Use `hermes chat -Q --yolo -q "..."`, the interactive CLI or the gateway when you need the logs signal.
+
 ## Debug log has no rotation
 
 Enabling `HERMES_OTEL_DEBUG=true` appends to `~/.hermes/plugins/hermes_otel/debug.log` forever. No rotation, no size cap.

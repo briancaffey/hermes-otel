@@ -96,6 +96,11 @@ def _get_live_store():
         return None
     # create=True: the dashboard runs in a SEPARATE process from the gateway, so
     # it opens the shared SQLite store itself (reading what the gateway writes).
+    # The store follows the profile of the request (#70): a dashboard serving
+    # several profiles reads each one's own file.
+    per_home = getattr(mod, "get_live_store_for_home", None)
+    if per_home is not None:
+        return per_home(create=True)
     return mod.get_live_store(create=True)
 
 

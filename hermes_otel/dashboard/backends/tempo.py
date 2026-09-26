@@ -61,6 +61,44 @@ _CARD_SELECT_ATTRS = (
 )
 
 
+def _dedupe_spans(data: Any) -> Any:
+    """Drop repeated spans (same span id) from an OTLP-JSON trace.
+
+    Two entries that both end in one Tempo (a ``tempo`` entry next to an
+    ``lgtm`` gateway that forwards to the same Tempo) store every span twice
+    until compaction merges them, and the waterfall would show each span
+    doubled. The first copy wins.
+    """
+    if not isinstance(data, dict):
+        return data
+    seen: set = set()
+    for batch in data.get("batches") or []:
+        for scope in batch.get("scopeSpans") or []:
+            kept = []
+            for sp in scope.get("spans") or []:
+                sid = sp.get("spanId")
+                if sid and sid in seen:
+                    continue
+                if sid:
+                    seen.add(sid)
+                kept.append(sp)
+            scope["spans"] = kept
+    return data
+
+
+def _re_esc(text: str) -> str:
+    """Escape ``text`` for a TraceQL regex inside a double-quoted string."""
+    out = []
+    for ch in text:
+        if ch in ".^$*+?()[]{}|\\":
+            out.append("\\\\" + ch)
+        elif ch == '"':
+            out.append('\\"')
+        else:
+            out.append(ch)
+    return "".join(out)
+
+
 def _esc(s: str) -> str:
     """Quote a string for safe inclusion in a TraceQL string literal."""
     return s.replace("\\", "\\\\").replace('"', '\\"')
@@ -182,6 +220,12 @@ class TempoAdapter(BackendAdapter):
                 predicates.append("status = ok")
             for k, v in f.attr_equals.items():
                 predicates.append(f'.{k} = "{_esc(str(v))}"')
+            if f.free_text:
+                # Any span of the trace whose captured input or output
+                # mentions the text; regex-escaped so a marker with dots or
+                # brackets matches literally.
+                pat = ".*" + _re_esc(f.free_text) + ".*"
+                predicates.append(f'(span.input.value =~ "{pat}" || span.output.value =~ "{pat}")')
             base = "{ " + " && ".join(predicates) + " }" if predicates else "{}"
 
         if "select(" in base:
@@ -219,7 +263,10 @@ class TempoAdapter(BackendAdapter):
         # whose *child* is an api span. When the user asked for roots
         # only, drop traces where none of the matched spans is the
         # trace root.
-        if f.roots_only and isinstance(result, dict):
+        # A free-text search is a content search: the text usually sits on an
+        # api/llm span, not the root, so the trace is kept whenever any span
+        # matched.
+        if f.roots_only and not f.free_text and isinstance(result, dict):
             filtered = []
             for t in result.get("traces") or []:
                 root_name = (t.get("rootTraceName") or "").strip()
@@ -256,4 +303,4 @@ class TempoAdapter(BackendAdapter):
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
-        return http_get_json(url, timeout=20.0)
+        return _dedupe_spans(http_get_json(url, timeout=20.0))

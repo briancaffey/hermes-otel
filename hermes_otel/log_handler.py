@@ -23,7 +23,7 @@ attribute before adding a new one.
 from __future__ import annotations
 
 import logging
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
@@ -37,9 +37,10 @@ try:
     # handler attaches to and lets us fan out to multiple providers. Revisit
     # if the SDK handler is actually removed (not just deprecated).
     from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
-    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler, LogRecordProcessor
     from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExporter, LogExportResult
     from opentelemetry.sdk.resources import Resource
+    from opentelemetry.trace import set_span_in_context
 
     _LOGS_AVAILABLE = True
 except ImportError:  # pragma: no cover - exercised only when SDK missing
@@ -50,7 +51,9 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
     BatchLogRecordProcessor = None  # type: ignore[assignment]
     LogExporter = object  # type: ignore[assignment,misc]
     LogExportResult = None  # type: ignore[assignment]
+    LogRecordProcessor = object  # type: ignore[assignment,misc]
     Resource = None  # type: ignore[assignment]
+    set_span_in_context = None  # type: ignore[assignment]
 
 
 # Marker attribute stamped on handlers we install so idempotent reinstalls
@@ -147,6 +150,63 @@ class _LoggingLogExporter(LogExporter):  # type: ignore[misc]
         return flush(timeout_millis) if flush else True
 
 
+# A callable the tracer supplies: ``(session_id, span)`` of the one session
+# with a turn in flight and its innermost open span, or ``None``.
+ContextResolver = Callable[[], Optional[Tuple[str, Any]]]
+
+SESSION_ID_ATTRIBUTE = "hermes.session_id"
+
+
+class SpanContextStamper(LogRecordProcessor):  # type: ignore[misc]
+    """Give exported records the trace context of the plugin's active span.
+
+    Hermes' loggers write from the agent's threads, where the plugin's spans
+    are not on the OpenTelemetry context, so the SDK's ``LoggingHandler``
+    translates every record with an empty ``trace_id`` and every backend
+    stores it uncorrelated. Registered ahead of the exporters, this processor
+    fills ``trace_id`` / ``span_id`` / ``trace_flags`` from the span tracker,
+    the same policy the live store's handler follows (#186): the innermost
+    open span of the single session with a turn in flight; several active
+    sessions leave the record unattributed rather than attributed wrongly.
+    It also adds ``hermes.session_id`` so a backend can group one session's
+    lines without a trace id (the plugin's own session lines already carry it).
+    A record that arrives with a valid trace id (logged inside a span that is
+    current on the thread) is left untouched.
+    """
+
+    def __init__(self, resolve: ContextResolver) -> None:
+        self._resolve = resolve
+
+    def on_emit(self, log_record: Any) -> None:  # ReadWriteLogRecord
+        try:
+            rec = getattr(log_record, "log_record", log_record)
+            if getattr(rec, "trace_id", 0):
+                return
+            found = self._resolve()
+            if not found:
+                return
+            session_id, span = found
+            ctx = span.get_span_context() if span is not None else None
+            if ctx is None or not getattr(ctx, "trace_id", 0):
+                return
+            rec.trace_id = ctx.trace_id
+            rec.span_id = ctx.span_id
+            rec.trace_flags = ctx.trace_flags
+            if set_span_in_context is not None:
+                rec.context = set_span_in_context(span)
+            attrs = getattr(rec, "attributes", None)
+            if attrs is not None and session_id and SESSION_ID_ATTRIBUTE not in attrs:
+                attrs[SESSION_ID_ATTRIBUTE] = str(session_id)
+        except Exception:  # pragma: no cover — logging must never raise
+            pass
+
+    def shutdown(self) -> None:
+        return None
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return True
+
+
 def build_log_processors(
     backends: List[_ResolvedBackend],
     extra_headers: Optional[Dict[str, str]] = None,
@@ -189,6 +249,7 @@ def install_handler(
     processors: List[Tuple[Any, "_ResolvedBackend"]],
     level: int,
     attach_logger: Optional[str] = None,
+    context_resolver: Optional[ContextResolver] = None,
 ) -> Optional["LoggerProvider"]:
     """Wire a :class:`LoggerProvider` + :class:`LoggingHandler` onto Python logging.
 
@@ -206,6 +267,9 @@ def install_handler(
         attach_logger: Logger name to attach the handler to. ``None``
             means the root logger (captures everything). Pass e.g.
             ``"hermes_otel"`` to scope capture to plugin logs only.
+        context_resolver: When given, a :class:`SpanContextStamper` built on
+            it runs before every exporter so records logged outside the OTel
+            context still carry the active span's trace id.
 
     Returns the ``LoggerProvider`` so the tracer can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are disabled,
@@ -215,6 +279,8 @@ def install_handler(
         return None
 
     provider = LoggerProvider(resource=resource)
+    if context_resolver is not None:
+        provider.add_log_record_processor(SpanContextStamper(context_resolver))
     for proc, _backend in processors:
         provider.add_log_record_processor(proc)
 

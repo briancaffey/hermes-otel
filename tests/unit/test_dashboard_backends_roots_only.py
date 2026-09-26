@@ -665,3 +665,186 @@ class TestOrderingNewestFirst:
         with patch("backends.jaeger.http_get_json", return_value=data):
             result = adapter.search(StructuredFilter(), 0, 1, 10)
         assert [t["traceID"] for t in result["traces"]] == ["t-new", "t-old"]
+
+
+# ── Free-text search ───────────────────────────────────────────────────
+#
+# `traces --text` / the dashboard search box. Each adapter must send the
+# text to the backend in its own query language, and Tempo must keep a
+# trace whose matching span is not the root (the text sits on api/llm spans).
+
+
+class TestFreeTextSearch:
+    def test_tempo_regex_on_input_and_output_and_no_root_filter(self):
+        from urllib.parse import unquote_plus
+
+        from backends.tempo import TempoAdapter
+
+        adapter = TempoAdapter({"type": "tempo", "endpoint": "http://localhost:4318/v1/traces"})
+        captured = {}
+
+        def _fake_get(url, headers=None, timeout=None):
+            captured["url"] = url
+            return {"traces": [_tempo_trace("t-child-api", "agent", ["api.gpt-4"])], "metrics": {}}
+
+        with patch("backends.tempo.http_get_json", side_effect=_fake_get):
+            result = adapter.search(
+                StructuredFilter(free_text="B1-shell.echo", roots_only=True), 0, 1, 50
+            )
+        q = unquote_plus(captured["url"])
+        assert 'span.input.value =~ ".*B1-shell\\\\.echo.*"' in q
+        assert 'span.output.value =~ ".*B1-shell\\\\.echo.*"' in q
+        # The matched span is a child, and the trace is still returned.
+        assert [t["traceID"] for t in result["traces"]] == ["t-child-api"]
+
+    def test_openobserve_ors_over_the_columns_the_stream_has(self):
+        from backends.openobserve import OpenObserveAdapter
+
+        adapter = OpenObserveAdapter(
+            {
+                "type": "openobserve",
+                "endpoint": "http://localhost:5080/api/default/v1/traces",
+                "user": "u",
+                "password": "p",
+            }
+        )
+        schema = {
+            "schema": [
+                {"name": "gen_ai_input_messages"},
+                {"name": "tool_name"},
+                {"name": "duration"},
+            ]
+        }
+        with patch("backends.openobserve.http_get_json", return_value=schema):
+            where = adapter._build_where(StructuredFilter(free_text="B1-x"))
+        assert "(gen_ai_input_messages LIKE '%B1-x%' OR tool_name LIKE '%B1-x%')" in where
+        assert "llm_input" not in where
+        # Cached: a second build does not fetch the schema again.
+        with patch("backends.openobserve.http_get_json", side_effect=AssertionError("refetched")):
+            assert "tool_name LIKE" in adapter._build_where(StructuredFilter(free_text="B1-x"))
+
+    def test_openobserve_falls_back_to_the_genai_columns_without_a_schema(self):
+        from backends.openobserve import OpenObserveAdapter
+
+        adapter = OpenObserveAdapter(
+            {
+                "type": "openobserve",
+                "endpoint": "http://localhost:5080/api/default/v1/traces",
+                "user": "u",
+                "password": "p",
+            }
+        )
+        with patch("backends.openobserve.http_get_json", side_effect=RuntimeError("down")):
+            where = adapter._build_where(StructuredFilter(free_text="B1-x"))
+        assert where.startswith(
+            "(gen_ai_input_messages LIKE '%B1-x%' OR gen_ai_output_messages LIKE '%B1-x%')"
+        )
+
+    def test_signoz_contains_on_input_value(self):
+        from backends.signoz import SigNozAdapter
+
+        adapter = SigNozAdapter({"type": "signoz", "endpoint": "http://localhost:4318/v1/traces"})
+        items = adapter._build_filters(StructuredFilter(free_text="B1-x", roots_only=False))[
+            "items"
+        ]
+        assert {
+            "key": {"key": "input.value", "type": "tag"},
+            "op": "contains",
+            "value": "B1-x",
+        } in items
+
+    def test_uptrace_contains_on_the_flattened_attribute(self):
+        from backends.uptrace import UptraceAdapter
+
+        adapter = UptraceAdapter(
+            {
+                "type": "uptrace",
+                "endpoint": "http://localhost:14318/v1/traces",
+                "dsn": "http://tok@localhost:14318",
+            }
+        )
+        assert 'where input_value contains "B1-x"' in adapter._build_uql(
+            StructuredFilter(free_text="B1-x")
+        )
+
+
+class TestSigNozRowShape:
+    """SigNoz's current trace detail: one row per span, columns named apart."""
+
+    def test_rows_become_a_tree_with_parents_status_and_tags(self):
+        from backends.signoz import _signoz_trace_to_otlp
+
+        cols = [
+            "__time",
+            "SpanId",
+            "TraceId",
+            "ServiceName",
+            "Name",
+            "Kind",
+            "DurationNano",
+            "TagsKeys",
+            "TagsValues",
+            "References",
+            "Events",
+            "HasError",
+            "StatusMessage",
+            "StatusCodeString",
+            "SpanKind",
+        ]
+        tid = "623a1d15455573a05c8b9fa4b6243755"
+        rows = [
+            [
+                1790463141232,
+                "5d86b2f5ab371b5c",
+                tid,
+                "hermes-agent",
+                "agent",
+                "1",
+                "10354905000",
+                ["session.id"],
+                ["s1"],
+                [f"{{TraceId={tid}, SpanId=, RefType=CHILD_OF}}"],
+                [],
+                False,
+                "",
+                "Ok",
+                "Internal",
+            ],
+            [
+                1790463141347,
+                "a3c2ba5129a7c096",
+                tid,
+                "hermes-agent",
+                "api.gpt",
+                "1",
+                "3170395000",
+                ["input.value", "tool.name"],
+                ["marker B1-x", "terminal"],
+                [f"{{TraceId={tid}, SpanId=5d86b2f5ab371b5c, RefType=CHILD_OF}}"],
+                [],
+                True,
+                "boom",
+                "Error",
+                "Internal",
+            ],
+        ]
+        otlp = _signoz_trace_to_otlp([{"columns": cols, "events": rows, "isSubTree": False}])
+        spans = otlp["batches"][0]["scopeSpans"][0]["spans"]
+        by_name = {sp["name"]: sp for sp in spans}
+        assert by_name["agent"]["parentSpanId"] is None
+        assert by_name["api.gpt"]["parentSpanId"] == "5d86b2f5ab371b5c"
+        assert by_name["agent"]["startTimeUnixNano"] == str(1790463141232 * 1_000_000)
+        assert (
+            int(by_name["agent"]["endTimeUnixNano"]) - int(by_name["agent"]["startTimeUnixNano"])
+            == 10354905000
+        )
+        attrs = {a["key"]: a["value"] for a in by_name["api.gpt"]["attributes"]}
+        assert attrs["input.value"] == {"stringValue": "marker B1-x"}
+        assert by_name["api.gpt"]["status"]["code"] == 2
+        assert by_name["agent"]["status"]["code"] == 1
+
+    def test_unknown_shapes_stay_empty(self):
+        from backends.signoz import _signoz_trace_to_otlp
+
+        assert _signoz_trace_to_otlp("nope") == {"batches": []}
+        assert _signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}
