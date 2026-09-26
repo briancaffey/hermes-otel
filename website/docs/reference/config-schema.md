@@ -108,6 +108,8 @@ Basic Auth header is constructed automatically from public + secret keys.
 | `endpoint` | string | OTLP endpoint (self-host: `http://localhost:4328/v1/traces`; cloud: `https://ingest.<region>.signoz.cloud:443/v1/traces`) |
 | `ingestion_key` | string | SigNoz Cloud ingestion key (inline; discouraged) |
 | `ingestion_key_env` | string | Env var name holding the ingestion key |
+| `query_port` | int | Dashboard read path: the SigNoz UI/API port (default `3301`; `443` behind an HTTPS ingress) |
+| `api_key` / `api_key_env` | string | Dashboard read path: a SigNoz API key, sent as `SIGNOZ-API-KEY` (current SigNoz issues them from a service account). Ingestion never needs it |
 
 When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 
@@ -122,6 +124,8 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | Field | Type | Description |
 |---|---|---|
 | `endpoint` | string | **Required.** Traces only (metrics/logs off); use `type: lgtm` for the all-in-one Grafana container |
+| `query_port` | int | Dashboard read path: Tempo's query API port (default `3200`) |
+| `prometheus_url` / `loki_url` | string | Optional. Naming them gives a Tempo entry the same dashboard metrics/logs as `lgtm` |
 
 #### `otlp`
 
@@ -142,6 +146,11 @@ Alias over `otlp` with a dedicated display name and all signals on by default. S
 | `endpoint` | string | **Required.** OTLP traces endpoint — `http://localhost:4318/v1/traces` for the bundled `docker-compose/lgtm.yaml` |
 | `metrics` | bool | Default: `true` |
 | `logs` | bool | Default: `true` |
+| `query_port` | int | Dashboard read path: Tempo's query API port (default `3200`) |
+| `prometheus_url` | string | Dashboard metrics. Default: port `9090` on the Tempo host (the otel-lgtm layout); `off` disables |
+| `loki_url` | string | Dashboard logs. Default: port `3100` on the Tempo host; `off` disables (e.g. a Loki without OTLP) |
+| `metrics_match` | string | Optional Prometheus series selector for the instrument list, e.g. `{__name__=~"hermes_.*"}` on a shared Prometheus |
+| `loki_selector` | string | Optional LogQL stream selector the log filters are applied to (default `{service_name=~".+"}`) |
 
 Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` container — `tempo` is traces-only and would disable the logs/metrics fan-out.
 
@@ -152,6 +161,9 @@ Use `type: lgtm` (not `type: tempo`) when pointing at the `grafana/otel-lgtm` co
 | `endpoint` | string | **Required.** OTLP traces endpoint (self-host: `http://localhost:14318/v1/traces`). Also via `OTEL_UPTRACE_ENDPOINT` |
 | `dsn` | string | Uptrace DSN, sent as the `uptrace-dsn` header on every export (inline; discouraged) |
 | `dsn_env` | string | Env var name holding the DSN (falls back to `OTEL_UPTRACE_DSN` / `UPTRACE_DSN`) |
+| `query_port` | int | Dashboard read path: the Uptrace UI/API port (default `14318`; `443` behind an HTTPS ingress) |
+| `user_token` / `user_token_env` | string | Dashboard read path: an Uptrace **user** token (Settings → API tokens); falls back to `UPTRACE_USER_TOKEN`. The DSN's project token only ingests |
+| `project_id` | int | Dashboard read path: the Uptrace project to query (default `1`) |
 
 All three signals on by default. See [Uptrace](/backends/uptrace).
 

@@ -190,6 +190,59 @@ class LogFilter:
     min_level: int = 0  # python logging numbers: 20 INFO, 30 WARNING, 40 ERROR
     logger: Optional[str] = None
     text: Optional[str] = None
+    # Keyset paging cursor: only records strictly older than this instant
+    # (unix ns). Pages are newest-first, so "the next page" is the rows older
+    # than the oldest row shown; a cursor survives new lines arriving, which
+    # an offset does not.
+    before_ns: Optional[int] = None
+
+
+def log_end_ns(end_s: int, f: "LogFilter") -> int:
+    """The exclusive upper bound of a logs query in ns: the window end, tightened
+    by the paging cursor when there is one."""
+    end_ns = int(end_s) * 1_000_000_000
+    return min(end_ns, int(f.before_ns)) if f.before_ns else end_ns
+
+
+def strictly_older(records: List[Dict[str, Any]], f: "LogFilter") -> List[Dict[str, Any]]:
+    """Drop rows at or after the cursor. Backends bound time at their own
+    precision (ms, µs); this keeps the page exact at the nanosecond so a
+    cursor never repeats the row it was taken from."""
+    if not f.before_ns:
+        return records
+    cut = int(f.before_ns)
+    return [r for r in records if int(r.get("time_unix_nano") or 0) < cut]
+
+
+# Adapters fetch this many rows beyond the page so log_page() can see whether
+# the last row's timestamp continues past the page boundary.
+LOG_PAGE_SLACK = 50
+
+
+def log_page(records: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
+    """The envelope every logs route returns: the rows plus where the next
+    page starts and whether asking is worthwhile.
+
+    The cursor is a timestamp, and timestamps are not unique (a burst can log
+    several lines in one nanosecond). A page therefore keeps every row that
+    shares its last row's timestamp, so the next page — "strictly older than
+    that timestamp" — neither repeats nor loses a tied row. ``records`` must be
+    newest-first and should carry ``LOG_PAGE_SLACK`` rows beyond ``limit``.
+    """
+    rows = list(records)
+    n = int(limit)
+    if len(rows) > n:
+        boundary = int(rows[n - 1].get("time_unix_nano") or 0)
+        while n < len(rows) and int(rows[n].get("time_unix_nano") or 0) == boundary:
+            n += 1
+    page, rest = rows[:n], rows[n:]
+    times = [int(r.get("time_unix_nano") or 0) for r in page if r.get("time_unix_nano")]
+    has_more = bool(rest)
+    return {
+        "logs": page,
+        "next_before_ns": min(times) if has_more and times else None,
+        "has_more": has_more,
+    }
 
 
 def bucketize(

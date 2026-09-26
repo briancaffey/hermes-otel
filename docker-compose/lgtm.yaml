@@ -35,7 +35,11 @@
 
 services:
   lgtm:
-    image: docker.io/grafana/otel-lgtm:latest
+    # Pinned: 0.34.0 = Grafana 13.2.1, Tempo 3.0.3, Loki 3.7.7, Prometheus
+    # 3.14.0, collector 0.160.0. Verified 2026-09-26 to listen on exactly the
+    # ports mapped below (the collector's own exporters use 4417/4418/9099
+    # inside the container; they are not receivers). Bump deliberately.
+    image: docker.io/grafana/otel-lgtm:0.34.0
     container_name: hermes-otel-lgtm
     restart: unless-stopped
     environment:

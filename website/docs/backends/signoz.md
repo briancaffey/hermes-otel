@@ -68,11 +68,42 @@ Full list: [Metrics reference](/reference/metrics).
 
 See [Span attributes reference](/reference/span-attributes) for the full list.
 
+## Dashboard
+
+The bundled dashboard's SigNoz adapter (and the `observability` skill with
+`--source signoz`) reads traces, **metrics and logs** back through SigNoz's
+query API. It needs two extra keys on the backend entry, because the query API
+sits on the UI port and requires authentication even when ingestion does not:
+
+```yaml
+  - type: signoz
+    endpoint: http://localhost:4328/v1/traces
+    query_port: 3301                 # the SigNoz UI/API port (443 behind an HTTPS ingress)
+    api_key_env: SIGNOZ_API_KEY      # an API key from the SigNoz settings, sent as SIGNOZ-API-KEY
+```
+
+Metrics are read with the query builder (`/api/v4/query_range`): counters such
+as `hermes.token.usage` are shown as the **increase per bucket** (delta and
+cumulative alike), gauges as the per-bucket reduction; the instrument list comes
+from the metrics autocomplete API, without histogram `.bucket`/`.min`/`.max`
+internals. Logs filter on `trace_id`, `hermes.session_id`, the logger (SigNoz's
+`scope_name`), severity and body text; the logger list is a `count` grouped by
+`scope_name`.
+
 ## Attribute convention
 
 SigNoz reads `gen_ai.*` attributes for LLM-specific views, which the plugin emits alongside the OpenInference `llm.*` convention. Both sets land on the same spans — SigNoz uses whichever it recognises.
 
 ## Troubleshooting
+
+**"Connection refused on 4318 right after a fresh self-hosted install"**
+
+- The SigNoz collector opens its receivers only after it has registered with
+  the SigNoz server over OpAMP, and that registration fails until the first
+  admin user (and with it the organisation) exists — `signoz` logs
+  `failed to find or create agent` on every heartbeat. Register the admin in
+  the UI (or `POST /api/v1/register`), and ingestion starts within a minute.
+  Until then every export is a silently dropped batch.
 
 **"Port 4318 is already in use"**
 

@@ -92,14 +92,48 @@ export function backendParams(f: TraceFilters, source: string, limit = 50): URLS
 // ── logs tab (#186) ──────────────────────────────────────────────────────
 export type LogFilters = { minLevel: string; logger: string; session: string; traceId: string; text: string; lookback: number };
 export const DEFAULT_LOG_FILTERS: LogFilters = { minLevel: "0", logger: "", session: "", traceId: "", text: "", lookback: 1 };
+export const LOG_PAGE_SIZES = [100, 200, 500, 1000];
+export const DEFAULT_LOG_PAGE = 200;
 
-export function logParams(f: LogFilters, source: string, limit: number): URLSearchParams {
+/** Query for /logs/search: the filters, the page size and, past the first
+ *  page, the keyset cursor (only rows strictly older than `beforeNs`). */
+export function logParams(f: LogFilters, source: string, limit: number, beforeNs?: string | null): URLSearchParams {
   const p = withBackend(new URLSearchParams({ lookback_hours: String(f.lookback), limit: String(limit) }), source);
   if (Number(f.minLevel) > 0) p.set("min_level", f.minLevel);
   if (f.logger.trim()) p.set("logger", f.logger.trim());
   if (f.session.trim()) p.set("session", f.session.trim());
   if (f.traceId.trim()) p.set("trace_id", f.traceId.trim());
   if (f.text.trim()) p.set("text", f.text.trim());
+  if (beforeNs && /^\d+$/.test(beforeNs)) p.set("before_ns", beforeNs);
   return p;
 }
 
+/** The URL's view of the filters (missing keys fall back to the defaults). */
+export function logFiltersFromNav(nav: { level?: string; logger?: string; session?: string; trace?: string; text?: string; lookback?: string }): LogFilters {
+  const lookback = Number(nav.lookback);
+  return {
+    minLevel: nav.level && /^\d+$/.test(nav.level) ? nav.level : DEFAULT_LOG_FILTERS.minLevel,
+    logger: nav.logger || "",
+    session: nav.session || "",
+    traceId: nav.trace || "",
+    text: nav.text || "",
+    lookback: lookback > 0 ? lookback : DEFAULT_LOG_FILTERS.lookback,
+  };
+}
+
+/** The filters as URL keys; an empty string clears a key (see navSearch). */
+export function navFromLogFilters(f: LogFilters): { level: string; logger: string; session: string; trace: string; text: string; lookback: string } {
+  return {
+    level: Number(f.minLevel) > 0 ? f.minLevel : "",
+    logger: f.logger.trim(),
+    session: f.session.trim(),
+    trace: f.traceId.trim(),
+    text: f.text.trim(),
+    lookback: f.lookback !== DEFAULT_LOG_FILTERS.lookback ? String(f.lookback) : "",
+  };
+}
+
+export function logPageSizeFromNav(size?: string): number {
+  const n = Number(size);
+  return LOG_PAGE_SIZES.includes(n) ? n : DEFAULT_LOG_PAGE;
+}

@@ -30,7 +30,7 @@ from backends import (  # noqa: E402  (after the path shim above)
     find_adapter_class,
     resolve_adapter,
 )
-from backends.base import LogFilter, StructuredFilter  # noqa: E402
+from backends.base import LOG_PAGE_SLACK, LogFilter, StructuredFilter, log_page  # noqa: E402
 
 router = APIRouter()
 
@@ -286,24 +286,24 @@ def live_logs_search(
     text: str = Query(""),
     lookback_hours: float = Query(1.0, gt=0, le=8760),
     limit: int = Query(300, ge=1, le=2000),
+    before_ns: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     store = _get_live_store()
     if store is None:
-        return {"live": False, "logs": []}
+        return {"live": False, "logs": [], "next_before_ns": None, "has_more": False}
     start_ns, end_ns = _window(lookback_hours, None, None)
-    return {
-        "live": True,
-        "logs": store.query_logs(
-            trace_id=trace_id.strip() or None,
-            session=session.strip() or None,
-            level_min=min_level or None,
-            logger=logger.strip() or None,
-            text=text.strip() or None,
-            start_ns=start_ns,
-            end_ns=end_ns,
-            limit=limit,
-        ),
-    }
+    rows = store.query_logs(
+        trace_id=trace_id.strip() or None,
+        session=session.strip() or None,
+        level_min=min_level or None,
+        logger=logger.strip() or None,
+        text=text.strip() or None,
+        start_ns=start_ns,
+        end_ns=end_ns,
+        limit=limit + LOG_PAGE_SLACK,
+        before_ns=before_ns or None,
+    )
+    return {"live": True, **log_page(rows, limit)}
 
 
 @router.get("/live/loggers")
@@ -316,7 +316,7 @@ def live_loggers() -> Dict[str, Any]:
 
 @router.get("/status")
 def status(
-    backend: str = Query("", description="Backend name or type to report on")
+    backend: str = Query("", description="Backend name or type to report on"),
 ) -> Dict[str, Any]:
     """Report the active query backend + every configured backend.
 
@@ -514,6 +514,7 @@ def backend_logs_search(
     text: str = Query(""),
     lookback_hours: float = Query(1.0, gt=0, le=8760),
     limit: int = Query(300, ge=1, le=2000),
+    before_ns: int = Query(0, ge=0),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "logs")
     end_s = int(time.time())
@@ -523,11 +524,10 @@ def backend_logs_search(
         min_level=min_level,
         logger=logger.strip() or None,
         text=text.strip() or None,
+        before_ns=before_ns or None,
     )
-    return {
-        "backend": backend_label(adapter.cfg),
-        "logs": adapter.logs_search(f, end_s - int(lookback_hours * 3600), end_s, limit),
-    }
+    rows = adapter.logs_search(f, end_s - int(lookback_hours * 3600), end_s, limit + LOG_PAGE_SLACK)
+    return {"backend": backend_label(adapter.cfg), **log_page(rows, limit)}
 
 
 @router.get("/loggers")
