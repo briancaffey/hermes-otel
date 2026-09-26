@@ -70,6 +70,13 @@ The upstream example bundles Prometheus. To route the plugin's metrics there:
 2. Or configure Tempo with a sidecar collector (see Grafana's docs).
 3. Or fan out to SigNoz / Phoenix in parallel via [Multi-backend](/backends/multi-backend).
 
+## Dashboard
+
+The dashboard's Tempo adapter reads traces from Tempo's query API (`query_port`,
+default `3200`). Tempo stores no metrics or logs, but a Tempo entry that names a
+`prometheus_url` and/or `loki_url` gets the same metrics and logs surface as
+`type: lgtm` — see [Grafana LGTM → Dashboard](/backends/lgtm#dashboard).
+
 ## Multi-backend config
 
 ```yaml

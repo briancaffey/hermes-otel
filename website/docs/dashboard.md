@@ -61,7 +61,10 @@ Without a selection (or a parameter), `query_backend: <name or type>` in `hermes
 | `openobserve` | yes | yes | yes | SQL over the traces, metrics and logs streams; needs `user` and `password`. Counters arrive cumulative and are shown as increases per bucket |
 | `langfuse` | yes | no | no | Public API; a synthetic root marked `synthetic: true` holds the observations together |
 | `signoz` | yes | yes | yes | Query-builder API (`/api/v4/query_range`) for all three signals; needs `api_key`. Counters are shown as the increase per bucket; logs filter on `trace_id`, `hermes.session_id`, the logger (`scope_name`), severity and body text |
-| `lgtm` / `tempo`, `uptrace`, `jaeger` | yes | no | no | Native query APIs for traces; metrics and logs from these are not wired yet (#194) |
+| `uptrace` | yes | yes | yes | Uptrace 2.x `/internal/v1` API; needs a **user** token (`user_token_env`), not the DSN's project token. Metrics via MQL (`$m`, `sum($m)`, `avg($m)`…) with `group by`; logs are the span store's `log:*` systems, filtered on `_trace_id`, `hermes_session_id`, `otel_library_name`, level and text |
+| `lgtm` | yes | yes | yes | Tempo for traces, the stack's Prometheus (`prometheus_url`, default `:9090`) for metrics and Loki (`loki_url`, default `:3100`, `off` to disable) for logs. Counters are shown as `increase()` per bucket; logs use LogQL label-filter stages on `trace_id`, `hermes_session_id`, `scope_name`, `severity_number` and body text |
+| `tempo` | yes | optional | optional | Traces from Tempo; add `prometheus_url` / `loki_url` to a Tempo entry to get the same metrics and logs as `lgtm` |
+| `jaeger` | yes | no | no | Jaeger stores traces only |
 | any other type | no | no | no | Shown as unavailable in the selector; use the Live source |
 
 ## API

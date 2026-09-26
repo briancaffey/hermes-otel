@@ -61,6 +61,18 @@ class TestResolveAdapter:
                 backends.resolve_adapter("nope")
             assert "phx, oo, hc" in str(e.value)
 
+    def test_exact_name_beats_first_of_type(self, monkeypatch):
+        # Two entries of one type: ``--source lgtm`` must pick the entry NAMED
+        # lgtm, not the first lgtm-typed entry that happens to be listed first.
+        cfg = [
+            {"type": "lgtm", "name": "lgtm-local", "endpoint": "http://localhost:14318/v1/traces"},
+            {"type": "lgtm", "name": "lgtm", "endpoint": "https://lgtm.lan/v1/traces"},
+        ]
+        monkeypatch.setattr(backends, "load_config", lambda: (None, cfg, None))
+        with patch("backends.top_level_config", return_value={}):
+            assert backends.resolve_adapter("lgtm")[0].cfg["name"] == "lgtm"
+            assert backends.resolve_adapter("lgtm-local")[0].cfg["name"] == "lgtm-local"
+
 
 class TestStatusAndRoutes:
     def test_status_lists_capabilities_and_active(self, client):

@@ -85,6 +85,32 @@ Explore → Prometheus. Query any `hermes_*` metric (`hermes_session_count_total
 **Logs (Loki):**
 Explore → Loki. Query `{service_name="hermes-agent"}`. Every `logger.info(...)` call from hermes or the plugin lands here with the active span's `trace_id` / `span_id` automatically attached — clicking a `trace_id` in a log line jumps straight into the Tempo trace. See [OTel logs](/configuration/logs) for the full story.
 
+## Dashboard
+
+The bundled dashboard's LGTM adapter (and the `observability` skill with
+`--source lgtm`) reads all three signals back from the stack's own components:
+traces from Tempo (`query_port`, default `3200`), **metrics from Prometheus**
+and **logs from Loki**. With the compose stack nothing needs configuring; when
+the pieces live elsewhere, name them:
+
+```yaml
+  - type: lgtm
+    endpoint: https://lgtm.example/v1/traces
+    query_port: 443                        # Tempo's query API
+    prometheus_url: https://prometheus.example
+    metrics_match: '{__name__=~"hermes_.*"}'   # optional: keep a shared Prometheus's instrument list short
+    loki_url: "off"                        # or https://loki.example; off when there is no Loki yet
+```
+
+Prometheus renames OTLP instruments (`hermes.token.usage` → `hermes_token_usage_total`,
+histograms grow `_sum`/`_count`); counters are charted as `increase()` per
+bucket, gauges as the last sample per bucket. A one-shot `hermes -z` run leaves
+a single cumulative sample, which Prometheus counts as zero increase; long-lived
+gateways chart normally. Logs use LogQL label-filter stages on the OTLP
+attributes Loki keeps (`trace_id`, `hermes_session_id`, `scope_name`,
+`severity_number`) plus `|=` for text; the logger list is a `count_over_time`
+by `scope_name`.
+
 ## Multi-backend config
 
 Fan out to LGTM alongside other backends:

@@ -779,14 +779,21 @@ def cmd_status(args: argparse.Namespace, out: TextIO) -> int:
         info["query_backend_pin"] = pin
         for b in configured:
             cls = backends.find_adapter_class(str(b.get("type") or ""))
+            # Capabilities are per entry, not per type (an ``lgtm`` entry may
+            # switch Loki off, a ``tempo`` entry may add Prometheus), so ask an
+            # instance when one can be built; fall back to the class flags.
+            try:
+                probe = cls(b) if cls else None
+            except Exception:
+                probe = cls
             info["backends"].append(
                 {
                     "name": backends.backend_label(b),
                     "type": b.get("type"),
                     "endpoint": b.get("endpoint") or b.get("host") or b.get("base_url"),
                     "queryable": cls is not None,
-                    "metrics": bool(getattr(cls, "supports_metrics", False)) if cls else False,
-                    "logs": bool(getattr(cls, "supports_logs", False)) if cls else False,
+                    "metrics": bool(getattr(probe, "supports_metrics", False)) if cls else False,
+                    "logs": bool(getattr(probe, "supports_logs", False)) if cls else False,
                 }
             )
     except Exception as exc:  # adapters need pyyaml; report, don't die

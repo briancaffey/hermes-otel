@@ -158,8 +158,17 @@ def backend_label(b: Dict[str, Any]) -> str:
     return str(b.get("name") or b.get("type") or "")
 
 
-def _match(b: Dict[str, Any], wanted: str) -> bool:
-    return backend_label(b) == wanted or b.get("type") == wanted
+def _find(backends: List[Dict[str, Any]], wanted: str) -> Optional[Dict[str, Any]]:
+    """The entry addressed by ``wanted``: an exact ``name`` first, then the
+    first entry of that ``type`` — so two entries of one type (say a local and
+    a cluster ``lgtm``) are still addressable by their names."""
+    for b in backends:
+        if backend_label(b) == wanted:
+            return b
+    for b in backends:
+        if b.get("type") == wanted:
+            return b
+    return None
 
 
 def resolve_adapter(
@@ -178,17 +187,17 @@ def resolve_adapter(
     cfg_path, backends, pin = load_config()
 
     if name:
-        for b in backends:
-            if _match(b, name):
-                return _instantiate(b), backends, cfg_path, pin
-        raise KeyError(", ".join(backend_label(b) for b in backends) or "(none configured)")
+        match = _find(backends, name)
+        if match is None:
+            raise KeyError(", ".join(backend_label(b) for b in backends) or "(none configured)")
+        return _instantiate(match), backends, cfg_path, pin
 
     if pin:
-        for b in backends:
-            if _match(b, pin):
-                adapter = _instantiate(b)
-                if adapter is not None:
-                    return adapter, backends, cfg_path, pin
+        match = _find(backends, pin)
+        if match is not None:
+            adapter = _instantiate(match)
+            if adapter is not None:
+                return adapter, backends, cfg_path, pin
 
     for b in backends:
         adapter = _instantiate(b)
