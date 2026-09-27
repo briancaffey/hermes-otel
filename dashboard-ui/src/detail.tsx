@@ -1,7 +1,9 @@
 // Trace detail pieces (#185): the summary header, per-kind span summaries,
 // grouped attributes, and the Spans / Logs / Raw sub-tabs.
 import { React, useState, useEffect, fetchJSON, API, Badge, Button, cn } from "./sdk";
-import { fmtDurationMs, fmtTokens, fmtAbsTime, kindOf, groupAttrs, headerFacts, parseMessages, prettyJson, HeaderFacts, TreeSpan, KIND_HEX } from "./lib";
+import { fmtDurationMs, fmtTokens, fmtAbsTime, kindOf, groupAttrs, headerFacts, HeaderFacts, TreeSpan, KIND_HEX } from "./lib";
+import { ValueView, Facts, StatusBadge, Chips } from "./render";
+import { splitList, turnTools } from "./values";
 import { withBackend } from "./source";
 import { navigate } from "./nav";
 import { LogLine, LogRec } from "./logs";
@@ -118,21 +120,6 @@ export function TraceHeader({
   );
 }
 
-function Chat({ raw }: { raw: any }) {
-  const msgs = parseMessages(raw);
-  if (!msgs.length) return null;
-  return (
-    <div className="space-y-1.5">
-      {msgs.map((m, i) => (
-        <div key={i} className={cn("otel-msg", `otel-msg-${m.role}`)}>
-          <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{m.role}</div>
-          <pre className="otel-pre">{m.text}</pre>
-        </div>
-      ))}
-    </div>
-  );
-}
-
 function Block({ label, children }: { label: string; children: any }) {
   if (children == null) return null;
   return (
@@ -143,42 +130,141 @@ function Block({ label, children }: { label: string; children: any }) {
   );
 }
 
+const first = (a: Record<string, any>, ...keys: string[]) => {
+  for (const k of keys) if (a[k] != null && a[k] !== "") return a[k];
+  return null;
+};
+
+/** A labelled attribute value in a summary: structured by default, raw on demand. */
+function Attr({ a, label, keys, source }: { a: Record<string, any>; label: string; keys: string[]; source?: string }) {
+  const key = keys.find((k) => a[k] != null && a[k] !== "");
+  if (!key) return null;
+  return (
+    <ValueView
+      attrKey={key}
+      value={a[key]}
+      label={label}
+      onSessionClick={source ? (id) => navigate({ tab: "traces", source, view: "sessions", session: id, trace: "" }) : undefined}
+    />
+  );
+}
+
 // What a person wants first for each kind of span; the attribute table stays
-// below, collapsed.
-export function SpanSummary({ span }: { span: TreeSpan }) {
+// below, collapsed. Every kind the plugin emits has its own summary.
+export function SpanSummary({ span, source }: { span: TreeSpan; source?: string }) {
   const a = span._attrs || {};
   const kind = kindOf(span.name, a);
-  const status = a["hermes.tool.outcome"] || a["status"] || null;
+  const err = a["error.message"] ?? a["exception.message"];
+  const errorBlock = err ? <ValueView attrKey="error.message" value={err} label={a["error.type"] ? `error · ${a["error.type"]}` : "error"} /> : null;
+
   if (kind === "tool") {
+    const truncated = String(a["hermes.preview.output.truncated"]) === "true";
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {a["tool.name"] ? <Badge variant="secondary" className="font-mono text-[10px]">{String(a["tool.name"])}</Badge> : null}
-          {status ? <Badge variant={String(status).toLowerCase().includes("error") || String(status).toLowerCase().includes("fail") ? "destructive" : "secondary"} className="text-[10px]">{String(status)}</Badge> : null}
-          {a["hermes.tool.target"] ? <span className="font-mono text-muted-foreground">{String(a["hermes.tool.target"])}</span> : null}
+          {first(a, "tool.name", "gen_ai.tool.name") ? <Badge variant="secondary" className="font-mono text-[10px]">{String(first(a, "tool.name", "gen_ai.tool.name"))}</Badge> : null}
+          <StatusBadge value={a["hermes.tool.outcome"] || a["status"]} />
+          {a["hermes.tool.blocked_by"] ? <Badge variant="destructive" className="text-[10px]">blocked by {String(a["hermes.tool.blocked_by"])}</Badge> : null}
           {a["hermes.tool.decided_by"] ? <span className="text-muted-foreground">decided by {String(a["hermes.tool.decided_by"])}</span> : null}
         </div>
-        {a["hermes.tool.command"] ? <Block label="command"><pre className="otel-pre">{String(a["hermes.tool.command"])}</pre></Block> : null}
-        {a["input.value"] != null ? <Block label="arguments"><pre className="otel-pre">{prettyJson(a["input.value"])}</pre></Block> : null}
-        {a["output.value"] != null ? <Block label="result"><pre className="otel-pre">{prettyJson(a["output.value"])}</pre></Block> : null}
+        <Facts
+          items={[
+            { label: "target", value: a["hermes.tool.target"], mono: true },
+            { label: "call id", value: a["gen_ai.tool.call.id"], mono: true },
+            { label: "cpu avg / peak", value: a["hermes.tool.cpu.utilization.avg"] != null ? `${a["hermes.tool.cpu.utilization.avg"]} / ${a["hermes.tool.cpu.utilization.peak"] ?? "?"}` : null },
+            { label: "gpu avg / peak", value: a["hermes.tool.gpu.utilization.avg"] != null ? `${a["hermes.tool.gpu.utilization.avg"]} / ${a["hermes.tool.gpu.utilization.peak"] ?? "?"}` : null },
+          ]}
+        />
+        {errorBlock}
+        <Attr a={a} label="command" keys={["hermes.tool.command"]} />
+        <Attr a={a} label="arguments" keys={["input.value", "gen_ai.tool.call.arguments"]} />
+        <Attr a={a} label={truncated ? `result · preview of ${fmtTokens(a["hermes.preview.output.original_chars"]) || "?"} chars` : "result"} keys={["output.value", "gen_ai.tool.call.result"]} />
       </div>
     );
   }
-  if (kind === "llm" || kind === "api" || kind === "agent") {
+  if (kind === "llm" || kind === "api") {
     const f = headerFacts(a);
-    const output = a["llm.output.content"] ?? a["output.value"];
-    const input = a["llm.input_messages"] ?? a["input.value"];
     return (
       <div className="space-y-2">
-        <div className="flex flex-wrap items-center gap-x-3 gap-y-1 text-xs text-muted-foreground">
-          {f.requestModel ? <span className="font-mono text-foreground/80">{f.requestModel}</span> : null}
-          {f.responseModel ? <span>served: {f.responseModel}</span> : null}
-          {f.totalTokens != null ? <span className="tabular-nums">{fmtTokens(f.totalTokens)} tok{f.inputTokens != null ? ` (in ${fmtTokens(f.inputTokens)} · out ${fmtTokens(f.outputTokens ?? 0)})` : ""}</span> : null}
-          {a["llm.response.finish_reason"] ? <span>finish: {String(a["llm.response.finish_reason"])}</span> : null}
-          {a["hermes.turn.api_call_count"] != null ? <span>{String(a["hermes.turn.api_call_count"])} API call(s)</span> : null}
+        <Facts
+          items={[
+            { label: "model", value: f.requestModel, mono: true },
+            { label: "served by", value: f.responseModel, mono: true },
+            { label: "tokens", value: f.totalTokens != null ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null ? ` (in ${fmtTokens(f.inputTokens)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}` : null },
+            { label: "finish", value: first(a, "llm.response.finish_reason", "gen_ai.response.finish_reasons") },
+            { label: "latency", value: a["llm.response.duration_ms"] != null ? fmtDurationMs(Number(a["llm.response.duration_ms"])) : null },
+            { label: "messages", value: a["llm.request.message_count"] },
+            { label: "mode", value: a["llm.api_mode"] },
+            { label: "tool calls", value: a["llm.response.tool_calls"] },
+            { label: "http", value: first(a, "http.response.status_code", "gen_ai.response.status_code"), tone: Number(first(a, "http.response.status_code", "gen_ai.response.status_code")) >= 400 ? "bad" : undefined },
+            { label: "retries", value: a["hermes.retry.count"] != null ? `${a["hermes.retry.count"]}${a["hermes.max_retries"] != null ? ` of ${a["hermes.max_retries"]}` : ""}` : null },
+          ]}
+        />
+        {errorBlock}
+        <Attr a={a} label={kind === "llm" ? "input" : "prompt"} keys={["llm.input_messages", "input.value", "gen_ai.input.messages"]} />
+        <Attr a={a} label="response" keys={["llm.output.content", "output.value", "gen_ai.output.messages"]} />
+        {a["gen_ai.system_instructions"] && !a["input.value"] ? <Attr a={a} label="system instructions" keys={["gen_ai.system_instructions"]} /> : null}
+      </div>
+    );
+  }
+  if (kind === "agent" || kind === "session") {
+    const f = headerFacts(a);
+    const tools = turnTools(a);
+    const skills = splitList("hermes.turn.skills", a["hermes.turn.skills"]);
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          <StatusBadge value={a["hermes.turn.final_status"]} />
+          {a["hermes.session.kind"] ? <Badge variant="secondary" className="text-[10px]">{String(a["hermes.session.kind"])}</Badge> : null}
+          {String(a["hermes.session.is_subagent"]) === "true" ? <Badge variant="secondary" className="text-[10px]">sub-agent</Badge> : null}
+          {String(a["hermes.session.interrupted"]) === "true" ? <Badge variant="destructive" className="text-[10px]">interrupted</Badge> : null}
+          {String(a["hermes.session.failed"]) === "true" ? <Badge variant="destructive" className="text-[10px]">failed</Badge> : null}
+          {String(a["hermes.session.synthesized"]) === "true" ? <Badge variant="secondary" className="text-[10px]" title="root recreated by the plugin after a restart">synthesized</Badge> : null}
         </div>
-        {input != null ? <Block label={kind === "agent" ? "user message" : "prompt"}><Chat raw={input} /></Block> : null}
-        {output != null ? <Block label="response"><pre className="otel-pre">{prettyJson(output)}</pre></Block> : null}
+        <Facts
+          items={[
+            { label: "exit", value: a["hermes.turn.exit_reason"] },
+            { label: "api calls", value: a["hermes.turn.api_call_count"] },
+            { label: "tokens", value: f.totalTokens != null ? fmtTokens(f.totalTokens) : null },
+            { label: "platform", value: a["hermes.platform"] },
+            { label: "profile", value: a["hermes.profile"] },
+            { label: "turn", value: a["hermes.turn.number"] },
+            { label: "previous session", value: a["hermes.session.previous_id"], mono: true },
+          ]}
+        />
+        {errorBlock}
+        <Attr a={a} label="user message" keys={["input.value", "gen_ai.input.messages"]} source={source} />
+        <Attr a={a} label="final response" keys={["output.value", "gen_ai.output.messages"]} />
+        {tools.length ? (
+          <Block label={`tools · ${tools.length}`}>
+            <dl className="otel-attr-table otel-kv-table text-xs">
+              {tools.map((t, i) => (
+                <React.Fragment key={i}>
+                  <dt className="font-mono">{t.tool || "·"}</dt>
+                  <dd className="min-w-0 break-words">
+                    <StatusBadge value={t.outcome} />
+                    {t.command ? <code className="otel-code ml-1">{t.command}</code> : null}
+                    {t.target ? <span className="ml-1 font-mono text-muted-foreground">{t.target}</span> : null}
+                  </dd>
+                </React.Fragment>
+              ))}
+            </dl>
+          </Block>
+        ) : null}
+        {skills && skills.length ? <Block label="skills"><Chips items={skills} mono /></Block> : null}
+      </div>
+    );
+  }
+  if (kind === "skill") {
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {first(a, "hermes.skill.name", "gen_ai.skill.name") ? <Badge variant="secondary" className="font-mono text-[10px]">{String(first(a, "hermes.skill.name", "gen_ai.skill.name"))}</Badge> : null}
+          <StatusBadge value={a["hermes.skill.result_status"]} />
+          {a["hermes.skill.source"] ? <span className="text-muted-foreground">loaded via {String(a["hermes.skill.source"])}</span> : null}
+        </div>
+        <Facts items={[{ label: "path", value: a["hermes.skill.path"], mono: true }]} />
+        {errorBlock}
       </div>
     );
   }
@@ -188,40 +274,96 @@ export function SpanSummary({ span }: { span: TreeSpan }) {
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {a["hermes.approval.choice"] ? <Badge variant="secondary" className="text-[10px]">👤 {String(a["hermes.approval.choice"])}</Badge> : null}
           {a["hermes.approval.granted"] != null ? <Badge variant={String(a["hermes.approval.granted"]) === "true" ? "secondary" : "destructive"} className="text-[10px]">{String(a["hermes.approval.granted"]) === "true" ? "granted" : "denied"}</Badge> : null}
-          {a["hermes.approval.decided_by"] ? <span className="text-muted-foreground">by {String(a["hermes.approval.decided_by"])}</span> : null}
-          {a["hermes.approval.duration_ms"] != null ? <span className="text-muted-foreground">waited {fmtDurationMs(Number(a["hermes.approval.duration_ms"]))}</span> : null}
           {String(a["hermes.approval.timed_out"]) === "true" ? <Badge variant="destructive" className="text-[10px]">timed out</Badge> : null}
         </div>
-        {a["hermes.approval.command"] ? <Block label="command"><pre className="otel-pre">{String(a["hermes.approval.command"])}</pre></Block> : null}
-        {a["hermes.approval.description"] ? <Block label="description"><pre className="otel-pre">{String(a["hermes.approval.description"])}</pre></Block> : null}
+        <Facts
+          items={[
+            { label: "decided by", value: a["hermes.approval.decided_by"] },
+            { label: "surface", value: a["hermes.approval.surface"] },
+            { label: "waited", value: a["hermes.approval.duration_ms"] != null ? fmtDurationMs(Number(a["hermes.approval.duration_ms"])) : null },
+            { label: "pattern", value: first(a, "hermes.approval.pattern_key", "hermes.approval.pattern_keys"), mono: true },
+          ]}
+        />
+        <Attr a={a} label="command" keys={["hermes.approval.command"]} />
+        <Attr a={a} label="description" keys={["hermes.approval.description"]} />
       </div>
     );
   }
-  return null;
+  if (kind === "subagent") {
+    return (
+      <div className="space-y-2">
+        <div className="flex flex-wrap items-center gap-2 text-xs">
+          {a["hermes.subagent.role"] ? <Badge variant="secondary" className="text-[10px]">{String(a["hermes.subagent.role"])}</Badge> : null}
+          <StatusBadge value={a["hermes.subagent.status"]} />
+        </div>
+        <Facts
+          items={[
+            { label: "duration", value: a["hermes.subagent.duration_ms"] != null ? fmtDurationMs(Number(a["hermes.subagent.duration_ms"])) : null },
+            { label: "child session", value: first(a, "hermes.subagent.child_session_id", "hermes.subagent.child_id"), mono: true },
+            { label: "parent session", value: first(a, "hermes.subagent.parent_session_id", "hermes.subagent.parent_id"), mono: true },
+          ]}
+        />
+        {errorBlock}
+        <Attr a={a} label="goal" keys={["hermes.subagent.goal", "input.value"]} />
+        <Attr a={a} label="summary" keys={["hermes.subagent.summary", "output.value"]} />
+      </div>
+    );
+  }
+  if (kind === "cron") {
+    return (
+      <div className="space-y-2">
+        <Facts items={[{ label: "job", value: a["hermes.cron.job_id"], mono: true }]} />
+        {errorBlock}
+        <Attr a={a} label="input" keys={["input.value"]} />
+        <Attr a={a} label="output" keys={["output.value"]} />
+      </div>
+    );
+  }
+  return errorBlock ? <div className="space-y-2">{errorBlock}</div> : null;
 }
 
-export function AttrGroups({ attrs }: { attrs: Record<string, any> }) {
+// Keys the summary already shows in full; the table shows them collapsed.
+const CONTENT_KEYS = new Set([
+  "input.value",
+  "output.value",
+  "gen_ai.input.messages",
+  "gen_ai.output.messages",
+  "llm.input_messages",
+  "llm.output.content",
+  "gen_ai.tool.call.arguments",
+  "gen_ai.tool.call.result",
+  "gen_ai.system_instructions",
+  "hermes.conversation.history",
+]);
+
+export function AttrGroups({ attrs, source }: { attrs: Record<string, any>; source?: string }) {
   const groups = groupAttrs(attrs || {});
   if (!groups.length) return <div className="text-xs text-muted-foreground">(no attributes)</div>;
+  const onSession = source ? (id: string) => navigate({ tab: "traces", source, view: "sessions", session: id, trace: "" }) : undefined;
   return (
     <div className="space-y-3">
       {groups.map((g) => (
         <div key={g.prefix}>
           <MiniLabel>{g.prefix}</MiniLabel>
           <dl className="otel-attr-table text-xs">
-            {g.entries.map((e) => {
-              const v = e.value;
-              const rendered = v && typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
-              return (
-                <React.Fragment key={e.key}>
-                  <dt className="text-muted-foreground" title={e.aliases.length ? `also: ${e.aliases.join(", ")}` : ""}>
-                    {e.key}
-                    {e.aliases.length ? <span className="ml-1 text-[10px] text-muted-foreground/60">+{e.aliases.length}</span> : null}
-                  </dt>
-                  <dd className="whitespace-pre-wrap break-words text-foreground">{rendered}</dd>
-                </React.Fragment>
-              );
-            })}
+            {g.entries.map((e) => (
+              <React.Fragment key={e.key}>
+                <dt className="text-muted-foreground" title={e.aliases.length ? `also: ${e.aliases.join(", ")}` : ""}>
+                  {e.key}
+                  {e.aliases.length ? <span className="ml-1 text-[10px] text-muted-foreground/60">+{e.aliases.length}</span> : null}
+                </dt>
+                <dd className="min-w-0 break-words text-foreground">
+                  {CONTENT_KEYS.has(e.key) ? (
+                    <details className="otel-details">
+                      <summary className="cursor-pointer text-[11px] text-muted-foreground">{String(e.value).length.toLocaleString("en-US")} chars</summary>
+                      <div className="mt-1"><ValueView attrKey={e.key} value={e.value} /></div>
+                    </details>
+                  ) : (
+                    <ValueView attrKey={e.key} value={e.value} onSessionClick={onSession} />
+                  )}
+                </dd>
+              </React.Fragment>
+            ))}
           </dl>
         </div>
       ))}
