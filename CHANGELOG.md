@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.17.1...hermes-otel-v1.18.0) (2026-09-27)
+
+
+### Features
+
+* **dashboard:** structured span views: conversations by role, markdown, tool calls, key/value JSON, with a structured/raw switch ([#249](https://github.com/briancaffey/hermes-otel/issues/249)) ([f55e9d2](https://github.com/briancaffey/hermes-otel/commit/f55e9d249092a1065b370e3dbe45159528184fc8))
+
 ## [1.17.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.17.0...hermes-otel-v1.17.1) (2026-09-26)
 
 
