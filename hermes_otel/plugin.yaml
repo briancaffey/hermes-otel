@@ -8,8 +8,8 @@ description: >-
   output, only to the backends you configure; by default (content_capture: full)
   whole prompts and responses, unclipped; preview clips to 1200 chars, off sends
   no content; with none configured it keeps a local SQLite store under
-  $HERMES_HOME and sends nothing; installs opentelemetry-api, opentelemetry-sdk
-  and opentelemetry-exporter-otlp-proto-http into the Hermes venv.
+  $HERMES_HOME and sends nothing; installs opentelemetry-api, -sdk,
+  opentelemetry-exporter-otlp-proto-http and PyYAML into the Hermes venv.
 author: Brian Caffey
 license: Apache-2.0
 homepage: https://briancaffey.github.io/hermes-otel/
@@ -24,6 +24,7 @@ python_dependencies:
   - opentelemetry-api<2
   - opentelemetry-sdk<2
   - opentelemetry-exporter-otlp-proto-http<2
+  - PyYAML>=6,<7
 provides_hooks:
   - on_session_start
   - on_session_end

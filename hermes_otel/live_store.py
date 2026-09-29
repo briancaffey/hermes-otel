@@ -150,7 +150,13 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
                 seen = True
         return total if seen else None
 
-    return {"tokens": pick(_TOKEN_KEYS), "cost": pick(_COST_KEYS)}
+    # A root with a cost status but no amount (unknown, included or partial
+    # pricing) has no total; never fall back to a subtotal (#252).
+    root_attrs = (root.get("attributes") or {}) if root is not None else {}
+    no_cost_total = (
+        "hermes.cost.status" in root_attrs and _num(_first(root_attrs, _COST_KEYS)) is None
+    )
+    return {"tokens": pick(_TOKEN_KEYS), "cost": None if no_cost_total else pick(_COST_KEYS)}
 
 
 def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:

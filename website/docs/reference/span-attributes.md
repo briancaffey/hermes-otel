@@ -76,6 +76,8 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
+| `hermes.cost.usage` | float | The turn's USD cost: the sum of its API calls' `hermes.cost.usage`, set **only when every call was priced** (optional) |
+| `hermes.cost.status` | string | `actual` (every call provider-reported) · `estimated` · `partial` (some calls priced, some not: no total) · `included` (subscription route) · `unknown` (no price for the model); absent when no call reported usage |
 | `gen_ai.response.model` | string | Model at turn end |
 | `error.type` | string | Most recent provider error class this turn (optional) |
 | `input.value`, `output.value` | string | First user message / final assistant response of the turn (previews; optional) |
@@ -132,6 +134,9 @@ Set at **end** (success):
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
 | `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
 | `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |
+| `hermes.cost.status` | hermes | string | How Hermes priced this call (`estimate_usage_cost`, the function behind `state.db` and `/usage`): `actual` (provider-reported) · `estimated` (price table or models API) · `included` (subscription route: no charge to report) · `unknown` (no price for the model). Absent on Hermes builds without the pricing module |
+| `hermes.cost.source` | hermes | string | Where the price came from, as Hermes reports it (`official_docs_snapshot`, `provider_models_api`, `none`, …) (optional) |
+| `hermes.cost.usage` | hermes | float | USD for this call, **only** for `actual` / `estimated`; never `0` for an unknown price or an included route (optional) |
 
 ### `api.*` on failure (`api_request_error`)
 

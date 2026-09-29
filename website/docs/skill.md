@@ -27,7 +27,7 @@ The skill ships a script, `scripts/otel.py`, next to its `SKILL.md`. Hermes list
 python3 ${HERMES_SKILL_DIR}/scripts/otel.py trace last
 ```
 
-You can run the same script yourself; on a default install it is at `~/.hermes/plugins/hermes_otel/skills/observability/scripts/otel.py`. It needs only Python 3 and the standard library to read the live store. Querying a backend with `--source` additionally needs `pyyaml` (to read the config file), which the Hermes interpreter has.
+You can run the same script yourself; on a default install it is at `~/.hermes/plugins/hermes_otel/skills/observability/scripts/otel.py`. It needs only Python 3 and the standard library to read the live store. Querying a backend with `--source` additionally needs `PyYAML` (to read the config file), which Hermes installs with the plugin as a declared dependency.
 
 | Command | Shows |
 |---|---|

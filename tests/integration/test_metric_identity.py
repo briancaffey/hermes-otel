@@ -65,7 +65,7 @@ def _full_turn():
         finish_reason="stop",
         message_count=1,
         response_model="gpt-4",
-        usage={"prompt_tokens": 10, "output_tokens": 5, "cost": 0.001, "cache_read_tokens": 4},
+        usage={"prompt_tokens": 10, "output_tokens": 5, "cache_read_tokens": 4},
         assistant_content_chars=5,
         assistant_tool_call_count=0,
     )

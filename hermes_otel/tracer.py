@@ -360,7 +360,12 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         labels=_MODEL_LABELS + ("api_mode", "cache_result"),
     ),
     "cost_usage": InstrumentSpec(
-        "hermes.cost.usage", "counter", "USD", "USD cost per message", "float", labels=_MODEL_LABELS
+        "hermes.cost.usage",
+        "counter",
+        "USD",
+        "USD cost per API call, as priced by Hermes (actual or estimated)",
+        "float",
+        labels=_MODEL_LABELS + ("cost_status",),
     ),
     "tool_duration": InstrumentSpec(
         "hermes.tool.duration",

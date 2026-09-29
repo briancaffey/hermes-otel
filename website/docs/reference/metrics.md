@@ -26,7 +26,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.token.usage` | Counter | `{token}` | `model`, `provider`, `token_type` = `input` · `output` · `cacheRead` · `cacheCreation` · `reasoning` | `post_api_request` |
 | `hermes.prompt_cache.tokens` | Counter | `{token}` | `model`, `provider`, `api_mode`, `cache_result` = `hit` · `miss` | `post_api_request` (only when the provider reported cache accounting) |
 | `hermes.prompt_cache.observations` | Counter | `{request}` | `model`, `provider`, `api_mode`, `cache_result` | `post_api_request` |
-| `hermes.cost.usage` | Counter | `USD` | `model`, `provider` | `post_api_request` (when Hermes reports `usage.cost`) |
+| `hermes.cost.usage` | Counter | `USD` | `model`, `provider`, `cost_status` = `actual` · `estimated` | `post_api_request`: Hermes's own price for the call (`agent.usage_pricing.estimate_usage_cost`). Calls with an unknown price or on a subscription-included route record nothing, so a missing price never reads as `$0` |
 | `hermes.tool.duration` | Histogram | `ms` **(deprecated)** | `tool_name`, `gen_ai.tool.name` | `post_tool_call`; superseded by `gen_ai.execute_tool.duration` (seconds), removed in 2.0 |
 | `hermes.skill.inferred` | Counter | `{hit}` | `skill_name`, `source` = `skill_view` · `path_match` | `pre_tool_call` |
 | `hermes.approval.count` | Counter | `{prompt}` | `choice` | `post_approval_response` |

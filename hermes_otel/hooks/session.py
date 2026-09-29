@@ -192,6 +192,9 @@ def on_session_end(
             _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
         )
 
+    if ps is not None:
+        attributes.update(ps.cost_rollup())
+
     # Surface the last API error's type on the root so a failed turn shows why.
     if ps is not None and ps.last_error_type:
         attributes["error.type"] = ps.last_error_type

@@ -137,11 +137,16 @@ Consequences:
 - **No GPU on macOS / without an SDK.** The GPU series are simply absent; the
   CPU series still work.
 
-## No cost accounting
+## Cost is Hermes's estimate, and only when Hermes has a price
 
-The plugin emits token counts; it doesn't convert them to dollars. Cost is model-and-tier specific (prompt tokens vs. completion tokens, cached vs. uncached, provider pricing tiers), and baking a price table into a plugin that has to track every new model release is a losing battle.
+The plugin keeps no price table. Each `api.*` span's cost comes from Hermes's own `estimate_usage_cost`, the function behind `state.db`'s `estimated_cost_usd` and `/usage`, so it matches what Hermes shows and inherits its limits:
 
-Phoenix and Langfuse both do cost accounting server-side from the token counts. SigNoz can too with a derived metric. For plain Jaeger/Tempo, build the conversion in a dashboard query.
+- **Mostly estimates.** `hermes.cost.status` says `estimated` for a price-table or models-API figure (OpenRouter's is the models API price times the tokens, not the invoice) and `actual` only when a provider profile reports the charge.
+- **No price, no number.** An unknown model (`unknown`) or a subscription-included route (`included`) gets the status but no `hermes.cost.usage` and no metric point, never `$0`. A turn mixing priced and unpriced calls is `partial` on the root with no total.
+- **Main-loop calls only.** Auxiliary calls Hermes makes outside `post_api_request` (for example title generation) are not priced here.
+- **Older Hermes builds** without `agent.usage_pricing` get no cost attributes at all.
+
+Phoenix and Langfuse can also price spans server-side from the token counts; SigNoz can with a derived metric.
 
 ## Python ≥ 3.9
 

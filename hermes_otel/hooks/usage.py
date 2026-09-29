@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from ..helpers import to_int, truncate_string
 from ._common import _as_dict
@@ -103,6 +103,46 @@ def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, 
         v = totals.get(key, 0)
         if v:
             tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
+
+
+# Cost statuses that carry a real dollar figure. Hermes's other two,
+# ``included`` (subscription route: an API-equivalent estimate is not a charge)
+# and ``unknown`` (no price for the model), have no amount to report.
+_PRICED_COST_STATUSES = ("actual", "estimated")
+
+
+def _estimate_cost(
+    model: str, provider: str, base_url: str, usage: Dict[str, Any]
+) -> Optional[Dict[str, Any]]:
+    """Price one API call with Hermes's own ``estimate_usage_cost`` (#252).
+
+    Hermes's ``post_api_request`` usage is ``asdict(CanonicalUsage)`` and
+    carries no ``cost`` field; Hermes prices the same buckets itself for
+    ``state.db`` and ``/usage``, so the plugin asks the same function rather
+    than keeping a price table. Returns ``{"status", "source", "usd"}`` with
+    ``usd`` set only for an ``actual``/``estimated`` result, or None when this
+    Hermes has no pricing module (older build, tests) or it raised.
+    """
+    try:
+        from dataclasses import fields
+
+        from agent.usage_pricing import CanonicalUsage, estimate_usage_cost  # type: ignore
+    except Exception:
+        return None
+    try:
+        names = {f.name for f in fields(CanonicalUsage) if f.name != "raw_usage"}
+        canonical = CanonicalUsage(
+            **{k: to_int(v) for k, v in usage.items() if k in names and v is not None}
+        )
+        result = estimate_usage_cost(
+            model or "", canonical, provider=provider or None, base_url=base_url or None, api_key=""
+        )
+        status = str(getattr(result, "status", "") or "unknown")
+        amount = getattr(result, "amount_usd", None)
+        usd = float(amount) if amount is not None and status in _PRICED_COST_STATUSES else None
+        return {"status": status, "source": str(getattr(result, "source", "") or ""), "usd": usd}
+    except Exception:
+        return None
 
 
 def _record_prompt_cache_metrics(
