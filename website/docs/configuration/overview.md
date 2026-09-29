@@ -50,13 +50,9 @@ mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
 
 `config.yaml` is gitignored in the plugin repo (so local endpoints and any inline secrets don't get committed). Only `config.yaml.example` is tracked.
 
-## Requires `pyyaml`
+## Requires `PyYAML`
 
-YAML parsing is optional. If `pyyaml` isn't installed in the Hermes venv, the plugin silently skips the YAML file and falls back to env vars + defaults. Install it via the `yaml` extra:
-
-```bash
-~/git/hermes-agent/venv/bin/pip install pyyaml
-```
+The plugin declares `PyYAML` in its manifest's `python_dependencies`, so Hermes installs it with the OpenTelemetry packages when the plugin is enabled. Hermes itself uses `ruamel.yaml`, so its runtime does not have PyYAML otherwise. If PyYAML is missing (the plugin was copied in by hand, or installed with dependency preparation skipped), the plugin logs one warning naming the file and falls back to env vars + defaults; `hermes plugins enable hermes_otel` prepares the declared dependencies.
 
 Malformed YAML logs a single warning at startup and falls back to defaults — it won't crash Hermes.
 

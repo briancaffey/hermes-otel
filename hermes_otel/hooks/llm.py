@@ -39,6 +39,7 @@ from .attributes import (
 from .session import _start_session_span
 from .usage import (
     _USAGE_FIELDS,
+    _estimate_cost,
     _genai_metric_dims,
     _normalize_usage,
     _record_genai_token_usage,
@@ -398,12 +399,21 @@ def on_post_api_request(
             _genai_metric_dims(model, provider, response_model),
         )
 
-        cost = usage.get("cost")
-        if cost:
-            try:
-                tracer.record_metric("cost_usage", float(cost), model_labels)
-            except (ValueError, TypeError):
-                pass
+        # Cost: Hermes's own estimate for this call (#252). An unknown price
+        # or a subscription-included route carries a status but no amount, so
+        # a missing price never reads as $0.
+        cost = _estimate_cost(model, provider, base_url, usage)
+        if cost is not None:
+            attributes["hermes.cost.status"] = cost["status"]
+            if cost["source"]:
+                attributes["hermes.cost.source"] = cost["source"]
+            if cost["usd"] is not None:
+                attributes["hermes.cost.usage"] = cost["usd"]
+                tracer.record_metric(
+                    "cost_usage", cost["usd"], {**model_labels, "cost_status": cost["status"]}
+                )
+            if session_id:
+                tracer.sessions.get_or_create(session_id).add_cost(cost["status"], cost["usd"])
 
         tracer.record_metric("model_usage", 1, model_labels)
 

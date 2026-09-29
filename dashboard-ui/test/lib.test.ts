@@ -45,6 +45,16 @@ describe("traceTotals (#178)", () => {
     const withCost = turn.map((s) => (s.name.startsWith("api.") ? { ...s, attributes: { ...s.attributes, "hermes.cost.usage": 0.01 } } : s));
     expect(traceTotals(withCost).cost).toBeCloseTo(0.03);
   });
+  it("shows no total for a root whose cost status carries no amount (#252)", () => {
+    const partial = turn.map((s) =>
+      s.name.startsWith("api.")
+        ? { ...s, attributes: { ...s.attributes, "hermes.cost.usage": 0.01 } }
+        : s.name === "agent"
+          ? { ...s, attributes: { ...s.attributes, "hermes.cost.status": "partial" } }
+          : s
+    );
+    expect(traceTotals(partial).cost).toBeNull();
+  });
 });
 
 describe("groupLiveTraces", () => {

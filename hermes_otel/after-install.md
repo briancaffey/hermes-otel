@@ -12,8 +12,9 @@ run a Hermes older than 0.21:
 /path/to/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
 ```
 
-Optional: `langsmith` (LangSmith backend, uuid7 run IDs) and `pyyaml`
-(enables `hermes_otel.yaml`; env vars and defaults work without it).
+Optional: `langsmith` (LangSmith backend, uuid7 run IDs). `PyYAML`, which
+reads `hermes_otel.yaml`, is a declared dependency and is installed with the
+OpenTelemetry packages.
 `host_metrics: true` uses `psutil` (ships with hermes-agent); GPU readings
 additionally need `pynvml` (NVIDIA) or `amdsmi` matching your ROCm stack.
 

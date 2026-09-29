@@ -415,7 +415,10 @@ export function traceTotals(spans: LiveSpan[]): { tokens: number | null; cost: n
     }
     return seen ? sum : null;
   };
-  return { tokens: pick(liveTokens), cost: pick(liveCost) };
+  // A root that reports a cost status without an amount (unknown, included or
+  // partial pricing) means "no total": never fall back to a subtotal (#252).
+  const noCostTotal = root != null && root.attributes["hermes.cost.status"] != null && liveCost(root) == null;
+  return { tokens: pick(liveTokens), cost: noCostTotal ? null : pick(liveCost) };
 }
 
 export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {

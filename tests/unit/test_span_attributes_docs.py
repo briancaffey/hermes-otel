@@ -18,9 +18,9 @@ _PROSE_ONLY = {"telemetry.sdk.*", "resource_attributes.*", "global_tags.*"}
 
 # Metric-only literals: instrument names created in tracer.py (documented in
 # metrics.md), the one metric-only label, and the host-metric names the live
-# store mirrors. ``hermes.retry.count`` is both an instrument and a span
-# attribute, so it stays.
-_DUAL_USE = {"hermes.retry.count"}
+# store mirrors. ``hermes.retry.count`` and ``hermes.cost.usage`` are both an
+# instrument and a span attribute, so they stay.
+_DUAL_USE = {"hermes.retry.count", "hermes.cost.usage"}
 
 
 def _metric_names() -> set:

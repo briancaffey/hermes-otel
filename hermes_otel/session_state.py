@@ -113,6 +113,33 @@ class PerSession:
     # ``hermes.turn.number`` span attribute so any backend can group or filter
     # a session's spans by conversation turn. See SessionState.next_turn.
     turn_number: int = 0
+    # Per-call cost statuses from Hermes's pricing (#252) and the sum of the
+    # priced calls' USD. The root carries a total only when every call was
+    # priced; see cost_rollup.
+    cost_statuses: List[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+
+    def add_cost(self, status: str, usd: Optional[float]) -> None:
+        self.cost_statuses.append(status)
+        if usd is not None:
+            self.cost_usd += usd
+
+    def cost_rollup(self) -> Dict[str, Any]:
+        """The turn's cost attributes for the root span (empty when no call was priced).
+
+        ``hermes.cost.usage`` is set only when every API call had a price;
+        a turn mixing priced and unpriced calls reports ``partial`` with no
+        amount, so a subtotal is never read as the turn's cost.
+        """
+        statuses = set(self.cost_statuses)
+        if not statuses:
+            return {}
+        if statuses <= {"actual", "estimated"}:
+            status = "actual" if statuses == {"actual"} else "estimated"
+            return {"hermes.cost.status": status, "hermes.cost.usage": self.cost_usd}
+        if statuses & {"actual", "estimated"}:
+            return {"hermes.cost.status": "partial"}
+        return {"hermes.cost.status": "included" if statuses == {"included"} else "unknown"}
 
 
 class SessionState:
