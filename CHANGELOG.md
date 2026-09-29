@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.18.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.0...hermes-otel-v1.18.1) (2026-09-29)
+
+
+### Bug Fixes
+
+* price API calls with Hermes's own cost estimate; declare PyYAML ([#253](https://github.com/briancaffey/hermes-otel/issues/253)) ([7a1d684](https://github.com/briancaffey/hermes-otel/commit/7a1d6846fb8e46e605f1115a7e304aafdd6addbb)), closes [#251](https://github.com/briancaffey/hermes-otel/issues/251) [#252](https://github.com/briancaffey/hermes-otel/issues/252)
+
 ## [1.18.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.17.1...hermes-otel-v1.18.0) (2026-09-27)
 
 
