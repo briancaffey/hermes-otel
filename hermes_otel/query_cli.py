@@ -401,10 +401,8 @@ def _import_backends():
             "Run the script with the interpreter Hermes uses (`hermes --version` prints the "
             "install directory; use its venv/bin/python) or `pip install pyyaml`."
         )
-    dash = _PKG_DIR / "dashboard"
-    if str(dash) not in sys.path:
-        sys.path.insert(0, str(dash))
-    import backends  # noqa: E402  (path shim above)
+    # Relative to this package, never as a top-level ``backends`` module.
+    from .dashboard import backends
 
     return backends
 

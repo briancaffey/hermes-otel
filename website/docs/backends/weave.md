@@ -76,10 +76,10 @@ If both places set `wandb.entity` or `wandb.project`, the values must match.
 
 ## Single backend (env vars)
 
-Without a `config.yaml` `backends:` list, env-var mode selects Weave when all routing values are present:
+Without a `config.yaml` `backends:` list, env-var mode selects Weave when `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) and all routing values are present. `WANDB_API_KEY` alone is used as a credential fallback but does not turn export on:
 
 ```bash
-export WANDB_API_KEY="..."
+export OTEL_WEAVE_API_KEY="..."
 export WANDB_ENTITY="my-team"
 export WANDB_PROJECT="hermes-agent"
 ```

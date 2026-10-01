@@ -84,6 +84,23 @@ _ENV_PRIORITY = [
     "phoenix",
 ]
 
+# Env-var mode must not switch on export to a vendor just because that vendor's
+# SDK-standard credentials (``HONEYCOMB_API_KEY``, ``WANDB_API_KEY``,
+# ``LANGFUSE_PUBLIC_KEY``/``LANGFUSE_SECRET_KEY``) are in the environment: those
+# are often set for other tools, and ``~/.hermes/.env`` is loaded into the
+# process. For these types the env path needs at least one plugin-namespaced
+# variable as the explicit opt-in; the generic fallbacks still fill in the rest,
+# and an explicit ``backends:`` entry in config.yaml is unaffected.
+_ENV_OPT_IN = {
+    "langfuse": (
+        "OTEL_LANGFUSE_PUBLIC_API_KEY",
+        "OTEL_LANGFUSE_SECRET_API_KEY",
+        "OTEL_LANGFUSE_ENDPOINT",
+    ),
+    "weave": ("OTEL_WEAVE_API_KEY", "OTEL_WEAVE_ENDPOINT", "OTEL_WEAVE_BASE_URL"),
+    "honeycomb": ("OTEL_HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_ENDPOINT"),
+}
+
 
 @dataclass
 class _ResolvedBackend:
@@ -539,7 +556,7 @@ def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
     key = _resolve_secret(
         bc.api_key,
         bc.api_key_env,
-        ["WANDB_API_KEY"],
+        ["OTEL_WEAVE_API_KEY", "WANDB_API_KEY"],
     )
     if not key:
         raise ValueError("weave requires api_key (or set WANDB_API_KEY)")
@@ -665,6 +682,9 @@ def resolve_from_env() -> Optional[_ResolvedBackend]:
     backend qualifies — the caller should then log a helpful message.
     """
     for backend_type in _ENV_PRIORITY:
+        opt_in = _ENV_OPT_IN.get(backend_type)
+        if opt_in and not any(os.getenv(name, "").strip() for name in opt_in):
+            continue
         try:
             rb = resolve(BackendConfig(type=backend_type))
             if backend_type == "weave":

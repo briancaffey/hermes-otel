@@ -34,7 +34,7 @@ export LANGFUSE_SECRET_KEY="sk-lf-..."
 export LANGFUSE_BASE_URL="https://cloud.langfuse.com"
 ```
 
-Both forms work. The plugin automatically constructs the `Authorization: Basic ...` header from the two keys — you don't need to base64-encode anything yourself.
+Both forms work for the credentials. In env-var mode (no `backends:` list), Langfuse is only selected when at least one `OTEL_LANGFUSE_*` variable is set, so Option B alone does not turn export on; add `OTEL_LANGFUSE_ENDPOINT` (or use a `backends:` entry). The plugin automatically constructs the `Authorization: Basic ...` header from the two keys — you don't need to base64-encode anything yourself.
 
 ## Self-hosted
 
