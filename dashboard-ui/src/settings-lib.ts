@@ -118,6 +118,8 @@ export type SettingsReport = {
   fields: SettingField[];
   effective_yaml: string;
   env: EnvEntry[];
+  /** Vendor credentials present without their OTEL_* opt-in (env-var mode only); empty otherwise. */
+  env_notices?: string[];
   process: {
     role: string;
     pid: number;

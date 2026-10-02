@@ -122,7 +122,7 @@ Single-backend selection is env-var-driven. First match wins:
 10. `OTEL_TEMPO_ENDPOINT` set → Tempo
 11. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in.
+Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 

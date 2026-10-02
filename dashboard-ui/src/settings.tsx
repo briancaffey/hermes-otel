@@ -529,6 +529,11 @@ export function SettingsPage() {
 
           {view === "env" ? (
             <div className="space-y-3">
+              {(report.env_notices ?? []).map((n) => (
+                <div key={n} className="border border-dashed border-border px-3 py-2 text-[11px] text-muted-foreground" role="status">
+                  {n}
+                </div>
+              ))}
               <div className="flex flex-wrap items-center gap-3">
                 <span className="text-[11px] text-muted-foreground">
                   {envCounts(report.env).set} set of {envCounts(report.env).known} the plugin reads, as seen by the dashboard process

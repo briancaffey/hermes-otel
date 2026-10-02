@@ -25,7 +25,7 @@ import dataclasses
 import os
 import urllib.parse
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional
+from typing import Callable, Dict, List, Optional, Tuple
 
 from .plugin_config import BackendConfig, normalize_temporality
 
@@ -100,6 +100,60 @@ _ENV_OPT_IN = {
     "weave": ("OTEL_WEAVE_API_KEY", "OTEL_WEAVE_ENDPOINT", "OTEL_WEAVE_BASE_URL"),
     "honeycomb": ("OTEL_HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_ENDPOINT"),
 }
+
+# The vendor-variable sets that used to select each type on their own (before
+# the opt-in rule). Each inner tuple is one alternative spelling; every group
+# must be satisfied for the set to count as "credentials present". Used only
+# to tell the user why env-var mode did not export (#259).
+_VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
+    "langfuse": (("LANGFUSE_PUBLIC_KEY",), ("LANGFUSE_SECRET_KEY",)),
+    "weave": (
+        ("WANDB_API_KEY",),
+        ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
+        ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"),
+    ),
+    "honeycomb": (("HONEYCOMB_API_KEY",),),
+}
+
+
+def _set(name: str) -> bool:
+    return bool(os.getenv(name, "").strip())
+
+
+def vendor_credentials_without_opt_in() -> List[Tuple[str, List[str], Tuple[str, ...]]]:
+    """Types whose vendor credentials are in the environment but whose
+    ``OTEL_*`` opt-in is not: ``[(type, present_vendor_vars, opt_in_vars)]``.
+
+    Env-var mode deliberately ignores these (see ``_ENV_OPT_IN``); the caller
+    turns the list into a one-line notice so the silence is explained.
+    """
+    out: List[Tuple[str, List[str], Tuple[str, ...]]] = []
+    for backend_type, opt_in in _ENV_OPT_IN.items():
+        if any(_set(name) for name in opt_in):
+            continue
+        present: List[str] = []
+        for group in _VENDOR_CREDENTIALS[backend_type]:
+            hit = next((name for name in group if _set(name)), None)
+            if hit is None:
+                present = []
+                break
+            present.append(hit)
+        if present:
+            out.append((backend_type, present, opt_in))
+    return out
+
+
+def env_opt_in_hints() -> List[str]:
+    """Human-readable version of :func:`vendor_credentials_without_opt_in`."""
+    hints: List[str] = []
+    for backend_type, present, opt_in in vendor_credentials_without_opt_in():
+        label = _DISPLAY_NAMES.get(backend_type, backend_type)
+        hints.append(
+            f"{' and '.join(present)} {'is' if len(present) == 1 else 'are'} set, but env-var mode "
+            f"only exports to {label} when one of {', '.join(opt_in)} is also set "
+            f"(or {backend_type} is listed under backends:); not exporting."
+        )
+    return hints
 
 
 @dataclass
