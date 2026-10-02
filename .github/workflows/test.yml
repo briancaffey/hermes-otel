@@ -80,6 +80,39 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
+  test-otel-floor:
+    # The declared OpenTelemetry floor (``>=1.35`` in pyproject.toml,
+    # hermes_otel/requirements.txt and plugin.yaml) is a measured value, and
+    # this job is what keeps it true: a fresh venv with the three packages
+    # pinned to exactly the floor, then the full suite. Bump all four places
+    # together when the plugin starts needing a newer SDK API (#257).
+    name: Tests on the OpenTelemetry floor (1.35)
+    runs-on: ubuntu-latest
+    env:
+      OTEL_FLOOR: "1.35.0"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.11"
+      - name: Install the project with the OTel packages pinned to the floor
+        run: >
+          uv venv --python 3.11 .venv-floor &&
+          uv pip install --python .venv-floor/bin/python -e ".[dev]"
+          "opentelemetry-api==$OTEL_FLOOR"
+          "opentelemetry-sdk==$OTEL_FLOOR"
+          "opentelemetry-exporter-otlp-proto-http==$OTEL_FLOOR"
+      - name: Confirm the floor is what runs
+        run: >
+          .venv-floor/bin/python -c
+          "import sys, opentelemetry.sdk.version as v; assert v.__version__ == sys.argv[1], v.__version__; print('opentelemetry-sdk', v.__version__)"
+          "$OTEL_FLOOR"
+      - name: Run unit and integration tests on the floor
+        run: .venv-floor/bin/python -m pytest --tb=short -q
+
   dashboard-dist:
     # hermes_otel/dashboard/dist/ is committed build output of dashboard-ui/src.
     # Rebuild it and fail if a PR changed the TSX without rebuilding (#100).

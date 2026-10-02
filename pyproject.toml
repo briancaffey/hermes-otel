@@ -45,11 +45,14 @@ classifiers = [
 ]
 dependencies = [
     # Upper bounds per Hermes's plugin dependency policy — `hermes plugins
-    # doctor` warns without them. No lower bound: the plugin uses only
-    # long-stable OTel 1.x APIs.
-    "opentelemetry-api<2",
-    "opentelemetry-sdk<2",
-    "opentelemetry-exporter-otlp-proto-http<2",
+    # doctor` warns without them. The floor is measured, not guessed: the
+    # full suite was run against each SDK minor and 1.35.0 is the oldest that
+    # passes (1.34 still has the abstract ``LogRecordProcessor.emit`` that
+    # ``on_emit`` replaced, which breaks the logs pipeline). The
+    # ``test-otel-floor`` CI job keeps it true (#257).
+    "opentelemetry-api>=1.35,<2",
+    "opentelemetry-sdk>=1.35,<2",
+    "opentelemetry-exporter-otlp-proto-http>=1.35,<2",
     # Reads hermes_otel.yaml. Hermes's own runtime ships ruamel.yaml, not
     # PyYAML, so the plugin must declare it (#251).
     "PyYAML>=6,<7",

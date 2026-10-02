@@ -1,7 +1,9 @@
 ## hermes-otel installed
 
 Hermes 0.21+ has already installed the OpenTelemetry packages this plugin
-imports into its own virtualenv and will re-apply them after `hermes update`.
+imports (`opentelemetry-api`, `-sdk` and `-exporter-otlp-proto-http`, 1.35 or
+newer, below 2) into its own virtualenv and will re-apply them after
+`hermes update`.
 Enable the plugin if you have not (`hermes plugins enable hermes_otel`) and
 restart the gateway if one is running.
 

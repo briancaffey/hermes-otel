@@ -130,7 +130,7 @@ If the banner says "attached to `hermes_otel`" you're in scoped mode — hermes-
 
 If the banner is **absent** after setting `capture_logs: true`, check:
 
-1. `opentelemetry-sdk` is recent enough to have `LoggingHandler` in `opentelemetry.sdk._logs` (the plugin warns if the import fails).
+1. `opentelemetry-sdk` is 1.35 or newer, the declared floor (CI runs the suite on exactly that version); older SDKs lack the `on_emit` log-processor API the plugin's log pipeline uses, and the plugin warns if the import fails.
 2. At least one configured backend has `supports_logs=True`.
 3. The config file is actually being read (plugin installs default handler when `pyyaml` is missing).
 
