@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.18.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.1...hermes-otel-v1.18.2) (2026-10-02)
+
+
+### Bug Fixes
+
+* create the live store and debug.log owner-only (0600) ([#262](https://github.com/briancaffey/hermes-otel/issues/262)) ([d1be8d5](https://github.com/briancaffey/hermes-otel/commit/d1be8d58494685d6b20d2e92136b6945f02a85cb))
+* declare the measured OpenTelemetry floor (&gt;=1.35) and test on it in CI ([#264](https://github.com/briancaffey/hermes-otel/issues/264)) ([79b24ac](https://github.com/briancaffey/hermes-otel/commit/79b24ac0cf18b17f4b8f027badccbd56e285db51))
+* require an OTEL_* opt-in for vendor env-var mode; import dashboard backends through the package ([#255](https://github.com/briancaffey/hermes-otel/issues/255)) ([ea014c1](https://github.com/briancaffey/hermes-otel/commit/ea014c12e6a4d14e9b237d663eef8025abd9d35f))
+* say why env-var mode ignored vendor credentials instead of going quiet ([#263](https://github.com/briancaffey/hermes-otel/issues/263)) ([9632e49](https://github.com/briancaffey/hermes-otel/commit/9632e4992664490b63cd22dc52fec680face89fe))
+
+
+### Documentation
+
+* describe the OTEL_* opt-in rule everywhere env-var mode is explained ([#261](https://github.com/briancaffey/hermes-otel/issues/261)) ([36bf1d8](https://github.com/briancaffey/hermes-otel/commit/36bf1d8c6b8017a506fedd1838039c1055d2582c))
+
 ## [1.18.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.0...hermes-otel-v1.18.1) (2026-09-29)
 
 
