@@ -998,6 +998,11 @@ class HermesOTelPlugin:
         """
         rb = _backends.resolve_from_env()
         if rb is None:
+            # Vendor SDK credentials that used to select a backend on their own
+            # are ignored without an OTEL_* opt-in (#255); say so, once, so the
+            # switch to live-only mode is not silent (#259).
+            for hint in _backends.env_opt_in_hints():
+                logger.info("[hermes-otel] %s", hint)
             # No external backend — but the in-process live store still gives a
             # working zero-config dashboard. Stand up a live-only pipeline.
             if self.config.dashboard_live:

@@ -795,6 +795,9 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
         "fields": reports,
         "effective_yaml": effective_yaml(reports, path if exists else None),
         "env": env_inventory(reveal=reveal),
+        # Vendor credentials present without their OTEL_* opt-in; only relevant
+        # in env-var mode (a backends: list bypasses that path entirely).
+        "env_notices": [] if effective.backends else _backends.env_opt_in_hints(),
         "process": {
             "role": "dashboard",
             "pid": os.getpid(),
