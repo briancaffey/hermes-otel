@@ -62,10 +62,10 @@ The plugin uses **OTLP/HTTP** (not gRPC). The metrics and logs endpoints are der
 
 ## Single backend (env vars)
 
-Without a `config.yaml` `backends:` list, the env-var flow picks up Honeycomb when `HONEYCOMB_API_KEY` is set (US endpoint by default):
+Without a `config.yaml` `backends:` list, the env-var flow picks up Honeycomb when `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) is set (US endpoint by default). `HONEYCOMB_API_KEY` alone is used as a credential fallback but does not turn export on:
 
 ```bash
-export HONEYCOMB_API_KEY="hcaik_..."
+export OTEL_HONEYCOMB_API_KEY="hcaik_..."
 # Optional — override the URL (e.g. the EU host):
 # export OTEL_HONEYCOMB_ENDPOINT="https://api.eu1.honeycomb.io/v1/traces"
 export OTEL_PROJECT_NAME=hermes-otel-honeycomb

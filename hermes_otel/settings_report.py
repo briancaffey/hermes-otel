@@ -95,7 +95,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "parseable": {"api_key": ("OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY")},
     "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
     "weave": {
-        "api_key": ("WANDB_API_KEY",),
+        "api_key": ("OTEL_WEAVE_API_KEY", "WANDB_API_KEY"),
         "entity": ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
         "project": ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"),
     },
@@ -560,7 +560,8 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),
     ("WANDB_BASE_URL", "backend", "Weave base URL fallback"),
-    ("WANDB_API_KEY", "backend", "Weave API key"),
+    ("OTEL_WEAVE_API_KEY", "backend", "Weave API key (preferred name)"),
+    ("WANDB_API_KEY", "backend", "Weave API key fallback"),
     ("WANDB_ENTITY", "backend", "Weave entity"),
     ("WANDB_PROJECT", "backend", "Weave project"),
     ("DEFAULT_WANDB_ENTITY", "backend", "Weave entity fallback"),

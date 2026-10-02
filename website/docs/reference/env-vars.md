@@ -20,7 +20,7 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_LANGFUSE_PUBLIC_API_KEY` | `pk-lf-...` | Langfuse public key (plugin-specific) |
 | `OTEL_LANGFUSE_SECRET_API_KEY` | `sk-lf-...` | Langfuse secret key (plugin-specific) |
 | `OTEL_LANGFUSE_ENDPOINT` | URL | Langfuse OTLP endpoint |
-| `LANGFUSE_PUBLIC_KEY` | `pk-lf-...` | Langfuse public key (SDK-standard) |
+| `LANGFUSE_PUBLIC_KEY` | `pk-lf-...` | Langfuse public key (SDK-standard fallback; does not enable Langfuse in env-var mode on its own) |
 | `LANGFUSE_SECRET_KEY` | `sk-lf-...` | Langfuse secret key (SDK-standard) |
 | `LANGFUSE_BASE_URL` | URL | Langfuse base URL (SDK-standard) |
 | `OTEL_SIGNOZ_ENDPOINT` | URL | SigNoz OTLP endpoint (self-host: `http://localhost:4328/v1/traces`) |
@@ -37,10 +37,11 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_PARSEABLE_ENDPOINT` | URL | Parseable ingestor `.../v1/traces`; enables Parseable in env-var mode |
 | `OTEL_PARSEABLE_API_KEY` / `PARSEABLE_API_KEY` | string | Parseable API key |
 | `PARSEABLE_TRACES_DATASET` / `PARSEABLE_METRICS_DATASET` / `PARSEABLE_LOGS_DATASET` | string | Parseable dataset per signal (defaults `hermes-traces` / `hermes-metrics` / `hermes-logs`) |
-| `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
-| `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key (plugin-specific alias) |
+| `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
+| `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
-| `WANDB_API_KEY` | string | W&B API key; enables Weave in env-var mode when routing vars are also set |
+| `OTEL_WEAVE_API_KEY` | string | W&B API key (plugin-specific); enables Weave in env-var mode when routing vars are also set |
+| `WANDB_API_KEY` | string | W&B API key fallback; does not enable Weave in env-var mode on its own |
 | `WANDB_ENTITY` | string | W&B entity/team for Weave routing (`wandb.entity`) |
 | `WANDB_PROJECT` | string | W&B project for Weave routing (`wandb.project`) |
 | `DEFAULT_WANDB_ENTITY` | string | Weave entity fallback, useful with an OTel Collector |

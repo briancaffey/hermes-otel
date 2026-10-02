@@ -26,6 +26,7 @@ def _clear_env(monkeypatch):
         "OTEL_JAEGER_ENDPOINT",
         "OTEL_TEMPO_ENDPOINT",
         "OTEL_PHOENIX_ENDPOINT",
+        "OTEL_WEAVE_API_KEY",
         "WANDB_API_KEY",
         "WANDB_ENTITY",
         "WANDB_PROJECT",
@@ -130,12 +131,12 @@ class TestWeaveBackendType:
 
     def test_env_priority_requires_routing(self, monkeypatch):
         _clear_env(monkeypatch)
-        monkeypatch.setenv("WANDB_API_KEY", "env_key")
+        monkeypatch.setenv("OTEL_WEAVE_API_KEY", "env_key")
         assert backends.resolve_from_env() is None
 
     def test_env_priority_picks_weave_with_routing(self, monkeypatch):
         _clear_env(monkeypatch)
-        monkeypatch.setenv("WANDB_API_KEY", "env_key")
+        monkeypatch.setenv("OTEL_WEAVE_API_KEY", "env_key")
         monkeypatch.setenv("WANDB_ENTITY", "team")
         monkeypatch.setenv("WANDB_PROJECT", "proj")
         rb = backends.resolve_from_env()

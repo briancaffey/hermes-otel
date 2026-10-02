@@ -15,22 +15,39 @@ from typing import Any, Dict, Optional
 from fastapi import APIRouter, HTTPException, Query
 
 # The Hermes plugin loader imports this file via
-# ``importlib.util.spec_from_file_location``, which does NOT put the
-# file's directory on sys.path. To let this module import from a
-# sibling ``backends`` package we add our directory explicitly. One-
-# time, idempotent.
+# ``importlib.util.spec_from_file_location`` as a top-level module, so a
+# relative import of the sibling ``backends`` package is not possible. Import
+# it through the plugin package (``hermes_otel.dashboard.backends``) instead of
+# putting this directory on sys.path, which would register a global top-level
+# ``backends`` module in the long-lived dashboard process and collide with any
+# other plugin or package of that name.
 _HERE = Path(__file__).resolve().parent
-if str(_HERE) not in sys.path:
-    sys.path.insert(0, str(_HERE))
 
-from backends import (  # noqa: E402  (after the path shim above)
+
+def _ensure_plugin_package_importable() -> None:
+    try:
+        import hermes_otel  # noqa: F401
+    except ImportError:
+        pkg_parent = str(_HERE.parent.parent)
+        if pkg_parent not in sys.path:
+            sys.path.insert(0, pkg_parent)
+
+
+_ensure_plugin_package_importable()
+
+from hermes_otel.dashboard.backends import (  # noqa: E402  (after the import check above)
     adapters,
-    backend_label,  # noqa: E402
+    backend_label,
     candidate_config_paths,
     find_adapter_class,
     resolve_adapter,
 )
-from backends.base import LOG_PAGE_SLACK, LogFilter, StructuredFilter, log_page  # noqa: E402
+from hermes_otel.dashboard.backends.base import (  # noqa: E402
+    LOG_PAGE_SLACK,
+    LogFilter,
+    StructuredFilter,
+    log_page,
+)
 
 router = APIRouter()
 

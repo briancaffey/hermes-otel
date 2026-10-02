@@ -90,11 +90,19 @@ class TestInitLangfuse:
             assert headers["x-langfuse-ingestion-version"] == "4"
 
     def test_init_with_langfuse_standard_vars(self, monkeypatch):
+        # The SDK-standard keys fill in credentials once an OTEL_LANGFUSE_*
+        # variable opts in, but never enable export on their own.
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf-std")
         monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf-std")
         monkeypatch.setenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
 
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+            assert plugin.init() is True
+            assert mock_otlp.call_args[0][0] == []
+
+        monkeypatch.setenv("OTEL_LANGFUSE_ENDPOINT", "https://cloud.langfuse.com")
         plugin = HermesOTelPlugin()
         with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
             assert plugin.init() is True
@@ -280,7 +288,7 @@ class TestInitTempo:
 class TestInitWeave:
     def test_env_init_uses_pipeline_to_preserve_resource_attrs(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("WANDB_API_KEY", "wandb_key")
+        monkeypatch.setenv("OTEL_WEAVE_API_KEY", "wandb_key")
         monkeypatch.setenv("WANDB_ENTITY", "team")
         monkeypatch.setenv("WANDB_PROJECT", "proj")
 

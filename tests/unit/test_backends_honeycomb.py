@@ -93,7 +93,7 @@ class TestHoneycombBackendType:
         assert rb.supports_metrics is False
 
     def test_env_priority_picks_honeycomb(self, monkeypatch):
-        # With only HONEYCOMB_API_KEY set and no config.yaml, the env-driven
+        # With only OTEL_HONEYCOMB_API_KEY set and no config.yaml, the env-driven
         # single-backend path should resolve to honeycomb.
         for var in (
             "OTEL_PHOENIX_ENDPOINT",
@@ -108,7 +108,21 @@ class TestHoneycombBackendType:
             "OTEL_LANGFUSE_SECRET_API_KEY",
         ):
             monkeypatch.delenv(var, raising=False)
-        monkeypatch.setenv("HONEYCOMB_API_KEY", "env_key")
+        monkeypatch.setenv("OTEL_HONEYCOMB_API_KEY", "env_key")
         rb = backends.resolve_from_env()
         assert rb is not None
         assert rb.type == "honeycomb"
+
+    def test_env_priority_ignores_unnamespaced_vendor_keys(self, monkeypatch):
+        # Vendor SDK credentials set for other tools must not switch on export
+        # of full prompts to that vendor; env mode needs an OTEL_* opt-in.
+        from _helpers import clear_backend_env
+
+        clear_backend_env(monkeypatch)
+        monkeypatch.setenv("HONEYCOMB_API_KEY", "hc_key")
+        monkeypatch.setenv("WANDB_API_KEY", "wandb_key")
+        monkeypatch.setenv("WANDB_ENTITY", "team")
+        monkeypatch.setenv("WANDB_PROJECT", "proj")
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-lf")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-lf")
+        assert backends.resolve_from_env() is None
