@@ -41,6 +41,23 @@ _TOKEN_KEYS = ("gen_ai.usage.total_tokens", "llm.token_count.total")
 _COST_KEYS = ("hermes.cost.usage",)
 
 
+def _restrict_to_owner(path: str) -> None:
+    """``chmod 0600`` the file at *path*; never raises.
+
+    The store holds full prompts, responses and tool I/O, so it must not be
+    readable by other local accounts the way the process umask (usually
+    ``022``) would leave it. Called right after the SQLite file is opened and
+    before WAL mode is enabled: SQLite gives the ``-wal`` / ``-shm`` sidecars
+    the mode of the main database file, so tightening the database first
+    covers all three. On Windows ``chmod`` only touches the read-only bit,
+    which ``0o600`` leaves clear.
+    """
+    try:
+        os.chmod(path, 0o600)
+    except OSError:
+        pass
+
+
 def default_db_path_for(home: Path) -> str:
     """The live store file for a given ``HERMES_HOME`` (pure; tests use this)."""
     return str(Path(home) / LIVE_DB_FILENAME)
@@ -262,6 +279,7 @@ class LiveStore:
         c = getattr(self._local, "conn", None)
         if c is None:
             c = sqlite3.connect(self.db_path, timeout=5.0, check_same_thread=False)
+            _restrict_to_owner(self.db_path)  # before WAL: sidecars inherit this mode
             c.execute("PRAGMA journal_mode=WAL")
             c.execute("PRAGMA busy_timeout=3000")
             c.execute("PRAGMA synchronous=NORMAL")

@@ -22,7 +22,7 @@ Then restart Hermes. The log file is:
 $HERMES_HOME/plugins/hermes_otel/debug.log     # ~/.hermes/plugins/hermes_otel/debug.log by default
 ```
 
-It's append-only — old entries stick around until you delete the file. No rotation; if you use debug mode for long periods, `rm debug.log` occasionally or pipe through `logrotate`.
+The file is created owner-only (`0600`; an existing file is tightened on first write) because the span lines include prompt and tool content. It's append-only — old entries stick around until you delete the file. No rotation; if you use debug mode for long periods, `rm debug.log` occasionally or pipe through `logrotate`.
 
 ## What gets logged
 

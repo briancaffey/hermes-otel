@@ -17,7 +17,7 @@ The plugin's own dashboard code lives in `hermes_otel/dashboard/` (a FastAPI rou
 
 ## The live store
 
-The gateway process writes every finished span, every metric point and (when `capture_logs` is on) every log line into a small SQLite file, `$HERMES_HOME/hermes_otel_live.db`. Rows are buffered and committed in one transaction by a background thread every 250 ms or 64 rows, so a hook never waits on the disk; the dashboard process, which is separate, reads the same file and sees a row within that interval. The store is a **bounded buffer of recent activity**, not a record:
+The gateway process writes every finished span, every metric point and (when `capture_logs` is on) every log line into a small SQLite file, `$HERMES_HOME/hermes_otel_live.db`. Rows are buffered and committed in one transaction by a background thread every 250 ms or 64 rows, so a hook never waits on the disk; the dashboard process, which is separate, reads the same file and sees a row within that interval. The file is created owner-only (`0600`, and an older `0644` file is tightened on open; the `-wal` / `-shm` sidecars inherit the mode) because it holds full prompts, responses and tool I/O. The store is a **bounded buffer of recent activity**, not a record:
 
 | Key | Default | Meaning |
 |---|---|---|

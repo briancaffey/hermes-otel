@@ -60,6 +60,10 @@ def debug_log_path() -> str:
     return os.path.join(str(resolve_hermes_home()), "plugins", "hermes_otel", "debug.log")
 
 
+def _private_opener(path: str, flags: int) -> int:
+    return os.open(path, flags, 0o600)
+
+
 def debug_log(msg: str) -> None:
     """Write a debug line if debug logging is enabled. Never raises."""
     if not _DEBUG_ENABLED:
@@ -70,7 +74,13 @@ def debug_log(msg: str) -> None:
             if _debug_file is None:
                 path = debug_log_path()
                 os.makedirs(os.path.dirname(path), exist_ok=True)
-                _debug_file = open(path, "a", encoding="utf-8", buffering=1)
+                # The log carries span content, so it is owner-only: created
+                # 0600 and tightened if an older, umask-mode file exists.
+                _debug_file = open(path, "a", encoding="utf-8", buffering=1, opener=_private_opener)
+                try:
+                    os.chmod(path, 0o600)
+                except OSError:
+                    pass
             _debug_file.write(f"{msg}\n")
     except Exception:
         pass
