@@ -87,7 +87,7 @@ _ENV_PRIORITY = [
 # Env-var mode must not switch on export to a vendor just because that vendor's
 # SDK-standard credentials (``HONEYCOMB_API_KEY``, ``WANDB_API_KEY``,
 # ``LANGFUSE_PUBLIC_KEY``/``LANGFUSE_SECRET_KEY``) are in the environment: those
-# are often set for other tools, and ``~/.hermes/.env`` is loaded into the
+# are often set for other tools, and Hermes loads its dotenv file into the
 # process. For these types the env path needs at least one plugin-namespaced
 # variable as the explicit opt-in; the generic fallbacks still fill in the rest,
 # and an explicit ``backends:`` entry in config.yaml is unaffected.
@@ -502,7 +502,9 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
         ["OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY"],
     )
     if not key:
-        raise ValueError("honeycomb requires api_key (or set HONEYCOMB_API_KEY)")
+        raise ValueError(
+            "honeycomb requires api_key (or set OTEL_HONEYCOMB_API_KEY / HONEYCOMB_API_KEY)"
+        )
 
     ep = (bc.endpoint or os.getenv("OTEL_HONEYCOMB_ENDPOINT", "")).strip()
     if not ep:
@@ -559,7 +561,7 @@ def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
         ["OTEL_WEAVE_API_KEY", "WANDB_API_KEY"],
     )
     if not key:
-        raise ValueError("weave requires api_key (or set WANDB_API_KEY)")
+        raise ValueError("weave requires api_key (or set OTEL_WEAVE_API_KEY / WANDB_API_KEY)")
 
     ep = (
         bc.endpoint or os.getenv("OTEL_WEAVE_ENDPOINT", "") or os.getenv("WANDB_OTLP_ENDPOINT", "")
