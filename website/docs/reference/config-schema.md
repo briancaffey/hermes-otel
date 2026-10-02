@@ -196,7 +196,7 @@ The plugin supplies signal-specific `X-P-Stream` and `X-P-Log-Source` headers au
 | Field | Type | Description |
 |---|---|---|
 | `api_key` | string | Honeycomb ingest key (inline; discouraged) |
-| `api_key_env` | string | Env var name holding the key (falls back to `HONEYCOMB_API_KEY` / `OTEL_HONEYCOMB_API_KEY`) |
+| `api_key_env` | string | Env var name holding the key (falls back to `OTEL_HONEYCOMB_API_KEY` / `HONEYCOMB_API_KEY`) |
 | `region` | string | `us` (default) or `eu`; selects the endpoint when none is given |
 | `dataset` | string | Optional `x-honeycomb-dataset` header. Only honored by Classic keys — modern Environments keys ignore it |
 | `endpoint` | string | Override; skips the region default. Also via `OTEL_HONEYCOMB_ENDPOINT` |
@@ -208,7 +208,7 @@ The plugin sets `x-honeycomb-team` from the key automatically and enables all th
 | Field | Type | Description |
 |---|---|---|
 | `api_key` | string | W&B API key (inline; discouraged) |
-| `api_key_env` | string | Env var name holding the key (falls back to `WANDB_API_KEY`) |
+| `api_key_env` | string | Env var name holding the key (falls back to `OTEL_WEAVE_API_KEY` / `WANDB_API_KEY`) |
 | `entity` | string | W&B entity/team; copied to Resource attribute `wandb.entity` |
 | `entity_env` | string | Env var name holding the entity (falls back to `WANDB_ENTITY` / `DEFAULT_WANDB_ENTITY`) |
 | `project` | string | W&B project; copied to Resource attribute `wandb.project` |

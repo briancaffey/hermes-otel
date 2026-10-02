@@ -36,6 +36,13 @@ Pick one and export it before starting Hermes:
 | Grafana LGTM / any OTLP collector | no env-var mode: add `backends: [{type: lgtm, endpoint: http://localhost:4318/v1/traces, metrics: true}]` to `$HERMES_HOME/hermes_otel.yaml` |
 | Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` |
 | LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |
+| Honeycomb | `OTEL_HONEYCOMB_API_KEY` |
+| W&B Weave | `OTEL_WEAVE_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` |
+
+Vendor SDK variables already in your environment (`LANGFUSE_PUBLIC_KEY` /
+`LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`) are used as credential
+fallbacks but never switch export on by themselves: with no `OTEL_*` variable and
+no `backends:` list, nothing leaves the machine.
 
 Telemetry shaping (sampling, preview sizes, resource attributes) is optional and
 lives in `$HERMES_HOME/hermes_otel.yaml`. Keep it there rather than in this
