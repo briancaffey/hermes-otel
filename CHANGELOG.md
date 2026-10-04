@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.19.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.2...hermes-otel-v1.19.0) (2026-10-04)
+
+
+### Features
+
+* **dashboard:** logs as a first-class signal in the Logs tab, CLI and every adapter ([#277](https://github.com/briancaffey/hermes-otel/issues/277)) ([be6232f](https://github.com/briancaffey/hermes-otel/commit/be6232f0335dc3175209296f1ce5cbf9771a15f6)), closes [#268](https://github.com/briancaffey/hermes-otel/issues/268)
+* **logs:** a logs: config block with per-backend overrides, pipeline controls, one severity spelling ([#272](https://github.com/briancaffey/hermes-otel/issues/272)) ([fabf8eb](https://github.com/briancaffey/hermes-otel/commit/fabf8eb38bd5a9964537c7c160bf0c227341a556))
+* **logs:** structured hermes.* and GenAI events from the hooks (off by default) ([#275](https://github.com/briancaffey/hermes-otel/issues/275)) ([e67e999](https://github.com/briancaffey/hermes-otel/commit/e67e999d64eb3d36569f73b1e6be66787d83e31c))
+
+
+### Bug Fixes
+
+* **ci:** retry and cache scanner downloads ([#274](https://github.com/briancaffey/hermes-otel/issues/274)) ([3585397](https://github.com/briancaffey/hermes-otel/commit/3585397dabbb1d938d1b888723f8f00547cb30fe))
+* **logs:** one enrichment processor for every log sink: exact attribution, no host internals, redaction ([#270](https://github.com/briancaffey/hermes-otel/issues/270)) ([8edc21f](https://github.com/briancaffey/hermes-otel/commit/8edc21f573701100c26926b746d163345b755b15))
+
+
+### Documentation
+
+* **logs:** Logs and events guide, generated log-events reference with a drift test, privacy and batch-export sections ([#276](https://github.com/briancaffey/hermes-otel/issues/276)) ([35fab22](https://github.com/briancaffey/hermes-otel/commit/35fab227ccde7a9b532d0d6774bc73bb828ad99e))
+
 ## [1.18.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.1...hermes-otel-v1.18.2) (2026-10-02)
 
 
