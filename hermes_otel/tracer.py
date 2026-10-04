@@ -634,97 +634,10 @@ def _is_mcp_keepalive_ping(span: Any) -> bool:
     return getattr(code, "name", None) != "ERROR"
 
 
-class _LiveLogNoiseFilter(logging.Filter):
-    """Drop Hermes' chattiest housekeeping lines from the live tail.
-
-    These fire on every gateway boot/refresh and drown out the agent's own
-    activity in the dashboard. Dropped regardless of level.
-    """
-
-    _NOISY_LOGGERS = ("gateway.config",)
-    _NOISY_SUBSTRINGS = (
-        "is_connected returned False",
-        "available but not configured",
-        "has no subscriptions",
-    )
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.name in self._NOISY_LOGGERS:
-            return False
-        try:
-            msg = record.getMessage()
-        except Exception:  # pragma: no cover
-            return True
-        return not any(s in msg for s in self._NOISY_SUBSTRINGS)
-
-
-class _LiveLogHandler(logging.Handler):
-    """Mirror log records into the in-process LiveStore, trace-correlated.
-
-    Installed only when both ``dashboard_live`` and ``capture_logs`` are on, so
-    the dashboard's Logs tab tails the agent's logs with no external backend.
-    """
-
-    def __init__(self, store: Any, tracker: Any = None) -> None:
-        super().__init__()
-        self._store = store
-        self._tracker = tracker
-
-    def _session_hint(self):
-        tracker = self._tracker
-        if tracker is None:
-            try:
-                tracker = get_tracer().spans
-            except Exception:
-                return None
-        try:
-            found = tracker.single_active_session()
-        except Exception:
-            return None
-        if not found:
-            return None
-        session_id, root = found
-        try:
-            ctx = root.get_span_context()
-            trace_id = format(ctx.trace_id, "032x") if getattr(ctx, "trace_id", 0) else None
-        except Exception:
-            trace_id = None
-        return str(session_id), trace_id
-
-    def emit(self, record: logging.LogRecord) -> None:
-        try:
-            trace_id = None
-            session_id = None
-            if _OTEL_AVAILABLE:
-                span = trace.get_current_span()
-                ctx = span.get_span_context() if span is not None else None
-                if ctx is not None and getattr(ctx, "trace_id", 0):
-                    trace_id = format(ctx.trace_id, "032x")
-                    attrs = getattr(span, "attributes", None) or {}
-                    for key in ("hermes.session_id", "session.id", "session_id"):
-                        if attrs.get(key):
-                            session_id = str(attrs[key])
-                            break
-            if trace_id is None:
-                # The plugin's spans live in its tracker, not on this thread's
-                # context: attribute the line to the one active session, if
-                # there is exactly one (#186). Never guess between several.
-                hint = self._session_hint()
-                if hint is not None:
-                    session_id, trace_id = hint
-            self._store.add_log(
-                {
-                    "level": record.levelname,
-                    "logger": record.name,
-                    "body": record.getMessage(),
-                    "time_unix_nano": int(record.created * 1e9),
-                    "trace_id": trace_id,
-                    "session_id": session_id,
-                }
-            )
-        except Exception:  # pragma: no cover — logging must never raise
-            pass
-
+# The live Logs tab is fed by ``log_handler.LiveLogProcessor`` on the same
+# ``LoggerProvider`` as the OTLP exporters (#265). The noise filter is
+# re-exported for callers that imported it from here.
+from .log_handler import _LiveLogNoiseFilter  # noqa: E402,F401
 
 # One id per process, generated at import: two Hermes processes exporting to
 # the same backend get distinct Resources and therefore distinct series.
@@ -762,8 +675,6 @@ class HermesOTelPlugin:
         self._initialized = False
         # True when the in-process live store (zero-config dashboard) is wired.
         self._live_active = False
-        self._live_log_handler = None
-        self._live_log_target: Optional[str] = None
         # Our own provider objects (independent of the OTel globals, which can
         # only be set once per process — see _init_otlp_pipeline).
         self._tracer_provider: Optional[Any] = None
@@ -853,8 +764,6 @@ class HermesOTelPlugin:
         self._meter = None
         self._meter_provider = None
         self._live_active = False
-        self._live_log_handler = None
-        self._live_log_target = None
 
     def shutdown(self) -> None:
         """Flush and tear the pipeline down. Idempotent; never raises.
@@ -904,15 +813,6 @@ class HermesOTelPlugin:
         if self._langsmith is not None:
             try:
                 self._langsmith.shutdown()
-            except Exception:
-                pass
-        if self._live_log_handler is not None:
-            try:
-                target = logging.getLogger(self._live_log_target or None)
-                target.removeHandler(self._live_log_handler)
-                previous = getattr(self._live_log_handler, "_hermes_otel_previous_level", None)
-                if previous is not None:
-                    target.setLevel(previous)
             except Exception:
                 pass
         if self._logger_provider is not None:
@@ -1182,32 +1082,8 @@ class HermesOTelPlugin:
                 if store is not None:
                     _attach(_LiveSpanProcessor(store))
                     self._live_active = True
-                    # Tail agent logs into the live store too (Logs tab), opt-in
-                    # via capture_logs so we don't capture the root logger by default.
-                    if self.config.capture_logs:
-                        try:
-                            from . import log_handler as _lh
-
-                            # Floor the live tail at INFO so the dashboard isn't
-                            # flooded by Hermes' DEBUG firehose (platform probes,
-                            # kanban notifier, etc.) — those evict useful lines
-                            # from the bounded buffer. OTLP export keeps its own
-                            # (possibly DEBUG) level via the separate handler.
-                            lvl = max(_lh.resolve_level(self.config.log_level), logging.INFO)
-                            target = logging.getLogger(self.config.log_attach_logger or None)
-                            h = _LiveLogHandler(store)
-                            h.setLevel(lvl)
-                            # Filter the chattiest config/probe loggers regardless.
-                            h.addFilter(_LiveLogNoiseFilter())
-                            target.addHandler(h)
-                            self._live_log_handler = h
-                            self._live_log_target = self.config.log_attach_logger or None
-                            # Remember the level we found so shutdown() can restore it.
-                            h._hermes_otel_previous_level = target.level
-                            if target.level == logging.NOTSET or target.level > lvl:
-                                target.setLevel(lvl)
-                        except Exception as e:  # pragma: no cover
-                            debug_log(f"live log handler not installed: {e}")
+                    # The live Logs tab is wired in _init_logs_pipeline (same provider
+                    # as the OTLP exporters, #265).
 
             metric_readers: List[Any] = []
 
@@ -1492,9 +1368,12 @@ class HermesOTelPlugin:
     def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
         """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
 
-        Skipped silently when ``capture_logs=false``, the SDK logs module is
-        unavailable, or no backend accepts OTLP logs. Failures in individual
-        backend exporters are logged but do not block pipeline init.
+        One provider carries the enrichment processor, the live store sink
+        (when ``dashboard_live`` is on) and one exporter per log-capable
+        backend (#265). Skipped silently when ``capture_logs=false`` or the
+        SDK logs module is unavailable; with no log-capable backend the live
+        store alone still gets the records. Failures in individual backend
+        exporters are logged but do not block pipeline init.
         """
         if not self.config.capture_logs:
             return
@@ -1509,32 +1388,52 @@ class HermesOTelPlugin:
             return
 
         processors = log_handler.build_log_processors(backends, self.config.headers)
+        live_store = None
+        if self._live_active:
+            try:
+                from .live_store import get_live_store
+
+                live_store = get_live_store(create=False)
+            except Exception:  # pragma: no cover
+                live_store = None
         if not processors:
             backend_types = ", ".join(b.type for b in backends) or "none"
-            logger.warning(
-                f"[hermes-otel] ⚠ capture_logs=true but no configured backend "
-                f"accepts OTLP logs ({backend_types}); add a signoz/otlp backend "
-                f"or set logs: true on an existing entry"
+            if live_store is None:
+                logger.warning(
+                    f"[hermes-otel] ⚠ capture_logs=true but no configured backend "
+                    f"accepts OTLP logs ({backend_types}); add a signoz/otlp backend "
+                    f"or set logs: true on an existing entry"
+                )
+                return
+            logger.info(
+                f"[hermes-otel] Logs → live store only (no configured backend accepts "
+                f"OTLP logs: {backend_types})"
             )
-            return
 
         level = log_handler.resolve_level(self.config.log_level)
+        # The live tail is floored at INFO so Hermes's DEBUG firehose cannot
+        # evict useful lines from the bounded buffer; OTLP keeps ``log_level``.
         self._logger_provider = log_handler.install_handler(
             resource=resource,
             processors=processors,
             level=level,
             attach_logger=self.config.log_attach_logger,
             context_resolver=self.active_span_for_logs,
+            tracker=self.spans,
+            live_store=live_store,
+            live_min_level=max(level, logging.INFO),
         )
         if self._logger_provider is None:
             return
 
         self._log_processors = [p for p, _b in processors]
-        target = self.config.log_attach_logger or "root"
-        logger.info(
-            f"[hermes-otel] ✓ Logs → {len(processors)} backend(s) "
-            f"(attached to {target}, level={self.config.log_level.upper()})"
-        )
+        if processors:
+            target = self.config.log_attach_logger or "root"
+            logger.info(
+                f"[hermes-otel] ✓ Logs → {len(processors)} backend(s) "
+                f"(attached to {target}, level={self.config.log_level.upper()}"
+                f"{', live store' if live_store is not None else ''})"
+            )
 
     def active_span_for_logs(self) -> Optional[Tuple[str, Any]]:
         """``(session_id, span)`` a log record written now should be correlated with.

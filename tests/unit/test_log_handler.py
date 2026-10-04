@@ -643,6 +643,31 @@ class TestTracerLogsPipelineWiring:
         assert plugin._logger_provider is None
         assert any("no configured backend accepts OTLP logs" in r.message for r in caplog.records)
 
+    def test_live_store_alone_gets_a_provider(self, clean_root_logger, caplog, tmp_path):
+        from opentelemetry.sdk.resources import Resource
+
+        from hermes_otel import live_store as ls
+        from hermes_otel.plugin_config import HermesOtelConfig
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=True, dashboard_live=True))
+        store = ls.LiveStore(db_path=str(tmp_path / "live.db"))
+        plugin._live_active = True
+        traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
+        with (
+            patch.object(ls, "get_live_store", return_value=store),
+            caplog.at_level("INFO", logger="hermes_otel"),
+        ):
+            plugin._init_logs_pipeline(Resource.create({}), [traces_only])
+        try:
+            assert plugin._logger_provider is not None
+            assert plugin._log_processors == []
+            assert any("live store only" in r.message for r in caplog.records)
+            assert not any(r.levelname == "WARNING" for r in caplog.records)
+        finally:
+            log_handler.uninstall_handler(None)
+            store.close()
+
     def test_force_flush_drains_logger_provider(self):
         from hermes_otel.tracer import HermesOTelPlugin
 
@@ -652,81 +677,241 @@ class TestTracerLogsPipelineWiring:
         plugin._logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
 
 
-class TestSpanContextStamper:
-    """Records logged off the OTel context get the active span's ids (#186 policy)."""
+def _fake(prefix: str, body: str) -> str:
+    """A credential-shaped string assembled at runtime (never a literal key in source)."""
+    return prefix + body
 
-    @pytest.fixture()
-    def pipeline(self):
-        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
-        from opentelemetry.sdk._logs.export import InMemoryLogExporter, SimpleLogRecordProcessor
-        from opentelemetry.sdk.resources import Resource
 
-        exporter = InMemoryLogExporter()
-        holder: dict = {"found": None}
-        provider = LoggerProvider(resource=Resource.create({}))
-        provider.add_log_record_processor(log_handler.SpanContextStamper(lambda: holder["found"]))
-        provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
-        handler = LoggingHandler(level=logging.INFO, logger_provider=provider)
-        lg = logging.getLogger("test.stamper")
-        lg.setLevel(logging.INFO)
-        lg.propagate = False
-        lg.addHandler(handler)
-        try:
-            yield lg, exporter, holder
-        finally:
-            lg.removeHandler(handler)
+def _pipeline(resolve=None, tracker=None, live_store=None, redact=True):
+    """A real provider: enricher, optional live sink, in-memory exporter; one scoped logger."""
+    from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+    from opentelemetry.sdk._logs.export import InMemoryLogExporter, SimpleLogRecordProcessor
+    from opentelemetry.sdk.resources import Resource
+
+    exporter = InMemoryLogExporter()
+    provider = LoggerProvider(resource=Resource.create({}))
+    provider.add_log_record_processor(
+        log_handler.HermesLogProcessor(resolve=resolve, tracker=tracker, redact=redact)
+    )
+    if live_store is not None:
+        provider.add_log_record_processor(log_handler.LiveLogProcessor(live_store))
+    provider.add_log_record_processor(SimpleLogRecordProcessor(exporter))
+    handler = LoggingHandler(level=logging.INFO, logger_provider=provider)
+    lg = logging.getLogger("test.enricher")
+    lg.setLevel(logging.INFO)
+    lg.propagate = False
+    lg.addHandler(handler)
+    return lg, exporter, handler
+
+
+class TestHermesLogProcessor:
+    """Attribution never guesses, host internals never leave, secrets never leave (#265)."""
 
     @pytest.fixture()
     def span(self):
         from opentelemetry.sdk.trace import TracerProvider
 
         tracer = TracerProvider().get_tracer("t")
-        s = tracer.start_span("session.abc")
+        s = tracer.start_span("session.abc", attributes={"hermes.platform": "telegram"})
         try:
             yield s
         finally:
             s.end()
 
-    def test_stamps_trace_span_and_session(self, pipeline, span):
-        lg, exporter, holder = pipeline
+    @pytest.fixture()
+    def pipe(self):
+        holder: dict = {"found": None, "tracker": None}
+        lg, exporter, handler = _pipeline(
+            resolve=lambda: holder["found"], tracker=_FakeTracker(holder)
+        )
+        try:
+            yield lg, exporter, holder
+        finally:
+            lg.removeHandler(handler)
+
+    def test_single_session_tier(self, pipe, span):
+        lg, exporter, holder = pipe
         holder["found"] = ("sess-1", span)
         lg.info("tool terminal completed")
         (rec,) = exporter.get_finished_logs()
         ctx = span.get_span_context()
-        assert rec.log_record.trace_id == ctx.trace_id
-        assert rec.log_record.span_id == ctx.span_id
-        assert rec.log_record.trace_flags == ctx.trace_flags
-        assert rec.log_record.attributes["hermes.session_id"] == "sess-1"
+        r = rec.log_record
+        assert r.trace_id == ctx.trace_id and r.span_id == ctx.span_id
+        assert r.trace_flags == ctx.trace_flags
+        assert r.attributes["hermes.session_id"] == "sess-1"
+        assert r.attributes["gen_ai.conversation.id"] == "sess-1"
+        assert r.attributes["hermes.log.attribution"] == "single_session"
 
-    def test_leaves_unattributed_without_an_active_session(self, pipeline):
-        lg, exporter, holder = pipeline
-        holder["found"] = None
+    def test_unattributed_without_a_session(self, pipe):
+        lg, exporter, holder = pipe
         lg.info("gateway housekeeping")
         (rec,) = exporter.get_finished_logs()
+        attrs = rec.log_record.attributes or {}
         assert not rec.log_record.trace_id
-        assert "hermes.session_id" not in (rec.log_record.attributes or {})
+        assert "hermes.session_id" not in attrs and "hermes.log.attribution" not in attrs
 
-    def test_keeps_a_record_logged_inside_a_current_span(self, pipeline, span):
+    def test_context_tier_keeps_a_current_span(self, pipe, span):
         from opentelemetry import trace as otel_trace
         from opentelemetry.sdk.trace import TracerProvider
 
-        lg, exporter, holder = pipeline
-        holder["found"] = ("sess-1", span)  # would stamp this if it ran
+        lg, exporter, holder = pipe
+        holder["found"] = ("sess-1", span)  # would be used by the single-session tier
         tracer = TracerProvider().get_tracer("t")
         with tracer.start_as_current_span("current") as current:
             lg.info("inside a current span")
         (rec,) = exporter.get_finished_logs()
         assert rec.log_record.trace_id == current.get_span_context().trace_id
         assert rec.log_record.trace_id != span.get_span_context().trace_id
+        assert rec.log_record.attributes["hermes.log.attribution"] == "context"
         assert otel_trace.get_current_span() is otel_trace.INVALID_SPAN
 
-    def test_install_handler_registers_the_stamper_first(
-        self, clean_root_logger, fake_otlp_exporter
+    def test_session_tag_tier_is_exact_under_concurrent_sessions(self, pipe, span):
+        lg, exporter, holder = pipe
+        holder["found"] = None  # two sessions active: the single-session rule abstains
+        holder["tracker"] = {"sess-2": span}
+        lg.info("worker line", extra={"session_tag": " [sess-2]"})
+        (rec,) = exporter.get_finished_logs()
+        r = rec.log_record
+        assert r.trace_id == span.get_span_context().trace_id
+        assert r.attributes["hermes.session_id"] == "sess-2"
+        assert r.attributes["hermes.platform"] == "telegram"  # from the session root span
+        assert r.attributes["hermes.log.attribution"] == "session_tag"
+        assert "session_tag" not in r.attributes
+
+    def test_session_tag_without_an_open_span_keeps_the_session(self, pipe):
+        lg, exporter, holder = pipe
+        lg.info("between turns", extra={"session_tag": " [sess-9]"})
+        (rec,) = exporter.get_finished_logs()
+        r = rec.log_record
+        assert not r.trace_id
+        assert r.attributes["hermes.session_id"] == "sess-9"
+        assert r.attributes["hermes.log.attribution"] == "session_tag"
+
+    def test_single_session_rule_abstains_when_the_record_names_another_session(self, pipe, span):
+        lg, exporter, holder = pipe
+        holder["found"] = ("sess-1", span)
+        lg.info("line from another session", extra={"session_tag": " [sess-7]"})
+        (rec,) = exporter.get_finished_logs()
+        r = rec.log_record
+        assert not r.trace_id  # sess-7 has no open span; sess-1's ids must not be borrowed
+        assert r.attributes["hermes.session_id"] == "sess-7"
+
+    def test_host_internal_attributes_are_dropped(self, pipe):
+        lg, exporter, holder = pipe
+        lg.info(
+            "with hermes extras",
+            extra={"hermes_home": "/Users/me/.hermes", "session_tag": "", "job_home_path": "/x"},
+        )
+        (rec,) = exporter.get_finished_logs()
+        attrs = rec.log_record.attributes
+        assert "hermes_home" not in attrs and "session_tag" not in attrs
+        assert "job_home_path" not in attrs
+        assert attrs["code.function.name"]  # the SDK's own attributes survive
+
+    def test_body_and_string_attributes_are_redacted(self, pipe, monkeypatch):
+        from hermes_otel import redaction
+
+        monkeypatch.setattr(redaction, "_hermes_resolved", True)
+        monkeypatch.setattr(redaction, "_hermes_redactor", None)  # exercise the built-in set
+        lg, exporter, holder = pipe
+        lg.info(
+            "calling with Authorization: Bearer "
+            + _fake("sk-proj-", "abcdefghijklmnopqrstuvwxyz0123456789"),
+            extra={
+                "request_headers": "x-api-key: " + _fake("hcaik_", "0123456789abcdef"),
+                "count": 3,
+            },
+        )
+        (rec,) = exporter.get_finished_logs()
+        r = rec.log_record
+        assert _fake("sk-proj-", "abcdefghijklmnopqrstuvwxyz0123456789") not in r.body
+        assert r.body.startswith("calling with Authorization: Bearer sk-pro")
+        assert _fake("hcaik_", "0123456789abcdef") not in r.attributes["request_headers"]
+        assert r.attributes["count"] == 3
+
+    def test_redaction_can_be_disabled_for_the_processor(self, span):
+        lg, exporter, handler = _pipeline(redact=False)
+        try:
+            lg.info("token=" + _fake("sk-", "abcdefghijklmnopqrstuvwxyz"))
+        finally:
+            lg.removeHandler(handler)
+        (rec,) = exporter.get_finished_logs()
+        assert rec.log_record.body == "token=" + _fake("sk-", "abcdefghijklmnopqrstuvwxyz")
+
+    def test_processor_never_raises(self):
+        proc = log_handler.HermesLogProcessor(resolve=lambda: 1 / 0, tracker=object())
+
+        class Broken:
+            def __getattr__(self, name):
+                raise RuntimeError(name)
+
+        proc.on_emit(Broken())  # swallowed
+
+
+class _FakeTracker:
+    """Just enough of SpanTracker for the session_tag tier."""
+
+    def __init__(self, holder):
+        self._holder = holder
+
+    def get_current_parent(self, session_id):
+        return (self._holder.get("tracker") or {}).get(session_id)
+
+    def get_session_root(self, session_id):
+        return (self._holder.get("tracker") or {}).get(session_id)
+
+
+class TestLiveSinkOnTheProvider:
+    def test_live_rows_match_the_exported_record(self, tmp_path, monkeypatch):
+        from hermes_otel import redaction
+        from hermes_otel.live_store import LiveStore
+
+        monkeypatch.setattr(redaction, "_hermes_resolved", True)
+        monkeypatch.setattr(redaction, "_hermes_redactor", None)
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
+        lg, exporter, handler = _pipeline(live_store=store)
+        try:
+            lg.warning(
+                "secret " + _fake("sk-", "abcdefghijklmnopqrstuvwxyz0123"),
+                extra={"session_tag": " [s-1]"},
+            )
+        finally:
+            lg.removeHandler(handler)
+            store.flush()
+        (rec,) = exporter.get_finished_logs()
+        (row,) = store.logs()
+        store.close()
+        assert row["body"] == rec.log_record.body  # redacted identically
+        assert _fake("sk-", "abcdefghijklmnopqrstuvwxyz0123") not in row["body"]
+        assert row["session_id"] == "s-1" == rec.log_record.attributes["hermes.session_id"]
+        assert row["attributes"]["hermes.log.attribution"] == "session_tag"
+        assert row["level"] == "WARNING" and rec.log_record.severity_text == "WARN"
+
+    def test_live_sink_drops_noise_and_debug(self, tmp_path):
+        from hermes_otel.live_store import LiveStore
+
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
+        lg, exporter, handler = _pipeline(live_store=store)
+        try:
+            logging.getLogger("gateway.config").propagate = False
+            lg.info("Plugin platform 'raft' available but not configured")
+            lg.info("kept")
+        finally:
+            lg.removeHandler(handler)
+            store.flush()
+        assert len(exporter.get_finished_logs()) == 2  # the backend still gets both
+        assert [r["body"] for r in store.logs()] == ["kept"]
+        store.close()
+
+    def test_install_handler_registers_the_enricher_first_then_live_then_exporters(
+        self, clean_root_logger, fake_otlp_exporter, tmp_path
     ):
         from opentelemetry.sdk.resources import Resource
 
         from hermes_otel.backends import _ResolvedBackend
+        from hermes_otel.live_store import LiveStore
 
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
         backend = _ResolvedBackend(type="otlp", endpoint="http://x/v1/traces", supports_logs=True)
         processors = log_handler.build_log_processors([backend])
         provider = log_handler.install_handler(
@@ -734,7 +919,30 @@ class TestSpanContextStamper:
             processors=processors,
             level=logging.INFO,
             context_resolver=lambda: None,
+            live_store=store,
         )
         assert provider is not None
-        first = provider._multi_log_record_processor._log_record_processors[0]
-        assert isinstance(first, log_handler.SpanContextStamper)
+        chain = provider._multi_log_record_processor._log_record_processors
+        assert isinstance(chain[0], log_handler.HermesLogProcessor)
+        assert isinstance(chain[1], log_handler.LiveLogProcessor)
+        assert len(chain) == 3
+        store.close()
+
+    def test_install_handler_with_live_store_only(self, clean_root_logger, tmp_path):
+        from opentelemetry.sdk.resources import Resource
+
+        from hermes_otel.live_store import LiveStore
+
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
+        provider = log_handler.install_handler(
+            resource=Resource.create({}), processors=[], level=logging.INFO, live_store=store
+        )
+        assert provider is not None
+        chain = provider._multi_log_record_processor._log_record_processors
+        assert [type(c).__name__ for c in chain] == ["HermesLogProcessor", "LiveLogProcessor"]
+        store.close()
+
+    def test_python_to_severity_bands(self):
+        f = log_handler._python_to_severity
+        assert (f(logging.DEBUG), f(logging.INFO), f(logging.WARNING)) == (5, 9, 13)
+        assert (f(logging.ERROR), f(logging.CRITICAL), f(0)) == (17, 21, 1)
