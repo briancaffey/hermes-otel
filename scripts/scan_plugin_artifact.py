@@ -38,10 +38,13 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import shutil
 import subprocess
 import sys
 import tempfile
+import time
+import urllib.error
 import urllib.request
 from collections import Counter
 from pathlib import Path
@@ -52,6 +55,9 @@ LOCK_PATH = REPO_ROOT / "scripts" / "hermes_scanner.lock.json"
 
 UPSTREAM = "NousResearch/hermes-agent"
 SCANNER_FILES = ("tools/skills_guard.py", "tools/plugin_guard.py")
+SCANNER_CACHE_ENV = "HERMES_SCANNER_CACHE_DIR"
+FETCH_ATTEMPTS = 5
+FETCH_BACKOFF_SECONDS = 2.0
 
 # The install artifact: the subdirectory `hermes plugins install` unpacks.
 ARTIFACT_DIR = "hermes_otel"
@@ -62,12 +68,59 @@ SEVERITY_ORDER = ("critical", "high", "medium", "low")
 BLOCKING_SEVERITIES = ("critical", "high")
 
 
-def _fetch(ref: str, rel_path: str) -> bytes:
+def _cache_path(cache_dir: Optional[Path], ref: str, rel_path: str) -> Optional[Path]:
+    if cache_dir is None:
+        return None
+    return cache_dir / ref / rel_path
+
+
+def _retry_delay(exc: BaseException, attempt: int) -> float:
+    retry_after = (
+        getattr(exc, "headers", {}).get("Retry-After") if hasattr(exc, "headers") else None
+    )
+    if retry_after:
+        try:
+            return max(0.0, float(retry_after))
+        except ValueError:
+            pass
+    return min(FETCH_BACKOFF_SECONDS * (2 ** (attempt - 1)), 32.0)
+
+
+def _is_retryable(exc: BaseException) -> bool:
+    return isinstance(exc, urllib.error.HTTPError) and exc.code in {429, 500, 502, 503, 504}
+
+
+def _fetch(ref: str, rel_path: str, cache_dir: Optional[Path] = None) -> bytes:
+    cache_file = _cache_path(cache_dir, ref, rel_path)
+    if cache_file and cache_file.exists():
+        return cache_file.read_bytes()
+
     url = f"https://raw.githubusercontent.com/{UPSTREAM}/{ref}/{rel_path}"
-    with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 (fixed host)
-        if resp.status != 200:
-            raise RuntimeError(f"GET {url} returned HTTP {resp.status}")
-        return resp.read()
+    last_error: Optional[BaseException] = None
+    for attempt in range(1, FETCH_ATTEMPTS + 1):
+        try:
+            with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 (fixed host)
+                if resp.status != 200:
+                    raise RuntimeError(f"GET {url} returned HTTP {resp.status}")
+                blob = resp.read()
+                if cache_file:
+                    cache_file.parent.mkdir(parents=True, exist_ok=True)
+                    cache_file.write_bytes(blob)
+                return blob
+        except urllib.error.HTTPError as exc:
+            last_error = exc
+            if attempt == FETCH_ATTEMPTS or not _is_retryable(exc):
+                break
+            delay = _retry_delay(exc, attempt)
+            print(
+                f"[fetch] {rel_path}: HTTP {exc.code}; retrying in {delay:g}s "
+                f"({attempt}/{FETCH_ATTEMPTS})"
+            )
+            time.sleep(delay)
+
+    if last_error is not None:
+        raise last_error
+    raise RuntimeError(f"GET {url} failed")
 
 
 def _load_lock() -> Dict[str, object]:
@@ -81,6 +134,11 @@ def load_scanner(ref: Optional[str], verify: bool, update_lock: bool, dest: Path
     lock = _load_lock()
     ref = ref or str(lock["ref"])
     hashes = dict(lock.get("sha256", {}))  # type: ignore[arg-type]
+    cache_dir = (
+        Path(os.environ[SCANNER_CACHE_ENV])
+        if os.environ.get(SCANNER_CACHE_ENV) and not update_lock
+        else None
+    )
 
     pkg = dest / "tools"
     pkg.mkdir(parents=True, exist_ok=True)
@@ -88,7 +146,7 @@ def load_scanner(ref: Optional[str], verify: bool, update_lock: bool, dest: Path
 
     fetched: Dict[str, str] = {}
     for rel in SCANNER_FILES:
-        blob = _fetch(ref, rel)
+        blob = _fetch(ref, rel, cache_dir)
         digest = hashlib.sha256(blob).hexdigest()
         fetched[rel] = digest
         if verify and not update_lock:
