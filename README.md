@@ -16,7 +16,7 @@
 <p align="center">
   <b>OpenTelemetry plugin for <a href="https://github.com/nousresearch/hermes-agent">Hermes Agent</a>.</b><br>
   Every Hermes turn — model calls, API requests, tool calls, skill loads, approvals, delegated sub-agents — becomes one OTel trace,
-  with token / cost / latency metrics and (optionally) logs, exported to any OTLP/HTTP backend.
+  with token / cost / latency metrics and (optionally) logs and structured events, exported to any OTLP/HTTP backend.
 </p>
 
 <p align="center">
@@ -103,7 +103,7 @@ backends:
 capture_logs: true
 ```
 
-Each Hermes profile has its own install, settings and telemetry; a multiplexed gateway traces every profile it serves under its own name ([profiles](https://briancaffey.github.io/hermes-otel/configuration/profiles)). [`config.yaml.example`](config.yaml.example) in this repository documents every knob; every scalar knob is also a `HERMES_OTEL_*` environment variable. See the [config schema](https://briancaffey.github.io/hermes-otel/reference/config-schema), the [env var reference](https://briancaffey.github.io/hermes-otel/reference/env-vars), and the guides on [privacy](https://briancaffey.github.io/hermes-otel/configuration/privacy), [sampling](https://briancaffey.github.io/hermes-otel/configuration/sampling), [logs](https://briancaffey.github.io/hermes-otel/configuration/logs) and [host & GPU metrics](https://briancaffey.github.io/hermes-otel/configuration/host-metrics).
+Each Hermes profile has its own install, settings and telemetry; a multiplexed gateway traces every profile it serves under its own name ([profiles](https://briancaffey.github.io/hermes-otel/configuration/profiles)). [`config.yaml.example`](config.yaml.example) in this repository documents every knob; every scalar knob is also a `HERMES_OTEL_*` environment variable. See the [config schema](https://briancaffey.github.io/hermes-otel/reference/config-schema), the [env var reference](https://briancaffey.github.io/hermes-otel/reference/env-vars), and the guides on [privacy](https://briancaffey.github.io/hermes-otel/configuration/privacy), [sampling](https://briancaffey.github.io/hermes-otel/configuration/sampling), [logs and events](https://briancaffey.github.io/hermes-otel/configuration/logs) and [host & GPU metrics](https://briancaffey.github.io/hermes-otel/configuration/host-metrics).
 
 Not seeing data? `HERMES_OTEL_DEBUG=true` writes a per-span log — see [debug logging](https://briancaffey.github.io/hermes-otel/development/debug-logging).
 

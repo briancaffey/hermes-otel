@@ -2,7 +2,7 @@
 """Render the config-field and env-var reference tables from HermesOtelConfig.
 
 The tables live between ``[//]: # (generated:<name>:start)`` / ``:end`` marker lines in
-``website/docs/reference/config-schema.md`` and ``env-vars.md``. Run with
+``website/docs/reference/config-schema.md``, ``env-vars.md`` and ``log-events.md``. Run with
 ``--write`` to update them, ``--check`` (the default; also run by
 ``tests/unit/test_config_surface.py``) to fail when they drift from the code.
 
@@ -20,6 +20,7 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
+from hermes_otel import log_events as EV  # noqa: E402
 from hermes_otel.plugin_config import FIELD_DOCS, HermesOtelConfig, field_kinds  # noqa: E402
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
@@ -71,9 +72,30 @@ def render_env_table() -> str:
     return "\n".join(rows)
 
 
+def render_events_table() -> str:
+    """One section per event from ``hermes_otel.log_events.EVENTS`` (#269)."""
+    out = []
+    for name, spec in EV.EVENTS.items():
+        out.append(f"### `{name}`")
+        out.append("")
+        out.append(
+            f"Emitted from **`{spec['hook']}`**. Severity: {spec['severity']}. Body: `{spec['body']}`."
+        )
+        out.append("")
+        out.append("| Attribute | Content-gated |")
+        out.append("|---|---|")
+        for attr in spec["attributes"]:
+            gated = attr.endswith(" (content)")
+            clean = attr[: -len(" (content)")] if gated else attr
+            out.append(f"| `{clean}` | {'yes' if gated else ''} |")
+        out.append("")
+    return "\n".join(out).rstrip()
+
+
 BLOCKS = {
     (DOCS / "config-schema.md", "config-fields"): render_fields_table,
     (DOCS / "env-vars.md", "env-overrides"): render_env_table,
+    (DOCS / "log-events.md", "log-events"): render_events_table,
 }
 
 

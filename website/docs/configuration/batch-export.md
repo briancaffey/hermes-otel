@@ -69,6 +69,22 @@ span_batch_export_timeout_ms: 5000
 
 Note that a hard crash (SIGKILL, OOM) doesn't run `atexit` handlers — up to `schedule_delay_ms` of spans can be lost then. This is the standard OTel trade-off and mirrors every production tracing stack.
 
+## Logs
+
+Log records and events have their own `BatchLogRecordProcessor` per log-capable backend, tuned under the `logs:` block rather than the span keys:
+
+```yaml
+logs:
+  batch:
+    schedule_delay_ms: 1000        # export tick
+    max_queue_size: 2048           # queued records before the oldest are dropped
+    max_export_batch_size: 512     # records per POST
+    export_timeout_ms: 30000       # per-export timeout
+  max_attribute_length: 4096       # longest exported string attribute
+```
+
+The same mental model applies: a backend's rules filter sits in front of its batch processor, so a record a backend does not accept never occupies its queue. The live store is not batched by the SDK; it buffers rows itself and commits every 250 ms or 64 rows. The logger provider is flushed from the same turn-end and `atexit` paths as spans. In `debug.log` each log export writes `export <backend> logs: N record(s) -> SUCCESS|FAILURE`.
+
 ## Multi-backend implications
 
 These settings are **shared** across all backends — every `BatchSpanProcessor` uses the same values. The isolation is in the queues and workers, not the tuning.
