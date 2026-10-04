@@ -74,15 +74,20 @@ class TestShutdownAndReinit:
         level_before = root.level
         assert plugin.init() is True
         first_provider = plugin._tracer_provider
-        first_handler = plugin._live_log_handler
-        assert first_provider is not None and first_handler in root.handlers
+        from hermes_otel import log_handler as lh
+
+        def ours():
+            return [h for h in root.handlers if getattr(h, lh._HANDLER_MARKER, False)]
+
+        first_logger_provider = plugin._logger_provider
+        assert first_provider is not None and first_logger_provider is not None
+        assert len(ours()) == 1  # live-only: the log provider exists for the live sink
 
         assert plugin.init() is True  # reload / reconfigure
         assert plugin.is_enabled
         assert plugin._tracer_provider is not first_provider
-        # The first live-log handler is gone; exactly one of ours is attached.
-        ours = [h for h in root.handlers if type(h).__name__ == "_LiveLogHandler"]
-        assert ours == [plugin._live_log_handler]
+        # The first logging handler is gone; exactly one of ours is attached.
+        assert len(ours()) == 1 and plugin._logger_provider is not first_logger_provider
         # The tracer in use belongs to the new provider, not the once-only global.
         assert plugin.tracer is not None
         span = plugin.start_span("probe", "probe", session_id="s")
@@ -90,7 +95,7 @@ class TestShutdownAndReinit:
         plugin.end_span("probe")
 
         plugin.shutdown()
-        assert not any(type(h).__name__ == "_LiveLogHandler" for h in root.handlers)
+        assert ours() == []
         assert root.level == level_before
 
     def test_atexit_registers_shutdown_once(self, live_only_plugin, monkeypatch):

@@ -224,10 +224,23 @@ def main() -> int:
     print(f"\n→ project: {project}")
     print(f"→ trace processors: {len(tracer._span_processors)}")
     print(f"→ metric readers:   {len(tracer._metric_readers)}")
+    # The logs signal (#265): one provider carries the live store and every
+    # log-capable backend; a line logged during the session below is exported
+    # with that session's trace id. Reported, not queried (each backend's log
+    # query API differs; the smoke tests cover OpenObserve).
+    logs_on = tracer._logger_provider is not None
+    print(
+        f"→ log processors:   {len(tracer._log_processors)}"
+        f" ({'logs pipeline on' if logs_on else 'capture_logs off or no sink'})"
+    )
 
     session_id = f"verify-{int(time.time())}"
     print(f"\n→ emitting session {session_id}")
     emit_session(session_id)
+    if logs_on:
+        import logging
+
+        logging.getLogger("agent.verify").info("verify_multi_backend line for %s", session_id)
     tracer._force_flush()
     print("→ flushed; querying backends (up to 60s each)")
 

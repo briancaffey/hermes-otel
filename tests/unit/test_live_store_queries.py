@@ -198,41 +198,70 @@ class TestLogAttribution:
             pass
 
         class Root:
+            attributes = {"hermes.platform": "cli"}
+
             def get_span_context(self):
                 c = Ctx()
                 c.trace_id = trace_id
+                c.span_id = trace_id & 0xFFFF
+                c.trace_flags = 1
                 return c
 
         return Root()
 
-    def test_one_active_session_attributes_the_line(self, store):
+    def _emit(self, store, tracker, logger_name, msg):
+        """One record through the real provider: enricher first, then the live sink."""
         import logging
 
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk.resources import Resource
+
+        from hermes_otel.log_handler import HermesLogProcessor, LiveLogProcessor
+
+        def resolve():
+            found = tracker.single_active_session()
+            if not found:
+                return None
+            sid, root = found
+            return str(sid), tracker.get_current_parent(str(sid)) or root
+
+        provider = LoggerProvider(resource=Resource.create({}))
+        provider.add_log_record_processor(HermesLogProcessor(resolve=resolve, tracker=tracker))
+        provider.add_log_record_processor(LiveLogProcessor(store))
+        handler = LoggingHandler(level=logging.INFO, logger_provider=provider)
+        lg = logging.getLogger(f"test.live.{logger_name}")
+        previous = (lg.propagate, lg.level)
+        lg.propagate = False
+        lg.setLevel(logging.INFO)
+        lg.addHandler(handler)
+        try:
+            lg.info(msg)
+        finally:
+            lg.removeHandler(handler)
+            lg.propagate, lg.level = previous
+
+    def test_one_active_session_attributes_the_line(self, store):
         from hermes_otel.span_tracker import SpanTracker
-        from hermes_otel.tracer import _LiveLogHandler
 
         tracker = SpanTracker()
         tracker.push_parent(self._root(0xABC), session_id="sess-1")
-        h = _LiveLogHandler(store, tracker=tracker)
-        h.emit(logging.LogRecord("agent.loop", logging.INFO, __file__, 1, "hello", None, None))
+        self._emit(store, tracker, "agent.loop", "hello")
         (rec,) = store.logs()
         assert rec["session_id"] == "sess-1"
         assert rec["trace_id"] == format(0xABC, "032x")
+        assert rec["attributes"]["hermes.log.attribution"] == "single_session"
         assert [l["body"] for l in store.query_logs(session="sess-1")] == ["hello"]
 
     def test_two_active_sessions_stay_unattributed(self, store):
-        import logging
-
         from hermes_otel.span_tracker import SpanTracker
-        from hermes_otel.tracer import _LiveLogHandler
 
         tracker = SpanTracker()
         tracker.push_parent(self._root(1), session_id="a")
         tracker.push_parent(self._root(2), session_id="b")
-        h = _LiveLogHandler(store, tracker=tracker)
-        h.emit(logging.LogRecord("x", logging.INFO, __file__, 1, "ambiguous", None, None))
+        self._emit(store, tracker, "x", "ambiguous")
         (rec,) = store.logs()
         assert rec["session_id"] is None and rec["trace_id"] is None
+        assert "hermes.log.attribution" not in rec["attributes"]
         assert tracker.single_active_session() is None
         tracker.pop_parent(session_id="b")
         assert tracker.single_active_session()[0] == "a"
