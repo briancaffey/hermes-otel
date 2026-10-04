@@ -268,7 +268,7 @@ class TestEventCatalogue:
             provider="openrouter",
             error={
                 "type": "AuthenticationError",
-                "message": "bad key sk-abcdefghijklmnopqrstuvwxyz",
+                "message": "bad key " + "sk-" + "abcdefghijklmnopqrstuvwxyz",
             },
             status_code=401,
             retryable=False,
