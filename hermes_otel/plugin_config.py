@@ -86,6 +86,27 @@ _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _FALSE_STRINGS = {"0", "false", "no", "off"}
 
 
+# Logger prefixes the logs pipeline never forwards: the OTel SDK and the HTTP
+# client stack (an export that logs itself would feed the next export), plus
+# the third-party loggers Hermes itself pins at WARNING (hermes_logging._NOISY_LOGGERS).
+DEFAULT_LOG_EXCLUDE_LOGGERS: Tuple[str, ...] = (
+    "opentelemetry",
+    "urllib3",
+    "httpx",
+    "httpcore",
+    "requests",
+    "openai",
+    "asyncio",
+    "hpack",
+    "grpc",
+    "websockets",
+    "charset_normalizer",
+    "markdown_it",
+)
+
+LOG_EVENTS_CONTENT_MODES = ("inherit", "full", "preview", "off")
+
+
 @dataclass(frozen=True)
 class BackendConfig:
     """One collector destination declared in ``config.yaml``.
@@ -110,6 +131,12 @@ class BackendConfig:
     logs: Optional[bool] = (
         None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/parseable/honeycomb)
     )
+    # Per-backend log settings (#266): ``logs:`` given as a mapping in yaml
+    # turns the signal on and keeps the mapping here. Keys mirror the
+    # top-level ``logs:`` block (``level``, ``exclude_loggers``,
+    # ``logger_levels``, ``only_in_turn``, ``events: {enabled, content}``)
+    # and may only be stricter than the global values.
+    log_overrides: Optional[Dict[str, Any]] = None
     # Langfuse credentials
     public_key: Optional[str] = None
     secret_key: Optional[str] = None
@@ -223,6 +250,27 @@ class HermesOtelConfig:
     # None = attach to the root logger (captures all hermes-agent + plugin
     # logs). Set to e.g. "hermes_otel" to scope capture to plugin logs only.
     log_attach_logger: Optional[str] = None
+    # Logger-name prefixes never forwarded (loop guard + Hermes' own noisy
+    # list). Replaces the hardcoded filters; also drives the live tail.
+    log_exclude_loggers: Tuple[str, ...] = DEFAULT_LOG_EXCLUDE_LOGGERS
+    # Per-logger minimum level, e.g. {gateway.config: WARNING}.
+    log_logger_levels: Optional[Dict[str, str]] = None
+    # Drop records the plugin cannot attribute to a session (gateways that
+    # only want turn logs shipped).
+    log_only_in_turn: bool = False
+    # Longest string attribute value exported on a log record (characters).
+    log_max_attribute_length: int = 4096
+    # BatchLogRecordProcessor knobs, mirroring the span batch settings.
+    log_batch_schedule_delay_ms: int = 1000
+    log_batch_max_queue_size: int = 2048
+    log_batch_max_export_batch_size: int = 512
+    log_batch_export_timeout_ms: int = 30000
+    # Floor for the live store's Logs tab (the OTLP path keeps log_level).
+    log_live_min_level: str = "INFO"
+    # Structured hermes.* / GenAI events from the hooks (Phase 2, #267).
+    # Off by default; ``content`` inherits content_capture unless narrowed.
+    log_events: bool = False
+    log_events_content: str = "inherit"  # inherit | full | preview | off
     # ── OTel GenAI semantic-convention metrics ──────────────────────────
     # Emit spec-named instruments (gen_ai.client.*, gen_ai.agent.*) in
     # addition to the custom hermes.* metrics, so generic OTel-GenAI
@@ -297,7 +345,7 @@ class HermesOtelConfig:
 # (scripts/gen_config_docs.py) renders the reference tables from it. A new
 # field is therefore yaml-loadable, env-overridable and documented (or the
 # tests fail) without touching three hand-maintained lists (#93).
-_SCALAR_KINDS = ("bool", "int", "float", "str")
+_SCALAR_KINDS = ("bool", "int", "float", "str", "list")  # env-overridable kinds
 
 
 def _field_kind(field: "dataclasses.Field") -> str:
@@ -311,6 +359,8 @@ def _field_kind(field: "dataclasses.Field") -> str:
         return "backends"
     if ann.startswith("Optional[Dict") or ann.startswith("Dict"):
         return "map"
+    if ann.startswith("Optional[Tuple[str") or ann.startswith("Tuple[str"):
+        return "list"
     for kind in ("bool", "int", "float", "str"):
         if ann == kind or ann == f"Optional[{kind}]":
             return kind
@@ -324,6 +374,7 @@ def field_kinds() -> Dict[str, str]:
 # Fields whose string value gets extra normalisation.
 _STR_NORMALISERS = {
     "log_level": lambda v: str(v).upper(),
+    "log_live_min_level": lambda v: str(v).upper(),
 }
 
 CONTENT_CAPTURE_MODES = ("off", "preview", "full")
@@ -394,6 +445,7 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 
 
 _ALLOWED_KEYS = {f.name for f in fields(HermesOtelConfig)}
+TOP_LEVEL_BLOCKS = ("logs",)  # yaml keys that are blocks, not fields
 _BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)}
 
 
@@ -462,6 +514,15 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                         for kk, vv in v.items()
                     }
                 continue
+            if k == "logs" and isinstance(v, dict):
+                # ``logs: {level: WARN, ...}`` = the signal on, with per-backend
+                # settings (#266). Validated against the global values when the
+                # pipeline is built, where both are known.
+                kwargs["logs"] = True
+                overrides = _coerce_backend_log_overrides(v, idx)
+                if overrides:
+                    kwargs["log_overrides"] = overrides
+                continue
             if k in ("traces", "metrics", "logs"):
                 if isinstance(v, bool):
                     kwargs[k] = v
@@ -481,6 +542,152 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
             logger.warning(f"[hermes-otel] config.yaml backends[{idx}] invalid: {e}; skipping")
 
     return tuple(out) if out else None
+
+
+_BACKEND_LOG_OVERRIDE_KEYS = ("level", "exclude_loggers", "logger_levels", "only_in_turn", "events")
+
+
+def _coerce_backend_log_overrides(raw: Dict[str, Any], idx: int) -> Dict[str, Any]:
+    """Validate a per-backend ``logs:`` mapping; unknown keys and bad values warn and are dropped."""
+    out: Dict[str, Any] = {}
+    where = f"backends[{idx}].logs"
+    for k, v in raw.items():
+        if k not in _BACKEND_LOG_OVERRIDE_KEYS:
+            logger.warning(f"[hermes-otel] config.yaml {where}.{k}: unknown key; ignoring")
+            continue
+        if k == "level":
+            out[k] = str(v).strip().upper() if v is not None else None
+        elif k == "exclude_loggers":
+            parsed = _parse_scalar("list", k, v)
+            if parsed is None:
+                logger.warning(f"[hermes-otel] config.yaml {where}.{k} must be a list; ignoring")
+            else:
+                out[k] = parsed
+        elif k == "logger_levels":
+            if isinstance(v, dict):
+                out[k] = {str(kk): str(vv).upper() for kk, vv in v.items()}
+            else:
+                logger.warning(f"[hermes-otel] config.yaml {where}.{k} must be a mapping; ignoring")
+        elif k == "only_in_turn":
+            parsed = _parse_scalar("bool", k, v)
+            if parsed is None:
+                logger.warning(f"[hermes-otel] config.yaml {where}.{k} must be a bool; ignoring")
+            else:
+                out[k] = parsed
+        elif k == "events":
+            if not isinstance(v, dict):
+                logger.warning(
+                    f"[hermes-otel] config.yaml {where}.events must be a mapping; ignoring"
+                )
+                continue
+            events: Dict[str, Any] = {}
+            for ek, ev in v.items():
+                if ek == "enabled":
+                    parsed = _parse_scalar("bool", ek, ev)
+                    if parsed is not None:
+                        events["enabled"] = parsed
+                elif ek == "content":
+                    parsed = _parse_scalar("str", "log_events_content", ev)
+                    if parsed is None:
+                        logger.warning(
+                            f"[hermes-otel] config.yaml {where}.events.content: {ev!r} is not one of "
+                            f"{', '.join(LOG_EVENTS_CONTENT_MODES)}; ignoring"
+                        )
+                    else:
+                        events["content"] = parsed
+                else:
+                    logger.warning(
+                        f"[hermes-otel] config.yaml {where}.events.{ek}: unknown key; ignoring"
+                    )
+            if events:
+                out["events"] = events
+    return out
+
+
+# ── The ``logs:`` block (#266) ──────────────────────────────────────────────
+# The flat ``capture_logs`` / ``log_*`` fields are the dataclass's source of
+# truth (one field, one env var, one schema row). The block is the preferred
+# yaml spelling and is flattened onto them at load time; the flat spellings
+# keep working as aliases.
+LOGS_BLOCK_KEY = "logs"
+_LOGS_BLOCK: Dict[str, Any] = {
+    "capture": "capture_logs",
+    "level": "log_level",
+    "attach_logger": "log_attach_logger",
+    "exclude_loggers": "log_exclude_loggers",
+    "logger_levels": "log_logger_levels",
+    "only_in_turn": "log_only_in_turn",
+    "max_attribute_length": "log_max_attribute_length",
+    "live_min_level": "log_live_min_level",
+    "batch": {
+        "schedule_delay_ms": "log_batch_schedule_delay_ms",
+        "max_queue_size": "log_batch_max_queue_size",
+        "max_export_batch_size": "log_batch_max_export_batch_size",
+        "export_timeout_ms": "log_batch_export_timeout_ms",
+    },
+    "events": {"enabled": "log_events", "content": "log_events_content"},
+}
+# flat field -> ("block", "path") for rendering the effective yaml as a block
+LOGS_FLAT_TO_BLOCK: Dict[str, Tuple[str, ...]] = {}
+for _k, _v in _LOGS_BLOCK.items():
+    if isinstance(_v, dict):
+        for _kk, _vv in _v.items():
+            LOGS_FLAT_TO_BLOCK[_vv] = (_k, _kk)
+    else:
+        LOGS_FLAT_TO_BLOCK[_v] = (_k,)
+LOG_FIELDS: Tuple[str, ...] = tuple(LOGS_FLAT_TO_BLOCK)
+
+
+def _flatten_logs_block(block: Any, flat: Dict[str, Any]) -> Dict[str, Any]:
+    """Turn ``logs: {...}`` into flat keys; the block wins over a flat alias and says so."""
+    out: Dict[str, Any] = {}
+    if not isinstance(block, dict):
+        logger.warning("[hermes-otel] config.yaml 'logs' must be a mapping; ignoring")
+        return out
+
+    def _walk(mapping: Dict[str, Any], spec: Dict[str, Any], prefix: str) -> None:
+        for k, v in mapping.items():
+            target = spec.get(k)
+            if target is None:
+                logger.warning(f"[hermes-otel] config.yaml {prefix}{k}: unknown key; ignoring")
+                continue
+            if isinstance(target, dict):
+                if isinstance(v, dict):
+                    _walk(v, target, f"{prefix}{k}.")
+                else:
+                    logger.warning(
+                        f"[hermes-otel] config.yaml {prefix}{k} must be a mapping; ignoring"
+                    )
+                continue
+            if target in flat and flat[target] != v:
+                logger.warning(
+                    f"[hermes-otel] config.yaml {target}={flat[target]!r} conflicts with "
+                    f"{prefix}{k}={v!r}; the logs: block wins"
+                )
+            out[target] = v
+
+    _walk(block, _LOGS_BLOCK, f"{LOGS_BLOCK_KEY}.")
+    return out
+
+
+def normalize_yaml_data(yaml_data: Dict[str, Any], *, notice: bool = True) -> Dict[str, Any]:
+    """Flatten the ``logs:`` block onto the flat fields (block wins; flat spellings noticed once).
+
+    Shared by :func:`load_config` and the settings report so both see the
+    same flat view of the file.
+    """
+    data = dict(yaml_data or {})
+    flat_log_keys = sorted(k for k in data if k in LOG_FIELDS)
+    if LOGS_BLOCK_KEY in data:
+        data.update(_flatten_logs_block(data.pop(LOGS_BLOCK_KEY), data))
+    if flat_log_keys and notice:
+        logger.info(
+            "[hermes-otel] %s %s the flat spelling; the logs: block is preferred "
+            "(see /configuration/logs#configuration)",
+            ", ".join(flat_log_keys),
+            "uses" if len(flat_log_keys) == 1 else "use",
+        )
+    return data
 
 
 def _coerce_from_yaml(key: str, value: Any) -> Any:
@@ -528,7 +735,7 @@ def _parse_scalar(kind: Optional[str], key: str, value: Any) -> Any:
             return float(value)
         return _parse_float(str(value))
     if kind == "str":
-        if key == "content_capture" and isinstance(value, bool):
+        if key in ("content_capture", "log_events_content") and isinstance(value, bool):
             # YAML 1.1 reads a bare ``off`` as false and ``on`` as true.
             return "off" if not value else "full"
         text = str(value)
@@ -537,8 +744,19 @@ def _parse_scalar(kind: Optional[str], key: str, value: Any) -> Any:
         if key == "content_capture":
             mode = text.strip().lower()
             return mode if mode in CONTENT_CAPTURE_MODES else None
+        if key == "log_events_content":
+            mode = text.strip().lower()
+            return mode if mode in LOG_EVENTS_CONTENT_MODES else None
         norm = _STR_NORMALISERS.get(key)
         return norm(text) if norm else text
+    if kind == "list":
+        # yaml list, or a comma-separated string (the env-var spelling).
+        if isinstance(value, (list, tuple)):
+            items = [str(v).strip() for v in value if v is not None and str(v).strip()]
+            return tuple(items)
+        if isinstance(value, str):
+            return tuple(part.strip() for part in value.split(",") if part.strip())
+        return None
     return None
 
 
@@ -578,6 +796,8 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
     """
     yaml_path = path if path is not None else resolve_config_path()
     yaml_data = _load_yaml(yaml_path) if yaml_path is not None else {}
+
+    yaml_data = normalize_yaml_data(yaml_data)
 
     values: Dict[str, Any] = {}
     for key, raw in yaml_data.items():
@@ -757,6 +977,17 @@ FIELD_DOCS = {
     "capture_logs": "Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs)",
     "log_level": "Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL`",
     "log_attach_logger": "Logger to attach to; `null` = root, `hermes_otel` = the plugin only",
+    "log_exclude_loggers": "Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers`",
+    "log_logger_levels": "Per-logger minimum level, e.g. `{gateway.config: WARNING}`; `logs.logger_levels`",
+    "log_only_in_turn": "Drop records the plugin cannot attribute to a session; `logs.only_in_turn`",
+    "log_max_attribute_length": "Longest exported string attribute on a log record (characters); `logs.max_attribute_length`",
+    "log_batch_schedule_delay_ms": "Log batch processor: export every N ms; `logs.batch.schedule_delay_ms`",
+    "log_batch_max_queue_size": "Log batch processor: queued records before drops; `logs.batch.max_queue_size`",
+    "log_batch_max_export_batch_size": "Log batch processor: records per export request; `logs.batch.max_export_batch_size`",
+    "log_batch_export_timeout_ms": "Log batch processor: per-export timeout; `logs.batch.export_timeout_ms`",
+    "log_live_min_level": "Floor for the dashboard's live Logs tab (`INFO` default; the OTLP path keeps `log_level`); `logs.live_min_level`",
+    "log_events": "Emit structured `hermes.*` / GenAI events from the hooks (Phase 2); `logs.events.enabled`",
+    "log_events_content": "Content on events: `inherit` (follow `content_capture`) / `full` / `preview` / `off`; `logs.events.content`",
     "emit_genai_metrics": "Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`)",
     "metrics_temporality": "Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins",
     "metrics_histogram": "Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it)",
@@ -822,7 +1053,25 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "discovery_prompt",
         ),
     ),
-    ("Logs", ("capture_logs", "log_level", "log_attach_logger")),
+    (
+        "Logs",
+        (
+            "capture_logs",
+            "log_level",
+            "log_attach_logger",
+            "log_exclude_loggers",
+            "log_logger_levels",
+            "log_only_in_turn",
+            "log_max_attribute_length",
+            "log_batch_schedule_delay_ms",
+            "log_batch_max_queue_size",
+            "log_batch_max_export_batch_size",
+            "log_batch_export_timeout_ms",
+            "log_live_min_level",
+            "log_events",
+            "log_events_content",
+        ),
+    ),
     ("Dashboard", ("dashboard_live", "dashboard_live_max_spans", "dashboard_live_retention_hours")),
     ("Host metrics", ("host_metrics", "host_metrics_gpu", "host_metrics_interval_ms")),
     ("Backends", ("backends",)),

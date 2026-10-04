@@ -18,7 +18,13 @@ import pytest
 from hermes_otel.plugin_config import HermesOtelConfig, field_kinds, load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
-_SAMPLE = {"bool": ("false", False), "int": ("42", 42), "float": ("0.5", 0.5), "str": ("x", "x")}
+_SAMPLE = {
+    "bool": ("false", False),
+    "int": ("42", 42),
+    "float": ("0.5", 0.5),
+    "str": ("x", "x"),
+    "list": ("a.b, c", ("a.b", "c")),
+}
 
 
 def _scalar_fields():
@@ -39,6 +45,10 @@ class TestEnvOverrides:
             raw, expected = "exponential", "exponential"
         if name == "content_capture":
             raw, expected = "preview", "preview"
+        if name == "log_live_min_level":
+            raw, expected = "warn", "WARN"
+        if name == "log_events_content":
+            raw, expected = "preview", "preview"
         monkeypatch.setenv(f"HERMES_OTEL_{name.upper()}", raw)
         cfg = load_config(path=tmp_path / "nonexistent.yaml")
         assert getattr(cfg, name) == expected, name
@@ -48,6 +58,7 @@ class TestEnvOverrides:
             "headers",
             "global_tags",
             "resource_attributes",
+            "log_logger_levels",
             "backends",
         }
 
@@ -83,6 +94,10 @@ class TestYamlCoercion:
         if name == "metrics_histogram":
             raw, expected = "exponential", "exponential"
         if name == "content_capture":
+            raw, expected = "preview", "preview"
+        if name == "log_live_min_level":
+            raw, expected = "warn", "WARN"
+        if name == "log_events_content":
             raw, expected = "preview", "preview"
         path = tmp_path / "hermes_otel.yaml"
         path.write_text(f"{name}: {raw}\n")

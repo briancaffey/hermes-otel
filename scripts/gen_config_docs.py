@@ -30,6 +30,7 @@ _TYPE_LABEL = {
     "float": "float",
     "str": "string",
     "map": "map",
+    "list": "list of strings (env: comma-separated)",
     "backends": "list",
 }
 

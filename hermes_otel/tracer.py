@@ -16,7 +16,6 @@ out via one ``PeriodicExportingMetricReader`` per backend that supports them.
 from __future__ import annotations
 
 import atexit
-import logging
 import os
 import threading
 import time
@@ -1387,7 +1386,22 @@ class HermesOTelPlugin:
             )
             return
 
-        processors = log_handler.build_log_processors(backends, self.config.headers)
+        from .plugin_config import content_mode as _content_mode
+
+        rules = log_handler.rules_from_config(self.config)
+        batch = {
+            "schedule_delay_ms": self.config.log_batch_schedule_delay_ms,
+            "max_queue_size": self.config.log_batch_max_queue_size,
+            "max_export_batch_size": self.config.log_batch_max_export_batch_size,
+            "export_timeout_ms": self.config.log_batch_export_timeout_ms,
+        }
+        processors = log_handler.build_log_processors(
+            backends,
+            self.config.headers,
+            batch=batch,
+            rules=rules,
+            content_mode=_content_mode(self.config),
+        )
         live_store = None
         if self._live_active:
             try:
@@ -1411,8 +1425,10 @@ class HermesOTelPlugin:
             )
 
         level = log_handler.resolve_level(self.config.log_level)
-        # The live tail is floored at INFO so Hermes's DEBUG firehose cannot
-        # evict useful lines from the bounded buffer; OTLP keeps ``log_level``.
+        # The live tail has its own floor (``logs.live_min_level``, INFO by
+        # default) so Hermes's DEBUG firehose cannot evict useful lines from
+        # the bounded buffer; OTLP keeps ``log_level``.
+        live_level = max(level, log_handler.resolve_level(self.config.log_live_min_level))
         self._logger_provider = log_handler.install_handler(
             resource=resource,
             processors=processors,
@@ -1421,7 +1437,9 @@ class HermesOTelPlugin:
             context_resolver=self.active_span_for_logs,
             tracker=self.spans,
             live_store=live_store,
-            live_min_level=max(level, logging.INFO),
+            live_min_level=live_level,
+            rules=rules,
+            max_attribute_length=self.config.log_max_attribute_length,
         )
         if self._logger_provider is None:
             return

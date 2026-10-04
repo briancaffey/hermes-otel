@@ -98,7 +98,7 @@ class TestLiveStore:
         finally:
             lg.removeHandler(handler)
         (row,) = store.logs()
-        assert row["level"] == "WARNING"  # OTel WARN mapped back to the store's spelling
+        assert row["level"] == "WARN"  # OTel spelling since store v3 (#266)
         assert row["severity_number"] == 13
         assert row["logger"] == "my.logger" and row["scope"] == "my.logger"
         assert row["body"] == "boom x"

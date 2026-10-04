@@ -33,7 +33,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence
 
 LIVE_DB_FILENAME = "hermes_otel_live.db"
-SCHEMA_VERSION = 2
+SCHEMA_VERSION = 3  # v3 (#266): log rows carry OTel severity spelling, span_id, attributes
 
 _SESSION_KEYS = ("hermes.session_id", "session.id", "session_id")
 _MODEL_KEYS = ("gen_ai.request.model", "llm.model_name", "gen_ai.response.model")
@@ -219,7 +219,17 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
     }
 
 
-_LEVELS = {"debug": 10, "info": 20, "warning": 30, "warn": 30, "error": 40, "critical": 50}
+# Python spellings and the OTel display spellings (WARN, FATAL) the store writes since v3 (#266).
+_LEVELS = {
+    "trace": 5,
+    "debug": 10,
+    "info": 20,
+    "warning": 30,
+    "warn": 30,
+    "error": 40,
+    "critical": 50,
+    "fatal": 50,
+}
 
 
 def _level_no(level: Any) -> int:

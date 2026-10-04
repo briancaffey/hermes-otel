@@ -333,7 +333,18 @@ def _backend_summary(
         "query_fields": query_fields,
         "headers": _display_map(bc.headers, reveal),
         "credentials": credentials,
+        # Per-backend log settings from the entry's ``logs:`` mapping (#266).
+        "log_overrides": _overrides_as_yaml(bc.log_overrides),
     }
+
+
+def _overrides_as_yaml(overrides: Optional[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    if not overrides:
+        return None
+    out: Dict[str, Any] = {}
+    for k, v in overrides.items():
+        out[k] = list(v) if isinstance(v, tuple) else v
+    return out
 
 
 def _any_env_set(names: Tuple[str, ...]) -> bool:
@@ -683,19 +694,37 @@ def effective_yaml(reports: List[Dict[str, Any]], config_path: Optional[Path]) -
     """
     doc: Dict[str, Any] = {}
     sources: Dict[str, str] = {}
+    logs_block: Dict[str, Any] = {}
+    logs_sources: set = set()
     for r in reports:
         key, value = r["key"], r["value"]
+        if r["source"] == "env":
+            src = f"env {r['env_var']}"
+        elif r["source"] == "file":
+            src = "file"
+        else:
+            src = "default"
+        if key in pc.LOGS_FLAT_TO_BLOCK:
+            # The logs: block is the preferred spelling (#266): render the flat
+            # fields under it so the text pastes back as the block.
+            path = pc.LOGS_FLAT_TO_BLOCK[key]
+            node = logs_block
+            for part in path[:-1]:
+                node = node.setdefault(part, {})
+            node[path[-1]] = list(value) if isinstance(value, tuple) else value
+            logs_sources.add(src)
+            continue
         if r["kind"] == "backends":
             if value:
                 doc[key] = [_backend_as_yaml(b) for b in value]
         else:
             doc[key] = value
-        if r["source"] == "env":
-            sources[key] = f"env {r['env_var']}"
-        elif r["source"] == "file":
-            sources[key] = "file"
-        else:
-            sources[key] = "default"
+        sources[key] = src
+    if logs_block:
+        doc[pc.LOGS_BLOCK_KEY] = logs_block
+        sources[pc.LOGS_BLOCK_KEY] = (
+            next(iter(logs_sources)) if len(logs_sources) == 1 else "file, env and defaults"
+        )
     body = _yaml_dump(doc)
     lines = []
     for line in body.splitlines():
@@ -724,6 +753,8 @@ def _backend_as_yaml(b: Dict[str, Any]) -> Dict[str, Any]:
         configured = state.get("configured") if isinstance(state, dict) else state
         if configured != "auto":
             out[signal] = configured == "on"
+    if b.get("log_overrides"):
+        out["logs"] = b["log_overrides"]  # the mapping form implies the signal is on
     if b.get("metrics_temporality", {}).get("source") == "entry":
         out["metrics_temporality"] = b["metrics_temporality"]["value"]
     out.update(b.get("query_fields") or {})
@@ -747,7 +778,9 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     """Everything the Settings tab shows, as one JSON-serialisable dict."""
     path = pc.resolve_config_path()
     exists = bool(path and path.exists())
-    yaml_data = pc._load_yaml(path) if path is not None else {}
+    yaml_data = (
+        pc.normalize_yaml_data(pc._load_yaml(path), notice=False) if path is not None else {}
+    )
     reports, effective = field_reports(yaml_data, reveal=reveal)
 
     raw_text: Optional[str] = None

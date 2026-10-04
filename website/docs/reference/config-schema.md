@@ -45,6 +45,17 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |
+| `log_exclude_loggers` | list of strings (env: comma-separated) | `('opentelemetry', 'urllib3', 'httpx', 'httpcore', 'requests', 'openai', 'asyncio', 'hpack', 'grpc', 'websockets', 'charset_normalizer', 'markdown_it')` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
+| `log_logger_levels` | map | *(unset)* | Per-logger minimum level, e.g. `{gateway.config: WARNING}`; `logs.logger_levels` |
+| `log_only_in_turn` | bool | `false` | Drop records the plugin cannot attribute to a session; `logs.only_in_turn` |
+| `log_max_attribute_length` | int | `4096` | Longest exported string attribute on a log record (characters); `logs.max_attribute_length` |
+| `log_batch_schedule_delay_ms` | int | `1000` | Log batch processor: export every N ms; `logs.batch.schedule_delay_ms` |
+| `log_batch_max_queue_size` | int | `2048` | Log batch processor: queued records before drops; `logs.batch.max_queue_size` |
+| `log_batch_max_export_batch_size` | int | `512` | Log batch processor: records per export request; `logs.batch.max_export_batch_size` |
+| `log_batch_export_timeout_ms` | int | `30000` | Log batch processor: per-export timeout; `logs.batch.export_timeout_ms` |
+| `log_live_min_level` | string | `"INFO"` | Floor for the dashboard's live Logs tab (`INFO` default; the OTLP path keeps `log_level`); `logs.live_min_level` |
+| `log_events` | bool | `false` | Emit structured `hermes.*` / GenAI events from the hooks (Phase 2); `logs.events.enabled` |
+| `log_events_content` | string | `"inherit"` | Content on events: `inherit` (follow `content_capture`) / `full` / `preview` / `off`; `logs.events.content` |
 | `emit_genai_metrics` | bool | `true` | Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`) |
 | `metrics_temporality` | string \| null | *(unset)* | Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins |
 | `metrics_histogram` | string | `"explicit"` | Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it) |

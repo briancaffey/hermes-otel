@@ -27,12 +27,14 @@ attribute before adding a new one.
 
 from __future__ import annotations
 
+import dataclasses
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
 from .helpers import derive_signal_endpoint
+from .plugin_config import DEFAULT_LOG_EXCLUDE_LOGGERS, HermesOtelConfig
 from .redaction import redact_attributes, redact_text
 
 try:
@@ -68,48 +70,237 @@ _HANDLER_MARKER = "_hermes_otel_log_handler"
 # Logger level before install_handler lowered it, stamped on the handler.
 _PREVIOUS_LEVEL_ATTR = "_hermes_otel_previous_level"
 
-# Loggers whose records we refuse to forward to the OTLP logs pipeline.
-# Two reasons each of these is on the list:
-#
-#   opentelemetry.*  — The SDK emits warnings via stdlib logging on export
-#                      failure. Forwarding those back through the exporter
-#                      would fill the queue with more "export failed"
-#                      records, fail again, etc.
-#
-#   urllib3.*, httpx, httpcore, requests — The OTLP HTTP exporter uses
-#                      these libraries internally. When an app has HTTP
-#                      client debug logging turned on, EVERY outbound log
-#                      export also produces a DEBUG line like
-#                      ``http://localhost:4318 "POST /v1/logs HTTP/1.1" 200``
-#                      which then gets captured, batched, and exported —
-#                      producing the next DEBUG line, and so on. The loop
-#                      is async-bounded (no infinite recursion) but it
-#                      crowds out real application logs in Loki.
-#
-# If you need to debug the OTel exporter itself, temporarily scope the log
-# handler to a single logger via ``log_attach_logger: hermes_otel`` so the
-# full root-logger firehose is out of scope.
-_EXCLUDED_LOGGER_PREFIXES = (
-    "opentelemetry",
-    "urllib3",
-    "httpx",
-    "httpcore",
-    "requests",
-)
+# Loggers whose records we never forward, by default: the OTel SDK (an export
+# failure logged and re-exported would feed the next export), the HTTP client
+# stack the exporter uses (every outbound export would log a DEBUG line that
+# gets captured, batched and exported, producing the next one), and the
+# third-party loggers Hermes itself pins at WARNING. ``logs.exclude_loggers``
+# replaces this list (#266); the defaults live in plugin_config so the schema
+# docs show them.
+_EXCLUDED_LOGGER_PREFIXES = DEFAULT_LOG_EXCLUDE_LOGGERS
+
+_SEVERITY_FLOOR = {  # Python level -> lowest OTel severity number of that band
+    logging.CRITICAL: 21,
+    logging.ERROR: 17,
+    logging.WARNING: 13,
+    logging.INFO: 9,
+    logging.DEBUG: 5,
+}
 
 
-class _ExcludeOTelInternal(logging.Filter):
-    """Drop records emitted by OTel SDK internals.
+def _python_to_severity(level: int) -> int:
+    """Python level number -> the lowest OTel severity number of that band."""
+    for py_level, sev in _SEVERITY_FLOOR.items():
+        if level >= py_level:
+            return sev
+    return 1
 
-    Prevents export-failure warnings from the logs pipeline from re-entering
-    that same pipeline. Users who want to see SDK internal warnings can
-    still get them via the plugin's stderr handler (``hermes_otel`` logger)
-    or stdout.
+
+def _level_to_severity(name: Any, default: int) -> int:
+    """``"WARN"`` / ``"WARNING"`` / ``30`` -> OTel severity number; *default* when unknown."""
+    if name is None:
+        return default
+    text = str(name).strip().upper()
+    if not text:
+        return default
+    text = {"WARN": "WARNING", "FATAL": "CRITICAL", "TRACE": "DEBUG"}.get(text, text)
+    level = logging.getLevelName(text) if not text.isdigit() else int(text)
+    if not isinstance(level, int):
+        return default
+    return _python_to_severity(level)
+
+
+@dataclasses.dataclass(frozen=True)
+class LogRules:
+    """What one sink accepts. Built from the ``logs:`` block, then narrowed per backend.
+
+    ``min_severity`` is an OTel severity number (INFO = 9); ``logger_levels``
+    maps a logger name (exact or prefix) to the severity it must reach;
+    ``exclude_prefixes`` are logger-name prefixes dropped outright;
+    ``only_in_turn`` drops records the enricher could not attribute to a
+    session. ``events_enabled`` / ``events_content`` are carried for the
+    events pipeline (#267) and validated here so a weaker per-backend value
+    is refused at load time.
     """
 
+    min_severity: int = 1
+    exclude_prefixes: Tuple[str, ...] = ()
+    logger_levels: Tuple[Tuple[str, int], ...] = ()
+    only_in_turn: bool = False
+    events_enabled: bool = False
+    events_content: str = "inherit"
+
+    def accepts(self, logger_name: Optional[str], severity: Optional[int], attrs: Any) -> bool:
+        name = logger_name or ""
+        if any(
+            name == p or name.startswith(p + ".") or name.startswith(p)
+            for p in self.exclude_prefixes
+        ):
+            return False
+        sev = severity if isinstance(severity, int) else 9
+        floor = self.min_severity
+        for prefix, level_sev in self.logger_levels:
+            if name == prefix or name.startswith(prefix + "."):
+                floor = max(floor, level_sev)
+                break
+        if sev < floor:
+            return False
+        if self.only_in_turn:
+            try:
+                if not (attrs or {}).get(SESSION_ID_ATTRIBUTE):
+                    return False
+            except Exception:
+                return False
+        return True
+
+
+_CONTENT_RANK = {"off": 0, "preview": 1, "full": 2}
+
+
+def rules_from_config(cfg: HermesOtelConfig, *, min_level: Optional[int] = None) -> LogRules:
+    """The global rules from the ``logs:`` block (*min_level* overrides ``log_level``)."""
+    level = min_level if min_level is not None else resolve_level(cfg.log_level)
+    return LogRules(
+        min_severity=_python_to_severity(level),
+        exclude_prefixes=tuple(cfg.log_exclude_loggers or ()),
+        logger_levels=tuple(
+            (str(k), _level_to_severity(v, 1)) for k, v in (cfg.log_logger_levels or {}).items()
+        ),
+        only_in_turn=bool(cfg.log_only_in_turn),
+        events_enabled=bool(cfg.log_events),
+        events_content=str(cfg.log_events_content or "inherit"),
+    )
+
+
+def narrow_rules(
+    base: LogRules, overrides: Optional[Dict[str, Any]], *, where: str, content_mode: str
+) -> LogRules:
+    """Apply a backend's ``logs:`` mapping to *base*: stricter only, weaker warns and is refused.
+
+    *content_mode* is the effective ``content_capture`` so ``inherit`` can be
+    compared; a backend may narrow content (``full`` -> ``preview`` -> ``off``)
+    but never widen it.
+    """
+    if not overrides:
+        return base
+    changes: Dict[str, Any] = {}
+    level = overrides.get("level")
+    if level is not None:
+        sev = _level_to_severity(level, base.min_severity)
+        if sev < base.min_severity:
+            logger.warning(
+                f"[hermes-otel] {where}.logs.level={level} is below the global level; "
+                "per-backend settings can only be stricter, keeping the global level"
+            )
+        else:
+            changes["min_severity"] = sev
+    extra = overrides.get("exclude_loggers")
+    if extra:
+        changes["exclude_prefixes"] = tuple(base.exclude_prefixes) + tuple(
+            p for p in extra if p not in base.exclude_prefixes
+        )
+    levels = overrides.get("logger_levels")
+    if levels:
+        merged = dict(base.logger_levels)
+        for name, value in levels.items():
+            sev = _level_to_severity(value, 1)
+            merged[name] = max(sev, merged.get(name, 1))
+        changes["logger_levels"] = tuple(merged.items())
+    if overrides.get("only_in_turn") is True:
+        changes["only_in_turn"] = True
+    elif overrides.get("only_in_turn") is False and base.only_in_turn:
+        logger.warning(
+            f"[hermes-otel] {where}.logs.only_in_turn=false is weaker than the global setting; ignoring"
+        )
+    events = overrides.get("events") or {}
+    if events.get("enabled") is False:
+        changes["events_enabled"] = False
+    elif events.get("enabled") is True and not base.events_enabled:
+        logger.warning(
+            f"[hermes-otel] {where}.logs.events.enabled=true needs logs.events.enabled: true globally; ignoring"
+        )
+    content = events.get("content")
+    if content:
+        base_mode = content_mode if base.events_content == "inherit" else base.events_content
+        want = content_mode if content == "inherit" else content
+        if _CONTENT_RANK.get(want, 2) > _CONTENT_RANK.get(base_mode, 2):
+            logger.warning(
+                f"[hermes-otel] {where}.logs.events.content={content} is wider than the global "
+                f"{base_mode}; per-backend content can only be narrower, keeping {base_mode}"
+            )
+        else:
+            changes["events_content"] = content
+    return dataclasses.replace(base, **changes) if changes else base
+
+
+class _LoggerRulesFilter(logging.Filter):
+    """Handler-side filter: drop excluded loggers and below-level records before translation."""
+
+    def __init__(self, rules: Optional[LogRules] = None) -> None:
+        super().__init__()
+        self._rules = rules or LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES)
+
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
+        rules = self._rules
         name = record.name or ""
-        return not any(name.startswith(p) for p in _EXCLUDED_LOGGER_PREFIXES)
+        if any(
+            name == p or name.startswith(p + ".") or name.startswith(p)
+            for p in rules.exclude_prefixes
+        ):
+            return False
+        for prefix, level_sev in rules.logger_levels:
+            if name == prefix or name.startswith(prefix + "."):
+                return _python_to_severity(record.levelno) >= level_sev
+        return True
+
+
+class _ExcludeOTelInternal(_LoggerRulesFilter):
+    """The default exclusions only (kept for callers that used this name)."""
+
+    def __init__(self) -> None:
+        super().__init__(LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES))
+
+
+class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
+    """A backend's own rules in front of its batch processor (#266).
+
+    Records are shared objects on the provider, so this filter only decides
+    whether the inner processor sees a record; it never mutates one. (Per-
+    backend content narrowing for events, #267, copies the record first.)
+    """
+
+    def __init__(self, inner: Any, rules: LogRules, backend_name: str = "") -> None:
+        self._inner = inner
+        self._rules = rules
+        self._name = backend_name
+
+    @property
+    def rules(self) -> LogRules:
+        return self._rules
+
+    @property
+    def inner(self) -> Any:
+        return self._inner
+
+    def on_emit(self, log_record: Any) -> None:
+        try:
+            rec = getattr(log_record, "log_record", log_record)
+            scope = getattr(log_record, "instrumentation_scope", None)
+            severity = getattr(rec, "severity_number", None)
+            severity_value = getattr(severity, "value", severity)
+            if not self._rules.accepts(
+                getattr(scope, "name", None), severity_value, getattr(rec, "attributes", None)
+            ):
+                return
+        except Exception:  # pragma: no cover — never block a record on a filter bug
+            pass
+        self._inner.on_emit(log_record)
+
+    def shutdown(self) -> None:
+        self._inner.shutdown()
+
+    def force_flush(self, timeout_millis: int = 30000) -> bool:
+        return self._inner.force_flush(timeout_millis)
 
 
 # ── Endpoint derivation ─────────────────────────────────────────────────────
@@ -239,10 +430,12 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
         resolve: Optional[ContextResolver] = None,
         tracker: Any = None,
         redact: bool = True,
+        max_attribute_length: Optional[int] = None,
     ) -> None:
         self._resolve = resolve
         self._tracker = tracker
         self._redact = redact
+        self._max_len = int(max_attribute_length) if max_attribute_length else 0
 
     # ── helpers ────────────────────────────────────────────────────────────
     def _span_for_session(self, session_id: str):
@@ -349,6 +542,12 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
                     if redacted != body:
                         rec.body = redacted
                 redact_attributes(attrs)
+            # 5. attribute length cap (``logs.max_attribute_length``), after redaction.
+            if self._max_len and attrs is not None:
+                for key in list(attrs.keys()):
+                    value = attrs[key]
+                    if isinstance(value, str) and len(value) > self._max_len:
+                        attrs[key] = value[: self._max_len] + "…"
         except Exception:  # pragma: no cover — logging must never raise
             pass
 
@@ -367,17 +566,14 @@ SpanContextStamper = HermesLogProcessor
 
 # Hermes's chattiest housekeeping lines, dropped from the live tail regardless
 # of level: they fire on every gateway boot/refresh and drown the agent's own
-# activity in the dashboard. Phase 3 (#266) makes both lists configurable.
+# activity in the dashboard. Loggers and levels are configurable through the
+# ``logs:`` block (#266); these substrings stay built in.
 _LIVE_NOISY_LOGGERS = ("gateway.config",)
 _LIVE_NOISY_SUBSTRINGS = (
     "is_connected returned False",
     "available but not configured",
     "has no subscriptions",
 )
-
-# OTel severity text -> the live store's Python-style level names, until
-# Phase 3 (#266) moves the store to OTel spelling in one migration.
-_SEVERITY_TO_LEVEL = {"WARN": "WARNING", "FATAL": "CRITICAL"}
 _INFO_SEVERITY_NUMBER = 9  # OTel INFO = 9..12
 
 
@@ -415,29 +611,37 @@ class LiveLogProcessor(LogRecordProcessor):  # type: ignore[misc]
     bounded buffer) and skips the housekeeping noise above.
     """
 
-    def __init__(self, store: Any, min_severity_number: int = _INFO_SEVERITY_NUMBER) -> None:
+    def __init__(
+        self,
+        store: Any,
+        min_severity_number: int = _INFO_SEVERITY_NUMBER,
+        rules: Optional[LogRules] = None,
+    ) -> None:
         self._store = store
-        self._min_severity = int(min_severity_number)
+        self._rules = (
+            rules if rules is not None else LogRules(min_severity=int(min_severity_number))
+        )
 
     def on_emit(self, log_record: Any) -> None:
         try:
             rec = getattr(log_record, "log_record", log_record)
             severity = getattr(rec, "severity_number", None)
             severity_value = getattr(severity, "value", severity)
-            if isinstance(severity_value, int) and severity_value < self._min_severity:
-                return
             scope = getattr(log_record, "instrumentation_scope", None)
             logger_name = getattr(scope, "name", None)
             body = getattr(rec, "body", None)
+            attributes = getattr(rec, "attributes", None)
+            if not self._rules.accepts(logger_name, severity_value, attributes):
+                return
             if _is_live_noise(logger_name, body):
                 return
-            attrs = dict(getattr(rec, "attributes", None) or {})
+            attrs = dict(attributes or {})
             severity_text = str(getattr(rec, "severity_text", None) or "INFO")
             trace_id = getattr(rec, "trace_id", 0) or 0
             span_id = getattr(rec, "span_id", 0) or 0
             self._store.add_log(
                 {
-                    "level": _SEVERITY_TO_LEVEL.get(severity_text, severity_text),
+                    "level": severity_text,  # OTel spelling (WARN, FATAL) since store v3
                     "severity_number": severity_value if isinstance(severity_value, int) else None,
                     "logger": logger_name,
                     "scope": logger_name,
@@ -465,6 +669,10 @@ class LiveLogProcessor(LogRecordProcessor):  # type: ignore[misc]
 def build_log_processors(
     backends: List[_ResolvedBackend],
     extra_headers: Optional[Dict[str, str]] = None,
+    *,
+    batch: Optional[Dict[str, int]] = None,
+    rules: Optional[LogRules] = None,
+    content_mode: str = "full",
 ) -> List[Tuple[Any, _ResolvedBackend]]:
     """Build one :class:`BatchLogRecordProcessor` per log-capable backend.
 
@@ -472,9 +680,14 @@ def build_log_processors(
     logs are silently skipped. Any per-backend exporter init failure is
     logged and the other backends still proceed — matches the fan-out
     semantics of :meth:`HermesOTelPlugin._init_otlp_pipeline`.
+
+    *batch* carries the ``logs.batch.*`` knobs; *rules* the global
+    :class:`LogRules`, which each backend's own ``logs:`` mapping may narrow
+    (the processor is then wrapped in a :class:`BackendLogFilter`).
     """
     if not _LOGS_AVAILABLE:
         return []
+    batch = batch or {}
 
     processors: List[Tuple[Any, _ResolvedBackend]] = []
     for b in backends:
@@ -490,7 +703,22 @@ def build_log_processors(
             exporter = _LoggingLogExporter(
                 OTLPLogExporter(endpoint=endpoint, headers=merged or None), b.display_name
             )
-            processors.append((BatchLogRecordProcessor(exporter), b))
+            processor: Any = BatchLogRecordProcessor(
+                exporter,
+                schedule_delay_millis=batch.get("schedule_delay_ms"),
+                max_queue_size=batch.get("max_queue_size"),
+                max_export_batch_size=batch.get("max_export_batch_size"),
+                export_timeout_millis=batch.get("export_timeout_ms"),
+            )
+            if rules is not None:
+                backend_rules = narrow_rules(
+                    rules,
+                    b.log_overrides,
+                    where=f"backends[{b.display_name}]",
+                    content_mode=content_mode,
+                )
+                processor = BackendLogFilter(processor, backend_rules, b.display_name)
+            processors.append((processor, b))
         except Exception as e:
             logger.error(f"[hermes-otel] ✗ {b.display_name} logs init failed: {e}")
     return processors
@@ -509,6 +737,9 @@ def install_handler(
     live_store: Any = None,
     live_min_level: int = logging.INFO,
     redact: bool = True,
+    rules: Optional[LogRules] = None,
+    live_rules: Optional[LogRules] = None,
+    max_attribute_length: Optional[int] = None,
 ) -> Optional["LoggerProvider"]:
     """Wire a :class:`LoggerProvider` + :class:`LoggingHandler` onto Python logging.
 
@@ -533,6 +764,12 @@ def install_handler(
             enriched record into it (the dashboard Logs tab), floored at
             ``live_min_level``.
         redact: Redact secrets from bodies and attributes (default on).
+        rules: Global :class:`LogRules` (excluded loggers, per-logger levels)
+            applied at the handler, before translation. Defaults to the
+            built-in exclusions.
+        live_rules: Rules for the live sink; defaults to *rules* floored at
+            ``live_min_level``.
+        max_attribute_length: Cap on exported string attributes.
 
     Returns the ``LoggerProvider`` so the tracer can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are
@@ -543,17 +780,25 @@ def install_handler(
 
     provider = LoggerProvider(resource=resource)
     provider.add_log_record_processor(
-        HermesLogProcessor(resolve=context_resolver, tracker=tracker, redact=redact)
+        HermesLogProcessor(
+            resolve=context_resolver,
+            tracker=tracker,
+            redact=redact,
+            max_attribute_length=max_attribute_length,
+        )
     )
     if live_store is not None:
-        provider.add_log_record_processor(
-            LiveLogProcessor(live_store, min_severity_number=_python_to_severity(live_min_level))
-        )
+        if live_rules is None:
+            base = rules or LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES)
+            live_rules = dataclasses.replace(
+                base, min_severity=max(base.min_severity, _python_to_severity(live_min_level))
+            )
+        provider.add_log_record_processor(LiveLogProcessor(live_store, rules=live_rules))
     for proc, _backend in processors:
         provider.add_log_record_processor(proc)
 
     handler = LoggingHandler(level=level, logger_provider=provider)
-    handler.addFilter(_ExcludeOTelInternal())
+    handler.addFilter(_LoggerRulesFilter(rules))
     setattr(handler, _HANDLER_MARKER, True)
 
     target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
@@ -574,21 +819,6 @@ def install_handler(
         f"live={'yes' if live_store is not None else 'no'}"
     )
     return provider
-
-
-def _python_to_severity(level: int) -> int:
-    """Python level number -> the lowest OTel severity number of that band."""
-    if level >= logging.CRITICAL:
-        return 21
-    if level >= logging.ERROR:
-        return 17
-    if level >= logging.WARNING:
-        return 13
-    if level >= logging.INFO:
-        return 9
-    if level >= logging.DEBUG:
-        return 5
-    return 1
 
 
 def _remove_prior_handlers(target: logging.Logger) -> None:
