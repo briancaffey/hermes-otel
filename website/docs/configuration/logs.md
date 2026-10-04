@@ -68,6 +68,39 @@ The live store and every backend use the OTel display spellings (`WARN`, `FATAL`
 
 The plugin bridges stdlib `logging` with the OTel SDK's `LoggingHandler`, which opentelemetry-python deprecated in 1.40 in favour of `opentelemetry-instrumentation-logging`. The SDK handler is still the right tool here (it attaches to one chosen logger and feeds one provider that several sinks share), and a test pins its import path. When the SDK removes it, the fallback is the instrumentation package's handler behind the same `install_handler` seam; nothing in this page changes.
 
+## Events
+
+Besides forwarding Python log records, the plugin can emit **structured events** from the hooks: one OTel log record per occurrence with an `event_name`, emitted through `Logger.emit` on the plugin's own scope (`hermes_otel`, version = the plugin version). Events never go through the stdlib bridge, so they work with `logs.capture: false` as long as a log-capable backend or the live store exists. They carry the turn's trace context (attribution `context`), the session attributes, the same attribute names as the span they mirror, and they are redacted like every other record. The metrics stay the aggregate; an event is the per-occurrence record, the way Claude Code and Gemini CLI split the two.
+
+**Off by default.** Turn them on with:
+
+```yaml
+logs:
+  events:
+    enabled: true
+    content: inherit    # inherit (follow content_capture) | full | preview | off
+```
+
+`content` governs only the content attributes (`gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `gen_ai.tool.call.arguments`, `gen_ai.tool.call.result`, `input.value`, `output.value`, the sub-agent goal and summary): `full` keeps what the span has, `preview` clips to `preview_max_chars`, `off` drops them. Metadata (ids, counts, statuses, durations) always travels. Under `content_capture: off` the spans never captured content, so an event has none whatever `content` says.
+
+Per backend, `logs: {events: {enabled: false}}` drops the events for that backend only, and `logs: {events: {content: off}}` (or `preview`) narrows the content for that backend only, through a copy of the record; the other backends keep what the global setting allows. Narrower only: a wider per-backend value warns and is ignored.
+
+| Event | Emitted from | Severity | Attributes |
+|---|---|---|---|
+| `hermes.turn.start` | pre_llm_call | INFO | `hermes.session_id`, `gen_ai.conversation.id`, `hermes.platform`, `gen_ai.request.model`, `gen_ai.provider.name`, `hermes.turn.number` |
+| `hermes.turn.end` | on_session_end | INFO; WARN when interrupted; ERROR when failed | `hermes.turn.number`, `hermes.turn.final_status`, `hermes.turn.exit_reason`, `hermes.turn.api_call_count`, `hermes.turn.tool_count`, `hermes.turn.tools`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.usage.cache_read.input_tokens`, `gen_ai.usage.reasoning.output_tokens`, `hermes.cost.usage`, `hermes.turn.duration_s`, `error.type` |
+| `hermes.tool.call` | post_tool_call | INFO; WARN when blocked or timed out; ERROR on error | `gen_ai.tool.name`, `gen_ai.tool.call.id`, `gen_ai.tool.type`, `hermes.tool.outcome`, `hermes.tool.decided_by`, `hermes.tool.duration_s`, `gen_ai.tool.call.arguments (content)`, `gen_ai.tool.call.result (content)` |
+| `hermes.approval.decision` | post_approval_response | INFO; WARN when denied or timed out | `hermes.approval.choice`, `hermes.approval.granted`, `hermes.approval.decided_by`, `hermes.approval.surface`, `hermes.approval.timed_out`, `hermes.approval.duration_ms`, `gen_ai.tool.name` |
+| `hermes.api.error` | api_request_error | ERROR; WARN when retryable | `error.type`, `http.response.status_code`, `hermes.retryable`, `hermes.retry.count`, `gen_ai.request.model`, `gen_ai.provider.name`, `exception.type`, `exception.message` |
+| `hermes.subagent.start` | subagent_start | INFO | `hermes.subagent.role`, `hermes.subagent.child_session_id`, `hermes.subagent.parent_session_id`, `hermes.subagent.goal (content)` |
+| `hermes.subagent.stop` | subagent_stop | INFO; ERROR when the sub-agent reports failure | `hermes.subagent.role`, `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.child_session_id`, `hermes.subagent.parent_session_id`, `hermes.subagent.summary (content)` |
+| `hermes.session.finalize` | on_session_finalize / on_session_reset | INFO | `hermes.session.turn_count`, `hermes.session.duration_s`, `hermes.session.finalize_reason / hermes.session.reset_reason` |
+| `gen_ai.client.inference.operation.details` | post_api_request | INFO | `gen_ai.operation.name`, `gen_ai.provider.name`, `gen_ai.request.model`, `gen_ai.response.model`, `gen_ai.response.id`, `gen_ai.response.finish_reasons`, `gen_ai.usage.input_tokens`, `gen_ai.usage.output_tokens`, `gen_ai.conversation.id`, `gen_ai.input.messages (content)`, `gen_ai.output.messages (content)`, `gen_ai.system_instructions (content)` |
+
+Attributes marked *(content)* are the ones `content` governs. `hermes.tool.duration_s` and `hermes.turn.duration_s` exist only on events (the spans carry `*_ms`). The `gen_ai.client.inference.operation.details` event is the GenAI semantic convention's inference record: request attributes from the api span's start, response attributes from `post_api_request`, and content under the semconv names; the OpenInference-only names (`llm.*`, `input.value` / `output.value`) stay on the span.
+
+In the dashboard's Logs tab an event shows its name as a badge, and the **events only** filter (`?events=1`) hides plain log lines. The skill CLI and the backend adapters see events as log records with an `event_name` field.
+
 ## What correlation looks like
 
 When `capture_logs` is on and hermes-agent code calls:

@@ -93,6 +93,40 @@ _PREVIEW_LIMITS = {
 }
 
 
+def _emit_event(
+    tracer,
+    name: str,
+    body: str,
+    attributes: Dict[str, Any],
+    *,
+    severity: str = "INFO",
+    session_id: Optional[str] = None,
+    span: Any = None,
+    content: bool = True,
+) -> None:
+    """Emit a structured event (#267) with the content attributes gated by
+    ``logs.events.content`` (``inherit`` follows ``content_capture``).
+
+    *content=False* drops the content attributes outright (turn-level
+    events never repeat prompts). Cheap no-op when events are off.
+    """
+    if not getattr(tracer.config, "log_events", False):
+        return
+    try:
+        from ..log_events import apply_content_mode, resolve_content_mode
+        from ..plugin_config import content_mode
+
+        mode = (
+            "off"
+            if not content
+            else resolve_content_mode(tracer.config.log_events_content, content_mode(tracer.config))
+        )
+        attrs = apply_content_mode(attributes, mode, tracer.config.preview_max_chars)
+        tracer.emit_event(name, body, attrs, severity=severity, session_id=session_id, span=span)
+    except Exception as exc:  # never into the agent loop
+        debug_log(f"event {name} skipped: {type(exc).__name__}: {exc}")
+
+
 def _preview(value: Any, max_chars: int) -> Optional[str]:
     """Apply the configured preview policy: capture toggle + clip_preview."""
     tracer = get_tracer()

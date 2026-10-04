@@ -826,6 +826,7 @@ class LiveStore:
         before_ns: Optional[int] = None,
         span_id: Optional[str] = None,
         event_name: Optional[str] = None,
+        events_only: bool = False,
     ) -> List[Dict[str, Any]]:
         self.flush()
         where = ["kind='log'"]
@@ -839,6 +840,8 @@ class LiveStore:
         if event_name:
             where.append("json_extract(data, '$.event_name') = ?")
             args.append(event_name)
+        elif events_only:
+            where.append("json_extract(data, '$.event_name') IS NOT NULL")
         if session:
             where.append("session_id = ?")
             args.append(session)

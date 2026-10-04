@@ -6,6 +6,7 @@ import json
 import time
 from typing import Any, Dict, Optional
 
+from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import (
     FAILURE_OUTCOMES,
@@ -19,6 +20,7 @@ from ..helpers import (
     truncate_string,
 )
 from ._common import (
+    _emit_event,
     _fail_open,
     _mark_truncated,
     _preview_marked,
@@ -221,6 +223,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
 
     start_time = tracer.sessions.pop_tool_start(key)
     ended_at = time.perf_counter()
+    duration_ms: Optional[float] = None
     if start_time:
         duration_ms = (ended_at - start_time) * 1000
         tracer.record_metric(
@@ -316,6 +319,25 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.
     status = "error" if has_error else "ok"
+    tool_span = tracer.spans.get_span(key)
+    _emit_event(
+        tracer,
+        EV.TOOL_CALL,
+        f"tool {tool_name} {outcome}",
+        {
+            **{k: v for k, v in attributes.items() if k.startswith(EV.TOOL_PREFIXES)},
+            EV.ATTR_TOOL_DURATION_S: (
+                round(duration_ms / 1000.0, 3) if duration_ms is not None else None
+            ),
+        },
+        severity=(
+            "ERROR"
+            if outcome == "error"
+            else ("WARN" if outcome in ("blocked", "timeout") else "INFO")
+        ),
+        session_id=session_id,
+        span=tool_span,
+    )
     tracer.end_span(
         key, attributes=attributes, status=status, error_message=error_msg if has_error else None
     )

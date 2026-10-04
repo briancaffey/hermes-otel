@@ -1374,14 +1374,16 @@ class HermesOTelPlugin:
         store alone still gets the records. Failures in individual backend
         exporters are logged but do not block pipeline init.
         """
-        if not self.config.capture_logs:
+        capture = bool(self.config.capture_logs)
+        events = bool(self.config.log_events)
+        if not (capture or events):
             return
 
         from . import log_handler
 
         if not log_handler._LOGS_AVAILABLE:
             logger.warning(
-                "[hermes-otel] ⚠ capture_logs=true but opentelemetry.sdk._logs "
+                "[hermes-otel] ⚠ logs.capture / logs.events are on but opentelemetry.sdk._logs "
                 "is unavailable; upgrade opentelemetry-sdk to enable logs"
             )
             return
@@ -1401,6 +1403,7 @@ class HermesOTelPlugin:
             batch=batch,
             rules=rules,
             content_mode=_content_mode(self.config),
+            preview_chars=self.config.preview_max_chars,
         )
         live_store = None
         if self._live_active:
@@ -1412,9 +1415,10 @@ class HermesOTelPlugin:
                 live_store = None
         if not processors:
             backend_types = ", ".join(b.type for b in backends) or "none"
+            what = "logs.capture" if capture else "logs.events"
             if live_store is None:
                 logger.warning(
-                    f"[hermes-otel] ⚠ capture_logs=true but no configured backend "
+                    f"[hermes-otel] ⚠ {what} is on but no configured backend "
                     f"accepts OTLP logs ({backend_types}); add a signoz/otlp backend "
                     f"or set logs: true on an existing entry"
                 )
@@ -1440,18 +1444,92 @@ class HermesOTelPlugin:
             live_min_level=live_level,
             rules=rules,
             max_attribute_length=self.config.log_max_attribute_length,
+            attach_handler=capture,
         )
         if self._logger_provider is None:
             return
 
         self._log_processors = [p for p, _b in processors]
         if processors:
-            target = self.config.log_attach_logger or "root"
-            logger.info(
-                f"[hermes-otel] ✓ Logs → {len(processors)} backend(s) "
-                f"(attached to {target}, level={self.config.log_level.upper()}"
-                f"{', live store' if live_store is not None else ''})"
+            sinks = (
+                f"{len(processors)} backend(s){', live store' if live_store is not None else ''}"
             )
+            if capture:
+                target = self.config.log_attach_logger or "root"
+                logger.info(
+                    f"[hermes-otel] ✓ Logs → {sinks} "
+                    f"(attached to {target}, level={self.config.log_level.upper()}"
+                    f"{', events on' if events else ''})"
+                )
+            else:
+                logger.info(f"[hermes-otel] ✓ Log events → {sinks} (stdlib logs not captured)")
+
+    def emit_event(
+        self,
+        name: str,
+        body: str,
+        attributes: Dict[str, Any],
+        *,
+        severity: str = "INFO",
+        session_id: Optional[str] = None,
+        span: Any = None,
+    ) -> bool:
+        """Emit one structured event (#267) on the plugin's own log scope.
+
+        No-op unless ``logs.events.enabled`` is on and a log pipeline exists.
+        The record carries the trace context of *span* (default: the session's
+        innermost open span) so the enricher attributes it as ``context``,
+        plus the session attributes; it is then redacted like any record.
+        Never raises.
+        """
+        if not self.config.log_events or self._logger_provider is None:
+            return False
+        try:
+            from opentelemetry.trace import set_span_in_context
+
+            from . import log_events as _ev
+
+            attrs = _ev.strip_none(attributes)
+            if session_id:
+                attrs.setdefault("hermes.session_id", str(session_id))
+                attrs.setdefault("gen_ai.conversation.id", str(session_id))
+                if span is None:
+                    span = self.spans.get_current_parent(
+                        str(session_id)
+                    ) or self.spans.get_session_root(str(session_id))
+            context = set_span_in_context(span) if span is not None else None
+            otel_logger = self._logger_provider.get_logger(_ev.SCOPE_NAME, self.plugin_version)
+            from opentelemetry._logs import SeverityNumber
+
+            otel_logger.emit(
+                event_name=name,
+                body=body,
+                attributes=attrs,
+                severity_text=severity,
+                severity_number=SeverityNumber(_ev.severity_number(severity)),
+                context=context,
+            )
+            return True
+        except Exception as exc:  # telemetry must never raise into the agent
+            debug_log(f"event {name} not emitted: {type(exc).__name__}: {exc}")
+            return False
+
+    @property
+    def plugin_version(self) -> Optional[str]:
+        """The plugin's own version (``plugin.yaml``), for the events scope."""
+        cached = getattr(self, "_plugin_version_cache", None)
+        if cached is not None:
+            return cached or None
+        try:
+            import re as _re
+            from pathlib import Path as _Path
+
+            text = (_Path(__file__).resolve().parent / "plugin.yaml").read_text(encoding="utf-8")
+            m = _re.search(r"^version:\s*[\"']?([^\"'\n]+)", text, _re.M)
+            self._plugin_version_cache = m.group(1).strip() if m else ""
+        except Exception:
+            self._plugin_version_cache = ""
+        return self._plugin_version_cache or None
 
     def active_span_for_logs(self) -> Optional[Tuple[str, Any]]:
         """``(session_id, span)`` a log record written now should be correlated with.

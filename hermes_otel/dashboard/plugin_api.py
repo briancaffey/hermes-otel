@@ -309,6 +309,7 @@ def live_logs_search(
     lookback_hours: float = Query(1.0, gt=0, le=8760),
     limit: int = Query(300, ge=1, le=2000),
     before_ns: int = Query(0, ge=0),
+    events_only: bool = Query(False, description="Only rows with an event_name (logs.events)"),
 ) -> Dict[str, Any]:
     store = _get_live_store()
     if store is None:
@@ -324,6 +325,7 @@ def live_logs_search(
         end_ns=end_ns,
         limit=limit + LOG_PAGE_SLACK,
         before_ns=before_ns or None,
+        events_only=events_only,
     )
     return {"live": True, **log_page(rows, limit)}
 

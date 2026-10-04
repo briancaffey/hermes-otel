@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any, Dict
 
+from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import classify_approval_choice, clip_joined, truncate_string
-from ._common import _fail_open, _preview_for, _resolve_session_id, get_tracer
+from ._common import _emit_event, _fail_open, _preview_for, _resolve_session_id, get_tracer
 from .attributes import _gen_ai_attributes
 
 
@@ -122,6 +123,18 @@ def on_post_approval_response(
         duration_ms = (time.perf_counter() - start) * 1000
         attributes["hermes.approval.duration_ms"] = round(duration_ms, 1)
 
+    approval_span = tracer.spans.get_span(key)
+    _emit_event(
+        tracer,
+        EV.APPROVAL_DECISION,
+        f"approval {verdict['choice'] or 'unknown'}"
+        + (f" for {attributes['gen_ai.tool.name']}" if attributes.get("gen_ai.tool.name") else ""),
+        {k: v for k, v in attributes.items() if k.startswith(EV.APPROVAL_PREFIXES)},
+        severity="WARN" if (verdict["timed_out"] or verdict["granted"] is False) else "INFO",
+        session_id=session_id,
+        span=approval_span,
+        content=False,
+    )
     # A denied or timed-out approval is a valid human outcome, not an error.
     tracer.end_span(key, attributes=attributes, status="ok")
 
