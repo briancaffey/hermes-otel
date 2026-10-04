@@ -40,6 +40,7 @@ import hashlib
 import json
 import os
 import shutil
+import socket
 import subprocess
 import sys
 import tempfile
@@ -75,22 +76,44 @@ def _cache_path(cache_dir: Optional[Path], ref: str, rel_path: str) -> Optional[
 
 
 def _retry_delay(exc: BaseException, attempt: int) -> float:
-    retry_after = (
-        getattr(exc, "headers", {}).get("Retry-After") if hasattr(exc, "headers") else None
-    )
+    """Seconds to wait before the next attempt: a numeric ``Retry-After`` when the
+    server sent one, else exponential backoff capped at 32 s."""
+    headers = getattr(exc, "headers", None)
+    retry_after = headers.get("Retry-After") if headers is not None else None
     if retry_after:
         try:
             return max(0.0, float(retry_after))
-        except ValueError:
-            pass
+        except (TypeError, ValueError):
+            pass  # an HTTP-date Retry-After falls back to the backoff schedule
     return min(FETCH_BACKOFF_SECONDS * (2 ** (attempt - 1)), 32.0)
 
 
+_RETRYABLE_HTTP = {429, 500, 502, 503, 504}
+# Errors worth another attempt: rate limiting and server errors, plus the
+# connection-level failures (reset, DNS, timeout) that are the other common CI
+# flake. A 4xx other than 429 is a real answer and is not retried.
+_RETRYABLE_ERRORS = (urllib.error.URLError, TimeoutError, socket.timeout, ConnectionError)
+
+
 def _is_retryable(exc: BaseException) -> bool:
-    return isinstance(exc, urllib.error.HTTPError) and exc.code in {429, 500, 502, 503, 504}
+    if isinstance(exc, urllib.error.HTTPError):
+        return exc.code in _RETRYABLE_HTTP
+    return isinstance(exc, _RETRYABLE_ERRORS)
+
+
+def _describe(exc: BaseException) -> str:
+    if isinstance(exc, urllib.error.HTTPError):
+        return f"HTTP {exc.code}"
+    return type(exc).__name__
 
 
 def _fetch(ref: str, rel_path: str, cache_dir: Optional[Path] = None) -> bytes:
+    """The bytes of ``rel_path`` at ``ref``: from the cache when present, else downloaded.
+
+    Never writes the cache: the caller verifies the bytes against the lockfile
+    first and stores them with :func:`_store_cache` only when they match, so a
+    truncated or wrong download can never wedge later runs.
+    """
     cache_file = _cache_path(cache_dir, ref, rel_path)
     if cache_file and cache_file.exists():
         return cache_file.read_bytes()
@@ -102,25 +125,43 @@ def _fetch(ref: str, rel_path: str, cache_dir: Optional[Path] = None) -> bytes:
             with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310 (fixed host)
                 if resp.status != 200:
                     raise RuntimeError(f"GET {url} returned HTTP {resp.status}")
-                blob = resp.read()
-                if cache_file:
-                    cache_file.parent.mkdir(parents=True, exist_ok=True)
-                    cache_file.write_bytes(blob)
-                return blob
-        except urllib.error.HTTPError as exc:
+                return resp.read()
+        except _RETRYABLE_ERRORS as exc:
             last_error = exc
             if attempt == FETCH_ATTEMPTS or not _is_retryable(exc):
                 break
             delay = _retry_delay(exc, attempt)
             print(
-                f"[fetch] {rel_path}: HTTP {exc.code}; retrying in {delay:g}s "
-                f"({attempt}/{FETCH_ATTEMPTS})"
+                f"[fetch] {rel_path}: {_describe(exc)}; retrying in {delay:g}s "
+                f"({attempt}/{FETCH_ATTEMPTS})",
+                file=sys.stderr,
             )
             time.sleep(delay)
 
     if last_error is not None:
         raise last_error
     raise RuntimeError(f"GET {url} failed")
+
+
+def _store_cache(cache_dir: Optional[Path], ref: str, rel_path: str, blob: bytes) -> None:
+    """Cache verified bytes; a cache write failure is not a scan failure."""
+    cache_file = _cache_path(cache_dir, ref, rel_path)
+    if cache_file is None:
+        return
+    try:
+        cache_file.parent.mkdir(parents=True, exist_ok=True)
+        cache_file.write_bytes(blob)
+    except OSError as exc:
+        print(f"[fetch] could not cache {rel_path}: {exc}", file=sys.stderr)
+
+
+def _evict_cache(cache_dir: Optional[Path], ref: str, rel_path: str) -> None:
+    cache_file = _cache_path(cache_dir, ref, rel_path)
+    if cache_file is not None:
+        try:
+            cache_file.unlink()
+        except OSError:
+            pass
 
 
 def _load_lock() -> Dict[str, object]:
@@ -146,13 +187,25 @@ def load_scanner(ref: Optional[str], verify: bool, update_lock: bool, dest: Path
 
     fetched: Dict[str, str] = {}
     for rel in SCANNER_FILES:
+        cached = _cache_path(cache_dir, ref, rel)
+        from_cache = bool(cached and cached.exists())
         blob = _fetch(ref, rel, cache_dir)
         digest = hashlib.sha256(blob).hexdigest()
-        fetched[rel] = digest
         if verify and not update_lock:
             expected = hashes.get(rel)
             if expected is None:
                 raise SystemExit(f"{rel} is not pinned in {LOCK_PATH.name}")
+            if expected != digest and from_cache:
+                # A stale or corrupt cache entry must not wedge every later run:
+                # drop it and take the answer from upstream once more.
+                print(
+                    f"[fetch] {rel}: cached copy does not match the lockfile; refetching",
+                    file=sys.stderr,
+                )
+                _evict_cache(cache_dir, ref, rel)
+                from_cache = False
+                blob = _fetch(ref, rel, None)
+                digest = hashlib.sha256(blob).hexdigest()
             if expected != digest:
                 raise SystemExit(
                     f"checksum mismatch for {rel} at ref {ref}\n"
@@ -160,6 +213,11 @@ def load_scanner(ref: Optional[str], verify: bool, update_lock: bool, dest: Path
                     "Upstream changed the scanner. Review the diff, then re-pin with "
                     "--update-lock."
                 )
+        fetched[rel] = digest
+        if not from_cache:
+            _store_cache(
+                cache_dir, ref, rel, blob
+            )  # verified (or unverified by request) bytes only
         (pkg / Path(rel).name).write_bytes(blob)
 
     if update_lock:
