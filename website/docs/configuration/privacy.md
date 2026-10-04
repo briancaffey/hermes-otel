@@ -74,6 +74,16 @@ If even command and target are too sensitive for your deployment, file an issue 
 
 `preview_max_chars` (default: 1200) is a separate truncation cap. It clips long previews with a `...`. In `off` mode `preview_max_chars` becomes a no-op — there's nothing to clip. In `preview` mode a clipped value carries `hermes.preview.<input|output>.truncated = true` and `.original_chars`, so a short-looking value can be told from a clipped one.
 
+## Logs and events
+
+The logs signal is off by default on both of its switches. When on:
+
+- **Forwarded log records** (`logs.capture`) are not filtered by privacy mode: a body is whatever Hermes or a library logged. Secrets are redacted before export with Hermes' own `agent.redact` (the redactor behind `agent.log`) or the plugin's built-in set, and Hermes' host-internal record attributes (`hermes_home`, `session_tag`) never leave. Other sensitive text flows unless the logging application redacts it; narrow with `logs.exclude_loggers`, `logs.logger_levels` or `logs.only_in_turn`.
+- **Events** (`logs.events.enabled`) follow privacy mode: `logs.events.content: inherit` means `content_capture: off` puts no prompt, response or tool content on any event, `preview` clips it, `full` sends what the span has. A backend entry's `logs: {events: {content: off}}` removes content for that backend alone, so a SaaS log sink can stay content-free while a local one keeps everything.
+- The dashboard's live store holds the same records as the backends, redacted the same way, in a file created owner-only.
+
+See [Logs and events](/configuration/logs#what-never-leaves-the-machine) for the measured redaction cost and the attribution rules.
+
 ## Verifying
 
 A quick way to verify privacy mode is working: run a Hermes turn that uses a tool, then inspect the trace. Every `input.value` / `output.value` / `gen_ai.content.*` attribute should be **absent** (not empty — absent). Token counts and tool names should still be present.

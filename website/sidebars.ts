@@ -91,6 +91,7 @@ const sidebars: SidebarsConfig = {
         'reference/config-schema',
         'reference/span-attributes',
         'reference/metrics',
+        'reference/log-events',
         'reference/hooks',
         'reference/limitations',
       ],
