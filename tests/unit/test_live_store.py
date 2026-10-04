@@ -77,24 +77,38 @@ class TestLiveStore:
             writer.close()
             reader.close()
 
-    def test_live_log_handler_feeds_store(self, store):
+    def test_live_log_processor_feeds_store(self, store):
         import logging
 
-        from hermes_otel.tracer import _LiveLogHandler
+        from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler
+        from opentelemetry.sdk.resources import Resource
 
-        h = _LiveLogHandler(store)
-        rec = logging.LogRecord("my.logger", logging.WARNING, __file__, 1, "boom %s", ("x",), None)
-        h.emit(rec)
-        logs = store.logs()
-        assert len(logs) == 1
-        assert logs[0]["level"] == "WARNING"
-        assert logs[0]["logger"] == "my.logger"
-        assert logs[0]["body"] == "boom x"
+        from hermes_otel.log_handler import LiveLogProcessor
+
+        provider = LoggerProvider(resource=Resource.create({}))
+        provider.add_log_record_processor(LiveLogProcessor(store))
+        handler = LoggingHandler(level=logging.DEBUG, logger_provider=provider)
+        lg = logging.getLogger("my.logger")
+        lg.propagate = False
+        lg.setLevel(logging.DEBUG)
+        lg.addHandler(handler)
+        try:
+            lg.warning("boom %s", "x")
+            lg.debug("below the live floor")
+        finally:
+            lg.removeHandler(handler)
+        (row,) = store.logs()
+        assert row["level"] == "WARNING"  # OTel WARN mapped back to the store's spelling
+        assert row["severity_number"] == 13
+        assert row["logger"] == "my.logger" and row["scope"] == "my.logger"
+        assert row["body"] == "boom x"
+        assert row["span_id"] is None and row["event_name"] is None
+        assert isinstance(row["attributes"], dict) and "code.function.name" in row["attributes"]
 
     def test_live_log_noise_filter(self):
         import logging
 
-        from hermes_otel.tracer import _LiveLogNoiseFilter
+        from hermes_otel.log_handler import _LiveLogNoiseFilter
 
         nf = _LiveLogNoiseFilter()
 

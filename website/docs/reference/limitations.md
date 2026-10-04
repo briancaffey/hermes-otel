@@ -96,9 +96,13 @@ Because `wandb.entity` and `wandb.project` are Resource attributes on the
 shared `TracerProvider`, one Hermes process can route to one Weave project at a
 time. Multiple configured Weave entries must agree on those values.
 
-## Logs correlate by the single active session
+## Logs are attributed exactly or not at all
 
-Log records are stamped with a trace id from the plugin's span tracker, not from the OpenTelemetry context (Hermes' loggers run on threads where the plugin's spans are never current). With one session in flight every record maps to that turn's innermost open span; with several sessions active at once the records stay unattributed. Lines logged between turns never carry a trace id. See [OTel logs](/configuration/logs#where-the-ids-come-from).
+A log line gets a turn's trace and span ids from one of three exact sources: a span current on the logging thread, Hermes' own per-thread session tag on the record, or the single session with a turn in flight. Hermes sets its session tag on the agent's turn thread only (about a quarter of `agent.*` lines in a measured gateway log, almost none of `tools.*`, `gateway.*` or platform-adapter lines), so on a gateway serving several users at once, lines from tool execution and housekeeping threads stay unattributed rather than being pinned to the wrong user. `hermes.log.attribution` on each record says which source applied. Lines logged between turns never carry a trace id. See [OTel logs](/configuration/logs#where-the-ids-come-from).
+
+## Log redaction covers secrets, not personal data
+
+Exported log records and live-store rows are redacted with Hermes' `agent.redact` (credential shapes, auth headers, URL userinfo, vault values) or the plugin's smaller built-in set outside Hermes. Neither recognises names, e-mail addresses or free-text personal data; use a Collector processor or `content_capture` for those. Masked values keep a head and tail by design, so a leaked key can still be identified.
 
 ## One-shot runs (`hermes -z`) export no logs
 

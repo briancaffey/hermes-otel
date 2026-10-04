@@ -6,7 +6,7 @@ description: "Ship Python logger.info(...) calls to Loki or any OTLP logs receiv
 
 # OTel logs
 
-Opt-in pipeline that captures Python `logging` records and ships them to any log-capable backend (Loki via the [LGTM stack](/backends/lgtm), SigNoz, or any OTLP collector) as the OTel logs signal. Each record is automatically stamped with the active span's `trace_id` and `span_id`, which is what makes the "jump from this log line to the span that emitted it" workflow in Grafana / SigNoz work.
+Opt-in pipeline that captures Python `logging` records and ships them to any log-capable backend (Loki via the [LGTM stack](/backends/lgtm), SigNoz, OpenObserve, Uptrace, or any OTLP collector) as the OTel logs signal, and into the dashboard's Logs tab. One processor runs ahead of every sink and makes each record the same everywhere: it stamps the trace and span ids of the turn the line belongs to (never by guessing, see below), adds the session attributes, drops the host-internal attributes Hermes puts on every record, and redacts secrets with Hermes's own redactor. That is what makes the "jump from this log line to the span that emitted it" workflow in Grafana / SigNoz work, and what keeps a backend from seeing anything `agent.log` would not.
 
 **Off by default.** Attaching a handler to Python's root logger is invasive — it exports records from every library hermes-agent imports, not just the plugin. Turn it on deliberately.
 
@@ -27,7 +27,7 @@ export HERMES_OTEL_LOG_LEVEL=INFO
 export HERMES_OTEL_LOG_ATTACH_LOGGER=hermes_otel   # optional scope
 ```
 
-The plugin will attach an OTel `LoggingHandler` to the target logger and fan records out to every backend whose `supports_logs` is true (see [Which backends accept logs](#which-backends-accept-logs)).
+The plugin attaches an OTel `LoggingHandler` to the target logger and fans records out to every backend whose `supports_logs` is true (see [Which backends accept logs](#which-backends-accept-logs)) and, when `dashboard_live` is on, to the live store behind the dashboard's Logs tab. With no log-capable backend the live store alone receives the records.
 
 ## What correlation looks like
 
@@ -43,9 +43,16 @@ logger.info("tool complete tool=%s outcome=%s", tool_name, outcome)
 {
   body: "tool complete tool=Bash outcome=completed",
   severity_text: "INFO",
-  trace_id: "4bf92f3577b34da6...",   # ← the active span's trace_id
-  span_id:  "00f067aa0ba902b7",       # ← the active span's span_id
-  resource: { "service.name": "hermes-agent", ... }
+  trace_id: "4bf92f3577b34da6...",   # ← the turn's trace_id
+  span_id:  "00f067aa0ba902b7",       # ← the innermost open span of that turn
+  attributes: {
+    "hermes.session_id": "20261003_201501_ab12",
+    "gen_ai.conversation.id": "20261003_201501_ab12",
+    "hermes.platform": "telegram",
+    "hermes.log.attribution": "session_tag",   # how the ids were found, see below
+    "code.function.name": "...", "code.file.path": "...", "code.line.number": 123
+  },
+  resource: { "service.name": "hermes-agent", "hermes.profile": "default", ... }
 }
 ```
 
@@ -55,7 +62,22 @@ No app-side context plumbing required. The stdlib `logging` module is the integr
 
 ### Where the ids come from
 
-Hermes' loggers write from the agent's own threads, where the plugin's spans are not on the OpenTelemetry context, so the SDK's handler alone would export every record with an empty `trace_id`. The plugin therefore stamps each record itself, from its span tracker, with the same policy the live store's Logs tab uses: when exactly one session has a turn in flight, the record gets that session's innermost open span (the tool or LLM span if one is open, else the turn's root) and a `hermes.session_id` attribute; when several sessions are active at once (a busy gateway), the record stays unattributed rather than attributed to the wrong turn. A record logged inside a span that *is* current on its thread keeps that span's ids. Lines logged between turns (startup banners, gateway housekeeping) carry no trace id.
+Hermes' loggers write from the agent's own threads, where the plugin's spans are not on the OpenTelemetry context, so the SDK's handler alone would export every record with an empty `trace_id`. The plugin attributes each record itself, through three tiers that are each exact. It never guesses, and it records which tier applied in `hermes.log.attribution`:
+
+| `hermes.log.attribution` | When | What it means |
+|---|---|---|
+| `context` | A span was current on the thread that logged the line | The record already carried the ids; left as is. |
+| `session_tag` | Hermes stamped its own per-thread session id on the record (`%(session_tag)s`, set on the agent's turn thread) | The ids come from that session's innermost open span (the tool or LLM span if one is open, else the turn's root). Exact under any number of concurrent sessions. Between turns the session id is kept and the trace ids stay empty. |
+| `single_session` | Exactly one session has a turn in flight | The line can only belong to that session, so it gets that session's innermost open span. |
+| *(absent)* | Several sessions active, and the line names none of them | Unattributed, on purpose: a wrong session id on a log line is worse than none. |
+
+How far the `session_tag` tier reaches was measured on a real gateway (20 000 lines of `agent.log`, 2026-10-03): Hermes sets the tag on the turn thread, so `agent.*` lines carry it about a quarter of the time and `cli` lines about half, while tool execution (`tools.*`, 1%), platform adapters and gateway housekeeping (`gateway.*`, `plugins.*`, `hermes_cli.*`, 0%) log from other threads and depend on the `single_session` tier. For a single-user gateway that tier covers them; for a multi-user gateway those lines stay unattributed until Hermes propagates its session context across its thread pools.
+
+### What never leaves the machine
+
+Hermes' record factory puts `hermes_home` (the resolved home directory) and `session_tag` on every record, and the SDK handler would copy both onto the exported record. The processor removes them, together with any attribute ending in `.raw_home` or `_home_path`. `session_tag` is consumed into `hermes.session_id` first.
+
+Secrets are redacted from the body and from every string attribute before any sink sees the record, with Hermes's own `agent.redact` (the same redactor behind `agent.log`, honouring `security.redact_secrets` / `HERMES_REDACT_SECRETS` per profile) when the plugin runs inside Hermes, and with a built-in set (provider key prefixes, bearer and basic auth, `Authorization` and `x-api-key` style headers, `key=value` credential assignments, URL userinfo) when it does not. Measured cost with Hermes's redactor: about 34 µs for a typical 75-character line, 73 µs per 1 KB, 75 ms per 1 MB of plain text and up to 580 ms per 1 MB when it contains secrets; a busy turn's few hundred lines cost a few tens of milliseconds in total. The built-in set runs at 8 µs to 84 µs for the same sizes.
 
 ### One-shot runs export no logs
 
@@ -82,7 +104,8 @@ Which Python logger to attach the handler to.
 | Value | Scope |
 |---|---|
 | `null` (default) | **Root logger** — captures hermes-agent + plugin + every imported library |
-| `"hermes"` | Only hermes-agent's own logs (and child loggers) |
+| `"agent"` | The agent loop (`agent.*`): the lines most often tagged with a session |
+| `"gateway"`, `"tools"`, `"hermes_cli"`, `"cli"`, `"run_agent"` | Hermes' other logger families (there is no `"hermes"` logger; that name captures nothing) |
 | `"hermes_otel"` | Only the plugin's logs |
 | any other name | That logger's subtree only |
 
@@ -136,9 +159,13 @@ If the banner is **absent** after setting `capture_logs: true`, check:
 
 ## Not suppressed by privacy mode
 
-[Privacy mode](/configuration/privacy) (`capture_previews: false`) suppresses **span** previews (user messages, tool args/results) but does **not** touch logs. The log body is whatever the application passed to `logger.info(...)` — if that includes sensitive content, it flows unless the application redacts it first.
+[Privacy mode](/configuration/privacy) (`capture_previews: false`) suppresses **span** previews (user messages, tool args/results) but does **not** touch logs. The log body is whatever the application passed to `logger.info(...)`; secrets in it are redacted (see [What never leaves the machine](#what-never-leaves-the-machine)), other sensitive content flows unless the application redacts it first.
 
 This is deliberate: privacy mode reasons about plugin-captured attributes, not about what host-app code chooses to log. If your app logs user messages at INFO and you also want those suppressed, either scope capture with `log_attach_logger` to exclude the chatty logger, or filter at the application's logging layer.
+
+## The live store sees the same record
+
+With `dashboard_live` on, the dashboard's Logs tab is fed by a second processor on the same provider, after the enrichment step, so a row there has the same ids, attributes and redaction as the record a backend stores. The live tail is floored at `INFO` (Hermes' DEBUG firehose would evict useful lines from the bounded buffer) and skips a few gateway housekeeping lines (`gateway.config`, platform probes); OTLP export keeps `log_level`.
 
 ## Interaction with other signals
 

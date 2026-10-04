@@ -446,8 +446,9 @@ class LiveStore:
             record,
             ts=int(record.get("time_unix_nano") or 0) or None,
             trace_id=record.get("trace_id"),
+            span_id=record.get("span_id"),
             session_id=record.get("session_id"),
-            name=record.get("logger"),
+            name=record.get("event_name") or record.get("logger"),
             level=_level_no(record.get("level")),
             logger=record.get("logger"),
         )
@@ -813,6 +814,8 @@ class LiveStore:
         end_ns: Optional[int] = None,
         limit: int = 300,
         before_ns: Optional[int] = None,
+        span_id: Optional[str] = None,
+        event_name: Optional[str] = None,
     ) -> List[Dict[str, Any]]:
         self.flush()
         where = ["kind='log'"]
@@ -820,6 +823,12 @@ class LiveStore:
         if trace_id:
             where.append("trace_id = ?")
             args.append(trace_id)
+        if span_id:
+            where.append("span_id = ?")
+            args.append(span_id)
+        if event_name:
+            where.append("json_extract(data, '$.event_name') = ?")
+            args.append(event_name)
         if session:
             where.append("session_id = ?")
             args.append(session)

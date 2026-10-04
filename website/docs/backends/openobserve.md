@@ -83,7 +83,7 @@ Traces tab. Every span the plugin emits is indexed with its OpenInference / GenA
 Metrics tab. The `hermes_*` metrics (session counts, token usage, tool-duration histograms) show up as time series with their resource attributes intact.
 
 **Logs:**
-Logs tab. With `capture_logs: true`, every Python `logger.info(...)` record lands here stamped with the active span's `trace_id` and `span_id` — click a `trace_id` to jump to the corresponding trace. See [OTel logs](/configuration/logs) for the full pipeline.
+Logs tab. With `capture_logs: true`, every Python `logger.info(...)` record lands here. A line logged during a turn carries that turn's `trace_id` and `span_id` plus `hermes_session_id` (OpenObserve flattens the attribute name), and `hermes_log_attribution` says how the ids were found; lines logged between turns or from threads the plugin cannot attribute have an empty `trace_id`. Click a `trace_id` to jump to the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
 
 ## Streams
 

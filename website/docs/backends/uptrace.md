@@ -84,7 +84,7 @@ Navigation → Metrics. Query with PromQL over any `hermes_*` metric the plugin 
 - `hermes_tool_duration_bucket` — tool execution histogram
 
 **Logs:**
-Navigation → Logs. When `capture_logs: true` is on, every `logger.info(...)` from hermes or the plugin lands here with the active span's `trace_id` and `span_id` attached — click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs) for the full story.
+Navigation → Logs. When `capture_logs: true` is on, every `logger.info(...)` from hermes or the plugin lands here. A line logged during a turn carries that turn's `trace_id` and `span_id`, `hermes.session_id` and `hermes.log.attribution`; lines the plugin cannot attribute to a turn (between turns, or from another thread while several sessions are active) arrive without trace ids. Click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
 
 ## Dashboard
 
