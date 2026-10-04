@@ -1499,16 +1499,23 @@ class HermesOTelPlugin:
                     ) or self.spans.get_session_root(str(session_id))
             context = set_span_in_context(span) if span is not None else None
             otel_logger = self._logger_provider.get_logger(_ev.SCOPE_NAME, self.plugin_version)
-            from opentelemetry._logs import SeverityNumber
+            from opentelemetry._logs import LogRecord, SeverityNumber
 
-            otel_logger.emit(
-                event_name=name,
-                body=body,
-                attributes=attrs,
+            # ``Logger.emit(record)`` is the form every supported SDK has; the
+            # keyword form (``emit(event_name=..., body=...)``) is newer than
+            # the 1.35 floor. ``LogRecord(event_name=...)`` exists since 1.35.
+            now = time.time_ns()
+            record = LogRecord(
+                timestamp=now,
+                observed_timestamp=now,
+                context=context,
                 severity_text=severity,
                 severity_number=SeverityNumber(_ev.severity_number(severity)),
-                context=context,
+                body=body,
+                attributes=attrs,
+                event_name=name,
             )
+            otel_logger.emit(record)
             return True
         except Exception as exc:  # telemetry must never raise into the agent
             debug_log(f"event {name} not emitted: {type(exc).__name__}: {exc}")

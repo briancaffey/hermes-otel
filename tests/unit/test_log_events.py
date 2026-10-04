@@ -479,9 +479,12 @@ class TestPerBackendNarrowing:
         )
         return provider, full, strict
 
-    def _emit(self, provider, attrs, event_name=EV.TOOL_CALL):
+    def _emit(self, provider, attrs, event_name=EV.TOOL_CALL, body="b"):
+        from opentelemetry._logs import LogRecord
+
+        # ``emit(record)`` is the form every supported SDK has (the keyword form is newer than 1.35)
         provider.get_logger(EV.SCOPE_NAME).emit(
-            event_name=event_name, body="b", attributes=attrs, severity_number=None
+            LogRecord(body=body, attributes=attrs, event_name=event_name)
         )
 
     def test_content_off_for_one_backend_leaves_the_other_intact(self):
@@ -512,7 +515,7 @@ class TestPerBackendNarrowing:
     def test_events_disabled_for_one_backend_drops_only_events(self):
         provider, full, strict = self._provider("full", lh.LogRules(events_enabled=False))
         self._emit(provider, {"gen_ai.tool.name": "bash"})
-        provider.get_logger("agent.loop").emit(body="plain line", attributes={})
+        self._emit(provider, {}, event_name=None, body="plain line")
         assert len(full.get_finished_logs()) == 2
         bodies = [r.log_record.body for r in strict.get_finished_logs()]
         assert bodies == ["plain line"]
