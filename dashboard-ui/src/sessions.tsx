@@ -4,6 +4,7 @@ import { SessionRow, LiveTrace, fmtDurationMs, fmtTokens, fmtTimeAgo, fmtAbsTime
 import { liveParams, TraceFilters } from "./params";
 import { LiveTraceCard } from "./spantree";
 import { ErrorBanner } from "./atoms";
+import { navigate } from "./nav";
 
 function SessionCard({ row, open, onToggle, children }: { row: SessionRow; open: boolean; onToggle: () => void; children?: any }) {
   return (
@@ -23,6 +24,17 @@ function SessionCard({ row, open, onToggle, children }: { row: SessionRow; open:
           {row.tokens != null ? <span className="tabular-nums">{fmtTokens(row.tokens)} tok</span> : null}
           {row.cost != null ? <span className="tabular-nums text-emerald-400">${row.cost.toFixed(4)}</span> : null}
           <span className="tabular-nums">{fmtDurationMs((row.endNs - row.startNs) / 1e6)}</span>
+          <button
+            type="button"
+            className="otel-link text-[11px]"
+            title="this session's log lines and events"
+            onClick={(e: any) => {
+              e.stopPropagation();
+              navigate({ tab: "logs", session: row.session, trace: "", lookback: "168" });
+            }}
+          >
+            logs
+          </button>
           <span title={`${fmtAbsTime(row.startNs)} → ${fmtAbsTime(row.endNs)}`}>{fmtTimeAgo(row.endNs)}</span>
         </span>
       </div>

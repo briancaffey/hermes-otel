@@ -88,7 +88,7 @@ Per backend, `logs: {events: {enabled: false}}` drops the events for that backen
 
 The events are `hermes.turn.start`, `hermes.turn.end`, `hermes.tool.call`, `hermes.approval.decision`, `hermes.api.error`, `hermes.subagent.start`, `hermes.subagent.stop`, `hermes.session.finalize` and `gen_ai.client.inference.operation.details`; a blocked tool or a denied approval is `WARN`, a failed turn or a non-retryable API error is `ERROR`. `hermes.tool.duration_s` and `hermes.turn.duration_s` exist only on events (the spans carry `*_ms`). The `gen_ai.client.inference.operation.details` event is the GenAI semantic convention's inference record: request attributes from the api span's start, response attributes from `post_api_request`, and content under the semconv names; the OpenInference-only names (`llm.*`, `input.value` / `output.value`) stay on the span.
 
-In the dashboard's Logs tab an event shows its name as a badge, and the **events only** filter (`?events=1`) hides plain log lines. The skill CLI and the backend adapters see events as log records with an `event_name` field.
+In the dashboard's Logs tab an event shows its name as a badge, the **events only** filter (`?events=1`) hides plain log lines, and the **event name** box (`?event=hermes.tool.call`, or a click on a badge) keeps one kind; expanding the line shows its attributes grouped as Event, Hermes, GenAI and so on. The skill CLI (`logs --events-only`, `logs --event <name>`) and the backend adapters see events as log records with an `event_name` field; where a backend keeps no column for the OTLP `event_name` field, the adapter filters on the `event.name` attribute the plugin sets on every event.
 
 ## What correlation looks like
 
@@ -150,11 +150,11 @@ Per backend, `supports_logs` is derived from the type and overridden with `logs:
 
 | Backend | Logs | Notes |
 |---|---|---|
-| [SigNoz](/backends/signoz) | ✅ | default on |
+| [SigNoz](/backends/signoz) | ✅ | default on; the dashboard filters events on the `event.name` attribute |
 | [Generic OTLP](/backends/otlp) | ✅ | default on; the collector must accept `/v1/logs` |
 | [Grafana LGTM](/backends/lgtm) | ✅ | Loki; default on |
-| [OpenObserve](/backends/openobserve) | ✅ | default on; attributes flattened (`hermes_session_id`, `hermes_log_attribution`) |
-| [Uptrace](/backends/uptrace) | ✅ | default on |
+| [OpenObserve](/backends/openobserve) | ✅ | default on; attributes flattened in the UI (`hermes_session_id`, `hermes_log_attribution`), dotted again in the dashboard |
+| [Uptrace](/backends/uptrace) | ✅ | default on; the dashboard speaks both the 2.1 and the 2.0 query API |
 | [Parseable](/backends/parseable) | ✅ | default on; `logs_dataset` names the dataset |
 | [Honeycomb](/backends/honeycomb) | ✅ | default on; one dataset per signal with Classic keys |
 | [Phoenix](/backends/phoenix) | ❌ | traces only |

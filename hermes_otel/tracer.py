@@ -1490,6 +1490,10 @@ class HermesOTelPlugin:
             from . import log_events as _ev
 
             attrs = _ev.strip_none(attributes)
+            # The OTLP ``event_name`` field is dropped by some backends
+            # (OpenObserve keeps no column for it), so the name travels as an
+            # attribute too; the adapters read either (#268).
+            attrs.setdefault("event.name", name)
             if session_id:
                 attrs.setdefault("hermes.session_id", str(session_id))
                 attrs.setdefault("gen_ai.conversation.id", str(session_id))

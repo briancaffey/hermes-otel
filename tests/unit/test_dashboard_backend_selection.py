@@ -35,6 +35,14 @@ def client(monkeypatch):
         yield c
 
 
+def _core(row):
+    """The pre-#268 row keys; the richer fields (span_id, severity_number, event_name, attributes) are asserted separately."""
+    return {
+        k: row.get(k)
+        for k in ("level", "logger", "body", "time_unix_nano", "trace_id", "session_id")
+    }
+
+
 class TestResolveAdapter:
     def test_pin_then_first_supported(self, monkeypatch):
         monkeypatch.setattr(backends, "load_config", lambda: (None, CFG, "oo"))
@@ -243,7 +251,8 @@ class TestOpenObserveMetrics:
         with patch.object(a, "_search", return_value=rows) as m:
             out = a.logs_search(LogFilter(min_level=30, text="o"), 0, 10, 50)
             sql = m.call_args[0][0]
-        assert out == [
+        assert all(r["attributes"] == {} and r["severity_number"] for r in out)
+        assert [_core(r) for r in out] == [
             {
                 "level": "ERROR",
                 "logger": "tools.terminal",

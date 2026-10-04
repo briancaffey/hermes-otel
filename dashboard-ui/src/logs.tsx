@@ -8,7 +8,7 @@
 // (an offset would cost O(offset) and Loki has none). The newest page keeps
 // polling; browsing older pages pauses it. Filters, page size and the cursor
 // live in the URL, so refresh, back and a pasted link land on the same page.
-import { React, useState, useEffect, useCallback, useRef, fetchJSON, API, Button, Input, Select, SelectOption, cn } from "./sdk";
+import { React, useState, useEffect, useCallback, useMemo, useRef, fetchJSON, API, Button, Input, Select, SelectOption, cn } from "./sdk";
 import { fmtTimeAgo, fmtAbsTime } from "./lib";
 import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
@@ -16,15 +16,19 @@ import { SourceSelect } from "./sourceselect";
 import { navigate, readNav, writeNav } from "./nav";
 import { LogFilters, DEFAULT_LOG_FILTERS, LOG_PAGE_SIZES, logParams, logFiltersFromNav, navFromLogFilters, logPageSizeFromNav } from "./params";
 import { ErrorBanner } from "./atoms";
+import { CopyButton } from "./detail";
+import { severityCounts, timeBuckets, groupLogAttributes, codeLocation, attributionHint, severityOf, type Bucket } from "./logs-lib";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
 export type LogRec = {
   seq?: number;
   time_unix_nano?: number;
   level?: string;
+  severity_number?: number | null;
   logger?: string;
   body?: string;
   trace_id?: string | null;
+  span_id?: string | null;
   session_id?: string | null;
   event_name?: string | null;
   attributes?: Record<string, unknown> | null;
@@ -41,35 +45,171 @@ const LEVEL_CLASS: Record<string, string> = {
   DEBUG: "text-muted-foreground",
 };
 
-export function LogLine({ l, absolute, onTrace }: { l: LogRec; absolute: boolean; onTrace?: (id: string) => void }) {
+export type LogRowActions = {
+  onTrace?: (id: string) => void;
+  onSession?: (id: string) => void;
+  onContext?: (l: LogRec) => void;
+  onEvent?: (name: string) => void;
+};
+
+/** One log line; click to expand its attributes, exception and code location (#268). */
+export function LogRow({ l, absolute, wrap = true, expanded, onToggle, actions }: { l: LogRec; absolute: boolean; wrap?: boolean; expanded?: boolean; onToggle?: () => void; actions?: LogRowActions }) {
   const lvl = (l.level || "INFO").toUpperCase();
   const ts = l.time_unix_nano || 0;
+  const attrs = (l.attributes || {}) as Record<string, any>;
+  const hint = attributionHint(attrs);
+  const isError = severityOf(lvl) === "ERROR";
+  const edge = isError ? "border-l-2 border-l-primary" : "";
   return (
-    <div className="flex items-start gap-2 border-b border-border/60 px-3 py-1 last:border-b-0">
-      <span className={cn("shrink-0 text-muted-foreground/70", absolute ? "otel-w-40" : "otel-w-14")} title={ts ? fmtAbsTime(ts) : ""}>
-        {ts ? (absolute ? fmtAbsTime(ts) : fmtTimeAgo(ts)) : ""}
+    <div className={cn("border-b border-border/60 last:border-b-0", expanded ? "bg-muted/30" : "otel-hoverable", edge)}>
+      <div className="flex cursor-pointer items-start gap-2 px-3 py-1" onClick={onToggle} role="button" tabIndex={0} title={expanded ? "collapse" : "expand attributes"}>
+        <span className={cn("shrink-0 text-muted-foreground/70", absolute ? "otel-w-40" : "otel-w-14")} title={ts ? fmtAbsTime(ts) : ""}>
+          {ts ? (absolute ? fmtAbsTime(ts) : fmtTimeAgo(ts)) : ""}
+        </span>
+        <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
+        {l.event_name ? (
+          <button
+            type="button"
+            className="shrink-0 rounded border border-border px-1 font-mono text-[10px] text-muted-foreground"
+            title="structured event — click to filter to this event"
+            onClick={(e: any) => {
+              e.stopPropagation();
+              actions?.onEvent?.(String(l.event_name));
+            }}
+          >
+            {l.event_name}
+          </button>
+        ) : null}
+        {l.logger && !l.event_name ? (
+          <span className="otel-w-40 shrink-0 truncate text-muted-foreground" title={l.logger}>
+            {l.logger}
+          </span>
+        ) : null}
+        <span className={cn("min-w-0 flex-1 text-foreground/90", wrap ? "whitespace-pre-wrap break-words" : "truncate")}>{l.body}</span>
+        {hint ? (
+          <span className="shrink-0 text-[10px] text-muted-foreground/70" title={`attributed by ${hint.title}`}>
+            {hint.text}
+          </span>
+        ) : null}
+        {l.trace_id ? (
+          <button
+            type="button"
+            className="otel-link shrink-0 font-mono text-[10px] text-muted-foreground/70"
+            title={`open trace ${l.trace_id}`}
+            onClick={(e: any) => {
+              e.stopPropagation();
+              actions?.onTrace?.(String(l.trace_id));
+            }}
+          >
+            {String(l.trace_id).slice(0, 8)}
+          </button>
+        ) : null}
+      </div>
+      {expanded ? <LogDetail l={l} actions={actions} /> : null}
+    </div>
+  );
+}
+
+function LogDetail({ l, actions }: { l: LogRec; actions?: LogRowActions }) {
+  const attrs = (l.attributes || {}) as Record<string, any>;
+  const { groups, stacktrace } = groupLogAttributes(attrs);
+  const where = codeLocation(attrs);
+  const ts = l.time_unix_nano || 0;
+  return (
+    <div className="space-y-2 border-t border-border/60 px-3 py-2 font-mono text-[11px]">
+      <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-muted-foreground">
+        <span>{ts ? fmtAbsTime(ts) : ""}</span>
+        {l.logger ? <span title="logger / instrumentation scope">{l.logger}</span> : null}
+        {l.severity_number != null ? <span title="OTel severity number">sev {l.severity_number}</span> : null}
+        {where ? <span title="code location">{where}</span> : null}
+        {l.session_id ? (
+          <button type="button" className="otel-link" title="show this session's log lines" onClick={() => actions?.onSession?.(String(l.session_id))}>
+            session {String(l.session_id)}
+          </button>
+        ) : null}
+        {l.trace_id ? (
+          <button type="button" className="otel-link" title="open the trace" onClick={() => actions?.onTrace?.(String(l.trace_id))}>
+            trace {String(l.trace_id)}
+          </button>
+        ) : null}
+        {l.span_id ? <span title="span id">span {l.span_id}</span> : null}
+        <span className="ml-auto flex items-center gap-2">
+          {ts && actions?.onContext ? (
+            <button type="button" className="otel-link" title="show every line within 30 s of this one" onClick={() => actions.onContext?.(l)}>
+              ±30 s around this line
+            </button>
+          ) : null}
+          <CopyButton text={JSON.stringify(l, null, 2)} label="copy JSON" />
+        </span>
+      </div>
+      {l.body ? <pre className="otel-pre otel-raw whitespace-pre-wrap break-words">{l.body}</pre> : null}
+      {groups.length ? (
+        <div className="grid gap-x-4 gap-y-1 sm:grid-cols-2">
+          {groups.map((g) => (
+            <div key={g.label} className="min-w-0">
+              <div className="mb-1 text-muted-foreground">{g.label}</div>
+              <table className="otel-kv-table w-full">
+                <tbody>
+                  {g.entries.map(([k, v]) => (
+                    <tr key={k}>
+                      <td className="otel-kv text-muted-foreground">{k}</td>
+                      <td className="break-all text-foreground/90">{typeof v === "string" ? v : JSON.stringify(v)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          ))}
+        </div>
+      ) : (
+        <div className="text-muted-foreground">No attributes on this record.</div>
+      )}
+      {stacktrace ? <pre className="otel-pre otel-raw max-h-80 overflow-auto whitespace-pre-wrap break-words">{stacktrace}</pre> : null}
+    </div>
+  );
+}
+
+/** Kept for the trace detail's Logs sub-tab and older callers: a non-expanding line. */
+export function LogLine({ l, absolute, onTrace }: { l: LogRec; absolute: boolean; onTrace?: (id: string) => void }) {
+  return <LogRow l={l} absolute={absolute} actions={{ onTrace }} />;
+}
+
+/** Severity counts for the rows shown plus a per-bucket sparkline (errors on top). */
+export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bucket[] }) {
+  const c = severityCounts(rows);
+  const max = Math.max(1, ...buckets.map((b) => b.total));
+  const w = 160;
+  const h = 24;
+  const bw = buckets.length ? w / buckets.length : w;
+  return (
+    <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-muted-foreground">
+      <span className="tabular-nums">
+        {c.total} shown
+        {c.events ? ` · ${c.events} event${c.events === 1 ? "" : "s"}` : ""}
       </span>
-      <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
-      {l.event_name ? (
-        <span className="shrink-0 rounded border border-border px-1 font-mono text-[10px] text-muted-foreground" title="structured event (logs.events)">
-          {l.event_name}
-        </span>
-      ) : null}
-      {l.logger ? (
-        <span className="otel-w-40 shrink-0 truncate text-muted-foreground" title={l.logger}>
-          {l.logger}
-        </span>
-      ) : null}
-      <span className="min-w-0 flex-1 whitespace-pre-wrap break-words text-foreground/90">{l.body}</span>
-      {l.trace_id ? (
-        <button
-          type="button"
-          className="otel-link shrink-0 font-mono text-[10px] text-muted-foreground/70"
-          title={`open trace ${l.trace_id}`}
-          onClick={() => onTrace?.(String(l.trace_id))}
-        >
-          {String(l.trace_id).slice(0, 8)}
-        </button>
+      <span className="tabular-nums">
+        <span className={c.bySeverity.ERROR ? "text-destructive" : ""}>{c.bySeverity.ERROR} error</span>
+        {" · "}
+        <span className={c.bySeverity.WARN ? "otel-c-tool" : ""}>{c.bySeverity.WARN} warn</span>
+        {" · "}
+        {c.bySeverity.INFO} info
+        {c.bySeverity.DEBUG ? ` · ${c.bySeverity.DEBUG} debug` : ""}
+      </span>
+      {buckets.length > 1 ? (
+        <svg width={w} height={h} role="img" aria-label="lines per time bucket, oldest left" className="shrink-0">
+          <rect x="0" y={h - 1} width={w} height="1" className="text-muted-foreground" fill="currentColor" opacity="0.3" />
+          {buckets.map((b, i) => {
+            const total = (b.total / max) * (h - 2);
+            const bad = ((b.errors + b.warns) / max) * (h - 2);
+            return (
+              <g key={i}>
+                <title>{`${b.total} line${b.total === 1 ? "" : "s"}${b.errors ? `, ${b.errors} error` : ""}${b.warns ? `, ${b.warns} warn` : ""}`}</title>
+                <rect x={i * bw + 0.5} y={h - 1 - total} width={Math.max(1, bw - 1)} height={total} className="text-muted-foreground" fill="currentColor" opacity="0.35" />
+                {bad > 0 ? <rect x={i * bw + 0.5} y={h - 1 - bad} width={Math.max(1, bw - 1)} height={bad} className={b.errors ? "text-destructive" : "otel-c-tool"} fill="currentColor" /> : null}
+              </g>
+            );
+          })}
+        </svg>
       ) : null}
     </div>
   );
@@ -90,6 +230,11 @@ export function LogsPage() {
   const [loggers, setLoggers] = useState<{ logger: string; count: number }[]>([]);
   const [absolute, setAbsolute] = useState(false);
   const [paused, setPaused] = useState(false);
+  // follow = oldest first with the newest line at the bottom (a tail); wrap = long bodies wrap
+  const [follow, setFollow] = useState(false);
+  const [wrap, setWrap] = useState(true);
+  const [expanded, setExpanded] = useState<string | null>(null);
+  const listEnd = useRef<any>(null);
   const [error, setError] = useState<string | null>(null);
   const [live, setLive] = useState<boolean | null>(null);
   const inflight = useRef(false);
@@ -147,6 +292,29 @@ export function LogsPage() {
   const newer = () => setCursors((c) => c.slice(0, -1));
   const newest = () => setCursors([]);
   const openTrace = (id: string) => navigate({ tab: "traces", source, trace: id, view: "turns" });
+  const showSession = (id: string) => {
+    const f = { ...DEFAULT_LOG_FILTERS, session: id, lookback: applied.lookback };
+    setFilters(f);
+    apply(f);
+  };
+  const showContext = (l: LogRec) => {
+    const f = { ...DEFAULT_LOG_FILTERS, centerNs: String(l.time_unix_nano || ""), windowS: 30, lookback: applied.lookback };
+    setFilters(f);
+    apply(f);
+  };
+  const showEvent = (name: string) => {
+    const f = { ...filters, eventName: name, eventsOnly: true };
+    setFilters(f);
+    apply(f);
+  };
+  const actions: LogRowActions = { onTrace: openTrace, onSession: showSession, onContext: showContext, onEvent: showEvent };
+  const rowKey = (l: LogRec, i: number) => String(l.seq ?? `${l.time_unix_nano || 0}:${i}`);
+  const ordered = useMemo(() => (follow ? [...logs].reverse() : logs), [logs, follow]);
+  const buckets = useMemo(() => timeBuckets(logs, 24), [logs]);
+  useEffect(() => {
+    if (follow && onNewestPage && !paused) listEnd.current?.scrollIntoView?.({ block: "nearest" });
+  }, [logs, follow, onNewestPage, paused]);
+  const permalink = typeof window !== "undefined" ? window.location.href : "";
   const oldestShown = logs.length ? logs[logs.length - 1].time_unix_nano || 0 : 0;
   const newestShown = logs.length ? logs[0].time_unix_nano || 0 : 0;
 
@@ -165,6 +333,15 @@ export function LogsPage() {
           <input type="checkbox" checked={absolute} onChange={(e: any) => setAbsolute(e.target.checked)} />
           absolute times
         </label>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="oldest first, newest at the bottom, scrolls with new lines">
+          <input type="checkbox" checked={follow} onChange={(e: any) => setFollow(e.target.checked)} />
+          follow
+        </label>
+        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="wrap long lines">
+          <input type="checkbox" checked={wrap} onChange={(e: any) => setWrap(e.target.checked)} />
+          wrap
+        </label>
+        <CopyButton text={permalink} label="copy link" />
         <Select value={String(pageSize)} onValueChange={(v: string) => { setPageSize(Number(v)); setCursors([]); }} className="h-8">
           {LOG_PAGE_SIZES.map((n) => (
             <SelectOption key={n} value={String(n)}>
@@ -241,9 +418,10 @@ export function LogsPage() {
         <Input className="h-8" placeholder="trace id" value={filters.traceId} onChange={(e: any) => set("traceId", e.target.value)} />
         <Input className="h-8" placeholder="text…" value={filters.text} onChange={(e: any) => set("text", e.target.value)} />
         <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="only hermes.* / GenAI events (logs.events.enabled)">
-          <input type="checkbox" checked={filters.eventsOnly} onChange={(e: any) => set("eventsOnly", e.target.checked)} />
+          <input type="checkbox" checked={filters.eventsOnly || !!filters.eventName} onChange={(e: any) => set("eventsOnly", e.target.checked)} />
           events only
         </label>
+        <Input className="h-8 font-mono" placeholder="event name…" value={filters.eventName} onChange={(e: any) => set("eventName", e.target.value)} title="one structured event, e.g. hermes.tool.call" />
         <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8">
           <SelectOption value="0.25">15m</SelectOption>
           <SelectOption value="1">1h</SelectOption>
@@ -263,7 +441,7 @@ export function LogsPage() {
       {isLive && live === false ? (
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
           <div className="mb-1 text-base font-medium text-foreground">Live mode is off</div>
-          Set <span className="font-mono">dashboard_live: true</span> and <span className="font-mono">capture_logs: true</span>, then run a turn.
+          Set <span className="font-mono">dashboard_live: true</span> and <span className="font-mono">logs.capture: true</span> (or <span className="font-mono">logs.events.enabled: true</span>), then run a turn.
         </div>
       ) : logs.length === 0 ? (
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
@@ -272,8 +450,8 @@ export function LogsPage() {
             <Button variant="outline" size="sm" onClick={newer}>← Back to the newer page</Button>
           ) : isLive ? (
             <>
-              Set <span className="font-mono">capture_logs: true</span> in the plugin config and run a turn — the agent's log lines stream here. Lines written while a
-              turn is in flight carry its trace and session id.
+              Set <span className="font-mono">logs.capture: true</span> or <span className="font-mono">logs.events.enabled: true</span> in the plugin config and run a turn — the agent's log lines and events
+              stream here. Lines written while a turn is in flight carry its trace and session id; click a line for its attributes.
             </>
           ) : (
             "Nothing matched in this window."
@@ -281,11 +459,24 @@ export function LogsPage() {
         </div>
       ) : (
         <>
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <SeveritySummary rows={logs} buckets={buckets} />
+            {applied.centerNs ? (
+              <span className="text-xs text-muted-foreground">
+                ±{applied.windowS} s around {fmtAbsTime(Number(applied.centerNs))}{" "}
+                <button type="button" className="otel-link" onClick={() => { const f = { ...applied, centerNs: "" }; setFilters(f); apply(f); }}>
+                  clear
+                </button>
+              </span>
+            ) : null}
+          </div>
           {pager}
           <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
-            {logs.map((l, i) => (
-              <LogLine key={l.seq ?? `${l.time_unix_nano || 0}:${i}`} l={l} absolute={absolute} onTrace={openTrace} />
-            ))}
+            {ordered.map((l, i) => {
+              const k = rowKey(l, i);
+              return <LogRow key={k} l={l} absolute={absolute} wrap={wrap} expanded={expanded === k} onToggle={() => setExpanded(expanded === k ? null : k)} actions={actions} />;
+            })}
+            <div ref={listEnd} />
           </div>
           {pager}
         </>

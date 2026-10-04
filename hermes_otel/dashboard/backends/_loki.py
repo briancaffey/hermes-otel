@@ -12,7 +12,14 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from .base import LogFilter, http_get_json, log_end_ns, strictly_older
+from .base import (
+    LogFilter,
+    finish_log_row,
+    http_get_json,
+    log_end_ns,
+    strictly_older,
+)
+from .openobserve import _dotted
 
 DEFAULT_SELECTOR = '{service_name=~".+"}'
 
@@ -35,6 +42,10 @@ def logql_for(f: LogFilter, selector: str = DEFAULT_SELECTOR) -> str:
     stages: List[str] = []
     if f.trace_id:
         stages.append(f"| trace_id={_quote(f.trace_id)}")
+    if f.event_name:
+        stages.append(f"| event_name={_quote(f.event_name)}")
+    elif f.events_only:
+        stages.append('| event_name!=""')
     if f.session:
         stages.append(f"| hermes_session_id={_quote(f.session)}")
     if f.logger:
@@ -47,15 +58,51 @@ def logql_for(f: LogFilter, selector: str = DEFAULT_SELECTOR) -> str:
 
 
 def _record(labels: Dict[str, Any], ts_ns: Any, line: str) -> Dict[str, Any]:
+    """Stream labels plus structured metadata → the live store's row shape.
+
+    The otel-lgtm collector writes OTLP log attributes as Loki structured
+    metadata with dots turned into underscores (``hermes_session_id``,
+    ``hermes_log_attribution``); ``query_range`` returns them merged with the
+    stream labels, so everything that is not a known row field is exposed
+    under ``attributes``, mapped back to its dotted name where the plugin
+    documents one (``hermes.log.attribution``; see :func:`_dotted`) so the
+    dashboard groups and reads them like the live store's rows (#268). Loki's
+    own bookkeeping labels (``flags``, ``observed_timestamp``) are dropped.
+    """
     trace_id = labels.get("trace_id") or None
-    return {
+    known = {
+        "severity_text",
+        "detected_level",
+        "severity_number",
+        "scope_name",
+        "trace_id",
+        "span_id",
+        "hermes_session_id",
+        "event_name",
+        "service_name",
+        "level",
+        "flags",
+        "observed_timestamp",
+    }
+    row = {
         "level": str(labels.get("severity_text") or labels.get("detected_level") or "INFO").upper(),
+        "severity_number": _int_or_none(labels.get("severity_number")),
         "logger": labels.get("scope_name") or "",
         "body": line or "",
         "time_unix_nano": int(ts_ns or 0),
         "trace_id": trace_id,
+        "span_id": labels.get("span_id") or None,
         "session_id": labels.get("hermes_session_id") or None,
+        "event_name": labels.get("event_name") or None,
     }
+    return finish_log_row(row, {_dotted(k): v for k, v in labels.items() if k not in known})
+
+
+def _int_or_none(value: Any) -> Any:
+    try:
+        return int(value) if value not in (None, "") else None
+    except (TypeError, ValueError):
+        return None
 
 
 def logs_search(

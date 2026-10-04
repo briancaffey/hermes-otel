@@ -6,7 +6,7 @@ import { ValueView, Facts, StatusBadge, Chips } from "./render";
 import { splitList, turnTools } from "./values";
 import { withBackend } from "./source";
 import { navigate } from "./nav";
-import { LogLine, LogRec } from "./logs";
+import { LogLine, LogRec, LogRow } from "./logs";
 import { MiniLabel, ErrorBanner } from "./atoms";
 
 /* eslint-disable @typescript-eslint/no-explicit-any */
@@ -387,6 +387,7 @@ export function TraceTabs({
 }) {
   const [tab, setTab] = useState<"spans" | "logs" | "raw">("spans");
   const [logs, setLogs] = useState<LogRec[] | null>(null);
+  const [openLog, setOpenLog] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   useEffect(() => {
     if (tab !== "logs" || logs !== null) return;
@@ -420,10 +421,21 @@ export function TraceTabs({
         ) : logs.length === 0 ? (
           <div className="border border-dashed border-border px-4 py-6 text-center text-xs text-muted-foreground">No log lines carry this trace id.</div>
         ) : (
-          <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
-            {logs.map((l, i) => (
-              <LogLine key={l.seq ?? i} l={l} absolute />
-            ))}
+          <div className="space-y-2">
+            <div className="flex items-center justify-between text-xs text-muted-foreground">
+              <span>
+                {logs.length} line{logs.length === 1 ? "" : "s"} carry this trace id · click a line for its attributes
+              </span>
+              <button type="button" className="otel-link" title="open the Logs tab filtered to this trace" onClick={() => navigate({ tab: "logs", source, trace: traceId, session: "", lookback: "8760" })}>
+                open in Logs tab →
+              </button>
+            </div>
+            <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
+              {logs.map((l, i) => {
+                const k = String(l.seq ?? i);
+                return <LogRow key={k} l={l} absolute expanded={openLog === k} onToggle={() => setOpenLog(openLog === k ? null : k)} actions={{ onTrace: () => undefined }} />;
+              })}
+            </div>
           </div>
         )
       ) : null}
