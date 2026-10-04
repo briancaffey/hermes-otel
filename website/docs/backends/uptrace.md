@@ -102,16 +102,29 @@ project token inside the DSN, so the backend entry needs one more key:
     # project_id: 1
 ```
 
+Uptrace 2.1 and 2.0 spell that API differently (2.1 has one route per signal,
+`/spans/{project}`, `/logs/{project}`, `/traces/{project}/{id}`, with
+`time_start`/`time_end` and typed attribute keys such as
+`hermes_session_id::str`; 2.0 keeps everything under `/tracing/{project}/…` with
+`time_gte`/`time_lt`). The adapter asks the server once per process which one it
+speaks and remembers the answer; the dashboard's status shows it as `api_dialect`.
+The 2.1 spelling was taken from Uptrace's own UI requests and checked against
+2.1.0-beta.5 (the version `docker-compose/uptrace.yaml` pins); the 2.0 spelling
+is the one recorded against 2.0.2 when the adapter was written.
+
 Metrics go through MQL (`metric=<name>&alias=$m` plus `$m group by model`,
 `sum($m)`, `avg($m)`, `max($m)`, `count($m)`); a counter only supports its
 per-interval sum, so the other aggregates fall back to it. Logs are the span
-store's `log:*` systems: `--level` narrows the systems, `--trace`, `--session`
-and `--logger` become `where` clauses on `_trace_id`, `hermes_session_id` and
-`otel_library_name`, and `--text` uses Uptrace's search. The logger list is the
-`otel_library_name` attribute's values with counts.
+store's `log:*` systems: `--level` narrows the systems, `--trace`, `--session`,
+`--logger` and `--event` become `where` clauses on `_trace_id`,
+`hermes_session_id`, `otel_library_name` and `event_name` (`--events-only` is
+`where event_name exists`), and `--text` uses Uptrace's search. The logger list
+is the `otel_library_name` attribute's values with counts, scoped to the
+agent's service so Uptrace's own log lines stay out of it.
 
 Timestamps on this API are milliseconds and attribute keys are flattened with
-underscores; the adapter maps them back to the documented dotted names.
+underscores; the adapter strips 2.1's type suffixes and maps the keys back to
+the documented dotted names.
 
 ## Rotating the DSN
 

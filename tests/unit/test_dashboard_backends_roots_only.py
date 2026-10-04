@@ -377,9 +377,9 @@ class TestUptraceRootsOnly:
             }
         )
 
-    # Uptrace 2's API has no filterable parent-id column (``_parent_id = ""``
+    # Uptrace 2.0's API has no filterable parent-id column (``_parent_id = ""``
     # is rejected), so roots are kept client-side from the ``parentId`` field
-    # of each row; the UQL itself never mentions a parent.
+    # of each row on both dialects; the UQL itself never mentions a parent.
     def test_uql_never_filters_on_parent(self):
         adapter = self._adapter()
         for roots_only in (True, False):
@@ -596,7 +596,9 @@ class TestOrderingNewestFirst:
 
         monkeypatch.setattr(up, "http_get_json", fake_get)
         traces = adapter.search(StructuredFilter(), 0, 10, 10)["traces"]
-        assert "sort_by=_time" in seen["url"] and "sort_desc=true" in seen["url"]
+        assert (
+            "sort_by=_time" in seen["url"] and "sort_dir=desc" in seen["url"]
+        )  # the fake speaks 2.1
         assert [t["traceID"] for t in traces] == ["new", "old"]
 
     def test_openobserve_sql_has_order_by_desc(self):

@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_LOG_FILTERS, logParams, logFiltersFromNav, navFromLogFilters, logPageSizeFromNav } from "../src/params";
 import { readNav, navSearch } from "../src/nav";
 
-const F = { minLevel: "30", logger: "hermes_otel", session: "s1", traceId: "t1", text: "final", lookback: 24, eventsOnly: true };
+const F = { minLevel: "30", logger: "hermes_otel", session: "s1", traceId: "t1", text: "final", lookback: 24, eventsOnly: true, eventName: "", centerNs: "", windowS: 30 };
 
 describe("logParams", () => {
   it("maps filters, page size and the cursor onto /logs/search", () => {
@@ -29,7 +29,7 @@ describe("URL round trip", () => {
     expect(nav.before).toBe("42");
   });
   it("defaults clear their keys instead of writing them", () => {
-    expect(navFromLogFilters(DEFAULT_LOG_FILTERS)).toEqual({ level: "", logger: "", session: "", trace: "", text: "", lookback: "", events: "" });
+    expect(navFromLogFilters(DEFAULT_LOG_FILTERS)).toEqual({ level: "", logger: "", session: "", trace: "", text: "", lookback: "", events: "", event: "", center: "", win: "" });
     expect(navSearch({ tab: "logs", ...navFromLogFilters(DEFAULT_LOG_FILTERS) }, "?tab=logs&level=40&text=x")).toBe("?tab=logs");
   });
   it("ignores junk in the URL", () => {

@@ -38,7 +38,7 @@ You can run the same script yourself; on a default install it is at `~/.hermes/p
 | `sessions` | one row per session: turns, spans, tool calls, errors, tokens, cost, first and last |
 | `stats` | the window's totals: turns, sessions, errors, tokens, cost, one table per model and per tool, skills loaded, approvals, the slowest turns |
 | `metrics [name]` | the instruments with data, or one instrument's totals per group and per time bucket |
-| `logs` | captured log records and structured events (an `event_name` field marks an event), filterable by level, logger, text, trace and session |
+| `logs` | captured log records and structured events (an `event_name` field marks an event, `⚡` in the text output), filterable by level, logger, text, trace and session, `--event <name>` for one kind and `--events-only` for all of them; `--follow` keeps printing new records from the live store (`--interval` seconds) |
 | `sql "<select …>"` | read-only SQL against the live store |
 
 Common options: `--json` on every command; `--since 30m|2h|3d|1w|<ISO time>` and `--until` for the window; `--limit`; `--source <backend name or type>` to query a backend instead of the live store; `--db <file>` to point at a live store other than `$HERMES_HOME/hermes_otel_live.db`. `traces` and `stats` filter with `--session`, `--status error`, `--model`, `--tool`, `--name`, `--text` and `--min-duration`. While a turn is running, `trace last` is that turn (its root span arrives when it ends); `last-2` is the previous one. `trace` adds `--attrs` (every attribute under each span), `--io` (captured input and output under `llm`, `api` and `tool` spans, clipped to `--io-chars`), `--width` and `--no-bars`.

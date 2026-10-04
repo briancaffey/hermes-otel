@@ -171,7 +171,8 @@ class BackendAdapter:
         raise NotImplementedError
 
     # ── logs (same record shape as the live store: level, logger, body, ─
-    # ── time_unix_nano, trace_id, session_id) ────────────────────────────
+    # ── time_unix_nano, trace_id, session_id, plus since #268 span_id, ───
+    # ── severity_number, event_name and attributes) ──────────────────────
     def logs_search(
         self, f: "LogFilter", start_s: int, end_s: int, limit: int
     ) -> List[Dict[str, Any]]:
@@ -195,6 +196,78 @@ class LogFilter:
     # than the oldest row shown; a cursor survives new lines arriving, which
     # an offset does not.
     before_ns: Optional[int] = None
+    # Structured events (#267): one event name, or only rows that are events.
+    event_name: Optional[str] = None
+    events_only: bool = False
+
+
+# Row keys every adapter fills; anything else a backend returns goes under
+# ``attributes`` so the dashboard can show it without knowing the backend.
+LOG_ROW_KEYS = (
+    "level",
+    "severity_number",
+    "logger",
+    "body",
+    "time_unix_nano",
+    "trace_id",
+    "span_id",
+    "session_id",
+    "event_name",
+    "attributes",
+)
+
+_SEVERITY_NUMBERS = {
+    "TRACE": 1,
+    "DEBUG": 5,
+    "INFO": 9,
+    "WARN": 13,
+    "WARNING": 13,
+    "ERROR": 17,
+    "CRITICAL": 21,
+    "FATAL": 21,
+}
+
+
+def severity_number_for(level: Any) -> Optional[int]:
+    """OTel severity number for a level spelling (Python or OTel); None when unknown."""
+    if level is None:
+        return None
+    text = str(level).strip().upper()
+    if text.isdigit():
+        n = int(text)
+        return n if n <= 24 else {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}.get(n)
+    return _SEVERITY_NUMBERS.get(text)
+
+
+def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Normalise one adapter row: OTel level spelling, severity number, the
+    event name and the leftover fields under ``attributes`` (#268)."""
+    level = str(row.get("level") or "INFO").upper()
+    level = {"WARNING": "WARN", "CRITICAL": "FATAL"}.get(level, level)
+    row["level"] = level
+    if row.get("severity_number") is None:
+        row["severity_number"] = severity_number_for(level)
+    attrs: Dict[str, Any] = dict(row.get("attributes") or {})
+    for k, v in (extra or {}).items():
+        if v is None or v == "" or k in LOG_ROW_KEYS:
+            continue
+        attrs.setdefault(str(k), v)
+    event_name = (
+        row.get("event_name") or attrs.pop("event_name", None) or attrs.pop("event.name", None)
+    )
+    row["event_name"] = str(event_name) if event_name else None
+    row["attributes"] = attrs
+    row.setdefault("span_id", None)
+    return row
+
+
+def matches_event_filter(row: Dict[str, Any], f: "LogFilter") -> bool:
+    """Apply the event filters client-side for backends that cannot express them."""
+    if f.event_name:
+        return row.get("event_name") == f.event_name
+    if f.events_only:
+        return bool(row.get("event_name"))
+    return True
 
 
 def log_end_ns(end_s: int, f: "LogFilter") -> int:

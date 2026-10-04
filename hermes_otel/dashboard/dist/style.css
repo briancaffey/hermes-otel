@@ -426,6 +426,14 @@
 .otel-kv-table {
   row-gap: 0.15rem;
 }
+/* Key column of a log record's attribute table: long dotted keys wrap inside
+   their own column instead of running into the value (#268). */
+.otel-kv-table td.otel-kv {
+  max-width: 16rem;
+  overflow-wrap: anywhere;
+  vertical-align: top;
+  padding-right: 0.75rem;
+}
 .otel-chips {
   display: inline-flex;
   flex-wrap: wrap;

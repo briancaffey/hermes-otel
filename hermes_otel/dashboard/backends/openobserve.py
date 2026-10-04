@@ -16,10 +16,12 @@ from urllib import parse as _urlparse
 from . import register
 from .base import (
     BackendAdapter,
+    HTTPException,
     LogFilter,
     StructuredFilter,
     bucketize,
     counter_increases,
+    finish_log_row,
     http_get_json,
     http_post_json,
     otlp_attrs_from_dict,
@@ -61,11 +63,18 @@ def _oo_col(dotted: str) -> str:
 # a column its real name back is a table; ``tests/unit/test_openobserve_columns.py``
 # fails when the docs list a name that is missing here (#158).
 _KNOWN_ATTRIBUTES = (
+    "code.file.path",
+    "code.filepath",
+    "code.function",
+    "code.function.name",
+    "code.line.number",
+    "code.lineno",
     "correlation.id",
     "error.message",
     "error.type",
     "exception.escaped",
     "exception.message",
+    "exception.stacktrace",
     "exception.type",
     "gen_ai.agent.name",
     "gen_ai.conversation.id",
@@ -95,6 +104,7 @@ _KNOWN_ATTRIBUTES = (
     "gen_ai.tool.call.id",
     "gen_ai.tool.call.result",
     "gen_ai.tool.name",
+    "gen_ai.tool.type",
     "gen_ai.usage.cache_creation.input_tokens",
     "gen_ai.usage.cache_creation_input_tokens",
     "gen_ai.usage.cache_read.input_tokens",
@@ -103,9 +113,11 @@ _KNOWN_ATTRIBUTES = (
     "gen_ai.usage.output_tokens",
     "gen_ai.usage.reasoning.output_tokens",
     "gen_ai.usage.total_tokens",
+    "hermes.api.error",
     "hermes.approval.choice",
     "hermes.approval.command",
     "hermes.approval.decided_by",
+    "hermes.approval.decision",
     "hermes.approval.description",
     "hermes.approval.duration_ms",
     "hermes.approval.granted",
@@ -113,20 +125,36 @@ _KNOWN_ATTRIBUTES = (
     "hermes.approval.pattern_keys",
     "hermes.approval.surface",
     "hermes.approval.timed_out",
+    "hermes.content.input_chars",
+    "hermes.content.output_chars",
     "hermes.conversation.message_count",
+    "hermes.cost.source",
+    "hermes.cost.status",
+    "hermes.cost.usage",
     "hermes.cron.job_id",
+    "hermes.link",
+    "hermes.log.attribution",
     "hermes.max_retries",
     "hermes.platform",
+    "hermes.preview.input.original_chars",
+    "hermes.preview.input.truncated",
+    "hermes.preview.output.original_chars",
+    "hermes.preview.output.truncated",
     "hermes.profile",
     "hermes.retry.count",
     "hermes.retryable",
     "hermes.sender.id",
     "hermes.session.completed",
+    "hermes.session.duration_s",
     "hermes.session.failed",
+    "hermes.session.finalize_reason",
     "hermes.session.interrupted",
     "hermes.session.is_subagent",
     "hermes.session.kind",
+    "hermes.session.previous_id",
+    "hermes.session.reset_reason",
     "hermes.session.synthesized",
+    "hermes.session.turn_count",
     "hermes.session_id",
     "hermes.skill.name",
     "hermes.skill.path",
@@ -148,26 +176,14 @@ _KNOWN_ATTRIBUTES = (
     "hermes.tool.cpu.utilization.avg",
     "hermes.tool.cpu.utilization.peak",
     "hermes.tool.decided_by",
+    "hermes.tool.duration_s",
     "hermes.tool.gpu.utilization.avg",
     "hermes.tool.gpu.utilization.peak",
-    "hermes.content.input_chars",
-    "hermes.cost.source",
-    "hermes.cost.status",
-    "hermes.cost.usage",
-    "hermes.content.output_chars",
-    "hermes.preview.input.original_chars",
-    "hermes.preview.input.truncated",
-    "hermes.preview.output.original_chars",
-    "hermes.preview.output.truncated",
-    "hermes.link",
-    "hermes.session.duration_s",
-    "hermes.session.finalize_reason",
-    "hermes.session.previous_id",
-    "hermes.session.reset_reason",
-    "hermes.session.turn_count",
+    "hermes.tool.name",
     "hermes.tool.outcome",
     "hermes.tool.target",
     "hermes.turn.api_call_count",
+    "hermes.turn.duration_s",
     "hermes.turn.exit_reason",
     "hermes.turn.final_status",
     "hermes.turn.number",
@@ -627,13 +643,27 @@ class OpenObserveAdapter(BackendAdapter):
             where.append(f"instrumentation_library_name = '{_sql_escape(f.logger)}'")
         if f.text:
             where.append(f"body LIKE '%{_sql_escape(f.text)}%'")
+        if f.event_name:
+            where.append(f"event_name = '{_sql_escape(f.event_name)}'")
+        elif f.events_only:
+            where.append("event_name IS NOT NULL AND event_name != ''")
+        wants_events = bool(f.event_name or f.events_only)
         if f.before_ns:
             where.append(f"_timestamp < {int(f.before_ns) // 1000}")  # µs column
         sql = f'SELECT * FROM "{self._log_stream()}"'
         if where:
             sql += " WHERE " + " AND ".join(where)
         sql += f" ORDER BY _timestamp DESC LIMIT {int(limit) * 3}"
-        rows = self._search(sql, start_s, end_s, int(limit) * 3, "logs")
+        try:
+            rows = self._search(sql, start_s, end_s, int(limit) * 3, "logs")
+        except HTTPException as exc:
+            # OpenObserve rejects a WHERE on a column the stream has never seen
+            # ("Search field not found … No field named event_name"). Until an
+            # event has been ingested there are no events to show: answer empty
+            # instead of failing the whole Logs tab (#268).
+            if wants_events and "No field named event_name" in str(exc.detail):
+                return []
+            raise
         levels = {
             "DEBUG": 10,
             "INFO": 20,
@@ -648,18 +678,39 @@ class OpenObserveAdapter(BackendAdapter):
             level = self._level_name(r)
             if f.min_level and levels.get(level, 20) < f.min_level:
                 continue
-            out.append(
-                {
-                    "level": level,
-                    # The OTLP logs exporter records the Python logger name as
-                    # the instrumentation scope; that is the column OpenObserve keeps.
-                    "logger": r.get("instrumentation_library_name") or r.get("logger_name") or "",
-                    "body": r.get("body") or "",
-                    "time_unix_nano": int(r.get("_timestamp") or 0) * 1000,
-                    "trace_id": r.get("trace_id"),
-                    "session_id": r.get("session_id") or r.get("hermes_session_id"),
-                }
-            )
+            known = {
+                "_timestamp",
+                "body",
+                "trace_id",
+                "span_id",
+                "session_id",
+                "hermes_session_id",
+                "severity",
+                "severity_text",
+                "severity_number",
+                "level",
+                "instrumentation_library_name",
+                "logger_name",
+                "event_name",
+                "_p",
+                "_o2_id",
+            }
+            row = {
+                "level": level,
+                "severity_number": r.get("severity_number"),
+                # The OTLP logs exporter records the Python logger name as
+                # the instrumentation scope; that is the column OpenObserve keeps.
+                "logger": r.get("instrumentation_library_name") or r.get("logger_name") or "",
+                "body": r.get("body") or "",
+                "time_unix_nano": int(r.get("_timestamp") or 0) * 1000,
+                "trace_id": r.get("trace_id"),
+                "span_id": r.get("span_id"),
+                "session_id": r.get("session_id") or r.get("hermes_session_id"),
+                "event_name": r.get("event_name"),
+            }
+            # OpenObserve flattens attribute names (``hermes_log_attribution``);
+            # give the documented ones their dotted name back (#268).
+            out.append(finish_log_row(row, {_dotted(k): v for k, v in r.items() if k not in known}))
             if len(out) >= limit:
                 break
         return strictly_older(out, f)

@@ -159,7 +159,9 @@ class TestMetrics:
             "hermes.tool.duration.sum",
         ]
         url, headers = fake_http["get"][0]
-        assert headers == {"SIGNOZ-API-KEY": "k"}
+        # A personal access token is read from SIGNOZ-API-KEY, a login JWT only as
+        # a Bearer; sending both lets either kind of key work (verified on v0.119).
+        assert headers == {"SIGNOZ-API-KEY": "k", "Authorization": "Bearer k"}
         assert "dataSource=metrics" in url
 
     def test_counter_query_asks_for_increase_and_buckets_on_the_shared_grid(
@@ -207,6 +209,14 @@ class TestMetrics:
         assert set(out["series"]) == {"_"}
 
 
+def _core(row):
+    """The pre-#268 row keys; the richer fields (span_id, severity_number, event_name, attributes) are asserted separately."""
+    return {
+        k: row.get(k)
+        for k in ("level", "logger", "body", "time_unix_nano", "trace_id", "session_id")
+    }
+
+
 class TestLogs:
     def test_search_builds_filters_and_normalises_records(self, adapter, fake_http):
         f = LogFilter(
@@ -230,7 +240,9 @@ class TestLogs:
         assert items["severity_number"][:2] == (">=", 13)  # WARNING → OTel WARN
         assert items["body"][:2] == ("contains", "finalized")
 
-        assert logs == [
+        assert logs[0]["attributes"]["hermes.session_id"] == "20260924_203458_4a4dea"
+        assert logs[0]["severity_number"] == 9 and logs[0]["event_name"] is None
+        assert [_core(r) for r in logs] == [
             {
                 "level": "INFO",
                 "logger": "hermes_otel",
@@ -247,6 +259,20 @@ class TestLogs:
             fake_http["post"][-1][1]["compositeQuery"]["builderQueries"]["A"]["filters"]["items"]
             == []
         )
+
+    def test_event_filters_use_the_event_name_tag(self, adapter, fake_http):
+        # SigNoz has no column for the OTLP event_name field; the plugin also
+        # sets ``event.name`` as an attribute, which the query builder can filter.
+        adapter.logs_search(LogFilter(event_name="hermes.tool.call"), 0, 60, 10)
+        items = fake_http["post"][-1][1]["compositeQuery"]["builderQueries"]["A"]["filters"][
+            "items"
+        ]
+        assert items == [{"key": sz._tag("event.name"), "op": "=", "value": "hermes.tool.call"}]
+        adapter.logs_search(LogFilter(events_only=True), 0, 60, 10)
+        items = fake_http["post"][-1][1]["compositeQuery"]["builderQueries"]["A"]["filters"][
+            "items"
+        ]
+        assert items == [{"key": sz._tag("event.name"), "op": "exists"}]
 
     def test_severity_floor_per_python_level(self):
         assert [sz._otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
@@ -271,7 +297,8 @@ class TestLogs:
 
     def test_missing_fields_do_not_break_a_record(self):
         rec = sz._log_record({"data": {"body": "x"}})
-        assert rec == {
+        assert rec["attributes"] == {} and rec["span_id"] is None and rec["severity_number"] == 9
+        assert _core(rec) == {
             "level": "INFO",
             "logger": "",
             "body": "x",

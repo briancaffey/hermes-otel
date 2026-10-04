@@ -4,6 +4,7 @@
 import { useState, useEffect, useCallback, fetchJSON, API } from "./sdk";
 
 import { LIVE, withBackend } from "./params";
+import { readNav, writeNav } from "./nav";
 export { LIVE, withBackend };
 const KEY = "hermes_otel.source";
 
@@ -26,7 +27,10 @@ export type SourceStatus = {
   [k: string]: any;
 };
 
-export function readSource(): string {
+/** The source to start from: the URL's `source` (a pasted link wins), else the remembered one. */
+export function readSource(search?: string): string {
+  const fromUrl = readNav(search).source;
+  if (fromUrl) return fromUrl;
   try {
     return localStorage.getItem(KEY) || LIVE;
   } catch {
@@ -40,6 +44,8 @@ export function writeSource(v: string): void {
   } catch {
     /* private mode etc. */
   }
+  // Keep the URL in step so "copy link" names the source it was looking at (#268).
+  writeNav({ source: v === LIVE ? "" : v });
 }
 
 /**

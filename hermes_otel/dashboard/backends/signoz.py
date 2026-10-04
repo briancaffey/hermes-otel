@@ -27,6 +27,7 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bucketize,
+    finish_log_row,
     http_get_json,
     http_post_json,
     log_end_ns,
@@ -190,8 +191,10 @@ class SigNozAdapter(BackendAdapter):
                     "to the signoz backend entry in config.yaml."
                 ),
             )
-        # SigNoz accepts both ``SIGNOZ-API-KEY`` and standard Bearer.
-        return {"SIGNOZ-API-KEY": self.api_key}
+        # A personal access token is honoured as ``SIGNOZ-API-KEY``; a session
+        # JWT (what ``/api/v2/sessions/email_password`` returns) only as a
+        # Bearer. Send both so either kind of key works (verified on v0.119).
+        return {"SIGNOZ-API-KEY": self.api_key, "Authorization": f"Bearer {self.api_key}"}
 
     # ── Query-builder JSON construction ──────────────────────────────
 
@@ -485,6 +488,13 @@ class SigNozAdapter(BackendAdapter):
             )
         if f.text:
             items.append({"key": _column("body"), "op": "contains", "value": f.text})
+        # Structured events carry their name as the ``event.name`` attribute
+        # (SigNoz keeps no column for the OTLP ``event_name`` field); verified
+        # against SigNoz v0.119 (#268).
+        if f.event_name:
+            items.append({"key": _tag("event.name"), "op": "=", "value": f.event_name})
+        elif f.events_only:
+            items.append({"key": _tag("event.name"), "op": "exists"})
         if f.before_ns:
             # Keyset paging at nanosecond precision (``timestamp`` is a ns column).
             items.append(
@@ -563,17 +573,39 @@ def _iter_series_points(data: Any):
 
 
 def _log_record(entry: Dict[str, Any]) -> Dict[str, Any]:
-    """One SigNoz log entry → the live store's record shape."""
+    """One SigNoz log entry → the live store's record shape (#268: with span id,
+    severity number, event name and every attribute)."""
     row = entry.get("data") or {}
-    attrs = row.get("attributes_string") or {}
-    return {
+    attrs: Dict[str, Any] = {}
+    for bucket in (
+        "attributes_string",
+        "attributes_number",
+        "attributes_bool",
+        "attributes_float64",
+        "attributes_int64",
+    ):
+        values = row.get(bucket)
+        if isinstance(values, dict):
+            attrs.update(values)
+    resources = row.get("resources_string") or {}
+    event_name = (
+        row.get("event_name") or attrs.pop("event_name", None) or attrs.pop("event.name", None)
+    )
+    base = {
         "level": str(row.get("severity_text") or "INFO").upper(),
+        "severity_number": row.get("severity_number"),
         "logger": row.get("scope_name") or "",
         "body": row.get("body") or "",
         "time_unix_nano": ns_from_any(entry.get("timestamp")) or 0,
         "trace_id": row.get("trace_id") or None,
+        "span_id": row.get("span_id") or None,
         "session_id": attrs.get("hermes.session_id") or None,
+        "event_name": event_name or None,
+        "attributes": attrs,
     }
+    if isinstance(resources, dict) and resources:
+        base["attributes"] = {**attrs, **{f"resource.{k}": v for k, v in resources.items()}}
+    return finish_log_row(base)
 
 
 def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:

@@ -104,18 +104,19 @@ class TestAdapterBounds:
         assert capture["body"]["end"] == 1_790_500_000 * 1000
 
     def test_uptrace_ends_at_the_next_whole_second_and_over_fetches(self, capture):
-        # Uptrace floors time_lt to the second, so the bound is the next second
-        # above the cursor and the fetch is padded to cover that second.
+        # Uptrace floors the end bound to the second, so the bound is the next
+        # second above the cursor and the fetch is padded to cover that second.
+        # (The capture fake answers the dialect probe with JSON, i.e. 2.1 keys.)
         a = up.UptraceAdapter(
             {"type": "uptrace", "endpoint": "http://u:14318/v1/traces", "user_token": "t"}
         )
         a.logs_search(LogFilter(before_ns=CURSOR), 1_790_400_000, 1_790_500_000, 10)
         q = _urlparse.parse_qs(_urlparse.urlparse(capture["url"]).query)
-        assert q["time_lt"] == [str((CURSOR // 1_000_000_000 + 1) * 1000)]
-        assert q["time_gte"] == ["1790400000000"] and q["limit"] == ["510"]
+        assert q["time_end"] == [str((CURSOR // 1_000_000_000 + 1) * 1000)]
+        assert q["time_start"] == ["1790400000000"] and q["limit"] == ["510"]
         a.logs_search(LogFilter(), 1_790_400_000, 1_790_500_000, 10)
         q = _urlparse.parse_qs(_urlparse.urlparse(capture["url"]).query)
-        assert q["time_lt"] == ["1790500000000"] and q["limit"] == ["10"]
+        assert q["time_end"] == ["1790500000000"] and q["limit"] == ["10"]
 
     def test_loki_uses_the_exact_nanosecond(self, capture):
         _loki.logs_search(

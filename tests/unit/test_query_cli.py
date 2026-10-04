@@ -612,7 +612,7 @@ class TestLogs:
     def test_prints_records(self, db):
         code, out, _ = run("logs", db=db)
         assert code == 0
-        assert "ERROR    hermes.api" in out and "ran bash" in out
+        assert "ERROR   hermes.api" in out and "ran bash" in out
         assert f"[trace {T1[:12]}]" in out
         assert "2 record(s)" in out
 
@@ -820,6 +820,8 @@ def fake_backends(monkeypatch):
         min_level: int = 0
         logger: Optional[str] = None
         text: Optional[str] = None
+        event_name: Optional[str] = None
+        events_only: bool = False
 
     adapter = FakeAdapter()
 

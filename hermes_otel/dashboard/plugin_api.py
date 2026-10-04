@@ -310,11 +310,16 @@ def live_logs_search(
     limit: int = Query(300, ge=1, le=2000),
     before_ns: int = Query(0, ge=0),
     events_only: bool = Query(False, description="Only rows with an event_name (logs.events)"),
+    event_name: str = Query("", description="Exactly this event (implies events_only)"),
+    start_s: Optional[int] = Query(
+        None, ge=0, description="Window start (unix s); overrides lookback"
+    ),
+    end_s: Optional[int] = Query(None, ge=0, description="Window end (unix s); default now"),
 ) -> Dict[str, Any]:
     store = _get_live_store()
     if store is None:
         return {"live": False, "logs": [], "next_before_ns": None, "has_more": False}
-    start_ns, end_ns = _window(lookback_hours, None, None)
+    start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     rows = store.query_logs(
         trace_id=trace_id.strip() or None,
         session=session.strip() or None,
@@ -326,6 +331,7 @@ def live_logs_search(
         limit=limit + LOG_PAGE_SLACK,
         before_ns=before_ns or None,
         events_only=events_only,
+        event_name=event_name.strip() or None,
     )
     return {"live": True, **log_page(rows, limit)}
 
@@ -539,9 +545,14 @@ def backend_logs_search(
     lookback_hours: float = Query(1.0, gt=0, le=8760),
     limit: int = Query(300, ge=1, le=2000),
     before_ns: int = Query(0, ge=0),
+    events_only: bool = Query(False),
+    event_name: str = Query(""),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "logs")
-    end_s = int(time.time())
+    end = int(end_s) if end_s else int(time.time())
+    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
     f = LogFilter(
         trace_id=trace_id.strip() or None,
         session=session.strip() or None,
@@ -549,8 +560,10 @@ def backend_logs_search(
         logger=logger.strip() or None,
         text=text.strip() or None,
         before_ns=before_ns or None,
+        events_only=events_only,
+        event_name=event_name.strip() or None,
     )
-    rows = adapter.logs_search(f, end_s - int(lookback_hours * 3600), end_s, limit + LOG_PAGE_SLACK)
+    rows = adapter.logs_search(f, start, end, limit + LOG_PAGE_SLACK)
     return {"backend": backend_label(adapter.cfg), **log_page(rows, limit)}
 
 

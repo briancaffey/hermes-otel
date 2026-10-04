@@ -40,7 +40,7 @@ python3 ${HERMES_SKILL_DIR}/scripts/otel.py <command> [options]
 | `sessions` | one row per session: turns, spans, tool calls, errors, tokens, cost, first/last |
 | `stats` | the window's totals: turns, sessions, errors, tokens, cost, a table per model and per tool, skills loaded, approvals, the slowest turns |
 | `metrics [name]` | the instruments with data, or one instrument's totals per group (`--group-by model`) and per time bucket (`--buckets`) |
-| `logs` | captured log records (`capture_logs: true`), filterable by level, logger, text, trace, session |
+| `logs` | captured log records and structured events (`logs.capture` / `logs.events.enabled`), filterable by level, logger, text, trace, session, `--event <name>` and `--events-only`; `--follow` keeps printing new live-store records |
 | `sql "<select …>"` | read-only SQL against the live store, for anything the commands above do not cover |
 
 Options every command takes: `--json` for machine-readable output, `--since 30m|2h|3d|1w|2026-09-20T10:00` and `--until` for the window, `--limit N`, and `--source <backend name or type>` to query a configured backend instead of the live store. `traces` and `stats` also take `--session`, `--status error`, `--model`, `--tool bash`, `--name skill.foo`, `--text`, `--min-duration MS`. `trace` takes `--attrs` (every attribute under each span) and `--io` (captured input/output under llm, api and tool spans).

@@ -385,6 +385,8 @@ class LiveSource:
             start_ns=start_ns,
             end_ns=end_ns,
             limit=f.limit,
+            event_name=getattr(f, "event", None) or None,
+            events_only=bool(getattr(f, "events_only", False)),
         )
 
 
@@ -483,6 +485,8 @@ class BackendSource:
             min_level=_LEVELS.get((f.level or "").lower(), 0),
             logger=f.logger or None,
             text=f.text or None,
+            event_name=getattr(f, "event", None) or None,
+            events_only=bool(getattr(f, "events_only", False)),
         )
         start_s = int((start_ns or 0) / 1e9) or int(time.time() - 3600)
         end_s = int((end_ns or 0) / 1e9) or int(time.time())
@@ -1332,25 +1336,82 @@ def cmd_metrics(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
+def _log_line(r: Dict[str, Any]) -> str:
+    """One record as a terminal line: time, level, event or logger, body, ids."""
+    name = r.get("event_name") or r.get("logger") or ""
+    marker = "⚡" if r.get("event_name") else " "
+    tail = ""
+    if r.get("session_id"):
+        tail += f"  [session {_short_id(r.get('session_id'), 16)}]"
+    if r.get("trace_id"):
+        tail += f"  [trace {_short_id(r.get('trace_id'), 12)}]"
+    return (
+        f"{fmt_when(r.get('time_unix_nano'))}  {str(r.get('level') or ''):<5} {marker} {str(name):<34} "
+        f"{one_line(r.get('body'), 200)}{tail}\n"
+    )
+
+
 def cmd_logs(args: argparse.Namespace, out: TextIO) -> int:
     src = resolve_source(args)
+    if getattr(args, "follow", False):
+        return _follow_logs(src, args, out)
     start_ns, end_ns = _window(args)
     rows = src.logs(args, start_ns, end_ns)
     if args.json:
-        _emit_json(rows, out)
+        _emit_json(rows, out)  # the full record: attributes, event_name, span_id, severity_number
         return 0
     if not rows:
-        out.write("(no log records; capture_logs must be true for the plugin to record any)\n")
+        out.write(
+            "(no log records; logs.capture or logs.events.enabled must be on for the plugin to record any)\n"
+        )
         return 0
     for r in rows:
-        out.write(
-            f"{fmt_when(r.get('time_unix_nano'))}  {str(r.get('level') or ''):<8} {str(r.get('logger') or ''):<28} "
-            f"{one_line(r.get('body'), 200)}"
-            + (f"  [trace {_short_id(r.get('trace_id'), 12)}]" if r.get("trace_id") else "")
-            + "\n"
-        )
-    out.write(f"{len(rows)} record(s), newest first\n")
+        out.write(_log_line(r))
+    events = sum(1 for r in rows if r.get("event_name"))
+    out.write(
+        f"{len(rows)} record(s), newest first"
+        + (f" ({events} event{'s' if events != 1 else ''}, marked ⚡)" if events else "")
+        + "\n"
+    )
     return 0
+
+
+def _follow_logs(src: Any, args: argparse.Namespace, out: TextIO) -> int:
+    """Print new records as they arrive, oldest first, until interrupted (live store only)."""
+    if not isinstance(src, LiveSource):
+        raise CliError("--follow reads the live store; drop --source to follow")
+    seen: set = set()
+    start_ns = time.time_ns() - 60 * 1_000_000_000  # start with the last minute
+    out.write("following the live store (Ctrl-C to stop)\n")
+    out.flush()
+    try:
+        while True:
+            rows = src.logs(args, start_ns, None)
+            fresh = []
+            for r in rows:
+                key = (r.get("seq"), r.get("time_unix_nano"), r.get("body"))
+                if key in seen:
+                    continue
+                seen.add(key)
+                fresh.append(r)
+            for r in sorted(fresh, key=lambda x: int(x.get("time_unix_nano") or 0)):
+                out.write(_emit_follow_line(r, args))
+            out.flush()
+            if rows:
+                newest = max(int(r.get("time_unix_nano") or 0) for r in rows)
+                start_ns = max(start_ns, newest - 5_000_000_000)  # overlap 5 s; dedupe by key
+            if len(seen) > 20_000:
+                seen = set(list(seen)[-5_000:])
+            time.sleep(float(getattr(args, "interval", 2.0) or 2.0))
+    except KeyboardInterrupt:
+        out.write("\n")
+        return 0
+
+
+def _emit_follow_line(r: Dict[str, Any], args: argparse.Namespace) -> str:
+    if getattr(args, "json", False):
+        return json.dumps(r, default=str) + "\n"
+    return _log_line(r)
 
 
 def cmd_sql(args: argparse.Namespace, out: TextIO) -> int:
@@ -1492,6 +1553,20 @@ def build_parser() -> argparse.ArgumentParser:
     s.add_argument("--text", default=None)
     s.add_argument("--trace", default=None)
     s.add_argument("--session", default=None)
+    s.add_argument(
+        "--event", default=None, help="only this structured event (e.g. hermes.tool.call)"
+    )
+    s.add_argument(
+        "--events-only", action="store_true", help="only structured events (logs.events)"
+    )
+    s.add_argument(
+        "--follow",
+        action="store_true",
+        help="keep printing new records as they arrive (live store only; Ctrl-C to stop)",
+    )
+    s.add_argument(
+        "--interval", type=float, default=2.0, help="poll interval for --follow, seconds"
+    )
 
     s = sub.add_parser("sql", help="read-only SQL against the live store (table `events`)")
     s.add_argument("query")
