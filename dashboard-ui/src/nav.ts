@@ -19,11 +19,12 @@ export type NavState = {
   logger?: string;
   text?: string;
   lookback?: string;
+  events?: string; // "1" = events only (logs.events)
   size?: string;
   before?: string;
 };
 
-export const NAV_KEYS = ["tab", "source", "view", "trace", "session", "level", "logger", "text", "lookback", "size", "before"] as const;
+export const NAV_KEYS = ["tab", "source", "view", "trace", "session", "level", "logger", "text", "lookback", "events", "size", "before"] as const;
 
 export const NAV_EVENT = "hermes_otel:navigate";
 

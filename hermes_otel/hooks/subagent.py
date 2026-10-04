@@ -4,9 +4,10 @@ from __future__ import annotations
 
 from typing import Any, Dict
 
+from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import subagent_span_key, subagent_status_to_span_status, truncate_string
-from ._common import _fail_open, _preview_for, get_tracer
+from ._common import _emit_event, _fail_open, _preview_for, get_tracer
 from .attributes import _correlation_attributes, _session_identity_attributes
 
 
@@ -95,6 +96,14 @@ def on_subagent_start(
             record["context"] = None
     tracer.spans.register_subagent(child_session_id, record)
     debug_log(f"  subagent span started: key={key}, name={span_name}")
+    _emit_event(
+        tracer,
+        EV.SUBAGENT_START,
+        f"sub-agent {attributes.get('hermes.subagent.role') or 'worker'} started",
+        {k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},
+        session_id=parent_session_id,
+        span=span,
+    )
 
 
 @_fail_open
@@ -145,6 +154,21 @@ def on_subagent_stop(
     if status == "error":
         error_message = truncate_string(child_summary or child_status, 500)
 
+    child_span = tracer.spans.get_span(key)
+    _emit_event(
+        tracer,
+        EV.SUBAGENT_STOP,
+        f"sub-agent {attributes.get('hermes.subagent.role') or 'worker'} "
+        f"{attributes.get('hermes.subagent.status') or status}",
+        {
+            **{k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},
+            "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+        },
+        severity="ERROR" if status == "error" else "INFO",
+        session_id=kwargs.get("parent_session_id")
+        or attributes.get("hermes.subagent.parent_session_id"),
+        span=child_span,
+    )
     tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)
 
     # Metrics. ``status`` stays the coarse ok|error (existing dashboards filter

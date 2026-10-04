@@ -26,7 +26,9 @@ By default (`content_capture: full`) every model call's complete prompt and
 response go to your backends, unclipped. `content_capture: preview` keeps
 only 1200-character previews; `off` records no content at all. Set it in
 `$HERMES_HOME/hermes_otel.yaml` or with `HERMES_OTEL_CONTENT_CAPTURE`. The
-dashboard's OTel → Settings tab shows what is in force. The local live store
+dashboard's OTel → Settings tab shows what is in force. Structured `hermes.*` /
+GenAI log events from the hooks are off by default (`logs.events.enabled: true`
+turns them on; `logs.events.content` gates prompt content on them). The local live store
 (`$HERMES_HOME/hermes_otel_live.db`) and `debug.log` hold the same content and
 are created owner-only (`0600`).
 

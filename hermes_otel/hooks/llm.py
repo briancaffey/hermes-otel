@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
+from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import (
     coerce_bool,
@@ -15,6 +16,7 @@ from ..helpers import (
 )
 from ._common import (
     _as_dict,
+    _emit_event,
     _fail_open,
     _mark_truncated,
     _preview_for,
@@ -93,7 +95,21 @@ def on_pre_llm_call(
     # One pre_llm_call per user prompt (Hermes fires it before the tool loop),
     # so this is where the turn gets its number. Tool and api spans opened
     # later in the turn pick it up via _turn_attributes.
-    tracer.sessions.next_turn(session_id, reset=bool(is_first_turn))
+    turn_number = tracer.sessions.next_turn(session_id, reset=bool(is_first_turn))
+    if session_id:
+        _emit_event(
+            tracer,
+            EV.TURN_START,
+            f"turn {turn_number} started",
+            {
+                "hermes.turn.number": turn_number,
+                "hermes.platform": platform or None,
+                **_model_attributes(model, kwargs.get("provider")),
+            },
+            session_id=session_id,
+            span=tracer.spans.get_session_root(session_id),
+            content=False,
+        )
 
     # Capture first LLM input for top-level session span
     if session_id:
@@ -465,6 +481,31 @@ def on_post_api_request(
                 attributes["output.mime_type"] = "application/json"
             attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
 
+    # The GenAI semconv inference event (#267): request attributes from the api
+    # span's start, response attributes from this hook, content gated by
+    # logs.events.content. Read the span before end_span forgets it.
+    api_span = tracer.spans.get_span(key)
+    if api_span is not None and tracer.config.log_events:
+        start_attrs = dict(getattr(api_span, "attributes", None) or {})
+        event_attrs: Dict[str, Any] = {
+            k: v
+            for k, v in {**start_attrs, **attributes}.items()
+            if k.startswith(EV.INFERENCE_PREFIXES) or k in EV.INFERENCE_KEYS
+        }
+        in_tok = event_attrs.get("gen_ai.usage.input_tokens")
+        out_tok = event_attrs.get("gen_ai.usage.output_tokens")
+        tokens = (
+            f" ({in_tok}/{out_tok} tokens)" if in_tok is not None or out_tok is not None else ""
+        )
+        _emit_event(
+            tracer,
+            EV.INFERENCE_DETAILS,
+            f"{event_attrs.get('gen_ai.operation.name') or 'chat'} {model}{tokens}",
+            event_attrs,
+            session_id=session_id,
+            span=api_span,
+        )
+
     # Pop parent
     tracer.spans.pop_parent(session_id=session_id)
 
@@ -541,6 +582,22 @@ def on_api_request_error(
         ps = tracer.sessions.peek(session_id)
         if ps is not None:
             ps.last_error_type = error_type
+
+    _emit_event(
+        tracer,
+        EV.API_ERROR,
+        f"api error {error_type or 'unknown'}"
+        + (f" ({status_class})" if status_class else "")
+        + (f": {error_message}" if error_message else ""),
+        {
+            **attributes,
+            "exception.type": error_type or None,
+            "exception.message": error_message or None,
+        },
+        severity="WARN" if is_retryable else "ERROR",
+        session_id=session_id,
+        content=False,
+    )
 
     key = f"api:{task_id}" if task_id else None
     span = tracer.spans.get_span(key) if key else None

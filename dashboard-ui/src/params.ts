@@ -90,8 +90,8 @@ export function backendParams(f: TraceFilters, source: string, limit = 50): URLS
 
 
 // ── logs tab (#186) ──────────────────────────────────────────────────────
-export type LogFilters = { minLevel: string; logger: string; session: string; traceId: string; text: string; lookback: number };
-export const DEFAULT_LOG_FILTERS: LogFilters = { minLevel: "0", logger: "", session: "", traceId: "", text: "", lookback: 1 };
+export type LogFilters = { minLevel: string; logger: string; session: string; traceId: string; text: string; lookback: number; eventsOnly: boolean };
+export const DEFAULT_LOG_FILTERS: LogFilters = { minLevel: "0", logger: "", session: "", traceId: "", text: "", lookback: 1, eventsOnly: false };
 export const LOG_PAGE_SIZES = [100, 200, 500, 1000];
 export const DEFAULT_LOG_PAGE = 200;
 
@@ -104,12 +104,13 @@ export function logParams(f: LogFilters, source: string, limit: number, beforeNs
   if (f.session.trim()) p.set("session", f.session.trim());
   if (f.traceId.trim()) p.set("trace_id", f.traceId.trim());
   if (f.text.trim()) p.set("text", f.text.trim());
+  if (f.eventsOnly) p.set("events_only", "1");
   if (beforeNs && /^\d+$/.test(beforeNs)) p.set("before_ns", beforeNs);
   return p;
 }
 
 /** The URL's view of the filters (missing keys fall back to the defaults). */
-export function logFiltersFromNav(nav: { level?: string; logger?: string; session?: string; trace?: string; text?: string; lookback?: string }): LogFilters {
+export function logFiltersFromNav(nav: { level?: string; logger?: string; session?: string; trace?: string; text?: string; lookback?: string; events?: string }): LogFilters {
   const lookback = Number(nav.lookback);
   return {
     minLevel: nav.level && /^\d+$/.test(nav.level) ? nav.level : DEFAULT_LOG_FILTERS.minLevel,
@@ -118,11 +119,12 @@ export function logFiltersFromNav(nav: { level?: string; logger?: string; sessio
     traceId: nav.trace || "",
     text: nav.text || "",
     lookback: lookback > 0 ? lookback : DEFAULT_LOG_FILTERS.lookback,
+    eventsOnly: nav.events === "1",
   };
 }
 
 /** The filters as URL keys; an empty string clears a key (see navSearch). */
-export function navFromLogFilters(f: LogFilters): { level: string; logger: string; session: string; trace: string; text: string; lookback: string } {
+export function navFromLogFilters(f: LogFilters): { level: string; logger: string; session: string; trace: string; text: string; lookback: string; events: string } {
   return {
     level: Number(f.minLevel) > 0 ? f.minLevel : "",
     logger: f.logger.trim(),
@@ -130,6 +132,7 @@ export function navFromLogFilters(f: LogFilters): { level: string; logger: strin
     trace: f.traceId.trim(),
     text: f.text.trim(),
     lookback: f.lookback !== DEFAULT_LOG_FILTERS.lookback ? String(f.lookback) : "",
+    events: f.eventsOnly ? "1" : "",
   };
 }
 

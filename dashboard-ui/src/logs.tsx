@@ -26,6 +26,8 @@ export type LogRec = {
   body?: string;
   trace_id?: string | null;
   session_id?: string | null;
+  event_name?: string | null;
+  attributes?: Record<string, unknown> | null;
 };
 const POLL_MS = 3000;
 
@@ -48,6 +50,11 @@ export function LogLine({ l, absolute, onTrace }: { l: LogRec; absolute: boolean
         {ts ? (absolute ? fmtAbsTime(ts) : fmtTimeAgo(ts)) : ""}
       </span>
       <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
+      {l.event_name ? (
+        <span className="shrink-0 rounded border border-border px-1 font-mono text-[10px] text-muted-foreground" title="structured event (logs.events)">
+          {l.event_name}
+        </span>
+      ) : null}
       {l.logger ? (
         <span className="otel-w-40 shrink-0 truncate text-muted-foreground" title={l.logger}>
           {l.logger}
@@ -233,6 +240,10 @@ export function LogsPage() {
         <Input className="h-8" placeholder="session id" value={filters.session} onChange={(e: any) => set("session", e.target.value)} />
         <Input className="h-8" placeholder="trace id" value={filters.traceId} onChange={(e: any) => set("traceId", e.target.value)} />
         <Input className="h-8" placeholder="text…" value={filters.text} onChange={(e: any) => set("text", e.target.value)} />
+        <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="only hermes.* / GenAI events (logs.events.enabled)">
+          <input type="checkbox" checked={filters.eventsOnly} onChange={(e: any) => set("eventsOnly", e.target.checked)} />
+          events only
+        </label>
         <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8">
           <SelectOption value="0.25">15m</SelectOption>
           <SelectOption value="1">1h</SelectOption>

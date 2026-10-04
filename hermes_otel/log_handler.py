@@ -269,10 +269,31 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
     backend content narrowing for events, #267, copies the record first.)
     """
 
-    def __init__(self, inner: Any, rules: LogRules, backend_name: str = "") -> None:
+    def __init__(
+        self,
+        inner: Any,
+        rules: LogRules,
+        backend_name: str = "",
+        *,
+        global_events_content: str = "inherit",
+        span_content_mode: str = "full",
+        preview_chars: int = 1200,
+    ) -> None:
         self._inner = inner
         self._rules = rules
         self._name = backend_name
+        from . import log_events as _ev
+
+        self._ev = _ev
+        resolved_global = _ev.resolve_content_mode(global_events_content, span_content_mode)
+        resolved_mine = _ev.resolve_content_mode(rules.events_content, span_content_mode)
+        # Only a narrower per-backend mode changes anything; equal or wider = pass through.
+        self._event_content = (
+            resolved_mine
+            if _ev.narrower(resolved_mine, resolved_global) != resolved_global
+            else None
+        )
+        self._preview_chars = int(preview_chars)
 
     @property
     def rules(self) -> LogRules:
@@ -292,9 +313,35 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
                 getattr(scope, "name", None), severity_value, getattr(rec, "attributes", None)
             ):
                 return
+            if getattr(rec, "event_name", None):
+                if not self._rules.events_enabled:
+                    return  # this backend opted out of events
+                if self._event_content is not None:
+                    log_record = self._narrow_event(log_record, rec)
         except Exception:  # pragma: no cover — never block a record on a filter bug
             pass
         self._inner.on_emit(log_record)
+
+    def _narrow_event(self, log_record: Any, rec: Any) -> Any:
+        """A copy of the record with content attributes gated for this backend only.
+
+        Records are shared between the provider's processors, so the original
+        is left untouched for the backends that may keep full content.
+        """
+        import copy
+
+        attrs = getattr(rec, "attributes", None) or {}
+        if not self._ev.has_content(attrs):
+            return log_record
+        new_rec = copy.copy(rec)
+        new_rec.attributes = self._ev.apply_content_mode(
+            dict(attrs), self._event_content, self._preview_chars
+        )
+        if log_record is rec:
+            return new_rec
+        wrapper = copy.copy(log_record)
+        wrapper.log_record = new_rec
+        return wrapper
 
     def shutdown(self) -> None:
         self._inner.shutdown()
@@ -673,6 +720,7 @@ def build_log_processors(
     batch: Optional[Dict[str, int]] = None,
     rules: Optional[LogRules] = None,
     content_mode: str = "full",
+    preview_chars: int = 1200,
 ) -> List[Tuple[Any, _ResolvedBackend]]:
     """Build one :class:`BatchLogRecordProcessor` per log-capable backend.
 
@@ -717,7 +765,14 @@ def build_log_processors(
                     where=f"backends[{b.display_name}]",
                     content_mode=content_mode,
                 )
-                processor = BackendLogFilter(processor, backend_rules, b.display_name)
+                processor = BackendLogFilter(
+                    processor,
+                    backend_rules,
+                    b.display_name,
+                    global_events_content=rules.events_content,
+                    span_content_mode=content_mode,
+                    preview_chars=preview_chars,
+                )
             processors.append((processor, b))
         except Exception as e:
             logger.error(f"[hermes-otel] ✗ {b.display_name} logs init failed: {e}")
@@ -740,6 +795,7 @@ def install_handler(
     rules: Optional[LogRules] = None,
     live_rules: Optional[LogRules] = None,
     max_attribute_length: Optional[int] = None,
+    attach_handler: bool = True,
 ) -> Optional["LoggerProvider"]:
     """Wire a :class:`LoggerProvider` + :class:`LoggingHandler` onto Python logging.
 
@@ -770,6 +826,9 @@ def install_handler(
         live_rules: Rules for the live sink; defaults to *rules* floored at
             ``live_min_level``.
         max_attribute_length: Cap on exported string attributes.
+        attach_handler: Attach the stdlib ``LoggingHandler`` (``logs.capture``).
+            ``False`` builds the provider for the plugin's own events only
+            (``logs.events.enabled`` with ``logs.capture: false``, #267).
 
     Returns the ``LoggerProvider`` so the tracer can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are
@@ -797,12 +856,15 @@ def install_handler(
     for proc, _backend in processors:
         provider.add_log_record_processor(proc)
 
+    target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
+    _remove_prior_handlers(target)
+    if not attach_handler:
+        debug_log(f"log_handler: provider only (events), backends={len(processors)}")
+        return provider
+
     handler = LoggingHandler(level=level, logger_provider=provider)
     handler.addFilter(_LoggerRulesFilter(rules))
     setattr(handler, _HANDLER_MARKER, True)
-
-    target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
-    _remove_prior_handlers(target)
     target.addHandler(handler)
     # Ensure records actually reach the handler — Python filters at the
     # logger level before dispatching to handlers, so a root logger left

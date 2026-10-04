@@ -5,9 +5,10 @@ from __future__ import annotations
 import time
 from typing import Any, Dict, Optional
 
+from .. import log_events as EV
 from ..debug_utils import debug_log, logger
 from ..helpers import detect_session_kind, truncate_string
-from ._common import _fail_open, get_tracer
+from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
     _correlation_attributes,
     _extract_correlation_id,
@@ -235,6 +236,28 @@ def on_session_end(
                 status="ok",
             )
 
+    root_span = tracer.spans.get_span(key)
+    started_at = tracer._turn_started_at.get(session_id) if session_id else None
+    final = attributes.get("hermes.turn.final_status") or "incomplete"
+    _emit_event(
+        tracer,
+        EV.TURN_END,
+        f"turn {attributes.get('hermes.turn.number') or '?'} {final}",
+        {
+            **{
+                k: v
+                for k, v in attributes.items()
+                if k.startswith(EV.TURN_END_PREFIXES) or k in EV.TURN_END_KEYS
+            },
+            EV.ATTR_TURN_DURATION_S: (
+                round(time.perf_counter() - started_at, 3) if started_at is not None else None
+            ),
+        },
+        severity="ERROR" if final == "failed" else ("WARN" if final == "interrupted" else "INFO"),
+        session_id=session_id,
+        span=root_span,
+        content=False,
+    )
     _remember_root(tracer, session_id)
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
@@ -336,6 +359,20 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
             "hermes.session.duration_s": duration_s if duration_s is not None else 0.0,
             _REASON_KEY[event]: reason,
         },
+    )
+    _emit_event(
+        tracer,
+        EV.SESSION_FINALIZE,
+        f"session {session_id} {_FINAL_STATUS[event]} ({reason}): {turns} turn(s)"
+        + (f" over {duration_s:.1f}s" if duration_s is not None else ""),
+        {
+            "hermes.session.turn_count": turns,
+            "hermes.session.duration_s": round(duration_s, 3) if duration_s is not None else None,
+            _REASON_KEY[event]: truncate_string(reason, 120),
+            "hermes.platform": platform or None,
+        },
+        session_id=session_id,
+        content=False,
     )
     # The authoritative flush: nothing of this session should wait for the
     # batcher after its end. Background, like the turn-end flush; process
