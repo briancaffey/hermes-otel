@@ -32,6 +32,7 @@ const POLL_MS = 3000;
 const LEVEL_CLASS: Record<string, string> = {
   ERROR: "text-destructive",
   CRITICAL: "text-destructive",
+  FATAL: "text-destructive",
   WARNING: "otel-c-tool",
   WARN: "otel-c-tool",
   INFO: "otel-c-llm",

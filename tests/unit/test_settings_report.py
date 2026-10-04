@@ -119,7 +119,7 @@ class TestFieldReports:
         groups = {g for g, _ in FIELD_GROUPS}
         for f in build_settings_report()["fields"]:
             assert f["group"] in groups, f["key"]
-            assert f["kind"] in ("bool", "int", "float", "str", "map", "backends")
+            assert f["kind"] in ("bool", "int", "float", "str", "list", "map", "backends")
             assert f["description"]
 
     def test_unknown_file_keys_are_listed_with_known_notes(self, home):

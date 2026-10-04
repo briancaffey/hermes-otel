@@ -11,13 +11,13 @@ import logging
 import re
 from pathlib import Path
 
-from hermes_otel.plugin_config import HermesOtelConfig, load_config
+from hermes_otel.plugin_config import LOGS_FLAT_TO_BLOCK, HermesOtelConfig, load_config
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXAMPLE = REPO_ROOT / "config.yaml.example"
 
 # Top-level keys that are not dataclass fields but are real config.
-_TOP_LEVEL_BLOCKS = set()
+_TOP_LEVEL_BLOCKS = {"logs"}
 
 
 def _example_top_level_keys() -> set:
@@ -25,8 +25,21 @@ def _example_top_level_keys() -> set:
     return set(re.findall(r"^#? ?([a-z_]+):", text, flags=re.M))
 
 
+def _example_block_leaves() -> set:
+    """Nested ``#   key:`` lines: the ``logs:`` block documents its fields by leaf name."""
+    text = EXAMPLE.read_text(encoding="utf-8")
+    return set(re.findall(r"^#\s{2,}([a-z_]+):", text, flags=re.M))
+
+
 def _fields() -> set:
     return {f.name for f in dataclasses.fields(HermesOtelConfig)}
+
+
+def _documented_fields() -> set:
+    top = _example_top_level_keys()
+    leaves = _example_block_leaves()
+    via_block = {flat for flat, path in LOGS_FLAT_TO_BLOCK.items() if path[-1] in leaves}
+    return top | via_block
 
 
 def test_every_example_key_is_a_real_field():
@@ -35,7 +48,7 @@ def test_every_example_key_is_a_real_field():
 
 
 def test_every_field_is_documented_in_the_example():
-    missing = sorted(_fields() - _example_top_level_keys())
+    missing = sorted(_fields() - _documented_fields())
     assert missing == [], f"add these knobs to config.yaml.example: {missing}"
 
 

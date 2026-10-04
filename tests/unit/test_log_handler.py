@@ -885,7 +885,7 @@ class TestLiveSinkOnTheProvider:
         assert _fake("sk-", "abcdefghijklmnopqrstuvwxyz0123") not in row["body"]
         assert row["session_id"] == "s-1" == rec.log_record.attributes["hermes.session_id"]
         assert row["attributes"]["hermes.log.attribution"] == "session_tag"
-        assert row["level"] == "WARNING" and rec.log_record.severity_text == "WARN"
+        assert row["level"] == "WARN" == rec.log_record.severity_text
 
     def test_live_sink_drops_noise_and_debug(self, tmp_path):
         from hermes_otel.live_store import LiveStore

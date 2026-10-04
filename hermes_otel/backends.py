@@ -25,7 +25,7 @@ import dataclasses
 import os
 import urllib.parse
 from dataclasses import dataclass
-from typing import Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .plugin_config import BackendConfig, normalize_temporality
 
@@ -175,6 +175,8 @@ class _ResolvedBackend:
     supports_metrics: bool = True
     supports_logs: bool = False
     resource_attributes: Optional[Dict[str, str]] = None
+    # Per-backend log settings from the entry's ``logs:`` mapping (#266).
+    log_overrides: Optional[Dict[str, Any]] = None
     # ``cumulative`` / ``delta`` for this backend's metric reader; ``None`` =
     # the top-level ``metrics_temporality`` or the SDK default (#233).
     metrics_temporality: Optional[str] = None
@@ -718,6 +720,8 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
     ) or _TEMPORALITY_PRESETS.get(t)
     if temporality and rb.metrics_temporality != temporality:
         rb = dataclasses.replace(rb, metrics_temporality=temporality)
+    if bc.log_overrides:
+        rb = dataclasses.replace(rb, log_overrides=dict(bc.log_overrides))
     return rb
 
 

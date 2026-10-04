@@ -103,26 +103,59 @@
 # Clipped with a trailing "..." if the conversation is bigger.
 # conversation_history_max_chars: 20000
 
-# ── Logs (opt-in) ─────────────────────────────────────────────────────────────
+# ── Logs ─────────────────────────────────────────────────────────────────────
 #
-# Attaches an OTel LoggingHandler to Python's logging so stdlib logger.info()
-# calls ship to any log-capable backend (SigNoz, generic OTLP → Loki/LGTM).
-# Each log record is automatically stamped with the active span's trace_id
-# and span_id, so Grafana's "logs for this span" drill-down works.
+# Opt-in: forward Python `logging` records to every log-capable backend
+# (SigNoz, Loki via LGTM, OpenObserve, Uptrace, Parseable, Honeycomb, any
+# OTLP collector) and to the dashboard's Logs tab. One processor runs ahead
+# of every sink: it stamps the trace/span ids of the turn the line belongs to
+# (exactly, never by guessing), adds the session attributes, drops Hermes'
+# host-internal record attributes and redacts secrets with Hermes' own
+# redactor. See https://briancaffey.github.io/hermes-otel/configuration/logs
 #
-# Off by default because attaching to the root logger is invasive — it
-# exports logs from every library hermes-agent imports, not just the plugin.
-# Also settable via HERMES_OTEL_CAPTURE_LOGS / HERMES_OTEL_LOG_LEVEL /
-# HERMES_OTEL_LOG_ATTACH_LOGGER.
-# capture_logs: false
-
-# Minimum level the handler accepts (DEBUG, INFO, WARNING, ERROR, CRITICAL).
-# log_level: INFO
-
-# Which logger to attach to. Null/unset = root logger (captures everything).
-# Set to e.g. "hermes_otel" to capture only plugin logs; "hermes" for
-# hermes-agent's own logs; any logger name to scope further.
-# log_attach_logger: null
+# Off by default because attaching to the root logger is invasive: it exports
+# logs from every library hermes-agent imports, not just the plugin.
+#
+# The `logs:` block is the preferred spelling. Every key below also exists as
+# a flat field (capture_logs, log_level, log_attach_logger, log_exclude_loggers,
+# log_logger_levels, log_only_in_turn, log_max_attribute_length,
+# log_batch_schedule_delay_ms, log_batch_max_queue_size,
+# log_batch_max_export_batch_size, log_batch_export_timeout_ms,
+# log_live_min_level, log_events, log_events_content) and as
+# HERMES_OTEL_<FIELD> environment variables; the flat spellings keep working.
+#
+# logs:
+#   capture: false                 # the switch (= capture_logs)
+#   level: INFO                    # handler level: DEBUG, INFO, WARN, ERROR
+#   attach_logger: null            # null = root logger; "agent", "gateway", "tools",
+#                                  # "hermes_cli", "hermes_otel" or any logger name to scope
+#   # Logger-name prefixes never forwarded. Default = the OTel SDK and the HTTP
+#   # client stack (loop guard) plus the third-party loggers Hermes pins at WARNING.
+#   exclude_loggers: [opentelemetry, urllib3, httpx, httpcore, requests, openai,
+#                     asyncio, hpack, grpc, websockets, charset_normalizer, markdown_it]
+#   logger_levels: {gateway.config: WARNING}   # per-logger floors
+#   only_in_turn: false            # drop lines the plugin cannot attribute to a session
+#   max_attribute_length: 4096     # longest exported string attribute
+#   live_min_level: INFO           # floor for the dashboard's live Logs tab
+#   batch:                         # BatchLogRecordProcessor knobs
+#     schedule_delay_ms: 1000
+#     max_queue_size: 2048
+#     max_export_batch_size: 512
+#     export_timeout_ms: 30000
+#   events:                        # structured hermes.* / GenAI events (off by default)
+#     enabled: false
+#     content: inherit             # inherit (follow content_capture) | full | preview | off
+#
+# Per backend, `logs:` on an entry may be `true` / `false` (the signal switch)
+# or a mapping with the same `level`, `exclude_loggers`, `logger_levels`,
+# `only_in_turn` and `events` keys, which turns the signal on and narrows the
+# global settings for that backend only (stricter only; a weaker value warns
+# and is ignored):
+#
+# backends:
+#   - type: openobserve
+#     endpoint: http://localhost:5080/api/default/v1/traces
+#     logs: {level: WARN, events: {content: off}}
 
 # ── OTel GenAI semantic-convention metrics ────────────────────────────────────
 #

@@ -10,24 +10,63 @@ Opt-in pipeline that captures Python `logging` records and ships them to any log
 
 **Off by default.** Attaching a handler to Python's root logger is invasive — it exports records from every library hermes-agent imports, not just the plugin. Turn it on deliberately.
 
-## The switch
+## Configuration
+
+Everything about logs lives under one `logs:` block in `$HERMES_HOME/hermes_otel.yaml`:
 
 ```yaml
-# config.yaml
-capture_logs: true
-log_level: INFO
-log_attach_logger: null   # null = root logger (default); set to scope capture
+logs:
+  capture: true                  # the switch; off by default
+  level: INFO                    # handler level: DEBUG, INFO, WARN, ERROR
+  attach_logger: null            # null = root logger; "agent", "gateway", "tools", "hermes_cli",
+                                 # "hermes_otel" or any logger name to scope capture
+  exclude_loggers: [opentelemetry, urllib3, httpx, httpcore, requests, openai,
+                    asyncio, hpack, grpc, websockets, charset_normalizer, markdown_it]
+  logger_levels: {gateway.config: WARNING}   # per-logger floors
+  only_in_turn: false            # drop lines the plugin cannot attribute to a session
+  max_attribute_length: 4096     # longest exported string attribute
+  live_min_level: INFO           # floor for the dashboard's live Logs tab
+  batch:                         # BatchLogRecordProcessor knobs
+    schedule_delay_ms: 1000
+    max_queue_size: 2048
+    max_export_batch_size: 512
+    export_timeout_ms: 30000
+  events:                        # structured hermes.* / GenAI events (Phase 2 of #240; off)
+    enabled: false
+    content: inherit             # inherit (follow content_capture) | full | preview | off
 ```
 
-Or via env vars:
+Every key is also a flat field (`capture_logs`, `log_level`, `log_attach_logger`, `log_exclude_loggers`, `log_logger_levels`, `log_only_in_turn`, `log_max_attribute_length`, `log_batch_*`, `log_live_min_level`, `log_events`, `log_events_content`) and a `HERMES_OTEL_<FIELD>` environment variable (lists are comma-separated), so an older `capture_logs: true` keeps working; the loader prints one line saying the block is preferred, and when both spellings disagree the block wins with a warning. The [config schema](/reference/config-schema) lists each field with its block path.
 
-```bash
-export HERMES_OTEL_CAPTURE_LOGS=true
-export HERMES_OTEL_LOG_LEVEL=INFO
-export HERMES_OTEL_LOG_ATTACH_LOGGER=hermes_otel   # optional scope
+### Per backend
+
+A backend entry's `logs:` is either `true` / `false` (the signal switch, as before) or a mapping, which turns the signal on and narrows the global settings for that backend only:
+
+```yaml
+backends:
+  - type: openobserve
+    endpoint: http://localhost:5080/api/default/v1/traces
+    logs:
+      level: WARN                # this backend gets WARN and above
+      exclude_loggers: [tools]   # added to the global list
+      logger_levels: {gateway: ERROR}
+      only_in_turn: true
+      events: {content: off}     # no prompt content on events here (Phase 2)
 ```
 
-The plugin attaches an OTel `LoggingHandler` to the target logger and fans records out to every backend whose `supports_logs` is true (see [Which backends accept logs](#which-backends-accept-logs)) and, when `dashboard_live` is on, to the live store behind the dashboard's Logs tab. With no log-capable backend the live store alone receives the records.
+Per-backend settings can only be **stricter**: a lower `level`, a wider `events.content` or `only_in_turn: false` against a global `true` is refused with a warning and the global value stays. Secret redaction is global and cannot be turned down per backend. The dashboard's OTel → Settings tab shows each backend's effective values, and its effective-YAML view renders the block form.
+
+### Default exclusions
+
+The default `exclude_loggers` list is the loop guard (the OTel SDK and the HTTP client stack the exporter uses, so an export can never log itself into the next export) plus the third-party loggers Hermes itself pins at `WARNING`. Replacing the list replaces the loop guard too; keep `opentelemetry`, `urllib3`, `httpx`, `httpcore` and `requests` in it unless you are debugging the exporter from a scoped logger.
+
+### Severity spelling
+
+The live store and every backend use the OTel display spellings (`WARN`, `FATAL`, severity numbers 1 to 24). The dashboard, the skill CLI and the backend adapters read both spellings; `live_min_level`, `level` and `logger_levels` accept either (`WARN` or `WARNING`).
+
+### The SDK handler
+
+The plugin bridges stdlib `logging` with the OTel SDK's `LoggingHandler`, which opentelemetry-python deprecated in 1.40 in favour of `opentelemetry-instrumentation-logging`. The SDK handler is still the right tool here (it attaches to one chosen logger and feeds one provider that several sinks share), and a test pins its import path. When the SDK removes it, the fallback is the instrumentation package's handler behind the same `install_handler` seam; nothing in this page changes.
 
 ## What correlation looks like
 
@@ -85,31 +124,10 @@ Secrets are redacted from the body and from every string attribute before any si
 
 ## Fields
 
-### `capture_logs`
+The reference for every field, with its default and `logs:` path, is generated from the code: [config schema → Top level](/reference/config-schema#top-level). Two notes that are not in the table:
 
-Master switch. `false` → pipeline disabled, no handler installed, no change to Python logging. `true` → handler attached, records flow to every log-capable backend.
-
-### `log_level`
-
-When the target logger sits above this level, the plugin lowers it so records reach the handler (a process-wide effect on the root logger) and restores the previous level when the tracer shuts down or re-initializes.
-
-Minimum severity the handler accepts — `DEBUG`, `INFO`, `WARNING`, `ERROR`, `CRITICAL`. Case-insensitive. Numeric values (e.g. `"20"`) also accepted. Defaults to `INFO`.
-
-Records below this level never reach the OTel pipeline. Python's logger-level filtering still applies first (if the root logger is at WARNING, DEBUG records are never even created); the handler level is an additional cap on top.
-
-### `log_attach_logger`
-
-Which Python logger to attach the handler to.
-
-| Value | Scope |
-|---|---|
-| `null` (default) | **Root logger** — captures hermes-agent + plugin + every imported library |
-| `"agent"` | The agent loop (`agent.*`): the lines most often tagged with a session |
-| `"gateway"`, `"tools"`, `"hermes_cli"`, `"cli"`, `"run_agent"` | Hermes' other logger families (there is no `"hermes"` logger; that name captures nothing) |
-| `"hermes_otel"` | Only the plugin's logs |
-| any other name | That logger's subtree only |
-
-Start broad (root), narrow if the signal-to-noise ratio gets bad.
+- `attach_logger`: start broad (root) and narrow when the signal-to-noise ratio gets bad. Hermes' logger families are `agent` (the agent loop, where the session tag lives), `gateway`, `tools`, `hermes_cli`, `cli` and `run_agent`; there is no `hermes` logger.
+- `level` applies to the OTLP path; the live Logs tab has its own `live_min_level` (default `INFO`) so a `DEBUG` export does not flood the bounded live buffer.
 
 ## Which backends accept logs?
 
@@ -128,7 +146,7 @@ Set per-backend via `supports_logs` (auto-derived from `type`, overrideable via 
 
 If `capture_logs` is on but **no** configured backend accepts logs, the plugin logs a single warning at startup and leaves Python logging alone.
 
-## The loop-avoidance filter
+## The loop-avoidance filter (now `exclude_loggers`)
 
 The OTel HTTP exporter uses `urllib3` (via `requests`) to POST log batches to the collector. If the root logger is at DEBUG, `urllib3.connectionpool` emits a DEBUG line like `http://localhost:4318 "POST /v1/logs HTTP/1.1" 200 2` for every export — which would then get captured, batched, exported, producing another line.
 

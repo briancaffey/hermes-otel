@@ -86,6 +86,15 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_CAPTURE_LOGS` | `capture_logs` | bool | `false` |
 | `HERMES_OTEL_LOG_LEVEL` | `log_level` | string | `"INFO"` |
 | `HERMES_OTEL_LOG_ATTACH_LOGGER` | `log_attach_logger` | string | *(unset)* |
+| `HERMES_OTEL_LOG_ONLY_IN_TURN` | `log_only_in_turn` | bool | `false` |
+| `HERMES_OTEL_LOG_MAX_ATTRIBUTE_LENGTH` | `log_max_attribute_length` | int | `4096` |
+| `HERMES_OTEL_LOG_BATCH_SCHEDULE_DELAY_MS` | `log_batch_schedule_delay_ms` | int | `1000` |
+| `HERMES_OTEL_LOG_BATCH_MAX_QUEUE_SIZE` | `log_batch_max_queue_size` | int | `2048` |
+| `HERMES_OTEL_LOG_BATCH_MAX_EXPORT_BATCH_SIZE` | `log_batch_max_export_batch_size` | int | `512` |
+| `HERMES_OTEL_LOG_BATCH_EXPORT_TIMEOUT_MS` | `log_batch_export_timeout_ms` | int | `30000` |
+| `HERMES_OTEL_LOG_LIVE_MIN_LEVEL` | `log_live_min_level` | string | `"INFO"` |
+| `HERMES_OTEL_LOG_EVENTS` | `log_events` | bool | `false` |
+| `HERMES_OTEL_LOG_EVENTS_CONTENT` | `log_events_content` | string | `"inherit"` |
 | `HERMES_OTEL_EMIT_GENAI_METRICS` | `emit_genai_metrics` | bool | `true` |
 | `HERMES_OTEL_METRICS_TEMPORALITY` | `metrics_temporality` | string | *(unset)* |
 | `HERMES_OTEL_METRICS_HISTOGRAM` | `metrics_histogram` | string | `"explicit"` |
