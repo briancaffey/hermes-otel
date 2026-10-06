@@ -3,10 +3,10 @@
 # local volume — no ClickHouse/S3/Postgres dependency.
 #
 # Usage:
-#   docker compose -p openobserve -f docker-compose/openobserve.yaml up -d
+#   docker compose -f docker-compose/openobserve/docker-compose.yaml up -d
 #   # UI:  http://localhost:5080   (root@example.com / Complexpass#123)
-#   docker compose -p openobserve -f docker-compose/openobserve.yaml down
-#   docker compose -p openobserve -f docker-compose/openobserve.yaml down -v   # nuke data
+#   docker compose -f docker-compose/openobserve/docker-compose.yaml down
+#   docker compose -f docker-compose/openobserve/docker-compose.yaml down -v   # nuke data
 #
 # Ports:
 #   5080  OpenObserve UI + OTLP/HTTP ingestion  ← plugin exports here

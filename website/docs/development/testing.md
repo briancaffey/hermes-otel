@@ -77,8 +77,8 @@ Docker fixtures start/stop the containers automatically. If the container is alr
 
 ```bash
 # Start containers manually if preferred
-docker compose -f docker-compose/phoenix.yaml up -d
-docker compose -f docker-compose/langfuse.yaml up -d
+docker compose -f docker-compose/phoenix/docker-compose.yaml up -d
+docker compose -f docker-compose/langfuse/docker-compose.yaml up -d
 ```
 
 Pre-seeded Langfuse credentials:

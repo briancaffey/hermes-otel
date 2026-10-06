@@ -1,0 +1,58 @@
+# MLflow — tracking server with OTLP trace ingest (traces only).
+#
+# Upstream's compose (github.com/mlflow/mlflow/tree/master/docker-compose)
+# runs mlflow + postgres + rustfs (S3). OTLP ingest only needs a SQL backend
+# store, and SQLite qualifies, so this is a single container.
+#
+# Usage:
+#   docker compose -f docker-compose/mlflow/docker-compose.yaml up -d
+#   # UI:  http://localhost:5001   (no login)
+#   docker compose -f docker-compose/mlflow/docker-compose.yaml down
+#   docker compose -f docker-compose/mlflow/docker-compose.yaml down -v   # nuke data
+#
+# Ports:
+#   5001  MLflow UI + REST API + OTLP/HTTP (/v1/traces)   MLFLOW_PORT
+#         (container port 5000; macOS AirPlay Receiver owns host 5000)
+#
+# Point the plugin at it (no explicit `type: mlflow` yet, see issue #221):
+#
+#   backends:
+#     - type: otlp
+#       name: mlflow
+#       endpoint: http://localhost:5001/v1/traces
+#       headers:
+#         x-mlflow-experiment-id: "0"   # required; 0 is the built-in Default experiment
+#       metrics: false                  # MLflow has no /v1/metrics
+#       logs: false                     # ... and no /v1/logs
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  mlflow:
+    image: ghcr.io/mlflow/mlflow:${MLFLOW_VERSION:-v3.16.1}
+    container_name: hermes-otel-mlflow
+    restart: unless-stopped
+    command:
+      - mlflow
+      - server
+      - --backend-store-uri
+      - sqlite:////mlflow/mlflow.db
+      - --artifacts-destination
+      - /mlflow/artifacts
+      - --serve-artifacts
+      - --host
+      - 0.0.0.0
+      - --port
+      - "5000"
+    ports:
+      - "${MLFLOW_PORT:-5001}:5000"
+    volumes:
+      - mlflow_data:/mlflow
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 30
+
+volumes:
+  mlflow_data:

@@ -133,6 +133,27 @@ Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
+## Running one locally
+
+Every self-hostable backend above, plus the candidates tracked in [#232](https://github.com/briancaffey/hermes-otel/issues/232), has its own folder under [`docker-compose/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose) in the repo: `docker compose -f docker-compose/<name>/docker-compose.yaml up -d`, and `down -v` to remove it with its data. Each folder has a README (why pick it, logins, the `backends:` snippet, verification query, caveats), and [`docker-compose/README.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/README.md) is the manual: the comparison table, the port map, disk/memory budgets and the test loop.
+
+Backends without an explicit `type:` yet are driven through the generic `otlp` type; each was verified end to end on 2026-10-05 with hermes-otel 1.19.0:
+
+| Backend | Compose file | Stored from a Hermes turn | Plugin config |
+|---|---|---|---|
+| [OpenLIT](https://github.com/openlit/openlit) (#222) | `openlit/` | traces + metrics + logs | `type: otlp`, `http://localhost:4338/v1/traces` |
+| [MLflow](https://mlflow.org) (#221) | `mlflow/` | traces (with MLflow's own token and cost roll-ups) | `type: otlp`, `http://localhost:5001/v1/traces`, header `x-mlflow-experiment-id: "0"`, `metrics: false`, `logs: false` |
+| [Comet Opik](https://github.com/comet-ml/opik) (#220) | `opik/` | traces (threads, span types, cost) | `type: otlp`, `http://localhost:5173/api/v1/private/otel/v1/traces`, `metrics: false`, `logs: false` |
+| [Laminar](https://github.com/lmnr-ai/lmnr) (#223) | `laminar/` | traces + logs; metrics accepted and dropped | `type: otlp`, `http://localhost:8100/v1/traces`, `Authorization: Bearer <project key>`, `metrics: false` |
+| [LangWatch](https://github.com/langwatch/langwatch) (#229) | `langwatch/` | traces + metrics + logs | `type: otlp`, `http://localhost:5560/api/otel/v1/traces`, `Authorization: Bearer <project key>` |
+| [Langtrace](https://github.com/Scale3-Labs/langtrace) (#224) | `langtrace/` | traces (string and int attributes only) | `type: otlp`, `http://localhost:3040/api/trace`, header `x-api-key`, `metrics: false`, `logs: false` |
+| [Sigiro](https://sigiro.com) (#71) | `sigiro/` | traces + metrics + logs | `type: otlp`, `http://localhost:4378/v1/traces` |
+| [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
+| [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
+| [Latitude](https://github.com/latitude-dev/latitude-llm) (#230) | `latitude/` | not yet run (13 containers, ~15 GB of images) | `type: otlp`, `http://localhost:3002/v1/traces`, bearer key + `X-Latitude-Project` |
+
+Two of these are not open source: Sigiro publishes only a binary image, and Maple is source-available under FSL-1.1. [Jaeger v2](/backends/jaeger) (`jaeger-v2/`) and [Langfuse v4](/backends/langfuse) (`LANGFUSE_VERSION=4`) have their own stacks so the read-side issues #245 and #246 can be reproduced locally.
+
 ## Planned
 
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:

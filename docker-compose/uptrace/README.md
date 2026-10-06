@@ -17,7 +17,7 @@ DSN token the plugin sends as the `uptrace-dsn` header.
 
 ```bash
 # From the plugin root:
-docker compose -p uptrace -f docker-compose/uptrace.yaml up -d
+docker compose -f docker-compose/uptrace/docker-compose.yaml up -d
 
 # First boot bootstraps Postgres + ClickHouse schemas (~20s). Open
 # http://localhost:14318 and log in:
@@ -78,10 +78,10 @@ should appear in startup logs.
 
 ```bash
 # Stop containers, keep volumes (Postgres + ClickHouse data persists):
-docker compose -p uptrace -f docker-compose/uptrace.yaml down
+docker compose -f docker-compose/uptrace/docker-compose.yaml down
 
 # Stop + drop volumes (full reset — re-applies seed_data on next up):
-docker compose -p uptrace -f docker-compose/uptrace.yaml down -v
+docker compose -f docker-compose/uptrace/docker-compose.yaml down -v
 ```
 
 ## Signals supported

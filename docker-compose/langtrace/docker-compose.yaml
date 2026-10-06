@@ -1,0 +1,114 @@
+# Langtrace — LLM tracing UI (traces only, custom ingest path).
+#
+# Adapted from the upstream root compose file at
+#   github.com/Scale3-Labs/langtrace/blob/main/docker-compose.yaml
+# with its .env values inlined. Three containers:
+#
+#   langtrace   — Next.js app: UI + ingest route POST /api/trace
+#   postgres    — users, projects, API keys
+#   clickhouse  — spans
+#
+# Heads-up: AGPL-3.0, and the last upstream release is 4.0.11 from
+# 2025-04-17. Issue #224 tracks whether hermes-otel should support it at all.
+#
+# Usage:
+#   docker compose -f docker-compose/langtrace/docker-compose.yaml up -d
+#   # UI:  http://localhost:3040   (admin@langtrace.ai / langtraceadminpw)
+#   docker compose -f docker-compose/langtrace/docker-compose.yaml down
+#   docker compose -f docker-compose/langtrace/docker-compose.yaml down -v   # nuke data
+#
+# Ports (app moved off 3000; postgres and clickhouse are not published):
+#   3040  Langtrace UI + /api/trace   LANGTRACE_PORT   ← plugin exports here
+#
+# If you change LANGTRACE_PORT, the app's own URLs change with it (they are
+# derived from the same variable below).
+#
+# Ingest needs a project API key: sign in, create a project, then
+# "Generate API Key" on the project page.
+#
+# Point the plugin at it (the endpoint is used verbatim, it is not /v1/traces):
+#
+#   backends:
+#     - type: otlp
+#       name: langtrace
+#       endpoint: http://localhost:3040/api/trace
+#       headers:
+#         x-api-key: ${LANGTRACE_API_KEY}
+#       metrics: false
+#       logs: false
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  langtrace:
+    image: scale3labs/langtrace-client:${LANGTRACE_VERSION:-4.0.11}
+    container_name: hermes-otel-langtrace
+    restart: on-failure:5
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+    environment:
+      POSTGRES_HOST: postgres:5432
+      POSTGRES_USER: ltuser
+      POSTGRES_PASSWORD: ltpasswd
+      POSTGRES_DATABASE: langtrace
+      POSTGRES_URL: postgres://ltuser:ltpasswd@postgres:5432/langtrace
+      POSTGRES_PRISMA_URL: postgres://ltuser:ltpasswd@postgres:5432/langtrace?pgbouncer=true&connect_timeout=15
+      POSTGRES_URL_NO_SSL: postgres://ltuser:ltpasswd@postgres:5432/langtrace
+      POSTGRES_URL_NON_POOLING: postgres://ltuser:ltpasswd@postgres:5432/langtrace
+      NEXT_PUBLIC_APP_NAME: Langtrace
+      NEXT_PUBLIC_ENVIRONMENT: production
+      NEXT_PUBLIC_HOST: http://localhost:${LANGTRACE_PORT:-3040}
+      NEXTAUTH_SECRET: difficultsecret
+      NEXTAUTH_URL: http://localhost:${LANGTRACE_PORT:-3040}
+      NEXTAUTH_URL_INTERNAL: http://localhost:3000
+      CLICK_HOUSE_HOST: http://clickhouse:8123
+      CLICK_HOUSE_USER: lt_clickhouse_user
+      CLICK_HOUSE_PASSWORD: clickhousepw
+      CLICK_HOUSE_DATABASE_NAME: langtrace_traces
+      ADMIN_EMAIL: admin@langtrace.ai
+      ADMIN_PASSWORD: langtraceadminpw
+      NEXT_PUBLIC_ENABLE_ADMIN_LOGIN: "true"
+      # Upstream ships PostHog product analytics on by default.
+      TELEMETRY_ENABLED: "false"
+    ports:
+      - "${LANGTRACE_PORT:-3040}:3000"
+
+  postgres:
+    image: postgres:16.2-bookworm
+    container_name: hermes-otel-langtrace-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: ltuser
+      POSTGRES_PASSWORD: ltpasswd
+      POSTGRES_DB: langtrace
+    volumes:
+      - langtrace_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "ltuser", "-d", "langtrace"]
+      interval: 3s
+      timeout: 3s
+      retries: 15
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.5.1.1763-alpine
+    container_name: hermes-otel-langtrace-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+      CLICKHOUSE_USER: lt_clickhouse_user
+      CLICKHOUSE_PASSWORD: clickhousepw
+      CLICKHOUSE_DB: langtrace_traces
+    volumes:
+      - langtrace_clickhouse:/var/lib/clickhouse
+    healthcheck:
+      test: wget --no-verbose --tries=1 --spider http://127.0.0.1:8123/ping || exit 1
+      interval: 5s
+      retries: 10
+      start_period: 15s
+
+volumes:
+  langtrace_postgres:
+  langtrace_clickhouse:

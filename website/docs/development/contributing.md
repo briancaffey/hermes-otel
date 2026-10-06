@@ -113,7 +113,7 @@ GitHub Actions runs the unit + integration suite + ruff + black on every PR. E2E
 ## Adding a new backend
 
 1. Add the resolver in `backends.py`.
-2. Add a `docker-compose/<backend>.yaml` file if the backend runs locally.
+2. Add a `docker-compose/<backend>/` folder (compose file + README, see `docker-compose/README.md`) if the backend runs locally.
 3. Add a `docs/backends/<name>.md` page — follow the structure of `phoenix.md` / `signoz.md` (setup, multi-backend config, what you'll see, attribute convention, metrics note, troubleshooting).
 4. Add an entry under `backends:` in `config.yaml.example`.
 5. Add a unit test covering the resolver (env-var precedence, header construction).

@@ -2,7 +2,7 @@
 
 Prerequisites:
   - hermes-agent API server running:  API_SERVER_ENABLED=true hermes gateway
-  - Phoenix running on port 6006 (docker compose -f docker-compose/phoenix.yaml up -d)
+  - Phoenix running on port 6006 (docker compose -f docker-compose/phoenix/docker-compose.yaml up -d)
   - OTEL_PHOENIX_ENDPOINT set in ~/.hermes/.env
 
 These tests are skipped automatically if either service is not reachable.

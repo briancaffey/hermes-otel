@@ -33,7 +33,7 @@ The Compose file lives in the repository, not in the installed plugin, so fetch 
 
 ```bash
 mkdir -p ~/hermes-otel-backends && cd ~/hermes-otel-backends
-curl -fsSLO https://raw.githubusercontent.com/briancaffey/hermes-otel/main/docker-compose/phoenix.yaml
+curl -fsSLO https://raw.githubusercontent.com/briancaffey/hermes-otel/main/docker-compose/phoenix/docker-compose.yaml
 docker compose -f phoenix.yaml up -d
 ```
 

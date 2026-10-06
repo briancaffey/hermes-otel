@@ -16,23 +16,29 @@ If you want Grafana with **traces + metrics + logs**, use the [**LGTM stack**](/
 
 ## Local stack
 
-Tempo ships an upstream single-binary docker-compose example that bundles Tempo + MinIO (S3) + Grafana + Prometheus:
+The repo ships a two-container stack (Tempo 3.1 single binary with local-disk storage +
+Grafana with the Tempo datasource provisioned), trimmed from Tempo's upstream
+`example/docker-compose/single-binary`:
 
 ```bash
-cd ~/git/grafana/tempo/example/docker-compose/single-binary
-docker compose up -d
+docker compose -f docker-compose/tempo/docker-compose.yaml up -d
 ```
 
-- Grafana UI: http://localhost:3000 (anonymous admin)
-- OTLP/HTTP: http://localhost:4318
-- OTLP/gRPC: http://localhost:4317 *(unused — the plugin is HTTP/JSON only)*
+- Grafana UI: http://localhost:3020 (anonymous admin → Explore → Tempo)
+- Tempo API: http://localhost:3210
+- OTLP/HTTP: http://localhost:4358 *(moved off 4318 so it coexists with the LGTM stack)*
 
 Then point the plugin at Tempo:
 
 ```bash
-export OTEL_TEMPO_ENDPOINT="http://localhost:4318/v1/traces"
+export OTEL_TEMPO_ENDPOINT="http://localhost:4358/v1/traces"
 export OTEL_PROJECT_NAME="hermes-otel-tempo"
 ```
+
+Two Tempo 3 behaviours worth knowing: search results appear 20-30 s after export, and
+Tempo truncates attribute values at 2048 bytes by default, which cuts the full prompt
+under `content_capture: full`. The repo's `docker-compose/tempo/tempo.yaml` raises
+`distributor.max_attribute_bytes` for that reason; set it on your own Tempo too.
 
 Open Grafana, pick the pre-configured Tempo data source, and query — the span tree renders in Grafana's Explore view.
 

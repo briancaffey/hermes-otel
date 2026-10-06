@@ -1,0 +1,55 @@
+# OpenTelemetry Collector in front of Parseable OSS.
+#
+# Parseable OSS refuses OTLP/protobuf ("Protobuf ingestion is not supported in
+# Parseable OSS") and has no API keys, and the plugin's exporters are
+# protobuf-only (issue #238). This collector receives the plugin's protobuf
+# and re-sends each signal as OTLP/JSON with HTTP Basic auth and the dataset
+# headers Parseable routes on.
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+
+processors:
+  batch:
+    timeout: 1s
+
+exporters:
+  otlp_http/parseable-traces:
+    endpoint: http://parseable:8000
+    encoding: json
+    headers:
+      Authorization: "Basic ${env:PARSEABLE_BASIC_AUTH}"
+      X-P-Stream: hermes-traces
+      X-P-Log-Source: otel-traces
+  otlp_http/parseable-metrics:
+    endpoint: http://parseable:8000
+    encoding: json
+    headers:
+      Authorization: "Basic ${env:PARSEABLE_BASIC_AUTH}"
+      X-P-Stream: hermes-metrics
+      X-P-Log-Source: otel-metrics
+  otlp_http/parseable-logs:
+    endpoint: http://parseable:8000
+    encoding: json
+    headers:
+      Authorization: "Basic ${env:PARSEABLE_BASIC_AUTH}"
+      X-P-Stream: hermes-logs
+      X-P-Log-Source: otel-logs
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/parseable-traces]
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/parseable-metrics]
+    logs:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlp_http/parseable-logs]

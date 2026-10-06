@@ -1,0 +1,178 @@
+# Laminar — agent observability platform (traces only over OTLP).
+#
+# Adapted from the upstream "lite" compose file at
+#   github.com/lmnr-ai/lmnr/blob/main/docker-compose.yml
+# with its .env values inlined. Five long-running containers plus an init job:
+#
+#   postgres    — projects, users, API keys
+#   clickhouse  — spans and traces
+#   quickwit    — full-text span search
+#   app-server  — the API: OTLP/HTTP ingest on 8000, gRPC on 8001
+#   frontend    — the UI
+#
+#   quickwit-init — one-shot: creates the Quickwit indexes, then exits
+#
+# The two XML files under laminar/ are upstream's ClickHouse settings and
+# laminar/quickwit-indexes/ is upstream's frontend/lib/quickwit/indexes/, all
+# unchanged. quickwit-init exists because the published frontend image logs
+# "Quickwit indexes directory not found, skipping index initialization"
+# (seen with `latest` on 2026-10-05), which leaves the span indexer failing
+# with "index `spans_v2` not found" and span search empty.
+# Not published to the host: postgres, clickhouse, quickwit.
+#
+# Usage:
+#   docker compose -f docker-compose/laminar/docker-compose.yaml up -d
+#   # UI:  http://localhost:5667   (enter any email; local sign-in has no password)
+#   docker compose -f docker-compose/laminar/docker-compose.yaml down
+#   docker compose -f docker-compose/laminar/docker-compose.yaml down -v   # nuke data
+#
+# Ports (app-server moved off 8000, the most contested dev port):
+#   5667  Laminar UI                 LAMINAR_UI_PORT
+#   8100  app-server OTLP/HTTP + API LAMINAR_API_PORT   ← plugin exports here
+#   8101  app-server OTLP/gRPC       LAMINAR_GRPC_PORT  (not used by the plugin)
+#
+# Ingest needs a project API key. Either sign in, create a project and use
+# Settings → Project API keys, or mint one without the UI:
+#   docker-compose/laminar/mint-api-key.sh      # prints the key
+#
+# Point the plugin at it (no explicit `type: laminar` yet, see issue #223):
+#
+#   backends:
+#     - type: otlp
+#       name: laminar
+#       endpoint: http://localhost:8100/v1/traces
+#       headers:
+#         Authorization: "Bearer ${LMNR_PROJECT_API_KEY}"
+#       metrics: false   # /v1/metrics answers 200 and drops the payload
+#       logs: false
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+x-laminar-db: &laminar-db
+  DATABASE_URL: postgres://postgres:postgres_passwordabc@postgres:5432/postgres
+  SHARED_SECRET_TOKEN: some_secret
+  CLICKHOUSE_URL: http://clickhouse:8123
+  CLICKHOUSE_USER: ch_user
+  CLICKHOUSE_PASSWORD: ch_passwd
+  CLICKHOUSE_RO_USER: ch_user
+  CLICKHOUSE_RO_PASSWORD: ch_passwd
+  # must be exactly 32 bytes (64 hex characters)
+  AEAD_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+  QUICKWIT_SEARCH_URL: http://quickwit:7280
+  ENVIRONMENT: LITE   # no RabbitMQ dependency
+  # Self-hosted deployments send anonymised usage telemetry unless disabled.
+  LAMINAR_TELEMETRY_DISABLED: "true"
+
+services:
+  postgres:
+    image: postgres:16
+    container_name: hermes-otel-laminar-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres_passwordabc
+      POSTGRES_DB: postgres
+    volumes:
+      - laminar_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "postgres"]
+      interval: 2s
+      timeout: 5s
+      retries: 15
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.5
+    container_name: hermes-otel-laminar-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: ch_user
+      CLICKHOUSE_PASSWORD: ch_passwd
+    volumes:
+      - laminar_clickhouse:/var/lib/clickhouse/
+      - ./clickhouse-profiles-config.xml:/etc/clickhouse-server/users.d/lmnr.xml:ro
+      - ./clickhouse-server-config.xml:/etc/clickhouse-server/config.d/lmnr.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+
+  quickwit:
+    image: quickwit/quickwit:v0.8.2
+    container_name: hermes-otel-laminar-quickwit
+    restart: unless-stopped
+    environment:
+      QW_DATA_DIR: /quickwit/qwdata
+    command: ["run"]
+    volumes:
+      - laminar_quickwit:/quickwit/qwdata
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:7280/health/livez"]
+      interval: 10s
+      timeout: 5s
+      retries: 6
+
+  quickwit-init:
+    image: quickwit/quickwit:v0.8.2
+    container_name: hermes-otel-laminar-quickwit-init
+    restart: "no"
+    depends_on:
+      quickwit:
+        condition: service_healthy
+    volumes:
+      - ./quickwit-indexes:/indexes:ro
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - |
+        for f in /indexes/*.yaml; do
+          code=$$(curl -s -o /dev/null -w '%{http_code}' -X POST http://quickwit:7280/api/v1/indexes \
+            -H 'content-type: application/yaml' --data-binary @$$f)
+          echo "$$f -> $$code"   # 200 created, 400 already exists
+        done
+
+  app-server:
+    image: ghcr.io/lmnr-ai/app-server:${LAMINAR_VERSION:-latest}
+    container_name: hermes-otel-laminar-app-server
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      clickhouse:
+        condition: service_started
+      quickwit:
+        condition: service_healthy
+      quickwit-init:
+        condition: service_completed_successfully
+    environment:
+      <<: *laminar-db
+      PORT: 8000
+      GRPC_PORT: 8001
+      QUICKWIT_INGEST_URL: http://quickwit:7281
+      QUICKWIT_SPANS_INDEX_ID: spans_v2
+    ports:
+      - "${LAMINAR_API_PORT:-8100}:8000"
+      - "${LAMINAR_GRPC_PORT:-8101}:8001"
+
+  frontend:
+    image: ghcr.io/lmnr-ai/frontend:${LAMINAR_VERSION:-latest}
+    container_name: hermes-otel-laminar-frontend
+    restart: unless-stopped
+    depends_on:
+      postgres:
+        condition: service_healthy
+      quickwit:
+        condition: service_healthy
+    environment:
+      <<: *laminar-db
+      PORT: 5667
+      BACKEND_URL: http://app-server:8000
+      BACKEND_RT_URL: http://app-server:8002
+      NEXTAUTH_URL: http://localhost:${LAMINAR_UI_PORT:-5667}
+      NEXTAUTH_SECRET: 0123456789abcdef0123456789abcdef
+      NEXT_PUBLIC_URL: http://localhost:${LAMINAR_UI_PORT:-5667}
+    ports:
+      - "${LAMINAR_UI_PORT:-5667}:5667"
+
+volumes:
+  laminar_postgres:
+  laminar_clickhouse:
+  laminar_quickwit:

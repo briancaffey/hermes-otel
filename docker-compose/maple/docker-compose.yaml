@@ -1,0 +1,44 @@
+# Maple Local — single-process observability for local development
+# (traces + metrics + logs, errors, sessions, service map).
+#
+# Maple ships Maple Local as a binary (maple.dev/local), so maple/Dockerfile
+# downloads the GitHub release and runs `maple start` in a container.
+# Licence: FSL-1.1-ALv2, source-available (github.com/MapleTechLabs/maple).
+# Issue #49.
+#
+# Usage:
+#   docker compose -f docker-compose/maple/docker-compose.yaml up -d --build
+#   # UI + OTLP: http://localhost:4388   (no login)
+#   docker compose -f docker-compose/maple/docker-compose.yaml down
+#   docker compose -f docker-compose/maple/docker-compose.yaml down -v   # nuke data
+#
+# Ports (one port for UI and OTLP; moved off 4318 to coexist with LGTM):
+#   4388  Maple UI + OTLP/HTTP /v1/{traces,metrics,logs}   MAPLE_PORT   ← plugin exports here
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: otlp
+#       name: maple
+#       endpoint: http://localhost:4388/v1/traces
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  maple:
+    build:
+      context: .
+      args:
+        MAPLE_VERSION: ${MAPLE_VERSION:-v0.0.23}
+    image: hermes-otel/maple-local:${MAPLE_VERSION:-v0.0.23}
+    container_name: hermes-otel-maple
+    restart: unless-stopped
+    command: ["start", "--host", "0.0.0.0", "--offline"]
+    volumes:
+      - maple_data:/root/.maple/data
+    ports:
+      - "${MAPLE_PORT:-4388}:4318"
+
+volumes:
+  maple_data:

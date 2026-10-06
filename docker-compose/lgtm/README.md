@@ -18,7 +18,7 @@ correlated logs in Grafana with no extra configuration.
 
 ```bash
 # From the plugin root:
-docker compose -p lgtm -f docker-compose/lgtm.yaml up -d
+docker compose -f docker-compose/lgtm/docker-compose.yaml up -d
 
 # Wait ~30s for services to come up, then open Grafana at
 #   http://localhost:3000     (admin / admin)
@@ -99,10 +99,10 @@ them to `4317`/`4318` — those are the collector's own receiver ports.
 
 ```bash
 # Stop containers, keep no state (the image writes to an internal tmpfs by default):
-docker compose -p lgtm -f docker-compose/lgtm.yaml down
+docker compose -f docker-compose/lgtm/docker-compose.yaml down
 
 # Same + remove volumes (harmless — image is ephemeral):
-docker compose -p lgtm -f docker-compose/lgtm.yaml down -v
+docker compose -f docker-compose/lgtm/docker-compose.yaml down -v
 ```
 
 ## Under the hood

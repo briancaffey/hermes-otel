@@ -1,0 +1,229 @@
+# Comet Opik — LLM tracing and evaluation platform (traces only over OTLP).
+#
+# Trimmed from the upstream compose file at
+#   github.com/comet-ml/opik/blob/main/deployment/docker-compose/docker-compose.yaml
+# (tag 2.2.90) down to what trace ingest and the UI need. Seven long-running
+# containers plus a one-shot bucket job:
+#
+#   mysql       — state DB (workspaces, projects)
+#   redis       — cache and streams
+#   zookeeper   — required by ClickHouse's replicated tables
+#   clickhouse  — traces and spans
+#   minio (+mc) — attachment storage; `mc` creates the bucket and exits
+#   backend     — Java API, runs the DB migrations on start
+#   frontend    — nginx: UI + reverse proxy of /api/* to the backend
+#
+# Dropped from upstream: python-backend (code evaluators, about 2 GB),
+# guardrails-backend, demo-data-generator, and the jaeger / otel-collector
+# pair that only traces Opik itself. Online evaluation rules that run Python
+# will not work without python-backend. Files under opik/ are upstream's
+# ClickHouse and nginx config, unchanged.
+#
+# Usage:
+#   docker compose -f docker-compose/opik/docker-compose.yaml up -d    # first start: 2-3 min
+#   # UI:  http://localhost:5173   (no login)
+#   docker compose -f docker-compose/opik/docker-compose.yaml down
+#   docker compose -f docker-compose/opik/docker-compose.yaml down -v   # nuke data
+#
+# Ports (nothing else is published):
+#   5173  Opik UI + API + OTLP/HTTP under /api   OPIK_PORT   ← plugin exports here
+#
+# Point the plugin at it (no explicit `type: opik` yet, see issue #220):
+#
+#   backends:
+#     - type: otlp
+#       name: opik
+#       endpoint: http://localhost:5173/api/v1/private/otel/v1/traces
+#       headers:
+#         projectName: hermes-agent    # optional; default is "Default Project"
+#       metrics: false                 # no metrics endpoint
+#       logs: false                    # no logs endpoint
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  mysql:
+    image: mysql:8.4.2
+    container_name: hermes-otel-opik-mysql
+    restart: unless-stopped
+    environment:
+      MYSQL_ROOT_PASSWORD: opik
+      MYSQL_DATABASE: opik
+      MYSQL_USER: opik
+      MYSQL_PASSWORD: opik
+    volumes:
+      - opik_mysql:/var/lib/mysql/
+    healthcheck:
+      test: ["CMD", "mysqladmin", "ping", "-h", "127.0.0.1", "--silent"]
+      interval: 2s
+      timeout: 2s
+      retries: 150
+
+  redis:
+    image: redis:7.2.4-alpine3.19
+    container_name: hermes-otel-opik-redis
+    restart: unless-stopped
+    command: redis-server --requirepass opik
+    volumes:
+      - opik_redis:/data
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "6379"]
+      interval: 2s
+      timeout: 4s
+      retries: 20
+
+  zookeeper:
+    image: zookeeper:3.9.4
+    container_name: hermes-otel-opik-zookeeper
+    restart: unless-stopped
+    environment:
+      JVMFLAGS: "-Xmx256m"
+      ZOO_4LW_COMMANDS_WHITELIST: "srvr,ruok"
+    volumes:
+      - opik_zookeeper:/data
+    healthcheck:
+      test: ["CMD-SHELL", "echo ruok | nc localhost 2181 | grep -q imok"]
+      interval: 2s
+      timeout: 2s
+      retries: 150
+
+  clickhouse:
+    image: clickhouse/clickhouse-server:26.3.16.16-alpine
+    container_name: hermes-otel-opik-clickhouse
+    hostname: clickhouse
+    restart: unless-stopped
+    depends_on:
+      zookeeper:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_DB: opik
+      CLICKHOUSE_USER: opik
+      CLICKHOUSE_PASSWORD: opik
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - opik_clickhouse:/var/lib/clickhouse/
+      - ./clickhouse_config/additional_config.xml:/etc/clickhouse-server/config.d/additional_config.xml:ro
+      - ./clickhouse_config/users.d/enable_time_type.xml:/etc/clickhouse-server/users.d/enable_time_type.xml:ro
+      - ./clickhouse_config/users.d/distributed_insert_queue.xml:/etc/clickhouse-server/users.d/distributed_insert_queue.xml:ro
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD", "wget", "--spider", "-q", "http://127.0.0.1:8123/ping"]
+      interval: 2s
+      timeout: 2s
+      retries: 150
+
+  minio:
+    image: &opik-minio-image docker.io/cloudpirates/image-minio:RELEASE.2025-10-15T17-29-55Z-hardened
+    container_name: hermes-otel-opik-minio
+    restart: unless-stopped
+    environment:
+      MINIO_ROOT_USER: THAAIOSFODNN7EXAMPLE
+      MINIO_ROOT_PASSWORD: LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["mkdir -p /data && exec minio server --console-address ':9090' /data"]
+    volumes:
+      - opik_minio:/data
+    healthcheck:
+      test: ["CMD-SHELL", "MC_HOST_local=http://localhost:9000 mc ready local"]
+      interval: 2s
+      timeout: 10s
+      retries: 30
+
+  mc:
+    image: *opik-minio-image
+    container_name: hermes-otel-opik-mc
+    restart: "no"
+    depends_on:
+      minio:
+        condition: service_healthy
+    entrypoint: >
+      /bin/sh -c "
+      set -e;
+      /usr/bin/mc alias set s3 http://minio:9000 THAAIOSFODNN7EXAMPLE LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY --api S3v4;
+      /usr/bin/mc mb --ignore-existing s3/public;
+      /usr/bin/mc anonymous set download s3/public/;
+      "
+
+  backend:
+    image: ghcr.io/comet-ml/opik/opik-backend:${OPIK_VERSION:-2.2.90}
+    container_name: hermes-otel-opik-backend
+    hostname: backend
+    restart: unless-stopped
+    command: ["bash", "-c", "./run_db_migrations.sh && ./provision_agent_insights_readonly_user.sh && ./entrypoint.sh"]
+    depends_on:
+      mysql:
+        condition: service_healthy
+      clickhouse:
+        condition: service_healthy
+      minio:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    environment:
+      STATE_DB_PROTOCOL: "jdbc:mysql://"
+      STATE_DB_URL: "mysql:3306/opik?createDatabaseIfNotExist=true&rewriteBatchedStatements=true&connectionTimeZone=UTC&forceConnectionTimeZoneToSession=true"
+      STATE_DB_DATABASE_NAME: opik
+      STATE_DB_USER: opik
+      STATE_DB_PASS: opik
+      ANALYTICS_DB_MIGRATIONS_URL: "jdbc:clickhouse://clickhouse:8123"
+      ANALYTICS_DB_MIGRATIONS_USER: opik
+      ANALYTICS_DB_MIGRATIONS_PASS: opik
+      ANALYTICS_DB_PROTOCOL: "HTTP"
+      ANALYTICS_DB_HOST: "clickhouse"
+      ANALYTICS_DB_PORT: 8123
+      ANALYTICS_DB_DATABASE_NAME: opik
+      ANALYTICS_DB_USERNAME: opik
+      ANALYTICS_DB_PASS: opik
+      ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_USER: comet_readonly_freeform_sql_user
+      ANALYTICS_DB_READ_ONLY_FREEFORM_SQL_PASS: opik
+      JAVA_OPTS: "-Dliquibase.propertySubstitutionEnabled=true -XX:+UseG1GC -XX:MaxRAMPercentage=80.0"
+      REDIS_URL: redis://:opik@redis:6379/
+      OPIK_OTEL_SDK_ENABLED: "false"
+      # Upstream defaults this to true (anonymous usage reporting).
+      OPIK_USAGE_REPORT_ENABLED: "false"
+      AWS_ACCESS_KEY_ID: THAAIOSFODNN7EXAMPLE
+      AWS_SECRET_ACCESS_KEY: LESlrXUtnFEMI/K7MDENG/bPxRfiCYEXAMPLEKEY
+      IS_MINIO: "true"
+      S3_URL: http://minio:9000
+      TOGGLE_GUARDRAILS_ENABLED: "false"
+      TOGGLE_OPIK_AI_ENABLED: "false"
+    tmpfs:
+      - /tmp
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/health-check"]
+      interval: 3s
+      timeout: 10s
+      retries: 200
+
+  frontend:
+    image: ghcr.io/comet-ml/opik/opik-frontend:${OPIK_VERSION:-2.2.90}
+    container_name: hermes-otel-opik-frontend
+    hostname: frontend
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    environment:
+      OPIK_VERSION: ${OPIK_VERSION:-2.2.90}
+      NGINX_PORT: 5173
+      NGINX_CONF_SUFFIX: local
+      OTEL_TRACE: "off"
+    volumes:
+      - ./nginx_default_local.conf:/etc/nginx/templates/default.conf.template:ro
+    ports:
+      - "${OPIK_PORT:-5173}:5173"
+    healthcheck:
+      test: ["CMD-SHELL", "curl --fail --fail-early http://localhost:5173/health"]
+      interval: 3s
+      timeout: 30s
+      retries: 20
+
+volumes:
+  opik_mysql:
+  opik_redis:
+  opik_zookeeper:
+  opik_clickhouse:
+  opik_minio:

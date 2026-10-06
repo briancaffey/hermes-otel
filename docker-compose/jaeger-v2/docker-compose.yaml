@@ -1,0 +1,33 @@
+# Jaeger v2 — the OpenTelemetry-Collector-based Jaeger (traces only).
+#
+# docker-compose/jaeger/docker-compose.yaml runs `jaegertracing/all-in-one`, the v1 line that
+# stopped at 1.76.0 (2025-12). This file runs the v2 binary
+# (`jaegertracing/jaeger`), which is what the Helm chart deploys and what
+# issue #245 is about. All-in-one with in-memory storage: traces are lost on
+# restart.
+#
+# Usage:
+#   docker compose -f docker-compose/jaeger-v2/docker-compose.yaml up -d
+#   # UI:  http://localhost:16696   (no login)
+#   docker compose -f docker-compose/jaeger-v2/docker-compose.yaml down
+#
+# Ports (host side remapped so v1 and v2 can run side by side):
+#   16696  Jaeger UI + query API (/api/v3/..., and the classic /api/...)   JAEGER_V2_UI_PORT
+#   4368   OTLP/HTTP                                                       JAEGER_V2_OTLP_HTTP_PORT  ← plugin exports here
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: jaeger
+#       endpoint: http://localhost:4368/v1/traces
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  jaeger:
+    image: jaegertracing/jaeger:${JAEGER_V2_VERSION:-2.21.0}
+    container_name: hermes-otel-jaeger-v2
+    restart: unless-stopped
+    ports:
+      - "${JAEGER_V2_UI_PORT:-16696}:16686"
+      - "${JAEGER_V2_OTLP_HTTP_PORT:-4368}:4318"

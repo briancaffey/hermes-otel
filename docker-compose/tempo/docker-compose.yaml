@@ -1,0 +1,60 @@
+# Grafana Tempo — standalone trace store (traces only) + Grafana as the UI.
+#
+# Trimmed from the upstream single-binary example at
+#   github.com/grafana/tempo/tree/main/example/docker-compose/single-binary
+# keeping tempo and grafana. Dropped: alloy, prometheus, the k6 load
+# generator and tempo-vulture, plus Tempo's metrics-generator (it needs a
+# Prometheus to remote-write to). For traces + metrics + logs in Grafana use
+# docker-compose/lgtm/docker-compose.yaml instead.
+#
+# Usage:
+#   docker compose -f docker-compose/tempo/docker-compose.yaml up -d
+#   # UI:  http://localhost:3020   (Grafana, anonymous admin → Explore → Tempo)
+#   docker compose -f docker-compose/tempo/docker-compose.yaml down
+#   docker compose -f docker-compose/tempo/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side remapped so the stack coexists with LGTM, which owns
+# 3200/4317/4318 and Grafana 3000; override with the env vars):
+#   3020  Grafana UI                      TEMPO_GRAFANA_PORT
+#   3210  Tempo query API (/api/search)   TEMPO_API_PORT
+#   4358  Tempo OTLP/HTTP                 TEMPO_OTLP_HTTP_PORT  ← plugin exports here
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: tempo
+#       endpoint: http://localhost:4358/v1/traces
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  tempo:
+    image: grafana/tempo:${TEMPO_VERSION:-3.1.0}
+    container_name: hermes-otel-tempo
+    restart: unless-stopped
+    command: ["-target=all", "-config.file=/etc/tempo.yaml"]
+    volumes:
+      - ./tempo.yaml:/etc/tempo.yaml:ro
+      - tempo_data:/var/tempo
+    ports:
+      - "${TEMPO_API_PORT:-3210}:3200"
+      - "${TEMPO_OTLP_HTTP_PORT:-4358}:4318"
+
+  grafana:
+    image: grafana/grafana:${TEMPO_GRAFANA_VERSION:-13.1.3}
+    container_name: hermes-otel-tempo-grafana
+    restart: unless-stopped
+    depends_on:
+      - tempo
+    volumes:
+      - ./grafana-datasources.yaml:/etc/grafana/provisioning/datasources/datasources.yaml:ro
+    environment:
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+      GF_ANALYTICS_REPORTING_ENABLED: "false"
+    ports:
+      - "${TEMPO_GRAFANA_PORT:-3020}:3000"
+
+volumes:
+  tempo_data:

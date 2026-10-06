@@ -42,7 +42,7 @@ Langfuse self-host is a full stack (Langfuse + Postgres + Redis + ClickHouse + M
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -f docker-compose/langfuse.yaml up -d
+docker compose -f docker-compose/langfuse/docker-compose.yaml up -d
 # Wait ~60s for ClickHouse to start
 ```
 
@@ -55,6 +55,12 @@ export OTEL_LANGFUSE_ENDPOINT="http://localhost:3000"   # completed to /api/publ
 ```
 
 UI at http://localhost:3000.
+
+The same file runs **Langfuse v4** with `LANGFUSE_VERSION=4 docker compose -f
+docker-compose/langfuse/docker-compose.yaml up -d` (use `down -v` when switching major versions). Export
+works unchanged on v4; its default `events_only` mode removes `/api/public/traces`,
+`/api/public/observations` and `/api/public/sessions` (all 404), so the dashboard's Langfuse
+adapter cannot read it back until it moves to `/api/public/v2/observations` (issue #246).
 
 ## Multi-backend config
 

@@ -174,8 +174,9 @@ on any branch is cancelled rather than left red.
 
 1. Add the resolver in `tracer.py` (for now; this will move to
    `backends.py` in a later phase).
-2. Add a `docker-compose/<backend>.yaml` and a one-line entry in
-   `docker-compose/all.sh` if the backend runs locally.
+2. Add `docker-compose/<backend>/docker-compose.yaml` and `README.md` (see
+   `docker-compose/README.md` for the folder convention) if the backend runs
+   locally.
 3. Add a `docs/backends/<name>.md` (will exist after Phase 1) or a
    section in `README.md` with: required env vars, docker-compose
    snippet, link to the project's docs.

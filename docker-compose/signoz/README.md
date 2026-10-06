@@ -46,7 +46,7 @@ services. This compose file remaps them by default (override with env vars):
   which is SigNoz's historical UI port and unlikely to conflict.
 - **`4317` / `4318`** are the OpenTelemetry OTLP standard ports, so **any other
   OTel collector on the host will conflict**, including the Phoenix container
-  in `docker-compose/phoenix.yaml` (it binds `4317`). Moving SigNoz's OTLP
+  in `docker-compose/phoenix/docker-compose.yaml` (it binds `4317`). Moving SigNoz's OTLP
   receivers up by ten lets both stacks run side by side, which is useful when
   comparing backends.
 

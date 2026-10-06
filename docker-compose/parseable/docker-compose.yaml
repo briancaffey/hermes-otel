@@ -1,0 +1,73 @@
+# Parseable OSS — traces + metrics + logs, through a collector.
+#
+# Two containers:
+#
+#   parseable  — the OSS server in standalone `local-store` mode (UI + API)
+#   otelcol    — OpenTelemetry Collector that re-encodes OTLP/protobuf to
+#                OTLP/JSON and adds Basic auth + the dataset headers
+#
+# The collector is not optional: Parseable OSS answers 400 to OTLP/protobuf
+# and has no API keys, so the plugin's `type: parseable` (X-API-Key,
+# protobuf) only works against Parseable Cloud/Enterprise. See issue #238 and
+# parseable/otelcol-config.yaml.
+#
+# Usage:
+#   docker compose -f docker-compose/parseable/docker-compose.yaml up -d
+#   # UI:  http://localhost:8010   (admin / admin)
+#   docker compose -f docker-compose/parseable/docker-compose.yaml down
+#   docker compose -f docker-compose/parseable/docker-compose.yaml down -v   # nuke data
+#
+# Ports:
+#   8010  Parseable UI + API       PARSEABLE_PORT   (container 8000)
+#   4348  Collector OTLP/HTTP      PARSEABLE_OTLP_HTTP_PORT  ← plugin exports here
+#
+# Point the plugin at the collector with the generic type:
+#
+#   backends:
+#     - type: otlp
+#       name: parseable
+#       endpoint: http://localhost:4348/v1/traces
+#   capture_logs: true
+#
+# Datasets `hermes-traces`, `hermes-metrics` and `hermes-logs` are created on
+# first ingest. If you change the credentials, change PARSEABLE_BASIC_AUTH
+# too: it is base64("user:password").
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  parseable:
+    image: quay.io/parseablehq/parseable:${PARSEABLE_VERSION:-v3.2.4}
+    container_name: hermes-otel-parseable
+    restart: unless-stopped
+    command: ["parseable", "local-store"]
+    environment:
+      P_ADDR: 0.0.0.0:8000
+      P_USERNAME: admin
+      P_PASSWORD: admin
+      P_FS_DIR: /parseable/data
+      P_STAGING_DIR: /parseable/staging
+      P_CHECK_UPDATE: "false"
+      P_SEND_ANONYMOUS_USAGE_DATA: "false"
+    volumes:
+      - parseable_data:/parseable
+    ports:
+      - "${PARSEABLE_PORT:-8010}:8000"
+
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:${PARSEABLE_OTELCOL_VERSION:-0.162.0}
+    container_name: hermes-otel-parseable-otelcol
+    restart: unless-stopped
+    depends_on:
+      - parseable
+    command: ["--config=/etc/otelcol/config.yaml"]
+    environment:
+      # base64("admin:admin")
+      PARSEABLE_BASIC_AUTH: YWRtaW46YWRtaW4=
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+    ports:
+      - "${PARSEABLE_OTLP_HTTP_PORT:-4348}:4318"
+
+volumes:
+  parseable_data:

@@ -16,7 +16,7 @@ A ready-to-use compose file ships with the plugin:
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -p lgtm -f docker-compose/lgtm.yaml up -d
+docker compose -f docker-compose/lgtm/docker-compose.yaml up -d
 ```
 
 Wait ~30s for everything to come up, then open Grafana at http://localhost:3000 (admin / admin). Three datasources are pre-provisioned: Tempo, Prometheus (pointed at Mimir), and Loki.
