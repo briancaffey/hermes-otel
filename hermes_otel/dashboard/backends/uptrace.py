@@ -45,6 +45,7 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bucketize,
+    counter_increases,
     finish_log_row,
     http_get_json,
     log_end_ns,
@@ -248,8 +249,8 @@ class UptraceAdapter(BackendAdapter):
             or None
         )
         self.project_id = int(cfg.get("project_id") or 1)
-        # Log queries are pinned to the agent's service (Uptrace writes its own
-        # lines into the same project): the entry's ``service_name``, else the
+        # Trace and log queries are pinned to the agent's service (Uptrace
+        # writes its own spans and lines into the same project): the entry's ``service_name``, else the
         # plugin's resource ``service.name``, else ``hermes-agent``;
         # ``service_name: off`` removes the pin.
         raw_service = cfg.get("service_name")
@@ -363,8 +364,13 @@ class UptraceAdapter(BackendAdapter):
 
     def _build_uql(self, f: StructuredFilter) -> str:
         parts: List[str] = []
-        if f.service:
-            parts.append(f'where service_name = "{_esc(f.service)}"')
+        # Uptrace writes its own spans (service ``serve``) into the same
+        # project; without a service the list is those, newest first, and the
+        # agent's turns never reach page one. The same pin the log queries use
+        # applies here unless the search names a service (#298).
+        service = f.service or self.service_name
+        if service:
+            parts.append(f'where service_name = "{_esc(service)}"')
         if f.name_prefix:
             parts.append(f'where _name like "{_esc(f.name_prefix)}%"')
         if f.name_regex:
@@ -477,14 +483,23 @@ class UptraceAdapter(BackendAdapter):
                 if value is None:
                     continue
                 points.append((int(ts_ms) * 1_000_000, float(value), label))
-        # Uptrace picks its own interval; folding its points with ``sum`` onto
-        # the requested grid keeps totals exact for counters and histograms'
-        # sum/count, which is what the dashboard charts.
+        # Uptrace picks its own interval and, for a counter's ``$m`` and a
+        # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
+        # at each interval end, forward-filled into later intervals (verified
+        # on 2.1.0-beta.5: two turns of 2 calls read 4, 4 at 00:16 and 00:20;
+        # ``delta($m)`` loses the first interval). The increases between its
+        # points are what the chart wants, and a series that starts inside the
+        # window counts its first value, exactly as for the other stores (#298).
+        cumulative = instrument == "counter" or (
+            instrument == "histogram" and agg in ("sum", "count")
+        )
+        if cumulative:
+            points = counter_increases(points, window_start_ns=start_s * 1_000_000_000)
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name
         out["instrument"] = instrument
-        out["cumulative"] = instrument == "counter"
+        out["cumulative"] = cumulative
         out["mql"] = expr
         return out
 

@@ -870,9 +870,14 @@ class TestSigNoz:
 
 
 class TestUptrace:
-    def _adapter(self):
+    def _adapter(self, extra=None):
         return uptrace.UptraceAdapter(
-            {"type": "uptrace", "endpoint": "http://localhost:14318", "user_token": "t"}
+            {
+                "type": "uptrace",
+                "endpoint": "http://localhost:14318",
+                "user_token": "t",
+                **(extra or {}),
+            }
         )
 
     def test_a_rejected_token_is_an_auth_error_and_caches_nothing(self, monkeypatch):
@@ -943,6 +948,17 @@ class TestUptrace:
         monkeypatch.setattr(uptrace, "http_get_json", fake)
         with pytest.raises(BackendError, match="bad UQL"):
             self._adapter().search(StructuredFilter(raw="where nonsense"), 0, 10, 5)
+
+    def test_trace_search_is_pinned_to_the_agent_service_by_default(self):
+        # Uptrace stores its own ``serve`` spans in the same project: without a
+        # pin they fill page one (#298). The search's own service wins.
+        a = self._adapter()
+        assert a._build_uql(StructuredFilter()).startswith('where service_name = "hermes-agent"')
+        assert a._build_uql(StructuredFilter(service="other")).startswith(
+            'where service_name = "other"'
+        )
+        off = self._adapter({"service_name": "off"})
+        assert "service_name" not in off._build_uql(StructuredFilter())
 
 
 class TestPhoenix:

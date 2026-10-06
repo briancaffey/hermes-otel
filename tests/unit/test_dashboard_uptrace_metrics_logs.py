@@ -407,6 +407,28 @@ class TestMetrics:
         assert out["series"]["nvidia/nemotron-3-nano-omni"] == [None, 26748.0, None, None]
         assert out["series"]["nvidia/nemotron-3-super"] == [None, 42342.0, 100.0, None]
 
+    def test_a_counter_forward_filled_by_uptrace_counts_once(self, adapter, monkeypatch):
+        # Uptrace answers the cumulative value at each interval end and repeats
+        # it into later intervals (two turns of 2 calls read 4, 4): the chart
+        # wants the increases, with the first value counted (#298).
+        payload = {
+            "query": [{"error": ""}],
+            "timeseries": [
+                {
+                    "attrs": {"model::str": "m"},
+                    "time": [1790294400000, 1790294640000, 1790294880000],
+                    "value": [4, 4, 6],
+                }
+            ],
+        }
+        monkeypatch.setattr(up, "http_get_json", lambda *a, **k: payload)
+        adapter._instrument_cache["hermes_token_usage"] = "counter"
+        out = adapter.metrics_query(
+            "hermes_token_usage", 1790294400 - 240, 1790294880 + 240, 240, group_by="model"
+        )
+        assert out["cumulative"] is True
+        assert [v for v in out["series"]["m"] if v is not None] == [4.0, 0.0, 2.0]
+
     def test_mql_per_instrument(self):
         assert up.mql_for("counter", "avg", None) == "$m"  # counters only sum
         assert up.mql_for("histogram", "avg", "tool.name") == "avg($m) group by tool_name"
