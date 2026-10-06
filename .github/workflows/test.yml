@@ -135,7 +135,9 @@ jobs:
         run: cd dashboard-ui && npm ci && npm run build
       - name: Fail on a stale bundle
         run: git diff --exit-code -- hermes_otel/dashboard/dist
-      - name: Front-end unit tests (src/lib.ts)
+      - name: Type check, lint, format (tsc, eslint, prettier)
+        run: cd dashboard-ui && npm run check
+      - name: Front-end unit tests (pure helpers + rendered page smoke tests)
         run: cd dashboard-ui && npm test
 
   website-build:

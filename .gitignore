@@ -248,3 +248,5 @@ config.yaml.local
 # generic `dist/` rule in the Python block above.
 !hermes_otel/dashboard/dist/
 !hermes_otel/dashboard/dist/**
+# Claude Code parallel worktrees (local only)
+.claude/worktrees/

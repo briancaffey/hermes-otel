@@ -23,7 +23,10 @@ const opts = {
   jsx: "transform",
   jsxFactory: "React.createElement",
   jsxFragment: "React.Fragment",
-  minify: !watch,
+  // Not minified: the committed bundle stays reviewable in a PR diff and a
+  // runtime error in the host console names the TSX function, without
+  // shipping a source map in the install artifact (#288, #100).
+  minify: false,
   sourcemap: watch ? "inline" : false,
   legalComments: "none",
   logLevel: "info",

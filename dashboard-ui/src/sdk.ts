@@ -5,7 +5,6 @@
 // the host's single React instance. Using the host's SDK.components keeps the
 // dashboard visually native (same shadcn primitives + theme as core Hermes).
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 import type * as ReactTypes from "react";
 
 const SDK: any = (window as any).__HERMES_PLUGIN_SDK__ || {};
@@ -24,40 +23,23 @@ export const useRef = hooks.useRef as typeof ReactTypes.useRef;
 
 // Native UI components (shadcn primitives provided by the host).
 export const C: any = SDK.components || {};
-export const {
-  Card,
-  CardHeader,
-  CardTitle,
-  CardContent,
-  Badge,
-  Button,
-  Input,
-  Label,
-  Select,
-  SelectOption,
-  Separator,
-  Tabs,
-  TabsList,
-  TabsTrigger,
-  Checkbox,
-} = C;
+export const { Card, CardHeader, CardContent, Badge, Button, Input, Label, Select, SelectOption, Checkbox } = C;
 
+// The host's fetchJSON handles auth and throws Error("<status>: <body>") on a
+// non-2xx response (web/src/plugins/sdk.d.ts). Without the SDK there is no
+// registry either, so there is nothing to fall back to.
 export const fetchJSON: (url: string, opts?: any) => Promise<any> =
-  SDK.fetchJSON || ((u: string) => fetch(u).then((r) => r.json()));
+  SDK.fetchJSON ||
+  (async () => {
+    throw new Error("0: dashboard SDK unavailable");
+  });
 
-export const buildWsUrl: ((path: string, params?: any) => Promise<string> | string) | undefined =
-  SDK.buildWsUrl;
-
-export const timeAgo: (ts: number) => string = (SDK.utils && SDK.utils.timeAgo) || String;
-export const cn: (...a: any[]) => string =
-  (SDK.utils && SDK.utils.cn) ||
-  ((...a: any[]) => a.filter(Boolean).join(" "));
+export const cn: (...a: any[]) => string = (SDK.utils && SDK.utils.cn) || ((...a: any[]) => a.filter(Boolean).join(" "));
 
 export function register(name: string, component: any): void {
   if (PLUGINS && typeof PLUGINS.register === "function") {
     PLUGINS.register(name, component);
   } else {
-    // eslint-disable-next-line no-console
     console.error("[hermes_otel] dashboard plugin registry unavailable");
   }
 }

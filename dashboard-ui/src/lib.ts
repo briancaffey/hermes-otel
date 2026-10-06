@@ -2,8 +2,6 @@
 // Trace (backend) data is OTLP/Tempo-shaped; live data is the compact dict the
 // in-process store emits. Both flow through the same rendering.
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 // ── OTLP attribute decoding (backend traces) ─────────────────────────────
 export function decodeAttrValue(v: any): any {
   if (v == null) return null;
@@ -64,23 +62,13 @@ export function fmtInt(n: number | null | undefined): string {
 }
 export function clip(s: any, max: number): string | null {
   if (s == null) return null;
-  let str = (typeof s === "string" ? s : String(s)).replace(/\s+/g, " ").trim();
+  const str = (typeof s === "string" ? s : String(s)).replace(/\s+/g, " ").trim();
   if (!str) return null;
   return str.length <= max ? str : str.slice(0, max - 1) + "…";
 }
 
 // ── span-kind classification (drives icon + accent) ──────────────────────
-export type Kind =
-  | "agent"
-  | "llm"
-  | "api"
-  | "tool"
-  | "skill"
-  | "approval"
-  | "subagent"
-  | "session"
-  | "cron"
-  | "other";
+export type Kind = "agent" | "llm" | "api" | "tool" | "skill" | "approval" | "subagent" | "session" | "cron" | "other";
 
 export function kindOf(name: string, attrs?: Record<string, any>): Kind {
   const a = attrs || {};
@@ -99,19 +87,6 @@ export function kindOf(name: string, attrs?: Record<string, any>): Kind {
   return "other";
 }
 
-// Text-colour class per kind; defined in dist/style.css (the host ships only some of these hues, #180).
-export const KIND_TEXT: Record<Kind, string> = {
-  agent: "otel-c-agent",
-  llm: "otel-c-llm",
-  api: "otel-c-api",
-  tool: "otel-c-tool",
-  skill: "otel-c-skill",
-  approval: "otel-c-approval",
-  subagent: "otel-c-subagent",
-  session: "otel-c-session",
-  cron: "otel-c-cron",
-  other: "text-muted-foreground",
-};
 // Bar fill (currentColor via the text class won't reach SVG fill cleanly, so a
 // CSS-var map is used for waterfall/stream accents). Values reference the same
 // hues but are concrete so they render inside <svg>/inline style.
@@ -292,18 +267,13 @@ export function attrNum(a: Record<string, any>, ...keys: string[]): number | nul
   }
   return null;
 }
-export const liveTokens = (s: LiveSpan) =>
-  attrNum(s.attributes, "gen_ai.usage.total_tokens", "llm.token_count.total");
+export const liveTokens = (s: LiveSpan) => attrNum(s.attributes, "gen_ai.usage.total_tokens", "llm.token_count.total");
 export const liveCost = (s: LiveSpan) => attrNum(s.attributes, "hermes.cost.usage");
 // The requested model is the one shown everywhere (cards, header, metrics);
 // the response model appears next to it in the header when it differs (#185).
 export const liveModel = (s: LiveSpan) =>
-  s.attributes["gen_ai.request.model"] ||
-  s.attributes["llm.model_name"] ||
-  s.attributes["gen_ai.response.model"] ||
-  null;
-export const sessionOf = (s: LiveSpan) =>
-  s.attributes["hermes.session_id"] || s.attributes["session_id"] || s.attributes["session.id"] || null;
+  s.attributes["gen_ai.request.model"] || s.attributes["llm.model_name"] || s.attributes["gen_ai.response.model"] || null;
+export const sessionOf = (s: LiveSpan) => s.attributes["hermes.session_id"] || s.attributes["session_id"] || s.attributes["session.id"] || null;
 
 // ── assemble TRACES from flat live spans (so the live store powers a real ──
 // trace browser + waterfall, no external backend needed) ──────────────────
@@ -496,54 +466,7 @@ export function liveTreeFromSpans(spans: LiveSpan[]): { roots: TreeSpan[]; all: 
   return { roots, all };
 }
 
-
 // ── trace detail helpers (#185) ──────────────────────────────────────────
-
-export type ChatMessage = { role: string; text: string };
-
-// Messages JSON (OpenInference input.value / llm.input_messages) → a list the
-// detail view renders as a conversation. Anything else → one "user" message.
-export function parseMessages(raw: any): ChatMessage[] {
-  if (raw == null) return [];
-  let value: any = raw;
-  if (typeof raw === "string") {
-    const t = raw.trim();
-    if (!(t.startsWith("[") || t.startsWith("{"))) return [{ role: "user", text: raw }];
-    try {
-      value = JSON.parse(t);
-    } catch {
-      return [{ role: "user", text: raw }];
-    }
-  }
-  if (!Array.isArray(value)) value = [value];
-  const out: ChatMessage[] = [];
-  for (const m of value) {
-    if (!m || typeof m !== "object") continue;
-    const role = String(m.role || m["message.role"] || "user");
-    const c = m.content ?? m["message.content"];
-    let text: string;
-    if (typeof c === "string") text = c;
-    else if (Array.isArray(c)) text = c.map((p: any) => (typeof p === "string" ? p : p?.text ?? JSON.stringify(p))).join("\n");
-    else if (c == null && m.tool_calls) text = JSON.stringify(m.tool_calls, null, 2);
-    else text = c == null ? "" : JSON.stringify(c, null, 2);
-    out.push({ role, text });
-  }
-  return out;
-}
-
-export function prettyJson(raw: any): string {
-  if (raw == null) return "";
-  if (typeof raw !== "string") return JSON.stringify(raw, null, 2);
-  const t = raw.trim();
-  if (t.startsWith("{") || t.startsWith("[")) {
-    try {
-      return JSON.stringify(JSON.parse(t), null, 2);
-    } catch {
-      return raw;
-    }
-  }
-  return raw;
-}
 
 // The duplicate conventions the plugin emits for one fact. The first key
 // present is shown; the others are folded under it in "all attributes".
@@ -638,9 +561,17 @@ export function headerFacts(root: Record<string, any>, spansAttrs: Record<string
   else if (typeof toolsRaw === "string" && toolsRaw.trim()) {
     try {
       const parsed = JSON.parse(toolsRaw);
-      tools = Array.isArray(parsed) ? parsed.map(String) : toolsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      tools = Array.isArray(parsed)
+        ? parsed.map(String)
+        : toolsRaw
+            .split(",")
+            .map((s) => s.trim())
+            .filter(Boolean);
     } catch {
-      tools = toolsRaw.split(",").map((s) => s.trim()).filter(Boolean);
+      tools = toolsRaw
+        .split(",")
+        .map((s) => s.trim())
+        .filter(Boolean);
     }
   }
   const requestModel = a["gen_ai.request.model"] || a["llm.model_name"] || null;
@@ -662,7 +593,6 @@ export function headerFacts(root: Record<string, any>, spansAttrs: Record<string
     platform: a["hermes.platform"] || null,
   };
 }
-
 
 /** A Prometheus-style metric name (hermes_tool_duration_sum) as the OTLP name
  *  the plugin emits (hermes.tool.duration). OTLP names pass through. */

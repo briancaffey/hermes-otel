@@ -17,19 +17,6 @@
     grid-template-columns: repeat(5, minmax(0, 1fr));
   }
 }
-.otel-filter-grid {
-  display: grid;
-  align-items: end;
-  gap: 0.75rem;
-}
-@media (min-width: 768px) {
-  .otel-filter-grid {
-    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) 120px 150px;
-  }
-  .otel-filter-q {
-    grid-column: span 2 / span 2;
-  }
-}
 .otel-search-grid {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
@@ -213,24 +200,11 @@
   animation: otel-pulse 1.7s infinite;
 }
 
-@keyframes otel-slidein {
-  from {
-    opacity: 0;
-    transform: translateY(-2px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-.otel-slidein {
-  animation: otel-slidein 0.22s ease;
-}
 
 /* Respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
   .otel-pulse,
-  .otel-slidein {
+  .otel-spin {
     animation: none;
   }
 }
@@ -307,9 +281,6 @@
 .otel-pill-off {
   color: var(--color-muted-foreground);
   background: color-mix(in srgb, var(--color-muted) 50%, transparent);
-}
-.otel-pill-auto {
-  color: var(--color-muted-foreground);
 }
 .otel-pill-na {
   color: var(--color-muted-foreground);
@@ -536,12 +507,6 @@
 .otel-tone-bad {
   color: #f87171;
 }
-.otel-tone-warn {
-  color: #fbbf24;
-}
-.otel-tone-ok {
-  color: #34d399;
-}
 /* markdown */
 .otel-md {
   font-size: 0.8rem;
@@ -623,4 +588,44 @@
 }
 .otel-longtext > .otel-more {
   display: block;
+}
+
+/* ── host utilities the plugin needs ───────────────────────────────────
+   Tailwind classes the TSX uses that the targeted Hermes release no longer
+   compiles (its own pages stopped using them). Standard Tailwind values, so
+   they are identical when the host does ship them. Checked by
+   tests/unit/test_dashboard_css_classes.py against host-classes.txt. */
+.space-y-1 > * + * { margin-top: 0.25rem; }
+.space-y-1\.5 > * + * { margin-top: 0.375rem; }
+.space-y-3 > * + * { margin-top: 0.75rem; }
+.space-y-4 > * + * { margin-top: 1rem; }
+.gap-x-2 { column-gap: 0.5rem; }
+.gap-x-3 { column-gap: 0.75rem; }
+.gap-x-4 { column-gap: 1rem; }
+.gap-y-1 { row-gap: 0.25rem; }
+.ml-1 { margin-left: 0.25rem; }
+.mt-3 { margin-top: 0.75rem; }
+.pr-1 { padding-right: 0.25rem; }
+.p-0\.5 { padding: 0.125rem; }
+.h-2 { height: 0.5rem; }
+.max-h-80 { max-height: 20rem; }
+.inset-y-0 { top: 0; bottom: 0; }
+.items-baseline { align-items: baseline; }
+.rounded { border-radius: 0.25rem; }
+.border-l-2 { border-left-width: 2px; }
+.border-dashed { border-style: dashed; }
+.border-destructive\/40 { border-color: color-mix(in srgb, var(--color-destructive) 40%, transparent); }
+.bg-muted\/20 { background-color: color-mix(in srgb, var(--color-muted) 20%, transparent); }
+.bg-muted-foreground\/40 { background-color: color-mix(in srgb, var(--color-muted-foreground) 40%, transparent); }
+.text-foreground\/80 { color: color-mix(in srgb, var(--color-foreground) 80%, transparent); }
+.text-foreground\/90 { color: color-mix(in srgb, var(--color-foreground) 90%, transparent); }
+.text-xl { font-size: 1.25rem; line-height: 1.75rem; }
+.tracking-tight { letter-spacing: -0.025em; }
+.leading-snug { line-height: 1.375; }
+.opacity-70 { opacity: 0.7; }
+.break-all { word-break: break-all; }
+.break-words { overflow-wrap: break-word; }
+.last\:border-b-0:last-child { border-bottom-width: 0; }
+@media (min-width: 1024px) {
+  .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }

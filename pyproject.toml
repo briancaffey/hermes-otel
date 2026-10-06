@@ -103,6 +103,7 @@ hermes_otel = "hermes_otel:register"
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["tests"]
+norecursedirs = [".claude", ".venv", "node_modules", "website", "dist"]
 markers = [
     "unit: fast tests with no external dependencies",
     "integration: tests using InMemorySpanExporter",
@@ -144,6 +145,7 @@ extend-exclude = '''
     marketing
   | renders
   | hermes_otel\.egg-info
+  | \.claude/worktrees
 )/
 '''
 
@@ -152,6 +154,7 @@ line-length = 100
 target-version = "py39"
 extend-exclude = [
     ".venv",
+    ".claude/worktrees",
     "marketing",
     "renders",
     "hermes_otel.egg-info",

@@ -3,12 +3,32 @@ import { describe, expect, it } from "vitest";
 import { DEFAULT_FILTERS, liveParams, backendParams, isDefaultFilters } from "../src/params";
 import { groupBySession, sessionOfCard } from "../src/lib";
 
-const F = { ...DEFAULT_FILTERS, status: "error" as const, kind: "tool", tool: "terminal", model: "nano", session: "s1", minDurationMs: "250", text: "hello", lookback: 6 };
+const F = {
+  ...DEFAULT_FILTERS,
+  status: "error" as const,
+  kind: "tool",
+  tool: "terminal",
+  model: "nano",
+  session: "s1",
+  minDurationMs: "250",
+  text: "hello",
+  lookback: 6,
+};
 
 describe("liveParams", () => {
   it("maps every field onto /live/traces", () => {
     const p = liveParams(F);
-    expect(Object.fromEntries(p)).toEqual({ lookback_hours: "6", limit: "100", status: "error", kind: "tool", tool: "terminal", model: "nano", session: "s1", min_duration_ms: "250", text: "hello" });
+    expect(Object.fromEntries(p)).toEqual({
+      lookback_hours: "6",
+      limit: "100",
+      status: "error",
+      kind: "tool",
+      tool: "terminal",
+      model: "nano",
+      session: "s1",
+      min_duration_ms: "250",
+      text: "hello",
+    });
   });
   it("sends only the window by default", () => {
     expect(Object.fromEntries(liveParams(DEFAULT_FILTERS))).toEqual({ lookback_hours: "1", limit: "100" });
@@ -44,12 +64,21 @@ describe("groupBySession", () => {
     startTimeUnixNano: String(start),
     durationMs: 1000,
     spanCount: 3,
-    spanSets: [{ spans: [{ name: "agent", attributes: [
-      ...(sid ? [{ key: "hermes.session_id", value: { stringValue: sid } }] : []),
-      { key: "gen_ai.usage.total_tokens", value: { intValue: String(tokens) } },
-      { key: "llm.model_name", value: { stringValue: "m" } },
-      ...(err ? [{ key: "status", value: { stringValue: "error" } }] : []),
-    ] }] }],
+    spanSets: [
+      {
+        spans: [
+          {
+            name: "agent",
+            attributes: [
+              ...(sid ? [{ key: "hermes.session_id", value: { stringValue: sid } }] : []),
+              { key: "gen_ai.usage.total_tokens", value: { intValue: String(tokens) } },
+              { key: "llm.model_name", value: { stringValue: "m" } },
+              ...(err ? [{ key: "status", value: { stringValue: "error" } }] : []),
+            ],
+          },
+        ],
+      },
+    ],
   });
   it("groups cards by their session id with totals from the root attributes", () => {
     const rows = groupBySession([card("a", "s1", 1e18, 100), card("b", "s1", 2e18, 50, true), card("c", "s2", 3e18, 7), card("d", null, 4e18, 1)]);

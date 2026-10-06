@@ -14,12 +14,11 @@ import {
   parseJsonish,
   pretty,
   readViewMode,
+  splitToolResult,
   ToolCall,
   ViewMode,
   writeViewMode,
 } from "./values";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 const CLAMP_CHARS = 1600;
 
@@ -110,7 +109,11 @@ function ToolCallCard({ call }: { call: ToolCall }) {
     <div className="otel-toolcall">
       <div className="otel-toolcall-head">
         <span className="otel-chip otel-chip-tool font-mono">{call.name}</span>
-        {call.id ? <span className="font-mono text-[10px] text-muted-foreground" title="tool call id">{call.id}</span> : null}
+        {call.id ? (
+          <span className="font-mono text-[10px] text-muted-foreground" title="tool call id">
+            {call.id}
+          </span>
+        ) : null}
       </div>
       {args && typeof args === "object" && !Array.isArray(args) ? (
         <KvTable value={args} />
@@ -152,7 +155,11 @@ export function Chat({ messages }: { messages: Message[] }) {
             <div className="otel-msg-head">
               <span className={cn("otel-role", `otel-role-${role}`)}>{ROLE_LABEL[role] || role}</span>
               {m.name ? <span className="font-mono text-[10px] text-muted-foreground">{m.name}</span> : null}
-              {m.toolCallId ? <span className="font-mono text-[10px] text-muted-foreground" title="answers this tool call">↳ {m.toolCallId}</span> : null}
+              {m.toolCallId ? (
+                <span className="font-mono text-[10px] text-muted-foreground" title="answers this tool call">
+                  ↳ {m.toolCallId}
+                </span>
+              ) : null}
               {collapsed ? (
                 <button type="button" className="otel-link text-[10px]" onClick={() => setOpenSystem(true)}>
                   show all ({fmtCount(text.length)} chars)
@@ -166,7 +173,9 @@ export function Chat({ messages }: { messages: Message[] }) {
                 return looksLikeMarkdown(body) || role === "assistant" ? (
                   <Markdown key={j} text={body} />
                 ) : (
-                  <pre key={j} className="otel-pre otel-prose">{body}</pre>
+                  <pre key={j} className="otel-pre otel-prose">
+                    {body}
+                  </pre>
                 );
               }
               if (p.type === "tool_call") return <ToolCallCard key={j} call={p} />;
@@ -187,18 +196,16 @@ export function Chat({ messages }: { messages: Message[] }) {
 /** A tool's result: JSON `{output, ...}` shows the output as text and the rest as rows. */
 export function ToolResultBody({ raw }: { raw: any }) {
   const v = parseJsonish(raw);
-  if (v && typeof v === "object" && !Array.isArray(v)) {
-    const out = v.output ?? v.result ?? v.content ?? v.stdout;
-    const rest: Record<string, any> = {};
-    for (const [k, val] of Object.entries(v)) if (!["output", "result", "content", "stdout"].includes(k)) rest[k] = val;
+  if (Array.isArray(v)) return <pre className="otel-pre">{JSON.stringify(v, null, 2)}</pre>;
+  const { output, rest } = splitToolResult(raw);
+  if (v && typeof v === "object") {
     return (
       <div className="otel-toolresult">
-        {typeof out === "string" ? <LongText text={out} mono={!looksLikeMarkdown(out)} markdown={looksLikeMarkdown(out)} /> : out != null ? <pre className="otel-pre">{JSON.stringify(out, null, 2)}</pre> : null}
-        {Object.keys(rest).length ? <KvTable value={rest} /> : null}
+        {output != null ? <LongText text={output} mono={!looksLikeMarkdown(output)} markdown={looksLikeMarkdown(output)} /> : null}
+        {rest ? <KvTable value={rest} /> : null}
       </div>
     );
   }
-  if (Array.isArray(v)) return <pre className="otel-pre">{JSON.stringify(v, null, 2)}</pre>;
   const text = String(v ?? "");
   const md = looksLikeMarkdown(text) && !looksLikeCode(text);
   return <LongText text={text} mono={!md} markdown={md} />;
@@ -224,17 +231,7 @@ function ModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewMode
 }
 
 /** One attribute value, rendered by what it is; rich values get the toggle. */
-export function ValueView({
-  attrKey,
-  value,
-  label,
-  onSessionClick,
-}: {
-  attrKey: string;
-  value: any;
-  label?: string;
-  onSessionClick?: (id: string) => void;
-}) {
+export function ValueView({ attrKey, value, label, onSessionClick }: { attrKey: string; value: any; label?: string; onSessionClick?: (id: string) => void }) {
   const [mode, change] = useViewMode();
   const c = classify(attrKey, value);
   const rich = c.kind === "messages" || c.kind === "tool_calls" || c.kind === "json" || c.kind === "markdown";
@@ -293,13 +290,14 @@ export function ValueView({
         body = <span className={cn("otel-chip", c.value ? "otel-chip-yes" : "otel-chip-no")}>{c.value ? "yes" : "no"}</span>;
         break;
       case "id":
-        body = onSessionClick && /session|conversation|thread/.test(attrKey) ? (
-          <button type="button" className="otel-link font-mono" title="show this session's turns" onClick={() => onSessionClick(c.value)}>
-            {c.value}
-          </button>
-        ) : (
-          <span className="font-mono break-all">{c.value}</span>
-        );
+        body =
+          onSessionClick && /session|conversation|thread/.test(attrKey) ? (
+            <button type="button" className="otel-link font-mono" title="show this session's turns" onClick={() => onSessionClick(c.value)}>
+              {c.value}
+            </button>
+          ) : (
+            <span className="font-mono break-all">{c.value}</span>
+          );
         break;
       default:
         body = c.text.length > 200 || c.text.includes("\n") ? <LongText text={c.text} /> : <span className="break-words">{c.text}</span>;

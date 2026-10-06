@@ -97,3 +97,18 @@ def test_plugin_classes_are_defined_in_the_plugin_stylesheet():
 def test_host_list_is_pinned_to_a_hermes_version():
     head = HOST_LIST.read_text(encoding="utf-8").splitlines()[:3]
     assert any("hermes version" in line for line in head), head
+
+
+def test_every_plugin_class_in_the_stylesheet_is_used():
+    """Dead ``otel-*`` rules are debt: a class nobody sets must not linger."""
+    plugin_css = PLUGIN_CSS.read_text(encoding="utf-8")
+    defined = {
+        m.group(1)
+        for m in re.finditer(r"\.(otel-[A-Za-z0-9_-]+)", plugin_css)
+        if not m.group(1).startswith("otel-md-")  # markdown renderer classes, set in markdown.tsx
+    }
+    used = used_classes() | {"otel-md"}
+    # Class families set by string composition in the TSX (prefix + variable).
+    composed = {c for c in defined if re.match(r"otel-(msg|role|src|pill|chip|tone|c)-", c)}
+    unused = sorted(defined - used - composed)
+    assert not unused, f"otel-* classes defined in dist/style.css but never used: {unused}"

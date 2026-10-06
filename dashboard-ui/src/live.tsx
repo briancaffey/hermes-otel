@@ -1,22 +1,9 @@
 import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Button } from "./sdk";
-import {
-  LiveSpan,
-  LiveTrace,
-  kindOf,
-  Kind,
-  KIND_HEX,
-  sessionOf,
-  groupLiveTraces,
-  liveTreeFromSpans,
-  isMcpKeepalivePing,
-  fmtCost,
-  fmtInt,
-} from "./lib";
+import { LiveSpan, LiveTrace, kindOf, Kind, KIND_HEX, sessionOf, groupLiveTraces, liveTreeFromSpans, isMcpKeepalivePing, fmtCost, fmtInt } from "./lib";
 import { Stat, Sparkline, Pulse, MiniLabel, ErrorBanner } from "./atoms";
 import { LiveTraceCard, LiveTraceDetail } from "./spantree";
 import { usePolling } from "./poll";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 1500;
 const MAX_KEEP = 1500;
 
@@ -72,7 +59,7 @@ export function LivePage() {
   const allTraces = groupLiveTraces(spans);
   const traces = showPings ? allTraces : allTraces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
   const hiddenPings = allTraces.length - traces.length;
-  const visibleSpans = showPings ? spans : traces.flatMap((t) => t.spans);
+  const visibleSpans = showPings ? spans : traces.flatMap((t) => t.spans || []);
   const stats = deriveStats(traces, visibleSpans);
   const lastSession = spans.length ? sessionOf(spans[spans.length - 1]) : null;
 
@@ -96,7 +83,7 @@ export function LivePage() {
   // Detail view — full waterfall for the picked turn.
   if (selected) {
     const fresh = groupLiveTraces(spans).find((t) => t.traceId === selected.traceId) || selected;
-    const { roots } = liveTreeFromSpans(fresh.spans);
+    const { roots } = liveTreeFromSpans(fresh.spans || []);
     return (
       <div className="space-y-3">
         <LiveTraceDetail trace={fresh} roots={roots} onBack={() => setSelected(null)} />
@@ -168,8 +155,8 @@ export function LivePage() {
         {traces.length === 0 ? (
           <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
             <div className="mb-1 text-base font-medium text-foreground">Waiting for activity…</div>
-            Run a Hermes turn (CLI, Telegram, anything). Each turn appears here as a card — open it to see every span,
-            timing and attribute. No backend required.
+            Run a Hermes turn (CLI, Telegram, anything). Each turn appears here as a card — open it to see every span, timing and attribute. No backend
+            required.
           </div>
         ) : (
           traces.map((t) => <LiveTraceCard key={t.traceId} trace={t} onSelect={setSelected} />)

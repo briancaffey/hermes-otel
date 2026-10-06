@@ -1,6 +1,6 @@
 // Sessions view: one row per session id, expandable into its turns (#187).
-import { React, useState, useEffect, useCallback, fetchJSON, API, Badge, Button, cn } from "./sdk";
-import { SessionRow, LiveTrace, fmtDurationMs, fmtTokens, fmtTimeAgo, fmtAbsTime, fmtInt, groupBySession } from "./lib";
+import { React, useState, useEffect, useCallback, fetchJSON, API, Badge, cn } from "./sdk";
+import { SessionRow, LiveTrace, fmtDurationMs, fmtTokens, fmtTimeAgo, fmtAbsTime, groupBySession } from "./lib";
 import { liveParams, TraceFilters } from "./params";
 import { LiveTraceCard } from "./spantree";
 import { ErrorBanner } from "./atoms";
@@ -14,11 +14,21 @@ function SessionCard({ row, open, onToggle, children }: { row: SessionRow; open:
         <span className="font-mono text-sm" title={row.session}>
           {row.session}
         </span>
-        {row.platform ? <Badge variant="secondary" className="text-[10px]">{row.platform}</Badge> : null}
-        {row.errors ? <Badge variant="destructive" className="text-[10px]">{row.errors} error{row.errors === 1 ? "" : "s"}</Badge> : null}
+        {row.platform ? (
+          <Badge variant="secondary" className="text-[10px]">
+            {row.platform}
+          </Badge>
+        ) : null}
+        {row.errors ? (
+          <Badge variant="destructive" className="text-[10px]">
+            {row.errors} error{row.errors === 1 ? "" : "s"}
+          </Badge>
+        ) : null}
         <span className="ml-auto flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground">
           {row.model ? <span className="font-mono text-foreground/80">{row.model}</span> : null}
-          <span className="tabular-nums">{row.turns} turn{row.turns === 1 ? "" : "s"}</span>
+          <span className="tabular-nums">
+            {row.turns} turn{row.turns === 1 ? "" : "s"}
+          </span>
           {row.spans != null ? <span className="tabular-nums">{row.spans} spans</span> : null}
           {row.toolCalls != null ? <span className="tabular-nums">{row.toolCalls} tool calls</span> : null}
           {row.tokens != null ? <span className="tabular-nums">{fmtTokens(row.tokens)} tok</span> : null}
@@ -86,7 +96,9 @@ export function LiveSessions({ filters, onSelectTrace }: { filters: TraceFilters
     );
   return (
     <div className="flex flex-col gap-2">
-      <div className="text-xs text-muted-foreground">{rows.length} session{rows.length === 1 ? "" : "s"} · click one to see its turns in order</div>
+      <div className="text-xs text-muted-foreground">
+        {rows.length} session{rows.length === 1 ? "" : "s"} · click one to see its turns in order
+      </div>
       {rows.map((row) => (
         <SessionCard key={row.session} row={row} open={open === row.session} onToggle={() => toggle(row.session)}>
           {turns[row.session] ? (
@@ -151,7 +163,10 @@ export function ViewToggle({ view, onChange }: { view: "turns" | "sessions"; onC
     <button
       type="button"
       onClick={() => onChange(id)}
-      className={cn("otel-toggle px-3 py-1 text-xs font-medium transition-colors", view === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground")}
+      className={cn(
+        "otel-toggle px-3 py-1 text-xs font-medium transition-colors",
+        view === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground"
+      )}
     >
       {label}
     </button>
@@ -163,5 +178,3 @@ export function ViewToggle({ view, onChange }: { view: "turns" | "sessions"; onC
     </div>
   );
 }
-
-export { fmtInt, Button };

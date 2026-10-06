@@ -143,20 +143,14 @@ describe("backend cards", () => {
     const forced = signalPill("metrics", { supported: false, configured: "on", exported: true }, "Jaeger");
     expect(forced.cls).toBe("forced");
     expect(forced.title).toContain("does not accept OTLP metrics");
-    expect(signalPill("traces", { supported: true, configured: "on", exported: true }, "Phoenix").title).toContain(
-      "traces: true in the config file"
-    );
+    expect(signalPill("traces", { supported: true, configured: "on", exported: true }, "Phoenix").title).toContain("traces: true in the config file");
   });
 
   it("summarises what the dashboard can query", () => {
     expect(queryCapabilityLine(undefined, "Phoenix")).toBeNull();
-    expect(queryCapabilityLine({ supported: false, metrics: false, logs: false }, "OTLP")?.text).toBe(
-      "not queryable from this dashboard"
-    );
+    expect(queryCapabilityLine({ supported: false, metrics: false, logs: false }, "OTLP")?.text).toBe("not queryable from this dashboard");
     expect(queryCapabilityLine({ supported: true, metrics: false, logs: false }, "Phoenix")?.text).toBe("dashboard queries traces");
-    expect(queryCapabilityLine({ supported: true, metrics: true, logs: true }, "OpenObserve")?.text).toBe(
-      "dashboard queries traces, metrics, logs"
-    );
+    expect(queryCapabilityLine({ supported: true, metrics: true, logs: true }, "OpenObserve")?.text).toBe("dashboard queries traces, metrics, logs");
   });
 
   it("shows the type badge only when the name does not already say it", () => {

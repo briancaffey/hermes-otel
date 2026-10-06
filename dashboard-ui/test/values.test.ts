@@ -1,16 +1,6 @@
 // What an attribute value is, and the per-key rules (src/values.ts).
 import { describe, expect, it } from "vitest";
-import {
-  classify,
-  fmtCount,
-  looksLikeMarkdown,
-  parseChat,
-  parsePyRepr,
-  parseToolCalls,
-  splitList,
-  splitToolResult,
-  turnTools,
-} from "../src/values";
+import { classify, fmtCount, looksLikeMarkdown, parseChat, parsePyRepr, parseToolCalls, splitList, splitToolResult, turnTools } from "../src/values";
 
 const MESSAGES = JSON.stringify([
   { role: "system", content: "You are Hermes." },
@@ -34,7 +24,13 @@ describe("parseChat", () => {
   it("reads the flattened Hermes tool-call shape and content parts", () => {
     const msgs = parseChat([
       { role: "assistant", tool_calls: [{ id: "c", name: "read_file", arguments: { path: "/x" } }] },
-      { role: "user", content: [{ type: "text", text: "hi" }, { type: "image_url", image_url: { url: "data:..." } }] },
+      {
+        role: "user",
+        content: [
+          { type: "text", text: "hi" },
+          { type: "image_url", image_url: { url: "data:..." } },
+        ],
+      },
     ])!;
     expect(msgs[0].parts[0]).toMatchObject({ type: "tool_call", name: "read_file", args: { path: "/x" } });
     expect(msgs[1].parts[0]).toEqual({ type: "text", text: "hi" });
