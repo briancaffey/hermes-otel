@@ -706,7 +706,9 @@ export function headerFacts(root: Record<string, any>, spans: NamedAttrs[] = [])
 }
 
 /** A Prometheus-style metric name (hermes_tool_duration_sum) as the OTLP name
- *  the plugin emits (hermes.tool.duration). OTLP names pass through. */
+ *  the plugin emits (hermes.tool.duration). OTLP names pass through (a dotted
+ *  ``.count`` can be a real instrument, ``hermes.session.count``; SigNoz's
+ *  histogram parts are told apart by the catalogue, see resolveInstrument). */
 export function metricOtlpName(n: string): string {
   if (n.includes(".")) return n;
   const base = n.replace(/_(sum|count|bucket|total)$/, "");

@@ -95,14 +95,23 @@ export function rangeLabel(r: { label: string; bucket: number }): string {
  *  (contract §6). A histogram lands on a backend as ``_sum`` / ``_count`` (and
  *  ``_bucket``) streams; ``prefer`` picks the one the panel wants. */
 export function resolveInstrument(names: { name: string; otlp_name?: string }[], otlp: string, prefer?: string): string | null {
-  const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || metricOtlpName(n.name) === otlp).map((n) => n.name);
+  const all = new Set(names.map((n) => n.name));
+  // SigNoz spells a histogram's parts "<name>.sum" / "<name>.count": both
+  // exist together, which tells them from a real ".count" instrument.
+  const canonical = (n: string) => {
+    const m = /^(.*)\.(sum|count)$/.exec(n);
+    if (m && all.has(`${m[1]}.sum`) && all.has(`${m[1]}.count`)) return m[1];
+    return metricOtlpName(n);
+  };
+  const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || canonical(n.name) === otlp).map((n) => n.name);
   if (!matches.length) return null;
   if (prefer) {
-    const hit = matches.find((n) => n.endsWith(prefer));
+    // "_count" also matches SigNoz's dotted "hermes.tool.duration.count"
+    const hit = matches.find((n) => n.endsWith(prefer) || n.endsWith(prefer.replace("_", ".")));
     if (hit) return hit;
   }
-  // The bare name first (the live store, Uptrace, SigNoz), then any spelling.
-  return matches.find((n) => n === otlp) || matches.find((n) => !/_(sum|count|bucket|total)$/.test(n)) || matches[0];
+  // The bare name first (the live store, Uptrace), then any spelling.
+  return matches.find((n) => n === otlp) || matches.find((n) => !/[_.](sum|count|bucket|total)$/.test(n)) || matches[0];
 }
 
 const PALETTE = [
@@ -239,7 +248,7 @@ export function MetricsPage() {
           }
           // A backend that keeps the histogram as one instrument (Uptrace,
           // SigNoz) has no _count series: count its observations instead.
-          const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !native.endsWith("_count") ? "count" : def.agg.backend;
+          const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !/[_.]count$/.test(native) ? "count" : def.agg.backend;
           try {
             out[def.key] = await query(native, def.group, aggregate);
           } catch (e) {

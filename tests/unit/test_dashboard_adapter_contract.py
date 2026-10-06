@@ -821,24 +821,32 @@ class TestSigNoz:
     def test_get_trace_does_not_retry_unreachable_and_finds_nothing(self, monkeypatch):
         calls = []
 
-        def fake_post(url, body, headers=None, timeout=None):
-            calls.append("post")
+        # GET /api/v1/traces/{id} is the span list on every build seen (v0.119
+        # answers the SPA page to the POST, #297); an unreachable GET is final.
+        def fake_get(url, headers=None, timeout=None):
+            calls.append("get")
             raise BackendError(502, "Backend unreachable: refused")
 
-        monkeypatch.setattr(signoz, "http_post_json", fake_post)
-        monkeypatch.setattr(signoz, "http_get_json", lambda *a, **k: calls.append("get"))
+        monkeypatch.setattr(signoz, "http_get_json", fake_get)
+        monkeypatch.setattr(signoz, "http_post_json", lambda *a, **k: calls.append("post"))
         with pytest.raises(BackendError, match="unreachable"):
             self._adapter().get_trace("t")
-        assert calls == ["post"]
+        assert calls == ["get"]
 
-        def rejected(url, body, headers=None, timeout=None):
+        # A GET refused as a request falls back to the POST form once.
+        calls.clear()
+
+        def rejected(url, headers=None, timeout=None):
+            calls.append("get")
             raise BackendError(502, "Backend returned 405: method not allowed")
 
-        monkeypatch.setattr(signoz, "http_post_json", rejected)
-        monkeypatch.setattr(signoz, "http_get_json", lambda *a, **k: {"spans": []})
+        monkeypatch.setattr(signoz, "http_get_json", rejected)
+        monkeypatch.setattr(
+            signoz, "http_post_json", lambda *a, **k: (calls.append("post"), {"spans": []})[1]
+        )
         with pytest.raises(BackendError) as exc:
             self._adapter().get_trace("t")
-        assert exc.value.kind == "not_found"
+        assert exc.value.kind == "not_found" and calls == ["get", "post"]
 
     def test_catalog_is_fetched_once_per_instance_and_counters_are_cumulative(self, monkeypatch):
         gets = []
@@ -858,7 +866,8 @@ class TestSigNoz:
         a.metric_names(0, 1)
         out = a.metrics_query("hermes.token.usage", 0, 60, 60)
         a.metrics_query("hermes.token.usage", 0, 60, 60)
-        assert len(gets) == 1 and out["cumulative"] is True
+        # one autocomplete search per plugin namespace, then cached
+        assert len(gets) == len(signoz._CATALOG_NAMESPACES) and out["cumulative"] is True
 
     def test_status_message_survives_the_row_shape(self):
         cols = ["__time", "SpanId", "TraceId", "ServiceName", "Name", "HasError", "StatusMessage"]

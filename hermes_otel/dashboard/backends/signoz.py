@@ -49,6 +49,9 @@ __all__ = ["SigNozAdapter", "HTTPException"]
 _DEFAULT_SIGNOZ_PORT = 3301
 # The trace detail asks for this many spans and says so when there are more.
 _DETAIL_SPAN_CAP = 500
+# The autocomplete API answers one bounded page; the catalogue is assembled
+# from one search per namespace the plugin (and its host mirror) emits.
+_CATALOG_NAMESPACES = ("hermes", "gen_ai", "process", "system", "hw")
 
 
 def _re_esc(text: str) -> str:
@@ -417,26 +420,33 @@ class SigNozAdapter(BackendAdapter):
             )
         return trace_page(strictly_older_traces(traces, f), limit)
 
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        """The trace in SigNoz's UI: ``ui_url`` on the entry when set, else the
+        query origin (the UI and the API share the port)."""
+        base = str(self.cfg.get("ui_url") or self.query_url or "").rstrip("/")
+        return f"{base}/trace/{trace_id}" if base else None
+
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
-        # SigNoz v0.40+ exposes a POST /api/v1/traces/{traceID} that
-        # accepts a json body with ``spansRenderLimit``. Older builds
-        # use GET on the same path: the GET is tried only when the POST
-        # was refused as a request (4xx), never after a network failure.
+        # ``GET /api/v1/traces/{traceID}`` is the span list (columns/events)
+        # on every build seen, v0.119 included; the POST with
+        # ``spansRenderLimit`` that some builds accept answers the SPA page on
+        # v0.119 (verified live, #297), so it is only a fallback for a GET
+        # refused as a request (4xx), never after a network failure.
         headers = self._headers()
         url = f"{self.query_url}/api/v1/traces/{trace_id}"
         try:
+            data = http_get_json(url, headers=headers, timeout=20.0)
+        except BackendError as exc:
+            if exc.kind == "not_found":
+                raise BackendError(404, f"Trace {trace_id} not found in SigNoz", "not_found")
+            if exc.kind != "backend" or "Backend returned 4" not in str(exc.detail):
+                raise
             data = http_post_json(
                 url,
                 {"spansRenderLimit": _DETAIL_SPAN_CAP, "uncollapsedSpans": []},
                 headers=headers,
                 timeout=20.0,
             )
-        except BackendError as exc:
-            if exc.kind == "not_found":
-                raise BackendError(404, f"Trace {trace_id} not found in SigNoz", "not_found")
-            if exc.kind != "backend" or "Backend returned 4" not in str(exc.detail):
-                raise
-            data = http_get_json(url, headers=headers, timeout=20.0)
         out = _signoz_trace_to_otlp(data)
         n = sum(
             len(scope.get("spans") or [])
@@ -465,18 +475,34 @@ class SigNozAdapter(BackendAdapter):
         """
         if not search and self._catalog_cache is not None:
             return self._catalog_cache
-        qs = _urlparse.urlencode(
-            {"aggregateOperator": "sum", "dataSource": "metrics", "searchText": search}
-        )
-        data = http_get_json(
-            f"{self.query_url}/api/v3/autocomplete/aggregate_attributes?{qs}",
-            headers=self._headers(),
-            timeout=15.0,
-        )
-        keys = ((data.get("data") or {}).get("attributeKeys")) if isinstance(data, dict) else None
-        out = [k for k in keys or [] if isinstance(k, dict) and k.get("key")]
-        if not search:
-            self._catalog_cache = out
+
+        def fetch(text: str) -> List[Dict[str, Any]]:
+            qs = _urlparse.urlencode(
+                {"aggregateOperator": "sum", "dataSource": "metrics", "searchText": text}
+            )
+            data = http_get_json(
+                f"{self.query_url}/api/v3/autocomplete/aggregate_attributes?{qs}",
+                headers=self._headers(),
+                timeout=15.0,
+            )
+            keys = (
+                ((data.get("data") or {}).get("attributeKeys")) if isinstance(data, dict) else None
+            )
+            return [k for k in keys or [] if isinstance(k, dict) and k.get("key")]
+
+        if search:
+            return fetch(search)
+        # The autocomplete answers a bounded page (``hermes.token.usage`` fell
+        # off a 41-entry list on v0.119); one search per namespace the plugin
+        # emits keeps every instrument.
+        out: List[Dict[str, Any]] = []
+        seen: set = set()
+        for ns in _CATALOG_NAMESPACES:
+            for k in fetch(ns):
+                if k["key"] not in seen:
+                    seen.add(k["key"])
+                    out.append(k)
+        self._catalog_cache = out
         return out
 
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

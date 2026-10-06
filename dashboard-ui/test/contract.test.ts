@@ -102,6 +102,9 @@ describe("metrics explorer in the URL (#284)", () => {
     const hist = [{ name: "hermes_tool_duration_sum" }, { name: "hermes_tool_duration_count" }, { name: "hermes_tool_duration" }];
     expect(resolveInstrument(hist, "hermes.tool.duration", "_count")).toBe("hermes_tool_duration_count");
     expect(resolveInstrument(hist, "hermes.tool.duration")).toBe("hermes_tool_duration");
+    const dotted = [{ name: "hermes.tool.duration.sum" }, { name: "hermes.tool.duration.count" }];
+    expect(resolveInstrument(dotted, "hermes.tool.duration", "_count")).toBe("hermes.tool.duration.count");
+    expect(resolveInstrument(dotted, "hermes.tool.duration", "_sum")).toBe("hermes.tool.duration.sum");
   });
   it("picks readable y ticks", () => {
     expect(yTicks(0)).toEqual([0]);
