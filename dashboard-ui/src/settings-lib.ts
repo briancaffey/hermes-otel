@@ -209,15 +209,17 @@ export const ENV_GROUP_LABELS: Record<string, string> = {
 };
 const ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "langsmith", "otel", "other"];
 
-export function groupEnv(env: EnvEntry[], showUnset: boolean): { group: string; label: string; entries: EnvEntry[] }[] {
+export function groupEnv(env: EnvEntry[], showUnset: boolean, query = ""): { group: string; label: string; entries: EnvEntry[] }[] {
   const seen = new Set<string>();
+  const q = query.trim().toLowerCase();
+  const matches = (e: EnvEntry) => !q || [e.name, e.description, e.value || "", e.maps_to || ""].join(" ").toLowerCase().includes(q);
   const groups = [...ENV_GROUP_ORDER, ...env.map((e) => e.group).filter((g) => !ENV_GROUP_ORDER.includes(g))];
   return groups
     .filter((g) => (seen.has(g) ? false : (seen.add(g), true)))
     .map((g) => ({
       group: g,
       label: ENV_GROUP_LABELS[g] || g,
-      entries: env.filter((e) => e.group === g && (showUnset || e.set)),
+      entries: env.filter((e) => e.group === g && (showUnset || e.set) && matches(e)),
     }))
     .filter((g) => g.entries.length > 0);
 }

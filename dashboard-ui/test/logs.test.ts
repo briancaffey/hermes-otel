@@ -41,7 +41,19 @@ describe("logParams", () => {
 describe("URL round trip", () => {
   it("filters survive navSearch → readNav → logFiltersFromNav", () => {
     const search = navSearch({ tab: "logs", ...navFromLogFilters(F), size: "500", before: "42" }, "");
-    expect(search).toBe("?tab=logs&trace=t1&session=s1&level=30&logger=hermes_otel&text=final&lookback=24&events=1&size=500&before=42");
+    // key order follows NAV_KEYS; compare the set, not the string
+    expect(Object.fromEntries(new URLSearchParams(search))).toEqual({
+      tab: "logs",
+      trace: "t1",
+      session: "s1",
+      level: "30",
+      logger: "hermes_otel",
+      text: "final",
+      lookback: "24",
+      events: "1",
+      size: "500",
+      before: "42",
+    });
     const nav = readNav(search);
     expect(logFiltersFromNav(nav)).toEqual(F);
     expect(logPageSizeFromNav(nav.size)).toBe(500);

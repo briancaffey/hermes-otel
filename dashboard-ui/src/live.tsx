@@ -1,92 +1,143 @@
-import { React, useState, useEffect, useRef, useCallback, fetchJSON, API, Button } from "./sdk";
-import { LiveSpan, LiveTrace, kindOf, Kind, KIND_HEX, sessionOf, groupLiveTraces, liveTreeFromSpans, isMcpKeepalivePing, fmtCost, fmtInt } from "./lib";
-import { Stat, Sparkline, Pulse, MiniLabel, ErrorBanner } from "./atoms";
-import { LiveTraceCard, LiveTraceDetail } from "./spantree";
+// Live tab (#280): the last hour of turns from the live store's own query
+// (/live/traces, the same rows and totals the Traces tab shows), KPIs over
+// that window, an activity sparkline built from the rows, and one card per
+// turn. Nothing is assembled from raw spans in the browser any more, so a
+// turn never renders from a partial span set and the first load is one page.
+import { React, useState, useEffect, useRef, useCallback, api, Button, Checkbox } from "./sdk";
+import { LiveSpan, LiveTrace, TraceRow, rowFromLive, Kind, KIND_COLOR, liveTreeFromSpans, isMcpKeepalivePing, fmtCost, fmtInt, findRoot } from "./lib";
+import { Stat, Sparkline, Pulse, MiniLabel, ErrorBanner, Empty, Toggle } from "./atoms";
+import { IconPause, IconPlay } from "./icons";
+import { TraceCard, LiveTraceDetail } from "./spantree";
 import { usePolling } from "./poll";
+import { readNav, writeNav } from "./nav";
+import { useActive } from "./index";
 
-const POLL_MS = 1500;
-const MAX_KEEP = 1500;
+const POLL_MS = 2000;
+const WINDOW_H = 1;
+const PAGE = 50;
+const BUCKETS = 50;
+const BUCKET_S = 2;
 
-// Tokens and cost are summed per TRACE (each turn counted once, #178);
-// span-level counters stay per span.
-function deriveStats(traces: LiveTrace[], spans: LiveSpan[]) {
-  let cost = 0;
-  let tokens = 0;
+export function deriveStats(rows: TraceRow[]) {
+  let cost: number | null = null;
+  let tokens: number | null = null;
   let errors = 0;
-  const byKind: Record<string, number> = {};
-  for (const t of traces) {
-    cost += t.cost || 0;
-    tokens += t.tokens || 0;
+  let spans = 0;
+  let spansKnown = true;
+  const byKind: Partial<Record<Kind, number>> = {};
+  for (const t of rows) {
+    if (t.cost != null) cost = (cost || 0) + t.cost;
+    if (t.tokens != null) tokens = (tokens || 0) + t.tokens;
+    if (t.error) errors++;
+    if (t.spanCount == null) spansKnown = false;
+    else spans += t.spanCount;
+    byKind[t.rootKind] = (byKind[t.rootKind] || 0) + 1;
   }
-  for (const s of spans) {
-    if (s.status === "ERROR") errors++;
-    const k = kindOf(s.name, s.attributes);
-    byKind[k] = (byKind[k] || 0) + 1;
+  return { cost, tokens, errors, turns: rows.length, spans: spansKnown ? spans : null, byKind };
+}
+
+/** Spans per 2 s over the last 100 s, from the rows' end times and span counts. */
+export function activityBuckets(rows: TraceRow[], now = Date.now()): number[] {
+  const buckets = new Array(BUCKETS).fill(0);
+  for (const t of rows) {
+    const endMs = (t.endNs || t.startNs) / 1e6;
+    const idx = BUCKETS - 1 - Math.floor((now - endMs) / (BUCKET_S * 1000));
+    if (idx >= 0 && idx < BUCKETS) buckets[idx] += t.spanCount || 1;
   }
-  return { cost, tokens, errors, traces: traces.length, byKind };
+  return buckets;
 }
 
 export function LivePage() {
-  const [spans, setSpans] = useState<LiveSpan[]>([]);
+  const active = useActive();
+  const [rows, setRows] = useState<TraceRow[]>([]);
   const [status, setStatus] = useState<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   const [paused, setPaused] = useState(false);
   const [selected, setSelected] = useState<LiveTrace | null>(null);
+  const [detailSpans, setDetailSpans] = useState<LiveSpan[] | null>(null);
   const [showPings, setShowPings] = useState(false);
-  const cursor = useRef(0);
+  const [loaded, setLoaded] = useState(false);
+  const inflight = useRef(false);
 
   const poll = useCallback(async () => {
+    if (inflight.current) return;
+    inflight.current = true;
     try {
-      const st = await fetchJSON(`${API}/live/status`);
+      const st = await api("/live/status");
       setStatus(st);
       if (!st || st.live === false) return;
-      const sp = await fetchJSON(`${API}/live/spans?since=${cursor.current}&limit=2000`);
-      cursor.current = Math.max(sp.cursor || 0, cursor.current);
-      if (sp.spans?.length) setSpans((prev) => [...prev, ...sp.spans].slice(-MAX_KEEP));
+      const r = await api("/live/traces", { lookback_hours: WINDOW_H, limit: PAGE });
+      setRows((r.traces || []).map(rowFromLive));
       setError(null);
-    } catch (e: any) {
-      setError(String(e?.message || e));
+    } catch (e: unknown) {
+      setError(e);
+    } finally {
+      inflight.current = false;
+      setLoaded(true);
     }
   }, []);
-
   useEffect(() => {
     poll();
   }, [poll]);
-  usePolling(poll, POLL_MS, !paused && !selected);
+  usePolling(poll, POLL_MS, active && !paused && !selected);
 
-  // Hidden MCP keepalive pings drop out of the stats and sparkline too, so a
-  // dozen pings never read as "activity".
-  const allTraces = groupLiveTraces(spans);
-  const traces = showPings ? allTraces : allTraces.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
-  const hiddenPings = allTraces.length - traces.length;
-  const visibleSpans = showPings ? spans : traces.flatMap((t) => t.spans || []);
-  const stats = deriveStats(traces, visibleSpans);
-  const lastSession = spans.length ? sessionOf(spans[spans.length - 1]) : null;
+  // Detail: the trace's spans, refreshed while the turn is still running.
+  const loadDetail = useCallback(async (id: string) => api(`/live/traces/${encodeURIComponent(id)}`), []);
+  useEffect(() => {
+    if (!selected) return;
+    setDetailSpans(null);
+    loadDetail(selected.traceId)
+      .then((r: any) => {
+        setDetailSpans(r.spans || []);
+        if (r.trace) setSelected((s) => (s && s.traceId === selected.traceId ? { ...s, ...r.trace } : s));
+      })
+      .catch(() => setDetailSpans([]));
+  }, [selected?.traceId, loadDetail]);
+  const refreshDetail = useCallback(() => {
+    if (!selected) return;
+    loadDetail(selected.traceId)
+      .then((r: any) => setDetailSpans(r.spans || []))
+      .catch(() => undefined);
+  }, [selected?.traceId, loadDetail]);
+  usePolling(refreshDetail, POLL_MS, active && !!selected && (!!selected.partial || (detailSpans != null && !findRoot(detailSpans))));
 
-  const now = Date.now();
-  const buckets = new Array(50).fill(0);
-  for (const s of visibleSpans) {
-    const t = (s.end_time_unix_nano || s.start_time_unix_nano) / 1e6;
-    const idx = 49 - Math.floor((now - t) / 2000);
-    if (idx >= 0 && idx < 50) buckets[idx]++;
-  }
+  // ?tab=live&trace=<id> opens the card after a refresh (#280).
+  useEffect(() => {
+    const t = readNav().trace;
+    if (!t || readNav().tab !== "live") return;
+    loadDetail(t)
+      .then((r: any) => {
+        if (r.trace) setSelected({ ...r.trace, spans: r.spans });
+      })
+      .catch(() => undefined);
+  }, [loadDetail]);
+  useEffect(() => {
+    if (!active) return;
+    writeNav({ trace: selected ? String(selected.traceId) : "" });
+  }, [selected, active]);
+
+  const allRows = rows;
+  const shown = showPings ? allRows : allRows.filter((t) => !isMcpKeepalivePing(t.rootName, t.error));
+  const hiddenPings = allRows.length - shown.length;
+  const stats = deriveStats(shown);
+  const buckets = activityBuckets(shown);
+  const lastSession = shown.length ? shown[0].session : null;
 
   if (status && status.live === false) {
     return (
-      <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-        <div className="mb-1 text-base font-medium text-foreground">Live mode is off</div>
+      <Empty title="Live store unavailable">
         {status.reason || "Set dashboard_live: true in the plugin config (it's on by default), then run a turn."}
-      </div>
+        {status.path ? <div className="mt-1 font-mono text-xs">{status.path}</div> : null}
+      </Empty>
     );
   }
 
-  // Detail view — full waterfall for the picked turn.
   if (selected) {
-    const fresh = groupLiveTraces(spans).find((t) => t.traceId === selected.traceId) || selected;
-    const { roots } = liveTreeFromSpans(fresh.spans || []);
+    const spans = detailSpans || [];
+    const { roots } = liveTreeFromSpans(spans);
     return (
       <div className="space-y-3">
-        <LiveTraceDetail trace={fresh} roots={roots} onBack={() => setSelected(null)} />
+        <LiveTraceDetail trace={{ ...selected, spans }} roots={roots} loading={detailSpans === null} onBack={() => setSelected(null)} />
       </div>
     );
   }
@@ -107,33 +158,46 @@ export function LivePage() {
             ) : null}
           </span>
         </div>
-        <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)}>
-          {paused ? "▶ Resume" : "⏸ Pause"}
+        <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)} title={paused ? "resume following" : "stop following"}>
+          {paused ? <IconPlay size={12} /> : <IconPause size={12} />}
+          <span className="ml-1">{paused ? "Resume" : "Pause"}</span>
         </Button>
       </div>
 
       {error ? <ErrorBanner error={error} /> : null}
+      {status?.write_error ? <ErrorBanner error={`0: ${status.write_error}`} prefix="Live store write failed" /> : null}
 
+      <div className="flex items-center gap-2">
+        <MiniLabel>
+          last {WINDOW_H}h · up to {PAGE} newest turns
+        </MiniLabel>
+      </div>
       <div className="otel-kpi-grid">
-        <Stat label="Cost" value={fmtCost(stats.cost)} accent="cost" />
-        <Stat label="Tokens" value={fmtInt(stats.tokens)} />
-        <Stat label="Turns" value={fmtInt(stats.traces)} />
-        <Stat label="Spans" value={fmtInt(visibleSpans.length)} />
+        <Stat label="Cost" value={stats.cost != null ? fmtCost(stats.cost) : null} accent="cost" unknownText="no pricing data" />
+        <Stat label="Tokens" value={stats.tokens != null ? fmtInt(stats.tokens) : null} unknownText="not recorded" />
+        <Stat label="Turns" value={fmtInt(stats.turns)} />
+        <Stat label="Spans" value={stats.spans != null ? fmtInt(stats.spans) : null} unknownText="unknown" />
         <Stat label="Errors" value={fmtInt(stats.errors)} accent={stats.errors ? "error" : undefined} />
       </div>
 
       <div className="otel-card-bg flex items-center gap-4 border border-border px-3 py-2">
-        <MiniLabel>activity · spans per 2 s · last 100 s</MiniLabel>
+        <MiniLabel>
+          activity · spans per {BUCKET_S} s · last {BUCKETS * BUCKET_S} s
+        </MiniLabel>
         <div className="otel-w-44">
-          <Sparkline values={buckets} />
+          <Sparkline values={buckets} label={`spans finished per ${BUCKET_S} seconds over the last ${BUCKETS * BUCKET_S} seconds`} />
         </div>
         <div className="ml-auto flex flex-wrap gap-3">
           {(Object.keys(stats.byKind) as Kind[])
-            .sort((a, b) => stats.byKind[b] - stats.byKind[a])
+            .sort((a, b) => (stats.byKind[b] || 0) - (stats.byKind[a] || 0))
             .slice(0, 7)
             .map((k) => (
-              <span key={k} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">
-                <span className="otel-w-2 inline-block h-2 rounded-full" style={{ background: KIND_HEX[k] }} />
+              <span
+                key={k}
+                className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground"
+                title={`${stats.byKind[k]} turn${stats.byKind[k] === 1 ? "" : "s"} rooted in a ${k} span`}
+              >
+                <span className="otel-w-2 inline-block h-2 rounded-full" style={{ background: KIND_COLOR[k] }} aria-hidden />
                 {k} {stats.byKind[k]}
               </span>
             ))}
@@ -143,23 +207,24 @@ export function LivePage() {
       <div className="flex items-center justify-between pt-1">
         <MiniLabel>recent turns</MiniLabel>
         <div className="flex items-center gap-3 text-[11px] text-muted-foreground">
-          <label className="inline-flex cursor-pointer items-center gap-1.5">
-            <input type="checkbox" checked={showPings} onChange={(e: any) => setShowPings(e.target.checked)} />
-            show MCP keepalive pings{hiddenPings ? ` (${hiddenPings} hidden)` : ""}
-          </label>
-          <span>click a turn to open its span waterfall</span>
+          <Toggle
+            checked={showPings}
+            onChange={setShowPings}
+            label={`show MCP keepalive pings${hiddenPings ? ` (${hiddenPings} hidden)` : ""}`}
+            Switch={Checkbox}
+          />
+          <span>open a turn to see its span waterfall</span>
         </div>
       </div>
 
       <div className="flex flex-col gap-2">
-        {traces.length === 0 ? (
-          <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-            <div className="mb-1 text-base font-medium text-foreground">Waiting for activity…</div>
+        {shown.length === 0 && loaded ? (
+          <Empty title="Waiting for activity…">
             Run a Hermes turn (CLI, Telegram, anything). Each turn appears here as a card — open it to see every span, timing and attribute. No backend
             required.
-          </div>
+          </Empty>
         ) : (
-          traces.map((t) => <LiveTraceCard key={t.traceId} trace={t} onSelect={setSelected} />)
+          shown.map((t) => <TraceCard key={t.traceId} row={t} onSelect={(r) => setSelected(r.raw as LiveTrace)} />)
         )}
       </div>
     </div>
