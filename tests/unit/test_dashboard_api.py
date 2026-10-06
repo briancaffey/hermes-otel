@@ -340,3 +340,69 @@ class TestSettingsRoute:
         r = settings_client.get("/settings?reveal=true")
         assert r.status_code == 200
         assert "sk-live" in r.json()["config"]["raw"]
+
+
+class TestLiveHardening:
+    """#290/#291: validation, real reasons, span_id, and the router against a
+    real store resolved from the environment (no monkeypatched ``_get_live_store``)."""
+
+    def test_bucket_count_is_capped(self, client):
+        r = client.get(
+            "/live/metrics/query", params={"name": "x", "bucket_s": 1, "lookback_hours": 8760}
+        )
+        assert r.status_code == 422 and "buckets" in r.json()["detail"]
+        ok = client.get("/live/metrics/query", params={"name": "x", "bucket_s": 3600})
+        assert ok.status_code == 200
+
+    def test_inverted_window_is_422(self, client):
+        r = client.get("/live/traces", params={"start_s": 2_000_000_000, "end_s": 1_000_000_000})
+        assert r.status_code == 422
+        r = client.get("/live/logs/search", params={"start_s": 20, "end_s": 10})
+        assert r.status_code == 422
+
+    def test_span_id_filter_and_has_more(self, client):
+        r = client.get("/live/logs/search", params={"span_id": "nope"}).json()
+        assert r["logs"] == []
+        r = client.get("/live/traces", params={"limit": 1}).json()
+        assert r["has_more"] is True and r["traces"][0]["partial"] is False
+        assert client.get("/live/sessions").json()["has_more"] is False
+
+    def test_status_names_the_real_reason(self, monkeypatch, tmp_path):
+        monkeypatch.setattr(plugin_api, "_get_live_store", lambda: None)
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            r = c.get("/live/status").json()
+            assert r["live"] is False and "could not be imported" in r["reason"]
+        bad = tmp_path / "bad.db"
+        bad.write_bytes(b"junk" * 50)
+        store = LiveStore(db_path=str(bad))
+        monkeypatch.setattr(plugin_api, "_get_live_store", lambda: store)
+        with TestClient(app) as c:
+            r = c.get("/live/status").json()
+            assert r["live"] is False and "could not be opened" in r["reason"]
+            assert r["path"] == str(bad)
+        store.close()
+
+    def test_router_resolves_the_store_from_the_environment(self, tmp_path, monkeypatch):
+        from hermes_otel import live_store as ls
+
+        monkeypatch.setattr(ls, "_LIVE_STORE", None)
+        monkeypatch.setattr(ls, "_STORES_BY_PATH", {})
+        db = tmp_path / "env.db"
+        monkeypatch.setenv("HERMES_OTEL_LIVE_DB", str(db))
+        writer = LiveStore(db_path=str(db))
+        writer.add_span(_span("t", "agent", "r", None, {"hermes.session_id": "s"}))
+        writer.flush()
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        try:
+            with TestClient(app) as c:
+                st = c.get("/live/status").json()
+                assert st["live"] is True and st["spans"] == 1 and st["path"] == str(db)
+                assert c.get("/live/traces").json()["total"] == 1
+                assert c.get("/live/sessions").json()["sessions"][0]["session"] == "s"
+        finally:
+            writer.close()
+            for s in ls._STORES_BY_PATH.values():
+                s.close()
