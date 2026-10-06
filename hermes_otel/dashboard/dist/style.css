@@ -1,10 +1,72 @@
 /* hermes-otel dashboard — the plugin's own CSS.
    Colours come from the host's theme tokens (--color-*), so the tab follows
-   every Hermes theme. LAYOUT rules live here on purpose: the host only ships
-   the Tailwind classes its own pages use, so a plugin that leans on classes
-   like `sm:grid-cols-5` reflows whenever Hermes changes (#180). Every
-   `otel-*` class used in dashboard-ui/src is defined in this file;
-   tests/unit/test_dashboard_css_classes.py keeps that true. */
+   every Hermes theme; the plugin's own hues (span kinds, log levels, cost)
+   are custom properties below with a light-scheme block, chosen at runtime
+   from the host background's luminance (index.tsx sets data-otel-scheme).
+   LAYOUT rules live here on purpose: the host only ships the Tailwind classes
+   its own pages use, so a plugin that leans on classes like `sm:grid-cols-5`
+   reflows whenever Hermes changes (#180). Every `otel-*` class used in
+   dashboard-ui/src is defined in this file and every class defined here is
+   used; tests/unit/test_dashboard_css_classes.py keeps that true. */
+
+/* ── colour tokens ─────────────────────────────────────────────────── */
+.otel-root {
+  display: block;
+  --otel-kind-agent: #34d399;
+  --otel-kind-llm: #38bdf8;
+  --otel-kind-api: #22d3ee;
+  --otel-kind-tool: #fbbf24;
+  --otel-kind-skill: #6ee7b7;
+  --otel-kind-approval: #f472b6;
+  --otel-kind-subagent: #a78bfa;
+  --otel-kind-cron: #c4b5fd;
+  --otel-kind-other: #94a3b8;
+  --otel-level-error: var(--color-destructive, #f87171);
+  --otel-level-warn: #fbbf24;
+  --otel-level-info: #38bdf8;
+  --otel-level-debug: var(--color-muted-foreground);
+  --otel-cost: #34d399;
+  --otel-bad: #f87171;
+  --otel-role-user: #34d399;
+  --otel-role-assistant: #38bdf8;
+  --otel-role-system: #94a3b8;
+  --otel-role-tool: #fbbf24;
+  --otel-chart-1: #38bdf8;
+  --otel-chart-2: #34d399;
+  --otel-chart-3: #fbbf24;
+  --otel-chart-4: #a78bfa;
+  --otel-chart-5: #f472b6;
+  --otel-chart-6: #22d3ee;
+  --otel-chart-7: #6ee7b7;
+  --otel-chart-8: #94a3b8;
+}
+.otel-root[data-otel-scheme="light"] {
+  --otel-kind-agent: #047857;
+  --otel-kind-llm: #0369a1;
+  --otel-kind-api: #0e7490;
+  --otel-kind-tool: #b45309;
+  --otel-kind-skill: #059669;
+  --otel-kind-approval: #be185d;
+  --otel-kind-subagent: #6d28d9;
+  --otel-kind-cron: #7c3aed;
+  --otel-kind-other: #64748b;
+  --otel-level-warn: #b45309;
+  --otel-level-info: #0369a1;
+  --otel-cost: #047857;
+  --otel-bad: #b91c1c;
+  --otel-role-user: #047857;
+  --otel-role-assistant: #0369a1;
+  --otel-role-system: #64748b;
+  --otel-role-tool: #b45309;
+  --otel-chart-1: #0369a1;
+  --otel-chart-2: #047857;
+  --otel-chart-3: #b45309;
+  --otel-chart-4: #6d28d9;
+  --otel-chart-5: #be185d;
+  --otel-chart-6: #0e7490;
+  --otel-chart-7: #059669;
+  --otel-chart-8: #64748b;
+}
 
 /* ── layout ────────────────────────────────────────────────────────── */
 .otel-kpi-grid {
@@ -41,23 +103,36 @@
 .otel-mr-2 {
   margin-right: 0.5rem;
 }
-.otel-root {
-  display: block;
-}
 .otel-pl-2 {
   padding-left: 0.5rem;
 }
 .otel-space-y-0 > * + * {
   margin-top: 0;
 }
-.otel-w-2 { width: 0.5rem; }
-.otel-w-12 { width: 3rem; }
-.otel-w-14 { width: 3.5rem; }
-.otel-w-16 { width: 4rem; }
-.otel-w-28 { width: 7rem; }
-.otel-w-40 { width: 10rem; }
-.otel-w-44 { width: 11rem; }
-.otel-w-56 { width: 14rem; }
+.otel-w-2 {
+  width: 0.5rem;
+}
+.otel-w-12 {
+  width: 3rem;
+}
+.otel-w-14 {
+  width: 3.5rem;
+}
+.otel-w-16 {
+  width: 4rem;
+}
+.otel-w-28 {
+  width: 7rem;
+}
+.otel-w-40 {
+  width: 10rem;
+}
+.otel-w-44 {
+  width: 11rem;
+}
+.otel-w-56 {
+  width: 14rem;
+}
 
 .otel-facts-grid {
   display: grid;
@@ -77,6 +152,37 @@
 }
 .otel-link:hover {
   color: var(--color-foreground);
+}
+.otel-link:focus-visible,
+.otel-btn:focus-visible,
+.otel-toggle:focus-visible,
+.otel-tab:focus-visible,
+[role="button"].otel-hover-parent:focus-visible,
+.otel-row:focus-visible {
+  outline: 2px solid var(--color-ring, var(--color-foreground));
+  outline-offset: 1px;
+}
+/* A small outlined button for pagers and secondary actions. */
+.otel-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  height: 1.75rem;
+  padding: 0 0.6rem;
+  border: 1px solid var(--color-border);
+  background: color-mix(in srgb, var(--color-card) 40%, transparent);
+  color: var(--color-foreground);
+  font: inherit;
+  font-size: 0.75rem;
+  cursor: pointer;
+  white-space: nowrap;
+}
+.otel-btn:hover:not(:disabled) {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
+}
+.otel-btn:disabled {
+  opacity: 0.45;
+  cursor: not-allowed;
 }
 .otel-pre {
   margin: 0;
@@ -99,16 +205,17 @@
   padding-left: 0.5rem;
 }
 .otel-msg-user {
-  border-left-color: #34d399;
+  border-left-color: var(--otel-role-user);
 }
 .otel-msg-assistant {
-  border-left-color: #38bdf8;
+  border-left-color: var(--otel-role-assistant);
 }
-.otel-msg-system {
-  border-left-color: #94a3b8;
+.otel-msg-system,
+.otel-msg-developer {
+  border-left-color: var(--otel-role-system);
 }
 .otel-msg-tool {
-  border-left-color: #fbbf24;
+  border-left-color: var(--otel-role-tool);
 }
 .otel-details > summary {
   list-style: none;
@@ -139,34 +246,94 @@
 .otel-hover-parent:hover .otel-reveal {
   opacity: 0.9;
 }
+.otel-error-banner {
+  display: flex;
+  gap: 0.5rem;
+  align-items: flex-start;
+  border: 1px solid color-mix(in srgb, var(--color-destructive) 40%, transparent);
+  background: color-mix(in srgb, var(--color-destructive) 10%, transparent);
+  color: var(--color-destructive);
+  padding: 0.5rem 0.75rem;
+  font-size: 0.75rem;
+}
+.otel-error-status {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  opacity: 0.8;
+}
+.otel-error-detail {
+  margin-top: 0.15rem;
+  color: var(--color-foreground);
+  opacity: 0.85;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+.otel-error-hint {
+  margin-top: 0.15rem;
+  color: var(--color-muted-foreground);
+}
 
-/* ── span-kind colours (same hues as KIND_HEX in src/lib.ts) ───────── */
+/* ── span-kind colours (the same tokens KIND_COLOR in src/lib.ts uses) ─ */
 .otel-c-agent,
 .otel-c-session {
-  color: #34d399;
+  color: var(--otel-kind-agent);
 }
 .otel-c-llm {
-  color: #38bdf8;
+  color: var(--otel-kind-llm);
 }
 .otel-c-api {
-  color: #22d3ee;
+  color: var(--otel-kind-api);
 }
 .otel-c-tool {
-  color: #fbbf24;
+  color: var(--otel-kind-tool);
 }
 .otel-c-skill {
-  color: #6ee7b7;
+  color: var(--otel-kind-skill);
 }
 .otel-c-approval {
-  color: #f472b6;
+  color: var(--otel-kind-approval);
 }
-.otel-c-subagent,
+.otel-c-subagent {
+  color: var(--otel-kind-subagent);
+}
 .otel-c-cron {
-  color: #a78bfa;
+  color: var(--otel-kind-cron);
+}
+.otel-c-other {
+  color: var(--otel-kind-other);
+}
+.otel-c-cost {
+  color: var(--otel-cost);
+}
+/* log levels (#285) */
+.otel-level-error {
+  color: var(--otel-level-error);
+}
+.otel-level-warn {
+  color: var(--otel-level-warn);
+}
+.otel-level-info {
+  color: var(--otel-level-info);
+}
+.otel-level-debug {
+  color: var(--otel-level-debug);
+}
+.otel-row-error {
+  box-shadow: inset 3px 0 0 var(--otel-level-error);
+}
+.otel-row-warn {
+  box-shadow: inset 3px 0 0 var(--otel-level-warn);
 }
 
 /* ── tabs + source toggle ──────────────────────────────────────────── */
+.otel-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.otel-tabs::-webkit-scrollbar {
+  display: none;
+}
 .otel-tab {
+  white-space: nowrap;
   margin-bottom: -1px;
   border-bottom: 2px solid transparent;
 }
@@ -183,11 +350,11 @@
 
 /* ── live pulse ────────────────────────────────────────────────────── */
 .otel-pulse-dot {
-  background: var(--color-success, #34d399);
+  background: var(--color-success, var(--otel-kind-agent));
 }
 @keyframes otel-pulse {
   0% {
-    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success, #34d399) 55%, transparent);
+    box-shadow: 0 0 0 0 color-mix(in srgb, var(--color-success, var(--otel-kind-agent)) 55%, transparent);
   }
   70% {
     box-shadow: 0 0 0 6px transparent;
@@ -200,13 +367,57 @@
   animation: otel-pulse 1.7s infinite;
 }
 
-
 /* Respect reduced-motion preferences. */
 @media (prefers-reduced-motion: reduce) {
   .otel-pulse,
   .otel-spin {
     animation: none;
   }
+}
+
+/* ── waterfall (#283) ──────────────────────────────────────────────── */
+.otel-axis {
+  position: relative;
+  height: 1.1rem;
+  margin: 0 0 0.25rem;
+  border-bottom: 1px solid var(--color-border);
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+}
+.otel-axis > span {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+.otel-axis > span:first-child {
+  transform: none;
+}
+.otel-axis > span:last-child {
+  transform: translateX(-100%);
+}
+.otel-axis > i {
+  position: absolute;
+  bottom: -1px;
+  height: 4px;
+  border-left: 1px solid var(--color-border);
+}
+.otel-row {
+  cursor: pointer;
+}
+
+/* ── search bar (#281) ─────────────────────────────────────────────── */
+.otel-field-off {
+  opacity: 0.55;
+}
+.otel-field-note {
+  text-transform: none;
+  letter-spacing: 0;
+  font-weight: 400;
+}
+.otel-mark {
+  background: color-mix(in srgb, var(--otel-level-warn) 35%, transparent);
+  color: inherit;
 }
 
 /* ── settings tab ──────────────────────────────────────────────────── */
@@ -236,7 +447,7 @@
   background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
 .otel-changed {
-  box-shadow: inset 3px 0 0 var(--color-primary, #34d399);
+  box-shadow: inset 3px 0 0 var(--color-primary, var(--otel-kind-agent));
 }
 .otel-src {
   display: inline-block;
@@ -254,14 +465,14 @@
   color: var(--color-muted-foreground);
 }
 .otel-src-env {
-  color: #fbbf24;
-  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
-  background: color-mix(in srgb, #fbbf24 12%, transparent);
+  color: var(--otel-level-warn);
+  border-color: color-mix(in srgb, var(--otel-level-warn) 55%, transparent);
+  background: color-mix(in srgb, var(--otel-level-warn) 12%, transparent);
 }
 .otel-src-file {
-  color: #38bdf8;
-  border-color: color-mix(in srgb, #38bdf8 55%, transparent);
-  background: color-mix(in srgb, #38bdf8 12%, transparent);
+  color: var(--otel-kind-llm);
+  border-color: color-mix(in srgb, var(--otel-kind-llm) 55%, transparent);
+  background: color-mix(in srgb, var(--otel-kind-llm) 12%, transparent);
 }
 .otel-pill {
   display: inline-block;
@@ -274,9 +485,9 @@
   white-space: nowrap;
 }
 .otel-pill-on {
-  color: #34d399;
-  border-color: color-mix(in srgb, #34d399 55%, transparent);
-  background: color-mix(in srgb, #34d399 12%, transparent);
+  color: var(--otel-kind-agent);
+  border-color: color-mix(in srgb, var(--otel-kind-agent) 55%, transparent);
+  background: color-mix(in srgb, var(--otel-kind-agent) 12%, transparent);
 }
 .otel-pill-off {
   color: var(--color-muted-foreground);
@@ -288,9 +499,9 @@
   opacity: 0.7;
 }
 .otel-pill-forced {
-  color: #fbbf24;
-  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
-  background: color-mix(in srgb, #fbbf24 12%, transparent);
+  color: var(--otel-level-warn);
+  border-color: color-mix(in srgb, var(--otel-level-warn) 55%, transparent);
+  background: color-mix(in srgb, var(--otel-level-warn) 12%, transparent);
 }
 .otel-code {
   font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
@@ -306,7 +517,7 @@
   color: var(--color-muted-foreground);
 }
 .otel-warn {
-  color: #fbbf24;
+  color: var(--otel-level-warn);
 }
 .otel-kv > * + * {
   margin-top: 0.125rem;
@@ -315,16 +526,6 @@
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
   gap: 0.5rem;
-}
-.otel-backend-card {
-  cursor: pointer;
-  transition: border-color 0.15s, background-color 0.15s;
-}
-.otel-backend-card:hover,
-.otel-backend-card:focus-visible {
-  border-color: var(--color-primary, #34d399);
-  background: color-mix(in srgb, var(--color-accent) 25%, transparent);
-  outline: none;
 }
 .otel-backend-name {
   display: inline-flex;
@@ -373,9 +574,9 @@
 .otel-value-error .otel-pre,
 .otel-value-error .otel-md,
 .otel-value-error .otel-prose {
-  border-left: 3px solid var(--color-destructive, #f87171);
+  border-left: 3px solid var(--otel-level-error);
   padding-left: 0.5rem;
-  color: var(--color-destructive, #f87171);
+  color: var(--otel-level-error);
 }
 .otel-prose {
   font-family: inherit;
@@ -387,7 +588,7 @@
   font-size: 0.7rem;
 }
 .otel-cmd {
-  color: #fbbf24;
+  color: var(--otel-kind-tool);
 }
 .otel-more {
   display: inline-block;
@@ -421,13 +622,13 @@
   white-space: nowrap;
 }
 .otel-chip-tool {
-  color: #fbbf24;
-  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
-  background: color-mix(in srgb, #fbbf24 12%, transparent);
+  color: var(--otel-kind-tool);
+  border-color: color-mix(in srgb, var(--otel-kind-tool) 55%, transparent);
+  background: color-mix(in srgb, var(--otel-kind-tool) 12%, transparent);
 }
 .otel-chip-yes {
-  color: #34d399;
-  border-color: color-mix(in srgb, #34d399 55%, transparent);
+  color: var(--otel-kind-agent);
+  border-color: color-mix(in srgb, var(--otel-kind-agent) 55%, transparent);
 }
 .otel-chip-no {
   color: var(--color-muted-foreground);
@@ -453,26 +654,23 @@
   color: var(--color-muted-foreground);
 }
 .otel-role-user {
-  color: #34d399;
-  border-color: color-mix(in srgb, #34d399 55%, transparent);
+  color: var(--otel-role-user);
+  border-color: color-mix(in srgb, var(--otel-role-user) 55%, transparent);
 }
 .otel-role-assistant {
-  color: #38bdf8;
-  border-color: color-mix(in srgb, #38bdf8 55%, transparent);
+  color: var(--otel-role-assistant);
+  border-color: color-mix(in srgb, var(--otel-role-assistant) 55%, transparent);
 }
 .otel-role-tool {
-  color: #fbbf24;
-  border-color: color-mix(in srgb, #fbbf24 55%, transparent);
-}
-.otel-msg-developer {
-  border-left-color: #94a3b8;
+  color: var(--otel-role-tool);
+  border-color: color-mix(in srgb, var(--otel-role-tool) 55%, transparent);
 }
 .otel-toolcalls > * + * {
   margin-top: 0.35rem;
 }
 .otel-toolcall {
-  border: 1px solid color-mix(in srgb, #fbbf24 35%, transparent);
-  background: color-mix(in srgb, #fbbf24 6%, transparent);
+  border: 1px solid color-mix(in srgb, var(--otel-kind-tool) 35%, transparent);
+  background: color-mix(in srgb, var(--otel-kind-tool) 6%, transparent);
   padding: 0.35rem 0.5rem;
 }
 .otel-toolcall-head {
@@ -505,7 +703,7 @@
   color: var(--color-foreground);
 }
 .otel-tone-bad {
-  color: #f87171;
+  color: var(--otel-bad);
 }
 /* markdown */
 .otel-md {
@@ -590,42 +788,167 @@
   display: block;
 }
 
+/* ── charts (#284) ─────────────────────────────────────────────────── */
+.otel-chart {
+  display: grid;
+  grid-template-columns: 3rem minmax(0, 1fr);
+  grid-template-areas:
+    "y plot"
+    ". x"
+    "legend legend";
+  column-gap: 0.25rem;
+}
+.otel-chart-y {
+  grid-area: y;
+  position: relative;
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+  text-align: right;
+}
+.otel-chart-y > span {
+  position: absolute;
+  right: 0;
+  transform: translateY(-50%);
+  white-space: nowrap;
+  font-variant-numeric: tabular-nums;
+}
+.otel-chart-plot {
+  grid-area: plot;
+  position: relative;
+  min-width: 0;
+}
+.otel-chart-x {
+  grid-area: x;
+  display: flex;
+  justify-content: space-between;
+  font-size: 10px;
+  color: var(--color-muted-foreground);
+  font-variant-numeric: tabular-nums;
+}
+.otel-chart > .mt-1 {
+  grid-area: legend;
+}
+.otel-chart-tip {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  min-width: 9rem;
+  max-width: 16rem;
+  padding: 0.3rem 0.5rem;
+  border: 1px solid var(--color-border);
+  background: var(--color-popover, var(--color-background));
+  color: var(--color-foreground);
+  font-size: 11px;
+  pointer-events: none;
+  z-index: 2;
+}
+
 /* ── host utilities the plugin needs ───────────────────────────────────
    Tailwind classes the TSX uses that the targeted Hermes release no longer
    compiles (its own pages stopped using them). Standard Tailwind values, so
    they are identical when the host does ship them. Checked by
    tests/unit/test_dashboard_css_classes.py against host-classes.txt. */
-.space-y-1 > * + * { margin-top: 0.25rem; }
-.space-y-1\.5 > * + * { margin-top: 0.375rem; }
-.space-y-3 > * + * { margin-top: 0.75rem; }
-.space-y-4 > * + * { margin-top: 1rem; }
-.gap-x-2 { column-gap: 0.5rem; }
-.gap-x-3 { column-gap: 0.75rem; }
-.gap-x-4 { column-gap: 1rem; }
-.gap-y-1 { row-gap: 0.25rem; }
-.ml-1 { margin-left: 0.25rem; }
-.mt-3 { margin-top: 0.75rem; }
-.pr-1 { padding-right: 0.25rem; }
-.p-0\.5 { padding: 0.125rem; }
-.h-2 { height: 0.5rem; }
-.max-h-80 { max-height: 20rem; }
-.inset-y-0 { top: 0; bottom: 0; }
-.items-baseline { align-items: baseline; }
-.rounded { border-radius: 0.25rem; }
-.border-l-2 { border-left-width: 2px; }
-.border-dashed { border-style: dashed; }
-.border-destructive\/40 { border-color: color-mix(in srgb, var(--color-destructive) 40%, transparent); }
-.bg-muted\/20 { background-color: color-mix(in srgb, var(--color-muted) 20%, transparent); }
-.bg-muted-foreground\/40 { background-color: color-mix(in srgb, var(--color-muted-foreground) 40%, transparent); }
-.text-foreground\/80 { color: color-mix(in srgb, var(--color-foreground) 80%, transparent); }
-.text-foreground\/90 { color: color-mix(in srgb, var(--color-foreground) 90%, transparent); }
-.text-xl { font-size: 1.25rem; line-height: 1.75rem; }
-.tracking-tight { letter-spacing: -0.025em; }
-.leading-snug { line-height: 1.375; }
-.opacity-70 { opacity: 0.7; }
-.break-all { word-break: break-all; }
-.break-words { overflow-wrap: break-word; }
-.last\:border-b-0:last-child { border-bottom-width: 0; }
+.space-y-1 > * + * {
+  margin-top: 0.25rem;
+}
+.space-y-1\.5 > * + * {
+  margin-top: 0.375rem;
+}
+.space-y-3 > * + * {
+  margin-top: 0.75rem;
+}
+.space-y-4 > * + * {
+  margin-top: 1rem;
+}
+.gap-x-2 {
+  column-gap: 0.5rem;
+}
+.gap-x-3 {
+  column-gap: 0.75rem;
+}
+.gap-x-4 {
+  column-gap: 1rem;
+}
+.gap-y-1 {
+  row-gap: 0.25rem;
+}
+.ml-1 {
+  margin-left: 0.25rem;
+}
+.mt-3 {
+  margin-top: 0.75rem;
+}
+.pr-1 {
+  padding-right: 0.25rem;
+}
+.py-10 {
+  padding-top: 2.5rem;
+  padding-bottom: 2.5rem;
+}
+.p-0\.5 {
+  padding: 0.125rem;
+}
+.h-2 {
+  height: 0.5rem;
+}
+.max-h-80 {
+  max-height: 20rem;
+}
+.inset-y-0 {
+  top: 0;
+  bottom: 0;
+}
+.items-baseline {
+  align-items: baseline;
+}
+.rounded {
+  border-radius: 0.25rem;
+}
+.border-l-2 {
+  border-left-width: 2px;
+}
+.border-dashed {
+  border-style: dashed;
+}
+.border-destructive\/40 {
+  border-color: color-mix(in srgb, var(--color-destructive) 40%, transparent);
+}
+.bg-muted\/20 {
+  background-color: color-mix(in srgb, var(--color-muted) 20%, transparent);
+}
+.bg-muted-foreground\/40 {
+  background-color: color-mix(in srgb, var(--color-muted-foreground) 40%, transparent);
+}
+.text-foreground\/80 {
+  color: color-mix(in srgb, var(--color-foreground) 80%, transparent);
+}
+.text-foreground\/90 {
+  color: color-mix(in srgb, var(--color-foreground) 90%, transparent);
+}
+.text-xl {
+  font-size: 1.25rem;
+  line-height: 1.75rem;
+}
+.tracking-tight {
+  letter-spacing: -0.025em;
+}
+.leading-snug {
+  line-height: 1.375;
+}
+.opacity-70 {
+  opacity: 0.7;
+}
+.break-all {
+  word-break: break-all;
+}
+.break-words {
+  overflow-wrap: break-word;
+}
+.last\:border-b-0:last-child {
+  border-bottom-width: 0;
+}
 @media (min-width: 1024px) {
-  .lg\:grid-cols-2 { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lg\:grid-cols-2 {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }

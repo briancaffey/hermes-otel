@@ -109,6 +109,8 @@ def test_every_plugin_class_in_the_stylesheet_is_used():
     }
     used = used_classes() | {"otel-md"}
     # Class families set by string composition in the TSX (prefix + variable).
-    composed = {c for c in defined if re.match(r"otel-(msg|role|src|pill|chip|tone|c)-", c)}
+    composed = {
+        c for c in defined if re.match(r"otel-(msg|role|src|pill|chip|tone|c|level|row)-", c)
+    }
     unused = sorted(defined - used - composed)
     assert not unused, f"otel-* classes defined in dist/style.css but never used: {unused}"

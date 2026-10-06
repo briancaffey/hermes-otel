@@ -136,3 +136,81 @@ export const IconExternal = (p: IP) =>
       <path d="M18 13v6a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h6" />
     </>
   );
+
+export const IconDatabase = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <ellipse cx="12" cy="5" rx="9" ry="3" />
+      <path d="M3 5v14a9 3 0 0 0 18 0V5" />
+      <path d="M3 12a9 3 0 0 0 18 0" />
+    </>
+  );
+export const IconPause = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <rect x="6" y="4" width="4" height="16" />
+      <rect x="14" y="4" width="4" height="16" />
+    </>
+  );
+export const IconPlay = (p: IP) => svg(p.size, p.className, <polygon points="6 3 20 12 6 21 6 3" />);
+export const IconSkipBack = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <polygon points="19 20 9 12 19 4 19 20" />
+      <line x1="5" x2="5" y1="19" y2="5" />
+    </>
+  );
+export const IconArrowLeft = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <path d="m12 19-7-7 7-7" />
+      <path d="M19 12H5" />
+    </>
+  );
+export const IconArrowRight = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <path d="M5 12h14" />
+      <path d="m12 5 7 7-7 7" />
+    </>
+  );
+export const IconAlert = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <path d="m21.73 18-8-14a2 2 0 0 0-3.48 0l-8 14A2 2 0 0 0 4 21h16a2 2 0 0 0 1.73-3" />
+      <path d="M12 9v4" />
+      <path d="M12 17h.01" />
+    </>
+  );
+export const IconUser = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+      <circle cx="12" cy="7" r="4" />
+    </>
+  );
+export const IconScrollText = (p: IP) =>
+  svg(
+    p.size,
+    p.className,
+    <>
+      <path d="M15 12h-5" />
+      <path d="M15 8h-5" />
+      <path d="M19 17V5a2 2 0 0 0-2-2H4" />
+      <path d="M8 21h12a2 2 0 0 0 2-2v-1a1 1 0 0 0-1-1H11a1 1 0 0 0-1 1v1a2 2 0 1 1-4 0V5a2 2 0 1 0-4 0v2a1 1 0 0 0 1 1h3" />
+    </>
+  );

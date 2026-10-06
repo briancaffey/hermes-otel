@@ -1,36 +1,16 @@
-// Trace detail pieces (#185): the summary header, per-kind span summaries,
-// grouped attributes, and the Spans / Logs / Raw sub-tabs.
-import { React, useState, useEffect, fetchJSON, API, Badge, Button, cn } from "./sdk";
-import { fmtDurationMs, fmtTokens, fmtAbsTime, kindOf, groupAttrs, headerFacts, HeaderFacts, TreeSpan, KIND_HEX } from "./lib";
+// Trace detail pieces (#185, #283): the summary header, per-kind span
+// summaries, grouped attributes, and the Spans / Logs / Raw sub-tabs.
+import { React, useState, useEffect, useMemo, Badge, Button, cn } from "./sdk";
+import { fmtDurationMs, fmtTokens, fmtCostExact, kindOf, groupAttrs, headerFacts, HeaderFacts, TreeSpan, NamedAttrs, KIND_COLOR } from "./lib";
 import { ValueView, Facts, StatusBadge, Chips } from "./render";
-import { splitList, turnTools } from "./values";
+import { splitList, turnTools, fmtCount } from "./values";
 import { withBackend } from "./source";
 import { navigate } from "./nav";
+import { api } from "./sdk";
 import { LogRec, LogRow } from "./logs";
-import { MiniLabel, ErrorBanner } from "./atoms";
+import { MiniLabel, ErrorBanner, CopyButton, Segmented } from "./atoms";
 
-export function CopyButton({ text, label }: { text: string; label?: string }) {
-  const [done, setDone] = useState(false);
-  return (
-    <button
-      type="button"
-      className="otel-link text-[10px] text-muted-foreground"
-      title={`copy ${text}`}
-      onClick={(e: any) => {
-        e.stopPropagation();
-        try {
-          navigator.clipboard?.writeText(text);
-          setDone(true);
-          setTimeout(() => setDone(false), 1200);
-        } catch {
-          /* clipboard unavailable */
-        }
-      }}
-    >
-      {done ? "copied" : label || "copy"}
-    </button>
-  );
-}
+export { CopyButton };
 
 function Fact({ label, children }: { label: string; children: any }) {
   if (children == null || children === "" || children === false) return null;
@@ -42,15 +22,19 @@ function Fact({ label, children }: { label: string; children: any }) {
   );
 }
 
-// Header for both sources: the root span's attributes carry the turn totals.
+// Header for both sources: the root span's attributes carry the turn totals,
+// with the api.* spans as the one fallback (lib.headerFacts).
 export function TraceHeader({
   title,
   traceId,
   service,
   durationMs,
   rootAttrs,
-  spansAttrs,
+  spans,
   error,
+  partial,
+  truncated,
+  spanCount,
   uiUrl,
   uiLabel,
   source,
@@ -58,20 +42,27 @@ export function TraceHeader({
 }: {
   title: string;
   traceId: string;
-  service?: string;
+  service?: string | null;
   durationMs: number;
   rootAttrs: Record<string, any>;
-  spansAttrs?: Record<string, any>[];
+  spans?: NamedAttrs[];
   error?: boolean;
+  partial?: boolean;
+  truncated?: boolean;
+  spanCount?: number | null;
   uiUrl?: string | null;
   uiLabel?: string | null;
   source: string;
   onBack: () => void;
 }) {
-  const f: HeaderFacts = headerFacts(rootAttrs, spansAttrs || []);
+  const f: HeaderFacts = headerFacts(rootAttrs, spans || []);
   const tokens =
     f.totalTokens != null
-      ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null || f.outputTokens != null ? ` (in ${fmtTokens(f.inputTokens ?? 0)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache read ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}`
+      ? `${fmtTokens(f.totalTokens)}${
+          f.inputTokens != null || f.outputTokens != null
+            ? ` (in ${fmtTokens(f.inputTokens ?? 0)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache read ${fmtTokens(f.cacheReadTokens)}` : ""})`
+            : ""
+        }`
       : null;
   return (
     <div className="space-y-3">
@@ -82,6 +73,16 @@ export function TraceHeader({
             {error ? (
               <Badge variant="destructive" className="text-[10px]">
                 error
+              </Badge>
+            ) : null}
+            {partial ? (
+              <Badge variant="secondary" className="text-[10px]" title="the root span has not finished yet; totals are provisional">
+                in progress
+              </Badge>
+            ) : null}
+            {truncated ? (
+              <Badge variant="secondary" className="text-[10px]" title={`the backend returned the first spans only${spanCount ? ` of ${spanCount}` : ""}`}>
+                truncated
               </Badge>
             ) : null}
             {f.platform ? (
@@ -122,7 +123,7 @@ export function TraceHeader({
         </Fact>
         <Fact label="tokens">{tokens}</Fact>
         <Fact label="cost">
-          {f.cost != null ? <span className="text-emerald-400">${f.cost.toFixed(4)}</span> : <span className="text-muted-foreground">no pricing data</span>}
+          {f.cost != null ? <span className="otel-c-cost">{fmtCostExact(f.cost)}</span> : <span className="text-muted-foreground">no pricing data</span>}
         </Fact>
         <Fact label="tools">{f.tools.length ? f.tools.join(", ") : null}</Fact>
         <Fact label="outcome">
@@ -175,7 +176,8 @@ function Attr({ a, label, keys, source }: { a: Record<string, any>; label: strin
 }
 
 // What a person wants first for each kind of span; the attribute table stays
-// below, collapsed. Every kind the plugin emits has its own summary.
+// below, collapsed. Every kind the plugin emits has its own summary; anything
+// else gets the generic one (name, duration, status, error).
 export function SpanSummary({ span, source }: { span: TreeSpan; source?: string }) {
   const a = span._attrs || {};
   const kind = kindOf(span.name, a);
@@ -184,6 +186,7 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
 
   if (kind === "tool") {
     const truncated = String(a["hermes.preview.output.truncated"]) === "true";
+    const origChars = Number(a["hermes.preview.output.original_chars"]);
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
@@ -225,7 +228,7 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
         <Attr a={a} label="arguments" keys={["input.value", "gen_ai.tool.call.arguments"]} />
         <Attr
           a={a}
-          label={truncated ? `result · preview of ${fmtTokens(a["hermes.preview.output.original_chars"]) || "?"} chars` : "result"}
+          label={truncated ? `result · preview of ${Number.isFinite(origChars) ? fmtCount(origChars) : "?"} chars` : "result"}
           keys={["output.value", "gen_ai.tool.call.result"]}
         />
       </div>
@@ -233,6 +236,7 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
   }
   if (kind === "llm" || kind === "api") {
     const f = headerFacts(a);
+    const http = first(a, "http.response.status_code", "gen_ai.response.status_code");
     return (
       <div className="space-y-2">
         <Facts
@@ -246,16 +250,13 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
                   ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null ? ` (in ${fmtTokens(f.inputTokens)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}`
                   : null,
             },
+            { label: "cost", value: f.cost != null ? fmtCostExact(f.cost) : null },
             { label: "finish", value: first(a, "llm.response.finish_reason", "gen_ai.response.finish_reasons") },
             { label: "latency", value: a["llm.response.duration_ms"] != null ? fmtDurationMs(Number(a["llm.response.duration_ms"])) : null },
             { label: "messages", value: a["llm.request.message_count"] },
             { label: "mode", value: a["llm.api_mode"] },
             { label: "tool calls", value: a["llm.response.tool_calls"] },
-            {
-              label: "http",
-              value: first(a, "http.response.status_code", "gen_ai.response.status_code"),
-              tone: Number(first(a, "http.response.status_code", "gen_ai.response.status_code")) >= 400 ? "bad" : undefined,
-            },
+            { label: "http", value: http, tone: http != null && Number(http) >= 400 ? "bad" : undefined },
             {
               label: "retries",
               value:
@@ -309,6 +310,7 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
             { label: "exit", value: a["hermes.turn.exit_reason"] },
             { label: "api calls", value: a["hermes.turn.api_call_count"] },
             { label: "tokens", value: f.totalTokens != null ? fmtTokens(f.totalTokens) : null },
+            { label: "cost", value: f.cost != null ? fmtCostExact(f.cost) : f.costUnknown ? "no pricing data" : null },
             { label: "platform", value: a["hermes.platform"] },
             { label: "profile", value: a["hermes.profile"] },
             { label: "turn", value: a["hermes.turn.number"] },
@@ -365,7 +367,7 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
         <div className="flex flex-wrap items-center gap-2 text-xs">
           {a["hermes.approval.choice"] ? (
             <Badge variant="secondary" className="text-[10px]">
-              👤 {String(a["hermes.approval.choice"])}
+              choice: {String(a["hermes.approval.choice"])}
             </Badge>
           ) : null}
           {a["hermes.approval.granted"] != null ? (
@@ -426,7 +428,22 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
       </div>
     );
   }
-  return errorBlock ? <div className="space-y-2">{errorBlock}</div> : null;
+  // Generic summary for spans the plugin did not name (#283).
+  return (
+    <div className="space-y-2">
+      <Facts
+        items={[
+          { label: "span", value: span.name, mono: true },
+          { label: "duration", value: fmtDurationMs(span.durationMs) },
+          { label: "status", value: span.status?.code === 2 ? "error" : span.status?.code === 1 ? "ok" : null },
+          { label: "kind", value: a["openinference.span.kind"] || a["hermes.span_kind"] || null },
+        ]}
+      />
+      {errorBlock}
+      <Attr a={a} label="input" keys={["input.value"]} />
+      <Attr a={a} label="output" keys={["output.value"]} />
+    </div>
+  );
 }
 
 // Keys the summary already shows in full; the table shows them collapsed.
@@ -462,7 +479,7 @@ export function AttrGroups({ attrs, source }: { attrs: Record<string, any>; sour
                 <dd className="min-w-0 break-words text-foreground">
                   {CONTENT_KEYS.has(e.key) ? (
                     <details className="otel-details">
-                      <summary className="cursor-pointer text-[11px] text-muted-foreground">{String(e.value).length.toLocaleString("en-US")} chars</summary>
+                      <summary className="cursor-pointer text-[11px] text-muted-foreground">{fmtCount(String(e.value).length)} chars</summary>
                       <div className="mt-1">
                         <ValueView attrKey={e.key} value={e.value} />
                       </div>
@@ -480,46 +497,65 @@ export function AttrGroups({ attrs, source }: { attrs: Record<string, any>; sour
   );
 }
 
-// Spans | Logs | Raw under a trace.
-export function TraceTabs({ traceId, source, logsAvailable, spans, raw }: { traceId: string; source: string; logsAvailable: boolean; spans: any; raw: any }) {
+// Spans | Logs | Raw under a trace. The Logs sub-tab asks for the trace's own
+// window (plus a margin) instead of a year (#283), and its rows carry the same
+// actions as the Logs tab.
+export function TraceTabs({
+  traceId,
+  source,
+  logsAvailable,
+  spans,
+  raw,
+  windowNs,
+}: {
+  traceId: string;
+  source: string;
+  logsAvailable: boolean;
+  spans: any;
+  raw: any;
+  windowNs?: [number, number];
+}) {
   const [tab, setTab] = useState<"spans" | "logs" | "raw">("spans");
   const [logs, setLogs] = useState<LogRec[] | null>(null);
   const [openLog, setOpenLog] = useState<string | null>(null);
-  const [error, setError] = useState<string | null>(null);
+  const [error, setError] = useState<unknown>(null);
   useEffect(() => {
     if (tab !== "logs" || logs !== null) return;
-    const base = source === "live" ? `${API}/live` : API;
-    const p = withBackend(new URLSearchParams({ trace_id: traceId, limit: "500", lookback_hours: "8760" }), source);
-    fetchJSON(`${base}/logs/search?${p}`)
+    const p = withBackend(new URLSearchParams({ trace_id: traceId, limit: "500" }), source);
+    const [startNs, endNs] = windowNs || [0, 0];
+    if (startNs > 0 && endNs > 0) {
+      // five minutes of margin on each side: lines logged around the turn
+      p.set("start_s", String(Math.max(0, Math.floor(startNs / 1e9) - 300)));
+      p.set("end_s", String(Math.ceil(endNs / 1e9) + 300));
+    } else {
+      p.set("lookback_hours", "720");
+    }
+    api(source === "live" ? "/live/logs/search" : "/logs/search", p)
       .then((r: any) => setLogs(r.logs || []))
-      .catch((e: any) => {
-        setError(String(e?.message || e));
+      .catch((e: unknown) => {
+        setError(e);
         setLogs([]);
       });
-  }, [tab, logs, source, traceId]);
-  const Btn = ({ id, label }: { id: "spans" | "logs" | "raw"; label: string }) => (
-    <button
-      type="button"
-      onClick={() => setTab(id)}
-      className={cn(
-        "otel-toggle px-3 py-1 text-xs font-medium transition-colors",
-        tab === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground"
-      )}
-    >
-      {label}
-    </button>
-  );
+  }, [tab, logs, source, traceId, windowNs]);
+  const rawText = useMemo(() => (tab === "raw" ? JSON.stringify(raw, null, 2) : ""), [raw, tab]);
+  const actions = {
+    onTrace: () => undefined,
+    onSession: (id: string) => navigate({ tab: "logs", source, session: id, trace: "", lookback: "168" }),
+    onEvent: (name: string) => navigate({ tab: "logs", source, trace: traceId, session: "", event: name, events: "1", lookback: "720" }),
+    onContext: (l: LogRec) => navigate({ tab: "logs", source, trace: "", session: "", center: String(l.time_unix_nano || ""), lookback: "720" }),
+  };
   return (
     <div className="space-y-3">
-      <div className="otel-card-bg inline-flex border border-border p-0.5">
-        <Btn id="spans" label="Spans" />
-        {logsAvailable ? <Btn id="logs" label="Logs" /> : null}
-        <Btn id="raw" label="Raw" />
-      </div>
+      <Segmented
+        value={tab}
+        onChange={setTab}
+        label="trace detail view"
+        options={[{ id: "spans", label: "Spans" }, ...(logsAvailable ? [{ id: "logs" as const, label: "Logs" }] : []), { id: "raw", label: "Raw" }]}
+      />
       {tab === "spans" ? spans : null}
       {tab === "logs" ? (
         error ? (
-          <ErrorBanner error={error} />
+          <ErrorBanner error={error} prefix="Logs" />
         ) : logs === null ? (
           <div className="text-xs text-muted-foreground">Loading…</div>
         ) : logs.length === 0 ? (
@@ -534,7 +570,7 @@ export function TraceTabs({ traceId, source, logsAvailable, spans, raw }: { trac
                 type="button"
                 className="otel-link"
                 title="open the Logs tab filtered to this trace"
-                onClick={() => navigate({ tab: "logs", source, trace: traceId, session: "", lookback: "8760" })}
+                onClick={() => navigate({ tab: "logs", source, trace: traceId, session: "", lookback: "720" })}
               >
                 open in Logs tab →
               </button>
@@ -542,25 +578,23 @@ export function TraceTabs({ traceId, source, logsAvailable, spans, raw }: { trac
             <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
               {logs.map((l, i) => {
                 const k = String(l.seq ?? i);
-                return (
-                  <LogRow
-                    key={k}
-                    l={l}
-                    absolute
-                    expanded={openLog === k}
-                    onToggle={() => setOpenLog(openLog === k ? null : k)}
-                    actions={{ onTrace: () => undefined }}
-                  />
-                );
+                return <LogRow key={k} l={l} absolute expanded={openLog === k} onToggle={() => setOpenLog(openLog === k ? null : k)} actions={actions} />;
               })}
             </div>
           </div>
         )
       ) : null}
-      {tab === "raw" ? <pre className="otel-pre otel-raw">{JSON.stringify(raw, null, 2)}</pre> : null}
+      {tab === "raw" ? (
+        <div className="space-y-1">
+          <div className="flex justify-end">
+            <CopyButton text={rawText} label="copy JSON" />
+          </div>
+          <pre className="otel-pre otel-raw">{rawText}</pre>
+        </div>
+      ) : null}
     </div>
   );
 }
 
-export const kindColor = (name: string, attrs?: Record<string, any>) => KIND_HEX[kindOf(name, attrs)];
-export { fmtAbsTime };
+export const kindColor = (name: string, attrs?: Record<string, any>) => KIND_COLOR[kindOf(name, attrs)];
+export const toneClass = (bad: boolean) => cn(bad ? "otel-tone-bad" : "");
