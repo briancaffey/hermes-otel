@@ -229,7 +229,19 @@ class LangfuseAdapter(BackendAdapter):
         # filtered out here (duration, name prefix); then walk further pages.
         page_size = want
         for page in range(1, _MAX_PAGES + 1):
-            items = self._list_rows(f, start_s, end_s, page_size, page)
+            try:
+                items = self._list_rows(f, start_s, end_s, page_size, page)
+            except BackendError as exc:
+                # Langfuse v4 in events_only mode answers 404 with a sentence
+                # about the mode: that is a deployment choice, not an outage
+                # (#246), so it is reported as configuration.
+                if "events_only" in str(exc.detail):
+                    raise ConfigError(
+                        "This Langfuse runs v4 in events_only mode, which has no "
+                        "/api/public/traces for the dashboard to query (#246). Use the "
+                        "Live source, or a Langfuse with the tracing API enabled."
+                    )
+                raise
             for t in items:
                 row = self._trace_row(t, f)
                 if row is not None:

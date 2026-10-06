@@ -483,10 +483,11 @@ class OpenObserveAdapter(BackendAdapter):
             "telemetry_sdk_language",
             "telemetry_sdk_name",
             "telemetry_sdk_version",
-            "service_instance_id",
-            "process_pid",
             "exemplars",
         }
+        # ``service_instance_id`` / ``process_pid`` stay in the identity: a
+        # counter is per process, and two processes' samples folded into one
+        # series would read the second one's first value as "no increase".
         samples = []
         # ``start_time`` is the counter's own start (ns): a series that started
         # inside the window is a fresh process whose first sample counts in
