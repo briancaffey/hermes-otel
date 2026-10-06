@@ -58,10 +58,12 @@ describe("headerFacts", () => {
   });
   it("hides the served model when it equals the request and sums api spans when the root has no total", () => {
     const f = headerFacts({ "gen_ai.request.model": "m", "gen_ai.response.model": "m" }, [
-      { "gen_ai.usage.total_tokens": 10, "gen_ai.usage.input_tokens": 8, "gen_ai.usage.output_tokens": 2 },
-      { "gen_ai.usage.total_tokens": 5 },
+      { name: "api.chat", attributes: { "gen_ai.usage.total_tokens": 10, "gen_ai.usage.input_tokens": 8, "gen_ai.usage.output_tokens": 2 } },
+      { name: "llm.chat", attributes: { "gen_ai.usage.total_tokens": 10, "gen_ai.usage.input_tokens": 8, "gen_ai.usage.output_tokens": 2 } },
+      { name: "api.chat", attributes: { "gen_ai.usage.total_tokens": 5 } },
     ]);
     expect(f.responseModel).toBeNull();
+    // api.* spans only: the llm.* mirror is never added (#283)
     expect(f.totalTokens).toBe(15);
     expect(f.inputTokens).toBe(8);
   });

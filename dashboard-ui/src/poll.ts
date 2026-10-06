@@ -1,6 +1,6 @@
-// Interval polling that stops while the browser tab is hidden and fires once
-// when it becomes visible again (#188). Every page polls the live store, so a
-// backgrounded dashboard used to keep two requests per 1.5 s going for nothing.
+// Interval polling that stops while the browser tab is hidden, while the
+// plugin tab is not the active one (pages stay mounted, #287), and fires once
+// when it becomes visible again (#188).
 import { useEffect } from "./sdk";
 
 export function usePolling(fn: () => void, ms: number, enabled: boolean): void {

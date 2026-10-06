@@ -1,26 +1,43 @@
-// Logs tab (#186): server-side search over the live store or a backend that
-// serves logs, with level/logger/session/trace/text filters, absolute or
+// Logs tab (#186, #285): server-side search over the live store or a backend
+// that serves logs, with level/logger/session/trace/text filters, absolute or
 // relative times, keyset paging, and trace ids that open the trace.
 //
 // Paging is by cursor, not offset: a page is "the N newest rows older than
 // `before`", where `before` is the oldest row of the previous page. New lines
 // arriving never shift an older page, and every backend bounds time natively
 // (an offset would cost O(offset) and Loki has none). The newest page keeps
-// polling; browsing older pages pauses it. Filters, page size and the cursor
-// live in the URL, so refresh, back and a pasted link land on the same page.
-import { React, useState, useEffect, useCallback, useMemo, useRef, fetchJSON, API, Button, Input, Select, SelectOption, cn } from "./sdk";
+// polling; browsing older pages pauses it. Filters, page size and the whole
+// cursor stack live in the URL, so refresh, back and a pasted link land on
+// the same page with the same page number.
+import { React, useState, useEffect, useCallback, useMemo, useRef, api, Button, Input, Select, SelectOption, Checkbox, cn } from "./sdk";
 import { fmtTimeAgo, fmtAbsTime } from "./lib";
 import { usePolling } from "./poll";
-import { useSource, withBackend } from "./source";
+import { useSource } from "./source";
 import { SourceSelect } from "./sourceselect";
 import { navigate, readNav, writeNav } from "./nav";
-import { LogFilters, DEFAULT_LOG_FILTERS, LOG_PAGE_SIZES, logParams, logFiltersFromNav, navFromLogFilters, logPageSizeFromNav } from "./params";
-import { ErrorBanner } from "./atoms";
-import { CopyButton } from "./detail";
+import {
+  LogFilters,
+  DEFAULT_LOG_FILTERS,
+  LOG_PAGE_SIZES,
+  LOG_LEVELS,
+  LOOKBACKS,
+  logParams,
+  logFiltersFromNav,
+  navFromLogFilters,
+  logPageSizeFromNav,
+  cursorsFromNav,
+  navFromCursors,
+  withBackend,
+} from "./params";
+import { ErrorBanner, CopyButton, Pager, Empty, Toggle, Clickable } from "./atoms";
+import { IconPause, IconPlay } from "./icons";
+import { ValueView } from "./render";
 import { severityCounts, timeBuckets, groupLogAttributes, codeLocation, attributionHint, severityOf, type Bucket } from "./logs-lib";
+import { useActive } from "./index";
 
 export type LogRec = {
   seq?: number;
+  id?: string;
   time_unix_nano?: number;
   level?: string;
   severity_number?: number | null;
@@ -35,13 +52,11 @@ export type LogRec = {
 const POLL_MS = 3000;
 
 const LEVEL_CLASS: Record<string, string> = {
-  ERROR: "text-destructive",
-  CRITICAL: "text-destructive",
-  FATAL: "text-destructive",
-  WARNING: "otel-c-tool",
-  WARN: "otel-c-tool",
-  INFO: "otel-c-llm",
-  DEBUG: "text-muted-foreground",
+  ERROR: "otel-level-error",
+  WARN: "otel-level-warn",
+  INFO: "otel-level-info",
+  DEBUG: "otel-level-debug",
+  OTHER: "text-muted-foreground",
 };
 
 export type LogRowActions = {
@@ -50,6 +65,11 @@ export type LogRowActions = {
   onContext?: (l: LogRec) => void;
   onEvent?: (name: string) => void;
 };
+
+// Attribute keys whose values are content (prompts, tool I/O): the expanded
+// row renders them with the trace detail's structured views (#285).
+const RICH_KEY =
+  /^(gen_ai\.(input|output)\.messages|gen_ai\.(prompt|completion)|gen_ai\.tool\.call\.(arguments|result)|input\.value|output\.value|hermes\.tool\.(command|output)|exception\.message)$/;
 
 /** One log line; click to expand its attributes, exception and code location (#268). */
 export function LogRow({
@@ -68,24 +88,24 @@ export function LogRow({
   actions?: LogRowActions;
 }) {
   const lvl = (l.level || "INFO").toUpperCase();
+  const sev = severityOf(lvl);
   const ts = l.time_unix_nano || 0;
   const attrs = (l.attributes || {}) as Record<string, any>;
   const hint = attributionHint(attrs);
-  const isError = severityOf(lvl) === "ERROR";
-  const edge = isError ? "border-l-2 border-l-primary" : "";
+  const edge = sev === "ERROR" ? "otel-row-error" : sev === "WARN" ? "otel-row-warn" : "";
   return (
     <div className={cn("border-b border-border/60 last:border-b-0", expanded ? "bg-muted/30" : "otel-hoverable", edge)}>
-      <div
-        className="flex cursor-pointer items-start gap-2 px-3 py-1"
-        onClick={onToggle}
-        role="button"
-        tabIndex={0}
+      <Clickable
+        onActivate={() => onToggle?.()}
+        aria-expanded={!!expanded}
+        label={`${expanded ? "collapse" : "expand"} log line`}
+        className="otel-row flex cursor-pointer items-start gap-2 px-3 py-1"
         title={expanded ? "collapse" : "expand attributes"}
       >
         <span className={cn("shrink-0 text-muted-foreground/70", absolute ? "otel-w-40" : "otel-w-14")} title={ts ? fmtAbsTime(ts) : ""}>
           {ts ? (absolute ? fmtAbsTime(ts) : fmtTimeAgo(ts)) : ""}
         </span>
-        <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[lvl] || "text-muted-foreground")}>{lvl}</span>
+        <span className={cn("otel-w-12 shrink-0 font-semibold", LEVEL_CLASS[sev])}>{lvl}</span>
         {l.event_name ? (
           <button
             type="button"
@@ -123,7 +143,7 @@ export function LogRow({
             {String(l.trace_id).slice(0, 8)}
           </button>
         ) : null}
-      </div>
+      </Clickable>
       {expanded ? <LogDetail l={l} actions={actions} /> : null}
     </div>
   );
@@ -172,7 +192,15 @@ function LogDetail({ l, actions }: { l: LogRec; actions?: LogRowActions }) {
                   {g.entries.map(([k, v]) => (
                     <tr key={k}>
                       <td className="otel-kv text-muted-foreground">{k}</td>
-                      <td className="break-all text-foreground/90">{typeof v === "string" ? v : JSON.stringify(v)}</td>
+                      <td className="break-all text-foreground/90">
+                        {RICH_KEY.test(k) || (typeof v === "string" && v.length > 200) ? (
+                          <ValueView attrKey={k} value={v} />
+                        ) : typeof v === "string" ? (
+                          v
+                        ) : (
+                          JSON.stringify(v)
+                        )}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -202,9 +230,9 @@ export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bu
         {c.events ? ` · ${c.events} event${c.events === 1 ? "" : "s"}` : ""}
       </span>
       <span className="tabular-nums">
-        <span className={c.bySeverity.ERROR ? "text-destructive" : ""}>{c.bySeverity.ERROR} error</span>
+        <span className={c.bySeverity.ERROR ? "otel-level-error" : ""}>{c.bySeverity.ERROR} error</span>
         {" · "}
-        <span className={c.bySeverity.WARN ? "otel-c-tool" : ""}>{c.bySeverity.WARN} warn</span>
+        <span className={c.bySeverity.WARN ? "otel-level-warn" : ""}>{c.bySeverity.WARN} warn</span>
         {" · "}
         {c.bySeverity.INFO} info
         {c.bySeverity.DEBUG ? ` · ${c.bySeverity.DEBUG} debug` : ""}
@@ -233,8 +261,7 @@ export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bu
                     y={h - 1 - bad}
                     width={Math.max(1, bw - 1)}
                     height={bad}
-                    className={b.errors ? "text-destructive" : "otel-c-tool"}
-                    fill="currentColor"
+                    fill={b.errors ? "var(--otel-level-error)" : "var(--otel-level-warn)"}
                   />
                 ) : null}
               </g>
@@ -248,13 +275,14 @@ export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bu
 
 export function LogsPage() {
   const { source, setSource, status, isLive } = useSource();
+  const active = useActive();
   const initialNav = readNav();
   const [filters, setFilters] = useState<LogFilters>(() => logFiltersFromNav(initialNav));
   const [applied, setApplied] = useState<LogFilters>(() => logFiltersFromNav(initialNav));
   const [pageSize, setPageSize] = useState<number>(() => logPageSizeFromNav(initialNav.size));
   // Cursor stack: [] = newest page; each entry is the `before` of one page
-  // deeper, so "Newer" is a pop and a refresh can rebuild the top from the URL.
-  const [cursors, setCursors] = useState<string[]>(() => (initialNav.before && /^\d+$/.test(initialNav.before) ? [initialNav.before] : []));
+  // deeper, so "Newer" is a pop and a refresh rebuilds the whole stack from the URL.
+  const [cursors, setCursors] = useState<string[]>(() => cursorsFromNav(initialNav.before));
   const [logs, setLogs] = useState<LogRec[]>([]);
   const [nextBefore, setNextBefore] = useState<string | null>(null);
   const [hasMore, setHasMore] = useState(false);
@@ -266,51 +294,70 @@ export function LogsPage() {
   const [wrap, setWrap] = useState(true);
   const [expanded, setExpanded] = useState<string | null>(null);
   const listEnd = useRef<any>(null);
-  const [error, setError] = useState<string | null>(null);
+  const listBox = useRef<any>(null);
+  const [tailing, setTailing] = useState(true);
+  const [error, setError] = useState<unknown>(null);
+  const [loaded, setLoaded] = useState(false);
   const [live, setLive] = useState<boolean | null>(null);
   const inflight = useRef(false);
   const before = cursors.length ? cursors[cursors.length - 1] : null;
   const onNewestPage = cursors.length === 0;
-  const base = isLive ? `${API}/live` : API;
+  const base = isLive ? "/live" : "";
   const canQuery = isLive || !!status?.logs;
 
-  // Keep the URL in step with what is applied: filters, page size, cursor.
+  // Keep the URL in step with what is applied: filters, page size, cursor stack.
   useEffect(() => {
-    writeNav({ ...navFromLogFilters(applied), size: pageSize !== 200 ? String(pageSize) : "", before: before || "" });
-  }, [applied, pageSize, before]);
+    if (active) writeNav({ ...navFromLogFilters(applied), size: pageSize !== 200 ? String(pageSize) : "", before: navFromCursors(cursors) });
+  }, [applied, pageSize, cursors, active]);
+  // A navigation request (a trace's "open in Logs tab", a session's "logs") re-targets this page.
+  useEffect(() => {
+    const onNav = (e: any) => {
+      const d = e.detail || {};
+      if (d.tab !== "logs") return;
+      if (d.source) setSource(d.source);
+      const f = logFiltersFromNav({ ...readNav(), ...d });
+      setFilters(f);
+      setApplied(f);
+      setCursors([]);
+    };
+    window.addEventListener("hermes_otel:navigate", onNav);
+    return () => window.removeEventListener("hermes_otel:navigate", onNav);
+  }, [setSource]);
 
   const load = useCallback(async () => {
     if (!canQuery || inflight.current) return;
     inflight.current = true;
     try {
       if (isLive) {
-        const st = await fetchJSON(`${API}/live/status`);
+        const st = await api("/live/status");
         setLive(st && st.live !== false);
         if (!st || st.live === false) return;
       }
-      const r = await fetchJSON(`${base}/logs/search?${logParams(applied, source, pageSize, before)}`);
+      const r = await api(`${base}/logs/search`, logParams(applied, source, pageSize, before));
       setLogs(dedupe(r.logs || []));
       setNextBefore(r.next_before_ns != null ? String(r.next_before_ns) : null);
       setHasMore(!!r.has_more);
       setError(null);
-    } catch (e: any) {
-      setError(String(e?.message || e));
+    } catch (e: unknown) {
+      setError(e);
     } finally {
       inflight.current = false;
+      setLoaded(true);
     }
   }, [applied, base, before, canQuery, isLive, pageSize, source]);
   useEffect(() => {
     load();
   }, [load]);
   // Only the newest page follows new lines; an older page is a fixed window.
-  usePolling(load, POLL_MS, !paused && canQuery && onNewestPage);
+  usePolling(load, POLL_MS, active && !paused && canQuery && onNewestPage);
+  // The logger list follows the lookback and the source.
   useEffect(() => {
     if (!canQuery) return;
-    const p = withBackend(new URLSearchParams(), source);
-    fetchJSON(`${base}/loggers?${p}`)
+    const p = withBackend(new URLSearchParams({ lookback_hours: String(applied.lookback) }), source);
+    api(`${base}/loggers`, p)
       .then((r: any) => setLoggers(r.loggers || []))
       .catch(() => setLoggers([]));
-  }, [base, canQuery, source]);
+  }, [base, canQuery, source, applied.lookback]);
 
   const set = (k: keyof LogFilters, v: any) => setFilters({ ...filters, [k]: v });
   const apply = (f: LogFilters) => {
@@ -339,12 +386,23 @@ export function LogsPage() {
     apply(f);
   };
   const actions: LogRowActions = { onTrace: openTrace, onSession: showSession, onContext: showContext, onEvent: showEvent };
-  const rowKey = (l: LogRec, i: number) => String(l.seq ?? `${l.time_unix_nano || 0}:${i}`);
+  const rowKey = (l: LogRec, i: number) => String(l.id ?? l.seq ?? `${l.time_unix_nano || 0}:${l.logger || ""}:${i}`);
   const ordered = useMemo(() => (follow ? [...logs].reverse() : logs), [logs, follow]);
   const buckets = useMemo(() => timeBuckets(logs, 24), [logs]);
+  // Follow mode keeps the end in view only while the person has not scrolled away (#285).
   useEffect(() => {
-    if (follow && onNewestPage && !paused) listEnd.current?.scrollIntoView?.({ block: "nearest" });
-  }, [logs, follow, onNewestPage, paused]);
+    if (follow && onNewestPage && !paused && tailing) listEnd.current?.scrollIntoView?.({ block: "nearest" });
+  }, [logs, follow, onNewestPage, paused, tailing]);
+  useEffect(() => {
+    if (!follow) return;
+    const onScroll = () => {
+      const el = document.scrollingElement || document.documentElement;
+      const atEnd = el.scrollHeight - el.scrollTop - el.clientHeight < 80;
+      setTailing(atEnd);
+    };
+    window.addEventListener("scroll", onScroll, { passive: true });
+    return () => window.removeEventListener("scroll", onScroll);
+  }, [follow]);
   const permalink = typeof window !== "undefined" ? window.location.href : "";
   const oldestShown = logs.length ? logs[logs.length - 1].time_unix_nano || 0 : 0;
   const newestShown = logs.length ? logs[0].time_unix_nano || 0 : 0;
@@ -359,22 +417,16 @@ export function LogsPage() {
           {onNewestPage ? (paused ? " · paused" : " · following") : " · older page, not following"}
         </span>
       </div>
-      <div className="flex items-center gap-2">
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground">
-          <input type="checkbox" checked={absolute} onChange={(e: any) => setAbsolute(e.target.checked)} />
-          absolute times
-        </label>
-        <label
-          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
-          title="oldest first, newest at the bottom, scrolls with new lines"
-        >
-          <input type="checkbox" checked={follow} onChange={(e: any) => setFollow(e.target.checked)} />
-          follow
-        </label>
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="wrap long lines">
-          <input type="checkbox" checked={wrap} onChange={(e: any) => setWrap(e.target.checked)} />
-          wrap
-        </label>
+      <div className="flex flex-wrap items-center gap-3">
+        <Toggle checked={absolute} onChange={setAbsolute} label="absolute times" Switch={Checkbox} />
+        <Toggle
+          checked={follow}
+          onChange={setFollow}
+          label="follow"
+          title="oldest first, newest at the bottom; scrolls with new lines until you scroll up"
+          Switch={Checkbox}
+        />
+        <Toggle checked={wrap} onChange={setWrap} label="wrap" title="wrap long lines" Switch={Checkbox} />
         <CopyButton text={permalink} label="copy link" />
         <Select
           value={String(pageSize)}
@@ -383,45 +435,47 @@ export function LogsPage() {
             setCursors([]);
           }}
           className="h-8"
+          aria-label="page size"
         >
           {LOG_PAGE_SIZES.map((n) => (
             <SelectOption key={n} value={String(n)}>
-              {n} / page
+              {`${n} / page`}
             </SelectOption>
           ))}
         </Select>
-        <Button variant="outline" size="sm" onClick={() => setPaused((p) => !p)} disabled={!onNewestPage}>
-          {paused ? "▶ Resume" : "⏸ Pause"}
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={() => setPaused((p) => !p)}
+          disabled={!onNewestPage}
+          title={onNewestPage ? (paused ? "resume following" : "stop following") : "an older page does not follow"}
+        >
+          {paused ? <IconPlay size={12} /> : <IconPause size={12} />}
+          <span className="ml-1">{paused ? "Resume" : "Pause"}</span>
         </Button>
       </div>
     </div>
   );
+  const availableSources = (status?.available || []).filter((b: any) => b.logs).map((b: any) => b.name);
   if (!canQuery)
     return (
       <div className="space-y-3">
         {header}
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">This source does not serve logs</div>
-          Pick the Live source, or a backend whose adapter serves logs (OpenObserve, SigNoz, Uptrace, LGTM).
-        </div>
+        <Empty title="This source does not serve logs">
+          Pick the Live source{availableSources.length ? ` or one of: ${availableSources.join(", ")}` : ", or configure a backend whose adapter serves logs"}.
+        </Empty>
       </div>
     );
 
   const pager = (
-    <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-      <span>{logs.length ? `${fmtAbsTime(oldestShown)} → ${fmtAbsTime(newestShown)}` : ""}</span>
-      <div className="flex items-center gap-2">
-        <Button variant="outline" size="sm" onClick={newest} disabled={onNewestPage}>
-          ⏮ Newest
-        </Button>
-        <Button variant="outline" size="sm" onClick={newer} disabled={onNewestPage}>
-          ← Newer
-        </Button>
-        <Button variant="outline" size="sm" onClick={older} disabled={!hasMore || !nextBefore}>
-          Older →
-        </Button>
-      </div>
-    </div>
+    <Pager
+      page={cursors.length + 1}
+      hasMore={!!hasMore && !!nextBefore}
+      onNewest={newest}
+      onNewer={newer}
+      onOlder={older}
+      range={logs.length ? `${fmtAbsTime(oldestShown)} → ${fmtAbsTime(newestShown)}` : ""}
+    />
   );
 
   return (
@@ -434,29 +488,34 @@ export function LogsPage() {
           apply(filters);
         }}
       >
-        <Select value={filters.minLevel} onValueChange={(v: string) => set("minLevel", v)} className="h-8">
-          <SelectOption value="0">All levels</SelectOption>
-          <SelectOption value="20">Info+</SelectOption>
-          <SelectOption value="30">Warn+</SelectOption>
-          <SelectOption value="40">Error</SelectOption>
+        <Select value={filters.minLevel} onValueChange={(v: string) => set("minLevel", v)} className="h-8" aria-label="minimum level">
+          {LOG_LEVELS.map((l) => (
+            <SelectOption key={l.value} value={l.value}>
+              {l.label}
+            </SelectOption>
+          ))}
         </Select>
-        <Select value={filters.logger} onValueChange={(v: string) => set("logger", v)} className="h-8">
+        <Select value={filters.logger} onValueChange={(v: string) => set("logger", v)} className="h-8" aria-label="logger">
           <SelectOption value="">Any logger</SelectOption>
           {filters.logger && !loggers.some((l) => l.logger === filters.logger) ? <SelectOption value={filters.logger}>{filters.logger}</SelectOption> : null}
           {loggers.map((l) => (
             <SelectOption key={l.logger} value={l.logger}>
-              {l.logger} ({l.count})
+              {`${l.logger} (${l.count})`}
             </SelectOption>
           ))}
         </Select>
-        <Input className="h-8" placeholder="session id" value={filters.session} onChange={(e: any) => set("session", e.target.value)} />
-        <Input className="h-8" placeholder="trace id" value={filters.traceId} onChange={(e: any) => set("traceId", e.target.value)} />
-        <Input className="h-8" placeholder="text…" value={filters.text} onChange={(e: any) => set("text", e.target.value)} />
+        <Input className="h-8" placeholder="session id" value={filters.session} onChange={(e: any) => set("session", e.target.value)} aria-label="session id" />
+        <Input className="h-8" placeholder="trace id" value={filters.traceId} onChange={(e: any) => set("traceId", e.target.value)} aria-label="trace id" />
+        <Input className="h-8" placeholder="text…" value={filters.text} onChange={(e: any) => set("text", e.target.value)} aria-label="text" />
         <label
           className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"
           title="only hermes.* / GenAI events (logs.events.enabled)"
         >
-          <input type="checkbox" checked={filters.eventsOnly || !!filters.eventName} onChange={(e: any) => set("eventsOnly", e.target.checked)} />
+          <input
+            type="checkbox"
+            checked={filters.eventsOnly || !!filters.eventName}
+            onChange={(e: any) => setFilters({ ...filters, eventsOnly: e.target.checked, eventName: e.target.checked ? filters.eventName : "" })}
+          />
           events only
         </label>
         <Input
@@ -465,14 +524,14 @@ export function LogsPage() {
           value={filters.eventName}
           onChange={(e: any) => set("eventName", e.target.value)}
           title="one structured event, e.g. hermes.tool.call"
+          aria-label="event name"
         />
-        <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8">
-          <SelectOption value="0.25">15m</SelectOption>
-          <SelectOption value="1">1h</SelectOption>
-          <SelectOption value="6">6h</SelectOption>
-          <SelectOption value="24">24h</SelectOption>
-          <SelectOption value="168">7d</SelectOption>
-          <SelectOption value="720">30d</SelectOption>
+        <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8" aria-label="lookback">
+          {LOOKBACKS.map((l) => (
+            <SelectOption key={l.hours} value={String(l.hours)}>
+              {l.label}
+            </SelectOption>
+          ))}
         </Select>
         <div className="flex items-center gap-2">
           <Button type="submit" size="sm">
@@ -491,16 +550,14 @@ export function LogsPage() {
           </Button>
         </div>
       </form>
-      {error ? <ErrorBanner error={error} /> : null}
+      {error ? <ErrorBanner error={error} prefix="Logs" /> : null}
       {isLive && live === false ? (
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">Live mode is off</div>
+        <Empty title="Live store unavailable">
           Set <span className="font-mono">dashboard_live: true</span> and <span className="font-mono">logs.capture: true</span> (or{" "}
           <span className="font-mono">logs.events.enabled: true</span>), then run a turn.
-        </div>
-      ) : logs.length === 0 ? (
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">{onNewestPage ? "No log lines" : "No older lines"}</div>
+        </Empty>
+      ) : logs.length === 0 && loaded && !error ? (
+        <Empty title={onNewestPage ? "No log lines" : "No older lines"}>
           {!onNewestPage ? (
             <Button variant="outline" size="sm" onClick={newer}>
               ← Back to the newer page
@@ -514,8 +571,8 @@ export function LogsPage() {
           ) : (
             "Nothing matched in this window."
           )}
-        </div>
-      ) : (
+        </Empty>
+      ) : logs.length === 0 && error ? null : (
         <>
           <div className="flex flex-wrap items-center justify-between gap-2">
             <SeveritySummary rows={logs} buckets={buckets} />
@@ -537,7 +594,7 @@ export function LogsPage() {
             ) : null}
           </div>
           {pager}
-          <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
+          <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs" ref={listBox}>
             {ordered.map((l, i) => {
               const k = rowKey(l, i);
               return (
@@ -554,6 +611,20 @@ export function LogsPage() {
             })}
             <div ref={listEnd} />
           </div>
+          {follow && !tailing && onNewestPage ? (
+            <div className="flex justify-center">
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={() => {
+                  setTailing(true);
+                  listEnd.current?.scrollIntoView?.({ block: "nearest" });
+                }}
+              >
+                ↓ Jump to newest
+              </Button>
+            </div>
+          ) : null}
           {pager}
         </>
       )}
@@ -562,12 +633,13 @@ export function LogsPage() {
 }
 
 /** Backends that bound time coarser than a nanosecond can hand back a row the
- *  cursor was taken from; drop exact repeats within a page defensively. */
+ *  cursor was taken from; drop exact repeats within a page defensively. A row
+ *  with its own id is never merged with another. */
 export function dedupe(rows: LogRec[]): LogRec[] {
   const seen = new Set<string>();
   const out: LogRec[] = [];
   for (const r of rows) {
-    const k = `${r.time_unix_nano || 0}|${r.logger || ""}|${r.body || ""}`;
+    const k = r.id != null ? `id:${r.id}` : r.seq != null ? `seq:${r.seq}` : `${r.time_unix_nano || 0}|${r.logger || ""}|${r.body || ""}`;
     if (seen.has(k)) continue;
     seen.add(k);
     out.push(r);

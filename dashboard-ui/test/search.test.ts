@@ -20,7 +20,7 @@ describe("liveParams", () => {
     const p = liveParams(F);
     expect(Object.fromEntries(p)).toEqual({
       lookback_hours: "6",
-      limit: "100",
+      limit: "50",
       status: "error",
       kind: "tool",
       tool: "terminal",
@@ -31,7 +31,7 @@ describe("liveParams", () => {
     });
   });
   it("sends only the window by default", () => {
-    expect(Object.fromEntries(liveParams(DEFAULT_FILTERS))).toEqual({ lookback_hours: "1", limit: "100" });
+    expect(Object.fromEntries(liveParams(DEFAULT_FILTERS))).toEqual({ lookback_hours: "1", limit: "50" });
     expect(isDefaultFilters(DEFAULT_FILTERS)).toBe(true);
     expect(isDefaultFilters(F)).toBe(false);
   });
@@ -42,7 +42,8 @@ describe("backendParams", () => {
     const p = Object.fromEntries(backendParams(F, "phx"));
     expect(p.backend).toBe("phx");
     expect(p.roots_only).toBe("false");
-    expect(p.name_regex).toBe("^tool\\.");
+    expect(p.name_prefix).toBe("tool.");
+    expect(p.name_regex).toBeUndefined();
     expect(p.free_text).toBe("hello");
     expect(p.tool).toBe("terminal");
     expect(p.model).toBe("nano");
