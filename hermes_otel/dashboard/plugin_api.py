@@ -53,6 +53,7 @@ def _ensure_plugin_package_importable() -> None:
 _ensure_plugin_package_importable()
 
 from hermes_otel.dashboard.backends import (  # noqa: E402  (after the import check above)
+    _instantiate,
     adapters,
     backend_label,
     candidate_config_paths,
@@ -518,13 +519,23 @@ def status(
 
     def _caps(b: Dict[str, Any]) -> Dict[str, Any]:
         cls = find_adapter_class(b.get("type", ""))
+        # What THIS entry serves comes from its (cached) adapter instance: a
+        # ``tempo`` entry grows metrics and logs when it names a Prometheus
+        # and a Loki, which the class alone cannot know.
+        inst = _instantiate(b, cfg_path) if cls is not None else None
         out = {
             "type": b.get("type"),
             "name": backend_label(b),
             "endpoint": _public_endpoint(b.get("endpoint")),
             "supported": cls is not None,
-            "metrics": bool(cls is not None and cls.supports_metrics),
-            "logs": bool(cls is not None and cls.supports_logs),
+            "metrics": bool(
+                inst.supports_metrics
+                if inst is not None
+                else cls is not None and cls.supports_metrics
+            ),
+            "logs": bool(
+                inst.supports_logs if inst is not None else cls is not None and cls.supports_logs
+            ),
         }
         if cls is not None:
             out["filters"] = filter_support_of(cls)

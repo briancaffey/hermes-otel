@@ -195,6 +195,22 @@ class TestStatusAndRoutes:
 
 
 class TestBucketHelpers:
+    def test_counter_increases_count_a_series_that_started_in_the_window(self):
+        # "a" existed before the window (baseline at t=1), "b" starts inside it
+        samples = [(1, 10.0, "a"), (5, 12.0, "a"), (6, 7.0, "b"), (9, 7.0, "b")]
+        assert counter_increases(samples, window_start_ns=4) == [
+            (5, 2.0, "a"),
+            (6, 7.0, "b"),
+            (9, 0.0, "b"),
+        ]
+        assert counter_increases(samples, started_in_window={"b"}) == [
+            (5, 2.0, "a"),
+            (6, 7.0, "b"),
+            (9, 0.0, "b"),
+        ]
+        # without either hint the first sample stays a baseline
+        assert counter_increases(samples) == [(5, 2.0, "a"), (9, 0.0, "b")]
+
     def test_counter_increases_per_series_and_reset(self):
         samples = [(1, 10.0, "a"), (2, 15.0, "a"), (3, 3.0, "a"), (1, 100.0, "b"), (2, 100.0, "b")]
         assert counter_increases(samples) == [(2, 5.0, "a"), (3, 3.0, "a"), (2, 0.0, "b")]

@@ -13,7 +13,13 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from .base import bucketize, http_get_json, validate_label_name, validate_metric_name
+from .base import (
+    bucketize,
+    counter_increases,
+    http_get_json,
+    validate_label_name,
+    validate_metric_name,
+)
 
 _HISTOGRAM_INTERNAL_SUFFIXES = ("_bucket",)
 
@@ -21,6 +27,10 @@ _HISTOGRAM_INTERNAL_SUFFIXES = ("_bucket",)
 # and ``_count`` series are cumulative too); everything else is treated as a
 # gauge. Only these five aggregates exist on the dashboard side.
 _COUNTER_SUFFIXES = ("_total", "_sum", "_count")
+# A counter series with no sample in the five minutes before the window is a
+# new one (a fresh process): its first value is an increase. Hermes exports
+# every 60 s, so a live gateway always has a sample inside the look-behind.
+LOOKBEHIND_S = 300
 _SPACE_AGG = {"sum": "sum", "count": "count", "avg": "avg", "max": "max", "last": "sum"}
 
 # Without ``metrics_match`` the instrument list is the plugin's own namespaces
@@ -90,8 +100,52 @@ def metrics_query(
     agg: str = "sum",
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """``query_range`` at ``step = bucket_s`` folded onto the shared bucket grid."""
+    """``query_range`` at ``step = bucket_s`` folded onto the shared bucket grid.
+
+    Counters are read as raw cumulative samples (with :data:`LOOKBEHIND_S` of
+    history) and turned into increases by :func:`counter_increases`, because
+    PromQL's ``increase()`` never counts a series' first sample: a one-shot
+    ``hermes -z`` run exports its counters once or twice with the same value,
+    so ``increase()`` reads 0 for every turn it ever ran (#296). Gauges keep
+    the aggregate PromQL.
+    """
     label = group_by.replace(".", "_") if group_by else None
+    start_ns, end_ns = int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000
+    if is_counter(name):
+        validate_metric_name(name)
+        validate_label_name(group_by)
+        raw = {
+            "query": name,
+            "start": int(start_s) - max(LOOKBEHIND_S, int(bucket_s)),
+            "end": int(end_s),
+            "step": max(1, int(bucket_s)),
+        }
+        data = http_get_json(
+            f"{base}/api/v1/query_range?{_urlparse.urlencode(raw)}", headers=headers, timeout=30.0
+        )
+        samples: List[tuple] = []
+        labels_of: Dict[str, str] = {}
+        for series in ((data.get("data") or {}).get("result")) if isinstance(data, dict) else []:
+            metric = series.get("metric") or {}
+            ident = "|".join(f"{k}={v}" for k, v in sorted(metric.items()) if k != "__name__")
+            labels_of[ident] = str(metric.get(label, "—")) if label else "_"
+            for ts, value in series.get("values") or []:
+                try:
+                    samples.append((int(float(ts)) * 1_000_000_000, float(value), ident))
+                except (TypeError, ValueError):
+                    continue
+        increases = counter_increases(samples, window_start_ns=start_ns)
+        points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in increases]
+        out = bucketize(points, start_ns, end_ns, bucket_s, agg if agg != "last" else "sum")
+        out["agg"] = effective_agg(name, agg)
+        out["agg_requested"] = agg
+        out["name"] = name
+        out["cumulative"] = True
+        out["promql"] = name
+        out["series_start_rule"] = (
+            f"a series with no sample in the {LOOKBEHIND_S}s before the window counts its first value"
+        )
+        return out
     params = {
         "query": promql_for(name, bucket_s, group_by, agg),
         "start": int(start_s),
@@ -110,12 +164,10 @@ def metrics_query(
                 continue
     # Prometheus evaluated the aggregate per step already; one point per
     # bucket folded with ``sum`` reproduces it on the shared grid.
-    out = bucketize(
-        points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, "sum"
-    )
-    out["agg"] = effective_agg(name, agg)
+    out = bucketize(points, start_ns, end_ns, bucket_s, "sum")
+    out["agg"] = agg
     out["agg_requested"] = agg
     out["name"] = name
-    out["cumulative"] = is_counter(name)
+    out["cumulative"] = False
     out["promql"] = params["query"]
     return out
