@@ -1821,8 +1821,36 @@ class HermesOTelPlugin:
             self._force_flush_providers(timeout_millis)
 
     def _force_flush_providers(self, timeout_millis: int = 2000) -> None:
-        """Flush the metric and log providers (their readers export synchronously)."""
-        if self._meter_provider:
+        """Flush the metric and log providers (their readers export synchronously).
+
+        One thread per metric reader: ``MeterProvider.force_flush`` walks the
+        readers in order and each export blocks for up to the exporter's
+        deadline (10 s) when its backend is down, so with several backends
+        configured and one of them unreachable a one-shot ``hermes -z`` exits
+        before the reachable backends get their only export. Verified on
+        2026-10-06 with an 11-backend config, four of them down: traces and
+        logs landed on the local stacks, no metric point ever did.
+        """
+        readers = list(self._metric_readers)
+        if self._meter_provider and len(readers) > 1:
+            threads = []
+            for reader in readers:
+
+                def flush_one(r=reader) -> None:
+                    try:
+                        r.force_flush(timeout_millis=timeout_millis)
+                    except Exception:
+                        pass
+
+                t = threading.Thread(
+                    target=flush_one, name="hermes-otel-flush-metrics", daemon=True
+                )
+                t.start()
+                threads.append(t)
+            deadline = time.monotonic() + max(0.05, timeout_millis / 1000.0)
+            for t in threads:
+                t.join(timeout=max(0.0, deadline - time.monotonic()))
+        elif self._meter_provider:
             try:
                 self._meter_provider.force_flush(timeout_millis=timeout_millis)
             except Exception:
