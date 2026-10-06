@@ -3525,13 +3525,19 @@
     return `last ${r.label} \xB7 ${b} buckets`;
   }
   function resolveInstrument(names, otlp, prefer) {
-    const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || metricOtlpName(n.name) === otlp).map((n) => n.name);
+    const all = new Set(names.map((n) => n.name));
+    const canonical = (n) => {
+      const m = /^(.*)\.(sum|count)$/.exec(n);
+      if (m && all.has(`${m[1]}.sum`) && all.has(`${m[1]}.count`)) return m[1];
+      return metricOtlpName(n);
+    };
+    const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || canonical(n.name) === otlp).map((n) => n.name);
     if (!matches.length) return null;
     if (prefer) {
-      const hit = matches.find((n) => n.endsWith(prefer));
+      const hit = matches.find((n) => n.endsWith(prefer) || n.endsWith(prefer.replace("_", ".")));
       if (hit) return hit;
     }
-    return matches.find((n) => n === otlp) || matches.find((n) => !/_(sum|count|bucket|total)$/.test(n)) || matches[0];
+    return matches.find((n) => n === otlp) || matches.find((n) => !/[_.](sum|count|bucket|total)$/.test(n)) || matches[0];
   }
   var PALETTE = [
     "var(--otel-chart-1)",
@@ -3632,7 +3638,7 @@
               out[def.key] = null;
               return;
             }
-            const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !native.endsWith("_count") ? "count" : def.agg.backend;
+            const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !/[_.]count$/.test(native) ? "count" : def.agg.backend;
             try {
               out[def.key] = await query(native, def.group, aggregate);
             } catch (e) {
