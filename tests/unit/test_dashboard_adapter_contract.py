@@ -1,0 +1,1074 @@
+"""The adapter contract of milestone 8 (#290, #292–#299): declared filter
+support, cursor paging, the error taxonomy, the caches, and the response
+parsing of the adapters that only had request-shape tests."""
+
+from __future__ import annotations
+
+import io
+import json
+import os
+from pathlib import Path
+from typing import Any, Dict, List
+from unittest.mock import patch
+from urllib import error as _urlerror
+from urllib import parse as _urlparse
+
+import pytest
+from fastapi import FastAPI, HTTPException
+from fastapi.testclient import TestClient
+
+from hermes_otel.dashboard import backends, plugin_api
+from hermes_otel.dashboard.backends import (
+    _loki,
+    _prometheus,
+    base,
+    jaeger,
+    langfuse,
+    openobserve,
+    phoenix,
+    signoz,
+    tempo,
+    uptrace,
+)
+from hermes_otel.dashboard.backends.base import (
+    FILTER_KEYS,
+    BackendError,
+    ConfigError,
+    LogFilter,
+    StructuredFilter,
+    error_kind,
+    filter_support_of,
+    otlp_metric_name,
+    split_applied_filters,
+    strictly_older_traces,
+    trace_page,
+)
+
+NS = 1_000_000_000
+
+CFG: List[Dict[str, Any]] = [
+    {"type": "phoenix", "name": "phx", "endpoint": "http://localhost:6006"},
+    {
+        "type": "langfuse",
+        "name": "lf",
+        "endpoint": "http://localhost:3000",
+        "public_key": "pk",
+        "secret_key": "sk",
+    },
+    {"type": "jaeger", "name": "jg", "endpoint": "http://localhost:16686"},
+    {"type": "lgtm", "name": "lgtm", "endpoint": "http://localhost:4318/v1/traces"},
+    {"type": "signoz", "name": "sz", "endpoint": "http://localhost:3301", "api_key": "k"},
+    {"type": "uptrace", "name": "up", "endpoint": "http://localhost:14318", "user_token": "t"},
+    {
+        "type": "openobserve",
+        "name": "oo",
+        "endpoint": "http://user:pw@localhost:5080/api/default/v1/traces",
+        "user": "u",
+        "password": "p",
+    },
+]
+MODULES = {
+    "phx": phoenix,
+    "lf": langfuse,
+    "jg": jaeger,
+    "lgtm": tempo,
+    "sz": signoz,
+    "up": uptrace,
+    "oo": openobserve,
+}
+
+
+@pytest.fixture(autouse=True)
+def _isolated(monkeypatch):
+    """No developer config, no cached adapters, no probed Uptrace dialect."""
+    monkeypatch.setattr(backends, "top_level_config", lambda: {})
+    backends.clear_caches()
+    uptrace._DIALECT_CACHE.clear()
+    yield
+    backends.clear_caches()
+    uptrace._DIALECT_CACHE.clear()
+
+
+@pytest.fixture()
+def client(monkeypatch):
+    monkeypatch.setattr(backends, "load_config", lambda: (Path("/x/hermes_otel.yaml"), CFG, None))
+    app = FastAPI()
+    app.include_router(plugin_api.router)
+    with TestClient(app) as c:
+        yield c
+
+
+def _down(*_a, **_k):
+    raise BackendError(502, "Backend unreachable: [Errno 61] Connection refused")
+
+
+def _row(trace_id: str, start_ns: int) -> Dict[str, Any]:
+    return {"traceID": trace_id, "startTimeUnixNano": str(start_ns), "spanSets": []}
+
+
+# ── declarations and helpers ───────────────────────────────────────────
+
+
+class TestDeclarations:
+    def test_every_adapter_declares_every_filter_field(self):
+        for cls in backends.adapters():
+            declared = cls.filter_support
+            assert declared, f"{cls.__name__} declares no filter_support"
+            assert set(declared) == set(FILTER_KEYS), cls.__name__
+            assert set(declared.values()) <= {"server", "client", "none"}, cls.__name__
+            assert filter_support_of(cls) == declared
+
+    def test_status_reports_the_declaration_and_strips_userinfo(self, client):
+        st = client.get("/status", params={"backend": "lf"}).json()
+        assert st["filters"]["model"] == "none" and st["filters"]["session"] == "server"
+        by = {b["name"]: b for b in st["available"]}
+        assert by["oo"]["endpoint"] == "http://localhost:5080/api/default/v1/traces"
+        assert by["jg"]["filters"]["roots_only"] == "client"
+
+    def test_split_applied_filters(self):
+        f = StructuredFilter(
+            attr_equals={"llm.model_name": "m", "hermes.session_id": "s"},
+            min_duration_ms=5,
+            free_text="x",
+            name_prefix="tool.",
+        )
+        applied, ignored = split_applied_filters(langfuse.LangfuseAdapter, f)
+        assert applied == ["name", "session", "min_duration"]
+        assert ignored == ["model", "free_text", "roots_only"]
+
+    def test_trace_page_and_cursor(self):
+        rows = [_row("c", 10 * NS), _row("a", 30 * NS), _row("b", 20 * NS), _row("d", 5 * NS)]
+        page = trace_page(rows, 2)
+        assert [t["traceID"] for t in page["traces"]] == ["a", "b"]
+        assert (page["has_more"], page["next_before_ns"]) == (True, 20 * NS)
+        older = strictly_older_traces(rows, StructuredFilter(before_ns=page["next_before_ns"]))
+        assert [t["traceID"] for t in older] == ["c", "d"]
+        last = trace_page(older, 2)
+        assert (last["has_more"], last["next_before_ns"]) == (False, None)
+
+    def test_otlp_metric_names(self):
+        assert otlp_metric_name("hermes_token_usage_total") == "hermes.token.usage"
+        assert otlp_metric_name("hermes_tool_duration_milliseconds_sum") == "hermes.tool.duration"
+        assert otlp_metric_name("hermes_prompt_cache_tokens_total") == "hermes.prompt_cache.tokens"
+        assert otlp_metric_name("hermes.tool.duration.count") == "hermes.tool.duration"
+        assert otlp_metric_name("gen_ai_client_token_usage") == "gen_ai.client.token.usage"
+        assert otlp_metric_name("process_cpu_utilization_ratio") == "process.cpu.utilization"
+
+
+# ── error taxonomy ─────────────────────────────────────────────────────
+
+
+def _http_error(code: int, body: str = "") -> _urlerror.HTTPError:
+    return _urlerror.HTTPError("http://x", code, "err", {}, io.BytesIO(body.encode()))
+
+
+class TestErrorTaxonomy:
+    @pytest.mark.parametrize(
+        "raised, kind, status, needle",
+        [
+            (_http_error(404, '{"error": "no such trace"}'), "not_found", 404, "404"),
+            (_http_error(401, "unauthorized"), "auth", 503, "credentials"),
+            (_http_error(403, "forbidden"), "auth", 503, "credentials"),
+            (_http_error(500, "<html><body>boom</body></html>"), "backend", 502, "HTML page"),
+            (_urlerror.URLError("refused"), "backend", 502, "unreachable"),
+            (TimeoutError("timed out"), "backend", 502, "failed"),
+        ],
+    )
+    def test_execute_maps_every_failure_to_a_kind(self, raised, kind, status, needle):
+        with patch.object(base._urlrequest, "urlopen", side_effect=raised):
+            with pytest.raises(BackendError) as exc:
+                base.http_get_json("http://x/api")
+        assert (exc.value.kind, exc.value.status_code) == (kind, status)
+        assert needle in exc.value.detail
+
+    def test_non_json_body_and_body_excerpt(self):
+        class _Resp(io.BytesIO):
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+        with patch.object(base._urlrequest, "urlopen", return_value=_Resp(b"not json")):
+            with pytest.raises(BackendError, match="non-JSON"):
+                base.http_get_json("http://x/api")
+        long = _http_error(500, "x" * 1000)
+        with patch.object(base._urlrequest, "urlopen", side_effect=long):
+            with pytest.raises(BackendError) as exc:
+                base.http_get_json("http://x/api")
+        assert len(exc.value.detail) < 300 and exc.value.detail.endswith("…")
+
+    def test_error_kind_of_plain_exceptions(self):
+        assert error_kind(HTTPException(status_code=422, detail="x")) == "request"
+        assert error_kind(HTTPException(status_code=503, detail="x")) == "config"
+        assert error_kind(RuntimeError("x")) == "backend"
+        assert error_kind(ConfigError("x")) == "config"
+
+    @pytest.mark.parametrize("name", list(MODULES))
+    def test_backend_down_is_a_502_with_a_kind_on_every_adapter(self, client, monkeypatch, name):
+        mod = MODULES[name]
+        for fn in ("http_get_json", "http_post_json"):
+            if hasattr(mod, fn):
+                monkeypatch.setattr(mod, fn, _down)
+        for helper in (_loki, _prometheus):
+            monkeypatch.setattr(helper, "http_get_json", _down)
+        r = client.get("/traces/search", params={"backend": name})
+        assert r.status_code == 502, (name, r.text)
+        assert r.json() == {
+            "detail": "Backend unreachable: [Errno 61] Connection refused",
+            "kind": "backend",
+        }
+        if MODULES[name].__name__.endswith(("lgtm", "tempo", "signoz", "uptrace", "openobserve")):
+            r = client.get("/logs/search", params={"backend": name})
+            assert r.status_code == 502 and r.json()["kind"] == "backend"
+
+    def test_a_search_404_is_a_wrong_url_not_a_missing_trace(self, client, monkeypatch):
+        def gone(*_a, **_k):
+            raise BackendError(
+                404, "Backend returned 404: (an HTML page, not an API answer)", "not_found"
+            )
+
+        monkeypatch.setattr(jaeger, "http_get_json", gone)
+        r = client.get("/traces/search", params={"backend": "jg"})
+        assert r.status_code == 502 and r.json()["kind"] == "backend"
+
+    @pytest.mark.parametrize(
+        "name, answer",
+        [
+            ("phx", {"data": {"node": {"name": "p", "trace": None}}}),
+            ("lf", {}),
+            ("jg", {"data": []}),
+            ("lgtm", {"batches": []}),
+            ("sz", []),
+            ("up", {"spans": []}),
+            ("oo", {"hits": []}),
+        ],
+    )
+    def test_unknown_trace_is_404_not_found(self, client, monkeypatch, name, answer):
+        mod = MODULES[name]
+
+        def fake(*_a, **_k):
+            return answer
+
+        for fn in ("http_get_json", "http_post_json"):
+            if hasattr(mod, fn):
+                monkeypatch.setattr(mod, fn, fake)
+        if name == "phx":
+            monkeypatch.setattr(
+                phoenix.PhoenixAdapter, "_resolve_project_id", lambda self: "P1", raising=True
+            )
+            monkeypatch.setattr(phoenix.PhoenixAdapter, "trace_url", lambda self, t: None)
+        if name == "lf":
+            monkeypatch.setattr(langfuse.LangfuseAdapter, "trace_url", lambda self, t: None)
+        r = client.get("/traces/deadbeef", params={"backend": name})
+        assert r.status_code == 404, (name, r.text)
+        assert r.json()["kind"] == "not_found" and "deadbeef" in r.json()["detail"]
+
+    @pytest.mark.parametrize(
+        "entry",
+        [
+            {"type": "langfuse", "name": "x", "endpoint": "http://localhost:3000"},
+            {"type": "signoz", "name": "x", "endpoint": "http://localhost:3301"},
+            {"type": "openobserve", "name": "x", "endpoint": "http://localhost:5080"},
+            {"type": "uptrace", "name": "x", "endpoint": "http://localhost:14318"},
+            {"type": "uptrace", "name": "x", "user_token": "t"},
+        ],
+    )
+    def test_missing_credentials_or_url_is_a_503_config_error(self, monkeypatch, entry):
+        monkeypatch.setattr(backends, "load_config", lambda: (None, [entry], None))
+        monkeypatch.delenv("UPTRACE_USER_TOKEN", raising=False)
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            r = c.get("/traces/search", params={"backend": "x"})
+        assert r.status_code == 503 and r.json()["kind"] == "config", r.text
+
+    def test_a_broken_entry_is_reported_as_config_not_unsupported(self, monkeypatch):
+        entry = {"type": "uptrace", "name": "x", "endpoint": "http://u:14318", "project_id": "abc"}
+        monkeypatch.setattr(backends, "load_config", lambda: (None, [entry], None))
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            r = c.get("/traces/search", params={"backend": "x"})
+        assert r.status_code == 503 and r.json()["kind"] == "config"
+        assert "could not be set up" in r.json()["detail"]
+        # The default pick skips it instead of failing the whole dashboard.
+        assert backends.resolve_adapter()[0] is None
+
+    def test_an_adapter_parsing_error_is_a_502_not_a_500(self, client, monkeypatch):
+        broken = {"data": [{"traceID": "t", "spans": [{"spanID": "a", "tags": 5}]}]}
+        monkeypatch.setattr(jaeger, "http_get_json", lambda *a, **k: broken)
+        r = client.get("/traces/search", params={"backend": "jg"})
+        assert r.status_code == 502 and r.json()["kind"] == "backend"
+        assert "could not read the backend's answer" in r.json()["detail"]
+
+
+# ── routes: paging, windows, validation ───────────────────────────────
+
+
+class TestRoutes:
+    def test_search_passes_the_cursor_and_prefix_and_reports_filters(self, client, monkeypatch):
+        seen = {}
+
+        def fake_search(self, f, start_s, end_s, limit):
+            seen.update(f=f, start=start_s, end=end_s, limit=limit)
+            return {"traces": [_row("a", 5 * NS)], "has_more": True, "next_before_ns": 5 * NS}
+
+        monkeypatch.setattr(langfuse.LangfuseAdapter, "search", fake_search)
+        r = client.get(
+            "/traces/search",
+            params={
+                "backend": "lf",
+                "name_prefix": "tool.",
+                "before_ns": 99 * NS,
+                "model": "gpt-4o",
+                "session": "s1",
+                "start_s": 100,
+                "end_s": 200,
+            },
+        ).json()
+        assert seen["f"].name_prefix == "tool." and seen["f"].before_ns == 99 * NS
+        assert (seen["start"], seen["end"]) == (100, 200)
+        assert r["has_more"] is True and r["next_before_ns"] == 5 * NS
+        assert r["applied_filters"] == ["name", "session"]
+        # Langfuse lists traces, so the (default) roots-only switch does nothing there.
+        assert r["ignored_filters"] == ["model", "roots_only"]
+        assert r["backend"] == "lf"
+
+    def test_legacy_adapter_answers_get_the_envelope(self, client, monkeypatch):
+        monkeypatch.setattr(
+            phoenix.PhoenixAdapter, "search", lambda self, f, s, e, l: {"traces": []}
+        )
+        r = client.get("/traces/search", params={"backend": "phx"}).json()
+        assert (r["has_more"], r["next_before_ns"], r["traces"]) == (False, None, [])
+
+    def test_trace_detail_carries_truncated_and_span_count(self, client, monkeypatch):
+        monkeypatch.setattr(
+            tempo.TempoAdapter,
+            "get_trace",
+            lambda self, t: {"batches": [], "truncated": True, "span_count": 501},
+        )
+        r = client.get("/traces/abc", params={"backend": "lgtm"}).json()
+        assert r["truncated"] is True and r["span_count"] == 501 and r["backend"] == "lgtm"
+
+    def test_backend_metrics_take_an_absolute_window_and_cap_the_buckets(self, client, monkeypatch):
+        seen = {}
+
+        def fake_query(self, name, start_s, end_s, bucket_s, group_by=None, agg="sum"):
+            seen.update(start=start_s, end=end_s, bucket=bucket_s, group_by=group_by)
+            return {"name": name, "agg": agg, "bucketS": bucket_s, "buckets": [], "series": {}}
+
+        monkeypatch.setattr(tempo.TempoAdapter, "metrics_query", fake_query)
+        r = client.get(
+            "/metrics/query",
+            params={
+                "backend": "lgtm",
+                "name": "hermes_token_usage_total",
+                "start_s": 1000,
+                "end_s": 4600,
+                "bucket_s": 60,
+                "group_by": "model",
+            },
+        )
+        assert r.status_code == 200 and (seen["start"], seen["end"], seen["bucket"]) == (
+            1000,
+            4600,
+            60,
+        )
+        assert r.json()["otlp_name"] == "hermes.token.usage" and seen["group_by"] == "model"
+        r = client.get(
+            "/metrics/query",
+            params={"backend": "lgtm", "name": "x", "lookback_hours": 8760, "bucket_s": 1},
+        )
+        assert r.status_code == 422 and "buckets" in r.json()["detail"]
+
+    def test_metric_name_and_label_are_validated_before_any_query(self, client, monkeypatch):
+        monkeypatch.setattr(_prometheus, "http_get_json", _down)
+        r = client.get(
+            "/metrics/query", params={"backend": "lgtm", "name": "up) or vector(1", "bucket_s": 60}
+        )
+        assert r.status_code == 400 and r.json()["kind"] == "request"
+        r = client.get(
+            "/metrics/query",
+            params={"backend": "lgtm", "name": "up", "group_by": 'a") or (1', "bucket_s": 60},
+        )
+        assert r.status_code == 400 and "group_by" in r.json()["detail"]
+
+    def test_metric_names_carry_the_otlp_name(self, client, monkeypatch):
+        monkeypatch.setattr(
+            tempo.TempoAdapter,
+            "metric_names",
+            lambda self, s, e: [{"name": "hermes_tool_duration_milliseconds_sum"}],
+        )
+        names = client.get("/metrics/names", params={"backend": "lgtm"}).json()["names"]
+        assert names == [
+            {"name": "hermes_tool_duration_milliseconds_sum", "otlp_name": "hermes.tool.duration"}
+        ]
+
+    def test_logs_search_passes_span_id(self, client, monkeypatch):
+        seen = {}
+
+        def fake(self, f, start_s, end_s, limit):
+            seen["f"] = f
+            return []
+
+        monkeypatch.setattr(tempo.TempoAdapter, "logs_search", fake)
+        client.get("/logs/search", params={"backend": "lgtm", "span_id": "abc123"})
+        assert seen["f"].span_id == "abc123"
+        assert '| span_id="abc123"' in _loki.logql_for(LogFilter(span_id="abc123"))
+
+
+# ── caches ─────────────────────────────────────────────────────────────
+
+
+class TestCaches:
+    def test_adapter_instances_are_reused_until_the_config_changes(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "hermes_otel.yaml"
+        cfg.write_text("backends:\n  - type: jaeger\n    name: jg\n", encoding="utf-8")
+        monkeypatch.setattr(backends, "resolve_config_path", lambda: cfg)
+        a, *_ = backends.resolve_adapter("jg")
+        b, *_ = backends.resolve_adapter("jg")
+        assert a is b
+        # An edit (a new identity: size changes) yields a fresh instance.
+        cfg.write_text(
+            "backends:\n  - type: jaeger\n    name: jg\n    query_port: 16687\n", encoding="utf-8"
+        )
+        os.utime(cfg, (os.path.getmtime(cfg) + 5, os.path.getmtime(cfg) + 5))
+        c, *_ = backends.resolve_adapter("jg")
+        assert c is not a and c.query_url.endswith(":16687")
+        backends.clear_caches()
+        d, *_ = backends.resolve_adapter("jg")
+        assert d is not c
+
+    def test_config_is_parsed_once_per_file_identity(self, tmp_path, monkeypatch):
+        cfg = tmp_path / "hermes_otel.yaml"
+        cfg.write_text("project_name: p1\nbackends: []\n", encoding="utf-8")
+        monkeypatch.setattr(backends, "resolve_config_path", lambda: cfg)
+        import yaml
+
+        calls = []
+        real = yaml.safe_load
+
+        def counting(stream):
+            calls.append(1)
+            return real(stream)
+
+        monkeypatch.setattr(yaml, "safe_load", counting)
+        assert backends._load_raw_config()[1]["project_name"] == "p1"
+        assert backends._load_raw_config()[1]["project_name"] == "p1"
+        assert len(calls) == 1
+
+
+# ── per-adapter behaviour ──────────────────────────────────────────────
+
+
+class TestTempo:
+    def _adapter(self):
+        return tempo.TempoAdapter({"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"})
+
+    def test_predicates_include_prefix_duration_and_status(self):
+        q = self._adapter()._build_traceql(
+            StructuredFilter(name_prefix="tool.", min_duration_ms=250, status="ok", service="s")
+        )
+        assert q.startswith(
+            '{ resource.service.name = "s" && name =~ "^tool\\\\." && status = ok && duration >= 250ms }'
+        )
+        assert "| select(" in q
+
+    def test_a_4xx_retries_without_select_but_with_every_predicate(self, monkeypatch):
+        urls = []
+
+        def fake(url, headers=None, timeout=None):
+            urls.append(url)
+            if len(urls) == 1:
+                raise BackendError(502, "Backend returned 400: parse error at select")
+            return {"traces": []}
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        self._adapter().search(StructuredFilter(status="error", name_prefix="agent"), 0, 10, 5)
+        assert len(urls) == 2
+        second = _urlparse.unquote_plus(urls[1])
+        assert "status = error" in second and 'name =~ "^agent"' in second
+        assert "select(" not in second
+
+    def test_unreachable_is_not_retried(self, monkeypatch):
+        calls = []
+
+        def fake(url, headers=None, timeout=None):
+            calls.append(url)
+            raise BackendError(502, "Backend unreachable: refused")
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        with pytest.raises(BackendError, match="unreachable"):
+            self._adapter().search(StructuredFilter(), 0, 10, 5)
+        assert len(calls) == 1
+
+    def test_page_cursor_and_service_stats(self, monkeypatch):
+        traces = [
+            {
+                "traceID": t,
+                "rootTraceName": "agent",
+                "startTimeUnixNano": str(s),
+                "serviceStats": {"hermes-agent": {"spanCount": 7}},
+                "spanSets": [{"spans": [{"name": "agent"}]}],
+            }
+            for t, s in (("a", 30 * NS), ("b", 20 * NS), ("c", 10 * NS))
+        ]
+        seen = {}
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {"traces": traces, "metrics": {"inspectedTraces": 3}}
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        page = self._adapter().search(StructuredFilter(before_ns=25 * NS), 0, 100, 1)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert (q["limit"], q["end"]) == ("2", "26")
+        assert [t["traceID"] for t in page["traces"]] == ["b"]
+        assert page["has_more"] is True and page["next_before_ns"] == 20 * NS
+        assert page["traces"][0]["spanCount"] == 7 and page["metrics"] == {"inspectedTraces": 3}
+        assert "raw" not in page
+
+    def test_prometheus_last_on_a_counter_is_an_honest_sum(self):
+        assert _prometheus.effective_agg("c_total", "last") == "sum"
+        assert _prometheus.effective_agg("g", "last") == "last"
+        with pytest.raises(BackendError) as exc:
+            _prometheus.promql_for("up) or vector(1", 60, None, "sum")
+        assert exc.value.kind == "request"
+
+    def test_loki_windows_are_clamped_to_thirty_days(self, monkeypatch):
+        seen = {}
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {"data": {"result": []}}
+
+        monkeypatch.setattr(_loki, "http_get_json", fake)
+        year = 365 * 86400
+        _loki.loggers("http://l:3100", 0, year)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert f"[{30 * 86400}s]" in q["query"]
+        _loki.logs_search("http://l:3100", LogFilter(), 0, year, 10)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert int(q["end"]) - int(q["start"]) == 30 * 86400 * NS
+
+
+class TestOpenObserve:
+    def _adapter(self):
+        return openobserve.OpenObserveAdapter(
+            {
+                "type": "openobserve",
+                "endpoint": "http://localhost:5080/api/default/v1/traces",
+                "user": "u",
+                "password": "p",
+            }
+        )
+
+    def test_an_empty_root_query_is_the_answer(self, monkeypatch):
+        sqls = []
+
+        def fake(url, body, headers=None, timeout=None):
+            sqls.append(body["query"]["sql"])
+            return {"hits": []}
+
+        monkeypatch.setattr(openobserve, "http_post_json", fake)
+        out = self._adapter().search(StructuredFilter(name_prefix="api."), 0, 10, 5)
+        assert out["traces"] == [] and len(sqls) == 1
+        assert "operation_name LIKE 'api.%'" in sqls[0] and "reference_parent_span_id" in sqls[0]
+
+    def test_a_rejected_column_falls_through_and_roots_are_kept_client_side(self, monkeypatch):
+        sqls = []
+        rows = [
+            {"trace_id": "t1", "span_id": "r", "operation_name": "agent", "start_time": 20 * NS},
+            {
+                "trace_id": "t2",
+                "span_id": "c",
+                "operation_name": "api.m",
+                "start_time": 10 * NS,
+                "reference": '[{"refType":"CHILD_OF","spanId":"zz"}]',
+            },
+        ]
+
+        def fake(url, body, headers=None, timeout=None):
+            sql = body["query"]["sql"]
+            sqls.append(sql)
+            if "GROUP BY" in sql:
+                return {"hits": []}
+            if "reference" in sql:
+                raise BackendError(502, "Backend returned 400: unknown field reference")
+            return {"hits": rows}
+
+        monkeypatch.setattr(openobserve, "http_post_json", fake)
+        out = self._adapter().search(StructuredFilter(), 0, 10, 5)
+        assert [t["traceID"] for t in out["traces"]] == ["t1"]
+        assert len([s for s in sqls if "GROUP BY" not in s]) == 3
+
+    def test_unreachable_stops_the_attempt_chain(self, monkeypatch):
+        calls = []
+
+        def fake(url, body, headers=None, timeout=None):
+            calls.append(1)
+            raise BackendError(502, "Backend unreachable: refused")
+
+        monkeypatch.setattr(openobserve, "http_post_json", fake)
+        with pytest.raises(BackendError, match="unreachable"):
+            self._adapter().search(StructuredFilter(), 0, 10, 5)
+        assert len(calls) == 1
+
+    def test_like_patterns_escape_underscore_and_percent(self):
+        where = self._adapter()._build_where(StructuredFilter(name_regex="tool_x%"))
+        assert "operation_name LIKE '%tool\\_x\\%%'" in where
+
+    def test_trace_detail_window_and_not_found(self, monkeypatch):
+        seen = {}
+
+        def fake(url, body, headers=None, timeout=None):
+            seen["body"] = body
+            return {"hits": []}
+
+        monkeypatch.setattr(openobserve, "http_post_json", fake)
+        a = self._adapter()
+        with pytest.raises(BackendError) as exc:
+            a.get_trace("abc")
+        assert exc.value.kind == "not_found"
+        q = seen["body"]["query"]
+        assert q["end_time"] - q["start_time"] >= 90 * 86400 * 1_000_000
+
+    def test_metric_samples_keep_the_newest_and_say_when_cut(self, monkeypatch):
+        rows = [
+            {"_timestamp": 1_700_000_000_000_000 + i * 1_000_000, "value": i, "__name__": "m"}
+            for i in range(3)
+        ]
+        with patch.object(openobserve.OpenObserveAdapter, "_search", return_value=rows) as m:
+            out = self._adapter().metrics_query("m", 1_700_000_000, 1_700_000_060, 60)
+        assert "ORDER BY _timestamp DESC" in m.call_args[0][0]
+        assert out["truncated"] is False and out["cumulative"] is False
+        assert sum(v for v in out["series"]["_"] if v) == 3.0
+
+    def test_metric_names_label_the_lifetime_count(self, monkeypatch):
+        monkeypatch.setattr(
+            openobserve,
+            "http_get_json",
+            lambda *a, **k: {"list": [{"name": "hermes_token_usage", "stats": {"doc_num": 9}}]},
+        )
+        assert self._adapter().metric_names(0, 1) == [
+            {"name": "hermes_token_usage", "count": 9, "count_scope": "stream"}
+        ]
+
+
+class TestJaeger:
+    def _adapter(self):
+        return jaeger.JaegerAdapter({"type": "jaeger", "endpoint": "http://localhost:16686"})
+
+    @staticmethod
+    def _trace(tid, root_tags, child_tags, root_name="agent", start=1_000_000):
+        def tag(k, v):
+            return {"key": k, "type": "string", "value": v}
+
+        return {
+            "traceID": tid,
+            "spans": [
+                {
+                    "traceID": tid,
+                    "spanID": "root",
+                    "operationName": root_name,
+                    "startTime": start,
+                    "duration": 5000,
+                    "references": [],
+                    "tags": [tag(k, v) for k, v in root_tags.items()],
+                    "processID": "p1",
+                },
+                {
+                    "traceID": tid,
+                    "spanID": "child",
+                    "operationName": "tool.terminal",
+                    "startTime": start + 10,
+                    "duration": 100,
+                    "references": [{"refType": "CHILD_OF", "traceID": tid, "spanID": "root"}],
+                    "tags": [tag(k, v) for k, v in child_tags.items()],
+                    "processID": "p1",
+                },
+            ],
+            "processes": {"p1": {"serviceName": "hermes-agent", "tags": []}},
+        }
+
+    def test_roots_only_requires_the_root_itself_to_match(self, monkeypatch):
+        data = {
+            "data": [
+                self._trace("t-root-has-it", {"tool.name": "terminal"}, {}),
+                self._trace("t-only-child-has-it", {}, {"tool.name": "terminal"}),
+            ]
+        }
+        monkeypatch.setattr(jaeger, "http_get_json", lambda *a, **k: data)
+        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=True)
+        out = self._adapter().search(f, 0, 10, 10)
+        assert [t["traceID"] for t in out["traces"]] == ["t-root-has-it"]
+        widened = self._adapter().search(
+            StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False), 0, 10, 10
+        )
+        assert len(widened["traces"]) == 2
+
+    def test_name_prefix_is_checked_on_the_rows_and_cursor_bounds_the_query(self, monkeypatch):
+        seen = {}
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {
+                "data": [
+                    self._trace("cron-trace", {}, {}, root_name="cron", start=3_000_000),
+                    self._trace("agent-trace", {}, {}, root_name="agent", start=2_000_000),
+                ]
+            }
+
+        monkeypatch.setattr(jaeger, "http_get_json", fake)
+        out = self._adapter().search(
+            StructuredFilter(name_prefix="agent", before_ns=2_500_000_000), 0, 10, 5
+        )
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert (q["limit"], q["end"], q["service"]) == ("6", "2500000", "hermes-agent")
+        assert [t["traceID"] for t in out["traces"]] == ["agent-trace"]
+
+    def test_status_comes_from_the_otel_tags_and_bad_numbers_do_not_crash(self, monkeypatch):
+        t = self._trace("t", {"otel.status_code": "ERROR", "otel.status_description": "boom"}, {})
+        t["spans"][0]["startTime"] = "not-a-number"
+        monkeypatch.setattr(jaeger, "http_get_json", lambda *a, **k: {"data": [t]})
+        detail = self._adapter().get_trace("t")
+        root = detail["batches"][0]["scopeSpans"][0]["spans"][0]
+        assert root["status"] == {"code": 2, "message": "boom"}
+        assert root["startTimeUnixNano"] == "0" and detail["span_count"] == 2
+        card = self._adapter().search(StructuredFilter(), 0, 10, 5)["traces"][0]
+        attrs = {a["key"]: a["value"] for a in card["spanSets"][0]["spans"][0]["attributes"]}
+        assert attrs["status"] == {"stringValue": "error"}
+
+    def test_default_service_follows_the_plugin_resource(self, monkeypatch):
+        monkeypatch.setattr(
+            backends, "top_level_config", lambda: {"resource_attributes": {"service.name": "bot"}}
+        )
+        assert self._adapter().default_service == "bot"
+        assert (
+            jaeger.JaegerAdapter({"type": "jaeger", "service_name": "svc"}).default_service == "svc"
+        )
+
+
+class TestSigNoz:
+    def _adapter(self):
+        return signoz.SigNozAdapter(
+            {"type": "signoz", "endpoint": "http://localhost:3301", "api_key": "k"}
+        )
+
+    def test_search_parses_rows_into_cards_and_pages(self, monkeypatch):
+        rows = [
+            {
+                "traceID": "t1",
+                "spanID": "s1",
+                "name": "agent",
+                "serviceName": "hermes-agent",
+                "durationNano": 2_500_000_000,
+                "timestamp": "2026-10-05T10:00:03Z",
+                "hasError": False,
+                "llm.model_name": "gpt-4o-mini",
+                "gen_ai.usage.total_tokens": 42,
+                "hermes.session_id": "s-1",
+            },
+            {
+                "traceID": "t1",
+                "spanID": "s2",
+                "name": "api.m",
+                "serviceName": "hermes-agent",
+                "durationNano": 1_000,
+                "timestamp": "2026-10-05T10:00:02Z",
+            },
+            {
+                "traceID": "t2",
+                "spanID": "s3",
+                "name": "agent",
+                "serviceName": "hermes-agent",
+                "durationNano": 1_000_000,
+                "timestamp": "2026-10-05T10:00:01Z",
+                "hasError": True,
+            },
+        ]
+        seen = {}
+
+        def fake(url, body, headers=None, timeout=None):
+            seen["body"] = body
+            return {"data": {"result": [{"list": [{"data": r} for r in rows]}]}}
+
+        monkeypatch.setattr(signoz, "http_post_json", fake)
+        out = self._adapter().search(StructuredFilter(name_prefix="agent"), 0, 10, 1)
+        q = seen["body"]["compositeQuery"]["builderQueries"]["A"]
+        assert q["limit"] == 2  # one beyond the page in roots-only mode
+        assert {"key": "llm.model_name", "type": "tag", "dataType": "string"} in q["selectColumns"]
+        items = {i["key"]["key"]: i for i in q["filters"]["items"]}
+        assert items["name"]["op"] == "regex" and items["name"]["value"] == "^agent"
+        assert [t["traceID"] for t in out["traces"]] == ["t1"]
+        assert out["has_more"] is True and out["next_before_ns"]
+        attrs = {
+            a["key"]: a["value"] for a in out["traces"][0]["spanSets"][0]["spans"][0]["attributes"]
+        }
+        assert attrs["llm.model_name"] == {"stringValue": "gpt-4o-mini"}
+        assert attrs["gen_ai.usage.total_tokens"] == {"intValue": "42"}
+        assert attrs["hermes.session_id"] == {"stringValue": "s-1"}
+        assert out["traces"][0]["durationMs"] == 2500
+
+    def test_status_ok_is_sent_and_rows_limit_widens_without_roots(self):
+        a = self._adapter()
+        body = a._build_query_body(StructuredFilter(status="ok", roots_only=False), 0, 1, 10)
+        q = body["compositeQuery"]["builderQueries"]["A"]
+        items = {i["key"]["key"]: i for i in q["filters"]["items"]}
+        assert items["hasError"]["value"] is False and q["limit"] == 41
+
+    def test_get_trace_does_not_retry_unreachable_and_finds_nothing(self, monkeypatch):
+        calls = []
+
+        def fake_post(url, body, headers=None, timeout=None):
+            calls.append("post")
+            raise BackendError(502, "Backend unreachable: refused")
+
+        monkeypatch.setattr(signoz, "http_post_json", fake_post)
+        monkeypatch.setattr(signoz, "http_get_json", lambda *a, **k: calls.append("get"))
+        with pytest.raises(BackendError, match="unreachable"):
+            self._adapter().get_trace("t")
+        assert calls == ["post"]
+
+        def rejected(url, body, headers=None, timeout=None):
+            raise BackendError(502, "Backend returned 405: method not allowed")
+
+        monkeypatch.setattr(signoz, "http_post_json", rejected)
+        monkeypatch.setattr(signoz, "http_get_json", lambda *a, **k: {"spans": []})
+        with pytest.raises(BackendError) as exc:
+            self._adapter().get_trace("t")
+        assert exc.value.kind == "not_found"
+
+    def test_catalog_is_fetched_once_per_instance_and_counters_are_cumulative(self, monkeypatch):
+        gets = []
+        catalog = {
+            "data": {"attributeKeys": [{"key": "hermes.token.usage", "type": "Sum"}]},
+        }
+
+        def fake_get(url, headers=None, timeout=None):
+            gets.append(url)
+            return catalog
+
+        monkeypatch.setattr(signoz, "http_get_json", fake_get)
+        monkeypatch.setattr(
+            signoz, "http_post_json", lambda *a, **k: {"data": {"result": [{"series": []}]}}
+        )
+        a = self._adapter()
+        a.metric_names(0, 1)
+        out = a.metrics_query("hermes.token.usage", 0, 60, 60)
+        a.metrics_query("hermes.token.usage", 0, 60, 60)
+        assert len(gets) == 1 and out["cumulative"] is True
+
+    def test_status_message_survives_the_row_shape(self):
+        cols = ["__time", "SpanId", "TraceId", "ServiceName", "Name", "HasError", "StatusMessage"]
+        otlp = signoz._signoz_trace_to_otlp(
+            [{"columns": cols, "events": [[1790463141232, "s", "t", "svc", "agent", True, "boom"]]}]
+        )
+        span = otlp["batches"][0]["scopeSpans"][0]["spans"][0]
+        assert span["status"] == {"code": 2, "message": "boom"}
+
+
+class TestUptrace:
+    def _adapter(self):
+        return uptrace.UptraceAdapter(
+            {"type": "uptrace", "endpoint": "http://localhost:14318", "user_token": "t"}
+        )
+
+    def test_a_rejected_token_is_an_auth_error_and_caches_nothing(self, monkeypatch):
+        def fake(url, headers=None, timeout=None):
+            raise BackendError(503, "Backend rejected the credentials (401): bad token", "auth")
+
+        monkeypatch.setattr(uptrace, "http_get_json", fake)
+        with pytest.raises(BackendError) as exc:
+            self._adapter().search(StructuredFilter(), 0, 10, 5)
+        assert exc.value.kind == "auth" and uptrace._DIALECT_CACHE == {}
+
+    def test_an_auth_error_after_the_probe_forgets_the_dialect(self, monkeypatch):
+        answers = iter([{"systems": []}, None])
+
+        def fake(url, headers=None, timeout=None):
+            a = next(answers)
+            if a is None:
+                raise BackendError(503, "Backend rejected the credentials (401)", "auth")
+            return a
+
+        monkeypatch.setattr(uptrace, "http_get_json", fake)
+        a = self._adapter()
+        with pytest.raises(BackendError):
+            a.search(StructuredFilter(), 0, 10, 5)
+        assert uptrace._DIALECT_CACHE == {}
+
+    def test_prefix_pin_and_status(self, monkeypatch):
+        a = self._adapter()
+        assert 'where _name like "tool.%"' in a._build_uql(StructuredFilter(name_prefix="tool."))
+        # The log pin follows the plugin's resource service name; ``off`` removes it.
+        monkeypatch.setattr(
+            backends, "top_level_config", lambda: {"resource_attributes": {"service.name": "bot"}}
+        )
+        assert (
+            uptrace.UptraceAdapter(
+                {"type": "uptrace", "endpoint": "http://u:14318", "user_token": "t"}
+            ).service_name
+            == "bot"
+        )
+        off = uptrace.UptraceAdapter(
+            {
+                "type": "uptrace",
+                "endpoint": "http://u:14318",
+                "user_token": "t",
+                "service_name": "off",
+            }
+        )
+        assert off.service_name is None and off._log_clauses(LogFilter()) == []
+        hit = uptrace._search_hit(
+            {
+                "id": "x",
+                "traceId": "T",
+                "name": "agent",
+                "time": 1000.0,
+                "statusCode": "unset",
+                "attrs": {},
+            },
+            "T",
+        )
+        assert "status" not in {a["key"] for a in hit["spanSets"][0]["spans"][0]["attributes"]}
+
+    def test_query_errors_on_spans_are_surfaced(self, monkeypatch):
+        def fake(url, headers=None, timeout=None):
+            if url.endswith("/systems?" + _urlparse.urlparse(url).query):
+                return {"systems": []}
+            return {"query": [{"error": "bad UQL"}], "spans": []}
+
+        monkeypatch.setattr(uptrace, "http_get_json", fake)
+        with pytest.raises(BackendError, match="bad UQL"):
+            self._adapter().search(StructuredFilter(raw="where nonsense"), 0, 10, 5)
+
+
+class TestPhoenix:
+    def _adapter(self):
+        return phoenix.PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
+
+    def test_filter_condition_uses_the_documented_fields(self):
+        fc = self._adapter()._build_filter_condition(
+            StructuredFilter(name_prefix="tool.", status="error", min_duration_ms=10, raw="x == 1")
+        )
+        assert fc == "(x == 1) and 'tool.' in name and latency_ms >= 10 and status_code == 'ERROR'"
+
+    def test_search_enforces_the_prefix_and_pages(self, monkeypatch):
+        a = self._adapter()
+        a._project_id_cache = "P1"
+        seen = {}
+
+        def node(name, tid, start):
+            return {
+                "spanId": tid,
+                "name": name,
+                "latencyMs": 1,
+                "startTime": start,
+                "parentId": None,
+                "attributes": "{}",
+                "context": {"traceId": tid, "spanId": tid},
+                "trace": {"numSpans": 2},
+            }
+
+        def fake(url, body, headers=None, timeout=None):
+            seen["vars"] = body.get("variables")
+            spans = [
+                node("tool.x", "t1", "2026-10-05T10:00:03+00:00"),
+                node("agent", "t2", "2026-10-05T10:00:02+00:00"),
+                node("tool.y", "t3", "2026-10-05T10:00:01+00:00"),
+            ]
+            return {
+                "data": {"node": {"name": "p", "spans": {"edges": [{"node": s} for s in spans]}}}
+            }
+
+        monkeypatch.setattr(phoenix, "http_post_json", fake)
+        out = a.search(StructuredFilter(name_prefix="tool."), 0, 1_800_000_000, 1)
+        assert seen["vars"]["first"] == 2 and "'tool.' in name" in seen["vars"]["filterCondition"]
+        assert [t["traceID"] for t in out["traces"]] == ["t1"] and out["has_more"] is True
+
+    def test_detail_reports_truncation_and_the_whole_count(self, monkeypatch):
+        a = self._adapter()
+        a._project_id_cache = "P1"
+
+        def fake(url, body, headers=None, timeout=None):
+            assert body["variables"]["first"] == phoenix._DETAIL_SPAN_CAP
+            return {
+                "data": {
+                    "node": {
+                        "name": "p",
+                        "trace": {
+                            "numSpans": 900,
+                            "spans": {
+                                "pageInfo": {"hasNextPage": True},
+                                "edges": [
+                                    {
+                                        "node": {
+                                            "spanId": "s",
+                                            "name": "agent",
+                                            "attributes": "{}",
+                                            "context": {"traceId": "t", "spanId": "s"},
+                                        }
+                                    }
+                                ],
+                            },
+                        },
+                    }
+                }
+            }
+
+        monkeypatch.setattr(phoenix, "http_post_json", fake)
+        out = a.get_trace("t")
+        assert out["truncated"] is True and out["span_count"] == 900
+
+
+class TestLangfuse:
+    def _adapter(self):
+        return langfuse.LangfuseAdapter(
+            {
+                "type": "langfuse",
+                "endpoint": "http://localhost:3000",
+                "public_key": "pk",
+                "secret_key": "sk",
+            }
+        )
+
+    def test_raw_page_and_limit_cannot_override_the_route(self):
+        p = self._adapter()._list_params(
+            StructuredFilter(raw="page=9 limit=5000 userId=u"), 0, 10, 7
+        )
+        assert (p["page"], p["limit"], p["userId"]) == (1, 7, "u")
+
+    def test_duration_filter_walks_pages_and_latency_is_seconds(self, monkeypatch):
+        pages = []
+
+        def fake(url, headers=None, timeout=None):
+            q = dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))
+            pages.append(q["page"])
+            page = int(q["page"])
+            items = [
+                {
+                    "id": f"p{page}-{i}",
+                    "name": "agent",
+                    "timestamp": f"2026-10-05T10:0{page}:0{i}.000Z",
+                    "latency": 0.5 if i else 3.0,  # seconds: one slow trace per page
+                }
+                for i in range(3)
+            ]
+            return {"data": items}
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        out = self._adapter().search(StructuredFilter(min_duration_ms=1000), 0, 10, 2)
+        assert pages == ["1", "2", "3"]
+        assert [t["durationMs"] for t in out["traces"]] == [3000, 3000]
+        assert out["has_more"] is True
+
+    def test_a_wrong_key_on_the_projects_call_is_an_auth_error(self, monkeypatch):
+        def fake(url, headers=None, timeout=None):
+            raise BackendError(503, "Backend rejected the credentials (401)", "auth")
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        with pytest.raises(BackendError) as exc:
+            self._adapter().trace_url("t")
+        assert exc.value.kind == "auth"

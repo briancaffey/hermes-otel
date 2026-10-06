@@ -20,15 +20,24 @@ from urllib import parse as _urlparse
 from . import register
 from .base import (
     BackendAdapter,
+    BackendError,
     StructuredFilter,
     http_post_json,
     otlp_attrs_from_dict,
     otlp_status,
     resolve_env_or_literal,
     rewrite_host_for_docker,
+    strictly_older_traces,
+    trace_page,
 )
 
 _DEFAULT_PHOENIX_PORT = 6006
+# Phoenix pages spans; the detail view asks for this many and says so when
+# the trace has more.
+_DETAIL_SPAN_CAP = 500
+# Projects are listed once per adapter instance (instances are cached while
+# the config file is unchanged, #290).
+_PROJECT_LIST_SIZE = 200
 
 
 def _flatten(obj: Any, prefix: str = "") -> Dict[str, Any]:
@@ -65,14 +74,9 @@ def _ns_to_iso(ns: int) -> str:
     return datetime.fromtimestamp(ns / 1_000_000_000, tz=timezone.utc).isoformat()
 
 
-def _span_kind_to_otlp(kind: Optional[str]) -> int:
-    """Phoenix's SpanKind enum → OTLP span kind int.
-
-    OTLP span kinds: 0=UNSPECIFIED, 1=INTERNAL, 2=SERVER, 3=CLIENT,
-    4=PRODUCER, 5=CONSUMER. Phoenix's categories don't map 1:1; we
-    pick INTERNAL as the most sensible default for everything.
-    """
-    return 1  # INTERNAL
+# Phoenix's SpanKind (LLM, CHAIN, TOOL, …) is OpenInference's semantic kind,
+# not OTLP's transport kind, so every span is INTERNAL (1) in the OTLP shape.
+_OTLP_INTERNAL = 1
 
 
 _CARD_ATTR_KEYS = frozenset(
@@ -102,6 +106,19 @@ class PhoenixAdapter(BackendAdapter):
     handles = frozenset({"phoenix"})
     query_lang_label = "Phoenix filter"
     raw_placeholder = "llm.model_name == 'gpt-4'"
+    filter_support = {
+        "service": "none",  # a Phoenix project IS the service
+        "name": "client",  # a substring pre-filter, the prefix checked on the rows
+        "model": "server",
+        "session": "server",
+        "tool": "server",
+        "min_duration": "server",
+        "status_error": "server",
+        "status_ok": "server",
+        "free_text": "server",
+        "raw": "server",
+        "roots_only": "server",
+    }
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
@@ -148,20 +165,18 @@ class PhoenixAdapter(BackendAdapter):
             body["variables"] = variables
         resp = http_post_json(self.graphql_url, body, headers=headers, timeout=15.0)
         if not isinstance(resp, dict):
-            from .base import HTTPException
-
-            raise HTTPException(status_code=502, detail="Phoenix returned non-object")
+            raise BackendError(502, "Phoenix returned non-object")
         if resp.get("errors"):
-            from .base import HTTPException
-
             msg = "; ".join(e.get("message", "?") for e in resp["errors"])
-            raise HTTPException(status_code=502, detail=f"Phoenix GraphQL error: {msg}")
+            raise BackendError(502, f"Phoenix GraphQL error: {msg}")
         return resp.get("data") or {}
 
     def _resolve_project_id(self) -> Optional[str]:
         if self._project_id_cache:
             return self._project_id_cache
-        data = self._gql("{ projects(first: 50) { edges { node { id name hasTraces } } } }")
+        data = self._gql(
+            f"{{ projects(first: {_PROJECT_LIST_SIZE}) {{ edges {{ node {{ id name hasTraces }} }} }} }}"
+        )
         edges = ((data or {}).get("projects") or {}).get("edges") or []
         projects = [e["node"] for e in edges if e.get("node")]
         if not projects:
@@ -177,15 +192,12 @@ class PhoenixAdapter(BackendAdapter):
             # A configured project that does not exist is an error, not an
             # invitation to show some other project's traces under its name
             # (#159). Say what exists so the typo is easy to spot.
-            from .base import HTTPException
-
             available = ", ".join(sorted(str(p.get("name")) for p in projects)) or "none"
-            raise HTTPException(
-                status_code=404,
-                detail=(
-                    f"Phoenix project {self.project_name!r} not found at {self.query_url}; "
-                    f"available: {available}"
-                ),
+            raise BackendError(
+                404,
+                f"Phoenix project {self.project_name!r} not found at {self.query_url}; "
+                f"available: {available}",
+                "not_found",
             )
 
         # No project configured: show the first project that has traces (else
@@ -205,14 +217,20 @@ class PhoenixAdapter(BackendAdapter):
         parts: List[str] = []
         if user_raw:
             parts.append(f"({user_raw})")
+        if f.name_prefix:
+            # The filter DSL has substring membership but no startswith; the
+            # prefix is enforced on the returned rows (filter_support: client).
+            parts.append(f"'{_esc(f.name_prefix)}' in name")
         if f.name_regex:
             parts.append(f"name == '{_esc(f.name_regex)}'")  # no regex in UI expr
         if f.min_duration_ms:
             parts.append(f"latency_ms >= {int(f.min_duration_ms)}")
+        # ``status_code`` is the documented filter field (the bare name, as the
+        # Phoenix UI's filter bar accepts it).
         if f.status == "error":
-            parts.append("span.status_code == 'ERROR'")
+            parts.append("status_code == 'ERROR'")
         elif f.status == "ok":
-            parts.append("span.status_code == 'OK'")
+            parts.append("status_code == 'OK'")
         for k, v in f.attr_equals.items():
             parts.append(f"{k} == '{_esc(str(v))}'")
         if f.free_text:
@@ -289,7 +307,7 @@ class PhoenixAdapter(BackendAdapter):
             "spanId": span.get("spanId") or ctx.get("spanId"),
             "parentSpanId": span.get("parentId") or None,
             "name": span.get("name") or "",
-            "kind": _span_kind_to_otlp(span.get("spanKind")),
+            "kind": _OTLP_INTERNAL,
             "startTimeUnixNano": str(start_ns) if start_ns else "0",
             "endTimeUnixNano": str(end_ns) if end_ns else "0",
             "attributes": otlp_attrs_from_dict(raw_attrs),
@@ -305,9 +323,12 @@ class PhoenixAdapter(BackendAdapter):
             return {"traces": []}
 
         fc = self._build_filter_condition(f)
+        end_ns = end_s * 1_000_000_000
+        if f.before_ns:
+            end_ns = min(end_ns, int(f.before_ns))
         time_range = {
             "start": _ns_to_iso(start_s * 1_000_000_000),
-            "end": _ns_to_iso(end_s * 1_000_000_000),
+            "end": _ns_to_iso(end_ns),
         }
 
         # Phoenix's ``rootSpansOnly`` honours the companion
@@ -356,7 +377,8 @@ class PhoenixAdapter(BackendAdapter):
             query,
             {
                 "projectId": project_id,
-                "first": int(limit),
+                # One beyond the page so has_more is exact (trace_page).
+                "first": int(limit) + 1,
                 "timeRange": time_range,
                 "filterCondition": fc,
                 "rootsOnly": bool(f.roots_only),
@@ -384,6 +406,8 @@ class PhoenixAdapter(BackendAdapter):
             # anything that still has a parentId when the user asked
             # for root spans only.
             if f.roots_only and span.get("parentId"):
+                continue
+            if f.name_prefix and not str(span.get("name") or "").startswith(f.name_prefix):
                 continue
             start_ns = _iso_to_ns(span.get("startTime"))
             card_attrs = self._span_to_card_attrs(span)
@@ -417,7 +441,7 @@ class PhoenixAdapter(BackendAdapter):
                     ],
                 }
             )
-        return {"traces": traces}
+        return trace_page(strictly_older_traces(traces, f), limit)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         project_id = self._resolve_project_id()
@@ -431,13 +455,15 @@ class PhoenixAdapter(BackendAdapter):
             return {"batches": []}
 
         query = """
-        query GetTrace($projectId: ID!, $traceId: ID!) {
+        query GetTrace($projectId: ID!, $traceId: ID!, $first: Int!) {
           node(id: $projectId) {
             ... on Project {
               name
               trace(traceId: $traceId) {
                 traceId
-                spans(first: 500) {
+                numSpans
+                spans(first: $first) {
+                  pageInfo { hasNextPage }
                   edges { node {
                     spanId name statusCode statusMessage startTime endTime
                     parentId spanKind attributes
@@ -452,13 +478,28 @@ class PhoenixAdapter(BackendAdapter):
           }
         }
         """
-        data = self._gql(query, {"projectId": project_id, "traceId": trace_id})
+        data = self._gql(
+            query, {"projectId": project_id, "traceId": trace_id, "first": _DETAIL_SPAN_CAP}
+        )
         project = data.get("node") or {}
         project_name = project.get("name") or "phoenix"
         trace = project.get("trace") or {}
-        edges = ((trace.get("spans") or {}).get("edges")) or []
+        if not trace:
+            raise BackendError(
+                404, f"Trace {trace_id} not found in Phoenix project {project_name!r}", "not_found"
+            )
+        spans_conn = trace.get("spans") or {}
+        edges = spans_conn.get("edges") or []
 
         otlp_spans = [self._span_node_to_otlp(e["node"]) for e in edges if e.get("node")]
+        if not otlp_spans:
+            raise BackendError(
+                404, f"Trace {trace_id} not found in Phoenix project {project_name!r}", "not_found"
+            )
+        truncated = bool((spans_conn.get("pageInfo") or {}).get("hasNextPage")) or (
+            len(otlp_spans) >= _DETAIL_SPAN_CAP
+        )
+        span_count = trace.get("numSpans")
 
         resource_attrs = otlp_attrs_from_dict({"service.name": project_name})
         return {
@@ -467,7 +508,9 @@ class PhoenixAdapter(BackendAdapter):
                     "resource": {"attributes": resource_attrs},
                     "scopeSpans": [{"spans": otlp_spans}],
                 }
-            ]
+            ],
+            "truncated": truncated,
+            "span_count": int(span_count) if isinstance(span_count, int) else len(otlp_spans),
         }
 
 

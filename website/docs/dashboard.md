@@ -49,9 +49,11 @@ Successful MCP keepalive pings are hidden by default in every list (a checkbox s
 
 ## Choosing the source
 
-Every tab has a **source** selector: `Live (in-process)` plus one entry per configured backend. Entries whose type has no adapter, or that cannot serve what the tab shows (metrics, logs), are listed but disabled with the reason. The choice is remembered per browser. The API takes the same choice as a `backend=<name or type>` query parameter on `/status`, `/traces/search`, `/traces/{id}`, `/metrics/*` and `/logs/*`; an unknown name is a `400` listing the configured names, and a backend without the capability is a `503`.
+Every tab has a **source** selector: `Live (in-process)` plus one entry per configured backend. Entries whose type has no adapter, or that cannot serve what the tab shows (metrics, logs), are listed but disabled with the reason. The choice is remembered per browser. The API takes the same choice as a `backend=<name or type>` query parameter on `/status`, `/traces/search`, `/traces/{id}`, `/metrics/*` and `/logs/*`.
 
-Without a selection (or a parameter), `query_backend: <name or type>` in `hermes_otel.yaml` chooses the default backend, else the first configured one with an adapter.
+Every backend route answers a failure with the same body, `{"detail": "<message>", "kind": "<kind>"}`, and a status that follows the kind: `request` (400: an unknown backend name, an invalid metric name), `config` (503: no adapter for the type, a missing credential or URL, an entry that cannot be set up such as `project_id: abc`), `auth` (503: the backend rejected the key), `not_found` (404: only on `/traces/{id}`, when the backend has no such trace) and `backend` (502: unreachable, a timeout, a 5xx, a non-JSON answer, or an answer the adapter could not read). A backend is contacted once per request: nothing is retried after a network failure.
+
+Without a selection (or a parameter), `query_backend: <name or type>` in `hermes_otel.yaml` chooses the default backend, else the first configured one with an adapter that sets up cleanly. The config file is parsed once per change (its path, modification time and size) and the adapter for each entry is kept for as long as the file is unchanged, so an edit is picked up on the next request and the adapters' own caches (Phoenix's project id, OpenObserve's schema, Uptrace's API dialect) hold between requests.
 
 A dashboard that serves several profiles (`?profile=<name>`) reads each profile's own config and live store: the Live source, the backend list and the Settings tab all follow the profile of the page.
 
@@ -66,10 +68,30 @@ A dashboard that serves several profiles (`?profile=<name>`) reads each profile'
 | `uptrace` | yes | yes | yes | Uptrace 2.x `/internal/v1` API in both of its spellings (2.1's one route per signal, 2.0's `/tracing/` routes; probed once per process); needs a **user** token (`user_token_env`), not the DSN's project token. Metrics via MQL (`$m`, `sum($m)`, `avg($m)`…) with `group by`; logs are the span store's `log:*` systems, filtered on `_trace_id`, `hermes_session_id`, `otel_library_name`, `event_name`, level and text |
 | `lgtm` | yes | yes | yes | Tempo for traces, the stack's Prometheus (`prometheus_url`, default `:9090`) for metrics and Loki (`loki_url`, default `:3100`, `off` to disable) for logs. Counters are shown as `increase()` per bucket; logs use LogQL label-filter stages on `trace_id`, `hermes_session_id`, `scope_name`, `severity_number`, `event_name` and body text, and the underscored labels come back as dotted attribute names |
 | `tempo` | yes | optional | optional | Traces from Tempo; add `prometheus_url` / `loki_url` to a Tempo entry to get the same metrics and logs as `lgtm` |
+| `jaeger` | yes | no | no | Jaeger stores traces only. Every search names a service: the entry's `service_name`, else the plugin's `resource_attributes.service.name`, else `hermes-agent` |
+| any other type | no | no | no | Shown as unavailable in the selector; use the Live source |
 
 The logs column, including the event filters and the expanded record view, was checked against live stacks on 2026-10-04: `grafana/otel-lgtm` 0.34 (Loki), OpenObserve, SigNoz v0.119 and Uptrace 2.1.0-beta.5, each fed by a real Hermes turn. The Uptrace 2.0 spelling keeps the request and row shapes recorded against 2.0.2 and was not re-run.
-| `jaeger` | yes | no | no | Jaeger stores traces only |
-| any other type | no | no | no | Shown as unavailable in the selector; use the Live source |
+
+### Which search-bar fields reach each backend
+
+Every adapter declares what it does with each field of the search bar, and `/status` publishes the declaration (`available[].filters`): **server** means the field is part of the query the backend runs, **client** that it is applied to the rows the backend returned (so a page can come back short), **none** that it is ignored. A search answers with `applied_filters` and `ignored_filters` so the tab can say which fields did nothing.
+
+| Field | `phoenix` | `langfuse` | `jaeger` | `lgtm` / `tempo` | `signoz` | `uptrace` | `openobserve` |
+|---|---|---|---|---|---|---|---|
+| service | none (a project is the service) | none | server (defaults to the agent's service) | server | server | server | server |
+| kind (a span-name prefix) | client (a substring pre-filter, the prefix checked on the rows) | client | client (`operation=` is exact) | server | server | server (`like "x%"`) | server |
+| model / session / tool | server | session only | server (tags) | server | server | server | server |
+| min duration | server | client (walks up to five pages) | server | server (`duration >=` in the TraceQL) | server | server | server |
+| status = error | server | none | server (`error=true`) | server | server | server | server |
+| status = ok | server | none | none (no negative tag search) | server | server | server | server |
+| free text | server (`in input.value`) | none | none | server (input and output) | server (`input.value contains`) | server (`input_value contains`) | server (every text column the stream has) |
+| native query | server (`filterCondition`) | server (`k=v` query parameters; `page` and `limit` stay the route's) | server (`k=v` tags) | server (TraceQL, replaces the predicates) | server (`k=v` items) | server (UQL, appended) | server (SQL, ANDed) |
+| roots only | server | none (the list is per trace) | client (the root span itself must match) | client (by root name; a child named like the root passes) | server | client (from each row's `parentId`) | server |
+
+Implicit scoping, worth knowing when a filter seems to match nothing: a **Jaeger** search always names a service (above); **Uptrace** log queries are pinned to the same service name so Uptrace's own lines stay out of the Logs tab (`service_name: off` on the entry removes the pin), and its user token may also come from `UPTRACE_USER_TOKEN`; **Loki** filters are label-filter stages that match the labels and structured metadata the collector promoted (`trace_id`, `hermes_session_id`, `scope_name`, `severity_number`, `event_name`, as the `grafana/otel-lgtm` image does), and every Loki window is clamped to the last 30 days of the request (Loki's default `max_query_length`); the **Phoenix** project list is read once per adapter and holds up to 200 projects.
+
+Pages: trace search is keyset-paged like logs. The response carries `has_more` and `next_before_ns` (the start of the oldest trace shown); pass it back as `before_ns` for the next, older page, on every source. A trace detail carries `span_count` and `truncated: true` when the backend's span cap (500 on Phoenix, SigNoz and OpenObserve) was hit.
 
 ## API
 
@@ -88,10 +110,10 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 | `GET /live/loggers` | Logger names with counts |
 | `GET /settings` (`reveal`) | Every setting with value, default, source and description; the config file raw and as an effective YAML; the environment variables the plugin reads. Credentials are masked unless `reveal=true` |
 | `GET /status` (`backend`) | The chosen or default backend, and every configured one with its capabilities (`available[].supported/metrics/logs`) |
-| `GET /traces/search` (`backend`, `q`, `service`, `lookback_hours`, `roots_only`, `status`, `min_duration_ms`, `free_text`, `name_regex`, `model`, `session`, `tool`) | Backend trace search; `model`/`session`/`tool` become attribute equalities each adapter translates |
-| `GET /traces/{trace_id}` (`backend`) | Backend trace detail as OTLP JSON |
-| `GET /metrics/names`, `/metrics/query` (`backend`, same parameters as the live ones) | Metrics from a backend that serves them, in the live endpoints' shape |
-| `GET /logs/search`, `/loggers` (`backend`, same parameters as the live ones) | Logs from a backend that serves them, in the live record shape |
+| `GET /traces/search` (`backend`, `q`, `service`, `lookback_hours` or `start_s`/`end_s`, `roots_only`, `status`, `min_duration_ms`, `free_text`, `name_prefix`, `name_regex`, `model`, `session`, `tool`, `limit`, `before_ns`) | Backend trace search, newest first: `{traces, has_more, next_before_ns, applied_filters, ignored_filters}`. `model`/`session`/`tool` become attribute equalities, `name_prefix` is the kind filter; each adapter declares what it honours (table above) |
+| `GET /traces/{trace_id}` (`backend`) | Backend trace detail as OTLP JSON plus `span_count`, `truncated` and `ui_url`; `404 {"kind": "not_found"}` when the backend has no such trace |
+| `GET /metrics/names`, `/metrics/query` (`backend`, `lookback_hours` or `start_s`/`end_s`, same parameters as the live ones) | Metrics from a backend that serves them, in the live endpoints' shape; every name row carries `otlp_name`, the plugin's dotted instrument name behind the backend's spelling (`hermes_token_usage_total` → `hermes.token.usage`). At most 5,000 buckets per query (`422` otherwise); `name` and `group_by` are validated before they reach a query |
+| `GET /logs/search`, `/loggers` (`backend`, `start_s`/`end_s` or `lookback_hours`, same parameters as the live ones, plus `span_id`) | Logs from a backend that serves them, in the live record shape |
 
 ## Troubleshooting
 
