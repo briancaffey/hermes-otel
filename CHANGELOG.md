@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.20.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.19.0...hermes-otel-v1.20.0) (2026-10-06)
+
+
+### Features
+
+* **dashboard:** adapter contract — declared filters, cursor paging, one error taxonomy, cached adapters, seven adapter fixes ([#309](https://github.com/briancaffey/hermes-otel/issues/309)) ([f0d913d](https://github.com/briancaffey/hermes-otel/commit/f0d913dcc8047e0c08cd5b46fc300037a8d6e677))
+* **dashboard:** one card, cursor paging and URL state on every page; shell with mounted pages, error boundaries and profile forwarding; docs and verification ([#313](https://github.com/briancaffey/hermes-otel/issues/313)) ([f906b93](https://github.com/briancaffey/hermes-otel/commit/f906b934c8bff9085215e30b78143b601434e104))
+
+
+### Bug Fixes
+
+* **dashboard:** live store correctness and durability, settings masking gaps, live-route validation ([#308](https://github.com/briancaffey/hermes-otel/issues/308)) ([de48f45](https://github.com/briancaffey/hermes-otel/commit/de48f45b5018f0d03514162c81c28fb9cc9d7890))
+* **dashboard:** type check, lint and page smoke tests in CI; host utilities the current Hermes no longer ships ([#307](https://github.com/briancaffey/hermes-otel/issues/307)) ([81fee75](https://github.com/briancaffey/hermes-otel/commit/81fee75475e84caaec6efe0da9a72283140a8ea3)), closes [#288](https://github.com/briancaffey/hermes-otel/issues/288)
+
 ## [1.19.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.18.2...hermes-otel-v1.19.0) (2026-10-04)
 
 
