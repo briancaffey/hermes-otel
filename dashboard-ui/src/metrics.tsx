@@ -1,16 +1,21 @@
-// Metrics tab (#181): an explorer over every instrument the source holds,
-// plus curated panels, all served by the bucket query endpoints (live store
-// or a backend that serves metrics). Nothing is aggregated in the browser.
-import { React, useState, useEffect, useCallback, useMemo, fetchJSON, API, Input, Select, SelectOption, Button } from "./sdk";
-import { fmtCost, fmtInt, fmtDurationMs, fmtAbsTime, metricOtlpName } from "./lib";
-import { Stat, LineChart, MiniLabel, ErrorBanner } from "./atoms";
+// Metrics tab (#181, #284): curated panels plus an explorer over every
+// instrument the source holds, all served by the bucket query endpoints (live
+// store or a backend that serves metrics). Nothing is aggregated in the
+// browser. The explorer runs on Query only; the panels refresh on a slow
+// poll; range and explorer state live in the URL.
+import { React, useState, useEffect, useCallback, useMemo, api, Input, Select, SelectOption, Button } from "./sdk";
+import { fmtCost, fmtInt, fmtDurationMs, fmtAbsTime, fmtClock, metricOtlpName } from "./lib";
+import { Stat, LineChart, MiniLabel, ErrorBanner, Empty, Series } from "./atoms";
 import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
 import { SourceSelect } from "./sourceselect";
+import { readNav, writeNav } from "./nav";
+import { RANGES, AGGS, explorerFromNav, navFromExplorer, ExplorerState } from "./params";
+import { useActive } from "./index";
 
-const POLL_MS = 15000;
+const POLL_MS = 30000;
 
-type Buckets = {
+export type Buckets = {
   name: string;
   agg: string;
   bucketS: number;
@@ -18,6 +23,7 @@ type Buckets = {
   series: Record<string, (number | null)[]>;
   points: number;
   cumulative?: boolean;
+  instrument?: string;
 };
 
 // Units for the instruments the plugin emits, by OTLP name. The live store
@@ -51,13 +57,6 @@ const UNITS: Record<string, string> = {
   "hw.power": "W",
 };
 const GROUP_KEYS = ["", "model", "provider", "token_type", "tool_name", "choice", "status", "operation", "error_type"];
-const RANGES: { label: string; hours: number; bucket: number }[] = [
-  { label: "15m", hours: 0.25, bucket: 15 },
-  { label: "1h", hours: 1, bucket: 60 },
-  { label: "6h", hours: 6, bucket: 300 },
-  { label: "24h", hours: 24, bucket: 900 },
-  { label: "7d", hours: 168, bucket: 3600 * 3 },
-];
 
 export function seriesTotal(b: Buckets | null, label?: string): number {
   if (!b) return 0;
@@ -92,24 +91,60 @@ export function rangeLabel(r: { label: string; bucket: number }): string {
   return `last ${r.label} · ${b} buckets`;
 }
 
-const PALETTE = ["#38bdf8", "#34d399", "#fbbf24", "#a78bfa", "#f472b6", "#22d3ee", "#6ee7b7", "#94a3b8"];
+/** The name to query for a canonical instrument, from the source's catalogue
+ *  (contract §6). A histogram lands on a backend as ``_sum`` / ``_count`` (and
+ *  ``_bucket``) streams; ``prefer`` picks the one the panel wants. */
+export function resolveInstrument(names: { name: string; otlp_name?: string }[], otlp: string, prefer?: string): string | null {
+  const all = new Set(names.map((n) => n.name));
+  // SigNoz spells a histogram's parts "<name>.sum" / "<name>.count": both
+  // exist together, which tells them from a real ".count" instrument.
+  const canonical = (n: string) => {
+    const m = /^(.*)\.(sum|count)$/.exec(n);
+    if (m && all.has(`${m[1]}.sum`) && all.has(`${m[1]}.count`)) return m[1];
+    return metricOtlpName(n);
+  };
+  const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || canonical(n.name) === otlp).map((n) => n.name);
+  if (!matches.length) return null;
+  if (prefer) {
+    // "_count" also matches SigNoz's dotted "hermes.tool.duration.count"
+    const hit = matches.find((n) => n.endsWith(prefer) || n.endsWith(prefer.replace("_", ".")));
+    if (hit) return hit;
+  }
+  // The bare name first (the live store, Uptrace), then any spelling.
+  return matches.find((n) => n === otlp) || matches.find((n) => !/[_.](sum|count|bucket|total)$/.test(n)) || matches[0];
+}
+
+const PALETTE = [
+  "var(--otel-chart-1)",
+  "var(--otel-chart-2)",
+  "var(--otel-chart-3)",
+  "var(--otel-chart-4)",
+  "var(--otel-chart-5)",
+  "var(--otel-chart-6)",
+  "var(--otel-chart-7)",
+  "var(--otel-chart-8)",
+];
 
 function BarList({ rows, fmt, color }: { rows: { label: string; value: number }[]; fmt?: (n: number) => string; color?: string }) {
   if (!rows.length) return <div className="py-3 text-xs text-muted-foreground">No data in this range.</div>;
   const max = Math.max(1e-9, ...rows.map((r) => r.value));
+  const top = rows.slice(0, 10);
   return (
     <div className="space-y-1.5">
-      {rows.slice(0, 10).map((r) => (
-        <div key={r.label} className="flex items-center gap-2">
-          <span className="otel-w-28 shrink-0 truncate font-mono text-[11px] text-muted-foreground" title={r.label}>
-            {r.label === "_" ? "all" : r.label}
-          </span>
-          <div className="relative h-4 flex-1 bg-muted/30">
-            <div className="absolute inset-y-0 left-0" style={{ width: `${(r.value / max) * 100}%`, background: color || "var(--color-primary, #34d399)" }} />
+      {top.map((r) => (
+        <div
+          key={r.label}
+          className="flex items-center gap-2"
+          title={`${r.label === "_" ? "all" : r.label}: ${fmt ? fmt(r.value) : fmtInt(Math.round(r.value))}`}
+        >
+          <span className="otel-w-28 shrink-0 truncate font-mono text-[11px] text-muted-foreground">{r.label === "_" ? "all" : r.label}</span>
+          <div className="relative h-4 flex-1 bg-muted/30" role="img" aria-label={`${r.label}: ${fmt ? fmt(r.value) : fmtInt(Math.round(r.value))}`}>
+            <div className="absolute inset-y-0 left-0" style={{ width: `${(r.value / max) * 100}%`, background: color || "var(--otel-chart-2)" }} />
           </div>
           <span className="otel-w-16 shrink-0 text-right tabular-nums text-xs">{fmt ? fmt(r.value) : fmtInt(Math.round(r.value))}</span>
         </div>
       ))}
+      {rows.length > top.length ? <div className="text-[10px] text-muted-foreground">+{rows.length - top.length} more series</div> : null}
     </div>
   );
 }
@@ -126,41 +161,70 @@ function Panel({ title, sub, children }: { title: string; sub?: string; children
   );
 }
 
-function Chart({ b, fmt }: { b: Buckets | null; fmt?: (n: number) => string }) {
+function Chart({ b, fmt, error }: { b: Buckets | null; fmt?: (n: number) => string; error?: unknown }) {
+  if (error) return <ErrorBanner error={error} />;
   if (!b || !Object.keys(b.series).length) return <div className="py-3 text-xs text-muted-foreground">No data in this range.</div>;
-  const series = Object.keys(b.series)
+  const all = Object.keys(b.series);
+  const series: Series[] = all
     .slice(0, 8)
-    .map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label].map((v) => v ?? 0) }));
+    .map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label] }));
   const n = b.buckets.length;
-  const labels = [0, Math.floor(n / 2), n - 1].map((i) => fmtAbsTime(b.buckets[i]).replace(/^.*?, /, ""));
-  return <LineChart series={series} labels={labels} fmt={fmt} />;
+  const withDate = b.bucketS >= 3600;
+  const labels = [0, Math.floor(n / 2), n - 1].map((i) => (withDate ? fmtAbsTime(b.buckets[i]).slice(5, 16) : fmtClock(b.buckets[i])));
+  const bucketLabels = b.buckets.map((t) => fmtAbsTime(t));
+  return (
+    <div>
+      <LineChart series={series} labels={labels} fmt={fmt} bucketLabels={bucketLabels} />
+      {all.length > 8 ? <div className="text-[10px] text-muted-foreground">showing 8 of {all.length} series</div> : null}
+    </div>
+  );
 }
+
+type PanelDef = { key: string; otlp: string; group: string; agg: { live: string; backend: string }; prefer?: string };
+const PANELS: PanelDef[] = [
+  { key: "tokens", otlp: "hermes.token.usage", group: "token_type", agg: { live: "sum", backend: "sum" } },
+  { key: "cost", otlp: "hermes.cost.usage", group: "", agg: { live: "sum", backend: "sum" } },
+  { key: "calls", otlp: "hermes.model.usage", group: "model", agg: { live: "count", backend: "sum" } },
+  // the duration histogram: its _sum on a backend, the raw points on live
+  { key: "tools", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "avg", backend: "sum" }, prefer: "_sum" },
+  // the histogram's _count is the number of tool calls on a backend
+  { key: "toolcalls", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "count", backend: "sum" }, prefer: "_count" },
+  { key: "approvals", otlp: "hermes.approval.count", group: "choice", agg: { live: "count", backend: "sum" } },
+  { key: "cache", otlp: "hermes.prompt_cache.tokens", group: "token_type", agg: { live: "sum", backend: "sum" } },
+  { key: "cpu", otlp: "process.cpu.utilization", group: "", agg: { live: "avg", backend: "avg" } },
+  { key: "gpu", otlp: "hw.gpu.utilization", group: "", agg: { live: "avg", backend: "avg" } },
+];
 
 export function MetricsPage() {
   const { source, setSource, status, isLive } = useSource();
-  const [range, setRange] = useState(RANGES[1]);
-  const [names, setNames] = useState<{ name: string; count?: number }[]>([]);
-  const [error, setError] = useState<string | null>(null);
+  const active = useActive();
+  const [ex, setEx] = useState<ExplorerState>(() => explorerFromNav(readNav()));
+  const range = ex.range;
+  const [names, setNames] = useState<{ name: string; otlp_name?: string; count?: number; instrument?: string }[]>([]);
+  const [error, setError] = useState<unknown>(null);
   const [panels, setPanels] = useState<Record<string, Buckets | null>>({});
-  // explorer
-  const [pick, setPick] = useState("");
-  const [groupBy, setGroupBy] = useState("");
+  const [panelErrors, setPanelErrors] = useState<Record<string, unknown>>({});
+  const [loaded, setLoaded] = useState(false);
+  // explorer draft (applied on Query)
   const [customGroup, setCustomGroup] = useState("");
-  const [agg, setAgg] = useState("sum");
   const [explore, setExplore] = useState<Buckets | null>(null);
+  const [exploreError, setExploreError] = useState<unknown>(null);
+  const [exploring, setExploring] = useState(false);
 
-  const base = isLive ? `${API}/live` : API;
-  const canQuery = isLive || !!status?.metrics;
+  const base = isLive ? "/live" : "";
+  const entry = (status?.available || []).find((b: any) => b.name === source) || null;
+  // The entry says what the type can do; the active adapter instance says what this entry does (lgtm vs tempo).
+  const canQuery = isLive || !!(entry?.metrics || (status?.active === source && status?.metrics));
+
+  useEffect(() => {
+    if (active) writeNav(navFromExplorer(ex));
+  }, [ex, active]);
 
   const query = useCallback(
-    async (name: string, group: string, aggregate: string): Promise<Buckets | null> => {
+    async (name: string, group: string, aggregate: string): Promise<Buckets> => {
       const p = withBackend(new URLSearchParams({ name, agg: aggregate, lookback_hours: String(range.hours), bucket_s: String(range.bucket) }), source);
       if (group) p.set("group_by", group);
-      try {
-        return await fetchJSON(`${base}/metrics/query?${p}`);
-      } catch {
-        return null;
-      }
+      return api(`${base}/metrics/query`, p);
     },
     [base, range, source]
   );
@@ -169,54 +233,77 @@ export function MetricsPage() {
     if (!canQuery) return;
     try {
       const p = withBackend(new URLSearchParams({ lookback_hours: String(range.hours) }), source);
-      const r = await fetchJSON(`${base}/metrics/names?${p}`);
-      const list: { name: string; count?: number }[] = r.names || [];
+      const r = await api(`${base}/metrics/names`, p);
+      const list: { name: string; otlp_name?: string; count?: number }[] = r.names || [];
       setNames(list);
       setError(null);
-      const have = new Set(list.map((n) => n.name));
-      const want: [string, string, string, string][] = [
-        ["tokens", isLive ? "hermes.token.usage" : "hermes_token_usage", "token_type", "sum"],
-        ["cost", isLive ? "hermes.cost.usage" : "hermes_cost_usage", "", "sum"],
-        ["calls", isLive ? "hermes.model.usage" : "hermes_model_usage", "model", isLive ? "count" : "sum"],
-        ["tools", isLive ? "hermes.tool.duration" : "hermes_tool_duration_sum", "tool_name", isLive ? "avg" : "sum"],
-        ["approvals", isLive ? "hermes.approval.count" : "hermes_approval_count", "choice", isLive ? "count" : "sum"],
-        ["cache", isLive ? "hermes.prompt_cache.tokens" : "hermes_prompt_cache_tokens", "token_type", "sum"],
-        ["cpu", "process.cpu.utilization", "", "avg"],
-        ["gpu", "hw.gpu.utilization", "", "avg"],
-      ];
       const out: Record<string, Buckets | null> = {};
+      const errs: Record<string, unknown> = {};
       await Promise.all(
-        want.map(async ([key, name, group, aggregate]) => {
-          out[key] = have.has(name) ? await query(name, group, aggregate) : null;
+        PANELS.map(async (def) => {
+          const native = resolveInstrument(list, def.otlp, isLive ? undefined : def.prefer);
+          if (!native) {
+            out[def.key] = null;
+            return;
+          }
+          // A backend that keeps the histogram as one instrument (Uptrace,
+          // SigNoz) has no _count series: count its observations instead.
+          const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !/[_.]count$/.test(native) ? "count" : def.agg.backend;
+          try {
+            out[def.key] = await query(native, def.group, aggregate);
+          } catch (e) {
+            out[def.key] = null;
+            errs[def.key] = e;
+          }
         })
       );
       setPanels(out);
-    } catch (e: any) {
-      setError(String(e?.message || e));
+      setPanelErrors(errs);
+    } catch (e: unknown) {
+      setError(e);
+    } finally {
+      setLoaded(true);
     }
   }, [base, canQuery, isLive, query, range.hours, source]);
 
   useEffect(() => {
+    setLoaded(false);
     load();
   }, [load]);
-  usePolling(load, POLL_MS, canQuery);
+  usePolling(load, POLL_MS, active && canQuery);
 
   const runExplore = useCallback(async () => {
-    if (!pick) return;
-    setExplore(await query(pick, customGroup.trim() || groupBy, agg));
-  }, [agg, customGroup, groupBy, pick, query]);
+    if (!ex.instrument) return;
+    setExploring(true);
+    setExploreError(null);
+    try {
+      setExplore(await query(ex.instrument, ex.groupBy, ex.agg));
+    } catch (e) {
+      setExploreError(e);
+      setExplore(null);
+    } finally {
+      setExploring(false);
+    }
+  }, [ex.agg, ex.groupBy, ex.instrument, query]);
+  // A pasted link with an instrument runs once; afterwards only the button does.
+  const ranOnce = useState({ done: false })[0];
   useEffect(() => {
-    runExplore();
-  }, [runExplore]);
+    if (ex.instrument && !ranOnce.done && names.length) {
+      ranOnce.done = true;
+      runExplore();
+    }
+  }, [ex.instrument, names.length, runExplore, ranOnce]);
 
   const tokens = panels.tokens || null;
   const cost = panels.cost || null;
   const calls = panels.calls || null;
   const tools = panels.tools || null;
+  const toolCallsB = panels.toolcalls || null;
+  const toolCalls = isLive ? (tools ? fmtInt(tools.points) : null) : toolCallsB ? fmtInt(Math.round(seriesTotal(toolCallsB))) : null;
   const approvals = panels.approvals || null;
   const cache = panels.cache || null;
-  const totalTokens = seriesTotal(tokens);
-  const totalCost = seriesTotal(cost);
+  const totalTokens = tokens ? seriesTotal(tokens) : null;
+  const totalCost = cost && cost.points ? seriesTotal(cost) : null;
   // Cache-read share: the hermes.token.usage series carries a cacheRead token
   // type next to input; hermes.prompt_cache.tokens (when recorded) is the same fact.
   const tokenRows = useMemo(() => totalsByLabel(tokens), [tokens]);
@@ -224,6 +311,7 @@ export function MetricsPage() {
   const cacheRead = tokenRows.find((r) => /cache/i.test(r.label))?.value ?? cacheRows.find((r) => /read|hit/i.test(r.label))?.value ?? null;
   const cacheAll = tokenRows.find((r) => r.label === "input")?.value ?? cacheRows.reduce((a, r) => a + r.value, 0);
   const unit = (n: string) => UNITS[n] || UNITS[metricOtlpName(n)] || "";
+  const availableSources = (status?.available || []).filter((b: any) => b.metrics).map((b: any) => b.name);
 
   const header = (
     <div className="flex flex-wrap items-center justify-between gap-2">
@@ -231,8 +319,9 @@ export function MetricsPage() {
         <SourceSelect source={source} onChange={setSource} status={status} need="metrics" />
         <Select
           value={String(range.hours)}
-          onValueChange={(v: string) => setRange(RANGES.find((r) => String(r.hours) === v) || RANGES[1])}
+          onValueChange={(v: string) => setEx((s) => ({ ...s, range: RANGES.find((r) => String(r.hours) === v) || RANGES[1] }))}
           className="otel-w-56 h-8"
+          aria-label="range"
         >
           {RANGES.map((r) => (
             <SelectOption key={r.label} value={String(r.hours)}>
@@ -242,7 +331,8 @@ export function MetricsPage() {
         </Select>
       </div>
       <span className="text-xs text-muted-foreground">
-        {names.length} instrument{names.length === 1 ? "" : "s"} in this range
+        {names.length} instrument{names.length === 1 ? "" : "s"}
+        {isLive ? " in the store" : " in this range"}
       </span>
     </div>
   );
@@ -251,107 +341,128 @@ export function MetricsPage() {
     return (
       <div className="space-y-3">
         {header}
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">This source does not serve metrics</div>
-          Pick the Live source, or a backend whose adapter serves metrics (OpenObserve, SigNoz, Uptrace, LGTM).
-        </div>
+        <Empty title="This source does not serve metrics">
+          Pick the Live source{availableSources.length ? ` or one of: ${availableSources.join(", ")}` : ", or configure a backend whose adapter serves metrics"}
+          .
+        </Empty>
       </div>
     );
 
   return (
     <div className="space-y-3">
       {header}
-      {error ? <ErrorBanner error={error} /> : null}
-      {names.length === 0 ? (
-        <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
-          <div className="mb-1 text-base font-medium text-foreground">No metrics in this range</div>
-          Run a Hermes turn, or widen the range. Token usage, cost, tool durations and approvals appear here.
-        </div>
+      {error ? <ErrorBanner error={error} prefix="Metrics" /> : null}
+      {loaded && names.length === 0 && !error ? (
+        <Empty title="No metrics in this range">Run a Hermes turn, or widen the range. Token usage, cost, tool durations and approvals appear here.</Empty>
       ) : (
         <>
           <div className="otel-kpi-grid">
-            <Stat label="Tokens" value={fmtInt(Math.round(totalTokens))} />
+            <Stat label="Tokens" value={totalTokens != null ? fmtInt(Math.round(totalTokens)) : null} unknownText="not recorded" />
+            <Stat label="Cost" value={totalCost != null ? fmtCost(totalCost) : null} unknownText="no pricing data" accent="cost" />
+            <Stat label="Model calls" value={calls ? fmtInt(Math.round(seriesTotal(calls))) : null} unknownText="not recorded" />
             <Stat
-              label="Cost"
-              value={cost && cost.points ? fmtCost(totalCost) : "—"}
-              sub={cost && cost.points ? undefined : "no pricing data"}
-              accent={cost && cost.points ? "cost" : undefined}
+              label="Tool calls"
+              value={toolCalls}
+              unknownText="not recorded"
+              sub={isLive ? "duration points, one per call" : "from the duration histogram's count"}
             />
-            <Stat label="Model calls" value={fmtInt(Math.round(seriesTotal(calls)))} />
-            <Stat label="Tool calls" value={tools ? fmtInt(tools.points) : "0"} />
             <Stat
               label="Cache read"
-              value={cacheRead != null && cacheAll ? `${Math.round((cacheRead / cacheAll) * 100)}%` : "—"}
-              sub={cacheRead != null ? `${fmtInt(Math.round(cacheRead))} of ${fmtInt(Math.round(cacheAll))} input tokens` : "no cache data"}
+              value={cacheRead != null && cacheAll ? `${Math.round((cacheRead / cacheAll) * 100)}%` : null}
+              sub={cacheRead != null ? `${fmtInt(Math.round(cacheRead))} of ${fmtInt(Math.round(cacheAll))} input tokens` : undefined}
+              unknownText="no cache data"
             />
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
             <Panel title="Tokens over time" sub={`by token_type · per ${range.bucket}s`}>
-              <Chart b={tokens} />
+              <Chart b={tokens} error={panelErrors.tokens} />
             </Panel>
             <Panel title="Cost over time" sub={cost && cost.points ? `USD · per ${range.bucket}s` : "no pricing data for the models used"}>
-              <Chart b={cost} fmt={fmtCost} />
+              <Chart b={cost} fmt={fmtCost} error={panelErrors.cost} />
             </Panel>
             <Panel title="Tokens by type">
-              <BarList rows={totalsByLabel(tokens)} color="#38bdf8" />
+              <BarList rows={totalsByLabel(tokens)} color="var(--otel-chart-1)" />
             </Panel>
             <Panel title="Calls by model">
-              <BarList rows={totalsByLabel(calls)} color="#a78bfa" />
+              <BarList rows={totalsByLabel(calls)} color="var(--otel-chart-4)" />
             </Panel>
             <Panel title={isLive ? "Avg tool duration" : "Tool duration (sum)"} sub="ms">
-              <BarList rows={isLive ? meanByLabel(tools) : totalsByLabel(tools)} fmt={fmtDurationMs} color="#fbbf24" />
+              <BarList rows={isLive ? meanByLabel(tools) : totalsByLabel(tools)} fmt={fmtDurationMs} color="var(--otel-chart-3)" />
             </Panel>
             <Panel title="Approvals by choice">
-              <BarList rows={totalsByLabel(approvals)} color="#f472b6" />
+              <BarList rows={totalsByLabel(approvals)} color="var(--otel-chart-5)" />
             </Panel>
-            {panels.cpu || panels.gpu ? (
-              <Panel title="Host" sub="utilisation ratio, avg per bucket">
-                <Chart b={panels.cpu || panels.gpu} />
+            {panels.cpu ? (
+              <Panel title="CPU" sub="utilisation ratio, avg per bucket">
+                <Chart b={panels.cpu} error={panelErrors.cpu} />
+              </Panel>
+            ) : null}
+            {panels.gpu ? (
+              <Panel title="GPU" sub="utilisation ratio, avg per bucket">
+                <Chart b={panels.gpu} error={panelErrors.gpu} />
               </Panel>
             ) : null}
           </div>
 
           <Panel title="Explore any instrument" sub="server-side buckets; group by an attribute">
-            <div className="otel-search-grid">
-              <Select value={pick} onValueChange={setPick} className="h-8">
+            <form
+              className="otel-search-grid"
+              onSubmit={(e: any) => {
+                e.preventDefault();
+                setEx((s) => ({ ...s, groupBy: customGroup.trim() || s.groupBy }));
+                runExplore();
+              }}
+            >
+              <Select value={ex.instrument} onValueChange={(v: string) => setEx((s) => ({ ...s, instrument: v }))} className="h-8" aria-label="instrument">
                 <SelectOption value="">pick an instrument…</SelectOption>
                 {names.map((n) => (
                   <SelectOption key={n.name} value={n.name}>
-                    {n.name}
-                    {n.count != null ? ` (${n.count})` : ""}
-                    {unit(n.name) ? ` · ${unit(n.name)}` : ""}
+                    {`${n.name}${n.count != null ? ` (${n.count})` : ""}${unit(n.otlp_name || n.name) ? ` · ${unit(n.otlp_name || n.name)}` : ""}`}
                   </SelectOption>
                 ))}
               </Select>
-              <Select value={groupBy} onValueChange={setGroupBy} className="h-8">
+              <Select
+                value={GROUP_KEYS.includes(ex.groupBy) ? ex.groupBy : ""}
+                onValueChange={(v: string) => setEx((s) => ({ ...s, groupBy: v }))}
+                className="h-8"
+                aria-label="group by"
+              >
                 {GROUP_KEYS.map((k) => (
                   <SelectOption key={k} value={k}>
                     {k ? `group by ${k}` : "no grouping"}
                   </SelectOption>
                 ))}
               </Select>
-              <Input className="h-8" placeholder="or any attribute" value={customGroup} onChange={(e: any) => setCustomGroup(e.target.value)} />
-              <Select value={agg} onValueChange={setAgg} className="h-8">
-                {["sum", "count", "avg", "max", "last"].map((a) => (
+              <Input
+                className="h-8"
+                placeholder="or any attribute"
+                value={customGroup}
+                onChange={(e: any) => setCustomGroup(e.target.value)}
+                aria-label="custom group by"
+              />
+              <Select value={ex.agg} onValueChange={(v: string) => setEx((s) => ({ ...s, agg: v }))} className="h-8" aria-label="aggregation">
+                {AGGS.map((a) => (
                   <SelectOption key={a} value={a}>
                     {a}
                   </SelectOption>
                 ))}
               </Select>
-              <Button type="button" size="sm" onClick={runExplore} disabled={!pick}>
-                Query
+              <Button type="submit" size="sm" disabled={!ex.instrument || exploring}>
+                {exploring ? "Querying…" : "Query"}
               </Button>
-            </div>
-            {pick ? (
+            </form>
+            {ex.instrument ? (
               <div className="mt-3 space-y-3">
-                <Chart b={explore} />
+                <Chart b={explore} error={exploreError} />
                 <div className="text-[11px] text-muted-foreground">
                   {explore
-                    ? `${explore.points} point${explore.points === 1 ? "" : "s"} · ${Object.keys(explore.series).length} series · ${explore.agg} per ${explore.bucketS}s${unit(pick) ? ` · ${unit(pick)}` : ""}${explore.cumulative ? " · cumulative counter shown as increases" : ""}`
-                    : "no data"}
+                    ? `${explore.points} point${explore.points === 1 ? "" : "s"} · ${Object.keys(explore.series).length} series · ${explore.agg} per ${explore.bucketS}s${unit(ex.instrument) ? ` · ${unit(ex.instrument)}` : ""}${explore.cumulative ? " · cumulative counter shown as increases" : ""}${explore.instrument ? ` · ${explore.instrument}` : ""}`
+                    : exploreError
+                      ? ""
+                      : "press Query"}
                 </div>
-                <BarList rows={agg === "avg" ? meanByLabel(explore) : totalsByLabel(explore)} />
+                <BarList rows={ex.agg === "avg" ? meanByLabel(explore) : totalsByLabel(explore)} />
               </div>
             ) : null}
           </Panel>

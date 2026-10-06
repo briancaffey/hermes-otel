@@ -2,7 +2,7 @@
 // JSON as key/value rows, prose as markdown, lists as chips, and a
 // structured / raw toggle on every rich value (the choice is remembered per
 // browser).
-import { React, useState, useEffect, Badge, cn } from "./sdk";
+import { React, useState, useContext, createContext, Badge, cn } from "./sdk";
 import { fmtDurationMs } from "./lib";
 import { Markdown } from "./markdown";
 import {
@@ -21,41 +21,53 @@ import {
 } from "./values";
 
 const CLAMP_CHARS = 1600;
+/** Above this a value is offered for copying rather than rendered in full (#283). */
+const HUGE_CHARS = 200_000;
 
-// One structured / raw preference for the whole page: every block follows
-// the switch, and the choice is remembered per browser.
-let currentMode: ViewMode = readViewMode();
-const modeListeners = new Set<(m: ViewMode) => void>();
+// One structured / raw preference for the whole tab, held by a context the
+// shell provides (#283); every block follows the switch and the choice is
+// remembered per browser.
+type ModeCtx = [ViewMode, (m: ViewMode) => void];
+const ViewModeContext: any = createContext ? createContext<ModeCtx | null>(null) : null;
 
-function setGlobalMode(m: ViewMode) {
-  currentMode = m;
-  writeViewMode(m);
-  modeListeners.forEach((fn) => fn(m));
+export function ViewModeProvider({ children }: { children: any }) {
+  const [mode, setMode] = useState<ViewMode>(readViewMode());
+  const change = (m: ViewMode) => {
+    writeViewMode(m);
+    setMode(m);
+  };
+  if (!ViewModeContext) return children;
+  return React.createElement(ViewModeContext.Provider, { value: [mode, change] }, children);
 }
 
-function useViewMode(): [ViewMode, (m: ViewMode) => void] {
-  const [mode, setMode] = useState<ViewMode>(currentMode);
-  useEffect(() => {
-    modeListeners.add(setMode);
-    return () => {
-      modeListeners.delete(setMode);
-    };
-  }, []);
-  return [mode, setGlobalMode];
+function useViewMode(): ModeCtx {
+  const ctx = ViewModeContext && useContext ? (useContext(ViewModeContext) as ModeCtx | null) : null;
+  const own = useState<ViewMode>(readViewMode());
+  if (ctx) return ctx;
+  return [
+    own[0],
+    (m: ViewMode) => {
+      writeViewMode(m);
+      own[1](m);
+    },
+  ];
 }
 
 /** Long text collapsed to a preview with a "show all" control. */
 export function LongText({ text, mono, markdown }: { text: string; mono?: boolean; markdown?: boolean }) {
   const [open, setOpen] = useState(false);
   const long = text.length > CLAMP_CHARS;
+  const huge = text.length > HUGE_CHARS;
   const shown = long && !open ? text.slice(0, CLAMP_CHARS) : text;
   return (
     <div className="otel-longtext">
       {markdown ? <Markdown text={shown} /> : <pre className={cn("otel-pre", mono ? "" : "otel-prose")}>{shown}</pre>}
       {long ? (
-        <button type="button" className="otel-link otel-more" onClick={() => setOpen((o) => !o)}>
-          {open ? "show less" : `show all (${fmtCount(text.length)} chars)`}
-        </button>
+        <span className="otel-more inline-flex items-center gap-2">
+          <button type="button" className="otel-link" onClick={() => setOpen((o) => !o)}>
+            {open ? "show less" : `show all (${fmtCount(text.length)} chars${huge ? ", large" : ""})`}
+          </button>
+        </span>
       ) : null}
     </div>
   );
@@ -216,6 +228,7 @@ function ModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewMode
   const Btn = ({ id, label }: { id: ViewMode; label: string }) => (
     <button
       type="button"
+      aria-pressed={mode === id}
       onClick={() => onChange(id)}
       className={cn("otel-toggle otel-mode-btn", mode === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground")}
     >
@@ -223,7 +236,7 @@ function ModeToggle({ mode, onChange }: { mode: ViewMode; onChange: (m: ViewMode
     </button>
   );
   return (
-    <span className="otel-mode">
+    <span className="otel-mode" role="group" aria-label="structured or raw">
       <Btn id="structured" label="structured" />
       <Btn id="raw" label="raw" />
     </span>
