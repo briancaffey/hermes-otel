@@ -237,8 +237,11 @@ export function MetricsPage() {
             out[def.key] = null;
             return;
           }
+          // A backend that keeps the histogram as one instrument (Uptrace,
+          // SigNoz) has no _count series: count its observations instead.
+          const aggregate = isLive ? def.agg.live : def.prefer === "_count" && !native.endsWith("_count") ? "count" : def.agg.backend;
           try {
-            out[def.key] = await query(native, def.group, isLive ? def.agg.live : def.agg.backend);
+            out[def.key] = await query(native, def.group, aggregate);
           } catch (e) {
             out[def.key] = null;
             errs[def.key] = e;

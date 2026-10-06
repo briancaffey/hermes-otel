@@ -45,6 +45,7 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bucketize,
+    counter_increases,
     finish_log_row,
     http_get_json,
     log_end_ns,
@@ -482,14 +483,23 @@ class UptraceAdapter(BackendAdapter):
                 if value is None:
                     continue
                 points.append((int(ts_ms) * 1_000_000, float(value), label))
-        # Uptrace picks its own interval; folding its points with ``sum`` onto
-        # the requested grid keeps totals exact for counters and histograms'
-        # sum/count, which is what the dashboard charts.
+        # Uptrace picks its own interval and, for a counter's ``$m`` and a
+        # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
+        # at each interval end, forward-filled into later intervals (verified
+        # on 2.1.0-beta.5: two turns of 2 calls read 4, 4 at 00:16 and 00:20;
+        # ``delta($m)`` loses the first interval). The increases between its
+        # points are what the chart wants, and a series that starts inside the
+        # window counts its first value, exactly as for the other stores (#298).
+        cumulative = instrument == "counter" or (
+            instrument == "histogram" and agg in ("sum", "count")
+        )
+        if cumulative:
+            points = counter_increases(points, window_start_ns=start_s * 1_000_000_000)
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name
         out["instrument"] = instrument
-        out["cumulative"] = instrument == "counter"
+        out["cumulative"] = cumulative
         out["mql"] = expr
         return out
 
