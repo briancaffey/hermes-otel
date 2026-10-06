@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.20.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.20.0...hermes-otel-v1.20.1) (2026-10-06)
+
+
+### Bug Fixes
+
+* **tracer:** flush every metric reader concurrently so one dead backend cannot starve the rest ([#314](https://github.com/briancaffey/hermes-otel/issues/314)) ([716a16a](https://github.com/briancaffey/hermes-otel/commit/716a16afc4e08650fc432d0df0bd3329ca51d24f)), closes [#300](https://github.com/briancaffey/hermes-otel/issues/300)
+
 ## [1.20.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.19.0...hermes-otel-v1.20.0) (2026-10-06)
 
 
