@@ -18,7 +18,6 @@ import {
   ToolCall,
   ViewMode,
   writeViewMode,
-  splitToolResult,
 } from "./values";
 
 const CLAMP_CHARS = 1600;
