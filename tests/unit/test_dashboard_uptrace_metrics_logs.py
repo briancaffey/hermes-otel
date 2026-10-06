@@ -167,7 +167,10 @@ def _params(url):
 
 
 @pytest.fixture(autouse=True)
-def _fresh_dialect():
+def _fresh_dialect(monkeypatch):
+    # No developer config: the log pin would otherwise follow the real
+    # ``resource_attributes.service.name`` of this machine's hermes_otel.yaml.
+    monkeypatch.setattr("hermes_otel.dashboard.backends.top_level_config", lambda: {})
     up._DIALECT_CACHE.clear()
     yield
     up._DIALECT_CACHE.clear()
@@ -338,13 +341,16 @@ class TestTraces:
         assert p["query"] == [
             'where service_name = "hermes-agent" | where _name like "agent" | where _status_code = "ok" | where _duration >= 100ms'
         ]
+        # Roots are kept client-side: four rows per requested trace, plus one
+        # so has_more is exact.
         assert (p["time_start"], p["time_end"], p["system[]"], p["sort_dir"], p["limit"]) == (
             ["1790000000000"],
             ["1790500000000"],
             ["spans:all"],
             ["desc"],
-            ["40"],
+            ["41"],
         )
+        assert out["has_more"] is False and out["next_before_ns"] is None
         assert [t["rootTraceName"] for t in out["traces"]] == ["agent"]  # the api child is dropped
         t = out["traces"][0]
         assert (t["traceID"], t["rootServiceName"], t["durationMs"], t["startTimeUnixNano"]) == (

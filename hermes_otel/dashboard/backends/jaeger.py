@@ -7,7 +7,12 @@ when present.
 
 Jaeger search filters by ``service`` + ``tags``; there is no TraceQL
 equivalent. Structured filters map directly, and the raw query field
-accepts additional ``key=value`` pairs that become more tags.
+accepts additional ``key=value`` pairs that become more tags. ``tags=``
+matches ANY span of a trace, so with ``roots_only`` the adapter re-checks
+the filter against the root span of every returned trace (#295).
+
+Every query names a service: ``service_name`` on the entry, else the
+plugin's own ``resource_attributes.service.name``, else ``hermes-agent``.
 """
 
 from __future__ import annotations
@@ -16,15 +21,19 @@ import json
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from . import register
+from . import default_service_name, register
 from .base import (
     BackendAdapter,
+    BackendError,
     StructuredFilter,
     http_get_json,
     otlp_attrs_from_dict,
     otlp_status,
+    parse_kv_tokens,
     resolve_env_or_literal,
     rewrite_host_for_docker,
+    strictly_older_traces,
+    trace_page,
 )
 
 _DEFAULT_JAEGER_QUERY_PORT = 16686
@@ -43,6 +52,8 @@ _CARD_TAGS = frozenset(
         "input.value",
         "output.value",
         "llm.output.content",
+        "hermes.session_id",
+        "hermes.turn.number",
     }
 )
 
@@ -66,11 +77,35 @@ def _tag_value(tag: Dict[str, Any]) -> Any:
     return v
 
 
+def _int(value: Any) -> int:
+    """A Jaeger numeric field (``startTime``, ``duration``), 0 when malformed."""
+    try:
+        return int(value or 0)
+    except (TypeError, ValueError):
+        try:
+            return int(float(value))
+        except (TypeError, ValueError):
+            return 0
+
+
 @register
 class JaegerAdapter(BackendAdapter):
     handles = frozenset({"jaeger"})
     query_lang_label = "Jaeger tags (key=value)"
     raw_placeholder = "http.status_code=500 error=true"
+    filter_support = {
+        "service": "server",
+        "name": "client",  # ``operation=`` is exact; a prefix is checked on the rows
+        "model": "server",
+        "session": "server",
+        "tool": "server",
+        "min_duration": "server",
+        "status_error": "server",
+        "status_ok": "none",  # Jaeger has no negative tag search
+        "free_text": "none",
+        "raw": "server",
+        "roots_only": "client",
+    }
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
@@ -82,10 +117,7 @@ class JaegerAdapter(BackendAdapter):
         self.query_url = f"{scheme}://{rewrite_host_for_docker(host)}:{port}"
         # Optional bearer for cloud-hosted Jaeger / authenticated proxy.
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
-        # Default service name filter — if the user ships a single-
-        # service Hermes install, defaulting here saves the structured
-        # filter from being required.
-        self.default_service = cfg.get("service_name") or "hermes-agent"
+        self.default_service = default_service_name(cfg)
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -102,34 +134,35 @@ class JaegerAdapter(BackendAdapter):
     # ── Filter translation ───────────────────────────────────────────
 
     def _parse_raw_tags(self, raw: Optional[str]) -> Dict[str, str]:
-        if not raw:
-            return {}
-        tags: Dict[str, str] = {}
-        for tok in raw.split():
-            if "=" in tok:
-                k, v = tok.split("=", 1)
-                if k.strip() and v.strip():
-                    tags[k.strip()] = v.strip().strip("\"'")
+        return parse_kv_tokens(raw)
+
+    def _tags(self, f: StructuredFilter) -> Dict[str, Any]:
+        tags: Dict[str, Any] = dict(f.attr_equals)
+        tags.update(self._parse_raw_tags(f.raw))
+        if f.status == "error":
+            tags["error"] = "true"
         return tags
 
     def _build_query(
         self, f: StructuredFilter, start_s: int, end_s: int, limit: int
     ) -> Dict[str, Any]:
+        end_us = int(end_s) * 1_000_000
+        if f.before_ns:
+            # The cursor is the query's end bound (µs); strictly_older_traces()
+            # makes the cut exact afterwards.
+            end_us = min(end_us, int(f.before_ns) // 1000)
         params: Dict[str, Any] = {
             "service": f.service or self.default_service,
-            "limit": int(limit),
+            # One beyond the page so has_more is exact.
+            "limit": int(limit) + 1,
             "start": int(start_s) * 1_000_000,
-            "end": int(end_s) * 1_000_000,
+            "end": end_us,
         }
         if f.name_regex:
             params["operation"] = f.name_regex
         if f.min_duration_ms and f.min_duration_ms > 0:
             params["minDuration"] = f"{int(f.min_duration_ms)}ms"
-
-        tags: Dict[str, Any] = dict(f.attr_equals)
-        tags.update(self._parse_raw_tags(f.raw))
-        if f.status == "error":
-            tags["error"] = "true"
+        tags = self._tags(f)
         if tags:
             params["tags"] = json.dumps(tags)
         return params
@@ -160,6 +193,40 @@ class JaegerAdapter(BackendAdapter):
                 return sp
         return spans[0] if spans else None
 
+    def _root_matches(
+        self, root: Dict[str, Any], attrs: Dict[str, Any], f: StructuredFilter
+    ) -> bool:
+        """Whether the ROOT span itself satisfies the filter. Jaeger's ``tags=``
+        and ``operation=`` match any span of a trace; roots-only means the root
+        must match, so the same predicates are re-checked here (#295)."""
+        refs = root.get("references") or []
+        if refs and any(r.get("refType") == "CHILD_OF" for r in refs):
+            return False  # an orphan: its real root is outside the window
+        name = root.get("operationName") or ""
+        if f.name_prefix and not name.startswith(f.name_prefix):
+            return False
+        if f.name_regex and name != f.name_regex:
+            return False
+        for k, v in self._tags(f).items():
+            have = attrs.get(k)
+            if have is None:
+                return False
+            if str(have).lower() != str(v).lower():
+                return False
+        if f.min_duration_ms and _int(root.get("duration")) < int(f.min_duration_ms) * 1000:
+            return False
+        return True
+
+    @staticmethod
+    def _status_of(attrs: Dict[str, Any]) -> Dict[str, Any]:
+        """OTLP status from the ``otel.status_code`` / ``otel.status_description``
+        tags Jaeger keeps for OTLP spans, else the ``error`` tag."""
+        code = attrs.get("otel.status_code")
+        message = str(attrs.get("otel.status_description") or "")
+        if isinstance(code, str) and code:
+            return otlp_status(code, message)
+        return otlp_status("error" if attrs.get("error") else "ok", message)
+
     # ── Public API ───────────────────────────────────────────────────
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
@@ -181,28 +248,28 @@ class JaegerAdapter(BackendAdapter):
             root = self._find_root_span(spans)
             if root is None:
                 continue
-            if f.roots_only:
-                # Jaeger has no server-side root-only filter; enforce
-                # client-side by skipping traces where the root span
-                # was not itself a match for the user's filter. When
-                # the root has no parent-references we count it as a
-                # match; otherwise drop the trace.
-                refs = root.get("references") or []
-                if refs and any(r.get("refType") == "CHILD_OF" for r in refs):
+            attrs = self._span_tags_as_dict(root)
+            if f.roots_only and not self._root_matches(root, attrs, f):
+                continue
+            if not f.roots_only and f.name_prefix:
+                # Any span of the trace may carry the prefix; the card still
+                # describes the root.
+                if not any(
+                    str(sp.get("operationName") or "").startswith(f.name_prefix) for sp in spans
+                ):
                     continue
             processes = t.get("processes") or {}
             service = self._service_name_for_span(root, processes)
-            attrs = self._span_tags_as_dict(root)
             # Keep only the card-relevant keys for the list payload; the
             # detail view will expose the rest.
             keep = {k: v for k, v in attrs.items() if k in _CARD_TAGS}
             keep["name"] = root.get("operationName") or ""
-            if attrs.get("error"):
+            if self._status_of(attrs).get("code") == 2:
                 keep["status"] = "error"
 
-            start_us = int(root.get("startTime") or 0)
+            start_us = _int(root.get("startTime"))
             start_ns = start_us * 1000 if start_us else 0
-            dur_us = int(root.get("duration") or 0)
+            dur_us = _int(root.get("duration"))
 
             traces.append(
                 {
@@ -226,11 +293,7 @@ class JaegerAdapter(BackendAdapter):
                     ],
                 }
             )
-        traces.sort(
-            key=lambda t: int(t.get("startTimeUnixNano") or 0),
-            reverse=True,
-        )
-        return {"traces": traces}
+        return trace_page(strictly_older_traces(traces, f), limit)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         return f"{self.query_url}/trace/{trace_id}"
@@ -240,7 +303,7 @@ class JaegerAdapter(BackendAdapter):
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         items = data.get("data") if isinstance(data, dict) else None
         if not items:
-            return {"batches": []}
+            raise BackendError(404, f"Trace {trace_id} not found in Jaeger", "not_found")
         trace = items[0] if isinstance(items, list) else items
         processes = trace.get("processes") or {}
         spans = trace.get("spans") or []
@@ -257,8 +320,8 @@ class JaegerAdapter(BackendAdapter):
                 if r.get("refType") == "CHILD_OF" and r.get("spanID"):
                     parent = r["spanID"]
                     break
-            start_us = int(sp.get("startTime") or 0)
-            dur_us = int(sp.get("duration") or 0)
+            start_us = _int(sp.get("startTime"))
+            dur_us = _int(sp.get("duration"))
             start_ns = start_us * 1000
             end_ns = (start_us + dur_us) * 1000
 
@@ -271,7 +334,7 @@ class JaegerAdapter(BackendAdapter):
                 "startTimeUnixNano": str(start_ns) if start_ns else "0",
                 "endTimeUnixNano": str(end_ns) if end_ns else "0",
                 "attributes": otlp_attrs_from_dict(attrs),
-                "status": otlp_status("error" if attrs.get("error") else "ok"),
+                "status": self._status_of(attrs),
             }
             by_service.setdefault(service, []).append(otlp_span)
 
@@ -284,4 +347,4 @@ class JaegerAdapter(BackendAdapter):
                     "scopeSpans": [{"spans": spans_list}],
                 }
             )
-        return {"batches": batches}
+        return {"batches": batches, "span_count": len(spans), "truncated": False}

@@ -7,11 +7,12 @@ Look up the active adapter via :func:`resolve_adapter`.
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
-from .base import BackendAdapter
+from .base import BackendAdapter, ConfigError
 
 # ── Registry ───────────────────────────────────────────────────────────
 
@@ -90,15 +91,46 @@ def candidate_config_paths() -> List[Path]:
     return _candidate_config_paths()
 
 
+# ── Caches (#290) ──────────────────────────────────────────────────────
+#
+# The dashboard polls every few seconds; parsing the YAML and rebuilding the
+# adapter on every request threw away every per-instance cache (Phoenix's
+# project id, OpenObserve's schema, Uptrace's dialect) and cost two or three
+# round trips per request. Both caches key on the file's identity (path,
+# mtime, size), so an edit is picked up on the next request and nothing
+# needs restarting.
+
+_CONFIG_CACHE: Dict[str, Tuple[Tuple[float, int], Dict[str, Any]]] = {}
+_ADAPTER_CACHE: Dict[Tuple[Any, ...], BackendAdapter] = {}
+
+
+def clear_caches() -> None:
+    """Forget parsed configs and adapter instances (tests, or a config reload)."""
+    _CONFIG_CACHE.clear()
+    _ADAPTER_CACHE.clear()
+
+
+def _file_identity(path: Path) -> Optional[Tuple[float, int]]:
+    try:
+        st = path.stat()
+    except OSError:
+        return None
+    return (st.st_mtime, st.st_size)
+
+
 def _load_raw_config() -> Tuple[Optional[Path], Dict[str, Any]]:
     """Parse config.yaml into a plain dict. Returns ``(path, data)``.
 
     Returns ``(path, {})`` on any parse failure so callers never need
-    to handle exceptions.
+    to handle exceptions. Cached per file identity.
     """
     cfg_path = resolve_config_path()
     if cfg_path is None:
         return None, {}
+    ident = _file_identity(cfg_path)
+    cached = _CONFIG_CACHE.get(str(cfg_path))
+    if cached is not None and ident is not None and cached[0] == ident:
+        return cfg_path, cached[1]
     try:
         import yaml  # type: ignore
     except ImportError:
@@ -109,7 +141,9 @@ def _load_raw_config() -> Tuple[Optional[Path], Dict[str, Any]]:
     except Exception:
         return cfg_path, {}
     if not isinstance(data, dict):
-        return cfg_path, {}
+        data = {}
+    if ident is not None:
+        _CONFIG_CACHE[str(cfg_path)] = (ident, data)
     return cfg_path, data
 
 
@@ -118,6 +152,25 @@ def top_level_config() -> Dict[str, Any]:
     about options like ``project_name`` declared above ``backends:``)."""
     _, data = _load_raw_config()
     return data
+
+
+def default_service_name(cfg: Dict[str, Any]) -> str:
+    """The service an adapter scopes its queries to when the filter names none:
+    the entry's ``service_name``, else the plugin's own
+    ``resource_attributes.service.name``, else ``hermes-agent`` (the plugin's
+    default resource). Jaeger needs one for every search; Uptrace pins its
+    log queries to it (#295, #298)."""
+    explicit = cfg.get("service_name")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    try:
+        resource = top_level_config().get("resource_attributes") or {}
+        name = resource.get("service.name") if isinstance(resource, dict) else None
+        if isinstance(name, str) and name.strip():
+            return name.strip()
+    except Exception:
+        pass
+    return "hermes-agent"
 
 
 def load_config() -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
@@ -143,14 +196,36 @@ def load_config() -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
 # ── Resolution ─────────────────────────────────────────────────────────
 
 
-def _instantiate(b: Dict[str, Any]) -> Optional[BackendAdapter]:
+def _instantiate(b: Dict[str, Any], cfg_path: Optional[Path] = None) -> Optional[BackendAdapter]:
+    """The adapter for one entry, reused across requests while the config file
+    is unchanged. A constructor that raises is a config error the user should
+    see (``project_id: abc``), not "no adapter for this type"."""
     cls = find_adapter_class(b.get("type", ""))
     if cls is None:
         return None
     try:
-        return cls(b)
+        entry_key = json.dumps(b, sort_keys=True, default=str)
     except Exception:
-        return None
+        entry_key = repr(b)
+    key = (str(cfg_path) if cfg_path else None, _file_identity(cfg_path) if cfg_path else None)
+    key = key + (entry_key,)
+    cached = _ADAPTER_CACHE.get(key)
+    if cached is not None:
+        return cached
+    try:
+        adapter = cls(b)
+    except ConfigError:
+        raise
+    except Exception as e:
+        raise ConfigError(
+            f"Backend {backend_label(b)!r} ({b.get('type')}) could not be set up: {e}"
+        )
+    # One entry per key; drop stale instances of the same file so the cache
+    # does not grow with every edit.
+    for stale in [k for k in _ADAPTER_CACHE if k[0] == key[0] and k != key]:
+        _ADAPTER_CACHE.pop(stale, None)
+    _ADAPTER_CACHE[key] = adapter
+    return adapter
 
 
 def backend_label(b: Dict[str, Any]) -> str:
@@ -190,17 +265,22 @@ def resolve_adapter(
         match = _find(backends, name)
         if match is None:
             raise KeyError(", ".join(backend_label(b) for b in backends) or "(none configured)")
-        return _instantiate(match), backends, cfg_path, pin
+        return _instantiate(match, cfg_path), backends, cfg_path, pin
 
     if pin:
         match = _find(backends, pin)
         if match is not None:
-            adapter = _instantiate(match)
+            adapter = _instantiate(match, cfg_path)
             if adapter is not None:
                 return adapter, backends, cfg_path, pin
 
+    # The first entry that has an adapter AND sets up cleanly; a broken entry
+    # is skipped here (asking for it by name reports the error).
     for b in backends:
-        adapter = _instantiate(b)
+        try:
+            adapter = _instantiate(b, cfg_path)
+        except ConfigError:
+            continue
         if adapter is not None:
             return adapter, backends, cfg_path, pin
 

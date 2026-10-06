@@ -23,6 +23,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
@@ -43,6 +44,48 @@ except ImportError:  # pragma: no cover - exercised in test_query_cli via sys.mo
 
         def __str__(self) -> str:
             return f"{self.status_code}: {self.detail}"
+
+
+# ── One error taxonomy for every adapter (#290) ─────────────────────────
+#
+# ``kind`` tells the route (and the UI) what went wrong without parsing the
+# message: ``not_found`` (the backend has no such trace / route: 404),
+# ``auth`` (401/403: the key is wrong or missing scope), ``config`` (the entry
+# lacks a credential or a URL; nothing was sent), ``request`` (the dashboard
+# asked for something invalid), ``backend`` (unreachable, timeout, 5xx,
+# non-JSON, an unparseable answer). The route turns the kind into the HTTP
+# status the browser sees: 404, 503, 503, 400, 502.
+
+ERROR_KINDS = ("not_found", "auth", "config", "request", "backend")
+
+
+class BackendError(HTTPException):
+    """An adapter could not get an answer; ``kind`` says why."""
+
+    def __init__(self, status_code: int, detail: str, kind: str = "backend") -> None:
+        super().__init__(status_code=status_code, detail=detail)
+        self.kind = kind if kind in ERROR_KINDS else "backend"
+
+
+class ConfigError(BackendError):
+    """The backend entry is incomplete (a missing credential, no URL): a 503 the
+    user fixes in ``hermes_otel.yaml``, not a backend failure."""
+
+    def __init__(self, detail: str) -> None:
+        super().__init__(503, detail, "config")
+
+
+def error_kind(exc: BaseException) -> str:
+    """The ``kind`` of any exception an adapter call may raise."""
+    kind = getattr(exc, "kind", None)
+    if isinstance(kind, str) and kind in ERROR_KINDS:
+        return kind
+    status = getattr(exc, "status_code", None)
+    if status in (400, 422):
+        return "request"
+    if status == 503:
+        return "config"
+    return "backend"
 
 
 # ── Docker-host rewrite shim ────────────────────────────────────────────
@@ -96,6 +139,10 @@ class StructuredFilter:
 
     service: Optional[str] = None
     name_regex: Optional[str] = None
+    # The kind filter (#292): a span-name prefix such as ``tool.`` or ``agent``.
+    # Every backend can express a prefix (a regex anchor, ``like 'x%'``, a
+    # substring plus a client-side check); a regex only some could.
+    name_prefix: Optional[str] = None
     attr_equals: Dict[str, str] = field(default_factory=dict)
     min_duration_ms: Optional[int] = None
     status: Optional[str] = None  # "ok" | "error"
@@ -106,6 +153,191 @@ class StructuredFilter:
     # to True since "one trace per match, from the top" is what the
     # list view usually wants; set False via the UI to widen.
     roots_only: bool = True
+    # Keyset paging cursor (#292): only traces that STARTED strictly before
+    # this instant (unix ns). Adapters pass it as the query's end bound and
+    # :func:`strictly_older_traces` makes the cut exact; :func:`trace_page`
+    # hands the next cursor back.
+    before_ns: Optional[int] = None
+
+    def set_fields(self) -> List[str]:
+        """The ``filter_support`` keys this filter actually uses."""
+        out: List[str] = []
+        if self.service:
+            out.append("service")
+        if self.name_regex or self.name_prefix:
+            out.append("name")
+        if self.attr_equals.get("llm.model_name"):
+            out.append("model")
+        if self.attr_equals.get("hermes.session_id"):
+            out.append("session")
+        if self.attr_equals.get("tool.name"):
+            out.append("tool")
+        if self.min_duration_ms:
+            out.append("min_duration")
+        if self.status == "error":
+            out.append("status_error")
+        elif self.status == "ok":
+            out.append("status_ok")
+        if self.free_text:
+            out.append("free_text")
+        if self.raw and self.raw.strip():
+            out.append("raw")
+        if self.roots_only:
+            out.append("roots_only")
+        return out
+
+
+# The search-bar fields an adapter declares support for (#292). Values:
+# ``server`` (part of the backend query), ``client`` (applied to the rows the
+# backend returned, so a page can come back short) or ``none`` (ignored).
+FILTER_KEYS = (
+    "service",
+    "name",
+    "model",
+    "session",
+    "tool",
+    "min_duration",
+    "status_error",
+    "status_ok",
+    "free_text",
+    "raw",
+    "roots_only",
+)
+FILTER_LEVELS = ("server", "client", "none")
+
+
+def filter_support_of(adapter: Any) -> Dict[str, str]:
+    """An adapter's declared support, with every key present and a valid level."""
+    declared = getattr(adapter, "filter_support", None) or {}
+    return {
+        k: (declared.get(k) if declared.get(k) in FILTER_LEVELS else "none") for k in FILTER_KEYS
+    }
+
+
+def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str], List[str]]:
+    """``(applied, ignored)``: which of the filter's set fields the adapter honours
+    (server- or client-side) and which it drops."""
+    support = filter_support_of(adapter)
+    used = f.set_fields()
+    applied = [k for k in used if support.get(k) != "none"]
+    ignored = [k for k in used if support.get(k) == "none"]
+    return applied, ignored
+
+
+def strictly_older_traces(
+    traces: List[Dict[str, Any]], f: StructuredFilter
+) -> List[Dict[str, Any]]:
+    """Drop trace rows that started at or after the cursor (backends bound time
+    at their own precision; this keeps the page exact)."""
+    if not f.before_ns:
+        return traces
+    cut = int(f.before_ns)
+    return [t for t in traces if int(t.get("startTimeUnixNano") or 0) < cut]
+
+
+def trace_page(traces: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
+    """The envelope a trace search returns: newest-first rows, the start of the
+    oldest row as the next cursor, and whether asking is worthwhile. ``traces``
+    should carry at least one row beyond ``limit`` so ``has_more`` is exact."""
+    rows = sorted(traces, key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
+    n = int(limit)
+    page, rest = rows[:n], rows[n:]
+    starts = [int(t.get("startTimeUnixNano") or 0) for t in page if t.get("startTimeUnixNano")]
+    has_more = bool(rest)
+    return {
+        "traces": page,
+        "next_before_ns": min(starts) if has_more and starts else None,
+        "has_more": has_more,
+    }
+
+
+def parse_kv_tokens(raw: Optional[str]) -> Dict[str, str]:
+    """``key=value key2=value2`` → a dict (the native-query grammar of the
+    adapters whose backend takes query parameters or tags: Jaeger, Langfuse)."""
+    if not raw:
+        return {}
+    out: Dict[str, str] = {}
+    for tok in raw.split():
+        if "=" in tok:
+            k, v = tok.split("=", 1)
+            if k.strip() and v.strip():
+                out[k.strip()] = v.strip().strip("\"'")
+    return out
+
+
+_METRIC_NAME_RE = re.compile(r"^[A-Za-z_:][A-Za-z0-9_:.]*$")
+_LABEL_NAME_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.]*$")
+
+
+def validate_metric_name(name: str) -> str:
+    """A metric name safe to splice into PromQL / MQL / SQL; ``request`` error otherwise."""
+    if not _METRIC_NAME_RE.match(name or ""):
+        raise BackendError(400, f"Invalid metric name {name!r}", "request")
+    return name
+
+
+def validate_label_name(label: Optional[str]) -> Optional[str]:
+    if not label:
+        return None
+    if not _LABEL_NAME_RE.match(label):
+        raise BackendError(400, f"Invalid group_by attribute {label!r}", "request")
+    return label
+
+
+# Units the OTLP-to-Prometheus translation appends to a name; ``{token}``
+# style units are dropped by it, so no ``_tokens`` here.
+_PROM_UNIT_SUFFIXES = (
+    "_milliseconds",
+    "_seconds",
+    "_bytes",
+    "_ratio",
+    "_percent",
+    "_watts",
+)
+
+
+def otlp_metric_name(native: str) -> str:
+    """The plugin's dotted instrument name behind a backend's native spelling,
+    so the UI can match its curated panels on every source (#284).
+
+    ``hermes_token_usage_total`` → ``hermes.token.usage``;
+    ``hermes_tool_duration_milliseconds_sum`` → ``hermes.tool.duration``;
+    a dotted name passes through. Best effort: the Prometheus translation
+    appends ``_total`` to counters and the unit to everything with one.
+    """
+    n = str(native or "")
+    if "." in n:
+        base = n
+        for suffix in (".sum", ".count", ".bucket", ".min", ".max"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+        return base
+    base = n
+    for suffix in ("_total", "_sum", "_count", "_bucket"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    for suffix in _PROM_UNIT_SUFFIXES:
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    # Name segments that carry an underscore of their own (``gen_ai``,
+    # ``prompt_cache``) are kept whole; every other underscore was a dot.
+    toks = base.split("_")
+    out: List[str] = []
+    i = 0
+    while i < len(toks):
+        pair = f"{toks[i]}_{toks[i + 1]}" if i + 1 < len(toks) else None
+        if pair in _UNDERSCORE_SEGMENTS:
+            out.append(pair)
+            i += 2
+        else:
+            out.append(toks[i])
+            i += 1
+    return ".".join(out)
+
+
+_UNDERSCORE_SEGMENTS = ("gen_ai", "prompt_cache")
 
 
 # ── Adapter base ───────────────────────────────────────────────────────
@@ -126,6 +358,10 @@ class BackendAdapter:
     # them in /status so the UI offers only what works.
     supports_metrics: bool = False
     supports_logs: bool = False
+    # Which search-bar fields reach the backend (``server``), are applied to
+    # the returned rows (``client``) or are dropped (``none``); see
+    # ``FILTER_KEYS``. ``/status`` publishes it so the UI can grey fields out.
+    filter_support: Dict[str, str] = {}
 
     def __init__(self, cfg: Dict[str, Any]):
         self.cfg = cfg
@@ -140,12 +376,18 @@ class BackendAdapter:
             "raw_placeholder": self.raw_placeholder,
             "metrics": self.supports_metrics,
             "logs": self.supports_logs,
+            "filters": filter_support_of(self),
         }
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
+        """``{traces: [...], has_more, next_before_ns}`` (see :func:`trace_page`):
+        at most ``limit`` trace rows, newest first, honouring ``f.before_ns``."""
         raise NotImplementedError
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
+        """OTLP-JSON ``{batches: [...]}`` plus ``truncated: true`` when the
+        backend's span cap was hit and ``span_count`` when known. Raises a
+        ``not_found`` :class:`BackendError` for an unknown id."""
         raise NotImplementedError
 
     def trace_url(self, trace_id: str) -> Optional[str]:
@@ -199,6 +441,8 @@ class LogFilter:
     # Structured events (#267): one event name, or only rows that are events.
     event_name: Optional[str] = None
     events_only: bool = False
+    # The lines written inside one span (#290).
+    span_id: Optional[str] = None
 
 
 # Row keys every adapter fills; anything else a backend returns goes under
@@ -259,15 +503,6 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     row["attributes"] = attrs
     row.setdefault("span_id", None)
     return row
-
-
-def matches_event_filter(row: Dict[str, Any], f: "LogFilter") -> bool:
-    """Apply the event filters client-side for backends that cannot express them."""
-    if f.event_name:
-        return row.get("event_name") == f.event_name
-    if f.events_only:
-        return bool(row.get("event_name"))
-    return True
 
 
 def log_end_ns(end_s: int, f: "LogFilter") -> int:
@@ -386,7 +621,25 @@ def counter_increases(
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──
 
 
+_ERROR_BODY_CHARS = 200
+
+
+def _error_body(text: str) -> str:
+    """What of a backend's error body is worth echoing: a short excerpt, never
+    an HTML page (an SPA answering a wrong route is pages of markup)."""
+    body = (text or "").strip()
+    if body[:1] == "<" or "<html" in body[:200].lower():
+        return "(an HTML page, not an API answer)"
+    body = " ".join(body.split())
+    return body[:_ERROR_BODY_CHARS] + ("…" if len(body) > _ERROR_BODY_CHARS else "")
+
+
 def _execute(req: _urlrequest.Request, timeout: float) -> Any:
+    """Send one request; every failure is a :class:`BackendError` with a kind.
+
+    404 → ``not_found``, 401/403 → ``auth``, any other HTTP error, a network
+    error, a timeout or a non-JSON body → ``backend``.
+    """
     try:
         with _urlrequest.urlopen(req, timeout=timeout) as resp:
             body = resp.read()
@@ -395,17 +648,24 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
             detail = e.read().decode("utf-8", errors="replace")
         except Exception:
             detail = str(e)
-        raise HTTPException(status_code=502, detail=f"Backend returned {e.code}: {detail[:500]}")
+        excerpt = _error_body(detail)
+        if e.code == 404:
+            raise BackendError(404, f"Backend returned 404: {excerpt}", "not_found")
+        if e.code in (401, 403):
+            raise BackendError(
+                503, f"Backend rejected the credentials ({e.code}): {excerpt}", "auth"
+            )
+        raise BackendError(502, f"Backend returned {e.code}: {excerpt}")
     except _urlerror.URLError as e:
-        raise HTTPException(status_code=502, detail=f"Backend unreachable: {e.reason}")
+        raise BackendError(502, f"Backend unreachable: {e.reason}")
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Backend query failed: {e}")
+        raise BackendError(502, f"Backend query failed: {e}")
     if not body:
         return None
     try:
         return json.loads(body.decode("utf-8"))
     except Exception as e:
-        raise HTTPException(status_code=502, detail=f"Backend returned non-JSON: {e}")
+        raise BackendError(502, f"Backend returned non-JSON: {e}")
 
 
 def http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 10.0) -> Any:
@@ -513,6 +773,12 @@ def ns_from_any(value: Any) -> Optional[int]:
         except Exception:
             return None
     return None
+
+
+def ns_from_magnitude(n: float) -> int:
+    """Public spelling of :func:`_scale_to_ns` for adapters whose timestamps
+    come as ms or ns depending on the version (SigNoz)."""
+    return _scale_to_ns(n)
 
 
 def _scale_to_ns(n: float) -> int:

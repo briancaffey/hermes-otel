@@ -13,7 +13,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from .base import bucketize, http_get_json
+from .base import bucketize, http_get_json, validate_label_name, validate_metric_name
 
 _HISTOGRAM_INTERNAL_SUFFIXES = ("_bucket",)
 
@@ -23,9 +23,21 @@ _HISTOGRAM_INTERNAL_SUFFIXES = ("_bucket",)
 _COUNTER_SUFFIXES = ("_total", "_sum", "_count")
 _SPACE_AGG = {"sum": "sum", "count": "count", "avg": "avg", "max": "max", "last": "sum"}
 
+# Without ``metrics_match`` the instrument list is the plugin's own namespaces
+# (plus the host/GPU ones it mirrors), not every series Prometheus scrapes.
+DEFAULT_MATCH = '{__name__=~"(hermes|gen_ai|process|system|hw)_.*"}'
+
 
 def is_counter(name: str) -> bool:
     return name.endswith(_COUNTER_SUFFIXES)
+
+
+def effective_agg(name: str, agg: str) -> str:
+    """The aggregate the PromQL really computes: ``last`` on a counter has no
+    per-bucket meaning, so it is the increase summed (reported as ``sum``)."""
+    if agg == "last" and is_counter(name):
+        return "sum"
+    return agg
 
 
 def promql_for(name: str, bucket_s: int, group_by: Optional[str], agg: str) -> str:
@@ -34,9 +46,12 @@ def promql_for(name: str, bucket_s: int, group_by: Optional[str], agg: str) -> s
     Counters: the increase over each bucket, then the space aggregate across
     series. Gauges: the space aggregate of the last sample in each bucket.
     ``group_by`` is an OTLP attribute key; Prometheus stores it with dots
-    replaced by underscores.
+    replaced by underscores. Both names are validated first: they are spliced
+    into the query text (#296).
     """
-    by = f" by ({group_by.replace('.', '_')})" if group_by else ""
+    validate_metric_name(name)
+    label = validate_label_name(group_by)
+    by = f" by ({label.replace('.', '_')})" if label else ""
     space = _SPACE_AGG.get(agg, "sum")
     window = f"[{max(1, int(bucket_s))}s]"
     if is_counter(name):
@@ -51,10 +66,10 @@ def metric_names(
     match: Optional[str] = None,
     headers: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
-    """``[{name}]`` for series present in the window (``match`` narrows it)."""
+    """``[{name}]`` for series present in the window (``match`` narrows it;
+    the plugin's namespaces by default)."""
     params: List[tuple] = [("start", int(start_s)), ("end", int(end_s))]
-    if match:
-        params.append(("match[]", match))
+    params.append(("match[]", match or DEFAULT_MATCH))
     url = f"{base}/api/v1/label/__name__/values?{_urlparse.urlencode(params)}"
     data = http_get_json(url, headers=headers, timeout=30.0)
     names = (data.get("data") if isinstance(data, dict) else None) or []
@@ -98,7 +113,8 @@ def metrics_query(
     out = bucketize(
         points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, "sum"
     )
-    out["agg"] = agg
+    out["agg"] = effective_agg(name, agg)
+    out["agg_requested"] = agg
     out["name"] = name
     out["cumulative"] = is_counter(name)
     out["promql"] = params["query"]

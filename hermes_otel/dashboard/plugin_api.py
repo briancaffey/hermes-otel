@@ -7,12 +7,16 @@ Thin router — all backend-specific logic lives in the sibling
 
 from __future__ import annotations
 
+import functools
 import sys
 import time
+import traceback
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Any, Callable, Dict, Optional
+from urllib import parse as _urlparse
 
 from fastapi import APIRouter, HTTPException, Query
+from fastapi.responses import JSONResponse
 
 # The Hermes plugin loader imports this file via
 # ``importlib.util.spec_from_file_location`` as a top-level module, so a
@@ -57,41 +61,139 @@ from hermes_otel.dashboard.backends import (  # noqa: E402  (after the import ch
 )
 from hermes_otel.dashboard.backends.base import (  # noqa: E402
     LOG_PAGE_SLACK,
+    BackendError,
     LogFilter,
     StructuredFilter,
+    error_kind,
+    filter_support_of,
     log_page,
+    otlp_metric_name,
+    split_applied_filters,
+    validate_label_name,
+    validate_metric_name,
 )
 
 router = APIRouter()
+
+
+# ── Backend routes: one error shape (#290) ───────────────────────────────
+#
+# Every route that talks to a backend answers a failure with
+# ``{"detail": <message>, "kind": <kind>}`` and the status the kind implies:
+# ``not_found`` 404 (only where a thing can be missing: a trace), ``auth``
+# and ``config`` 503, ``request`` 400, ``backend`` 502. A parsing error inside
+# an adapter is a 502 too — never a 500 with a stack trace — and the trace
+# goes to the plugin's debug log.
+
+_KIND_STATUS = {"not_found": 404, "auth": 503, "config": 503, "request": 400, "backend": 502}
+
+
+def _error_response(detail: str, kind: str, status: Optional[int] = None) -> JSONResponse:
+    return JSONResponse(
+        {"detail": detail, "kind": kind}, status_code=status or _KIND_STATUS.get(kind, 502)
+    )
+
+
+def _debug(msg: str) -> None:
+    mod = _plugin_module("debug_utils")
+    if mod is not None:
+        try:
+            mod.debug_log(msg)
+        except Exception:
+            pass
+
+
+def _backend_route(fn: Optional[Callable] = None, *, not_found_ok: bool = False) -> Callable:
+    """Wrap a route so adapter failures become the shared error payload.
+
+    A ``not_found`` from a backend means "this trace does not exist" only on
+    the trace-detail route; anywhere else a 404 is a wrong URL (a Jaeger v2 UI
+    port, a renamed Uptrace route) and is reported as a backend failure.
+    """
+
+    def decorate(f: Callable) -> Callable:
+        @functools.wraps(f)
+        def wrapper(*args: Any, **kwargs: Any) -> Any:
+            try:
+                return f(*args, **kwargs)
+            except HTTPException as exc:
+                kind = error_kind(exc)
+                detail = str(exc.detail)
+                if kind == "not_found" and not not_found_ok:
+                    return _error_response(detail, "backend", 502)
+                status = exc.status_code if kind not in _KIND_STATUS else _KIND_STATUS[kind]
+                if kind == "request":
+                    status = exc.status_code or 400
+                return _error_response(detail, kind, status)
+            except Exception as exc:  # an adapter tripped over the backend's answer
+                _debug(f"[dashboard] {f.__name__} failed: {traceback.format_exc()}")
+                return _error_response(
+                    f"The adapter could not read the backend's answer: {type(exc).__name__}: {exc}",
+                    "backend",
+                    502,
+                )
+
+        return wrapper
+
+    return decorate(fn) if fn is not None else decorate
 
 
 def _adapter_for(backend: str, need: str = "traces"):
     """The adapter a request asked for (``backend=``), or the default one.
 
     400 for a name that is not configured, 503 when nothing queryable is
-    configured or the chosen backend lacks the capability (#177, #182).
+    configured or the chosen backend lacks the capability (#177, #182), 503
+    ``config`` when the entry cannot be set up (a bad ``project_id``).
     """
     try:
         adapter, backends, _, _ = resolve_adapter(backend.strip() or None)
     except KeyError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Unknown backend {backend!r}; configured: {e.args[0]}"
-        )
+        raise BackendError(400, f"Unknown backend {backend!r}; configured: {e.args[0]}", "request")
     if adapter is None:
         if backend.strip():
-            raise HTTPException(
-                status_code=503, detail=f"Backend {backend!r} has no dashboard adapter for its type"
+            raise BackendError(
+                503, f"Backend {backend!r} has no dashboard adapter for its type", "config"
             )
-        raise HTTPException(status_code=503, detail="No trace backend configured")
+        raise BackendError(503, "No trace backend configured", "config")
     if need == "metrics" and not adapter.supports_metrics:
-        raise HTTPException(
-            status_code=503, detail=f"Backend {backend_label(adapter.cfg)!r} does not serve metrics"
+        raise BackendError(
+            503, f"Backend {backend_label(adapter.cfg)!r} does not serve metrics", "config"
         )
     if need == "logs" and not adapter.supports_logs:
-        raise HTTPException(
-            status_code=503, detail=f"Backend {backend_label(adapter.cfg)!r} does not serve logs"
+        raise BackendError(
+            503, f"Backend {backend_label(adapter.cfg)!r} does not serve logs", "config"
         )
     return adapter
+
+
+def _public_endpoint(endpoint: Any) -> Any:
+    """An endpoint URL without its userinfo, for ``/status`` (#290)."""
+    if not isinstance(endpoint, str) or "@" not in endpoint:
+        return endpoint
+    try:
+        parts = _urlparse.urlsplit(endpoint)
+    except ValueError:
+        return endpoint
+    if not parts.username and not parts.password:
+        return endpoint
+    host = parts.hostname or ""
+    if parts.port:
+        host = f"{host}:{parts.port}"
+    return _urlparse.urlunsplit((parts.scheme, host, parts.path, parts.query, parts.fragment))
+
+
+# At most this many buckets per metrics query: ``bucket_s=1`` over a year
+# would otherwise allocate 31.5 M buckets per series (#290).
+MAX_BUCKETS = 5000
+
+
+def _backend_bucket_guard(start_s: int, end_s: int, bucket_s: int) -> None:
+    n = (int(end_s) - int(start_s)) // max(1, int(bucket_s)) + 1
+    if n > MAX_BUCKETS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{n} buckets requested; at most {MAX_BUCKETS} (widen bucket_s)",
+        )
 
 
 def _plugin_module(name: str):
@@ -398,32 +500,35 @@ def live_loggers() -> Dict[str, Any]:
 
 
 @router.get("/status")
+@_backend_route
 def status(
     backend: str = Query("", description="Backend name or type to report on"),
 ) -> Dict[str, Any]:
     """Report the active query backend + every configured backend.
 
     ``available`` lists every entry with its capabilities so the UI builds
-    its source selector from the server's view, not from the yaml (#177).
+    its source selector from the server's view, not from the yaml (#177),
+    including which search-bar fields the adapter honours (``filters``, #292).
     """
     try:
         adapter, backends, cfg_path, pin = resolve_adapter(backend.strip() or None)
     except KeyError as e:
-        raise HTTPException(
-            status_code=400, detail=f"Unknown backend {backend!r}; configured: {e.args[0]}"
-        )
+        raise BackendError(400, f"Unknown backend {backend!r}; configured: {e.args[0]}", "request")
     queryable_types = sorted({t for cls in adapters() for t in cls.handles})
 
     def _caps(b: Dict[str, Any]) -> Dict[str, Any]:
         cls = find_adapter_class(b.get("type", ""))
-        return {
+        out = {
             "type": b.get("type"),
             "name": backend_label(b),
-            "endpoint": b.get("endpoint"),
+            "endpoint": _public_endpoint(b.get("endpoint")),
             "supported": cls is not None,
             "metrics": bool(cls is not None and cls.supports_metrics),
             "logs": bool(cls is not None and cls.supports_logs),
         }
+        if cls is not None:
+            out["filters"] = filter_support_of(cls)
+        return out
 
     backend_list = [_caps(b) for b in backends]
 
@@ -477,10 +582,12 @@ def _parse_filter(
     model: str = "",
     session: str = "",
     tool: str = "",
+    name_prefix: str = "",
+    before_ns: int = 0,
 ) -> StructuredFilter:
     # Attribute equality the search bar offers (#183); adapters translate the
     # keys they know (Phoenix filterCondition, OpenObserve columns, TraceQL,
-    # Langfuse's sessionId) and drop the rest.
+    # Langfuse's sessionId) and declare the rest in ``filter_support``.
     attr_equals: Dict[str, str] = {}
     if model.strip():
         attr_equals["llm.model_name"] = model.strip()
@@ -491,22 +598,40 @@ def _parse_filter(
     return StructuredFilter(
         service=service.strip() or None,
         name_regex=name_regex.strip() or None,
+        name_prefix=name_prefix.strip() or None,
         attr_equals=attr_equals,
         min_duration_ms=min_duration_ms if (min_duration_ms and min_duration_ms > 0) else None,
         status=status_in.strip().lower() or None,
         free_text=free_text.strip() or None,
         raw=q.strip() or None,
         roots_only=roots_only,
+        before_ns=int(before_ns) or None,
     )
 
 
+def _window_s(lookback_hours: float, start_s: Optional[int], end_s: Optional[int]):
+    """``(start_s, end_s)`` for a backend route: an absolute window when given,
+    else the lookback ending now."""
+    end = int(end_s) if end_s else int(time.time())
+    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
+    return start, end
+
+
 @router.get("/traces/search")
+@_backend_route
 def search_traces(
     limit: int = Query(50, ge=1, le=200),
     lookback_hours: float = Query(1.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0, description="Window start (unix s)"),
+    end_s: Optional[int] = Query(None, ge=0, description="Window end (unix s); default now"),
     q: str = Query("", description="Backend-native raw query"),
     service: str = Query(""),
-    name_regex: str = Query(""),
+    name_regex: str = Query(
+        "", description="Native span-name match (regex where the backend has one)"
+    ),
+    name_prefix: str = Query(
+        "", description="Span-name prefix, the kind filter (tool., llm., agent)"
+    ),
     min_duration_ms: Optional[int] = Query(None, ge=0),
     status: str = Query("", description="'ok' or 'error'"),
     free_text: str = Query(""),
@@ -517,11 +642,12 @@ def search_traces(
     model: str = Query("", description="exact model name (llm.model_name)"),
     session: str = Query("", description="exact session id (hermes.session_id)"),
     tool: str = Query("", description="exact tool name (tool.name); implies roots_only=false"),
+    before_ns: int = Query(
+        0, ge=0, description="Keyset cursor: only traces that started before this instant (unix ns)"
+    ),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend)
-
-    end_s = int(time.time())
-    start_s = end_s - int(lookback_hours * 3600)
+    start, end = _window_s(lookback_hours, start_s, end_s)
     # A tool filter matches tool spans, which are never roots.
     f = _parse_filter(
         q,
@@ -534,22 +660,39 @@ def search_traces(
         model,
         session,
         tool,
+        name_prefix,
+        before_ns,
     )
-    return adapter.search(f, start_s, end_s, limit)
+    out = adapter.search(f, start, end, limit)
+    if not isinstance(out, dict):
+        out = {"traces": []}
+    out.setdefault("traces", [])
+    out.setdefault("has_more", False)
+    out.setdefault("next_before_ns", None)
+    applied, ignored = split_applied_filters(adapter, f)
+    out["applied_filters"] = applied
+    out["ignored_filters"] = ignored
+    out["backend"] = backend_label(adapter.cfg)
+    return out
 
 
 @router.get("/traces/{trace_id}")
+@_backend_route(not_found_ok=True)
 def get_trace(trace_id: str, backend: str = Query("")) -> Dict[str, Any]:
     if not trace_id or not trace_id.replace("-", "").isalnum():
-        raise HTTPException(status_code=400, detail="Invalid trace id")
+        raise BackendError(400, "Invalid trace id", "request")
     adapter = _adapter_for(backend)
     out = adapter.get_trace(trace_id)
+    if not isinstance(out, dict):
+        out = {"batches": []}
+    out.setdefault("truncated", False)
     try:
         ui_url = adapter.trace_url(trace_id)
     except Exception:
         ui_url = None
-    if isinstance(out, dict) and ui_url:
+    if ui_url:
         out["ui_url"] = ui_url
+    out["backend"] = backend_label(adapter.cfg)
     return out
 
 
@@ -557,40 +700,52 @@ def get_trace(trace_id: str, backend: str = Query("")) -> Dict[str, Any]:
 
 
 @router.get("/metrics/names")
+@_backend_route
 def backend_metric_names(
     backend: str = Query(""),
     lookback_hours: float = Query(1.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "metrics")
-    end_s = int(time.time())
-    return {
-        "backend": backend_label(adapter.cfg),
-        "names": adapter.metric_names(end_s - int(lookback_hours * 3600), end_s),
-    }
+    start, end = _window_s(lookback_hours, start_s, end_s)
+    names = []
+    for row in adapter.metric_names(start, end) or []:
+        if isinstance(row, dict) and row.get("name"):
+            # The plugin's dotted instrument name next to the native spelling,
+            # so the UI can match its panels on every source (#284).
+            names.append({**row, "otlp_name": otlp_metric_name(str(row["name"]))})
+    return {"backend": backend_label(adapter.cfg), "names": names}
 
 
 @router.get("/metrics/query")
+@_backend_route
 def backend_metrics_query(
     name: str = Query(..., min_length=1),
     backend: str = Query(""),
     group_by: str = Query(""),
     agg: str = Query("sum", pattern="^(sum|count|avg|max|last)$"),
     lookback_hours: float = Query(1.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
     bucket_s: int = Query(15, ge=1, le=86400),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "metrics")
-    end_s = int(time.time())
-    start_s = end_s - int(lookback_hours * 3600)
-    out = adapter.metrics_query(
-        name, start_s, end_s, bucket_s, group_by=group_by.strip() or None, agg=agg
-    )
-    return {"backend": backend_label(adapter.cfg), **out}
+    start, end = _window_s(lookback_hours, start_s, end_s)
+    _backend_bucket_guard(start, end, bucket_s)
+    # Both names are spliced into PromQL / MQL / SQL by the adapters.
+    validate_metric_name(name)
+    label = validate_label_name(group_by.strip() or None)
+    out = adapter.metrics_query(name, start, end, bucket_s, group_by=label, agg=agg)
+    return {"backend": backend_label(adapter.cfg), "otlp_name": otlp_metric_name(name), **out}
 
 
 @router.get("/logs/search")
+@_backend_route
 def backend_logs_search(
     backend: str = Query(""),
     trace_id: str = Query(""),
+    span_id: str = Query(""),
     session: str = Query(""),
     min_level: int = Query(0, ge=0, le=50),
     logger: str = Query(""),
@@ -604,10 +759,10 @@ def backend_logs_search(
     end_s: Optional[int] = Query(None, ge=0),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "logs")
-    end = int(end_s) if end_s else int(time.time())
-    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
+    start, end = _window_s(lookback_hours, start_s, end_s)
     f = LogFilter(
         trace_id=trace_id.strip() or None,
+        span_id=span_id.strip() or None,
         session=session.strip() or None,
         min_level=min_level,
         logger=logger.strip() or None,
@@ -621,12 +776,13 @@ def backend_logs_search(
 
 
 @router.get("/loggers")
+@_backend_route
 def backend_loggers(
-    backend: str = Query(""), lookback_hours: float = Query(24.0, gt=0, le=8760)
+    backend: str = Query(""),
+    lookback_hours: float = Query(24.0, gt=0, le=8760),
+    start_s: Optional[int] = Query(None, ge=0),
+    end_s: Optional[int] = Query(None, ge=0),
 ) -> Dict[str, Any]:
     adapter = _adapter_for(backend, "logs")
-    end_s = int(time.time())
-    return {
-        "backend": backend_label(adapter.cfg),
-        "loggers": adapter.loggers(end_s - int(lookback_hours * 3600), end_s),
-    }
+    start, end = _window_s(lookback_hours, start_s, end_s)
+    return {"backend": backend_label(adapter.cfg), "loggers": adapter.loggers(start, end)}
