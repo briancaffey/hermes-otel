@@ -303,7 +303,8 @@ export function LogsPage() {
   const before = cursors.length ? cursors[cursors.length - 1] : null;
   const onNewestPage = cursors.length === 0;
   const base = isLive ? "/live" : "";
-  const canQuery = isLive || !!status?.logs;
+  const entry = (status?.available || []).find((b: any) => b.name === source) || null;
+  const canQuery = isLive || !!(entry?.logs || (status?.active === source && status?.logs));
 
   // Keep the URL in step with what is applied: filters, page size, cursor stack.
   useEffect(() => {

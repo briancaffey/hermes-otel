@@ -837,6 +837,11 @@
       },
       ticks.map((t) => /* @__PURE__ */ React.createElement("line", { key: t, x1: 0, x2: W, y1: y(t), y2: y(t), stroke: "var(--color-border)", strokeWidth: 0.3, vectorEffect: "non-scaling-stroke" })),
       series.map((s) => /* @__PURE__ */ React.createElement("path", { key: s.label, d: path(s.points), fill: "none", stroke: s.color, strokeWidth: 1.2, vectorEffect: "non-scaling-stroke" })),
+      series.map(
+        (s) => s.points.map(
+          (v, i) => v != null && s.points[i - 1] == null && s.points[i + 1] == null ? /* @__PURE__ */ React.createElement("circle", { key: `${s.label}-${i}`, cx: x(i), cy: y(v), r: 1.2, fill: s.color }) : null
+        )
+      ),
       hover != null ? /* @__PURE__ */ React.createElement(
         "line",
         {
@@ -1610,6 +1615,13 @@
     { label: "7d", hours: 168 },
     { label: "30d", hours: 720 }
   ];
+  function lookbackLabel(hours) {
+    const l = LOOKBACKS.find((x) => x.hours === hours);
+    if (l) return l.label;
+    if (hours < 1) return `${Math.round(hours * 60)}m`;
+    if (hours % 24 === 0) return `${hours / 24}d`;
+    return `${hours}h`;
+  }
   var KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "skill", "session", "other"];
   var KIND_PREFIX = {
     agent: "agent",
@@ -2127,7 +2139,8 @@
     const before = cursors.length ? cursors[cursors.length - 1] : null;
     const onNewestPage = cursors.length === 0;
     const base = isLive ? "/live" : "";
-    const canQuery = isLive || !!(status == null ? void 0 : status.logs);
+    const entry = ((status == null ? void 0 : status.available) || []).find((b) => b.name === source) || null;
+    const canQuery = isLive || !!((entry == null ? void 0 : entry.logs) || (status == null ? void 0 : status.active) === source && (status == null ? void 0 : status.logs));
     useEffect(() => {
       if (active) writeNav({ ...navFromLogFilters(applied), size: pageSize !== 200 ? String(pageSize) : "", before: navFromCursors(cursors) });
     }, [applied, pageSize, cursors, active]);
@@ -2666,7 +2679,7 @@
       /* @__PURE__ */ React.createElement("span", { className: "w-3 shrink-0 text-xs text-muted-foreground", "aria-hidden": true }, open ? "\u25BE" : "\u25B8"),
       /* @__PURE__ */ React.createElement("span", { className: "otel-w-2 inline-block h-2 shrink-0 rounded-full", style: { background: hex }, "aria-hidden": true }),
       /* @__PURE__ */ React.createElement("span", { className: "truncate font-mono text-sm", title: span.name }, span.name),
-      hasKids ? /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-muted-foreground" }, span.children.length) : null,
+      hasKids ? /* @__PURE__ */ React.createElement("span", { className: "text-[10px] text-muted-foreground", title: "direct child spans" }, span.children.length, " child", span.children.length === 1 ? "" : "ren") : null,
       isErr ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "shrink-0 text-[10px]" }, "error") : null,
       approval ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 text-[10px]" }, "approval: ", approval) : null,
       /* @__PURE__ */ React.createElement("div", { className: "ml-auto flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground" }, tokens ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(tokens), " tok") : null, cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(Number(cost))) : null, startMs > 0.5 ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "start offset from trace begin" }, "+", fmtDurationMs(startMs)) : null, /* @__PURE__ */ React.createElement("span", { className: "otel-w-14 text-right font-medium tabular-nums text-foreground" }, fmtDurationMs(span.durationMs)))
@@ -2992,7 +3005,7 @@
       row.platform ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, row.platform) : null,
       row.errors ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "text-[10px]" }, row.errors, " error", row.errors === 1 ? "" : "s") : null,
       partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: "grouped from the traces on this page of results, not the whole session" }, "this page only") : null,
-      /* @__PURE__ */ React.createElement("span", { className: "ml-auto flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.turns, " turn", row.turns === 1 ? "" : "s"), row.spans != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spans, " spans") : null, row.toolCalls != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.toolCalls, " tool calls") : null, row.tokens != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok") : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "wall time from the first turn's start to the last turn's end" }, fmtDurationMs((row.endNs - row.startNs) / 1e6), " span"), /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("span", { className: "ml-auto flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.turns, " turn", row.turns === 1 ? "" : "s"), row.spans != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spans, " spans") : null, row.toolCalls != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.toolCalls, " tool call", row.toolCalls === 1 ? "" : "s") : null, row.tokens != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok") : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "wall time from the first turn's start to the last turn's end" }, fmtDurationMs((row.endNs - row.startNs) / 1e6), " wall"), /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "button",
@@ -3055,7 +3068,16 @@
     if (error) return /* @__PURE__ */ React.createElement(ErrorBanner, { error, prefix: "Sessions" });
     const shown = wantedSession ? rows.filter((r) => r.session === wantedSession) : rows;
     if (loaded && !shown.length)
-      return /* @__PURE__ */ React.createElement(Empty, { title: wantedSession ? `Session ${wantedSession} is not in the last ${filters.lookback}h` : `No sessions in the last ${filters.lookback}h` }, "Turns carry ", /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, "hermes.session_id"), "; sessions group them.", wantedSession ? /* @__PURE__ */ React.createElement("div", { className: "mt-2" }, /* @__PURE__ */ React.createElement(Button, { variant: "outline", size: "sm", onClick: () => navigate({ tab: "traces", view: "sessions", session: "", trace: "" }) }, "show every session")) : null);
+      return /* @__PURE__ */ React.createElement(
+        Empty,
+        {
+          title: wantedSession ? `Session ${wantedSession} is not in the last ${lookbackLabel(filters.lookback)}` : `No sessions in the last ${lookbackLabel(filters.lookback)}`
+        },
+        "Turns carry ",
+        /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, "hermes.session_id"),
+        "; sessions group them.",
+        wantedSession ? /* @__PURE__ */ React.createElement("div", { className: "mt-2" }, /* @__PURE__ */ React.createElement(Button, { variant: "outline", size: "sm", onClick: () => navigate({ tab: "traces", view: "sessions", session: "", trace: "" }) }, "show every session")) : null
+      );
     return /* @__PURE__ */ React.createElement("div", { className: "flex flex-col gap-2" }, /* @__PURE__ */ React.createElement("div", { className: "text-xs text-muted-foreground" }, wantedSession ? /* @__PURE__ */ React.createElement(React.Fragment, null, "one session \xB7", " ", /* @__PURE__ */ React.createElement("button", { type: "button", className: "otel-link", onClick: () => navigate({ tab: "traces", view: "sessions", session: "", trace: "" }) }, "show every session")) : `${rows.length} session${rows.length === 1 ? "" : "s"} \xB7 click one to see its turns in order`), shown.map((row) => /* @__PURE__ */ React.createElement(SessionCard, { key: row.session, row, open: open === row.session, onToggle: () => toggle(row.session) }, turns[row.session] ? turns[row.session].length ? /* @__PURE__ */ React.createElement("div", { className: "flex flex-col gap-1.5" }, turns[row.session].slice().sort((a, b) => a.startNs - b.startNs).map((t) => /* @__PURE__ */ React.createElement(TraceCard, { key: t.traceId, row: { ...rowFromLive(t) }, onSelect: () => onSelectTrace(t) })), turns[row.session].length >= 200 ? /* @__PURE__ */ React.createElement("div", { className: "text-xs text-muted-foreground" }, "Showing the first 200 turns of this session.") : null) : /* @__PURE__ */ React.createElement("div", { className: "text-xs text-muted-foreground" }, "No turns in this window.") : /* @__PURE__ */ React.createElement("div", { className: "text-xs text-muted-foreground" }, "Loading\u2026"))), hasMore && !wantedSession ? /* @__PURE__ */ React.createElement("div", { className: "flex justify-center" }, /* @__PURE__ */ React.createElement(Button, { variant: "outline", size: "sm", onClick: () => setLimit((n) => n + PAGE2) }, "Show more sessions")) : null);
   }
   function BackendSessions({ rows, wantedSession, renderTrace }) {
@@ -3198,7 +3220,7 @@
         support: null,
         hide: view === "sessions" ? ["status", "kind", "tool", "model", "minDurationMs", "text", "traceId", "q", "service", "rootsOnly"] : void 0
       }
-    ))), error ? /* @__PURE__ */ React.createElement(ErrorBanner, { error }) : null, view === "sessions" ? /* @__PURE__ */ React.createElement(LiveSessions, { filters: applied, wantedSession: wanted.session || "", onSelectTrace: setSelected, active }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-3 text-xs text-muted-foreground" }, /* @__PURE__ */ React.createElement("span", null, shown.length, page.total != null ? ` of ${page.total}` : "", " trace", page.total === 1 ? "" : "s", isDefaultFilters(applied) ? "" : " matching", " in the last ", applied.lookback, "h", before ? " \xB7 older page, not following" : paused ? " \xB7 paused" : " \xB7 following"), /* @__PURE__ */ React.createElement(Toggle, { checked: showPings, onChange: setShowPings, label: `show MCP keepalive pings${pingCount ? ` (${pingCount})` : ""}`, Switch: Checkbox }), /* @__PURE__ */ React.createElement(
+    ))), error ? /* @__PURE__ */ React.createElement(ErrorBanner, { error }) : null, view === "sessions" ? /* @__PURE__ */ React.createElement(LiveSessions, { filters: applied, wantedSession: wanted.session || "", onSelectTrace: setSelected, active }) : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-3 text-xs text-muted-foreground" }, /* @__PURE__ */ React.createElement("span", null, shown.length, page.total != null ? ` of ${page.total}` : "", " trace", page.total === 1 ? "" : "s", isDefaultFilters({ ...applied, lookback: DEFAULT_FILTERS.lookback }) ? "" : " matching", " in the last ", lookbackLabel(applied.lookback), before ? " \xB7 older page, not following" : paused ? " \xB7 paused" : " \xB7 following"), /* @__PURE__ */ React.createElement(Toggle, { checked: showPings, onChange: setShowPings, label: `show MCP keepalive pings${pingCount ? ` (${pingCount})` : ""}`, Switch: Checkbox }), /* @__PURE__ */ React.createElement(
       Button,
       {
         variant: "outline",
@@ -3502,10 +3524,14 @@
     const b = r.bucket >= 3600 ? `${r.bucket / 3600}h` : r.bucket >= 60 ? `${r.bucket / 60}m` : `${r.bucket}s`;
     return `last ${r.label} \xB7 ${b} buckets`;
   }
-  function resolveInstrument(names, otlp) {
-    for (const n of names) if (n.otlp_name === otlp || n.name === otlp) return n.name;
-    for (const n of names) if (metricOtlpName(n.name) === otlp) return n.name;
-    return null;
+  function resolveInstrument(names, otlp, prefer) {
+    const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || metricOtlpName(n.name) === otlp).map((n) => n.name);
+    if (!matches.length) return null;
+    if (prefer) {
+      const hit = matches.find((n) => n.endsWith(prefer));
+      if (hit) return hit;
+    }
+    return matches.find((n) => n === otlp) || matches.find((n) => !/_(sum|count|bucket|total)$/.test(n)) || matches[0];
   }
   var PALETTE = [
     "var(--otel-chart-1)",
@@ -3542,7 +3568,8 @@
     const all = Object.keys(b.series);
     const series = all.slice(0, 8).map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label] }));
     const n = b.buckets.length;
-    const labels = [0, Math.floor(n / 2), n - 1].map((i) => fmtClock(b.buckets[i]));
+    const withDate = b.bucketS >= 3600;
+    const labels = [0, Math.floor(n / 2), n - 1].map((i) => withDate ? fmtAbsTime(b.buckets[i]).slice(5, 16) : fmtClock(b.buckets[i]));
     const bucketLabels = b.buckets.map((t) => fmtAbsTime(t));
     return /* @__PURE__ */ React.createElement("div", null, /* @__PURE__ */ React.createElement(LineChart, { series, labels, fmt, bucketLabels }), all.length > 8 ? /* @__PURE__ */ React.createElement("div", { className: "text-[10px] text-muted-foreground" }, "showing 8 of ", all.length, " series") : null);
   }
@@ -3550,7 +3577,10 @@
     { key: "tokens", otlp: "hermes.token.usage", group: "token_type", agg: { live: "sum", backend: "sum" } },
     { key: "cost", otlp: "hermes.cost.usage", group: "", agg: { live: "sum", backend: "sum" } },
     { key: "calls", otlp: "hermes.model.usage", group: "model", agg: { live: "count", backend: "sum" } },
-    { key: "tools", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "avg", backend: "sum" } },
+    // the duration histogram: its _sum on a backend, the raw points on live
+    { key: "tools", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "avg", backend: "sum" }, prefer: "_sum" },
+    // the histogram's _count is the number of tool calls on a backend
+    { key: "toolcalls", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "count", backend: "sum" }, prefer: "_count" },
     { key: "approvals", otlp: "hermes.approval.count", group: "choice", agg: { live: "count", backend: "sum" } },
     { key: "cache", otlp: "hermes.prompt_cache.tokens", group: "token_type", agg: { live: "sum", backend: "sum" } },
     { key: "cpu", otlp: "process.cpu.utilization", group: "", agg: { live: "avg", backend: "avg" } },
@@ -3572,7 +3602,8 @@
     const [exploreError, setExploreError] = useState(null);
     const [exploring, setExploring] = useState(false);
     const base = isLive ? "/live" : "";
-    const canQuery = isLive || !!(status == null ? void 0 : status.metrics);
+    const entry = ((status == null ? void 0 : status.available) || []).find((b) => b.name === source) || null;
+    const canQuery = isLive || !!((entry == null ? void 0 : entry.metrics) || (status == null ? void 0 : status.active) === source && (status == null ? void 0 : status.metrics));
     useEffect(() => {
       if (active) writeNav(navFromExplorer(ex));
     }, [ex, active]);
@@ -3596,7 +3627,7 @@
         const errs = {};
         await Promise.all(
           PANELS.map(async (def) => {
-            const native = resolveInstrument(list, def.otlp);
+            const native = resolveInstrument(list, def.otlp, isLive ? void 0 : def.prefer);
             if (!native) {
               out[def.key] = null;
               return;
@@ -3646,6 +3677,8 @@
     const cost = panels.cost || null;
     const calls = panels.calls || null;
     const tools = panels.tools || null;
+    const toolCallsB = panels.toolcalls || null;
+    const toolCalls = isLive ? tools ? fmtInt(tools.points) : null : toolCallsB ? fmtInt(Math.round(seriesTotal(toolCallsB))) : null;
     const approvals = panels.approvals || null;
     const cache = panels.cache || null;
     const totalTokens = tokens ? seriesTotal(tokens) : null;
@@ -3671,10 +3704,10 @@
     return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, header, error ? /* @__PURE__ */ React.createElement(ErrorBanner, { error, prefix: "Metrics" }) : null, loaded && names.length === 0 && !error ? /* @__PURE__ */ React.createElement(Empty, { title: "No metrics in this range" }, "Run a Hermes turn, or widen the range. Token usage, cost, tool durations and approvals appear here.") : /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("div", { className: "otel-kpi-grid" }, /* @__PURE__ */ React.createElement(Stat, { label: "Tokens", value: totalTokens != null ? fmtInt(Math.round(totalTokens)) : null, unknownText: "not recorded" }), /* @__PURE__ */ React.createElement(Stat, { label: "Cost", value: totalCost != null ? fmtCost(totalCost) : null, unknownText: "no pricing data", accent: "cost" }), /* @__PURE__ */ React.createElement(Stat, { label: "Model calls", value: calls ? fmtInt(Math.round(seriesTotal(calls))) : null, unknownText: "not recorded" }), /* @__PURE__ */ React.createElement(
       Stat,
       {
-        label: isLive ? "Tool calls" : "Tool duration samples",
-        value: tools ? fmtInt(tools.points) : null,
+        label: "Tool calls",
+        value: toolCalls,
         unknownText: "not recorded",
-        sub: isLive ? "duration points, one per call" : "samples in the range, not calls"
+        sub: isLive ? "duration points, one per call" : "from the duration histogram's count"
       }
     ), /* @__PURE__ */ React.createElement(
       Stat,
@@ -4087,6 +4120,10 @@
       window.addEventListener(NAV_EVENT, onNav);
       return () => window.removeEventListener(NAV_EVENT, onNav);
     }, []);
+    const [visited, setVisited] = useState(() => ({ [tab]: true }));
+    useEffect(() => {
+      setVisited((v) => v[tab] ? v : { ...v, [tab]: true });
+    }, [tab]);
     const scheme = useScheme();
     const tz = useMemo(() => localTimezone(), []);
     const onKey = (e, i) => {
@@ -4097,7 +4134,7 @@
       setTab(TABS[j].id);
       (_c = (_b = (_a = e.currentTarget.parentElement) == null ? void 0 : _a.children[j]) == null ? void 0 : _b.focus) == null ? void 0 : _c.call(_b);
     };
-    return /* @__PURE__ */ React.createElement("div", { className: "otel-root space-y-4", "data-otel-scheme": scheme }, /* @__PURE__ */ React.createElement("div", { className: "flex items-center gap-1 border-b border-border", role: "tablist", "aria-label": "OTel views" }, TABS.map((t, i) => {
+    return /* @__PURE__ */ React.createElement("div", { className: "otel-root space-y-4", "data-otel-scheme": scheme }, /* @__PURE__ */ React.createElement("div", { className: "otel-tabs flex items-center gap-1 border-b border-border", role: "tablist", "aria-label": "OTel views" }, TABS.map((t, i) => {
       const on = t.id === tab;
       const Icon = t.Icon;
       return /* @__PURE__ */ React.createElement(
@@ -4123,7 +4160,7 @@
       const on = t.id === tab;
       const Page = t.Page;
       const body = /* @__PURE__ */ React.createElement(PageBoundary, { name: t.label }, /* @__PURE__ */ React.createElement(Page, null));
-      return /* @__PURE__ */ React.createElement("div", { key: t.id, role: "tabpanel", id: `otel-panel-${t.id}`, "aria-labelledby": `otel-tab-${t.id}`, hidden: !on }, ActiveContext ? /* @__PURE__ */ React.createElement(ActiveContext.Provider, { value: on }, body) : body);
+      return /* @__PURE__ */ React.createElement("div", { key: t.id, role: "tabpanel", id: `otel-panel-${t.id}`, "aria-labelledby": `otel-tab-${t.id}`, hidden: !on }, !visited[t.id] && !on ? null : ActiveContext ? /* @__PURE__ */ React.createElement(ActiveContext.Provider, { value: on }, body) : body);
     })));
   }
   if (sdkOk) {

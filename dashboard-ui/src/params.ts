@@ -59,6 +59,15 @@ export const LOOKBACKS: { label: string; hours: number }[] = [
   { label: "30d", hours: 720 },
 ];
 
+/** "30d" for 720, "6h" for 6, "15m" for 0.25 (#281). */
+export function lookbackLabel(hours: number): string {
+  const l = LOOKBACKS.find((x) => x.hours === hours);
+  if (l) return l.label;
+  if (hours < 1) return `${Math.round(hours * 60)}m`;
+  if (hours % 24 === 0) return `${hours / 24}d`;
+  return `${hours}h`;
+}
+
 export const KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "skill", "session", "other"];
 // A kind is a span-name prefix. The API takes `name_prefix` (contract §2);
 // the live store takes `kind` directly.

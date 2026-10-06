@@ -11,8 +11,8 @@ import { SpanTreeView, TraceCard, LiveTraceDetail } from "./spantree";
 import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
 import { SourceSelect } from "./sourceselect";
-import { FilterBar, TraceFilters, liveParams, backendParams, isDefaultFilters } from "./filters";
-import { traceFiltersFromNav, navFromTraceFilters, cursorsFromNav, navFromCursors } from "./params";
+import { FilterBar, TraceFilters, DEFAULT_FILTERS, liveParams, backendParams, isDefaultFilters } from "./filters";
+import { traceFiltersFromNav, navFromTraceFilters, cursorsFromNav, navFromCursors, lookbackLabel } from "./params";
 import { LiveSessions, BackendSessions } from "./sessions";
 import { TraceHeader, TraceTabs } from "./detail";
 import { readNav, writeNav, NAV_EVENT, NavState } from "./nav";
@@ -181,7 +181,7 @@ function LiveTraces({ view, wanted, active }: { view: "turns" | "sessions"; want
             <span>
               {shown.length}
               {page.total != null ? ` of ${page.total}` : ""} trace{page.total === 1 ? "" : "s"}
-              {isDefaultFilters(applied) ? "" : " matching"} in the last {applied.lookback}h
+              {isDefaultFilters({ ...applied, lookback: DEFAULT_FILTERS.lookback }) ? "" : " matching"} in the last {lookbackLabel(applied.lookback)}
               {before ? " · older page, not following" : paused ? " · paused" : " · following"}
             </span>
             <Toggle checked={showPings} onChange={setShowPings} label={`show MCP keepalive pings${pingCount ? ` (${pingCount})` : ""}`} Switch={Checkbox} />

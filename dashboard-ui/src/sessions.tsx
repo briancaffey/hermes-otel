@@ -1,7 +1,7 @@
 // Sessions view: one row per session id, expandable into its turns (#187, #282).
 import { React, useState, useEffect, useCallback, api, Badge, Button } from "./sdk";
 import { SessionRow, LiveTrace, TraceRow, fmtDurationMs, fmtTokens, fmtCostExact, fmtTimeAgo, fmtAbsTime, groupBySession } from "./lib";
-import { liveParams, TraceFilters } from "./params";
+import { liveParams, TraceFilters, lookbackLabel } from "./params";
 import { TraceCard } from "./spantree";
 import { ErrorBanner, Clickable, Empty } from "./atoms";
 import { usePolling } from "./poll";
@@ -47,11 +47,15 @@ function SessionCard({ row, open, onToggle, children, partial }: { row: SessionR
             {row.turns} turn{row.turns === 1 ? "" : "s"}
           </span>
           {row.spans != null ? <span className="tabular-nums">{row.spans} spans</span> : null}
-          {row.toolCalls != null ? <span className="tabular-nums">{row.toolCalls} tool calls</span> : null}
+          {row.toolCalls != null ? (
+            <span className="tabular-nums">
+              {row.toolCalls} tool call{row.toolCalls === 1 ? "" : "s"}
+            </span>
+          ) : null}
           {row.tokens != null ? <span className="tabular-nums">{fmtTokens(row.tokens)} tok</span> : null}
           {row.cost != null ? <span className="tabular-nums otel-c-cost">{fmtCostExact(row.cost)}</span> : null}
           <span className="tabular-nums" title="wall time from the first turn's start to the last turn's end">
-            {fmtDurationMs((row.endNs - row.startNs) / 1e6)} span
+            {fmtDurationMs((row.endNs - row.startNs) / 1e6)} wall
           </span>
           <button
             type="button"
@@ -135,7 +139,13 @@ export function LiveSessions({
   const shown = wantedSession ? rows.filter((r) => r.session === wantedSession) : rows;
   if (loaded && !shown.length)
     return (
-      <Empty title={wantedSession ? `Session ${wantedSession} is not in the last ${filters.lookback}h` : `No sessions in the last ${filters.lookback}h`}>
+      <Empty
+        title={
+          wantedSession
+            ? `Session ${wantedSession} is not in the last ${lookbackLabel(filters.lookback)}`
+            : `No sessions in the last ${lookbackLabel(filters.lookback)}`
+        }
+      >
         Turns carry <span className="font-mono">hermes.session_id</span>; sessions group them.
         {wantedSession ? (
           <div className="mt-2">

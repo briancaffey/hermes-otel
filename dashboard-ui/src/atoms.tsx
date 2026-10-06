@@ -228,6 +228,14 @@ export function LineChart({
           {series.map((s) => (
             <path key={s.label} d={path(s.points)} fill="none" stroke={s.color} strokeWidth={1.2} vectorEffect="non-scaling-stroke" />
           ))}
+          {/* a point with no neighbour on either side has no segment to show it: draw a dot */}
+          {series.map((s) =>
+            s.points.map((v, i) =>
+              v != null && s.points[i - 1] == null && s.points[i + 1] == null ? (
+                <circle key={`${s.label}-${i}`} cx={x(i)} cy={y(v)} r={1.2} fill={s.color} />
+              ) : null
+            )
+          )}
           {hover != null ? (
             <line
               x1={x(hover)}
