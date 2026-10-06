@@ -422,3 +422,64 @@ class TestBackendCards:
         assert "ui_url: http://localhost:3000/explore" in text
         assert "metrics_temporality: cumulative" in text
         assert "logs: false" in text
+
+
+class TestMaskingGaps:
+    """Credential masking gaps found in the dashboard review (#286)."""
+
+    def test_otlp_header_list_is_masked_per_pair(self, monkeypatch):
+        monkeypatch.setenv(
+            "OTEL_EXPORTER_OTLP_HEADERS", "Authorization=Bearer abc,x-team=blue,api-key=k1"
+        )
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS", "x-honeycomb-team=hcaik_abc")
+        env = {e["name"]: e for e in env_inventory()}
+        assert env["OTEL_EXPORTER_OTLP_HEADERS"]["value"] == (
+            f"Authorization={MASK},x-team=blue,api-key={MASK}"
+        )
+        assert env["OTEL_EXPORTER_OTLP_TRACES_HEADERS"]["value"] == f"x-honeycomb-team={MASK}"
+        revealed = {e["name"]: e for e in env_inventory(reveal=True)}
+        assert revealed["OTEL_EXPORTER_OTLP_HEADERS"]["value"].startswith(
+            "Authorization=Bearer abc"
+        )
+
+    def test_other_otel_vars_with_bearer_values_are_masked(self, monkeypatch):
+        monkeypatch.setenv("OTEL_SOMETHING_NEW", "Bearer tok")
+        env = {e["name"]: e for e in env_inventory()}
+        assert env["OTEL_SOMETHING_NEW"]["value"] == MASK
+
+    def test_yaml_list_item_secret_is_masked(self):
+        text = "backends:\n  - secret_key: sk-on-dash-line\n    name: x\n  - public_key: pk\n"
+        assert redact_yaml_text(text) == (
+            f"backends:\n  - secret_key: {MASK}\n    name: x\n  - public_key: {MASK}\n"
+        )
+
+    def test_yaml_header_values_are_masked_inside_headers_block(self):
+        text = (
+            "headers:\n  x-honeycomb-team: hcaik_abc\n  x-team: blue\n"
+            "resource_attributes:\n  team: platform\nname: fine\n"
+        )
+        assert redact_yaml_text(text) == (
+            f"headers:\n  x-honeycomb-team: {MASK}\n  x-team: blue\n"
+            "resource_attributes:\n  team: platform\nname: fine\n"
+        )
+
+    def test_yaml_block_scalar_secret_is_masked(self):
+        text = "secret_key: |\n  line one\n  line two\nname: ok\n"
+        assert redact_yaml_text(text) == f"secret_key: |\n  {MASK}\n  {MASK}\nname: ok\n"
+        assert redact_yaml_text("api_key: >-\n  abc\n") == f"api_key: >-\n  {MASK}\n"
+
+    def test_quoted_keys_and_env_refs_stay_correct(self):
+        text = '"api_key": abc\nsecret_key_env: VAR\ntoken: ${TOK}\n'
+        assert (
+            redact_yaml_text(text) == f'"api_key": {MASK}\nsecret_key_env: VAR\ntoken: ${{TOK}}\n'
+        )
+
+    def test_headers_map_masks_vendor_team_header(self, home):
+        (home / "hermes_otel.yaml").write_text(
+            YAML + "    headers:\n      x-honeycomb-team: hcaik\n      x-team: blue\n",
+            encoding="utf-8",
+        )
+        backends = {b["name"]: b for b in build_settings_report()["fields"][-1]["value"]}
+        assert backends["openobserve"]["headers"] == {"x-honeycomb-team": MASK, "x-team": "blue"}
+        revealed = {b["name"]: b for b in build_settings_report(reveal=True)["fields"][-1]["value"]}
+        assert revealed["openobserve"]["headers"]["x-honeycomb-team"] == "hcaik"
