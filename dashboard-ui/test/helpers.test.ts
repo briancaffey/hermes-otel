@@ -40,7 +40,14 @@ describe("buildSpanTree", () => {
         {
           spans: [
             { spanId: "c", parentSpanId: "r", name: "tool.x", startTimeUnixNano: "20", endTimeUnixNano: "30", attributes: [] },
-            { spanId: "r", name: "agent", startTimeUnixNano: "10", endTimeUnixNano: "40", status: { code: 2 }, attributes: [{ key: "k", value: { stringValue: "v" } }] },
+            {
+              spanId: "r",
+              name: "agent",
+              startTimeUnixNano: "10",
+              endTimeUnixNano: "40",
+              status: { code: 2 },
+              attributes: [{ key: "k", value: { stringValue: "v" } }],
+            },
             { spanId: "orphan", parentSpanId: "missing", name: "api.y", startTimeUnixNano: "5", endTimeUnixNano: "6", attributes: [] },
           ],
         },
@@ -55,7 +62,11 @@ describe("buildSpanTree", () => {
     expect(agent.children.map((c) => c.name)).toEqual(["tool.x"]);
     expect(agent.durationMs).toBeCloseTo(30 / 1e6);
     expect(agent._attrs).toEqual({ k: "v" });
-    expect(flatten(roots).map((n) => [n.span.name, n.depth])).toEqual([["api.y", 0], ["agent", 0], ["tool.x", 1]]);
+    expect(flatten(roots).map((n) => [n.span.name, n.depth])).toEqual([
+      ["api.y", 0],
+      ["agent", 0],
+      ["tool.x", 1],
+    ]);
   });
   it("accepts snake_case OTLP too", () => {
     const { all } = buildSpanTree([{ scope_spans: [{ spans: [{ span_id: "a", name: "n", start_time_unix_nano: "1", end_time_unix_nano: "2" }] }] }]);
@@ -69,8 +80,30 @@ describe("buildSpanTree", () => {
 describe("liveTreeFromSpans", () => {
   it("maps live spans to the same tree shape, ERROR becoming status code 2", () => {
     const { roots } = liveTreeFromSpans([
-      { trace_id: "t", span_id: "r", parent_span_id: null, name: "agent", start_time_unix_nano: 1, end_time_unix_nano: 5, duration_ms: 0.000004, status: "OK", attributes: {}, seq: 1 },
-      { trace_id: "t", span_id: "c", parent_span_id: "r", name: "tool.t", start_time_unix_nano: 2, end_time_unix_nano: 3, duration_ms: 0.000001, status: "ERROR", attributes: {}, seq: 2 },
+      {
+        trace_id: "t",
+        span_id: "r",
+        parent_span_id: null,
+        name: "agent",
+        start_time_unix_nano: 1,
+        end_time_unix_nano: 5,
+        duration_ms: 0.000004,
+        status: "OK",
+        attributes: {},
+        seq: 1,
+      },
+      {
+        trace_id: "t",
+        span_id: "c",
+        parent_span_id: "r",
+        name: "tool.t",
+        start_time_unix_nano: 2,
+        end_time_unix_nano: 3,
+        duration_ms: 0.000001,
+        status: "ERROR",
+        attributes: {},
+        seq: 2,
+      },
     ]);
     expect(roots).toHaveLength(1);
     expect(statusCode(roots[0].children[0].status)).toBe("error");
@@ -80,7 +113,12 @@ describe("liveTreeFromSpans", () => {
 
 describe("previews", () => {
   it("takes the last user message out of a messages array", () => {
-    const msgs = JSON.stringify([{ role: "system", content: "s" }, { role: "user", content: "first" }, { role: "assistant", content: "a" }, { role: "user", content: [{ type: "text", text: "last" }] }]);
+    const msgs = JSON.stringify([
+      { role: "system", content: "s" },
+      { role: "user", content: "first" },
+      { role: "assistant", content: "a" },
+      { role: "user", content: [{ type: "text", text: "last" }] },
+    ]);
     expect(extractInputPreview({ "input.value": msgs })).toBe("last");
   });
   it("falls back to the raw string and to the first content", () => {
@@ -144,7 +182,13 @@ describe("traceAttrs", () => {
       spanSets: [
         {
           spans: [
-            { name: "llm.x", attributes: [{ key: "llm.model_name", value: { stringValue: "from-llm" } }, { key: "only.llm", value: { stringValue: "1" } }] },
+            {
+              name: "llm.x",
+              attributes: [
+                { key: "llm.model_name", value: { stringValue: "from-llm" } },
+                { key: "only.llm", value: { stringValue: "1" } },
+              ],
+            },
             { name: "api.x", attributes: [{ key: "llm.model_name", value: { stringValue: "from-api" } }] },
           ],
         },

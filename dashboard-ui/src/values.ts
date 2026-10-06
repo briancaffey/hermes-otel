@@ -3,12 +3,8 @@
 // of tool calls, a JSON object, prose, a command, a list, a number...) and
 // the per-key display rules the trace detail applies.
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
 export type MessagePart =
-  | { type: "text"; text: string }
-  | { type: "tool_call"; id: string | null; name: string; args: any }
-  | { type: "other"; label: string; value: any };
+  { type: "text"; text: string } | { type: "tool_call"; id: string | null; name: string; args: any } | { type: "other"; label: string; value: any };
 
 export type Message = {
   role: string; // system | user | assistant | tool | developer | ...
@@ -20,21 +16,7 @@ export type Message = {
 export type ToolCall = { id: string | null; name: string; args: any };
 
 export type ValueKind =
-  | "messages"
-  | "tool_calls"
-  | "json"
-  | "markdown"
-  | "text"
-  | "code"
-  | "list"
-  | "command"
-  | "path"
-  | "url"
-  | "duration"
-  | "count"
-  | "bool"
-  | "id"
-  | "empty";
+  "messages" | "tool_calls" | "json" | "markdown" | "text" | "code" | "list" | "command" | "path" | "url" | "duration" | "count" | "bool" | "id" | "empty";
 
 export type Classified = { kind: ValueKind; value: any; text: string };
 
@@ -57,7 +39,13 @@ export function parsePyRepr(raw: any): any {
   if (!((t.startsWith("[") && t.endsWith("]")) || (t.startsWith("{") && t.endsWith("}")))) return raw;
   if (!t.includes("'")) return raw;
   try {
-    return JSON.parse(t.replace(/'/g, '"').replace(/\bTrue\b/g, "true").replace(/\bFalse\b/g, "false").replace(/\bNone\b/g, "null"));
+    return JSON.parse(
+      t
+        .replace(/'/g, '"')
+        .replace(/\bTrue\b/g, "true")
+        .replace(/\bFalse\b/g, "false")
+        .replace(/\bNone\b/g, "null")
+    );
   } catch {
     return raw;
   }
@@ -250,7 +238,11 @@ export function splitToolResult(raw: any): { output: string | null; rest: Record
     rest[k] = val;
   }
   const err = typeof v.error === "string" ? v.error : v.success === false ? "failed" : null;
-  return { output: typeof out === "string" ? out : out == null ? null : JSON.stringify(out, null, 2), rest: Object.keys(rest).length ? rest : null, error: err };
+  return {
+    output: typeof out === "string" ? out : out == null ? null : JSON.stringify(out, null, 2),
+    rest: Object.keys(rest).length ? rest : null,
+    error: err,
+  };
 }
 
 /** The turn's tool calls: `hermes.turn.tools` holds the distinct tool names while
@@ -263,7 +255,7 @@ export function turnTools(a: Record<string, any>): { tool: string | null; outcom
   const targets = splitList("hermes.turn.tool_targets", a["hermes.turn.tool_targets"]) || [];
   const count = Number(a["hermes.turn.tool_count"]) || 0;
   const rows = Math.max(tools.length, outcomes.length, commands.length, targets.length, count);
-  const out = [];
+  const out: { tool: string | null; outcome: string | null; command: string | null; target: string | null }[] = [];
   for (let i = 0; i < rows; i++) {
     out.push({
       tool: tools[i] ?? (tools.length === 1 ? tools[0] : null),

@@ -31,13 +31,7 @@ export function FilterBar({
 }) {
   const set = (k: keyof TraceFilters, v: any) => onChange({ ...filters, [k]: v });
   const input = (k: keyof TraceFilters, placeholder: string, type = "text") => (
-    <Input
-      className="h-8"
-      type={type}
-      placeholder={placeholder}
-      value={String((filters as any)[k] ?? "")}
-      onChange={(e: any) => set(k, e.target.value)}
-    />
+    <Input className="h-8" type={type} placeholder={placeholder} value={String((filters as any)[k] ?? "")} onChange={(e: any) => set(k, e.target.value)} />
   );
   const lang: string = status?.query_lang_label || "";
   const rawLabel = !lang ? "native query" : /filter$/i.test(lang.trim()) ? lang : `${lang} query`;
@@ -101,7 +95,12 @@ export function FilterBar({
         <Button type="submit" size="sm" disabled={!!busy}>
           {busy ? "Searching…" : "Search"}
         </Button>
-        <Button type="button" variant="outline" size="sm" onClick={() => onChange({ ...DEFAULT_FILTERS, lookback: filters.lookback, rootsOnly: filters.rootsOnly })}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          onClick={() => onChange({ ...DEFAULT_FILTERS, lookback: filters.lookback, rootsOnly: filters.rootsOnly })}
+        >
           Clear
         </Button>
       </div>

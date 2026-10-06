@@ -8,9 +8,16 @@ import { groupLiveTraces, traceTotals, traceSpanCount, LiveSpan, metricOtlpName 
 const T = "daaf7828a1b2c3d4e5f60718293a4b5c";
 function span(name: string, id: string, parent: string | null, attrs: Record<string, any> = {}, start = 0, end = 1): LiveSpan {
   return {
-    trace_id: T, span_id: id, parent_span_id: parent, name,
-    start_time_unix_nano: 1_000_000 + start, end_time_unix_nano: 1_000_000 + end,
-    duration_ms: (end - start) / 1e6, status: "OK", attributes: attrs, seq: 0,
+    trace_id: T,
+    span_id: id,
+    parent_span_id: parent,
+    name,
+    start_time_unix_nano: 1_000_000 + start,
+    end_time_unix_nano: 1_000_000 + end,
+    duration_ms: (end - start) / 1e6,
+    status: "OK",
+    attributes: attrs,
+    seq: 0,
   };
 }
 const MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning-nvfp4";
@@ -34,7 +41,11 @@ describe("traceTotals (#178)", () => {
   });
   it("never counts llm.* spans, which mirror the api spans", () => {
     const withLlmTotals = turn.map((s) =>
-      s.name.startsWith("llm.") ? { ...s, attributes: { ...s.attributes, "gen_ai.usage.total_tokens": 42638 } } : s.name === "agent" ? { ...s, attributes: {} } : s
+      s.name.startsWith("llm.")
+        ? { ...s, attributes: { ...s.attributes, "gen_ai.usage.total_tokens": 42638 } }
+        : s.name === "agent"
+          ? { ...s, attributes: {} }
+          : s
     );
     expect(traceTotals(withLlmTotals).tokens).toBe(42638);
   });

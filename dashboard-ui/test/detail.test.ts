@@ -1,29 +1,8 @@
 // Detail helpers, URL state and log parameters (#185, #186).
 import { describe, expect, it } from "vitest";
-import { parseMessages, groupAttrs, headerFacts, prettyJson } from "../src/lib";
+import { groupAttrs, headerFacts } from "../src/lib";
 import { readNav, navSearch } from "../src/nav";
 import { logParams, DEFAULT_LOG_FILTERS } from "../src/params";
-
-describe("parseMessages", () => {
-  it("renders a messages array as a conversation", () => {
-    const raw = JSON.stringify([{ role: "system", content: "s" }, { role: "user", content: [{ type: "text", text: "hi" }, { type: "text", text: "there" }] }, { role: "assistant", content: null, tool_calls: [{ name: "x" }] }]);
-    expect(parseMessages(raw)).toEqual([
-      { role: "system", text: "s" },
-      { role: "user", text: "hi\nthere" },
-      { role: "assistant", text: JSON.stringify([{ name: "x" }], null, 2) },
-    ]);
-  });
-  it("treats a plain string as the user message", () => {
-    expect(parseMessages("What is 6 times 7?")).toEqual([{ role: "user", text: "What is 6 times 7?" }]);
-    expect(parseMessages(null)).toEqual([]);
-    expect(parseMessages("[broken")).toEqual([{ role: "user", text: "[broken" }]);
-  });
-  it("pretty-prints JSON and leaves text alone", () => {
-    expect(prettyJson('{"a":1}')).toBe('{\n  "a": 1\n}');
-    expect(prettyJson("plain")).toBe("plain");
-    expect(prettyJson({ b: 2 })).toBe('{\n  "b": 2\n}');
-  });
-});
 
 describe("groupAttrs", () => {
   it("groups by prefix and folds duplicate conventions", () => {
@@ -34,7 +13,7 @@ describe("groupAttrs", () => {
       "llm.token_count.total": 5,
       "hermes.session_id": "s",
       "session.id": "s",
-      "session_id": "s",
+      session_id: "s",
       "tool.name": "t",
       other: 1,
     });
@@ -78,7 +57,10 @@ describe("headerFacts", () => {
     expect(f.platform).toBe("cli");
   });
   it("hides the served model when it equals the request and sums api spans when the root has no total", () => {
-    const f = headerFacts({ "gen_ai.request.model": "m", "gen_ai.response.model": "m" }, [{ "gen_ai.usage.total_tokens": 10, "gen_ai.usage.input_tokens": 8, "gen_ai.usage.output_tokens": 2 }, { "gen_ai.usage.total_tokens": 5 }]);
+    const f = headerFacts({ "gen_ai.request.model": "m", "gen_ai.response.model": "m" }, [
+      { "gen_ai.usage.total_tokens": 10, "gen_ai.usage.input_tokens": 8, "gen_ai.usage.output_tokens": 2 },
+      { "gen_ai.usage.total_tokens": 5 },
+    ]);
     expect(f.responseModel).toBeNull();
     expect(f.totalTokens).toBe(15);
     expect(f.inputTokens).toBe(8);

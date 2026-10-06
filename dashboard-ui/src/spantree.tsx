@@ -1,47 +1,14 @@
 // Shared span-tree waterfall + trace cards. Used by both the Traces browser and
 // the Live "recent turns" feed so live spans and backend spans render identically.
 //
-// The waterfall is a 3-column GRID (name | shared timeline | duration) so every
-// row's timeline starts at the same x and shares ONE time axis — that's what
-// makes offsets comparable at a glance. Bars are absolutely positioned within
-// the timeline cell by (start−t0)/total and dur/total; gridlines + an axis
-// header give the scale.
+// The waterfall is one full-width card per span, each topped by a strip that
+// is positioned by (start−t0)/total and sized by dur/total against the trace's
+// whole duration, so the strips line up into a flamegraph; nesting is shown by
+// indenting the card's content.
 import { React, useState, useMemo, Card, CardHeader, CardContent, Badge, Button, cn } from "./sdk";
-import {
-  fmtDurationMs,
-  fmtTokens,
-  fmtTimeAgo,
-  fmtAbsTime,
-  kindOf,
-  statusCode,
-  KIND_HEX,
-  TreeSpan,
-  flatten,
-  LiveTrace,
-} from "./lib";
+import { fmtDurationMs, fmtTokens, fmtTimeAgo, fmtAbsTime, kindOf, statusCode, KIND_HEX, TreeSpan, flatten, LiveTrace } from "./lib";
 import { kindIcon, IconChevronRight } from "./icons";
 import { TraceHeader, TraceTabs, SpanSummary, AttrGroups } from "./detail";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
-
-export function AttrTable({ attrs }: { attrs: Record<string, any> }) {
-  const keys = Object.keys(attrs || {}).sort();
-  if (!keys.length) return <div className="text-xs text-muted-foreground">(no attributes)</div>;
-  return (
-    <dl className="otel-attr-table text-xs">
-      {keys.map((k) => {
-        const v = attrs[k];
-        const rendered = v && typeof v === "object" ? JSON.stringify(v, null, 2) : String(v);
-        return (
-          <React.Fragment key={k}>
-            <dt className="text-muted-foreground">{k}</dt>
-            <dd className="whitespace-pre-wrap break-words text-foreground">{rendered}</dd>
-          </React.Fragment>
-        );
-      })}
-    </dl>
-  );
-}
 
 // One span per line = a full-width collapsible card. The coloured LINE along the
 // top is the flamegraph bar: positioned by offset and sized by duration, all
@@ -85,12 +52,24 @@ function SpanSection({
         <span className="truncate font-mono text-sm" title={span.name}>
           {span.name}
         </span>
-        {isErr ? <Badge variant="destructive" className="shrink-0 text-[10px]">error</Badge> : null}
-        {approval ? <Badge variant="secondary" className="shrink-0 text-[10px]">👤 {approval}</Badge> : null}
+        {isErr ? (
+          <Badge variant="destructive" className="shrink-0 text-[10px]">
+            error
+          </Badge>
+        ) : null}
+        {approval ? (
+          <Badge variant="secondary" className="shrink-0 text-[10px]">
+            👤 {approval}
+          </Badge>
+        ) : null}
         <div className="ml-auto flex shrink-0 items-center gap-3 text-[11px] text-muted-foreground">
           {tokens ? <span className="tabular-nums">{fmtTokens(tokens)} tok</span> : null}
           {cost ? <span className="tabular-nums text-emerald-400">${Number(cost).toFixed(4)}</span> : null}
-          {startMs > 0.5 ? <span className="tabular-nums" title="start offset from trace begin">+{fmtDurationMs(startMs)}</span> : null}
+          {startMs > 0.5 ? (
+            <span className="tabular-nums" title="start offset from trace begin">
+              +{fmtDurationMs(startMs)}
+            </span>
+          ) : null}
           <span className="otel-w-14 text-right font-medium tabular-nums text-foreground">{fmtDurationMs(span.durationMs)}</span>
         </div>
       </div>
@@ -112,9 +91,7 @@ function SpanSection({
 // Reusable span tree: collapsible cards, each topped by its kind colour.
 export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaultOpen?: boolean }) {
   const flat = useMemo(() => flatten(roots), [roots]);
-  const [openIds, setOpenIds] = useState<Record<string, boolean>>(() =>
-    defaultOpen ? Object.fromEntries(flat.map((n) => [n.span.spanId, true])) : {}
-  );
+  const [openIds, setOpenIds] = useState<Record<string, boolean>>(() => (defaultOpen ? Object.fromEntries(flat.map((n) => [n.span.spanId, true])) : {}));
   if (!flat.length) return <div className="py-6 text-center text-sm text-muted-foreground">No spans.</div>;
   const t0 = Math.min(...flat.map((n) => n.span.startNs));
   const total = Math.max(...flat.map((n) => n.span.endNs)) - t0 || 1;
@@ -128,8 +105,12 @@ export function SpanTreeView({ roots, defaultOpen }: { roots: TreeSpan[]; defaul
           {flat.length} span{flat.length === 1 ? "" : "s"} · {fmtDurationMs(total / 1e6)} total
         </span>
         <div className="flex gap-2">
-          <Button variant="outline" size="sm" onClick={expandAll}>Expand all</Button>
-          <Button variant="outline" size="sm" onClick={collapseAll}>Collapse</Button>
+          <Button variant="outline" size="sm" onClick={expandAll}>
+            Expand all
+          </Button>
+          <Button variant="outline" size="sm" onClick={collapseAll}>
+            Collapse
+          </Button>
         </div>
       </div>
       <div className="flex flex-col gap-1.5">
@@ -177,11 +158,17 @@ export function LiveTraceCard({ trace, onSelect }: { trace: LiveTrace; onSelect:
       <div className="min-w-0 flex-1 space-y-1">
         <div className="flex min-w-0 items-center gap-2">
           <span className="truncate font-mono text-sm">{trace.rootName}</span>
-          {trace.error ? <Badge variant="destructive" className="shrink-0 text-[10px]">error</Badge> : null}
+          {trace.error ? (
+            <Badge variant="destructive" className="shrink-0 text-[10px]">
+              error
+            </Badge>
+          ) : null}
         </div>
         <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground">
           {trace.model ? <span className="font-mono text-foreground/80">{trace.model}</span> : null}
-          <span className="tabular-nums">{trace.spanCount} span{trace.spanCount === 1 ? "" : "s"}</span>
+          <span className="tabular-nums">
+            {trace.spanCount} span{trace.spanCount === 1 ? "" : "s"}
+          </span>
           <span className="text-border">·</span>
           <span className="tabular-nums">{fmtDurationMs(trace.durationMs)}</span>
           {trace.tokens ? (

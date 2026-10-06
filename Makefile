@@ -19,7 +19,7 @@ banner:
 # ── The CI gate, locally ───────────────────────────────────────────────
 # Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
 # black), plugin scan, tests with the 85% coverage gate, dashboard bundle
-# up to date + vitest, docs site build, wheel build. `make ci-fast` skips
+# up to date + tsc/eslint/prettier + vitest, docs site build, wheel build. `make ci-fast` skips
 # the two npm builds when you did not touch dashboard-ui/ or website/.
 .PHONY: ci ci-fast ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
 ci: ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
@@ -48,7 +48,7 @@ ci-dashboard:
 	after=$$(cat hermes_otel/dashboard/dist/index.js hermes_otel/dashboard/dist/style.css | shasum); \
 	if [ "$$before" != "$$after" ]; then echo "dashboard bundle was stale and has been rebuilt: commit hermes_otel/dashboard/dist and rerun"; exit 1; fi; \
 	echo "✓ dashboard bundle is up to date"
-	cd dashboard-ui && npm test --silent
+	cd dashboard-ui && npm run check --silent && npm test --silent
 
 ci-docs:
 	cd website && npm ci --silent && npm run build --silent

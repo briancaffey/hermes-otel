@@ -1,45 +1,18 @@
 // Shared atoms. Styling uses the HOST's Tailwind utility classes (so corners,
 // colours and spacing match Hermes' theme exactly) — never custom rounding.
 import { React, cn } from "./sdk";
-import { Kind, KIND_HEX } from "./lib";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export function MiniLabel(props: { children: any }) {
   return <span className="text-[11px] font-medium uppercase tracking-wide text-muted-foreground">{props.children}</span>;
 }
 
 export function ErrorBanner({ error }: { error: string }) {
-  return (
-    <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">
-      {error}
-    </div>
-  );
-}
-
-export function KindDot({ kind, size = 8 }: { kind: Kind; size?: number }) {
-  return (
-    <span
-      className="inline-block shrink-0 rounded-full"
-      style={{ width: size, height: size, background: KIND_HEX[kind] }}
-    />
-  );
+  return <div className="border border-destructive/40 bg-destructive/10 px-3 py-2 text-xs text-destructive">{error}</div>;
 }
 
 // A KPI tile. accent maps to host semantic colours.
-export function Stat({
-  label,
-  value,
-  sub,
-  accent,
-}: {
-  label: string;
-  value: any;
-  sub?: any;
-  accent?: "cost" | "error" | "ok";
-}) {
-  const valColor =
-    accent === "cost" ? "text-emerald-400" : accent === "error" ? "text-destructive" : "text-foreground";
+export function Stat({ label, value, sub, accent }: { label: string; value: any; sub?: any; accent?: "cost" | "error" | "ok" }) {
+  const valColor = accent === "cost" ? "text-emerald-400" : accent === "error" ? "text-destructive" : "text-foreground";
   return (
     <div className="otel-card-bg border border-border px-3 py-2.5">
       <div className={cn("text-xl font-semibold tabular-nums tracking-tight", valColor)}>{value}</div>
@@ -51,14 +24,7 @@ export function Stat({
 
 // Live pulse dot.
 export function Pulse({ active }: { active: boolean }) {
-  return (
-    <span
-      className={cn(
-        "inline-block h-2.5 w-2.5 rounded-full",
-        active ? "otel-pulse-dot otel-pulse" : "bg-muted-foreground/40"
-      )}
-    />
-  );
+  return <span className={cn("inline-block h-2.5 w-2.5 rounded-full", active ? "otel-pulse-dot otel-pulse" : "bg-muted-foreground/40")} />;
 }
 
 // Tiny hand-rolled SVG bar sparkline (host ships no chart lib).
@@ -71,17 +37,7 @@ export function Sparkline({ values, height = 30, color }: { values: number[]; he
     <svg viewBox={`0 0 100 ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
       {values.map((v, i) => {
         const h = (v / max) * (height - 2);
-        return (
-          <rect
-            key={i}
-            x={i * bw + 0.25}
-            y={height - h}
-            width={Math.max(0.5, bw - 0.5)}
-            height={h || 0.5}
-            fill={fill}
-            opacity={0.3 + 0.7 * (i / w)}
-          />
-        );
+        return <rect key={i} x={i * bw + 0.25} y={height - h} width={Math.max(0.5, bw - 0.5)} height={h || 0.5} fill={fill} opacity={0.3 + 0.7 * (i / w)} />;
       })}
     </svg>
   );
@@ -105,9 +61,7 @@ export function LineChart({
   const fmtY = (v: number) => (fmt ? fmt(v) : v >= 1000 ? `${(v / 1000).toFixed(v >= 10000 ? 0 : 1)}k` : v.toFixed(v < 10 && v !== Math.round(v) ? 2 : 0));
   const W = 100;
   const path = (pts: number[]) =>
-    pts
-      .map((v, i) => `${i === 0 ? "M" : "L"} ${(i / Math.max(1, n - 1)) * W} ${height - (v / max) * (height - 6) - 3}`)
-      .join(" ");
+    pts.map((v, i) => `${i === 0 ? "M" : "L"} ${(i / Math.max(1, n - 1)) * W} ${height - (v / max) * (height - 6) - 3}`).join(" ");
   return (
     <div>
       <svg viewBox={`0 0 ${W} ${height}`} preserveAspectRatio="none" style={{ width: "100%", height }}>
@@ -119,7 +73,9 @@ export function LineChart({
         ))}
       </svg>
       <div className="mt-1 flex flex-wrap items-center gap-3">
-        <span className="text-[10px] tabular-nums text-muted-foreground/70" title="y-axis maximum">max {fmtY(rawMax)}</span>
+        <span className="text-[10px] tabular-nums text-muted-foreground/70" title="y-axis maximum">
+          max {fmtY(rawMax)}
+        </span>
         {labels && labels.length ? <span className="text-[10px] tabular-nums text-muted-foreground/70">{labels.join(" · ")}</span> : null}
         {series.map((s) => (
           <span key={s.label} className="inline-flex items-center gap-1.5 text-[11px] text-muted-foreground">

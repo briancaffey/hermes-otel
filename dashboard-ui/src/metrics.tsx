@@ -8,10 +8,17 @@ import { usePolling } from "./poll";
 import { useSource, withBackend } from "./source";
 import { SourceSelect } from "./sourceselect";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const POLL_MS = 15000;
 
-type Buckets = { name: string; agg: string; bucketS: number; buckets: number[]; series: Record<string, (number | null)[]>; points: number; cumulative?: boolean };
+type Buckets = {
+  name: string;
+  agg: string;
+  bucketS: number;
+  buckets: number[];
+  series: Record<string, (number | null)[]>;
+  points: number;
+  cumulative?: boolean;
+};
 
 // Units for the instruments the plugin emits, by OTLP name. The live store
 // records the same names as the backends since #95; a Prometheus-style name
@@ -121,7 +128,9 @@ function Panel({ title, sub, children }: { title: string; sub?: string; children
 
 function Chart({ b, fmt }: { b: Buckets | null; fmt?: (n: number) => string }) {
   if (!b || !Object.keys(b.series).length) return <div className="py-3 text-xs text-muted-foreground">No data in this range.</div>;
-  const series = Object.keys(b.series).slice(0, 8).map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label].map((v) => v ?? 0) }));
+  const series = Object.keys(b.series)
+    .slice(0, 8)
+    .map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label].map((v) => v ?? 0) }));
   const n = b.buckets.length;
   const labels = [0, Math.floor(n / 2), n - 1].map((i) => fmtAbsTime(b.buckets[i]).replace(/^.*?, /, ""));
   return <LineChart series={series} labels={labels} fmt={fmt} />;
@@ -220,7 +229,11 @@ export function MetricsPage() {
     <div className="flex flex-wrap items-center justify-between gap-2">
       <div className="flex flex-wrap items-center gap-3">
         <SourceSelect source={source} onChange={setSource} status={status} need="metrics" />
-        <Select value={String(range.hours)} onValueChange={(v: string) => setRange(RANGES.find((r) => String(r.hours) === v) || RANGES[1])} className="otel-w-56 h-8">
+        <Select
+          value={String(range.hours)}
+          onValueChange={(v: string) => setRange(RANGES.find((r) => String(r.hours) === v) || RANGES[1])}
+          className="otel-w-56 h-8"
+        >
           {RANGES.map((r) => (
             <SelectOption key={r.label} value={String(r.hours)}>
               {rangeLabel(r)}
@@ -228,7 +241,9 @@ export function MetricsPage() {
           ))}
         </Select>
       </div>
-      <span className="text-xs text-muted-foreground">{names.length} instrument{names.length === 1 ? "" : "s"} in this range</span>
+      <span className="text-xs text-muted-foreground">
+        {names.length} instrument{names.length === 1 ? "" : "s"} in this range
+      </span>
     </div>
   );
 
@@ -256,10 +271,19 @@ export function MetricsPage() {
         <>
           <div className="otel-kpi-grid">
             <Stat label="Tokens" value={fmtInt(Math.round(totalTokens))} />
-            <Stat label="Cost" value={cost && cost.points ? fmtCost(totalCost) : "—"} sub={cost && cost.points ? undefined : "no pricing data"} accent={cost && cost.points ? "cost" : undefined} />
+            <Stat
+              label="Cost"
+              value={cost && cost.points ? fmtCost(totalCost) : "—"}
+              sub={cost && cost.points ? undefined : "no pricing data"}
+              accent={cost && cost.points ? "cost" : undefined}
+            />
             <Stat label="Model calls" value={fmtInt(Math.round(seriesTotal(calls)))} />
             <Stat label="Tool calls" value={tools ? fmtInt(tools.points) : "0"} />
-            <Stat label="Cache read" value={cacheRead != null && cacheAll ? `${Math.round((cacheRead / cacheAll) * 100)}%` : "—"} sub={cacheRead != null ? `${fmtInt(Math.round(cacheRead))} of ${fmtInt(Math.round(cacheAll))} input tokens` : "no cache data"} />
+            <Stat
+              label="Cache read"
+              value={cacheRead != null && cacheAll ? `${Math.round((cacheRead / cacheAll) * 100)}%` : "—"}
+              sub={cacheRead != null ? `${fmtInt(Math.round(cacheRead))} of ${fmtInt(Math.round(cacheAll))} input tokens` : "no cache data"}
+            />
           </div>
 
           <div className="grid gap-3 lg:grid-cols-2">
@@ -269,12 +293,18 @@ export function MetricsPage() {
             <Panel title="Cost over time" sub={cost && cost.points ? `USD · per ${range.bucket}s` : "no pricing data for the models used"}>
               <Chart b={cost} fmt={fmtCost} />
             </Panel>
-            <Panel title="Tokens by type"><BarList rows={totalsByLabel(tokens)} color="#38bdf8" /></Panel>
-            <Panel title="Calls by model"><BarList rows={totalsByLabel(calls)} color="#a78bfa" /></Panel>
+            <Panel title="Tokens by type">
+              <BarList rows={totalsByLabel(tokens)} color="#38bdf8" />
+            </Panel>
+            <Panel title="Calls by model">
+              <BarList rows={totalsByLabel(calls)} color="#a78bfa" />
+            </Panel>
             <Panel title={isLive ? "Avg tool duration" : "Tool duration (sum)"} sub="ms">
               <BarList rows={isLive ? meanByLabel(tools) : totalsByLabel(tools)} fmt={fmtDurationMs} color="#fbbf24" />
             </Panel>
-            <Panel title="Approvals by choice"><BarList rows={totalsByLabel(approvals)} color="#f472b6" /></Panel>
+            <Panel title="Approvals by choice">
+              <BarList rows={totalsByLabel(approvals)} color="#f472b6" />
+            </Panel>
             {panels.cpu || panels.gpu ? (
               <Panel title="Host" sub="utilisation ratio, avg per bucket">
                 <Chart b={panels.cpu || panels.gpu} />
@@ -317,7 +347,9 @@ export function MetricsPage() {
               <div className="mt-3 space-y-3">
                 <Chart b={explore} />
                 <div className="text-[11px] text-muted-foreground">
-                  {explore ? `${explore.points} point${explore.points === 1 ? "" : "s"} · ${Object.keys(explore.series).length} series · ${explore.agg} per ${explore.bucketS}s${unit(pick) ? ` · ${unit(pick)}` : ""}${explore.cumulative ? " · cumulative counter shown as increases" : ""}` : "no data"}
+                  {explore
+                    ? `${explore.points} point${explore.points === 1 ? "" : "s"} · ${Object.keys(explore.series).length} series · ${explore.agg} per ${explore.bucketS}s${unit(pick) ? ` · ${unit(pick)}` : ""}${explore.cumulative ? " · cumulative counter shown as increases" : ""}`
+                    : "no data"}
                 </div>
                 <BarList rows={agg === "avg" ? meanByLabel(explore) : totalsByLabel(explore)} />
               </div>

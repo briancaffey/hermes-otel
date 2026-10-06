@@ -2,6 +2,8 @@
 // onto the live store's /live/traces and a backend adapter's /traces/search.
 // No SDK import, so the vitest suite can load it.
 
+import { contextWindow } from "./logs-lib";
+
 export const LIVE = "live";
 
 /** Append `backend=<name>` for a backend source (nothing for live). */
@@ -88,7 +90,6 @@ export function backendParams(f: TraceFilters, source: string, limit = 50): URLS
   return p;
 }
 
-
 // ── logs tab (#186) ──────────────────────────────────────────────────────
 export type LogFilters = {
   minLevel: string;
@@ -132,16 +133,27 @@ export function logParams(f: LogFilters, source: string, limit: number, beforeNs
   if (f.eventName.trim()) p.set("event_name", f.eventName.trim());
   else if (f.eventsOnly) p.set("events_only", "1");
   if (f.centerNs && /^\d+$/.test(f.centerNs)) {
-    const centerS = Math.floor(Number(f.centerNs) / 1e9);
-    p.set("start_s", String(Math.max(0, centerS - f.windowS)));
-    p.set("end_s", String(centerS + f.windowS + 1));
+    const { startS, endS } = contextWindow(Number(f.centerNs), f.windowS);
+    p.set("start_s", String(startS));
+    p.set("end_s", String(endS));
   }
   if (beforeNs && /^\d+$/.test(beforeNs)) p.set("before_ns", beforeNs);
   return p;
 }
 
 /** The URL's view of the filters (missing keys fall back to the defaults). */
-export function logFiltersFromNav(nav: { level?: string; logger?: string; session?: string; trace?: string; text?: string; lookback?: string; events?: string; event?: string; center?: string; win?: string }): LogFilters {
+export function logFiltersFromNav(nav: {
+  level?: string;
+  logger?: string;
+  session?: string;
+  trace?: string;
+  text?: string;
+  lookback?: string;
+  events?: string;
+  event?: string;
+  center?: string;
+  win?: string;
+}): LogFilters {
   const lookback = Number(nav.lookback);
   return {
     minLevel: nav.level && /^\d+$/.test(nav.level) ? nav.level : DEFAULT_LOG_FILTERS.minLevel,
@@ -158,7 +170,18 @@ export function logFiltersFromNav(nav: { level?: string; logger?: string; sessio
 }
 
 /** The filters as URL keys; an empty string clears a key (see navSearch). */
-export function navFromLogFilters(f: LogFilters): { level: string; logger: string; session: string; trace: string; text: string; lookback: string; events: string; event: string; center: string; win: string } {
+export function navFromLogFilters(f: LogFilters): {
+  level: string;
+  logger: string;
+  session: string;
+  trace: string;
+  text: string;
+  lookback: string;
+  events: string;
+  event: string;
+  center: string;
+  win: string;
+} {
   return {
     level: Number(f.minLevel) > 0 ? f.minLevel : "",
     logger: f.logger.trim(),

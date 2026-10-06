@@ -6,10 +6,8 @@ import { ValueView, Facts, StatusBadge, Chips } from "./render";
 import { splitList, turnTools } from "./values";
 import { withBackend } from "./source";
 import { navigate } from "./nav";
-import { LogLine, LogRec, LogRow } from "./logs";
+import { LogRec, LogRow } from "./logs";
 import { MiniLabel, ErrorBanner } from "./atoms";
-
-/* eslint-disable @typescript-eslint/no-explicit-any */
 
 export function CopyButton({ text, label }: { text: string; label?: string }) {
   const [done, setDone] = useState(false);
@@ -81,9 +79,21 @@ export function TraceHeader({
         <div className="min-w-0 space-y-1">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-lg font-semibold uppercase tracking-tight">{title}</span>
-            {error ? <Badge variant="destructive" className="text-[10px]">error</Badge> : null}
-            {f.platform ? <Badge variant="secondary" className="text-[10px]">{f.platform}</Badge> : null}
-            {f.turn != null ? <Badge variant="secondary" className="text-[10px]">turn {f.turn}</Badge> : null}
+            {error ? (
+              <Badge variant="destructive" className="text-[10px]">
+                error
+              </Badge>
+            ) : null}
+            {f.platform ? (
+              <Badge variant="secondary" className="text-[10px]">
+                {f.platform}
+              </Badge>
+            ) : null}
+            {f.turn != null ? (
+              <Badge variant="secondary" className="text-[10px]">
+                turn {f.turn}
+              </Badge>
+            ) : null}
           </div>
           <div className="flex flex-wrap items-center gap-2 text-xs text-muted-foreground">
             {service ? <span>{service}</span> : null}
@@ -96,21 +106,36 @@ export function TraceHeader({
             ) : null}
           </div>
         </div>
-        <Button variant="ghost" size="sm" onClick={onBack}>← Back</Button>
+        <Button variant="ghost" size="sm" onClick={onBack}>
+          ← Back
+        </Button>
       </div>
       <div className="otel-facts-grid">
         <Fact label="duration">{fmtDurationMs(durationMs)}</Fact>
         <Fact label="model">
           {f.requestModel ? <span className="font-mono">{f.requestModel}</span> : null}
-          {f.responseModel ? <span className="ml-1 text-xs text-muted-foreground" title="the model named in the response, when it differs from the request">(served: {f.responseModel})</span> : null}
+          {f.responseModel ? (
+            <span className="ml-1 text-xs text-muted-foreground" title="the model named in the response, when it differs from the request">
+              (served: {f.responseModel})
+            </span>
+          ) : null}
         </Fact>
         <Fact label="tokens">{tokens}</Fact>
-        <Fact label="cost">{f.cost != null ? <span className="text-emerald-400">${f.cost.toFixed(4)}</span> : <span className="text-muted-foreground">no pricing data</span>}</Fact>
+        <Fact label="cost">
+          {f.cost != null ? <span className="text-emerald-400">${f.cost.toFixed(4)}</span> : <span className="text-muted-foreground">no pricing data</span>}
+        </Fact>
         <Fact label="tools">{f.tools.length ? f.tools.join(", ") : null}</Fact>
-        <Fact label="outcome">{f.finalStatus || f.exitReason ? `${f.finalStatus || ""}${f.finalStatus && f.exitReason ? " · " : ""}${f.exitReason || ""}` : null}</Fact>
+        <Fact label="outcome">
+          {f.finalStatus || f.exitReason ? `${f.finalStatus || ""}${f.finalStatus && f.exitReason ? " · " : ""}${f.exitReason || ""}` : null}
+        </Fact>
         <Fact label="session">
           {f.session ? (
-            <button type="button" className="otel-link font-mono" title="show this session's turns" onClick={() => navigate({ tab: "traces", source, view: "sessions", session: String(f.session), trace: "" })}>
+            <button
+              type="button"
+              className="otel-link font-mono"
+              title="show this session's turns"
+              onClick={() => navigate({ tab: "traces", source, view: "sessions", session: String(f.session), trace: "" })}
+            >
               {f.session}
             </button>
           ) : null}
@@ -162,23 +187,47 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {first(a, "tool.name", "gen_ai.tool.name") ? <Badge variant="secondary" className="font-mono text-[10px]">{String(first(a, "tool.name", "gen_ai.tool.name"))}</Badge> : null}
+          {first(a, "tool.name", "gen_ai.tool.name") ? (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {String(first(a, "tool.name", "gen_ai.tool.name"))}
+            </Badge>
+          ) : null}
           <StatusBadge value={a["hermes.tool.outcome"] || a["status"]} />
-          {a["hermes.tool.blocked_by"] ? <Badge variant="destructive" className="text-[10px]">blocked by {String(a["hermes.tool.blocked_by"])}</Badge> : null}
+          {a["hermes.tool.blocked_by"] ? (
+            <Badge variant="destructive" className="text-[10px]">
+              blocked by {String(a["hermes.tool.blocked_by"])}
+            </Badge>
+          ) : null}
           {a["hermes.tool.decided_by"] ? <span className="text-muted-foreground">decided by {String(a["hermes.tool.decided_by"])}</span> : null}
         </div>
         <Facts
           items={[
             { label: "target", value: a["hermes.tool.target"], mono: true },
             { label: "call id", value: a["gen_ai.tool.call.id"], mono: true },
-            { label: "cpu avg / peak", value: a["hermes.tool.cpu.utilization.avg"] != null ? `${a["hermes.tool.cpu.utilization.avg"]} / ${a["hermes.tool.cpu.utilization.peak"] ?? "?"}` : null },
-            { label: "gpu avg / peak", value: a["hermes.tool.gpu.utilization.avg"] != null ? `${a["hermes.tool.gpu.utilization.avg"]} / ${a["hermes.tool.gpu.utilization.peak"] ?? "?"}` : null },
+            {
+              label: "cpu avg / peak",
+              value:
+                a["hermes.tool.cpu.utilization.avg"] != null
+                  ? `${a["hermes.tool.cpu.utilization.avg"]} / ${a["hermes.tool.cpu.utilization.peak"] ?? "?"}`
+                  : null,
+            },
+            {
+              label: "gpu avg / peak",
+              value:
+                a["hermes.tool.gpu.utilization.avg"] != null
+                  ? `${a["hermes.tool.gpu.utilization.avg"]} / ${a["hermes.tool.gpu.utilization.peak"] ?? "?"}`
+                  : null,
+            },
           ]}
         />
         {errorBlock}
         <Attr a={a} label="command" keys={["hermes.tool.command"]} />
         <Attr a={a} label="arguments" keys={["input.value", "gen_ai.tool.call.arguments"]} />
-        <Attr a={a} label={truncated ? `result · preview of ${fmtTokens(a["hermes.preview.output.original_chars"]) || "?"} chars` : "result"} keys={["output.value", "gen_ai.tool.call.result"]} />
+        <Attr
+          a={a}
+          label={truncated ? `result · preview of ${fmtTokens(a["hermes.preview.output.original_chars"]) || "?"} chars` : "result"}
+          keys={["output.value", "gen_ai.tool.call.result"]}
+        />
       </div>
     );
   }
@@ -190,14 +239,28 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
           items={[
             { label: "model", value: f.requestModel, mono: true },
             { label: "served by", value: f.responseModel, mono: true },
-            { label: "tokens", value: f.totalTokens != null ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null ? ` (in ${fmtTokens(f.inputTokens)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}` : null },
+            {
+              label: "tokens",
+              value:
+                f.totalTokens != null
+                  ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null ? ` (in ${fmtTokens(f.inputTokens)} · out ${fmtTokens(f.outputTokens ?? 0)}${f.reasoningTokens ? ` · reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` · cache ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}`
+                  : null,
+            },
             { label: "finish", value: first(a, "llm.response.finish_reason", "gen_ai.response.finish_reasons") },
             { label: "latency", value: a["llm.response.duration_ms"] != null ? fmtDurationMs(Number(a["llm.response.duration_ms"])) : null },
             { label: "messages", value: a["llm.request.message_count"] },
             { label: "mode", value: a["llm.api_mode"] },
             { label: "tool calls", value: a["llm.response.tool_calls"] },
-            { label: "http", value: first(a, "http.response.status_code", "gen_ai.response.status_code"), tone: Number(first(a, "http.response.status_code", "gen_ai.response.status_code")) >= 400 ? "bad" : undefined },
-            { label: "retries", value: a["hermes.retry.count"] != null ? `${a["hermes.retry.count"]}${a["hermes.max_retries"] != null ? ` of ${a["hermes.max_retries"]}` : ""}` : null },
+            {
+              label: "http",
+              value: first(a, "http.response.status_code", "gen_ai.response.status_code"),
+              tone: Number(first(a, "http.response.status_code", "gen_ai.response.status_code")) >= 400 ? "bad" : undefined,
+            },
+            {
+              label: "retries",
+              value:
+                a["hermes.retry.count"] != null ? `${a["hermes.retry.count"]}${a["hermes.max_retries"] != null ? ` of ${a["hermes.max_retries"]}` : ""}` : null,
+            },
           ]}
         />
         {errorBlock}
@@ -215,11 +278,31 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
           <StatusBadge value={a["hermes.turn.final_status"]} />
-          {a["hermes.session.kind"] ? <Badge variant="secondary" className="text-[10px]">{String(a["hermes.session.kind"])}</Badge> : null}
-          {String(a["hermes.session.is_subagent"]) === "true" ? <Badge variant="secondary" className="text-[10px]">sub-agent</Badge> : null}
-          {String(a["hermes.session.interrupted"]) === "true" ? <Badge variant="destructive" className="text-[10px]">interrupted</Badge> : null}
-          {String(a["hermes.session.failed"]) === "true" ? <Badge variant="destructive" className="text-[10px]">failed</Badge> : null}
-          {String(a["hermes.session.synthesized"]) === "true" ? <Badge variant="secondary" className="text-[10px]" title="root recreated by the plugin after a restart">synthesized</Badge> : null}
+          {a["hermes.session.kind"] ? (
+            <Badge variant="secondary" className="text-[10px]">
+              {String(a["hermes.session.kind"])}
+            </Badge>
+          ) : null}
+          {String(a["hermes.session.is_subagent"]) === "true" ? (
+            <Badge variant="secondary" className="text-[10px]">
+              sub-agent
+            </Badge>
+          ) : null}
+          {String(a["hermes.session.interrupted"]) === "true" ? (
+            <Badge variant="destructive" className="text-[10px]">
+              interrupted
+            </Badge>
+          ) : null}
+          {String(a["hermes.session.failed"]) === "true" ? (
+            <Badge variant="destructive" className="text-[10px]">
+              failed
+            </Badge>
+          ) : null}
+          {String(a["hermes.session.synthesized"]) === "true" ? (
+            <Badge variant="secondary" className="text-[10px]" title="root recreated by the plugin after a restart">
+              synthesized
+            </Badge>
+          ) : null}
         </div>
         <Facts
           items={[
@@ -251,7 +334,11 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
             </dl>
           </Block>
         ) : null}
-        {skills && skills.length ? <Block label="skills"><Chips items={skills} mono /></Block> : null}
+        {skills && skills.length ? (
+          <Block label="skills">
+            <Chips items={skills} mono />
+          </Block>
+        ) : null}
       </div>
     );
   }
@@ -259,7 +346,11 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {first(a, "hermes.skill.name", "gen_ai.skill.name") ? <Badge variant="secondary" className="font-mono text-[10px]">{String(first(a, "hermes.skill.name", "gen_ai.skill.name"))}</Badge> : null}
+          {first(a, "hermes.skill.name", "gen_ai.skill.name") ? (
+            <Badge variant="secondary" className="font-mono text-[10px]">
+              {String(first(a, "hermes.skill.name", "gen_ai.skill.name"))}
+            </Badge>
+          ) : null}
           <StatusBadge value={a["hermes.skill.result_status"]} />
           {a["hermes.skill.source"] ? <span className="text-muted-foreground">loaded via {String(a["hermes.skill.source"])}</span> : null}
         </div>
@@ -272,9 +363,21 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {a["hermes.approval.choice"] ? <Badge variant="secondary" className="text-[10px]">👤 {String(a["hermes.approval.choice"])}</Badge> : null}
-          {a["hermes.approval.granted"] != null ? <Badge variant={String(a["hermes.approval.granted"]) === "true" ? "secondary" : "destructive"} className="text-[10px]">{String(a["hermes.approval.granted"]) === "true" ? "granted" : "denied"}</Badge> : null}
-          {String(a["hermes.approval.timed_out"]) === "true" ? <Badge variant="destructive" className="text-[10px]">timed out</Badge> : null}
+          {a["hermes.approval.choice"] ? (
+            <Badge variant="secondary" className="text-[10px]">
+              👤 {String(a["hermes.approval.choice"])}
+            </Badge>
+          ) : null}
+          {a["hermes.approval.granted"] != null ? (
+            <Badge variant={String(a["hermes.approval.granted"]) === "true" ? "secondary" : "destructive"} className="text-[10px]">
+              {String(a["hermes.approval.granted"]) === "true" ? "granted" : "denied"}
+            </Badge>
+          ) : null}
+          {String(a["hermes.approval.timed_out"]) === "true" ? (
+            <Badge variant="destructive" className="text-[10px]">
+              timed out
+            </Badge>
+          ) : null}
         </div>
         <Facts
           items={[
@@ -293,7 +396,11 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
     return (
       <div className="space-y-2">
         <div className="flex flex-wrap items-center gap-2 text-xs">
-          {a["hermes.subagent.role"] ? <Badge variant="secondary" className="text-[10px]">{String(a["hermes.subagent.role"])}</Badge> : null}
+          {a["hermes.subagent.role"] ? (
+            <Badge variant="secondary" className="text-[10px]">
+              {String(a["hermes.subagent.role"])}
+            </Badge>
+          ) : null}
           <StatusBadge value={a["hermes.subagent.status"]} />
         </div>
         <Facts
@@ -356,7 +463,9 @@ export function AttrGroups({ attrs, source }: { attrs: Record<string, any>; sour
                   {CONTENT_KEYS.has(e.key) ? (
                     <details className="otel-details">
                       <summary className="cursor-pointer text-[11px] text-muted-foreground">{String(e.value).length.toLocaleString("en-US")} chars</summary>
-                      <div className="mt-1"><ValueView attrKey={e.key} value={e.value} /></div>
+                      <div className="mt-1">
+                        <ValueView attrKey={e.key} value={e.value} />
+                      </div>
                     </details>
                   ) : (
                     <ValueView attrKey={e.key} value={e.value} onSessionClick={onSession} />
@@ -372,19 +481,7 @@ export function AttrGroups({ attrs, source }: { attrs: Record<string, any>; sour
 }
 
 // Spans | Logs | Raw under a trace.
-export function TraceTabs({
-  traceId,
-  source,
-  logsAvailable,
-  spans,
-  raw,
-}: {
-  traceId: string;
-  source: string;
-  logsAvailable: boolean;
-  spans: any;
-  raw: any;
-}) {
+export function TraceTabs({ traceId, source, logsAvailable, spans, raw }: { traceId: string; source: string; logsAvailable: boolean; spans: any; raw: any }) {
   const [tab, setTab] = useState<"spans" | "logs" | "raw">("spans");
   const [logs, setLogs] = useState<LogRec[] | null>(null);
   const [openLog, setOpenLog] = useState<string | null>(null);
@@ -401,7 +498,14 @@ export function TraceTabs({
       });
   }, [tab, logs, source, traceId]);
   const Btn = ({ id, label }: { id: "spans" | "logs" | "raw"; label: string }) => (
-    <button type="button" onClick={() => setTab(id)} className={cn("otel-toggle px-3 py-1 text-xs font-medium transition-colors", tab === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground")}>
+    <button
+      type="button"
+      onClick={() => setTab(id)}
+      className={cn(
+        "otel-toggle px-3 py-1 text-xs font-medium transition-colors",
+        tab === id ? "otel-toggle-active text-foreground" : "text-muted-foreground hover:text-foreground"
+      )}
+    >
       {label}
     </button>
   );
@@ -426,14 +530,28 @@ export function TraceTabs({
               <span>
                 {logs.length} line{logs.length === 1 ? "" : "s"} carry this trace id · click a line for its attributes
               </span>
-              <button type="button" className="otel-link" title="open the Logs tab filtered to this trace" onClick={() => navigate({ tab: "logs", source, trace: traceId, session: "", lookback: "8760" })}>
+              <button
+                type="button"
+                className="otel-link"
+                title="open the Logs tab filtered to this trace"
+                onClick={() => navigate({ tab: "logs", source, trace: traceId, session: "", lookback: "8760" })}
+              >
                 open in Logs tab →
               </button>
             </div>
             <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
               {logs.map((l, i) => {
                 const k = String(l.seq ?? i);
-                return <LogRow key={k} l={l} absolute expanded={openLog === k} onToggle={() => setOpenLog(openLog === k ? null : k)} actions={{ onTrace: () => undefined }} />;
+                return (
+                  <LogRow
+                    key={k}
+                    l={l}
+                    absolute
+                    expanded={openLog === k}
+                    onToggle={() => setOpenLog(openLog === k ? null : k)}
+                    actions={{ onTrace: () => undefined }}
+                  />
+                );
               })}
             </div>
           </div>

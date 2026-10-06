@@ -19,7 +19,6 @@ import { ErrorBanner } from "./atoms";
 import { CopyButton } from "./detail";
 import { severityCounts, timeBuckets, groupLogAttributes, codeLocation, attributionHint, severityOf, type Bucket } from "./logs-lib";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 export type LogRec = {
   seq?: number;
   time_unix_nano?: number;
@@ -53,7 +52,21 @@ export type LogRowActions = {
 };
 
 /** One log line; click to expand its attributes, exception and code location (#268). */
-export function LogRow({ l, absolute, wrap = true, expanded, onToggle, actions }: { l: LogRec; absolute: boolean; wrap?: boolean; expanded?: boolean; onToggle?: () => void; actions?: LogRowActions }) {
+export function LogRow({
+  l,
+  absolute,
+  wrap = true,
+  expanded,
+  onToggle,
+  actions,
+}: {
+  l: LogRec;
+  absolute: boolean;
+  wrap?: boolean;
+  expanded?: boolean;
+  onToggle?: () => void;
+  actions?: LogRowActions;
+}) {
   const lvl = (l.level || "INFO").toUpperCase();
   const ts = l.time_unix_nano || 0;
   const attrs = (l.attributes || {}) as Record<string, any>;
@@ -62,7 +75,13 @@ export function LogRow({ l, absolute, wrap = true, expanded, onToggle, actions }
   const edge = isError ? "border-l-2 border-l-primary" : "";
   return (
     <div className={cn("border-b border-border/60 last:border-b-0", expanded ? "bg-muted/30" : "otel-hoverable", edge)}>
-      <div className="flex cursor-pointer items-start gap-2 px-3 py-1" onClick={onToggle} role="button" tabIndex={0} title={expanded ? "collapse" : "expand attributes"}>
+      <div
+        className="flex cursor-pointer items-start gap-2 px-3 py-1"
+        onClick={onToggle}
+        role="button"
+        tabIndex={0}
+        title={expanded ? "collapse" : "expand attributes"}
+      >
         <span className={cn("shrink-0 text-muted-foreground/70", absolute ? "otel-w-40" : "otel-w-14")} title={ts ? fmtAbsTime(ts) : ""}>
           {ts ? (absolute ? fmtAbsTime(ts) : fmtTimeAgo(ts)) : ""}
         </span>
@@ -169,11 +188,6 @@ function LogDetail({ l, actions }: { l: LogRec; actions?: LogRowActions }) {
   );
 }
 
-/** Kept for the trace detail's Logs sub-tab and older callers: a non-expanding line. */
-export function LogLine({ l, absolute, onTrace }: { l: LogRec; absolute: boolean; onTrace?: (id: string) => void }) {
-  return <LogRow l={l} absolute={absolute} actions={{ onTrace }} />;
-}
-
 /** Severity counts for the rows shown plus a per-bucket sparkline (errors on top). */
 export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bucket[] }) {
   const c = severityCounts(rows);
@@ -204,8 +218,25 @@ export function SeveritySummary({ rows, buckets }: { rows: LogRec[]; buckets: Bu
             return (
               <g key={i}>
                 <title>{`${b.total} line${b.total === 1 ? "" : "s"}${b.errors ? `, ${b.errors} error` : ""}${b.warns ? `, ${b.warns} warn` : ""}`}</title>
-                <rect x={i * bw + 0.5} y={h - 1 - total} width={Math.max(1, bw - 1)} height={total} className="text-muted-foreground" fill="currentColor" opacity="0.35" />
-                {bad > 0 ? <rect x={i * bw + 0.5} y={h - 1 - bad} width={Math.max(1, bw - 1)} height={bad} className={b.errors ? "text-destructive" : "otel-c-tool"} fill="currentColor" /> : null}
+                <rect
+                  x={i * bw + 0.5}
+                  y={h - 1 - total}
+                  width={Math.max(1, bw - 1)}
+                  height={total}
+                  className="text-muted-foreground"
+                  fill="currentColor"
+                  opacity="0.35"
+                />
+                {bad > 0 ? (
+                  <rect
+                    x={i * bw + 0.5}
+                    y={h - 1 - bad}
+                    width={Math.max(1, bw - 1)}
+                    height={bad}
+                    className={b.errors ? "text-destructive" : "otel-c-tool"}
+                    fill="currentColor"
+                  />
+                ) : null}
               </g>
             );
           })}
@@ -333,7 +364,10 @@ export function LogsPage() {
           <input type="checkbox" checked={absolute} onChange={(e: any) => setAbsolute(e.target.checked)} />
           absolute times
         </label>
-        <label className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground" title="oldest first, newest at the bottom, scrolls with new lines">
+        <label
+          className="inline-flex cursor-pointer items-center gap-1.5 text-xs text-muted-foreground"
+          title="oldest first, newest at the bottom, scrolls with new lines"
+        >
           <input type="checkbox" checked={follow} onChange={(e: any) => setFollow(e.target.checked)} />
           follow
         </label>
@@ -342,7 +376,14 @@ export function LogsPage() {
           wrap
         </label>
         <CopyButton text={permalink} label="copy link" />
-        <Select value={String(pageSize)} onValueChange={(v: string) => { setPageSize(Number(v)); setCursors([]); }} className="h-8">
+        <Select
+          value={String(pageSize)}
+          onValueChange={(v: string) => {
+            setPageSize(Number(v));
+            setCursors([]);
+          }}
+          className="h-8"
+        >
           {LOG_PAGE_SIZES.map((n) => (
             <SelectOption key={n} value={String(n)}>
               {n} / page
@@ -368,11 +409,7 @@ export function LogsPage() {
 
   const pager = (
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground">
-      <span>
-        {logs.length
-          ? `${fmtAbsTime(oldestShown)} → ${fmtAbsTime(newestShown)}`
-          : ""}
-      </span>
+      <span>{logs.length ? `${fmtAbsTime(oldestShown)} → ${fmtAbsTime(newestShown)}` : ""}</span>
       <div className="flex items-center gap-2">
         <Button variant="outline" size="sm" onClick={newest} disabled={onNewestPage}>
           ⏮ Newest
@@ -405,9 +442,7 @@ export function LogsPage() {
         </Select>
         <Select value={filters.logger} onValueChange={(v: string) => set("logger", v)} className="h-8">
           <SelectOption value="">Any logger</SelectOption>
-          {filters.logger && !loggers.some((l) => l.logger === filters.logger) ? (
-            <SelectOption value={filters.logger}>{filters.logger}</SelectOption>
-          ) : null}
+          {filters.logger && !loggers.some((l) => l.logger === filters.logger) ? <SelectOption value={filters.logger}>{filters.logger}</SelectOption> : null}
           {loggers.map((l) => (
             <SelectOption key={l.logger} value={l.logger}>
               {l.logger} ({l.count})
@@ -417,11 +452,20 @@ export function LogsPage() {
         <Input className="h-8" placeholder="session id" value={filters.session} onChange={(e: any) => set("session", e.target.value)} />
         <Input className="h-8" placeholder="trace id" value={filters.traceId} onChange={(e: any) => set("traceId", e.target.value)} />
         <Input className="h-8" placeholder="text…" value={filters.text} onChange={(e: any) => set("text", e.target.value)} />
-        <label className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="only hermes.* / GenAI events (logs.events.enabled)">
+        <label
+          className="inline-flex h-8 cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"
+          title="only hermes.* / GenAI events (logs.events.enabled)"
+        >
           <input type="checkbox" checked={filters.eventsOnly || !!filters.eventName} onChange={(e: any) => set("eventsOnly", e.target.checked)} />
           events only
         </label>
-        <Input className="h-8 font-mono" placeholder="event name…" value={filters.eventName} onChange={(e: any) => set("eventName", e.target.value)} title="one structured event, e.g. hermes.tool.call" />
+        <Input
+          className="h-8 font-mono"
+          placeholder="event name…"
+          value={filters.eventName}
+          onChange={(e: any) => set("eventName", e.target.value)}
+          title="one structured event, e.g. hermes.tool.call"
+        />
         <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8">
           <SelectOption value="0.25">15m</SelectOption>
           <SelectOption value="1">1h</SelectOption>
@@ -431,8 +475,18 @@ export function LogsPage() {
           <SelectOption value="720">30d</SelectOption>
         </Select>
         <div className="flex items-center gap-2">
-          <Button type="submit" size="sm">Search</Button>
-          <Button type="button" variant="outline" size="sm" onClick={() => { setFilters(DEFAULT_LOG_FILTERS); apply(DEFAULT_LOG_FILTERS); }}>
+          <Button type="submit" size="sm">
+            Search
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            size="sm"
+            onClick={() => {
+              setFilters(DEFAULT_LOG_FILTERS);
+              apply(DEFAULT_LOG_FILTERS);
+            }}
+          >
             Clear
           </Button>
         </div>
@@ -441,17 +495,21 @@ export function LogsPage() {
       {isLive && live === false ? (
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
           <div className="mb-1 text-base font-medium text-foreground">Live mode is off</div>
-          Set <span className="font-mono">dashboard_live: true</span> and <span className="font-mono">logs.capture: true</span> (or <span className="font-mono">logs.events.enabled: true</span>), then run a turn.
+          Set <span className="font-mono">dashboard_live: true</span> and <span className="font-mono">logs.capture: true</span> (or{" "}
+          <span className="font-mono">logs.events.enabled: true</span>), then run a turn.
         </div>
       ) : logs.length === 0 ? (
         <div className="border border-dashed border-border px-4 py-12 text-center text-sm text-muted-foreground">
           <div className="mb-1 text-base font-medium text-foreground">{onNewestPage ? "No log lines" : "No older lines"}</div>
           {!onNewestPage ? (
-            <Button variant="outline" size="sm" onClick={newer}>← Back to the newer page</Button>
+            <Button variant="outline" size="sm" onClick={newer}>
+              ← Back to the newer page
+            </Button>
           ) : isLive ? (
             <>
-              Set <span className="font-mono">logs.capture: true</span> or <span className="font-mono">logs.events.enabled: true</span> in the plugin config and run a turn — the agent's log lines and events
-              stream here. Lines written while a turn is in flight carry its trace and session id; click a line for its attributes.
+              Set <span className="font-mono">logs.capture: true</span> or <span className="font-mono">logs.events.enabled: true</span> in the plugin config and
+              run a turn — the agent's log lines and events stream here. Lines written while a turn is in flight carry its trace and session id; click a line
+              for its attributes.
             </>
           ) : (
             "Nothing matched in this window."
@@ -464,7 +522,15 @@ export function LogsPage() {
             {applied.centerNs ? (
               <span className="text-xs text-muted-foreground">
                 ±{applied.windowS} s around {fmtAbsTime(Number(applied.centerNs))}{" "}
-                <button type="button" className="otel-link" onClick={() => { const f = { ...applied, centerNs: "" }; setFilters(f); apply(f); }}>
+                <button
+                  type="button"
+                  className="otel-link"
+                  onClick={() => {
+                    const f = { ...applied, centerNs: "" };
+                    setFilters(f);
+                    apply(f);
+                  }}
+                >
                   clear
                 </button>
               </span>
@@ -474,7 +540,17 @@ export function LogsPage() {
           <div className="otel-card-bg overflow-hidden border border-border font-mono text-xs">
             {ordered.map((l, i) => {
               const k = rowKey(l, i);
-              return <LogRow key={k} l={l} absolute={absolute} wrap={wrap} expanded={expanded === k} onToggle={() => setExpanded(expanded === k ? null : k)} actions={actions} />;
+              return (
+                <LogRow
+                  key={k}
+                  l={l}
+                  absolute={absolute}
+                  wrap={wrap}
+                  expanded={expanded === k}
+                  onToggle={() => setExpanded(expanded === k ? null : k)}
+                  actions={actions}
+                />
+              );
             })}
             <div ref={listEnd} />
           </div>

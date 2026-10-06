@@ -26,7 +26,6 @@ import {
   sourceNote,
 } from "./settings-lib";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 type View = "structured" | "raw" | "env";
 const VIEWS: { id: View; label: string }[] = [
   { id: "structured", label: "Structured" },
@@ -39,9 +38,13 @@ function Description({ text }: { text: string }) {
     <span>
       {renderDescription(text).map((tok, i) =>
         tok.t === "code" ? (
-          <code key={i} className="otel-code">{tok.v}</code>
+          <code key={i} className="otel-code">
+            {tok.v}
+          </code>
         ) : tok.t === "link" ? (
-          <a key={i} className="otel-link" href={tok.href} target="_blank" rel="noreferrer">{tok.v}</a>
+          <a key={i} className="otel-link" href={tok.href} target="_blank" rel="noreferrer">
+            {tok.v}
+          </a>
         ) : (
           <span key={i}>{tok.v}</span>
         )
@@ -51,8 +54,7 @@ function Description({ text }: { text: string }) {
 }
 
 function SourceBadge({ source }: { source: SettingField["source"] }) {
-  const title =
-    source === "env" ? "set by a HERMES_OTEL_* environment variable" : source === "file" ? "set in the config file" : "the built-in default";
+  const title = source === "env" ? "set by a HERMES_OTEL_* environment variable" : source === "file" ? "set in the config file" : "the built-in default";
   return (
     <span className={cn("otel-src", `otel-src-${source}`)} title={title}>
       {source}
@@ -63,8 +65,7 @@ function SourceBadge({ source }: { source: SettingField["source"] }) {
 function Value({ f }: { f: SettingField }) {
   const v = f.value;
   if (v == null) return <span className="otel-unset">unset</span>;
-  if (f.kind === "bool")
-    return <span className={cn("otel-pill", v ? "otel-pill-on" : "otel-pill-off")}>{v ? "on" : "off"}</span>;
+  if (f.kind === "bool") return <span className={cn("otel-pill", v ? "otel-pill-on" : "otel-pill-off")}>{v ? "on" : "off"}</span>;
   if (f.kind === "map")
     return (
       <div className="otel-kv">
@@ -164,7 +165,11 @@ function BackendCard({ b, q }: { b: BackendSummary; q?: QueryCapability }) {
         ) : (
           <span className="text-sm font-medium">{b.name}</span>
         )}
-        {showTypeBadge(b) ? <Badge variant="secondary" className="text-[10px] uppercase">{b.display_type}</Badge> : null}
+        {showTypeBadge(b) ? (
+          <Badge variant="secondary" className="text-[10px] uppercase">
+            {b.display_type}
+          </Badge>
+        ) : null}
         {b.docs_path ? (
           <a
             className="otel-link text-[11px] text-muted-foreground"
@@ -275,7 +280,9 @@ function ConfigFileLine({ r }: { r: SettingsReport }) {
       <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
         <MiniLabel>config file</MiniLabel>
         {c.path ? <span className="font-mono break-all">{c.path}</span> : <span className="text-muted-foreground">none found</span>}
-        <span className="otel-pill" title="how the file was chosen: HERMES_OTEL_CONFIG, then $HERMES_HOME/hermes_otel.yaml, then the plugin directory">{pathSourceLabel(c.path_source)}</span>
+        <span className="otel-pill" title="how the file was chosen: HERMES_OTEL_CONFIG, then $HERMES_HOME/hermes_otel.yaml, then the plugin directory">
+          {pathSourceLabel(c.path_source)}
+        </span>
         {c.exists && c.mtime ? (
           <span className="text-muted-foreground" title={fmtAbsTime(c.mtime * 1e9)}>
             edited {fmtTimeAgo(c.mtime * 1e9)}
@@ -287,7 +294,10 @@ function ConfigFileLine({ r }: { r: SettingsReport }) {
       {!c.path ? (
         <div className="mt-1 text-muted-foreground">
           Create <span className="font-mono">{c.durable_path}</span> to change settings; see the{" "}
-          <a className="otel-link" href={`${DOCS_BASE}/configuration/overview`} target="_blank" rel="noreferrer">configuration guide</a>.
+          <a className="otel-link" href={`${DOCS_BASE}/configuration/overview`} target="_blank" rel="noreferrer">
+            configuration guide
+          </a>
+          .
         </div>
       ) : null}
       {c.unknown_keys.length ? (
@@ -388,7 +398,10 @@ export function SettingsPage() {
               </button>
             ))}
           </div>
-          <label className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground" title="credential values are masked unless this is on">
+          <label
+            className="inline-flex cursor-pointer items-center gap-1.5 text-[11px] text-muted-foreground"
+            title="credential values are masked unless this is on"
+          >
             <input type="checkbox" checked={reveal} onChange={(e: any) => setReveal(e.target.checked)} />
             show secrets
           </label>
@@ -461,7 +474,8 @@ export function SettingsPage() {
                         </div>
                       ) : (
                         <div className="text-xs text-muted-foreground">
-                          No <span className="font-mono">backends:</span> entry. Telemetry stays in the live store on this machine; single-backend environment variables, if any, are listed under Environment.
+                          No <span className="font-mono">backends:</span> entry. Telemetry stays in the live store on this machine; single-backend environment
+                          variables, if any, are listed under Environment.
                         </div>
                       )}
                     </div>

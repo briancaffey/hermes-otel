@@ -168,10 +168,7 @@ export function fmtSettingValue(f: Pick<SettingField, "kind" | "value">): string
   return String(v);
 }
 
-export function filterFields(
-  fields: SettingField[],
-  opts: { query?: string; changedOnly?: boolean }
-): SettingField[] {
+export function filterFields(fields: SettingField[], opts: { query?: string; changedOnly?: boolean }): SettingField[] {
   const q = (opts.query || "").trim().toLowerCase();
   return fields.filter((f) => {
     if (opts.changedOnly && !f.changed && !f.env_invalid && !f.file_invalid) return false;
@@ -183,9 +180,7 @@ export function filterFields(
 
 export function groupFields(fields: SettingField[], groups: string[]): { group: string; fields: SettingField[] }[] {
   const order = groups.length ? groups : Array.from(new Set(fields.map((f) => f.group)));
-  return order
-    .map((g) => ({ group: g, fields: fields.filter((f) => f.group === g) }))
-    .filter((g) => g.fields.length > 0);
+  return order.map((g) => ({ group: g, fields: fields.filter((f) => f.group === g) })).filter((g) => g.fields.length > 0);
 }
 
 export function pathSourceLabel(ps: SettingsReport["config"]["path_source"]): string {

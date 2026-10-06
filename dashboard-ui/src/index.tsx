@@ -7,7 +7,6 @@ import { SettingsPage } from "./settings";
 import { IconActivity, IconList, IconChart, IconSettings } from "./icons";
 import { readNav, writeNav, NAV_EVENT } from "./nav";
 
-/* eslint-disable @typescript-eslint/no-explicit-any */
 const TABS = [
   { id: "live", label: "Live", Icon: IconActivity, render: () => <LivePage /> },
   { id: "traces", label: "Traces", Icon: IconList, render: () => <TracesPage /> },
@@ -62,6 +61,5 @@ function OtelDashboard() {
 if (sdkOk) {
   register("hermes_otel", OtelDashboard);
 } else {
-  // eslint-disable-next-line no-console
   console.error("[hermes_otel] dashboard SDK unavailable — not registering");
 }
