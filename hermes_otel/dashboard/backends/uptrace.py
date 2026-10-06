@@ -248,8 +248,8 @@ class UptraceAdapter(BackendAdapter):
             or None
         )
         self.project_id = int(cfg.get("project_id") or 1)
-        # Log queries are pinned to the agent's service (Uptrace writes its own
-        # lines into the same project): the entry's ``service_name``, else the
+        # Trace and log queries are pinned to the agent's service (Uptrace
+        # writes its own spans and lines into the same project): the entry's ``service_name``, else the
         # plugin's resource ``service.name``, else ``hermes-agent``;
         # ``service_name: off`` removes the pin.
         raw_service = cfg.get("service_name")
@@ -363,8 +363,13 @@ class UptraceAdapter(BackendAdapter):
 
     def _build_uql(self, f: StructuredFilter) -> str:
         parts: List[str] = []
-        if f.service:
-            parts.append(f'where service_name = "{_esc(f.service)}"')
+        # Uptrace writes its own spans (service ``serve``) into the same
+        # project; without a service the list is those, newest first, and the
+        # agent's turns never reach page one. The same pin the log queries use
+        # applies here unless the search names a service (#298).
+        service = f.service or self.service_name
+        if service:
+            parts.append(f'where service_name = "{_esc(service)}"')
         if f.name_prefix:
             parts.append(f'where _name like "{_esc(f.name_prefix)}%"')
         if f.name_regex:
