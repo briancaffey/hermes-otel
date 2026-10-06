@@ -325,7 +325,15 @@
 }
 
 /* ── tabs + source toggle ──────────────────────────────────────────── */
+.otel-tabs {
+  overflow-x: auto;
+  scrollbar-width: none;
+}
+.otel-tabs::-webkit-scrollbar {
+  display: none;
+}
 .otel-tab {
+  white-space: nowrap;
   margin-bottom: -1px;
   border-bottom: 2px solid transparent;
 }

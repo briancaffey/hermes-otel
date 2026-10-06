@@ -121,6 +121,12 @@ function OtelDashboard() {
     window.addEventListener(NAV_EVENT, onNav);
     return () => window.removeEventListener(NAV_EVENT, onNav);
   }, []);
+  // A page mounts the first time its tab is shown and stays mounted after,
+  // so hidden pages never fetch before anyone has looked at them.
+  const [visited, setVisited] = useState<Record<string, boolean>>(() => ({ [tab]: true }));
+  useEffect(() => {
+    setVisited((v) => (v[tab] ? v : { ...v, [tab]: true }));
+  }, [tab]);
   const scheme = useScheme();
   const tz = useMemo(() => localTimezone(), []);
   const onKey = (e: any, i: number) => {
@@ -132,7 +138,7 @@ function OtelDashboard() {
   };
   return (
     <div className="otel-root space-y-4" data-otel-scheme={scheme}>
-      <div className="flex items-center gap-1 border-b border-border" role="tablist" aria-label="OTel views">
+      <div className="otel-tabs flex items-center gap-1 border-b border-border" role="tablist" aria-label="OTel views">
         {TABS.map((t, i) => {
           const on = t.id === tab;
           const Icon = t.Icon;
@@ -171,7 +177,7 @@ function OtelDashboard() {
           );
           return (
             <div key={t.id} role="tabpanel" id={`otel-panel-${t.id}`} aria-labelledby={`otel-tab-${t.id}`} hidden={!on}>
-              {ActiveContext ? <ActiveContext.Provider value={on}>{body}</ActiveContext.Provider> : body}
+              {!visited[t.id] && !on ? null : ActiveContext ? <ActiveContext.Provider value={on}>{body}</ActiveContext.Provider> : body}
             </div>
           );
         })}

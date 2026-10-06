@@ -91,11 +91,18 @@ export function rangeLabel(r: { label: string; bucket: number }): string {
   return `last ${r.label} · ${b} buckets`;
 }
 
-/** The name to query for a canonical instrument, from the source's catalogue (contract §6). */
-export function resolveInstrument(names: { name: string; otlp_name?: string }[], otlp: string): string | null {
-  for (const n of names) if (n.otlp_name === otlp || n.name === otlp) return n.name;
-  for (const n of names) if (metricOtlpName(n.name) === otlp) return n.name;
-  return null;
+/** The name to query for a canonical instrument, from the source's catalogue
+ *  (contract §6). A histogram lands on a backend as ``_sum`` / ``_count`` (and
+ *  ``_bucket``) streams; ``prefer`` picks the one the panel wants. */
+export function resolveInstrument(names: { name: string; otlp_name?: string }[], otlp: string, prefer?: string): string | null {
+  const matches = names.filter((n) => n.otlp_name === otlp || n.name === otlp || metricOtlpName(n.name) === otlp).map((n) => n.name);
+  if (!matches.length) return null;
+  if (prefer) {
+    const hit = matches.find((n) => n.endsWith(prefer));
+    if (hit) return hit;
+  }
+  // The bare name first (the live store, Uptrace, SigNoz), then any spelling.
+  return matches.find((n) => n === otlp) || matches.find((n) => !/_(sum|count|bucket|total)$/.test(n)) || matches[0];
 }
 
 const PALETTE = [
@@ -153,7 +160,8 @@ function Chart({ b, fmt, error }: { b: Buckets | null; fmt?: (n: number) => stri
     .slice(0, 8)
     .map((label, i) => ({ label: label === "_" ? b.name : label, color: PALETTE[i % PALETTE.length], points: b.series[label] }));
   const n = b.buckets.length;
-  const labels = [0, Math.floor(n / 2), n - 1].map((i) => fmtClock(b.buckets[i]));
+  const withDate = b.bucketS >= 3600;
+  const labels = [0, Math.floor(n / 2), n - 1].map((i) => (withDate ? fmtAbsTime(b.buckets[i]).slice(5, 16) : fmtClock(b.buckets[i])));
   const bucketLabels = b.buckets.map((t) => fmtAbsTime(t));
   return (
     <div>
@@ -163,12 +171,15 @@ function Chart({ b, fmt, error }: { b: Buckets | null; fmt?: (n: number) => stri
   );
 }
 
-type PanelDef = { key: string; otlp: string; group: string; agg: { live: string; backend: string } };
+type PanelDef = { key: string; otlp: string; group: string; agg: { live: string; backend: string }; prefer?: string };
 const PANELS: PanelDef[] = [
   { key: "tokens", otlp: "hermes.token.usage", group: "token_type", agg: { live: "sum", backend: "sum" } },
   { key: "cost", otlp: "hermes.cost.usage", group: "", agg: { live: "sum", backend: "sum" } },
   { key: "calls", otlp: "hermes.model.usage", group: "model", agg: { live: "count", backend: "sum" } },
-  { key: "tools", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "avg", backend: "sum" } },
+  // the duration histogram: its _sum on a backend, the raw points on live
+  { key: "tools", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "avg", backend: "sum" }, prefer: "_sum" },
+  // the histogram's _count is the number of tool calls on a backend
+  { key: "toolcalls", otlp: "hermes.tool.duration", group: "tool_name", agg: { live: "count", backend: "sum" }, prefer: "_count" },
   { key: "approvals", otlp: "hermes.approval.count", group: "choice", agg: { live: "count", backend: "sum" } },
   { key: "cache", otlp: "hermes.prompt_cache.tokens", group: "token_type", agg: { live: "sum", backend: "sum" } },
   { key: "cpu", otlp: "process.cpu.utilization", group: "", agg: { live: "avg", backend: "avg" } },
@@ -192,7 +203,9 @@ export function MetricsPage() {
   const [exploring, setExploring] = useState(false);
 
   const base = isLive ? "/live" : "";
-  const canQuery = isLive || !!status?.metrics;
+  const entry = (status?.available || []).find((b: any) => b.name === source) || null;
+  // The entry says what the type can do; the active adapter instance says what this entry does (lgtm vs tempo).
+  const canQuery = isLive || !!(entry?.metrics || (status?.active === source && status?.metrics));
 
   useEffect(() => {
     if (active) writeNav(navFromExplorer(ex));
@@ -219,7 +232,7 @@ export function MetricsPage() {
       const errs: Record<string, unknown> = {};
       await Promise.all(
         PANELS.map(async (def) => {
-          const native = resolveInstrument(list, def.otlp);
+          const native = resolveInstrument(list, def.otlp, isLive ? undefined : def.prefer);
           if (!native) {
             out[def.key] = null;
             return;
@@ -273,6 +286,8 @@ export function MetricsPage() {
   const cost = panels.cost || null;
   const calls = panels.calls || null;
   const tools = panels.tools || null;
+  const toolCallsB = panels.toolcalls || null;
+  const toolCalls = isLive ? (tools ? fmtInt(tools.points) : null) : toolCallsB ? fmtInt(Math.round(seriesTotal(toolCallsB))) : null;
   const approvals = panels.approvals || null;
   const cache = panels.cache || null;
   const totalTokens = tokens ? seriesTotal(tokens) : null;
@@ -334,10 +349,10 @@ export function MetricsPage() {
             <Stat label="Cost" value={totalCost != null ? fmtCost(totalCost) : null} unknownText="no pricing data" accent="cost" />
             <Stat label="Model calls" value={calls ? fmtInt(Math.round(seriesTotal(calls))) : null} unknownText="not recorded" />
             <Stat
-              label={isLive ? "Tool calls" : "Tool duration samples"}
-              value={tools ? fmtInt(tools.points) : null}
+              label="Tool calls"
+              value={toolCalls}
               unknownText="not recorded"
-              sub={isLive ? "duration points, one per call" : "samples in the range, not calls"}
+              sub={isLive ? "duration points, one per call" : "from the duration histogram's count"}
             />
             <Stat
               label="Cache read"

@@ -99,6 +99,9 @@ describe("metrics explorer in the URL (#284)", () => {
     expect(resolveInstrument(names, "hermes.cost.usage")).toBe("hermes.cost.usage");
     expect(resolveInstrument(names, "hermes.model.usage")).toBe("custom_total");
     expect(resolveInstrument(names, "hw.gpu.utilization")).toBeNull();
+    const hist = [{ name: "hermes_tool_duration_sum" }, { name: "hermes_tool_duration_count" }, { name: "hermes_tool_duration" }];
+    expect(resolveInstrument(hist, "hermes.tool.duration", "_count")).toBe("hermes_tool_duration_count");
+    expect(resolveInstrument(hist, "hermes.tool.duration")).toBe("hermes_tool_duration");
   });
   it("picks readable y ticks", () => {
     expect(yTicks(0)).toEqual([0]);

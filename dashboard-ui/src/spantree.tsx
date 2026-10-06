@@ -79,7 +79,11 @@ function SpanSection({
         <span className="truncate font-mono text-sm" title={span.name}>
           {span.name}
         </span>
-        {hasKids ? <span className="text-[10px] text-muted-foreground">{span.children.length}</span> : null}
+        {hasKids ? (
+          <span className="text-[10px] text-muted-foreground" title="direct child spans">
+            {span.children.length} child{span.children.length === 1 ? "" : "ren"}
+          </span>
+        ) : null}
         {isErr ? (
           <Badge variant="destructive" className="shrink-0 text-[10px]">
             error
