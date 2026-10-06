@@ -13,6 +13,7 @@ import types
 from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import patch
+from urllib.parse import unquote_plus
 
 import pytest
 
@@ -233,21 +234,39 @@ class TestTempoRootsOnly:
 
         return TempoAdapter({"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"})
 
-    def test_drops_traces_when_no_matched_span_is_root(self):
+    def test_roots_only_is_a_query_predicate_not_a_client_filter(self):
         adapter = self._build_adapter()
-        # One trace where the matched span IS the root ("agent"), one
-        # where the matched span is "api.gpt-4" but root is "cron".
+        # Tempo's span sets carry no ``name``; a client-side root check never
+        # matched (#296). The query asks for roots (nestedSetParent < 0) and
+        # every trace the server returns is kept.
         traces = [
             _tempo_trace("t-root-agent", "agent", ["agent"]),
-            _tempo_trace("t-child-api", "cron", ["api.gpt-4"]),
+            _tempo_trace("t-root-cron", "cron", ["cron"]),
         ]
-        with patch(
-            "backends.tempo.http_get_json",
-            return_value={"traces": traces, "metrics": {}},
-        ):
+        captured = {}
+
+        def fake(url, headers=None, timeout=None):
+            captured["url"] = url
+            return {"traces": traces, "metrics": {}}
+
+        with patch("backends.tempo.http_get_json", side_effect=fake):
             result = adapter.search(StructuredFilter(roots_only=True), 0, 1, 50)
 
-        assert [t["traceID"] for t in result["traces"]] == ["t-root-agent"]
+        assert "nestedSetParent < 0" in unquote_plus(captured["url"])
+        assert [t["traceID"] for t in result["traces"]] == ["t-root-agent", "t-root-cron"]
+        assert adapter.filter_support["roots_only"] == "server"
+
+    def test_roots_only_off_sends_no_root_predicate(self):
+        adapter = self._build_adapter()
+        captured = {}
+
+        def fake(url, headers=None, timeout=None):
+            captured["url"] = url
+            return {"traces": [], "metrics": {}}
+
+        with patch("backends.tempo.http_get_json", side_effect=fake):
+            adapter.search(StructuredFilter(roots_only=False), 0, 1, 50)
+        assert "nestedSetParent" not in unquote_plus(captured["url"])
 
     def test_keeps_all_traces_when_roots_only_false(self):
         adapter = self._build_adapter()

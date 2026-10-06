@@ -600,20 +600,36 @@ def bucketize(
 
 def counter_increases(
     samples: Iterable[Tuple[int, float, str]],
+    *,
+    started_in_window: Optional[Iterable[str]] = None,
+    window_start_ns: Optional[int] = None,
 ) -> List[Tuple[int, float, str]]:
     """Turn cumulative counter samples into per-sample increases.
 
     OTLP counters arrive cumulative (the exporter's temporality); a bucketed
     "tokens per 15 s" chart needs the increase between consecutive samples of
     the same series. A drop (process restart) counts the new value in full.
+
+    A series' first sample is an increase too when the series started inside
+    the window: every ``hermes -z`` run is a new process whose counters start
+    at zero, so its one or two cumulative samples carry the whole turn.
+    Callers say which series those are, either by name (``started_in_window``,
+    for stores that record the counter's start time) or by giving
+    ``window_start_ns`` and passing samples from before the window as well: a
+    series whose first sample lies at or after the window start is new, one
+    with an earlier sample is not (and its earlier value is the baseline).
+    Without either, the first sample is a baseline only (the old behaviour).
     """
+    new = set(started_in_window or ())
     last: Dict[str, float] = {}
     out: List[Tuple[int, float, str]] = []
     for ts, value, label in sorted(samples, key=lambda p: (p[2], p[0])):
         prev = last.get(label)
-        inc = value if prev is None or value < prev else value - prev
-        if prev is not None:
-            out.append((ts, inc, label))
+        if prev is None:
+            if label in new or (window_start_ns is not None and int(ts) >= int(window_start_ns)):
+                out.append((ts, value, label))
+        else:
+            out.append((ts, value if value < prev else value - prev, label))
         last[label] = value
     return out
 

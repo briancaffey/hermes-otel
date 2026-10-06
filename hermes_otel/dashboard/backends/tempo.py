@@ -144,7 +144,7 @@ class TempoAdapter(BackendAdapter):
         "status_ok": "server",
         "free_text": "server",
         "raw": "server",
-        "roots_only": "client",
+        "roots_only": "server",
     }
 
     def __init__(self, cfg: Dict[str, Any]):
@@ -219,6 +219,13 @@ class TempoAdapter(BackendAdapter):
 
     def _predicates(self, f: StructuredFilter) -> List[str]:
         predicates: List[str] = []
+        if f.roots_only and not f.free_text:
+            # The root span has no parent in Tempo's nested-set model; asking
+            # for it here means every matched span IS the root, so the card
+            # attributes come from the root and nothing is dropped afterwards
+            # (a client-side check on the matched span's name never matched:
+            # Tempo's span sets carry no ``name`` field, #296).
+            predicates.append("nestedSetParent < 0")
         if f.service:
             predicates.append(f'resource.service.name = "{_esc(f.service)}"')
         if f.name_prefix:
@@ -301,33 +308,10 @@ class TempoAdapter(BackendAdapter):
         result: Dict[str, Any] = data if isinstance(data, dict) else {"traces": []}
         traces = [t for t in (result.get("traces") or []) if isinstance(t, dict)]
 
-        # Client-side root filter: TraceQL predicates match at the span
-        # level, so a ``name =~ "api.*"`` query can return a cron trace
-        # whose *child* is an api span. When the user asked for roots
-        # only, drop traces where none of the matched spans is the
-        # trace root (Tempo's span sets carry no parent id, so the root is
-        # recognised by its name; a child named like the root passes).
-        # A free-text search is a content search: the text usually sits on an
-        # api/llm span, not the root, so the trace is kept whenever any span
-        # matched.
-        if f.roots_only and not f.free_text:
-            filtered = []
-            for t in traces:
-                root_name = (t.get("rootTraceName") or "").strip()
-                if not root_name:
-                    filtered.append(t)
-                    continue
-                if f.name_prefix and not root_name.startswith(f.name_prefix):
-                    continue
-                span_sets = t.get("spanSets") or ([t["spanSet"]] if t.get("spanSet") else [])
-                matched_root = any(
-                    (sp.get("name") or "").strip() == root_name
-                    for ss in span_sets
-                    for sp in ss.get("spans") or []
-                )
-                if matched_root:
-                    filtered.append(t)
-            traces = filtered
+        # Roots-only is in the query (``nestedSetParent < 0``); a raw query is
+        # the user's own and is not second-guessed.
+        if f.roots_only and f.name_prefix and not (f.raw or "").strip():
+            traces = [t for t in traces if (t.get("rootTraceName") or "").startswith(f.name_prefix)]
 
         for t in traces:
             # Tempo's per-service stats carry the whole-trace span count.

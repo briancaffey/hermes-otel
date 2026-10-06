@@ -459,9 +459,13 @@ class OpenObserveAdapter(BackendAdapter):
         )
         truncated = len(rows) >= _METRIC_SAMPLE_CAP
         rows = sorted(rows, key=lambda r: int(r.get("_timestamp") or 0))
+        # A monotonic cumulative sum is a counter; a histogram's ``_sum`` and
+        # ``_count`` streams are cumulative too but OpenObserve stores them
+        # without ``is_monotonic``.
+        histogram_part = stream.endswith(("_sum", "_count"))
         cumulative = any(
             str(r.get("aggregation_temporality", "")).endswith("CUMULATIVE")
-            and str(r.get("is_monotonic")) == "true"
+            and (str(r.get("is_monotonic")) == "true" or histogram_part)
             for r in rows
         )
         # Series identity is every label except the OTel/OpenObserve bookkeeping columns.
@@ -484,14 +488,22 @@ class OpenObserveAdapter(BackendAdapter):
             "exemplars",
         }
         samples = []
+        # ``start_time`` is the counter's own start (ns): a series that started
+        # inside the window is a fresh process whose first sample counts in
+        # full (one-shot runs export each counter once, #299).
+        window_start_ns = int(start_s) * 1_000_000_000
+        started: set = set()
         for r in rows:
             v = _maybe_num(r.get("value"))
             if not isinstance(v, (int, float)):
                 continue
             ident = "|".join(f"{k}={r[k]}" for k in sorted(r) if k not in skip)
             samples.append((int(r.get("_timestamp") or 0) * 1000, float(v), ident))
+            st = _maybe_num(r.get("start_time"))
+            if isinstance(st, (int, float)) and int(st) >= window_start_ns:
+                started.add(ident)
         if cumulative:
-            samples = counter_increases(samples)
+            samples = counter_increases(samples, started_in_window=started)
 
         # Collapse the series identity to the requested group_by label.
         def label_of(ident: str) -> str:

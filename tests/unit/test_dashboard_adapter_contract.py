@@ -471,7 +471,7 @@ class TestTempo:
             StructuredFilter(name_prefix="tool.", min_duration_ms=250, status="ok", service="s")
         )
         assert q.startswith(
-            '{ resource.service.name = "s" && name =~ "^tool\\\\." && status = ok && duration >= 250ms }'
+            '{ nestedSetParent < 0 && resource.service.name = "s" && name =~ "^tool\\\\." && status = ok && duration >= 250ms }'
         )
         assert "| select(" in q
 

@@ -23,19 +23,53 @@ NAMES = {
         "up",
     ],
 }
+# Raw cumulative samples, as ``query_range`` on the bare counter answers them:
+# one series per process (service_instance_id). The first process existed
+# before the window (a sample in the look-behind) and grows by 5 inside it;
+# the second starts inside the window with its whole value; the third is a
+# one-shot run whose two samples carry the same value (#296).
 RANGE = {
     "status": "success",
     "data": {
         "resultType": "matrix",
         "result": [
             {
-                "metric": {"model": "nvidia/nemotron-3-nano-omni"},
-                "values": [[1790294400, "17078.75"], [1790298000, "0"]],
+                "metric": {
+                    "__name__": "hermes_token_usage_total",
+                    "model": "nvidia/nemotron-3-nano-omni",
+                    "service_instance_id": "gw",
+                },
+                "values": [
+                    [1790294400 - 3600 - 60, "100"],
+                    [1790294400, "100"],
+                    [1790298000, "105"],
+                ],
             },
             {
-                "metric": {"model": "nvidia/nemotron-3-super-120b-a12b"},
-                "values": [[1790294400, "29417.33"]],
+                "metric": {
+                    "__name__": "hermes_token_usage_total",
+                    "model": "nvidia/nemotron-3-nano-omni",
+                    "service_instance_id": "one-shot-a",
+                },
+                "values": [[1790298000, "17078"], [1790301600, "17078"]],
             },
+            {
+                "metric": {
+                    "__name__": "hermes_token_usage_total",
+                    "model": "nvidia/nemotron-3-super-120b-a12b",
+                    "service_instance_id": "one-shot-b",
+                },
+                "values": [[1790294400, "29417"]],
+            },
+        ],
+    },
+}
+GAUGE_RANGE = {
+    "status": "success",
+    "data": {
+        "resultType": "matrix",
+        "result": [
+            {"metric": {"model": "m"}, "values": [[1790294400, "0.5"], [1790298000, "0.25"]]}
         ],
     },
 }
@@ -100,7 +134,10 @@ def fake_http(monkeypatch):
         if path.endswith("/label/__name__/values"):
             return NAMES
         if path.endswith("/api/v1/query_range"):
-            return RANGE
+            q = dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))
+            return (
+                RANGE if q.get("query", "").startswith("hermes_token_usage_total") else GAUGE_RANGE
+            )
         raise AssertionError(url)
 
     monkeypatch.setattr(_prometheus, "http_get_json", fake_get)
@@ -168,16 +205,33 @@ class TestPrometheus:
         q = _query_of(fake_http[-1])
         assert (q["start"], q["end"], q["match[]"]) == ("100", "200", '{__name__=~"hermes_.*"}')
 
-    def test_counter_query_uses_increase_and_lands_on_the_grid(self, fake_http):
+    def test_counter_query_reads_raw_samples_and_counts_a_new_series_first_value(self, fake_http):
         a = tp.TempoAdapter({"type": "lgtm", "endpoint": "http://h:4318/v1/traces"})
         start, end = 1790294400 - 3600, 1790298000 + 3600
         out = a.metrics_query("hermes_token_usage_total", start, end, 3600, group_by="model")
         q = _query_of(fake_http[-1])
-        assert q["query"] == "sum by (model) (increase(hermes_token_usage_total[3600s]))"
-        assert (q["start"], q["end"], q["step"]) == (str(start), str(end), "3600")
+        # the bare counter with a look-behind, not increase(): a one-shot run's
+        # single sample would otherwise read as 0 (#296)
+        assert q["query"] == "hermes_token_usage_total"
+        assert (q["start"], q["end"], q["step"]) == (str(start - 3600), str(end), "3600")
         assert out["cumulative"] is True and out["bucketS"] == 3600 and len(out["buckets"]) == 4
-        assert out["series"]["nvidia/nemotron-3-nano-omni"] == [None, 17078.75, 0.0, None]
-        assert out["series"]["nvidia/nemotron-3-super-120b-a12b"] == [None, 29417.33, None, None]
+        # gateway series: baseline before the window, +0 then +5 inside it;
+        # one-shot-a: first value counts (17078), the repeat adds 0
+        assert out["series"]["nvidia/nemotron-3-nano-omni"] == [None, 0.0, 17078.0 + 5.0, 0.0]
+        # one-shot-b: a series that starts inside the window counts in full
+        assert out["series"]["nvidia/nemotron-3-super-120b-a12b"] == [None, 29417.0, None, None]
+        assert "first value" in out["series_start_rule"]
+
+    def test_gauge_query_keeps_the_promql_aggregate(self, fake_http):
+        a = tp.TempoAdapter({"type": "lgtm", "endpoint": "http://h:4318/v1/traces"})
+        start, end = 1790294400 - 3600, 1790298000 + 3600
+        out = a.metrics_query(
+            "process_cpu_utilization", start, end, 3600, group_by="model", agg="avg"
+        )
+        q = _query_of(fake_http[-1])
+        assert q["query"] == "avg by (model) (last_over_time(process_cpu_utilization[3600s]))"
+        assert out["cumulative"] is False
+        assert out["series"]["m"] == [None, 0.5, 0.25, None]
 
     def test_gauge_and_aggregate_verbs(self):
         assert (
