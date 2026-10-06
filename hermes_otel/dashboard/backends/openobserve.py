@@ -10,12 +10,17 @@ same keys it does on Tempo.
 from __future__ import annotations
 
 import base64
+import json
+import time
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
 from . import register
+from ._attrs import KNOWN_ATTRIBUTES, dotted, oo_col
 from .base import (
     BackendAdapter,
+    BackendError,
+    ConfigError,
     HTTPException,
     LogFilter,
     StructuredFilter,
@@ -29,9 +34,43 @@ from .base import (
     resolve_env_or_literal,
     rewrite_host_for_docker,
     strictly_older,
+    strictly_older_traces,
+    trace_page,
 )
 
+__all__ = ["OpenObserveAdapter", "HTTPException"]
+
 _DEFAULT_OO_PORT = 5080
+# The trace detail asks for this many rows and says so when there are more.
+_DETAIL_SPAN_CAP = 500
+# How far back a trace id is looked for when the detail view opens it: the
+# list may have shown it from a 30-day lookback, so a week is not enough.
+_DEFAULT_TRACE_WINDOW_DAYS = 90
+# Raw metric samples loaded per chart; newest kept when there are more.
+_METRIC_SAMPLE_CAP = 10000
+# Python logging levels and the OTel spellings OpenObserve stores in ``severity``.
+_LEVEL_NAMES = {
+    10: ("DEBUG", "TRACE", "DEBUG2", "DEBUG3", "DEBUG4"),
+    20: ("INFO", "INFO2", "INFO3", "INFO4"),
+    30: ("WARN", "WARNING", "WARN2", "WARN3", "WARN4"),
+    40: ("ERROR", "ERROR2", "ERROR3", "ERROR4"),
+    50: ("FATAL", "CRITICAL", "FATAL2", "FATAL3", "FATAL4"),
+}
+
+
+def _severity_names_at_least(min_level: int) -> List[str]:
+    """The ``severity`` spellings at or above a Python level (for a SQL ``IN``)."""
+    names: List[str] = []
+    for lvl in sorted(_LEVEL_NAMES):
+        if lvl >= int(min_level):
+            names.extend(_LEVEL_NAMES[lvl])
+    return names
+
+
+def _like_escape(v: Any) -> str:
+    """A LIKE pattern fragment: SQL-quoted, with ``%`` and ``_`` literal."""
+    return _sql_escape(v).replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+
 
 # Columns the card renderer cares about. Expressed in Otel dot form;
 # ``_oo_col`` translates to OpenObserve's underscore form on the wire.
@@ -53,218 +92,13 @@ _CARD_ATTR_KEYS = (
 )
 
 
-def _oo_col(dotted: str) -> str:
-    return dotted.replace(".", "_")
+_oo_col = oo_col
 
 
-# Every attribute name the plugin emits (the ``span-attributes.md`` reference
-# plus the OTel / OpenInference standard keys it sets). OpenObserve flattens
-# ``a.b_c`` and ``a.b.c`` to the same ``a_b_c`` column, so the only way to give
-# a column its real name back is a table; ``tests/unit/test_openobserve_columns.py``
-# fails when the docs list a name that is missing here (#158).
-_KNOWN_ATTRIBUTES = (
-    "code.file.path",
-    "code.filepath",
-    "code.function",
-    "code.function.name",
-    "code.line.number",
-    "code.lineno",
-    "correlation.id",
-    "error.message",
-    "error.type",
-    "exception.escaped",
-    "exception.message",
-    "exception.stacktrace",
-    "exception.type",
-    "gen_ai.agent.name",
-    "gen_ai.conversation.id",
-    "gen_ai.input.messages",
-    "gen_ai.operation.name",
-    "gen_ai.output.messages",
-    "gen_ai.provider.name",
-    "gen_ai.request.choice.count",
-    "gen_ai.request.frequency_penalty",
-    "gen_ai.request.max_tokens",
-    "gen_ai.request.model",
-    "gen_ai.request.presence_penalty",
-    "gen_ai.request.reasoning.level",
-    "gen_ai.request.stop_sequences",
-    "gen_ai.request.stream",
-    "gen_ai.request.temperature",
-    "gen_ai.request.top_k",
-    "gen_ai.request.top_p",
-    "gen_ai.response.finish_reasons",
-    "gen_ai.response.id",
-    "gen_ai.response.model",
-    "gen_ai.response.status_code",
-    "gen_ai.skill.name",
-    "gen_ai.system",
-    "gen_ai.system_instructions",
-    "gen_ai.tool.call.arguments",
-    "gen_ai.tool.call.id",
-    "gen_ai.tool.call.result",
-    "gen_ai.tool.name",
-    "gen_ai.tool.type",
-    "gen_ai.usage.cache_creation.input_tokens",
-    "gen_ai.usage.cache_creation_input_tokens",
-    "gen_ai.usage.cache_read.input_tokens",
-    "gen_ai.usage.cache_read_input_tokens",
-    "gen_ai.usage.input_tokens",
-    "gen_ai.usage.output_tokens",
-    "gen_ai.usage.reasoning.output_tokens",
-    "gen_ai.usage.total_tokens",
-    "hermes.api.error",
-    "hermes.approval.choice",
-    "hermes.approval.command",
-    "hermes.approval.decided_by",
-    "hermes.approval.decision",
-    "hermes.approval.description",
-    "hermes.approval.duration_ms",
-    "hermes.approval.granted",
-    "hermes.approval.pattern_key",
-    "hermes.approval.pattern_keys",
-    "hermes.approval.surface",
-    "hermes.approval.timed_out",
-    "hermes.content.input_chars",
-    "hermes.content.output_chars",
-    "hermes.conversation.message_count",
-    "hermes.cost.source",
-    "hermes.cost.status",
-    "hermes.cost.usage",
-    "hermes.cron.job_id",
-    "hermes.link",
-    "hermes.log.attribution",
-    "hermes.max_retries",
-    "hermes.platform",
-    "hermes.preview.input.original_chars",
-    "hermes.preview.input.truncated",
-    "hermes.preview.output.original_chars",
-    "hermes.preview.output.truncated",
-    "hermes.profile",
-    "hermes.retry.count",
-    "hermes.retryable",
-    "hermes.sender.id",
-    "hermes.session.completed",
-    "hermes.session.duration_s",
-    "hermes.session.failed",
-    "hermes.session.finalize_reason",
-    "hermes.session.interrupted",
-    "hermes.session.is_subagent",
-    "hermes.session.kind",
-    "hermes.session.previous_id",
-    "hermes.session.reset_reason",
-    "hermes.session.synthesized",
-    "hermes.session.turn_count",
-    "hermes.session_id",
-    "hermes.skill.name",
-    "hermes.skill.path",
-    "hermes.skill.result_status",
-    "hermes.skill.source",
-    "hermes.span_kind",
-    "hermes.subagent.child_id",
-    "hermes.subagent.child_session_id",
-    "hermes.subagent.duration_ms",
-    "hermes.subagent.goal",
-    "hermes.subagent.parent_id",
-    "hermes.subagent.parent_session_id",
-    "hermes.subagent.parent_turn_id",
-    "hermes.subagent.role",
-    "hermes.subagent.status",
-    "hermes.subagent.summary",
-    "hermes.tool.blocked_by",
-    "hermes.tool.command",
-    "hermes.tool.cpu.utilization.avg",
-    "hermes.tool.cpu.utilization.peak",
-    "hermes.tool.decided_by",
-    "hermes.tool.duration_s",
-    "hermes.tool.gpu.utilization.avg",
-    "hermes.tool.gpu.utilization.peak",
-    "hermes.tool.name",
-    "hermes.tool.outcome",
-    "hermes.tool.target",
-    "hermes.turn.api_call_count",
-    "hermes.turn.duration_s",
-    "hermes.turn.exit_reason",
-    "hermes.turn.final_status",
-    "hermes.turn.number",
-    "hermes.turn.skill_count",
-    "hermes.turn.skills",
-    "hermes.turn.tool_commands",
-    "hermes.turn.tool_count",
-    "hermes.turn.tool_outcomes",
-    "hermes.turn.tool_targets",
-    "hermes.turn.tools",
-    "host.name",
-    "http.response.status_code",
-    "input.mime_type",
-    "input.value",
-    "llm.api_mode",
-    "llm.input_messages",
-    "llm.model_name",
-    "llm.output.content",
-    "llm.output.tool_calls",
-    "llm.provider",
-    "llm.request.approx_input_tokens",
-    "llm.request.max_tokens",
-    "llm.request.message_count",
-    "llm.response.duration_ms",
-    "llm.response.finish_reason",
-    "llm.response.output_chars",
-    "llm.response.tool_calls",
-    "llm.system_prompt",
-    "llm.token_count.completion",
-    "llm.token_count.completion_details.reasoning",
-    "llm.token_count.prompt",
-    "llm.token_count.prompt_details.cache_read",
-    "llm.token_count.prompt_details.cache_write",
-    "llm.token_count.total",
-    "openinference.project.name",
-    "openinference.span.kind",
-    "output.mime_type",
-    "output.value",
-    "process.pid",
-    "service.instance.id",
-    "service.name",
-    "service.version",
-    "session.id",
-    "telemetry.sdk.language",
-    "telemetry.sdk.name",
-    "telemetry.sdk.version",
-    "tool.name",
-    "traceloop.span.kind",
-    "user.id",
-    "wandb.entity",
-    "wandb.is_turn",
-    "wandb.project",
-    "wandb.thread_id",
-    "weave.agent.version",
-)
-
-
-def _build_column_table() -> Dict[str, str]:
-    table: Dict[str, str] = {}
-    # Two names can flatten to one column (``gen_ai.usage.cache_read.input_tokens``
-    # and its legacy alias ``gen_ai.usage.cache_read_input_tokens``; ``session.id``
-    # and ``session_id``): keep the current dotted spelling, i.e. the one with
-    # more dots, and on a tie the shorter name.
-    for attr in sorted(_KNOWN_ATTRIBUTES, key=lambda a: (-a.count("."), len(a), a)):
-        table.setdefault(_oo_col(attr), attr)
-    return table
-
-
-_COLUMN_TO_ATTRIBUTE = _build_column_table()
-
-
-def _dotted(underscored: str) -> str:
-    """The attribute name behind an OpenObserve column, or the column name itself.
-
-    Not a rule: ``llm_model_name`` is ``llm.model_name`` and
-    ``gen_ai_usage_input_tokens`` is ``gen_ai.usage.input_tokens``, which no
-    underscore-to-dot rewrite can recover (the old one produced
-    ``llm.model.name``). Unknown columns keep OpenObserve's own name rather
-    than an invented one.
-    """
-    return _COLUMN_TO_ATTRIBUTE.get(underscored, underscored)
+# The attribute table and the column<->name mapping live in ``_attrs`` (shared
+# with the Loki and Uptrace adapters); the old names stay importable from here.
+_KNOWN_ATTRIBUTES = KNOWN_ATTRIBUTES
+_dotted = dotted
 
 
 def _sql_escape(v: Any) -> str:
@@ -280,6 +114,19 @@ class OpenObserveAdapter(BackendAdapter):
     # and logs in a logs stream, both queryable with the same SQL API (#182).
     supports_metrics = True
     supports_logs = True
+    filter_support = {
+        "service": "server",
+        "name": "server",
+        "model": "server",
+        "session": "server",
+        "tool": "server",
+        "min_duration": "server",
+        "status_error": "server",
+        "status_ok": "server",
+        "free_text": "server",
+        "raw": "server",
+        "roots_only": "server",
+    }
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
@@ -295,6 +142,10 @@ class OpenObserveAdapter(BackendAdapter):
         self.stream = cfg.get("stream_name") or cfg.get("stream") or "default"
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
+        try:
+            self.trace_window_days = int(cfg.get("trace_window_days") or _DEFAULT_TRACE_WINDOW_DAYS)
+        except (TypeError, ValueError):
+            self.trace_window_days = _DEFAULT_TRACE_WINDOW_DAYS
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -306,15 +157,10 @@ class OpenObserveAdapter(BackendAdapter):
 
     def _headers(self) -> Dict[str, str]:
         if not (self.user and self.password):
-            from .base import HTTPException
-
-            raise HTTPException(
-                status_code=502,
-                detail=(
-                    "OpenObserve requires basic auth credentials. Set "
-                    "user + password (or *_env) on the openobserve "
-                    "backend entry in config.yaml."
-                ),
+            raise ConfigError(
+                "OpenObserve requires basic auth credentials. Set "
+                "user + password (or *_env) on the openobserve "
+                "backend entry in config.yaml."
             )
         token = base64.b64encode(f"{self.user}:{self.password}".encode("utf-8")).decode("ascii")
         return {"Authorization": f"Basic {token}"}
@@ -357,10 +203,11 @@ class OpenObserveAdapter(BackendAdapter):
         clauses: List[str] = []
         if f.service:
             clauses.append(f"service_name = '{_sql_escape(f.service)}'")
+        if f.name_prefix:
+            clauses.append(f"operation_name LIKE '{_like_escape(f.name_prefix)}%'")
         if f.name_regex:
-            # OpenObserve SQL supports LIKE; wrap user text in %%.
-            pat = f.name_regex.replace("%", "\\%")
-            clauses.append(f"operation_name LIKE '%{_sql_escape(pat)}%'")
+            # OpenObserve SQL supports LIKE; the native text is a substring.
+            clauses.append(f"operation_name LIKE '%{_like_escape(f.name_regex)}%'")
         if f.status == "error":
             clauses.append("status_code = 2")
         elif f.status == "ok":
@@ -387,61 +234,100 @@ class OpenObserveAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
+    @staticmethod
+    def _is_root_row(row: Dict[str, Any]) -> bool:
+        return not (
+            row.get("reference_parent_span_id")
+            or _extract_parent_from_reference(row.get("reference"))
+            or row.get("parent_span_id")
+        )
+
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         where = self._build_where(f)
         url = f"{self.query_url}/api/{self.org}/_search?type=traces"
+        end_us = int(end_s) * 1_000_000
+        if f.before_ns:
+            # The cursor is the end bound (µs, rounded up so the row it was
+            # taken from stays inside); strictly_older_traces() cuts exactly.
+            end_us = min(end_us, int(f.before_ns) // 1000 + 1)
 
-        # When roots_only is False we want ALL matched spans (still
-        # deduped to one per trace client-side); when it's True we try
-        # version-specific root-span filters first and fall back to
-        # client-side dedupe.
+        # One row beyond the page so has_more is exact. Without roots-only
+        # several rows of one trace share a page, so ask for more and dedupe.
+        want = int(limit) + 1
+        wide = int(limit) * 4 + 1
+        # Roots only: the stream names the parent in one of two columns
+        # depending on the OpenObserve version. Each spelling is tried in
+        # turn; a later attempt runs ONLY when the earlier one was rejected
+        # (an unknown column is a 400), never when it matched nothing: an
+        # empty answer is the answer (#299). The last attempt has no root
+        # predicate and is filtered here from each row's parent fields.
         if f.roots_only:
             attempts = [
-                f"SELECT * FROM {self.stream} WHERE {where} AND "
-                f"(reference_parent_span_id IS NULL OR reference_parent_span_id = '') "
-                f"ORDER BY _timestamp DESC LIMIT {int(limit)}",
-                f"SELECT * FROM {self.stream} WHERE {where} AND "
-                f"(reference IS NULL OR reference = '') "
-                f"ORDER BY _timestamp DESC LIMIT {int(limit)}",
-                f"SELECT * FROM {self.stream} WHERE {where} "
-                f"ORDER BY _timestamp DESC LIMIT {int(limit) * 4}",
+                (
+                    f"SELECT * FROM {self.stream} WHERE {where} AND "
+                    f"(reference_parent_span_id IS NULL OR reference_parent_span_id = '') "
+                    f"ORDER BY _timestamp DESC LIMIT {want}",
+                    want,
+                    False,
+                ),
+                (
+                    f"SELECT * FROM {self.stream} WHERE {where} AND "
+                    f"(reference IS NULL OR reference = '') "
+                    f"ORDER BY _timestamp DESC LIMIT {want}",
+                    want,
+                    False,
+                ),
+                (
+                    f"SELECT * FROM {self.stream} WHERE {where} "
+                    f"ORDER BY _timestamp DESC LIMIT {wide}",
+                    wide,
+                    True,
+                ),
             ]
         else:
             attempts = [
-                f"SELECT * FROM {self.stream} WHERE {where} "
-                f"ORDER BY _timestamp DESC LIMIT {int(limit) * 4}",
+                (
+                    f"SELECT * FROM {self.stream} WHERE {where} "
+                    f"ORDER BY _timestamp DESC LIMIT {wide}",
+                    wide,
+                    False,
+                )
             ]
 
         rows: List[Dict[str, Any]] = []
+        client_roots = False
         last_err: Optional[Exception] = None
-        for sql in attempts:
+        for sql, size, filter_roots_here in attempts:
             body = {
                 "query": {
                     "sql": sql,
                     "start_time": int(start_s) * 1_000_000,  # µs
-                    "end_time": int(end_s) * 1_000_000,
-                    "size": int(limit) * 4,
+                    "end_time": end_us,
+                    "size": size,
                 }
             }
             try:
                 data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
-            except Exception as e:  # HTTPException or network
+            except BackendError as e:
+                if e.kind != "backend" or "Backend returned 4" not in str(e.detail):
+                    raise  # unreachable, auth, config: no other spelling will help
                 last_err = e
                 continue
             hits = data.get("hits") if isinstance(data, dict) else None
-            if isinstance(hits, list) and hits:
-                rows = hits
-                break
+            rows = [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+            client_roots = filter_roots_here
+            last_err = None
+            break
 
-        if not rows and last_err:
+        if last_err is not None:
             raise last_err
 
         traces: Dict[str, Dict[str, Any]] = {}
         for row in rows:
-            if not isinstance(row, dict):
-                continue
             trace_id = row.get("trace_id") or row.get("traceId")
             if not trace_id or trace_id in traces:
+                continue
+            if client_roots and not self._is_root_row(row):
                 continue
             start_ns = int(row.get("start_time") or 0)
             duration_us = int(row.get("duration") or 0)
@@ -467,8 +353,9 @@ class OpenObserveAdapter(BackendAdapter):
                     }
                 ],
             }
-        self._attach_span_counts(traces, start_s, end_s)
-        return {"traces": list(traces.values())}
+        page = trace_page(strictly_older_traces(list(traces.values()), f), limit)
+        self._attach_span_counts({t["traceID"]: t for t in page["traces"]}, start_s, end_s)
+        return page
 
     def _attach_span_counts(
         self, traces: Dict[str, Dict[str, Any]], start_s: int, end_s: int
@@ -477,7 +364,9 @@ class OpenObserveAdapter(BackendAdapter):
 
         The search query returns one row per trace, so the card would
         otherwise show "1 spans" for every trace (#179). A failed count
-        query leaves ``spanCount`` unset; the UI then shows no number.
+        query leaves ``spanCount`` unset; the UI then shows no number. The
+        count's window is a day wider than the search on both sides so a
+        trace straddling the window edge is not under-counted.
         """
         if not traces:
             return
@@ -489,8 +378,8 @@ class OpenObserveAdapter(BackendAdapter):
         body = {
             "query": {
                 "sql": sql,
-                "start_time": int(start_s) * 1_000_000,
-                "end_time": int(end_s) * 1_000_000,
+                "start_time": max(0, int(start_s) - 86400) * 1_000_000,
+                "end_time": (int(end_s) + 86400) * 1_000_000,
                 "size": len(traces),
             }
         }
@@ -533,9 +422,10 @@ class OpenObserveAdapter(BackendAdapter):
         return [h for h in hits or [] if isinstance(h, dict)]
 
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        """Every metric stream (the window is not applied: a stream listing has
+        no time bound). ``count`` is the stream's document count over its whole
+        life, which ``count_scope`` says."""
         url = f"{self.query_url}/api/{self.org}/streams?type=metrics"
-        from .base import http_get_json
-
         data = http_get_json(url, headers=self._headers(), timeout=30.0)
         out: List[Dict[str, Any]] = []
         for s in (data.get("list") if isinstance(data, dict) else None) or []:
@@ -545,7 +435,7 @@ class OpenObserveAdapter(BackendAdapter):
             if name.endswith(("_bucket", "_min", "_max")):
                 continue  # histogram internals; _sum and _count stay
             docs = ((s.get("stats") or {}).get("doc_num")) if isinstance(s, dict) else None
-            out.append({"name": name, "count": int(docs or 0)})
+            out.append({"name": name, "count": int(docs or 0), "count_scope": "stream"})
         return out
 
     def metrics_query(
@@ -558,17 +448,25 @@ class OpenObserveAdapter(BackendAdapter):
         agg: str = "sum",
     ) -> Dict[str, Any]:
         stream = name.replace('"', "")
+        # Newest first so a window with more samples than the cap loses the
+        # oldest, not the latest; the increases below need ascending order.
         rows = self._search(
-            f'SELECT * FROM "{stream}" ORDER BY _timestamp ASC LIMIT 10000',
+            f'SELECT * FROM "{stream}" ORDER BY _timestamp DESC LIMIT {_METRIC_SAMPLE_CAP}',
             start_s,
             end_s,
-            10000,
+            _METRIC_SAMPLE_CAP,
             "metrics",
         )
+        truncated = len(rows) >= _METRIC_SAMPLE_CAP
+        rows = sorted(rows, key=lambda r: int(r.get("_timestamp") or 0))
+        # A monotonic cumulative sum is a counter; a histogram's ``_sum`` and
+        # ``_count`` streams are cumulative too but OpenObserve stores them
+        # without ``is_monotonic``.
+        histogram_part = stream.endswith(("_sum", "_count"))
         cumulative = any(
             str(r.get("aggregation_temporality", "")).endswith("CUMULATIVE")
-            and str(r.get("is_monotonic")) == "true"
-            for r in rows[:1]
+            and (str(r.get("is_monotonic")) == "true" or histogram_part)
+            for r in rows
         )
         # Series identity is every label except the OTel/OpenObserve bookkeeping columns.
         skip = {
@@ -585,19 +483,28 @@ class OpenObserveAdapter(BackendAdapter):
             "telemetry_sdk_language",
             "telemetry_sdk_name",
             "telemetry_sdk_version",
-            "service_instance_id",
-            "process_pid",
             "exemplars",
         }
+        # ``service_instance_id`` / ``process_pid`` stay in the identity: a
+        # counter is per process, and two processes' samples folded into one
+        # series would read the second one's first value as "no increase".
         samples = []
+        # ``start_time`` is the counter's own start (ns): a series that started
+        # inside the window is a fresh process whose first sample counts in
+        # full (one-shot runs export each counter once, #299).
+        window_start_ns = int(start_s) * 1_000_000_000
+        started: set = set()
         for r in rows:
             v = _maybe_num(r.get("value"))
             if not isinstance(v, (int, float)):
                 continue
             ident = "|".join(f"{k}={r[k]}" for k in sorted(r) if k not in skip)
             samples.append((int(r.get("_timestamp") or 0) * 1000, float(v), ident))
+            st = _maybe_num(r.get("start_time"))
+            if isinstance(st, (int, float)) and int(st) >= window_start_ns:
+                started.add(ident)
         if cumulative:
-            samples = counter_increases(samples)
+            samples = counter_increases(samples, started_in_window=started)
 
         # Collapse the series identity to the requested group_by label.
         def label_of(ident: str) -> str:
@@ -615,6 +522,7 @@ class OpenObserveAdapter(BackendAdapter):
         )
         out["name"] = name
         out["cumulative"] = cumulative
+        out["truncated"] = truncated
         return out
 
     # ── logs (#182) ──────────────────────────────────────────────────
@@ -635,6 +543,13 @@ class OpenObserveAdapter(BackendAdapter):
         where: List[str] = []
         if f.trace_id:
             where.append(f"trace_id = '{_sql_escape(f.trace_id)}'")
+        if f.span_id:
+            where.append(f"span_id = '{_sql_escape(f.span_id)}'")
+        if f.min_level:
+            # Severity in the query, not on the page: a page of DEBUG rows
+            # would otherwise come back short of WARN lines that exist (#299).
+            names = ", ".join(f"'{n}'" for n in _severity_names_at_least(f.min_level))
+            where.append(f"severity IN ({names})")
         if f.session:
             # The exporter's ``hermes.session_id`` attribute; OpenObserve flattens
             # dots to underscores.
@@ -653,9 +568,9 @@ class OpenObserveAdapter(BackendAdapter):
         sql = f'SELECT * FROM "{self._log_stream()}"'
         if where:
             sql += " WHERE " + " AND ".join(where)
-        sql += f" ORDER BY _timestamp DESC LIMIT {int(limit) * 3}"
+        sql += f" ORDER BY _timestamp DESC LIMIT {int(limit)}"
         try:
-            rows = self._search(sql, start_s, end_s, int(limit) * 3, "logs")
+            rows = self._search(sql, start_s, end_s, int(limit), "logs")
         except HTTPException as exc:
             # OpenObserve rejects a WHERE on a column the stream has never seen
             # ("Search field not found … No field named event_name"). Until an
@@ -664,20 +579,9 @@ class OpenObserveAdapter(BackendAdapter):
             if wants_events and "No field named event_name" in str(exc.detail):
                 return []
             raise
-        levels = {
-            "DEBUG": 10,
-            "INFO": 20,
-            "WARNING": 30,
-            "WARN": 30,
-            "ERROR": 40,
-            "CRITICAL": 50,
-            "FATAL": 50,
-        }
         out: List[Dict[str, Any]] = []
         for r in rows:
             level = self._level_name(r)
-            if f.min_level and levels.get(level, 20) < f.min_level:
-                continue
             known = {
                 "_timestamp",
                 "body",
@@ -711,8 +615,6 @@ class OpenObserveAdapter(BackendAdapter):
             # OpenObserve flattens attribute names (``hermes_log_attribution``);
             # give the documented ones their dotted name back (#268).
             out.append(finish_log_row(row, {_dotted(k): v for k, v in r.items() if k not in known}))
-            if len(out) >= limit:
-                break
         return strictly_older(out, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
@@ -732,25 +634,36 @@ class OpenObserveAdapter(BackendAdapter):
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         where = f"trace_id = '{_sql_escape(trace_id)}'"
-        sql = f"SELECT * FROM {self.stream} WHERE {where} ORDER BY start_time ASC LIMIT 500"
-        # 24h window either side of the trace — trace_id is unique so
-        # we don't need a tight window but OpenObserve requires one.
-        import time
-
+        sql = (
+            f"SELECT * FROM {self.stream} WHERE {where} "
+            f"ORDER BY start_time ASC LIMIT {_DETAIL_SPAN_CAP}"
+        )
+        # OpenObserve requires a window; a trace id is unique, so it is as
+        # wide as the list could have shown it from (``trace_window_days``).
         now = int(time.time())
         body = {
             "query": {
                 "sql": sql,
-                "start_time": (now - 7 * 86400) * 1_000_000,
+                "start_time": max(0, now - self.trace_window_days * 86400) * 1_000_000,
                 "end_time": (now + 3600) * 1_000_000,
-                "size": 500,
+                "size": _DETAIL_SPAN_CAP,
             }
         }
         url = f"{self.query_url}/api/{self.org}/_search?type=traces"
         data = http_post_json(url, body, headers=self._headers(), timeout=20.0)
         hits = data.get("hits") if isinstance(data, dict) else None
-        rows = hits if isinstance(hits, list) else []
-        return _rows_to_otlp(rows)
+        rows = [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+        if not rows:
+            raise BackendError(
+                404,
+                f"Trace {trace_id} not found in OpenObserve stream {self.stream!r} "
+                f"(last {self.trace_window_days} days)",
+                "not_found",
+            )
+        out = _rows_to_otlp(rows)
+        out["span_count"] = len(rows)
+        out["truncated"] = len(rows) >= _DETAIL_SPAN_CAP
+        return out
 
 
 def _extract_org(endpoint: str) -> Optional[str]:
@@ -773,10 +686,10 @@ def _row_to_card_attrs(row: Dict[str, Any]) -> Dict[str, Any]:
     status_code = row.get("status_code")
     if status_code is not None:
         out["status"] = "error" if status_code == 2 else "ok"
-    for dotted, col in zip(_CARD_ATTR_KEYS, _CARD_ATTR_OO_COLS):
+    for dotted_key, col in zip(_CARD_ATTR_KEYS, _CARD_ATTR_OO_COLS):
         v = row.get(col)
         if v is not None and v != "":
-            out[dotted] = _maybe_num(v)
+            out[dotted_key] = _maybe_num(v)
     return out
 
 
@@ -878,8 +791,6 @@ def _extract_parent_from_reference(ref: Any) -> Optional[str]:
                 return r["spanId"]
     if isinstance(ref, str):
         try:
-            import json
-
             parsed = json.loads(ref)
             if isinstance(parsed, list):
                 for r in parsed:

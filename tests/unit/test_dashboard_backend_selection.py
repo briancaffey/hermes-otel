@@ -25,6 +25,15 @@ CFG = [
 ]
 
 
+@pytest.fixture(autouse=True)
+def _fresh_adapters():
+    """Adapter instances are cached per config identity (#290); never let one
+    test's instance (and its project / schema caches) reach the next."""
+    backends.clear_caches()
+    yield
+    backends.clear_caches()
+
+
 @pytest.fixture()
 def client(monkeypatch):
     monkeypatch.setattr(backends, "load_config", lambda: (Path("/x/hermes_otel.yaml"), CFG, "oo"))
@@ -82,6 +91,7 @@ class TestStatusAndRoutes:
         st = client.get("/status").json()
         assert st["active"] == "oo" and st["query_backend_pin"] == "oo"
         by = {b["name"]: b for b in st["available"]}
+        phx_filters = by["phx"].pop("filters")
         assert by["phx"] == {
             "type": "phoenix",
             "name": "phx",
@@ -90,7 +100,10 @@ class TestStatusAndRoutes:
             "metrics": False,
             "logs": False,
         }
+        # The adapter's declared search-bar support rides along (#292).
+        assert phx_filters["model"] == "server" and phx_filters["service"] == "none"
         assert by["oo"]["metrics"] and by["oo"]["logs"] and by["oo"]["supported"]
+        assert by["oo"]["filters"]["roots_only"] == "server"
         assert by["hc"] == {
             "type": "honeycomb",
             "name": "hc",
@@ -100,6 +113,7 @@ class TestStatusAndRoutes:
             "logs": False,
         }
         assert st["metrics"] is True and st["logs"] is True
+        assert st["filters"]["free_text"] == "server"  # the active (oo) adapter's
 
     def test_status_for_a_chosen_backend(self, client):
         st = client.get("/status", params={"backend": "phx"}).json()
@@ -181,6 +195,22 @@ class TestStatusAndRoutes:
 
 
 class TestBucketHelpers:
+    def test_counter_increases_count_a_series_that_started_in_the_window(self):
+        # "a" existed before the window (baseline at t=1), "b" starts inside it
+        samples = [(1, 10.0, "a"), (5, 12.0, "a"), (6, 7.0, "b"), (9, 7.0, "b")]
+        assert counter_increases(samples, window_start_ns=4) == [
+            (5, 2.0, "a"),
+            (6, 7.0, "b"),
+            (9, 0.0, "b"),
+        ]
+        assert counter_increases(samples, started_in_window={"b"}) == [
+            (5, 2.0, "a"),
+            (6, 7.0, "b"),
+            (9, 0.0, "b"),
+        ]
+        # without either hint the first sample stays a baseline
+        assert counter_increases(samples) == [(5, 2.0, "a"), (9, 0.0, "b")]
+
     def test_counter_increases_per_series_and_reset(self):
         samples = [(1, 10.0, "a"), (2, 15.0, "a"), (3, 3.0, "a"), (1, 100.0, "b"), (2, 100.0, "b")]
         assert counter_increases(samples) == [(2, 5.0, "a"), (3, 3.0, "a"), (2, 0.0, "b")]
@@ -252,17 +282,20 @@ class TestOpenObserveMetrics:
             out = a.logs_search(LogFilter(min_level=30, text="o"), 0, 10, 50)
             sql = m.call_args[0][0]
         assert all(r["attributes"] == {} and r["severity_number"] for r in out)
-        assert [_core(r) for r in out] == [
-            {
-                "level": "ERROR",
-                "logger": "tools.terminal",
-                "body": "boom",
-                "time_unix_nano": 1_700_000_000_000_000_000,
-                "trace_id": "t1",
-                "session_id": None,
-            }
-        ]
+        assert _core(out[0]) == {
+            "level": "ERROR",
+            "logger": "tools.terminal",
+            "body": "boom",
+            "time_unix_nano": 1_700_000_000_000_000_000,
+            "trace_id": "t1",
+            "session_id": None,
+        }
+        # The level is part of the query (#299), not a filter over the page:
+        # WARN and above, in every spelling OpenObserve stores.
+        assert "severity IN ('WARN', 'WARNING'" in sql and "'ERROR'" in sql and "'FATAL'" in sql
+        assert "'INFO'" not in sql
         assert "body LIKE '%o%'" in sql and 'FROM "default"' in sql
+        assert "LIMIT 50" in sql
 
 
 def test_trace_detail_carries_the_backend_ui_link(client):

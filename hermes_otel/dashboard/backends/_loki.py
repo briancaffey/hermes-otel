@@ -12,6 +12,7 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
+from ._attrs import dotted as _dotted
 from .base import (
     LogFilter,
     finish_log_row,
@@ -19,9 +20,13 @@ from .base import (
     log_end_ns,
     strictly_older,
 )
-from .openobserve import _dotted
 
 DEFAULT_SELECTOR = '{service_name=~".+"}'
+
+# Loki refuses a range longer than its ``max_query_length`` (30 days and one
+# hour by default); every window here is clamped to that so a one-year
+# lookback never turns into a 400 (#296).
+MAX_RANGE_S = 30 * 86400
 
 # Python logging levels → the smallest OTel severity number of that band
 # (the exporter maps DEBUG→5, INFO→9, WARNING→13, ERROR→17, CRITICAL→21).
@@ -42,6 +47,8 @@ def logql_for(f: LogFilter, selector: str = DEFAULT_SELECTOR) -> str:
     stages: List[str] = []
     if f.trace_id:
         stages.append(f"| trace_id={_quote(f.trace_id)}")
+    if f.span_id:
+        stages.append(f"| span_id={_quote(f.span_id)}")
     if f.event_name:
         stages.append(f"| event_name={_quote(f.event_name)}")
     elif f.events_only:
@@ -114,12 +121,14 @@ def logs_search(
     selector: str = DEFAULT_SELECTOR,
     headers: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
+    end_ns = log_end_ns(end_s, f)
+    start_ns = max(int(start_s) * 1_000_000_000, end_ns - MAX_RANGE_S * 1_000_000_000)
     params = {
         "query": logql_for(f, selector),
-        "start": int(start_s) * 1_000_000_000,
+        "start": start_ns,
         # Loki's end is exclusive and nanosecond-precise, so the cursor maps
         # straight onto it.
-        "end": log_end_ns(end_s, f),
+        "end": end_ns,
         "limit": int(limit),
         "direction": "backward",
     }
@@ -141,8 +150,9 @@ def loggers(
     selector: str = DEFAULT_SELECTOR,
     headers: Optional[Dict[str, str]] = None,
 ) -> List[Dict[str, Any]]:
-    """Record counts per ``scope_name`` (the Python logger) over the window."""
-    window = max(1, int(end_s) - int(start_s))
+    """Record counts per ``scope_name`` (the Python logger) over the window
+    (at most the last ``MAX_RANGE_S`` of it)."""
+    window = max(1, min(int(end_s) - int(start_s), MAX_RANGE_S))
     params = {
         "query": f"sum by (scope_name) (count_over_time({selector} [{window}s]))",
         "time": int(end_s),

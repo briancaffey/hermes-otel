@@ -35,13 +35,17 @@ import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
 from urllib import parse as _urlparse
 
-from . import register
+from . import default_service_name, register
+from ._attrs import dotted as _dotted
 from .base import (
     BackendAdapter,
+    BackendError,
+    ConfigError,
     HTTPException,
     LogFilter,
     StructuredFilter,
     bucketize,
+    counter_increases,
     finish_log_row,
     http_get_json,
     log_end_ns,
@@ -50,8 +54,14 @@ from .base import (
     resolve_env_or_literal,
     rewrite_host_for_docker,
     strictly_older,
+    strictly_older_traces,
+    trace_page,
 )
-from .openobserve import _dotted
+
+__all__ = ["UptraceAdapter", "HTTPException"]
+
+# Entries that switch the service pin on log queries off.
+_NO_PIN = ("", "off", "none", "any", "*")
 
 _DEFAULT_UPTRACE_HTTP_PORT = 14318
 _API = "/internal/v1"
@@ -205,6 +215,19 @@ class UptraceAdapter(BackendAdapter):
     raw_placeholder = 'where _name like "api.%" | where _duration > 1s'
     supports_metrics = True
     supports_logs = True
+    filter_support = {
+        "service": "server",
+        "name": "server",
+        "model": "server",
+        "session": "server",
+        "tool": "server",
+        "min_duration": "server",
+        "status_error": "server",
+        "status_ok": "server",
+        "free_text": "server",
+        "raw": "server",
+        "roots_only": "client",  # kept from each row's parentId (2.0 has no parent column)
+    }
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
@@ -226,12 +249,24 @@ class UptraceAdapter(BackendAdapter):
             or None
         )
         self.project_id = int(cfg.get("project_id") or 1)
-        self.service_name = str(cfg.get("service_name") or "hermes-agent")
+        # Trace and log queries are pinned to the agent's service (Uptrace
+        # writes its own spans and lines into the same project): the entry's ``service_name``, else the
+        # plugin's resource ``service.name``, else ``hermes-agent``;
+        # ``service_name: off`` removes the pin.
+        raw_service = cfg.get("service_name")
+        if isinstance(raw_service, str) and raw_service.strip().lower() in _NO_PIN:
+            self.service_name: Optional[str] = None
+        elif raw_service is False:
+            self.service_name = None
+        else:
+            self.service_name = default_service_name(cfg)
+        self._instrument_cache: Dict[str, str] = {}
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_url"] = self.query_url
         base["project_id"] = self.project_id
+        base["service_name"] = self.service_name
         base["auth_required"] = self.token is None
         if self.query_url in _DIALECT_CACHE:
             base["api_dialect"] = _DIALECT_CACHE[self.query_url]
@@ -249,11 +284,12 @@ class UptraceAdapter(BackendAdapter):
     # ── HTTP ──────────────────────────────────────────────────────────
 
     def _headers(self) -> Dict[str, str]:
-        if not self.token:
-            raise HTTPException(
-                status_code=502,
-                detail="Uptrace requires a user token. Set user_token or user_token_env.",
+        if not self.query_url:
+            raise ConfigError(
+                "The uptrace backend entry names no server: set endpoint (or dsn / dsn_env)."
             )
+        if not self.token:
+            raise ConfigError("Uptrace requires a user token. Set user_token or user_token_env.")
         return {"Authorization": f"Bearer {self.token}"}
 
     def _dialect(self) -> Dict[str, Any]:
@@ -261,8 +297,9 @@ class UptraceAdapter(BackendAdapter):
 
         ``/logs/{p}/systems`` exists only in 2.1 — 2.0 answers it with the SPA's
         HTML (a "non-JSON" 502 here). A JSON error (validation, a slow
-        ClickHouse) still means the route exists; an unreachable server is
-        reported as such rather than guessed.
+        ClickHouse) still means the route exists; an unreachable server or a
+        rejected token is reported as such rather than guessed, and nothing
+        is cached for it (#298).
         """
         version = _DIALECT_CACHE.get(self.query_url)
         if version is None:
@@ -274,12 +311,20 @@ class UptraceAdapter(BackendAdapter):
                 http_get_json(url, headers=self._headers(), timeout=20.0)
             except HTTPException as exc:
                 detail = str(exc.detail)
+                kind = getattr(exc, "kind", "backend")
+                if kind == "auth":
+                    raise
                 if "non-JSON" in detail:
                     version = "2.0"
                 elif "Backend returned" not in detail:
                     raise
             _DIALECT_CACHE[self.query_url] = version
         return _DIALECTS[version]
+
+    def _forget_dialect(self) -> None:
+        """Drop the probed dialect: after an auth error the next request with
+        a corrected token probes again instead of trusting a stale answer."""
+        _DIALECT_CACHE.pop(self.query_url, None)
 
     def _path(self, key: str, **fmt: Any) -> str:
         return str(self._dialect()[key]).format(p=self.project_id, **fmt)
@@ -299,7 +344,14 @@ class UptraceAdapter(BackendAdapter):
         """GET ``/internal/v1<path>`` with the time window in the server's dialect."""
         d = self._dialect()
         query = [(d["start"], _ms(start_s)), (d["end"], end_ms or _ms(end_s)), *params]
-        return http_get_json(self._api_url(path, query), headers=self._headers(), timeout=20.0)
+        try:
+            data = http_get_json(self._api_url(path, query), headers=self._headers(), timeout=20.0)
+        except BackendError as exc:
+            if exc.kind in ("auth", "not_found"):
+                self._forget_dialect()
+            raise
+        _raise_query_errors(data)
+        return data
 
     def _systems(self, systems: Iterable[str]) -> List[Tuple[str, Any]]:
         key = self._dialect()["system_key"]
@@ -312,8 +364,15 @@ class UptraceAdapter(BackendAdapter):
 
     def _build_uql(self, f: StructuredFilter) -> str:
         parts: List[str] = []
-        if f.service:
-            parts.append(f'where service_name = "{_esc(f.service)}"')
+        # Uptrace writes its own spans (service ``serve``) into the same
+        # project; without a service the list is those, newest first, and the
+        # agent's turns never reach page one. The same pin the log queries use
+        # applies here unless the search names a service (#298).
+        service = f.service or self.service_name
+        if service:
+            parts.append(f'where service_name = "{_esc(service)}"')
+        if f.name_prefix:
+            parts.append(f'where _name like "{_esc(f.name_prefix)}%"')
         if f.name_regex:
             parts.append(f'where _name like "{_esc(f.name_regex)}"')
         if f.status in ("error", "ok"):
@@ -333,13 +392,18 @@ class UptraceAdapter(BackendAdapter):
         # filterable parent column), so fetch a wider page and keep one span
         # per trace, preferring the root.
         d = self._dialect()
+        # Roots are kept client-side, so a page of roots needs several rows
+        # per trace; one beyond the page in either mode so has_more is exact.
         params: List[Tuple[str, Any]] = [
             *self._systems(d["span_systems"]),
             ("query", self._build_uql(f)),
             *d["sort"],
-            ("limit", int(limit) * (4 if f.roots_only else 1)),
+            ("limit", int(limit) * 4 + 1 if f.roots_only else int(limit) + 1),
         ]
-        data = self._get(self._path("spans"), start_s, end_s, params)
+        end_ms = None
+        if f.before_ns:
+            end_ms = int(f.before_ns) // 1_000_000 + 1
+        data = self._get(self._path("spans"), start_s, end_s, params, end_ms=end_ms)
         traces: Dict[str, Dict[str, Any]] = {}
         for sp in (data.get("spans") if isinstance(data, dict) else None) or []:
             trace_id = sp.get("traceId")
@@ -351,25 +415,41 @@ class UptraceAdapter(BackendAdapter):
             if trace_id in traces and not is_root:
                 continue
             traces[trace_id] = _search_hit(sp, trace_id)
-            if len(traces) >= limit and not f.roots_only:
-                break
-        out = sorted(traces.values(), key=lambda t: int(t["startTimeUnixNano"]), reverse=True)
-        return {"traces": out[: int(limit)]}
+        return trace_page(strictly_older_traces(list(traces.values()), f), limit)
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = self._api_url(self._path("trace", trace_id=trace_id), [])
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
-        return _trace_to_otlp(data)
+        out = _trace_to_otlp(data)
+        n = sum(len(scope["spans"]) for b in out["batches"] for scope in b["scopeSpans"])
+        if n == 0:
+            raise BackendError(404, f"Trace {trace_id} not found in Uptrace", "not_found")
+        out["span_count"] = n
+        out["truncated"] = False
+        return out
 
     # ── metrics (#194) ────────────────────────────────────────────────
 
     def _catalog(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         data = self._get(self._metrics(), start_s, end_s)
-        return [
+        out = [
             m
             for m in ((data.get("metrics") if isinstance(data, dict) else None) or [])
             if m.get("name")
         ]
+        for m in out:
+            if m.get("instrument"):
+                self._instrument_cache[str(m["name"])] = str(m["instrument"])
+        return out
+
+    def _instrument_of(self, name: str, start_s: int, end_s: int) -> str:
+        """The instrument kind of one metric, from the catalog seen so far
+        (one request per chart, not two, #298)."""
+        cached = self._instrument_cache.get(name)
+        if cached:
+            return cached
+        self._catalog(start_s, end_s)
+        return self._instrument_cache.get(name, "gauge")
 
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         return [
@@ -386,14 +466,7 @@ class UptraceAdapter(BackendAdapter):
         group_by: Optional[str] = None,
         agg: str = "sum",
     ) -> Dict[str, Any]:
-        instrument = next(
-            (
-                str(m.get("instrument") or "gauge")
-                for m in self._catalog(start_s, end_s)
-                if m["name"] == name
-            ),
-            "gauge",
-        )
+        instrument = self._instrument_of(name, start_s, end_s)
         expr = mql_for(instrument, agg, group_by)
         data = self._get(
             self._metrics("/timeseries"),
@@ -401,7 +474,6 @@ class UptraceAdapter(BackendAdapter):
             end_s,
             [("metric", name), ("alias", "$m"), ("query", expr)],
         )
-        _raise_query_errors(data)
         label_key = group_by.replace(".", "_") if group_by else None
         points = []
         for series in (data.get("timeseries") if isinstance(data, dict) else None) or []:
@@ -411,13 +483,23 @@ class UptraceAdapter(BackendAdapter):
                 if value is None:
                     continue
                 points.append((int(ts_ms) * 1_000_000, float(value), label))
-        # Uptrace picks its own interval; folding its points with ``sum`` onto
-        # the requested grid keeps totals exact for counters and histograms'
-        # sum/count, which is what the dashboard charts.
+        # Uptrace picks its own interval and, for a counter's ``$m`` and a
+        # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
+        # at each interval end, forward-filled into later intervals (verified
+        # on 2.1.0-beta.5: two turns of 2 calls read 4, 4 at 00:16 and 00:20;
+        # ``delta($m)`` loses the first interval). The increases between its
+        # points are what the chart wants, and a series that starts inside the
+        # window counts its first value, exactly as for the other stores (#298).
+        cumulative = instrument == "counter" or (
+            instrument == "histogram" and agg in ("sum", "count")
+        )
+        if cumulative:
+            points = counter_increases(points, window_start_ns=start_s * 1_000_000_000)
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name
         out["instrument"] = instrument
+        out["cumulative"] = cumulative
         out["mql"] = expr
         return out
 
@@ -425,9 +507,11 @@ class UptraceAdapter(BackendAdapter):
 
     def _log_clauses(self, f: LogFilter) -> List[str]:
         # Uptrace writes its own lines ("ClickHouse replica is back up", ...)
-        # into the same project; keep the tab to the agent's service (the
-        # entry's ``service_name``, default ``hermes-agent``).
-        clauses: List[str] = [f'where service_name = "{_esc(self.service_name)}"']
+        # into the same project; keep the tab to the agent's service unless
+        # the entry switched the pin off.
+        clauses: List[str] = []
+        if self.service_name:
+            clauses.append(f'where service_name = "{_esc(self.service_name)}"')
         if f.trace_id:
             clauses.append(f'where _trace_id = "{_esc(f.trace_id)}"')
         if f.session:
@@ -465,11 +549,9 @@ class UptraceAdapter(BackendAdapter):
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         d = self._dialect()
-        params = [
-            *self._systems(["log:all"]),
-            *d["logger_params"],
-            ("query", f'where service_name = "{_esc(self.service_name)}"'),
-        ]
+        params = [*self._systems(["log:all"]), *d["logger_params"]]
+        if self.service_name:
+            params.append(("query", f'where service_name = "{_esc(self.service_name)}"'))
         data = self._get(self._path("logger_values"), start_s, end_s, params)
         out = [
             {"logger": str(item.get("value")), "count": int(item.get("count") or 0)}
@@ -489,8 +571,12 @@ def _attrs_dotted(raw: Any) -> Dict[str, Any]:
 def _search_hit(sp: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     raw = plain_attrs(sp.get("attrs"))
     attrs: Dict[str, Any] = {_dotted(k): raw[k] for k in _CARD_ATTRS if k in raw}
-    if sp.get("statusCode"):
-        attrs["status"] = sp["statusCode"]
+    if sp.get("statusCode") in ("ok", "error"):
+        attrs["status"] = sp["statusCode"]  # never Uptrace's ``unset``
+    if raw.get("hermes_session_id"):
+        attrs["hermes.session_id"] = raw["hermes_session_id"]
+    if raw.get("hermes_turn_number") is not None:
+        attrs["hermes.turn.number"] = raw["hermes_turn_number"]
     start_ns = _ns_from_ms(sp.get("time"))
     name = sp.get("name") or sp.get("displayName") or ""
     return {
@@ -596,6 +682,4 @@ def _raise_query_errors(data: Any) -> None:
         p.get("error") for p in data.get("query") or [] if isinstance(p, dict) and p.get("error")
     ]
     if errors:
-        raise HTTPException(
-            status_code=502, detail=f"Uptrace rejected the query: {'; '.join(errors)}"
-        )
+        raise BackendError(502, f"Uptrace rejected the query: {'; '.join(errors)}")

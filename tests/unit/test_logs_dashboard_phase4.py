@@ -12,7 +12,7 @@ from fastapi.testclient import TestClient
 
 from hermes_otel.dashboard import backends, plugin_api
 from hermes_otel.dashboard.backends import _loki, base
-from hermes_otel.dashboard.backends.base import LogFilter, finish_log_row, matches_event_filter
+from hermes_otel.dashboard.backends.base import LogFilter, finish_log_row
 from hermes_otel.live_store import LiveStore
 
 
@@ -42,16 +42,6 @@ class TestRowShape:
         assert base.severity_number_for("CRITICAL") == 21 == base.severity_number_for("FATAL")
         assert base.severity_number_for("30") == 13 and base.severity_number_for("13") == 13
         assert base.severity_number_for("nope") is None
-
-    def test_matches_event_filter(self):
-        ev = {"event_name": "hermes.tool.call"}
-        plain = {"event_name": None}
-        assert matches_event_filter(ev, LogFilter(event_name="hermes.tool.call"))
-        assert not matches_event_filter(ev, LogFilter(event_name="hermes.turn.end"))
-        assert matches_event_filter(ev, LogFilter(events_only=True)) and not matches_event_filter(
-            plain, LogFilter(events_only=True)
-        )
-        assert matches_event_filter(plain, LogFilter())
 
     def test_loki_record_keeps_structured_metadata_as_attributes(self):
         row = _loki._record(
