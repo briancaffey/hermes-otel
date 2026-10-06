@@ -97,6 +97,8 @@ Implicit scoping, worth knowing when a filter seems to match nothing: a **Jaeger
 
 Pages: trace search is keyset-paged like logs. The response carries `has_more` and `next_before_ns` (the start of the oldest trace shown); pass it back as `before_ns` for the next, older page, on every source. A trace detail carries `span_count` and `truncated: true` when the backend's span cap (500 on Phoenix, SigNoz and OpenObserve) was hit.
 
+The whole tab was driven against every backend below on 2026-10-06 (Hermes v0.21.5; Phoenix and Langfuse on a cluster, the rest from the repo's compose files): trace list and detail, the kind filter, sessions, the curated metrics panels and the logs filters, with the token totals compared to the Live source for the same turns. Results and caveats per backend are on the per-backend issues and the matrix in [#300](https://github.com/briancaffey/hermes-otel/issues/300). Two things the run established for every backend: a one-shot `hermes -z` run exports each counter once, so increases are computed with the series' first value counted (see "Metrics" above), and the Langfuse column holds only for a deployment with the tracing API (v4 `events_only` has none, [#246](https://github.com/briancaffey/hermes-otel/issues/246)).
+
 ## API
 
 All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the cursor endpoints; the query endpoints do the filtering server-side.
