@@ -818,11 +818,17 @@ class LiveStore:
         min_duration_ms: Optional[float] = None,
         model: Optional[str] = None,
         tool: Optional[str] = None,
+        before_ns: Optional[int] = None,
     ) -> Dict[str, Any]:
-        """Trace-list rows (newest first) whose spans match every given filter.
+        """Trace-list rows, newest start first, whose spans match every filter.
 
-        ``total`` counts every matching trace; ``has_more`` says whether rows
-        exist past this page.
+        Paging is by keyset: ``before_ns`` keeps only traces whose start is
+        strictly older than it, and ``next_before_ns`` in the result is the
+        start of the oldest row returned (``None`` when empty), so a turn
+        landing between two pages never shifts the older page. ``offset``
+        still works for callers that use it. ``total`` counts every matching
+        trace regardless of the cursor; ``has_more`` says whether rows exist
+        past this page.
         """
         self.flush()
         where, args = self._span_where(
@@ -838,6 +844,14 @@ class LiveStore:
             model,
             tool,
         )
+        # The cursor and the order use the same key (the earliest matching
+        # span's start), so pages are gap-free and duplicate-free.
+        grouped = (
+            f"SELECT trace_id, MIN(COALESCE(start_ns, ts)) AS first FROM events "
+            f"WHERE {where} AND trace_id IS NOT NULL GROUP BY trace_id"
+        )
+        having = " HAVING first < ?" if before_ns else ""
+        cursor_args = [int(before_ns)] if before_ns else []
         try:
             c = self._conn()
             total = int(
@@ -845,20 +859,28 @@ class LiveStore:
                     f"SELECT COUNT(DISTINCT trace_id) FROM events WHERE {where}", args
                 ).fetchone()[0]
             )
-            ids = [
-                r[0]
-                for r in c.execute(
-                    f"SELECT trace_id, MAX(COALESCE(end_ns, start_ns, ts)) AS last FROM events "
-                    f"WHERE {where} AND trace_id IS NOT NULL GROUP BY trace_id "
-                    "ORDER BY last DESC LIMIT ? OFFSET ?",
-                    args + [int(limit), int(offset)],
-                ).fetchall()
-            ]
+            remaining = total
+            if before_ns:
+                remaining = int(
+                    c.execute(
+                        f"SELECT COUNT(*) FROM ({grouped}{having})", args + cursor_args
+                    ).fetchone()[0]
+                )
+            rows = c.execute(
+                f"{grouped}{having} ORDER BY first DESC LIMIT ? OFFSET ?",
+                args + cursor_args + [int(limit), int(offset)],
+            ).fetchall()
         except Exception:  # pragma: no cover
-            return {"traces": [], "total": 0, "has_more": False}
+            return {"traces": [], "total": 0, "has_more": False, "next_before_ns": None}
+        ids = [r[0] for r in rows]
         by_trace = self.spans_for_traces(ids)
         traces = [summarize_trace(by_trace[t]) for t in ids if by_trace.get(t)]
-        return {"traces": traces, "total": total, "has_more": int(offset) + len(ids) < total}
+        return {
+            "traces": traces,
+            "total": total,
+            "has_more": int(offset) + len(ids) < remaining,
+            "next_before_ns": int(rows[-1][1]) if rows else None,
+        }
 
     def trace(self, trace_id: str) -> Dict[str, Any]:
         self.flush()

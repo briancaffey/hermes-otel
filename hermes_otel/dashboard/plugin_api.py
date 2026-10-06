@@ -265,10 +265,15 @@ def live_traces(
     min_duration_ms: Optional[int] = Query(None, ge=0),
     model: str = Query("", description="substring of the model name"),
     tool: str = Query("", description="tool name (tool.<name> spans)"),
+    before_ns: int = Query(
+        0, ge=0, description="Keyset cursor: only traces that started strictly before this"
+    ),
 ) -> Dict[str, Any]:
+    """One row per trace, newest start first. Page with ``before_ns`` =
+    the previous page's ``next_before_ns`` (``offset`` still works)."""
     store = _get_live_store()
     if store is None:
-        return {"live": False, "traces": [], "total": 0}
+        return {"live": False, "traces": [], "total": 0, "has_more": False, "next_before_ns": None}
     start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     out = store.query_traces(
         min_duration_ms=min_duration_ms or None,
@@ -284,6 +289,7 @@ def live_traces(
         trace_id=trace_id.strip() or None,
         limit=limit,
         offset=offset,
+        before_ns=before_ns or None,
     )
     return {"live": True, **out}
 

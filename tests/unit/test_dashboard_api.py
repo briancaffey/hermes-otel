@@ -365,6 +365,10 @@ class TestLiveHardening:
         assert r["logs"] == []
         r = client.get("/live/traces", params={"limit": 1}).json()
         assert r["has_more"] is True and r["traces"][0]["partial"] is False
+        assert r["traces"][0]["traceId"] == T2 and r["next_before_ns"] == NOW_NS - 900_000_000
+        older = client.get("/live/traces", params={"limit": 1, "before_ns": r["next_before_ns"]})
+        assert [t["traceId"] for t in older.json()["traces"]] == [T1]
+        assert older.json()["has_more"] is False and older.json()["total"] == 2
         assert client.get("/live/sessions").json()["has_more"] is False
 
     def test_status_names_the_real_reason(self, monkeypatch, tmp_path):

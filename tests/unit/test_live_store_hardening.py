@@ -125,7 +125,28 @@ class TestFilters:
             "traces": [],
             "total": 3,
             "has_more": False,
+            "next_before_ns": None,
         }
+
+    def test_keyset_cursor_survives_a_newer_trace_between_pages(self, store):
+        for i in (3, 2, 1):  # t3 oldest … t1 newest
+            store.add_span(_span(f"t{i}", "agent", f"r{i}", None, start=NOW - i * 10**10))
+        page1 = store.query_traces(limit=1)
+        assert [t["traceId"] for t in page1["traces"]] == ["t1"] and page1["has_more"]
+        assert page1["next_before_ns"] == NOW - 10**10
+        # A newer turn lands between page 1 and page 2: an offset page would
+        # show t1 again; the cursor page does not.
+        store.add_span(_span("t0", "agent", "r0", None, start=NOW - 5 * 10**9))
+        page2 = store.query_traces(limit=1, before_ns=page1["next_before_ns"])
+        assert [t["traceId"] for t in page2["traces"]] == ["t2"] and page2["has_more"]
+        assert page2["total"] == 4  # total ignores the cursor
+        page3 = store.query_traces(limit=1, before_ns=page2["next_before_ns"])
+        assert [t["traceId"] for t in page3["traces"]] == ["t3"] and not page3["has_more"]
+        page4 = store.query_traces(limit=1, before_ns=page3["next_before_ns"])
+        assert page4["traces"] == [] and page4["next_before_ns"] is None
+        # Nothing skipped, nothing repeated across the three pages.
+        seen = [t["traceId"] for p in (page1, page2, page3) for t in p["traces"]]
+        assert seen == ["t1", "t2", "t3"]
 
 
 class TestSessions:
