@@ -25,12 +25,25 @@ _HERE = Path(__file__).resolve().parent
 
 
 def _ensure_plugin_package_importable() -> None:
+    """Make ``hermes_otel`` importable, preferring the package THIS file lives in.
+
+    The plugins directory goes to the front of ``sys.path`` before the first
+    import, so a stale copy in site-packages (or a sibling checkout) cannot
+    win over the package the API file ships with (#290). A package that is
+    already imported is left alone: re-importing would give the router a
+    second copy of the live-store singleton.
+    """
+    if "hermes_otel" in sys.modules:
+        return
+    pkg_parent = str(_HERE.parent.parent)
+    if (_HERE.parent.parent / "hermes_otel" / "__init__.py").exists():
+        if pkg_parent in sys.path:
+            sys.path.remove(pkg_parent)
+        sys.path.insert(0, pkg_parent)
     try:
         import hermes_otel  # noqa: F401
     except ImportError:
-        pkg_parent = str(_HERE.parent.parent)
-        if pkg_parent not in sys.path:
-            sys.path.insert(0, pkg_parent)
+        pass
 
 
 _ensure_plugin_package_importable()
@@ -103,18 +116,17 @@ def _plugin_module(name: str):
 
 
 def _get_live_store():
-    """Return the in-process LiveStore the tracer feeds, or None.
+    """Return the LiveStore for the request's Hermes home, or None.
 
-    Must import the SAME ``hermes_otel.live_store`` module the tracer uses so
-    the singleton is shared (the dashboard runs in the same process).
+    The dashboard runs in a SEPARATE process from the gateway: it opens the
+    shared SQLite file itself (``create=True``) and reads what the gateway
+    writes. The store follows the profile of the request (#70): a dashboard
+    serving several profiles reads each one's own file. ``None`` only when the
+    ``hermes_otel.live_store`` module cannot be imported.
     """
     mod = _plugin_module("live_store")
     if mod is None:
         return None
-    # create=True: the dashboard runs in a SEPARATE process from the gateway, so
-    # it opens the shared SQLite store itself (reading what the gateway writes).
-    # The store follows the profile of the request (#70): a dashboard serving
-    # several profiles reads each one's own file.
     per_home = getattr(mod, "get_live_store_for_home", None)
     if per_home is not None:
         return per_home(create=True)
@@ -137,14 +149,29 @@ def settings(
 
 @router.get("/live/status")
 def live_status() -> Dict[str, Any]:
-    """Whether the in-process live store is active, and its current fill."""
+    """Whether the live store can be read, and its current fill.
+
+    ``live: false`` names the real cause: the ``hermes_otel.live_store`` module
+    could not be imported, or the file could not be opened or initialised
+    (``open_error``). An empty but healthy store is ``live: true`` with zero
+    rows; ``dashboard_live: false`` on the gateway shows up as a store that
+    never fills, which the Settings tab reports.
+    """
     store = _get_live_store()
     if store is None:
         return {
             "live": False,
-            "reason": "live store unavailable (dashboard_live off / no telemetry yet)",
+            "reason": "the hermes_otel.live_store module could not be imported by the dashboard",
         }
-    return {"live": True, **store.stats()}
+    stats = store.stats()
+    if stats.get("open_error"):
+        return {
+            "live": False,
+            "reason": f"live store {store.db_path} could not be opened: {stats['open_error']}",
+            "path": store.db_path,
+            **stats,
+        }
+    return {"live": True, "path": store.db_path, **stats}
 
 
 @router.get("/live/spans")
@@ -191,6 +218,9 @@ def live_logs(
 # (traces, sessions, buckets, log lines) instead of the whole buffer.
 
 
+MAX_BUCKETS = 5000
+
+
 def _window(
     lookback_hours: float, start_s: Optional[int], end_s: Optional[int]
 ) -> "tuple[int, int]":
@@ -202,7 +232,21 @@ def _window(
         if start_s
         else end_ns - int(lookback_hours * 3600) * 1_000_000_000
     )
+    if start_ns > end_ns:
+        raise HTTPException(status_code=422, detail="start_s must not be after end_s")
     return start_ns, end_ns
+
+
+def _check_bucket_count(start_ns: int, end_ns: int, bucket_s: int) -> None:
+    """422 when a window / bucket pair would produce more than ``MAX_BUCKETS``
+    buckets (``bucket_s=1`` over a year is 31.5 M per series, #290). Shared by
+    the live and the backend metric routes."""
+    n = (int(end_ns) - int(start_ns)) // (max(1, int(bucket_s)) * 1_000_000_000) + 1
+    if n > MAX_BUCKETS:
+        raise HTTPException(
+            status_code=422,
+            detail=f"{n} buckets requested; at most {MAX_BUCKETS} (widen bucket_s or narrow the window)",
+        )
 
 
 @router.get("/live/traces")
@@ -221,10 +265,15 @@ def live_traces(
     min_duration_ms: Optional[int] = Query(None, ge=0),
     model: str = Query("", description="substring of the model name"),
     tool: str = Query("", description="tool name (tool.<name> spans)"),
+    before_ns: int = Query(
+        0, ge=0, description="Keyset cursor: only traces that started strictly before this"
+    ),
 ) -> Dict[str, Any]:
+    """One row per trace, newest start first. Page with ``before_ns`` =
+    the previous page's ``next_before_ns`` (``offset`` still works)."""
     store = _get_live_store()
     if store is None:
-        return {"live": False, "traces": [], "total": 0}
+        return {"live": False, "traces": [], "total": 0, "has_more": False, "next_before_ns": None}
     start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     out = store.query_traces(
         min_duration_ms=min_duration_ms or None,
@@ -240,6 +289,7 @@ def live_traces(
         trace_id=trace_id.strip() or None,
         limit=limit,
         offset=offset,
+        before_ns=before_ns or None,
     )
     return {"live": True, **out}
 
@@ -287,10 +337,11 @@ def live_metrics_query(
     end_s: Optional[int] = Query(None, ge=0),
     bucket_s: int = Query(15, ge=1, le=86400),
 ) -> Dict[str, Any]:
+    start_ns, end_ns = _window(lookback_hours, start_s, end_s)
+    _check_bucket_count(start_ns, end_ns, bucket_s)
     store = _get_live_store()
     if store is None:
         return {"live": False, "buckets": [], "series": {}}
-    start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     return {
         "live": True,
         **store.metric_buckets(
@@ -302,6 +353,7 @@ def live_metrics_query(
 @router.get("/live/logs/search")
 def live_logs_search(
     trace_id: str = Query(""),
+    span_id: str = Query("", description="Only lines logged while this span was current"),
     session: str = Query(""),
     min_level: int = Query(0, ge=0, le=50),
     logger: str = Query(""),
@@ -322,6 +374,7 @@ def live_logs_search(
     start_ns, end_ns = _window(lookback_hours, start_s, end_s)
     rows = store.query_logs(
         trace_id=trace_id.strip() or None,
+        span_id=span_id.strip() or None,
         session=session.strip() or None,
         level_min=min_level or None,
         logger=logger.strip() or None,

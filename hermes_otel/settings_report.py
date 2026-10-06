@@ -46,11 +46,26 @@ KNOWN_EXTRA_KEYS: Dict[str, str] = {
 _SECRET_NAME = re.compile(
     r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie)", re.I
 )
+# HTTP header names that carry a credential: the generic words above plus the
+# vendor spellings (``x-honeycomb-team``, ``x-api-key``, ``api-key``) and any
+# ``x-…-auth``; a header is almost always an auth header in this file.
+_HEADER_SECRET_NAME = re.compile(
+    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie|auth|signature"
+    r"|^x-[a-z0-9]+-team$)",
+    re.I,
+)
+# Env vars whose value is a ``k=v,k2=v2`` header list (OTel SDK spelling).
+_HEADER_LIST_NAME = re.compile(r"_HEADERS$", re.I)
 
 
 def is_secret_name(name: str) -> bool:
     """Whether a key, field or env var name looks like it holds a credential."""
     return bool(_SECRET_NAME.search(name or ""))
+
+
+def is_header_secret_name(name: str) -> bool:
+    """Whether an HTTP *header* name carries a credential (wider than :func:`is_secret_name`)."""
+    return bool(_HEADER_SECRET_NAME.search(name or ""))
 
 
 def is_secret_value(value: Any) -> bool:
@@ -64,14 +79,45 @@ def _mask(value: Any) -> Any:
     return MASK
 
 
-def _display_map(value: Optional[Dict[str, Any]], reveal: bool) -> Optional[Dict[str, Any]]:
+def mask_header_pairs(raw: str) -> str:
+    """Mask the secret values of a ``k=v,k2=v2`` header list, pair by pair.
+
+    ``OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer abc,x-team=blue`` →
+    ``Authorization=••••••,x-team=blue``. A pair whose header name is not an
+    auth name but whose value is a bearer/basic string is masked too; a pair
+    without ``=`` is left as written.
+    """
+    out = []
+    for pair in raw.split(","):
+        k, sep, v = pair.partition("=")
+        if sep and v.strip() and (is_header_secret_name(k.strip()) or is_secret_value(v)):
+            out.append(f"{k}={MASK}")
+        else:
+            out.append(pair)
+    return ",".join(out)
+
+
+def mask_env_value(name: str, raw: str) -> str:
+    """The value of one environment variable as the report may show it."""
+    if _HEADER_LIST_NAME.search(name or ""):
+        return mask_header_pairs(raw)
+    if is_secret_name(name) or is_secret_value(raw):
+        return MASK
+    return raw
+
+
+def _display_map(
+    value: Optional[Dict[str, Any]], reveal: bool, headers: bool = False
+) -> Optional[Dict[str, Any]]:
+    """A mapping with its secret values masked; ``headers`` widens the match to
+    header names (``x-honeycomb-team``) and masks per pair inside list values."""
     if value is None:
         return None
     if reveal:
         return dict(value)
+    secret_name = is_header_secret_name if headers else is_secret_name
     return {
-        k: (_mask(v) if is_secret_name(str(k)) or is_secret_value(v) else v)
-        for k, v in value.items()
+        k: (_mask(v) if secret_name(str(k)) or is_secret_value(v) else v) for k, v in value.items()
     }
 
 
@@ -331,7 +377,7 @@ def _backend_summary(
         "metrics_temporality": _temporality_report(bc, top_temporality),
         "fields": fields,
         "query_fields": query_fields,
-        "headers": _display_map(bc.headers, reveal),
+        "headers": _display_map(bc.headers, reveal, headers=True),
         "credentials": credentials,
         # Per-backend log settings from the entry's ``logs:`` mapping (#266).
         "log_overrides": _overrides_as_yaml(bc.log_overrides),
@@ -376,7 +422,7 @@ def _display_value(
             for i, bc in enumerate(value)
         ]
     if kind == "map":
-        return _display_map(value, reveal)
+        return _display_map(value, reveal, headers=(key == "headers"))
     if is_secret_name(key) and not reveal:
         return _mask(value)
     return value
@@ -617,7 +663,7 @@ def env_inventory(reveal: bool = False) -> List[Dict[str, Any]]:
         present = raw is not None and raw.strip() != ""
         value = None
         if present:
-            value = MASK if (is_secret_name(name) or is_secret_value(raw)) and not reveal else raw
+            value = raw if reveal else mask_env_value(name, raw or "")
         out.append(
             {
                 "name": name,
@@ -642,35 +688,63 @@ def env_inventory(reveal: bool = False) -> List[Dict[str, Any]]:
 
 # ── Raw and effective YAML ────────────────────────────────────────────────
 
-_YAML_SECRET_LINE = re.compile(
-    r"^(\s*)([A-Za-z0-9_\-]*(?:key|secret|token|password|passwd|dsn|authorization|credential|cookie)[A-Za-z0-9_\-]*)(\s*:\s*)(\S.*)$",
-    re.I,
+# A ``key: value`` line, including one that opens a list item (``- key: v``)
+# and quoted keys; group 2 is the bare key, group 4 the value (``|``/``>`` for
+# a block scalar).
+_YAML_KV_LINE = re.compile(
+    r"^(\s*(?:-\s+)?)(?P<q>[\"']?)([A-Za-z0-9_.\-]+)(?P=q)(\s*:\s*)(\S.*)?$",
 )
 _YAML_BEARER = re.compile(r"((?:bearer|basic)\s+)\S+", re.I)
+_YAML_BLOCK = re.compile(r"^[|>][-+0-9]*(\s+#.*)?$")
 
 
 def redact_yaml_text(text: str) -> str:
     """Mask the value of every key that looks like a credential, keep the rest verbatim.
 
     A ``<field>_env`` key names an environment variable, not a secret, and a
-    ``${VAR}`` reference is left as written; both stay readable.
+    ``${VAR}`` reference is left as written; both stay readable. A secret key
+    on a list-item line (``- secret_key: …``), inside a ``headers:`` mapping
+    (``x-honeycomb-team: …``), or holding a block scalar (``secret_key: |``
+    followed by indented lines) is masked as well (#286).
     """
     out = []
+    headers_indent: Optional[int] = None  # inside a headers: mapping deeper than this
+    block_indent: Optional[int] = None  # masking the continuation of a block scalar
     for line in text.splitlines():
-        m = _YAML_SECRET_LINE.match(line)
-        value = m.group(4) if m else ""
-        if (
-            m
-            and not m.group(2).lower().endswith("_env")
-            and not value.lstrip().startswith("${")
-            and not value.startswith("#")
-        ):
-            tail = re.search(r"\s+#.*$", value)
-            comment = tail.group(0) if tail else ""
-            line = f"{m.group(1)}{m.group(2)}{m.group(3)}{MASK}{comment}"
-        else:
-            line = _YAML_BEARER.sub(lambda mm: mm.group(1) + MASK, line)
-        out.append(line)
+        stripped = line.strip()
+        indent = len(line) - len(line.lstrip(" "))
+        if block_indent is not None:
+            if stripped and indent > block_indent:
+                out.append(" " * indent + MASK)
+                continue
+            block_indent = None
+        if headers_indent is not None and stripped and indent <= headers_indent:
+            headers_indent = None
+        m = _YAML_KV_LINE.match(line)
+        if m and not stripped.startswith("#"):
+            prefix, key, sep, value = m.group(1), m.group(3), m.group(4), m.group(5) or ""
+            key_indent = len(prefix.rstrip("- ")) if "-" in prefix else len(prefix)
+            in_headers = headers_indent is not None and indent > headers_indent
+            secret = (
+                is_header_secret_name(key) if in_headers else is_secret_name(key)
+            ) and not key.lower().endswith("_env")
+            if key.lower() == "headers" and not value:
+                headers_indent = key_indent
+            if (
+                secret
+                and value
+                and not value.lstrip().startswith("${")
+                and not value.startswith("#")
+            ):
+                if _YAML_BLOCK.match(value):
+                    block_indent = key_indent
+                    out.append(line)
+                    continue
+                tail = re.search(r"\s+#.*$", value)
+                comment = tail.group(0) if tail else ""
+                out.append(f"{prefix}{m.group(2)}{key}{m.group(2)}{sep}{MASK}{comment}")
+                continue
+        out.append(_YAML_BEARER.sub(lambda mm: mm.group(1) + MASK, line))
     return "\n".join(out) + ("\n" if text.endswith("\n") else "")
 
 

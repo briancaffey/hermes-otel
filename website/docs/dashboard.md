@@ -17,14 +17,16 @@ The plugin's own dashboard code lives in `hermes_otel/dashboard/` (a FastAPI rou
 
 ## The live store
 
-The gateway process writes every finished span, every metric point and (when `logs.capture` or `logs.events.enabled` is on) every log record and event into a small SQLite file, `$HERMES_HOME/hermes_otel_live.db`. Rows are buffered and committed in one transaction by a background thread every 250 ms or 64 rows, so a hook never waits on the disk; the dashboard process, which is separate, reads the same file and sees a row within that interval. The file is created owner-only (`0600`, and an older `0644` file is tightened on open; the `-wal` / `-shm` sidecars inherit the mode) because it holds full prompts, responses and tool I/O. The store is a **bounded buffer of recent activity**, not a record:
+The gateway process writes every finished span, every metric point and (when `logs.capture` or `logs.events.enabled` is on) every log record and event into a small SQLite file, `$HERMES_HOME/hermes_otel_live.db`. Rows are buffered and committed in one transaction by a background thread every 250 ms or 64 rows, so a hook never waits on the disk; the dashboard process, which is separate, reads the same file and sees a row within that interval. A commit that fails (the file locked by another process, a full disk) does not lose the batch: the rows are held, up to 5,000 of them, and committed on the next attempt, with one line in the plugin debug log. The file is created owner-only (`0600`, and an older `0644` file is tightened on open; the `-wal` / `-shm` sidecars inherit the mode) because it holds full prompts, responses and tool I/O. The store is a **bounded buffer of recent activity**, not a record:
 
 | Key | Default | Meaning |
 |---|---|---|
 | `dashboard_live` | `true` | Write to the live store at all. Set `false` to disable the Live source. |
-| `dashboard_live_max_spans` | `1000` | Rows kept per kind (spans, metrics, logs); the oldest are dropped. |
+| `dashboard_live_max_spans` | `1000` | Rows kept per kind (spans, metrics, logs); the oldest are dropped. Host samples (`process.cpu.*`, `system.cpu.*`, `hw.*`, recorded several times a second when `host_metrics` is on) have their own cap of 200 rows so they can never evict the turn's token and cost points. |
 | `dashboard_live_retention_hours` | `168` | Rows older than this are dropped as well. `0` keeps rows until the row cap evicts them. |
 | `HERMES_OTEL_LIVE_DB` (env) | `$HERMES_HOME/hermes_otel_live.db` | Where the file lives. Both processes must resolve the same path. |
+
+The caps are enforced every 64 writes by the gateway and once more whenever either process opens the file, with the values of that home's config, so a store fed only by one-shot `hermes -z` runs (fewer than 64 rows each) stays bounded too. With the default cap, 1,000 spans is roughly thirty turns of ten tool calls each; raise `dashboard_live_max_spans` for a busy gateway, or configure a backend for history.
 
 Every key also has a `HERMES_OTEL_*` environment variable, see [Environment variables](/reference/env-vars). For history beyond the buffer, configure a backend.
 
@@ -32,7 +34,9 @@ Metrics in the live store carry the same names as the OTLP instruments (`hermes.
 
 The same store is what the bundled skill's terminal tool reads, so an agent in the chat can list turns, draw a trace tree or total up cost without the dashboard: see [The observability skill](/skill).
 
-Rows carry indexed columns (trace id, session id, span name, status, start and end time, log level, logger, metric name) so the tab filters, groups and buckets in SQLite and the browser receives one page of results. The file's schema is versioned; a file written by a plugin release before 1.9 is recreated on first open.
+Rows carry indexed columns (trace id, session id, span name, status, start and end time, log level, logger, metric name) so the tab filters, groups and buckets in SQLite and the browser receives one page of results. The file's schema is versioned (`PRAGMA user_version`): a file written by a plugin release before 1.9 (v1, a JSON blob only) is recreated on first open; a file from 1.9 to 1.18 (v2) has the same layout as the current v3 and is kept and stamped in place, so a dashboard on the current release reads a file an older gateway is still writing; a file stamped by a newer release than the one reading it is opened as is and never re-stamped. A file that cannot be opened at all (corrupt, wrong permissions) is reported by `GET /live/status` as `live: false` with the error, not as an empty store.
+
+A trace whose root span has not finished yet (a turn in flight) is listed as **partial**: the row describes its earliest stored span, the totals are the `api.*` subtotal so far, and `partial: true` is on the row; it becomes a normal row when the root lands. A turn is `status=ok` only when none of its spans failed. The model filter matches the model attribute of a span (a model name quoted inside a prompt is not a match), and `%` / `_` in the name and text filters are literal.
 
 ## Tabs
 
@@ -77,14 +81,14 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 
 | Route | Purpose |
 |---|---|
-| `GET /live/status` | Whether the store is active and how full it is |
+| `GET /live/status` | Whether the store can be read (`live`, with a `reason` and the file `path` when not: the module failed to import, or the file could not be opened), how full it is, and `write_error` / `pending` while a commit is being retried |
 | `GET /live/spans`, `/live/metrics`, `/live/logs` (`since`, `limit`) | Raw rows after a cursor, for streaming |
-| `GET /live/traces` (`lookback_hours`, `session`, `status`, `name`, `kind`, `text`, `trace_id`, `model`, `tool`, `min_duration_ms`, `limit`, `offset`) | One row per trace, newest first, with totals counted once |
-| `GET /live/traces/{trace_id}` | The trace's spans |
-| `GET /live/sessions` (`lookback_hours`, `limit`) | One row per session: turns, spans, errors, tokens, cost, tool calls |
-| `GET /live/metrics/names` | Every instrument in the store with its point count |
-| `GET /live/metrics/query` (`name`, `group_by`, `agg`, `lookback_hours`, `bucket_s`) | Time buckets for one instrument, optionally split by an attribute |
-| `GET /live/logs/search` (`trace_id`, `session`, `min_level`, `logger`, `text`, `event_name`, `events_only`, `lookback_hours` or an absolute `start_s`/`end_s` window, `limit`, `before_ns`) | One page of filtered log lines, newest first: `{logs, next_before_ns, has_more}`. Pass `next_before_ns` back as `before_ns` for the next (older) page |
+| `GET /live/traces` (`lookback_hours` or `start_s`/`end_s`, `session`, `status`, `name`, `kind`, `text`, `trace_id`, `model`, `tool`, `min_duration_ms`, `limit`, `before_ns`, `offset`) | One row per trace, newest start first, with totals counted once: `{traces, total, has_more, next_before_ns}`. Pages are keyset-paged like logs: pass `next_before_ns` (the start of the oldest row shown) back as `before_ns` for the next (older) page, so a turn landing meanwhile never shifts it; `offset` still works. `total` ignores the cursor. A row carries `partial: true` while its root span is missing. `kind` accepts every kind the tab shows, including `other`. A window with `start_s` after `end_s` is a `422` |
+| `GET /live/traces/{trace_id}` | The trace's spans and its summary row (`partial` included) |
+| `GET /live/sessions` (`lookback_hours`, `limit`) | One row per session: turns, spans, errors, tokens, cost, tool calls, newest first; `has_more` when more sessions than `limit` exist in the window |
+| `GET /live/metrics/names` | Every instrument in the store with its point count (the whole buffer, not a window) |
+| `GET /live/metrics/query` (`name`, `group_by`, `agg`, `lookback_hours` or `start_s`/`end_s`, `bucket_s`) | Time buckets for one instrument, optionally split by an attribute. More than 5,000 buckets (window ÷ `bucket_s`) is a `422` |
+| `GET /live/logs/search` (`trace_id`, `span_id`, `session`, `min_level` on the Python scale: 10 debug, 20 info, 30 warn, 40 error, `logger`, `text`, `event_name`, `events_only`, `lookback_hours` or an absolute `start_s`/`end_s` window, `limit`, `before_ns`) | One page of filtered log lines, newest first: `{logs, next_before_ns, has_more}`. Pass `next_before_ns` back as `before_ns` for the next (older) page. Rows carry the OTel `severity_number` next to the level |
 | `GET /live/loggers` | Logger names with counts |
 | `GET /settings` (`reveal`) | Every setting with value, default, source and description; the config file raw and as an effective YAML; the environment variables the plugin reads. Credentials are masked unless `reveal=true` |
 | `GET /status` (`backend`) | The chosen or default backend, and every configured one with its capabilities (`available[].supported/metrics/logs`) |
@@ -95,7 +99,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 
 ## Troubleshooting
 
-**The Live tab says "Live mode is off".** `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files. `GET /live/status` reports the store's fill.
+**The Live tab says "Live mode is off".** The dashboard could not import the plugin's `live_store` module, or the file could not be opened (corrupt, or not readable by the dashboard's user); `GET /live/status` names the reason and the path. An empty Live tab with `live: true` and zero rows means nothing is being written: `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files (compare `path` with the gateway's home).
 
 **Backend source says "Not configured".** No entry under `backends:` has a type with an adapter. The message lists the types that do.
 
