@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.21.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.20.1...hermes-otel-v1.21.0) (2026-10-07)
+
+
+### Features
+
+* **dashboard:** backend verification harness and the adapter fixes it found ([#316](https://github.com/briancaffey/hermes-otel/issues/316)) ([94c4375](https://github.com/briancaffey/hermes-otel/commit/94c437540c803a2c820e6ee7dd45523eb348d210))
+
+
+### Documentation
+
+* website/docs/dashboard.md backend rows updated. ([94c4375](https://github.com/briancaffey/hermes-otel/commit/94c437540c803a2c820e6ee7dd45523eb348d210))
+
 ## [1.20.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.20.0...hermes-otel-v1.20.1) (2026-10-06)
 
 
