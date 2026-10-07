@@ -55,6 +55,7 @@ services:
       - ./otel.yaml:/etc/otelcol-contrib/config.yaml:ro
     environment:
       - ES_ENDPOINT=http://elasticsearch:9200
+      - OTEL_BIND_HOST=0.0.0.0
     ports:
       - "127.0.0.1:14319:4318"
     depends_on:

@@ -1,7 +1,10 @@
 receivers:
   otlp:
     protocols:
-      http: {endpoint: 0.0.0.0:4318}
+      # Bind ${env:OTEL_BIND_HOST} (set to 0.0.0.0 in the compose service) so
+      # the ports published by Docker are reachable; override OTEL_BIND_HOST to
+      # bind a single interface instead.
+      http: {endpoint: "${env:OTEL_BIND_HOST}:4318"}
 
 processors:
   batch: {}
