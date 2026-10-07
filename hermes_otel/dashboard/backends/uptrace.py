@@ -30,6 +30,7 @@ maps back to the documented dotted names for the UI.
 
 from __future__ import annotations
 
+import json
 import os
 import time
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -76,6 +77,8 @@ _DIALECTS: Dict[str, Dict[str, Any]] = {
         "sort": (("sort_by", "_time"), ("sort_dir", "desc")),
         "spans": "/spans/{p}",
         "span_systems": ("spans:all",),
+        # 2.1 filters on the parent id column, so roots come from the server
+        "root_filter": 'where _parent_id = ""',
         "logs": "/logs/{p}",
         "trace": "/traces/{p}/{trace_id}",
         "logger_values": "/tracing/{p}/attributes/otel_library_name::str",
@@ -201,6 +204,10 @@ def log_systems_for(min_level: int) -> List[str]:
         return ["log:all"]
     band = max((lvl for lvl in _LEVEL_TO_SYSTEM_INDEX if lvl <= int(min_level)), default=10)
     return list(_LOG_SYSTEMS[_LEVEL_TO_SYSTEM_INDEX[band] :])
+
+
+# The resource attribute that tells one exporting process from another.
+_INSTANCE_KEY = "service_instance_id"
 
 
 def mql_for(instrument: str, agg: str, group_by: Optional[str]) -> str:
@@ -362,8 +369,10 @@ class UptraceAdapter(BackendAdapter):
 
     # ── traces ────────────────────────────────────────────────────────
 
-    def _build_uql(self, f: StructuredFilter) -> str:
+    def _build_uql(self, f: StructuredFilter, root_filter: str = "") -> str:
         parts: List[str] = []
+        if f.roots_only and root_filter:
+            parts.append(root_filter)
         # Uptrace writes its own spans (service ``serve``) into the same
         # project; without a service the list is those, newest first, and the
         # agent's turns never reach page one. The same pin the log queries use
@@ -392,13 +401,17 @@ class UptraceAdapter(BackendAdapter):
         # filterable parent column), so fetch a wider page and keep one span
         # per trace, preferring the root.
         d = self._dialect()
-        # Roots are kept client-side, so a page of roots needs several rows
-        # per trace; one beyond the page in either mode so has_more is exact.
+        # 2.1 filters roots on the server (``_parent_id = ""``), so a page is
+        # ``limit + 1`` rows and has_more is exact. 2.0 keeps roots client-side
+        # and needs several rows per trace; a turn with more spans than that
+        # can still hide older roots behind its own children (#298).
+        root_filter = d.get("root_filter", "")
+        server_roots = bool(f.roots_only and root_filter)
         params: List[Tuple[str, Any]] = [
             *self._systems(d["span_systems"]),
-            ("query", self._build_uql(f)),
+            ("query", self._build_uql(f, root_filter)),
             *d["sort"],
-            ("limit", int(limit) * 4 + 1 if f.roots_only else int(limit) + 1),
+            ("limit", int(limit) + 1 if (server_roots or not f.roots_only) else int(limit) * 4 + 1),
         ]
         end_ms = None
         if f.before_ns:
@@ -467,22 +480,67 @@ class UptraceAdapter(BackendAdapter):
         agg: str = "sum",
     ) -> Dict[str, Any]:
         instrument = self._instrument_of(name, start_s, end_s)
-        expr = mql_for(instrument, agg, group_by)
-        data = self._get(
-            self._metrics("/timeseries"),
-            start_s,
-            end_s,
-            [("metric", name), ("alias", "$m"), ("query", expr)],
+        cumulative = instrument == "counter" or (
+            instrument == "histogram" and agg in ("sum", "count")
         )
+        # A cumulative value is per process: without the instance in the
+        # grouping Uptrace adds the processes' running totals together and the
+        # increases of that sum are meaningless once two turns share an
+        # interval (#298). The instance is a series key here, never a label.
+        group_keys = [group_by.replace(".", "_")] if group_by else []
+        if cumulative:
+            group_keys.append(_INSTANCE_KEY)
+        group_clause = ", ".join(group_keys) if group_keys else None
+        expr = mql_for(instrument, agg, group_clause)
         label_key = group_by.replace(".", "_") if group_by else None
-        points = []
-        for series in (data.get("timeseries") if isinstance(data, dict) else None) or []:
-            attrs = plain_attrs(series.get("attrs"))
+
+        def fetch(mql: str) -> List[Dict[str, Any]]:
+            data = self._get(
+                self._metrics("/timeseries"),
+                start_s,
+                end_s,
+                [("metric", name), ("alias", "$m"), ("query", mql)],
+            )
+            return (data.get("timeseries") if isinstance(data, dict) else None) or []
+
+        def ident_of(attrs: Dict[str, Any]) -> str:
             label = str(attrs.get(label_key, "—")) if label_key else "_"
-            for ts_ms, value in zip(series.get("time") or [], series.get("value") or []):
-                if value is None:
+            return f"{label}\x00{attrs.get(_INSTANCE_KEY, '')}" if cumulative else label
+
+        points = []
+        if instrument == "histogram" and agg == "count":
+            # ``count($m)`` is the number of samples Uptrace holds, not the
+            # histogram's observation count (verified on 2.1.0-beta.5: three
+            # tool calls in one process read 1). ``avg($m)`` is sum over the
+            # true count, so the count is ``sum($m) / avg($m)`` per series.
+            expr = "sum($m) / avg($m)" + (f" group by {group_clause}" if group_clause else "")
+            sums = {
+                json.dumps(plain_attrs(s_.get("attrs")), sort_keys=True): s_
+                for s_ in fetch(mql_for(instrument, "sum", group_clause))
+            }
+            for key, avg_series in (
+                (json.dumps(plain_attrs(s_.get("attrs")), sort_keys=True), s_)
+                for s_ in fetch(mql_for(instrument, "avg", group_clause))
+            ):
+                sum_series = sums.get(key)
+                if not sum_series:
                     continue
-                points.append((int(ts_ms) * 1_000_000, float(value), label))
+                attrs = plain_attrs(avg_series.get("attrs"))
+                ident = ident_of(attrs)
+                sum_by_t = dict(zip(sum_series.get("time") or [], sum_series.get("value") or []))
+                for ts_ms, avg in zip(avg_series.get("time") or [], avg_series.get("value") or []):
+                    total = sum_by_t.get(ts_ms)
+                    if avg is None or total is None or not avg:
+                        continue
+                    points.append((int(ts_ms) * 1_000_000, float(round(total / avg)), ident))
+        else:
+            for series in fetch(expr):
+                attrs = plain_attrs(series.get("attrs"))
+                ident = ident_of(attrs)
+                for ts_ms, value in zip(series.get("time") or [], series.get("value") or []):
+                    if value is None:
+                        continue
+                    points.append((int(ts_ms) * 1_000_000, float(value), ident))
         # Uptrace picks its own interval and, for a counter's ``$m`` and a
         # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
         # at each interval end, forward-filled into later intervals (verified
@@ -490,11 +548,13 @@ class UptraceAdapter(BackendAdapter):
         # ``delta($m)`` loses the first interval). The increases between its
         # points are what the chart wants, and a series that starts inside the
         # window counts its first value, exactly as for the other stores (#298).
-        cumulative = instrument == "counter" or (
-            instrument == "histogram" and agg in ("sum", "count")
-        )
         if cumulative:
-            points = counter_increases(points, window_start_ns=start_s * 1_000_000_000)
+            points = [
+                (ts, v, ident.split("\x00", 1)[0])
+                for ts, v, ident in counter_increases(
+                    points, window_start_ns=start_s * 1_000_000_000
+                )
+            ]
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name

@@ -100,7 +100,8 @@ def metrics_query(
     agg: str = "sum",
     headers: Optional[Dict[str, str]] = None,
 ) -> Dict[str, Any]:
-    """``query_range`` at ``step = bucket_s`` folded onto the shared bucket grid.
+    """Counters as raw samples, gauges as ``query_range`` at ``step = bucket_s``,
+    both folded onto the shared bucket grid.
 
     Counters are read as raw cumulative samples (with :data:`LOOKBEHIND_S` of
     history) and turned into increases by :func:`counter_increases`, because
@@ -114,14 +115,18 @@ def metrics_query(
     if is_counter(name):
         validate_metric_name(name)
         validate_label_name(group_by)
-        raw = {
-            "query": name,
-            "start": int(start_s) - max(LOOKBEHIND_S, int(bucket_s)),
-            "end": int(end_s),
-            "step": max(1, int(bucket_s)),
-        }
+        # A range-vector instant query returns every raw sample with its own
+        # timestamp. ``query_range`` at ``step = bucket_s`` does not: it reads
+        # the latest sample within the staleness delta at each evaluation
+        # instant, so a one-shot process whose single sample lands after the
+        # last instant (the grid is ``start + k·step``, not aligned to ``end``)
+        # is never seen, and a sample is reported at the instant rather than
+        # when it was written, which can move a series' first value into the
+        # window and count it twice (#296).
+        span_s = int(end_s) - int(start_s) + max(LOOKBEHIND_S, int(bucket_s))
+        raw = {"query": f"{name}[{max(1, span_s)}s]", "time": int(end_s)}
         data = http_get_json(
-            f"{base}/api/v1/query_range?{_urlparse.urlencode(raw)}", headers=headers, timeout=30.0
+            f"{base}/api/v1/query?{_urlparse.urlencode(raw)}", headers=headers, timeout=30.0
         )
         samples: List[tuple] = []
         labels_of: Dict[str, str] = {}

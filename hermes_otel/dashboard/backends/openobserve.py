@@ -632,6 +632,26 @@ class OpenObserveAdapter(BackendAdapter):
             if r.get("logger")
         ]
 
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        """The trace in OpenObserve's own UI (``/web/traces/trace-details``,
+        verified in a browser against the 2026-10 image): the org and stream
+        the adapter queries, and a 30-day window ending an hour from now so
+        the page's time picker contains the trace."""
+        base = str(self.cfg.get("ui_url") or self.query_url or "").rstrip("/")
+        if not base:
+            return None
+        # Rounded up to the hour so the link is the same string for every
+        # request in that hour (the page compares it with the API's).
+        to_s = (int(time.time()) // 3600 + 2) * 3600
+        params = {
+            "org_identifier": self.org,
+            "stream": self.stream,
+            "trace_id": trace_id,
+            "from": (to_s - 31 * 86400) * 1_000_000,
+            "to": to_s * 1_000_000,
+        }
+        return f"{base}/web/traces/trace-details?{_urlparse.urlencode(params)}"
+
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         where = f"trace_id = '{_sql_escape(trace_id)}'"
         sql = (

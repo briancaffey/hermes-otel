@@ -1,0 +1,62 @@
+# What the dashboard-verification harness expects of each backend type.
+# Mirrors the matrix in .claude/skills/hermes-otel-dashboard-verify/SKILL.md.
+#
+#   metrics / logs   whether /status must report the capability
+#   ui               whether trace_url (the "open in" link) must be present
+#   status_semantics root | any   what `status=error` means for this backend
+#                    (root: the root span errored; any: any span in the trace).
+#                    Every backend filters the root span (roots-only search);
+#                    only the live store means "any span errored".
+#   start_tolerance_ms  how far a list row's start may sit from the live root's (default 5)
+#   quirks           free text copied into the report
+types:
+  lgtm:
+    metrics: true
+    logs: true
+    ui: true
+    status_semantics: root
+    quirks: counters from raw range-vector samples with first-sample counting; roots via nestedSetParent < 0; regex prefixes carry .*; ids padded to 32 hex; Grafana Explore link needs ui_url
+  openobserve:
+    metrics: true
+    logs: true
+    ui: true
+    status_semantics: root
+    quirks: healthcheck false-negative (no wget in image); process identity from start_time; trace link to /web/traces/trace-details
+  signoz:
+    metrics: true
+    logs: true
+    ui: true
+    status_semantics: root
+    quirks: 30-min JWT (no PAT API in CE); detail via GET /api/v1/traces/{id}; counters read as latest-per-process and increased by the adapter; numeric list columns need float64
+  uptrace:
+    metrics: true
+    logs: true
+    ui: true
+    status_semantics: root
+    quirks: needs endpoint + dsn + user_token; cumulative $m per process (service_instance_id in the grouping); histogram count = sum/avg; roots server-side on 2.1 (_parent_id = ""); one heavy ClickHouse stack at a time on this VM
+  jaeger:
+    metrics: false
+    logs: false
+    ui: true
+    status_semantics: root
+    quirks: status_ok and free_text are none; roots client-side
+  tempo:
+    metrics: false
+    logs: false
+    ui: false
+    status_semantics: root
+    quirks: TraceQL; same engine as lgtm traces
+  phoenix:
+    metrics: false
+    logs: false
+    ui: true
+    status_semantics: root
+    quirks: status=error filters on the root span's status
+  langfuse:
+    metrics: false
+    logs: false
+    ui: true
+    status_semantics: root
+    # the trace's timestamp is set by Langfuse within a few tens of ms of the root span's start
+    start_tolerance_ms: 100
+    quirks: v4 events-only deployments answer 404 on /api/public/traces (#246) -> kind=config error expected; the list caps limit at 100; TOOL observations lose the tool. prefix (restored); kind filter widens over /api/public/observations by type

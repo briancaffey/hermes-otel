@@ -250,3 +250,4 @@ config.yaml.local
 !hermes_otel/dashboard/dist/**
 # Claude Code parallel worktrees (local only)
 .claude/worktrees/
+scripts/dashboard_verify/out/

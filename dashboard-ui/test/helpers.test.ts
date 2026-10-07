@@ -197,4 +197,37 @@ describe("traceAttrs", () => {
     expect(traceAttrs(trace)).toEqual({ "llm.model_name": "from-api", "only.llm": "1" });
     expect(traceAttrs({})).toEqual({});
   });
+
+  it("takes the turn totals from the root when an api span is matched too", () => {
+    // A Tempo free-text search matches every span whose input or output
+    // mentions the text: the api spans (per-call usage) and the agent root
+    // (the turn total). The card must show the total, the model may come
+    // from the api span.
+    const trace = {
+      spanSet: {
+        spans: [
+          {
+            name: "api.m",
+            attributes: [
+              { key: "llm.model_name", value: { stringValue: "m" } },
+              { key: "gen_ai.usage.total_tokens", value: { intValue: "7004" } },
+            ],
+          },
+          { name: "tool.terminal", attributes: [{ key: "tool.name", value: { stringValue: "terminal" } }] },
+          {
+            name: "agent",
+            attributes: [
+              { key: "gen_ai.usage.total_tokens", value: { intValue: "14095" } },
+              { key: "hermes.cost.usage", value: { doubleValue: 0.5 } },
+            ],
+          },
+        ],
+      },
+    };
+    const attrs = traceAttrs(trace);
+    expect(attrs["gen_ai.usage.total_tokens"]).toBe(14095);
+    expect(attrs["hermes.cost.usage"]).toBe(0.5);
+    expect(attrs["llm.model_name"]).toBe("m");
+    expect(attrs["tool.name"]).toBe("terminal");
+  });
 });

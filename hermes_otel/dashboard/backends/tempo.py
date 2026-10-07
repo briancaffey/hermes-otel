@@ -19,6 +19,7 @@ through; ``select()`` is appended only when they haven't added one.
 
 from __future__ import annotations
 
+import json
 import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
@@ -219,17 +220,23 @@ class TempoAdapter(BackendAdapter):
 
     def _predicates(self, f: StructuredFilter) -> List[str]:
         predicates: List[str] = []
-        if f.roots_only and not f.free_text:
+        if f.roots_only:
             # The root span has no parent in Tempo's nested-set model; asking
             # for it here means every matched span IS the root, so the card
             # attributes come from the root and nothing is dropped afterwards
             # (a client-side check on the matched span's name never matched:
-            # Tempo's span sets carry no ``name`` field, #296).
+            # Tempo's span sets carry no ``name`` field, #296). A free-text
+            # search keeps this predicate too: the text is matched by its own
+            # span set (see ``_build_traceql``) so any span of the trace may
+            # carry it while the card is still built from the root.
             predicates.append("nestedSetParent < 0")
         if f.service:
             predicates.append(f'resource.service.name = "{_esc(f.service)}"')
         if f.name_prefix:
-            predicates.append(f'name =~ "^{_re_esc(f.name_prefix)}"')
+            # Tempo anchors a regex at both ends (RE2 full match): ``^tool\.``
+            # alone matches only the literal ``tool.``, so the prefix needs a
+            # trailing ``.*`` to match ``tool.terminal``.
+            predicates.append(f'name =~ "^{_re_esc(f.name_prefix)}.*"')
         if f.name_regex:
             predicates.append(f'name =~ "{_esc(f.name_regex)}"')
         if f.status == "error":
@@ -242,13 +249,16 @@ class TempoAdapter(BackendAdapter):
             predicates.append(f"duration >= {int(f.min_duration_ms)}ms")
         for k, v in f.attr_equals.items():
             predicates.append(f'.{k} = "{_esc(str(v))}"')
-        if f.free_text:
-            # Any span of the trace whose captured input or output
-            # mentions the text; regex-escaped so a marker with dots or
-            # brackets matches literally.
-            pat = ".*" + _re_esc(f.free_text) + ".*"
-            predicates.append(f'(span.input.value =~ "{pat}" || span.output.value =~ "{pat}")')
+        if f.free_text and not f.roots_only:
+            predicates.append(self._free_text_predicate(f.free_text))
         return predicates
+
+    @staticmethod
+    def _free_text_predicate(text: str) -> str:
+        """Any span whose captured input or output mentions the text;
+        regex-escaped so a marker with dots or brackets matches literally."""
+        pat = ".*" + _re_esc(text) + ".*"
+        return f'(span.input.value =~ "{pat}" || span.output.value =~ "{pat}")'
 
     def _build_traceql(self, f: StructuredFilter, with_select: bool = True) -> str:
         """Compose the effective TraceQL query.
@@ -265,6 +275,14 @@ class TempoAdapter(BackendAdapter):
         else:
             predicates = self._predicates(f)
             base = "{ " + " && ".join(predicates) + " }" if predicates else "{}"
+            if f.free_text and f.roots_only:
+                # Two span sets AND'd at the trace level: the trace must have a
+                # root matching the structured filters AND some span mentioning
+                # the text. With ``spss=1`` the returned span set is the root
+                # alone, so the card carries the turn's totals, not an api
+                # span's per-call usage (Tempo caps a span set at three spans
+                # by default and the root was the one cut, #296).
+                base += " && { " + self._free_text_predicate(f.free_text) + " }"
 
         if not with_select or _SELECT_PIPELINE.search(base):
             return base
@@ -283,6 +301,10 @@ class TempoAdapter(BackendAdapter):
             "end": end,
             "q": q,
         }
+        if not (f.raw or "").strip():
+            # One span per set: the root in roots-only mode, the first matched
+            # span when widened (one card per trace, as the other backends).
+            params["spss"] = 1
         if f.raw and f.raw.strip() and f.min_duration_ms and f.min_duration_ms > 0:
             params["minDuration"] = f"{f.min_duration_ms}ms"
         return params
@@ -314,6 +336,31 @@ class TempoAdapter(BackendAdapter):
             traces = [t for t in traces if (t.get("rootTraceName") or "").startswith(f.name_prefix)]
 
         for t in traces:
+            if not f.roots_only:
+                # Widened to every span (the kind filter): the card is the
+                # matched span, named like the other backends name it, not the
+                # trace's root. ``name`` is in the select list.
+                sets = t.get("spanSets") or ([t["spanSet"]] if t.get("spanSet") else [])
+                spans = (sets[0].get("spans") or []) if sets else []
+                if spans:
+                    # ``name`` is a top-level field of the span when selected,
+                    # an attribute on older builds.
+                    matched = spans[0].get("name") or next(
+                        (
+                            (a.get("value") or {}).get("stringValue")
+                            for a in spans[0].get("attributes") or []
+                            if a.get("key") == "name"
+                        ),
+                        None,
+                    )
+                    if matched:
+                        t["rootTraceName"] = matched
+            # Tempo prints a trace id without its leading zeros; the live
+            # store, Loki and the other backends carry all 32 hex digits, and
+            # the Logs sub-tab correlates by the exact string (#296).
+            tid = str(t.get("traceID") or "")
+            if tid and len(tid) < 32 and all(c in "0123456789abcdefABCDEF" for c in tid):
+                t["traceID"] = tid.lower().zfill(32)
             # Tempo's per-service stats carry the whole-trace span count.
             stats = t.get("serviceStats")
             if isinstance(stats, dict) and "spanCount" not in t:
@@ -331,6 +378,34 @@ class TempoAdapter(BackendAdapter):
             if k != "traces":
                 page.setdefault(k, v)
         return page
+
+    def trace_url(self, trace_id: str) -> Optional[str]:
+        """The trace in Grafana Explore when the entry names a Grafana
+        (``ui_url``, e.g. ``http://localhost:3000/explore``); the Tempo
+        datasource uid is ``grafana_datasource_uid`` (default ``tempo``, what
+        ``grafana/otel-lgtm`` provisions). Tempo itself has no UI, so without
+        ``ui_url`` there is no link."""
+        base = str(self.cfg.get("ui_url") or "").rstrip("/")
+        if not base:
+            return None
+        uid = str(self.cfg.get("grafana_datasource_uid") or "tempo")
+        panes = json.dumps(
+            {
+                "a": {
+                    "datasource": uid,
+                    "queries": [
+                        {
+                            "refId": "A",
+                            "datasource": {"type": "tempo", "uid": uid},
+                            "queryType": "traceql",
+                            "query": trace_id,
+                        }
+                    ],
+                }
+            },
+            separators=(",", ":"),
+        )
+        return f"{base}?schemaVersion=1&{_urlparse.urlencode({'panes': panes})}"
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
