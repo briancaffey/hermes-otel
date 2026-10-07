@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import os
+import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -601,6 +602,12 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+# Valid data-stream name component: lowercase alphanumerics plus '-' and
+# '_', not starting with '-' or '_' (a full stream name is
+# `<type>-<dataset>-<namespace>`).
+_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9][a-z0-9_-]*")
+
+
 def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve an Elastic OTLP backend (Elastic Cloud mOTLP or self-hosted EDOT).
 
@@ -637,10 +644,16 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     headers.update(bc.headers or {})
 
     resource_attrs: Dict[str, str] = {}
-    if bc.dataset:
-        resource_attrs["data_stream.dataset"] = bc.dataset
-    if bc.namespace:
-        resource_attrs["data_stream.namespace"] = bc.namespace
+    for field, attr in (("dataset", "data_stream.dataset"), ("namespace", "data_stream.namespace")):
+        value = getattr(bc, field)
+        if not value:
+            continue
+        if not _ELASTIC_DS_COMPONENT.fullmatch(value):
+            raise ValueError(
+                f"elastic {field} {value!r} is not a valid data-stream component "
+                "(lowercase alphanumerics, '-' and '_', not starting with either)"
+            )
+        resource_attrs[attr] = value
 
     return _ResolvedBackend(
         type="elastic",
@@ -801,7 +814,6 @@ _TEMPORALITY_PRESETS: Dict[str, str] = {
     "signoz": "delta",
     "uptrace": "delta",
     "elastic": "delta",
-
 }
 
 

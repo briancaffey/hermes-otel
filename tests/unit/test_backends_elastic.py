@@ -89,6 +89,24 @@ class TestElasticBackendType:
             "data_stream.namespace": "agents",
         }
 
+    def test_invalid_dataset_raises(self):
+        with pytest.raises(ValueError, match="dataset"):
+            backends.resolve(
+                BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="Bad Name")
+            )
+
+    def test_invalid_namespace_raises(self):
+        with pytest.raises(ValueError, match="namespace"):
+            backends.resolve(
+                BackendConfig(type="elastic", endpoint="http://localhost:4318", namespace="UPPER")
+            )
+
+    def test_leading_underscore_dataset_raises(self):
+        with pytest.raises(ValueError, match="dataset"):
+            backends.resolve(
+                BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="_x")
+            )
+
     def test_no_dataset_no_resource_attributes(self):
         rb = backends.resolve(BackendConfig(type="elastic", endpoint="http://localhost:4318"))
         assert rb.resource_attributes is None

@@ -74,7 +74,7 @@ backends:
     namespace: agents
 ```
 
-Spans land in `traces-hermes-otel-agents`, metrics in `metrics-hermes-otel-agents`, logs in `logs-hermes-otel-agents`. Nothing is routed outside your Elastic deployment — the attributes only name data streams inside it.
+Spans land in `traces-hermes-otel-agents`, metrics in `metrics-hermes-otel-agents`, logs in `logs-hermes-otel-agents`. Nothing is routed outside your Elastic deployment — the attributes only name data streams inside it. `dataset` and `namespace` must be valid data-stream components (lowercase alphanumerics, `-`, `_`, not starting with `-`/`_`) — invalid values fail at config-load with a clear error instead of creating unreachable indices at runtime.
 
 ## Metrics temporality
 
