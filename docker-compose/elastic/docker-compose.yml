@@ -6,12 +6,12 @@
 #   docker compose -f docker-compose/elastic/docker-compose.yml up -d
 #   uv run --extra dev python scripts/verify_elastic.py
 #
-# Kibana: http://127.0.0.1:15601 (elastic / $ELASTIC_PASSWORD from .env)
-# EDOT OTLP/HTTP ingest: http://127.0.0.1:14318/v1/{traces,metrics,logs}
+# Kibana: http://127.0.0.1:15602 (security disabled — no login)
+# EDOT OTLP/HTTP ingest: http://127.0.0.1:14319/v1/{traces,metrics,logs}
 
 services:
   elasticsearch:
-    image: docker.elastic.co/elasticsearch/elasticsearch:9.1.3
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
     container_name: hermes-otel-elasticsearch
     environment:
       - discovery.type=single-node
@@ -30,7 +30,7 @@ services:
       retries: 60
 
   kibana:
-    image: docker.elastic.co/kibana/kibana:9.1.3
+    image: docker.elastic.co/kibana/kibana:9.5.5
     container_name: hermes-otel-kibana
     depends_on:
       elasticsearch: {condition: service_healthy}
@@ -48,7 +48,7 @@ services:
   # same directory. Ingest is unauthenticated (localhost) — exactly the
   # "self-hosted EDOT Collector" path type: elastic supports with no key.
   edot-collector:
-    image: docker.elastic.co/elastic-agent/elastic-otel-collector:9.1.3
+    image: docker.elastic.co/elastic-agent/elastic-otel-collector:9.5.5
     container_name: hermes-otel-edot
     command: ["--config=/etc/otelcol-contrib/config.yaml"]
     volumes:

@@ -42,6 +42,16 @@ backends:
 
 No API key is needed for a collector on a trusted network: when no key resolves, the `Authorization` header is omitted entirely (set one anyway if your collector has auth enabled — the header shape is the same).
 
+A complete local stack (Elasticsearch + Kibana + EDOT Collector) ships in [`docker-compose/elastic/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose/elastic), ports bound to 127.0.0.1 only:
+
+```bash
+docker compose -f docker-compose/elastic/docker-compose.yml up -d
+uv run --extra dev python scripts/verify_elastic.py   # end-to-end smoke: export + verify in ES
+./scripts/import_elastic_dashboard.sh                 # optional: hermes-otel dashboard in Kibana
+```
+
+The bundled dashboard (`docker-compose/elastic/dashboards.ndjson`) ships five panels — top span names, spans by operation, token usage by token type, tool-call duration by tool, and model usage (cost) by model — rendered with real session data in [`dashboard.png`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/elastic/dashboard.png). Kibana listens on `http://127.0.0.1:15602` (security disabled).
+
 ## Why a dedicated `type: elastic`
 
 Trace export also works through the [generic OTLP](/backends/otlp) type with a hand-written endpoint and header. Declaring `type: elastic` instead asks the plugin to:
@@ -70,11 +80,11 @@ backends:
   - type: elastic
     endpoint: https://<hash>.apm.eu-west-1.gcp.elastic-cloud.com:443
     api_key_env: OTEL_ELASTIC_API_KEY
-    dataset: hermes-otel
+    dataset: hermes_otel
     namespace: agents
 ```
 
-Spans land in `traces-hermes-otel-agents`, metrics in `metrics-hermes-otel-agents`, logs in `logs-hermes-otel-agents`. Nothing is routed outside your Elastic deployment — the attributes only name data streams inside it. `dataset` and `namespace` must be valid data-stream components (lowercase alphanumerics, `-`, `_`, not starting with `-`/`_`) — invalid values fail at config-load with a clear error instead of creating unreachable indices at runtime.
+Spans land in `traces-hermes_otel-agents`, metrics in `metrics-hermes_otel-agents`, logs in `logs-hermes_otel-agents`. Nothing is routed outside your Elastic deployment — the attributes only name data streams inside it. `dataset` and `namespace` must be valid data-stream components — lowercase alphanumerics and `_` only, up to 100 chars, no `-` (data-stream names are split on `-`) — invalid values fail at config-load with a clear error instead of being silently rewritten or creating unreachable indices at runtime.
 
 ## Metrics temporality
 

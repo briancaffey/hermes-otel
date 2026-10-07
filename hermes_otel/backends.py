@@ -602,10 +602,12 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
-# Valid data-stream name component: lowercase alphanumerics plus '-' and
-# '_', not starting with '-' or '_' (a full stream name is
-# `<type>-<dataset>-<namespace>`).
-_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9][a-z0-9_-]*")
+# Valid data-stream name component: lowercase alphanumerics plus '_'
+# only. '-' is NOT allowed — a full stream name is
+# `<type>-<dataset>-<namespace>` and is split on '-', so a '-' inside
+# dataset or namespace would make the name unparseable; EDOT silently
+# rewrites it to '_'. Max component length is 100 bytes.
+_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9][a-z0-9_]{0,99}")
 
 
 def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
@@ -651,7 +653,7 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
         if not _ELASTIC_DS_COMPONENT.fullmatch(value):
             raise ValueError(
                 f"elastic {field} {value!r} is not a valid data-stream component "
-                "(lowercase alphanumerics, '-' and '_', not starting with either)"
+                "(lowercase alphanumerics and '_' only, no '-'; max 100 chars)"
             )
         resource_attrs[attr] = value
 

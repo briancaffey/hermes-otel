@@ -43,8 +43,8 @@ def _req(url: str, payload: dict | None = None, timeout: float = 10.0) -> dict:
     return json.loads(text) if text else {}
 
 
-def _count(query: dict) -> int:
-    return _req(f"{ES}/_count", payload=query)["count"]
+def _count(query: dict, index: str = "_all") -> int:
+    return _req(f"{ES}/{index}/_count", payload=query)["count"]
 
 
 def main() -> int:
@@ -52,7 +52,7 @@ def main() -> int:
         backends.BackendConfig(
             type="elastic",
             endpoint=EDOT,
-            dataset="hermes-smoke",
+            dataset="hermes_smoke",
             namespace="hermes",
         )
     )
@@ -114,52 +114,45 @@ def main() -> int:
     tp.shutdown()
     print("export flushed")
 
-    q = {"query": {"term": {"service.name": SERVICE}}}
-    deadline = time.time() + 60
-    counts = {}
+    # Per-signal verification: count docs in each data stream
+    # (`<type>-<dataset>-<namespace>`) filtered by this run's unique
+    # service.name. Each signal must land in its own stream.
+    svc_filter = {"term": {"service.name": SERVICE}}
+    signals = {}
+    deadline = time.time() + 120
     while time.time() < deadline:
         time.sleep(3)
-        counts = {
-            t: _count({"query": {"bool": {"filter": [{"term": {"service.name": SERVICE}}]}}})
-            for t in ("traces", "metrics", "logs")
-        }
-        per_index = _req(
-            f"{ES}/_search",
-            payload={
-                **q,
-                "size": 0,
-                "aggs": {"by_index": {"terms": {"field": "_index", "size": 10}}},
-            },
-        )
-        buckets = per_index.get("aggregations", {}).get("by_index", {}).get("buckets", [])
-        named = {b["key"].split("-")[0]: b["doc_count"] for b in buckets if SERVICE not in b["key"]}
-        if all(named.get(k, 0) > 0 for k in ("traces", "metrics", "logs")):
+        for sig in ("traces", "metrics", "logs"):
+            try:
+                signals[sig] = _count(
+                    {"query": {"bool": {"filter": [svc_filter]}}}, index=f"{sig}-hermes_smoke*"
+                )
+            except urllib.error.HTTPError:
+                signals[sig] = 0  # stream not created yet
+        if all(signals.get(s, 0) > 0 for s in ("traces", "metrics", "logs")):
             break
+    print("per-signal counts:", signals)
+    missing = [s for s in ("traces", "metrics", "logs") if signals.get(s, 0) == 0]
+    assert not missing, f"signals {missing} never landed in their data streams: {signals}"
 
-    print("per-signal counts:", counts, "indices:", named)
-    total = sum(counts.values())
-    assert total >= 3, f"expected >=3 docs in traces/metrics/logs, got {counts}"
-
-    # negative control: a range strictly before the export must be empty
-    before = _count(
-        {
-            "query": {
-                "bool": {
-                    "filter": [
-                        {"term": {"service.name": SERVICE}},
-                        {"range": {"@timestamp": {"lt": "2020-01-01"}}},
-                    ]
-                }
-            }
-        }
+    # Content check: the exported span must be in the traces stream.
+    sample = _req(
+        f"{ES}/traces-hermes_smoke*/_search",
+        payload={"query": {"bool": {"filter": [svc_filter]}}, "size": 1},
     )
-    assert before == 0, f"negative control failed: {before} docs before 2020"
-    print("negative control: 0 docs before 2020 OK")
-
-    sample = _req(f"{ES}/traces-*/_search", payload={**q, "size": 1})
     hit = sample["hits"]["hits"][0]
     print("sample span index:", hit["_index"])
-    assert hit["_index"].startswith(".ds-traces-hermes-smoke-hermes") or "traces" in hit["_index"]
+    assert hit["_index"].startswith(".ds-traces-hermes_smoke."), hit["_index"]
+
+    # Negative control: the same query filtered on a service name that was
+    # never exported must return zero — proves the term filter is actually
+    # filtering and the counts above are not wildcard artifacts.
+    absent = _count(
+        {"query": {"bool": {"filter": [{"term": {"service.name": SERVICE + "-absent"}}]}}},
+        index="*",
+    )
+    assert absent == 0, f"negative control failed: {absent} docs for a service never exported"
+    print("negative control: 0 docs for absent service OK")
     print("SMOKE OK")
     return 0
 

@@ -80,14 +80,34 @@ class TestElasticBackendType:
             BackendConfig(
                 type="elastic",
                 endpoint="http://localhost:4318",
-                dataset="hermes-otel",
+                dataset="hermes_otel",
                 namespace="agents",
             )
         )
         assert rb.resource_attributes == {
-            "data_stream.dataset": "hermes-otel",
+            "data_stream.dataset": "hermes_otel",
             "data_stream.namespace": "agents",
         }
+
+    def test_dataset_with_hyphen_raises(self):
+        # Data-stream names are split on '-'; a '-' inside a component makes
+        # the stream name unparseable and EDOT silently rewrites it to '_'.
+        with pytest.raises(ValueError, match="dataset"):
+            backends.resolve(
+                BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="a-b")
+            )
+
+    def test_overlong_dataset_raises(self):
+        with pytest.raises(ValueError, match="dataset"):
+            backends.resolve(
+                BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="a" * 101)
+            )
+
+    def test_dataset_at_100_chars_allowed(self):
+        rb = backends.resolve(
+            BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="a" * 100)
+        )
+        assert rb.resource_attributes == {"data_stream.dataset": "a" * 100}
 
     def test_invalid_dataset_raises(self):
         with pytest.raises(ValueError, match="dataset"):
