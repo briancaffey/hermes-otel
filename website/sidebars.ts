@@ -34,6 +34,7 @@ const sidebars: SidebarsConfig = {
         'backends/parseable',
         'backends/honeycomb',
         'backends/weave',
+        'backends/elastic',
         'backends/telemetry',
         'backends/multi-backend',
       ],

@@ -131,7 +131,7 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:
 
 - [New Relic](https://newrelic.com) — cloud, 100 GB/mo free tier
-- [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) — self-host or Elastic Cloud
+- [Elastic](/backends/elastic) — dedicated `type: elastic` for Elastic Cloud mOTLP or a self-hosted EDOT Collector
 - [Datadog](https://www.datadoghq.com) — cloud, trial only
 
 File an issue if you've tried one of these and hit friction — we'll prioritise.

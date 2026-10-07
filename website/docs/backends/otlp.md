@@ -13,7 +13,7 @@ If your backend isn't on the list but it accepts **OTLP over HTTP**, the generic
 ## Typical use cases
 
 - Company-wide OTel collector (OpenTelemetry Collector, Grafana Alloy, etc.)
-- Commercial vendors with an OTLP ingest path (Honeycomb, New Relic, Datadog, Elastic APM, Uptrace, OpenObserve)
+- Commercial vendors with an OTLP ingest path (Honeycomb, New Relic, Datadog, Uptrace, OpenObserve)
 - Custom sink you're prototyping
 
 ## Configuration
