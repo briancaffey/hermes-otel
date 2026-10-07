@@ -90,6 +90,10 @@ Spans land in `traces-hermes_otel-agents`, metrics in `metrics-hermes_otel-agent
 
 Elasticsearch histograms do not support cumulative temporality; cumulative counters are also converted lossily. The plugin therefore defaults this backend to `metrics_temporality: delta`, matching the per-backend `metrics_temporality` knob (see the SigNoz/Datadog discussion in [#226](https://github.com/briancaffey/hermes-otel/issues/226)). You can still override it per entry with `metrics_temporality: cumulative` if your pipeline handles conversion downstream.
 
+## Logs
+
+The elastic backend exports logs when `capture_logs: true` is set (it is not on by default). Log records land in the `logs-<dataset>-<namespace>` data stream, one stream per signal; verified with a real `hermes -z` session against the bundled compose stack — spans, delta metrics and log records (with readable `body.text`) each in their own stream. One caveat: the OTel SDK's `LoggingHandler` emits log records asynchronously in batches, so the last few records of a short-lived session may not flush before shutdown; long-running sessions lose nothing.
+
 ## Troubleshooting
 
 - **`401 Unauthorized`** — the key is wrong, expired, or sent with the wrong scheme. The plugin always uses `ApiKey`; check the key in Kibana (**Stack Management → API Keys**).
