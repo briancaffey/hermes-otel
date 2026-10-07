@@ -476,11 +476,13 @@
 #     # endpoint:                             # optional; overrides the region default
 # capture_logs: true
 
-# ── W&B Weave quickstart ──────────────────────────────────────────────────────
+# ── Elastic quickstart ────────────────────────────────────────────────────────
 #
-# W&B Weave ingests OTLP traces at https://trace.wandb.ai/otel/v1/traces and
-# routes them by OTel Resource attributes `wandb.entity` and `wandb.project`.
-# It is traces-only by default; keep metrics/logs in LGTM, SigNoz, OpenObserve, etc.
+# Elastic ingests OTLP via a managed endpoint (mOTLP) or a self-hosted
+# EDOT Collector. Auth uses `Authorization: ApiKey <key>` (NOT Bearer).
+# Metrics default to delta temporality (Elastic does not support cumulative
+# histograms). See website/docs/backends/elastic.md for the full guide,
+# including the bundled docker-compose stack and smoke script.
 #
 # backends:
 #   - type: elastic
@@ -488,10 +490,16 @@
 #     api_key_env: OTEL_ELASTIC_API_KEY        # Elastic Cloud mOTLP key;
 #     #                                          omit for a local EDOT collector
 #     # Optional data-stream routing (Resource attributes):
-#     # dataset: hermes-otel                   # -> data_stream.dataset
+#     # dataset: hermes_otel                   # -> data_stream.dataset
 #     # namespace: agents                      # -> data_stream.namespace
 #     # Self-hosted EDOT Collector instead:
 #     # endpoint: http://localhost:4318         # no api_key needed
+
+# ── W&B Weave quickstart ──────────────────────────────────────────────────────
+#
+# W&B Weave ingests OTLP traces at https://trace.wandb.ai/otel/v1/traces and
+# routes them by OTel Resource attributes `wandb.entity` and `wandb.project`.
+# It is traces-only by default; keep metrics/logs in LGTM, SigNoz, OpenObserve, etc.
 #
 # backends:
 #   - type: weave
