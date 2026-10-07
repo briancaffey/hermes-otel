@@ -251,40 +251,49 @@ class JaegerAdapter(BackendAdapter):
             attrs = self._span_tags_as_dict(root)
             if f.roots_only and not self._root_matches(root, attrs, f):
                 continue
+            card = root
             if not f.roots_only and f.name_prefix:
-                # Any span of the trace may carry the prefix; the card still
-                # describes the root.
-                if not any(
-                    str(sp.get("operationName") or "").startswith(f.name_prefix) for sp in spans
-                ):
+                # Widened to every span (the kind filter): the card is the
+                # first span carrying the prefix, as the other backends show
+                # it, with that span's own attributes, start and duration.
+                card = next(
+                    (
+                        sp
+                        for sp in sorted(spans, key=lambda sp: _int(sp.get("startTime")))
+                        if str(sp.get("operationName") or "").startswith(f.name_prefix)
+                    ),
+                    None,
+                )
+                if card is None:
                     continue
+                attrs = self._span_tags_as_dict(card)
             processes = t.get("processes") or {}
-            service = self._service_name_for_span(root, processes)
+            service = self._service_name_for_span(card, processes)
             # Keep only the card-relevant keys for the list payload; the
             # detail view will expose the rest.
             keep = {k: v for k, v in attrs.items() if k in _CARD_TAGS}
-            keep["name"] = root.get("operationName") or ""
+            keep["name"] = card.get("operationName") or ""
             if self._status_of(attrs).get("code") == 2:
                 keep["status"] = "error"
 
-            start_us = _int(root.get("startTime"))
+            start_us = _int(card.get("startTime"))
             start_ns = start_us * 1000 if start_us else 0
-            dur_us = _int(root.get("duration"))
+            dur_us = _int(card.get("duration"))
 
             traces.append(
                 {
                     "traceID": trace_id,
                     "spanCount": len(spans),
                     "rootServiceName": service,
-                    "rootTraceName": root.get("operationName") or "",
+                    "rootTraceName": card.get("operationName") or "",
                     "startTimeUnixNano": str(start_ns) if start_ns else "0",
                     "durationMs": dur_us // 1000 if dur_us else 0,
                     "spanSets": [
                         {
                             "spans": [
                                 {
-                                    "spanID": root.get("spanID"),
-                                    "name": root.get("operationName") or "",
+                                    "spanID": card.get("spanID"),
+                                    "name": card.get("operationName") or "",
                                     "attributes": otlp_attrs_from_dict(keep),
                                 }
                             ],

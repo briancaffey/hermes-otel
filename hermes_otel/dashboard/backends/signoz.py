@@ -29,6 +29,7 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bucketize,
+    counter_increases,
     finish_log_row,
     http_get_json,
     http_post_json,
@@ -101,8 +102,19 @@ _TAG_KEYS_TO_COLLECT = (
 
 # The card attributes are span tags, not columns; a ``list`` panel returns
 # only the columns it is asked for, so they are requested explicitly (#297).
+# Numeric attributes live in SigNoz's number map: asked for as strings they
+# come back empty, so the card's token counts need their real type (#297).
+_NUMERIC_TAG_KEYS = frozenset(
+    {
+        "gen_ai.usage.input_tokens",
+        "gen_ai.usage.output_tokens",
+        "gen_ai.usage.total_tokens",
+        "hermes.turn.number",
+    }
+)
 _SIGNOZ_SELECT_COLUMNS += [
-    {"key": k, "type": "tag", "dataType": "string"} for k in _TAG_KEYS_TO_COLLECT
+    {"key": k, "type": "tag", "dataType": "float64" if k in _NUMERIC_TAG_KEYS else "string"}
+    for k in _TAG_KEYS_TO_COLLECT
 ]
 
 
@@ -140,6 +152,10 @@ def _otel_severity_for(min_level: int) -> int:
 def _column(key: str, data_type: str = "string") -> Dict[str, Any]:
     """A filter/group key that is a real column of the logs table."""
     return {"key": key, "type": "", "dataType": data_type, "isColumn": True}
+
+
+# The resource attribute that tells one exporting process from another.
+_INSTANCE_KEY = "service.instance.id"
 
 
 def _tag(key: str, data_type: str = "string") -> Dict[str, Any]:
@@ -538,26 +554,56 @@ class SigNozAdapter(BackendAdapter):
         agg: str = "sum",
     ) -> Dict[str, Any]:
         kind = self._metric_kind(name)
-        time_agg = _TIME_AGGREGATION.get(kind, _TIME_AGGREGATION["Sum"]).get(agg, "sum")
+        cumulative = kind == "Sum" and agg in ("sum", "count", "last")
+        if cumulative:
+            # A counter's value is per exporting process. SigNoz's own
+            # ``increase`` over-counted one-shot turns that share a step
+            # (verified on v0.119: four turns of 2+1+2+4 calls read 10), so
+            # the adapter reads the latest cumulative value per process and
+            # step (``service.instance.id`` joins the grouping as a series key,
+            # never a label) and takes the increases itself, a series that
+            # starts inside the window counting its first value (#297).
+            time_agg = "latest"
+            group = ([_tag(group_by)] if group_by else []) + [_tag(_INSTANCE_KEY)]
+        else:
+            time_agg = _TIME_AGGREGATION.get(kind, _TIME_AGGREGATION["Sum"]).get(agg, "sum")
+            group = [_tag(group_by)] if group_by else []
         query = _builder_query(
             dataSource="metrics",
             aggregateAttribute={"key": name, "dataType": "float64", "type": kind, "isColumn": True},
             timeAggregation=time_agg,
             spaceAggregation=_SPACE_AGGREGATION.get(agg, "sum"),
-            groupBy=[_tag(group_by)] if group_by else [],
+            groupBy=group,
             stepInterval=int(bucket_s),
         )
         data = self._query_range(_composite(query, "graph", start_s, end_s, bucket_s))
-        points = [
-            (ts_ns, value, labels.get(group_by, "_") if group_by else "_")
-            for labels, ts_ns, value in _iter_series_points(data)
-        ]
+        if cumulative:
+            samples = [
+                (
+                    ts_ns,
+                    value,
+                    f"{labels.get(group_by, '—') if group_by else '_'}\x00{labels.get(_INSTANCE_KEY, '')}",
+                )
+                for labels, ts_ns, value in _iter_series_points(data)
+            ]
+            points = [
+                (ts_ns, value, ident.split("\x00", 1)[0])
+                for ts_ns, value, ident in counter_increases(
+                    samples, window_start_ns=start_s * 1_000_000_000
+                )
+            ]
+        else:
+            points = [
+                (ts_ns, value, labels.get(group_by, "_") if group_by else "_")
+                for labels, ts_ns, value in _iter_series_points(data)
+            ]
         # SigNoz already reduced each bucket, so folding one point per bucket
         # with ``sum`` reproduces its values on the shared bucket grid.
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name
         out["kind"] = kind
+        out["cumulative"] = cumulative
         # A ``Sum`` instrument is a counter shown as the increase per bucket.
         out["cumulative"] = kind == "Sum"
         return out
@@ -714,6 +760,9 @@ def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:
         for entry in series.get("list") or []:
             row = entry.get("data") if isinstance(entry, dict) else None
             if isinstance(row, dict):
+                # the span's start time is on the entry, not in its columns
+                if not row.get("timestamp") and entry.get("timestamp"):
+                    row = {**row, "timestamp": entry["timestamp"]}
                 rows.append(row)
     return rows
 

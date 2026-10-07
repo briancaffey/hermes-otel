@@ -204,7 +204,7 @@ class TestTraceUrls:
             )
             assert b.trace_url("abc") is None
 
-    def test_openobserve_offers_no_link(self):
+    def test_openobserve_links_to_its_trace_details_page(self):
         a = OpenObserveAdapter(
             {
                 "type": "openobserve",
@@ -213,4 +213,6 @@ class TestTraceUrls:
                 "password": "p",
             }
         )
-        assert a.trace_url("abc") is None
+        assert a.trace_url("abc").startswith(
+            "http://localhost:5080/web/traces/trace-details?org_identifier=default&stream=default&trace_id=abc&from="
+        )

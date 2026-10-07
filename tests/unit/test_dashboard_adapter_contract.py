@@ -471,8 +471,8 @@ class TestTempo:
             StructuredFilter(name_prefix="tool.", min_duration_ms=250, status="ok", service="s")
         )
         assert q.startswith(
-            '{ nestedSetParent < 0 && resource.service.name = "s" && name =~ "^tool\\\\." && status = ok && duration >= 250ms }'
-        )
+            '{ nestedSetParent < 0 && resource.service.name = "s" && name =~ "^tool\\\\..*" && status = ok && duration >= 250ms }'
+        )  # Tempo anchors the regex at both ends, so the prefix carries ``.*``
         assert "| select(" in q
 
     def test_a_4xx_retries_without_select_but_with_every_predicate(self, monkeypatch):
@@ -488,7 +488,7 @@ class TestTempo:
         self._adapter().search(StructuredFilter(status="error", name_prefix="agent"), 0, 10, 5)
         assert len(urls) == 2
         second = _urlparse.unquote_plus(urls[1])
-        assert "status = error" in second and 'name =~ "^agent"' in second
+        assert "status = error" in second and 'name =~ "^agent.*"' in second
         assert "select(" not in second
 
     def test_unreachable_is_not_retried(self, monkeypatch):
@@ -524,10 +524,80 @@ class TestTempo:
         page = self._adapter().search(StructuredFilter(before_ns=25 * NS), 0, 100, 1)
         q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
         assert (q["limit"], q["end"]) == ("2", "26")
-        assert [t["traceID"] for t in page["traces"]] == ["b"]
+        # ids come back padded to 32 hex digits (Tempo drops leading zeros)
+        assert [t["traceID"] for t in page["traces"]] == ["b".zfill(32)]
         assert page["has_more"] is True and page["next_before_ns"] == 20 * NS
         assert page["traces"][0]["spanCount"] == 7 and page["metrics"] == {"inspectedTraces": 3}
         assert "raw" not in page
+
+    def test_free_text_keeps_the_root_in_its_own_span_set(self, monkeypatch):
+        seen = {}
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {"traces": []}
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        self._adapter().search(StructuredFilter(free_text="B1-x", status="ok"), 0, 10, 5)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        # the root set carries the structured filters, the text is a second set
+        assert q["q"].startswith(
+            '{ nestedSetParent < 0 && status = ok } && { (span.input.value =~ ".*B1-x.*" || span.output.value =~ ".*B1-x.*") }'
+        )
+        assert q["spss"] == "1"
+        # widened to every span: one set, no spss cap
+        self._adapter().search(StructuredFilter(free_text="B1-x", roots_only=False), 0, 10, 5)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert q["q"].startswith("{ (span.input.value =~") and q["spss"] == "1"
+
+    def test_widened_search_names_the_card_after_the_matched_span(self, monkeypatch):
+        trace = {
+            "traceID": "ab",
+            "rootTraceName": "agent",
+            "startTimeUnixNano": "1000000000",
+            "spanSets": [
+                {
+                    "spans": [
+                        {"attributes": [{"key": "name", "value": {"stringValue": "tool.terminal"}}]}
+                    ]
+                }
+            ],
+        }
+        monkeypatch.setattr(tempo, "http_get_json", lambda *a, **k: {"traces": [trace]})
+        page = self._adapter().search(
+            StructuredFilter(name_prefix="tool.", roots_only=False), 0, 10, 5
+        )
+        assert page["traces"][0]["rootTraceName"] == "tool.terminal"
+        # Tempo 3 puts the selected ``name`` on the span itself
+        trace["spanSets"] = [{"spans": [{"name": "tool.read_file", "attributes": []}]}]
+        trace["rootTraceName"] = "agent"
+        page = self._adapter().search(
+            StructuredFilter(name_prefix="tool.", roots_only=False), 0, 10, 5
+        )
+        assert page["traces"][0]["rootTraceName"] == "tool.read_file"
+        # roots-only keeps the root's name
+        trace["rootTraceName"] = "agent"
+        page = self._adapter().search(StructuredFilter(name_prefix="agent"), 0, 10, 5)
+        assert page["traces"][0]["rootTraceName"] == "agent"
+
+    def test_trace_url_is_grafana_explore_only_with_ui_url(self):
+        assert self._adapter().trace_url("abc") is None
+        a = tempo.TempoAdapter(
+            {
+                "type": "lgtm",
+                "endpoint": "http://localhost:4318/v1/traces",
+                "ui_url": "http://localhost:3001/explore/",
+            }
+        )
+        url = a.trace_url("0ae1")
+        assert url.startswith("http://localhost:3001/explore?schemaVersion=1&panes=")
+        panes = json.loads(dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))["panes"])
+        assert panes["a"]["queries"][0] == {
+            "refId": "A",
+            "datasource": {"type": "tempo", "uid": "tempo"},
+            "queryType": "traceql",
+            "query": "0ae1",
+        }
 
     def test_prometheus_last_on_a_counter_is_an_honest_sum(self):
         assert _prometheus.effective_agg("c_total", "last") == "sum"
@@ -563,6 +633,13 @@ class TestOpenObserve:
                 "password": "p",
             }
         )
+
+    def test_trace_url_opens_the_trace_details_page(self):
+        url = self._adapter().trace_url("abc123")
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))
+        assert url.startswith("http://localhost:5080/web/traces/trace-details?")
+        assert (q["org_identifier"], q["stream"], q["trace_id"]) == ("default", "default", "abc123")
+        assert int(q["from"]) < int(q["to"])
 
     def test_an_empty_root_query_is_the_answer(self, monkeypatch):
         sqls = []
@@ -707,6 +784,44 @@ class TestJaeger:
             StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False), 0, 10, 10
         )
         assert len(widened["traces"]) == 2
+
+    def test_widened_search_cards_are_the_matched_spans(self, monkeypatch):
+        data = {
+            "data": [
+                {
+                    "traceID": "t1",
+                    "spans": [
+                        {
+                            "spanID": "r",
+                            "operationName": "agent",
+                            "startTime": 1_000_000,
+                            "duration": 9_000_000,
+                            "tags": [],
+                            "references": [],
+                        },
+                        {
+                            "spanID": "c",
+                            "operationName": "tool.terminal",
+                            "startTime": 2_000_000,
+                            "duration": 50_000,
+                            "tags": [{"key": "tool.name", "type": "string", "value": "terminal"}],
+                            "references": [{"refType": "CHILD_OF", "spanID": "r", "traceID": "t1"}],
+                        },
+                    ],
+                    "processes": {},
+                }
+            ]
+        }
+        monkeypatch.setattr(jaeger, "http_get_json", lambda *a, **k: data)
+        page = self._adapter().search(
+            StructuredFilter(name_prefix="tool.", roots_only=False), 0, 10, 10
+        )
+        row = page["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal" and row["durationMs"] == 50
+        assert row["spanSets"][0]["spans"][0]["name"] == "tool.terminal"
+        # roots-only keeps the root as the card
+        page = self._adapter().search(StructuredFilter(name_prefix="agent"), 0, 10, 10)
+        assert page["traces"][0]["rootTraceName"] == "agent"
 
     def test_name_prefix_is_checked_on_the_rows_and_cursor_bounds_the_query(self, monkeypatch):
         seen = {}
@@ -1058,6 +1173,124 @@ class TestLangfuse:
                 "secret_key": "sk",
             }
         )
+
+    def test_card_reads_the_root_attributes_from_the_list_metadata(self, monkeypatch):
+        item = {
+            "id": "t1",
+            "name": "agent",
+            "timestamp": "2026-10-07T01:13:00.607Z",
+            "latency": 11.052,
+            "totalCost": 0,
+            "observations": ["a", "b"],
+            "input": "Run echo",
+            "output": "ok",
+            "metadata": {
+                "attributes": {
+                    "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+                    "gen_ai.usage.total_tokens": "29149",
+                    "hermes.session_id": "s1",
+                }
+            },
+        }
+        monkeypatch.setattr(langfuse, "http_get_json", lambda *a, **k: {"data": [item]})
+        page = self._adapter().search(StructuredFilter(), 0, 10, 5)
+        attrs = {
+            a["key"]: a["value"] for a in page["traces"][0]["spanSets"][0]["spans"][0]["attributes"]
+        }
+        assert attrs["llm.model_name"] == {"stringValue": "nvidia/nemotron-3-super-120b-a12b"}
+        assert attrs["gen_ai.usage.total_tokens"] == {"stringValue": "29149"}
+        assert attrs["hermes.session_id"] == {"stringValue": "s1"}
+        assert attrs["input.value"] == {"stringValue": "Run echo"}
+
+    def test_detail_restores_the_tool_prefix_langfuse_drops(self, monkeypatch):
+        data = {
+            "id": "t1",
+            "name": "agent",
+            "timestamp": "2026-10-07T01:13:00.607Z",
+            "observations": [
+                {
+                    "id": "r",
+                    "type": "AGENT",
+                    "name": "agent",
+                    "startTime": "2026-10-07T01:13:00.607Z",
+                    "endTime": "2026-10-07T01:13:11.000Z",
+                },
+                {
+                    "id": "c",
+                    "type": "TOOL",
+                    "name": "terminal",
+                    "parentObservationId": "r",
+                    "startTime": "2026-10-07T01:13:04.411Z",
+                    "endTime": "2026-10-07T01:13:05.696Z",
+                },
+            ],
+        }
+        monkeypatch.setattr(langfuse, "http_get_json", lambda *a, **k: data)
+        detail = self._adapter().get_trace("t1")
+        names = [
+            sp["name"] for b in detail["batches"] for ss in b["scopeSpans"] for sp in ss["spans"]
+        ]
+        assert names == ["agent", "tool.terminal"]
+
+    def test_page_size_is_capped_at_the_api_maximum(self, monkeypatch):
+        urls = []
+
+        def fake(url, headers=None, timeout=None):
+            urls.append(url)
+            return {"data": []}
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        self._adapter().search(StructuredFilter(), 0, 10, 200)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(urls[0]).query))
+        assert q["limit"] == "100"
+
+    def test_kind_filter_widens_to_typed_observations(self, monkeypatch):
+        urls = []
+        obs = {
+            "data": [
+                {
+                    "id": "o1",
+                    "traceId": "t1",
+                    "type": "TOOL",
+                    "name": "terminal",
+                    "startTime": "2026-10-07T01:13:07.640Z",
+                    "latency": 0.054,
+                    "input": {"command": "echo hi"},
+                    "output": "hi",
+                    "metadata": {"attributes": {"tool.name": "terminal"}},
+                },
+                {
+                    "id": "o2",
+                    "traceId": "t1",
+                    "type": "TOOL",
+                    "name": "terminal",
+                    "startTime": "2026-10-07T01:13:06.879Z",
+                    "latency": 0.03,
+                },
+            ]
+        }
+
+        def fake(url, headers=None, timeout=None):
+            urls.append(url)
+            return obs
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        page = self._adapter().search(
+            StructuredFilter(name_prefix="tool.", roots_only=False), 1791335492, 1791335683, 5
+        )
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(urls[0]).query))
+        assert "/api/public/observations?" in urls[0] and q["type"] == "TOOL"
+        assert (q["fromStartTime"], q["toStartTime"]) == (
+            "2026-10-07T01:11:32Z",
+            "2026-10-07T01:14:43Z",
+        )
+        # one card per trace, named like the exporter's span, with the tool's I/O
+        assert len(page["traces"]) == 1
+        row = page["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal" and row["durationMs"] == 54
+        attrs = {a["key"]: a["value"] for a in row["spanSets"][0]["spans"][0]["attributes"]}
+        assert attrs["tool.name"] == {"stringValue": "terminal"}
+        assert attrs["input.value"] == {"stringValue": '{"command": "echo hi"}'}
 
     def test_raw_page_and_limit_cannot_override_the_route(self):
         p = self._adapter()._list_params(

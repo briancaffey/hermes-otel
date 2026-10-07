@@ -23,7 +23,7 @@ NAMES = {
         "up",
     ],
 }
-# Raw cumulative samples, as ``query_range`` on the bare counter answers them:
+# Raw cumulative samples, as a range-vector query on the bare counter answers them:
 # one series per process (service_instance_id). The first process existed
 # before the window (a sample in the look-behind) and grows by 5 inside it;
 # the second starts inside the window with its whole value; the third is a
@@ -134,10 +134,11 @@ def fake_http(monkeypatch):
         if path.endswith("/label/__name__/values"):
             return NAMES
         if path.endswith("/api/v1/query_range"):
+            return GAUGE_RANGE
+        if path.endswith("/api/v1/query"):
             q = dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))
-            return (
-                RANGE if q.get("query", "").startswith("hermes_token_usage_total") else GAUGE_RANGE
-            )
+            assert q.get("query", "").startswith("hermes_token_usage_total["), url
+            return RANGE
         raise AssertionError(url)
 
     monkeypatch.setattr(_prometheus, "http_get_json", fake_get)
@@ -210,10 +211,12 @@ class TestPrometheus:
         start, end = 1790294400 - 3600, 1790298000 + 3600
         out = a.metrics_query("hermes_token_usage_total", start, end, 3600, group_by="model")
         q = _query_of(fake_http[-1])
-        # the bare counter with a look-behind, not increase(): a one-shot run's
-        # single sample would otherwise read as 0 (#296)
-        assert q["query"] == "hermes_token_usage_total"
-        assert (q["start"], q["end"], q["step"]) == (str(start - 3600), str(end), "3600")
+        # the bare counter's raw samples (a range vector covering the window
+        # plus the look-behind, evaluated at the window end), not increase():
+        # a one-shot run's single sample would otherwise read as 0, and a
+        # query_range grid can skip or shift a sample (#296)
+        assert q["query"] == f"hermes_token_usage_total[{end - start + 3600}s]"
+        assert q["time"] == str(end) and "step" not in q
         assert out["cumulative"] is True and out["bucketS"] == 3600 and len(out["buckets"]) == 4
         # gateway series: baseline before the window, +0 then +5 inside it;
         # one-shot-a: first value counts (17078), the repeat adds 0

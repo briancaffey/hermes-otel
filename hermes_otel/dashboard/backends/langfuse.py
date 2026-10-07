@@ -51,10 +51,34 @@ from .base import (
 _DEFAULT_LANGFUSE_PORT = 3000
 # How far the client-side duration filter walks through the list.
 _MAX_PAGES = 5
+# The public API refuses ``limit`` above 100.
+_MAX_PAGE_SIZE = 100
+# Root-span attributes the card shows, read from the list item's metadata.
+_CARD_ATTRIBUTE_KEYS = (
+    "llm.model_name",
+    "gen_ai.request.model",
+    "gen_ai.response.model",
+    "llm.provider",
+    "gen_ai.usage.input_tokens",
+    "gen_ai.usage.output_tokens",
+    "gen_ai.usage.total_tokens",
+    "hermes.session_id",
+    "hermes.turn.number",
+    "tool.name",
+)
+# OpenInference span kinds the exporter sets, as Langfuse types them.
+_OBSERVATION_TYPES = {"tool": "TOOL", "api": "GENERATION", "llm": "GENERATION", "agent": "AGENT"}
 
 
 def _iso_utc(ts_s: int) -> str:
     return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat().replace("+00:00", "Z")
+
+
+def _span_name(obs: Dict[str, Any]) -> str:
+    name = str(obs.get("name") or obs.get("type") or "")
+    if obs.get("type") == "TOOL" and name and not name.startswith("tool."):
+        return f"tool.{name}"
+    return name
 
 
 def _iso_to_ns(iso: Optional[str]) -> Optional[int]:
@@ -223,11 +247,14 @@ class LangfuseAdapter(BackendAdapter):
         return [t for t in (raw_list if isinstance(raw_list, list) else []) if isinstance(t, dict)]
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
+        if not f.roots_only and f.name_prefix and not (f.raw or "").strip():
+            return self._search_observations(f, start_s, end_s, limit)
         want = int(limit) + 1
         traces: List[Dict[str, Any]] = []
         # One page beyond the limit is enough for has_more unless rows are
-        # filtered out here (duration, name prefix); then walk further pages.
-        page_size = want
+        # filtered out here (duration, name prefix) or the page is capped
+        # (the public API refuses more than 100); then walk further pages.
+        page_size = min(want, _MAX_PAGE_SIZE)
         for page in range(1, _MAX_PAGES + 1):
             try:
                 items = self._list_rows(f, start_s, end_s, page_size, page)
@@ -248,9 +275,103 @@ class LangfuseAdapter(BackendAdapter):
                     traces.append(row)
             if len(traces) >= want or len(items) < page_size:
                 break
-            if not (f.min_duration_ms or f.name_prefix):
+            if not (f.min_duration_ms or f.name_prefix) and page_size >= want:
                 break
         return trace_page(strictly_older_traces(traces, f), limit)
+
+    # The kind filter widens the search to every span: Langfuse keeps those as
+    # observations, typed by the exporter's OpenInference kind. A ``tool.``
+    # prefix is the TOOL type (Langfuse drops the prefix from the name),
+    # ``api.`` / ``llm.`` are GENERATIONs with the name kept, ``agent`` is the
+    # AGENT type; any other prefix is matched on the name alone (#246).
+    def _search_observations(
+        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
+    ) -> Dict[str, Any]:
+        prefix = f.name_prefix or ""
+        obs_type = _OBSERVATION_TYPES.get(prefix.rstrip(".")) if prefix else None
+        want = int(limit) + 1
+        rows: List[Dict[str, Any]] = []
+        seen: set = set()
+        end_s_eff = int(end_s)
+        if f.before_ns:
+            end_s_eff = min(end_s_eff, int(f.before_ns) // 1_000_000_000 + 1)
+        for page in range(1, _MAX_PAGES + 1):
+            params: Dict[str, Any] = {
+                "page": page,
+                "limit": _MAX_PAGE_SIZE,
+                "fromStartTime": _iso_utc(start_s),
+                "toStartTime": _iso_utc(end_s_eff),
+            }
+            if obs_type:
+                params["type"] = obs_type
+            url = f"{self.query_url}/api/public/observations?" + _urlparse.urlencode(params)
+            data = http_get_json(url, headers=self._headers(), timeout=15.0)
+            items = data.get("data") if isinstance(data, dict) else None
+            items = [o for o in (items if isinstance(items, list) else []) if isinstance(o, dict)]
+            for o in items:
+                name = str(o.get("name") or "")
+                card_name = f"tool.{name}" if o.get("type") == "TOOL" else name
+                if not card_name.startswith(prefix):
+                    continue
+                trace_id = o.get("traceId")
+                if not trace_id or trace_id in seen:
+                    continue
+                row = self._observation_row(o, trace_id, card_name, f)
+                if row is None:
+                    continue
+                seen.add(trace_id)
+                rows.append(row)
+            if len(rows) >= want or len(items) < _MAX_PAGE_SIZE:
+                break
+        return trace_page(strictly_older_traces(rows, f), limit)
+
+    def _observation_row(
+        self, o: Dict[str, Any], trace_id: str, card_name: str, f: StructuredFilter
+    ) -> Optional[Dict[str, Any]]:
+        start_ns = _iso_to_ns(o.get("startTime"))
+        latency = o.get("latency")
+        duration_ms = (
+            int(latency * 1000)
+            if isinstance(latency, (int, float)) and not isinstance(latency, bool)
+            else 0
+        )
+        if f.min_duration_ms and duration_ms < int(f.min_duration_ms):
+            return None
+        attrs: Dict[str, Any] = {"name": card_name}
+        meta = o.get("metadata") if isinstance(o.get("metadata"), dict) else {}
+        span_attrs = meta.get("attributes") if isinstance(meta.get("attributes"), dict) else {}
+        for k in _CARD_ATTRIBUTE_KEYS:
+            if span_attrs.get(k) not in (None, ""):
+                attrs[k] = span_attrs[k]
+        if o.get("type") == "TOOL":
+            attrs.setdefault("tool.name", o.get("name") or "")
+        if o.get("model"):
+            attrs.setdefault("llm.model_name", o["model"])
+        for key, field_name in (("input.value", "input"), ("output.value", "output")):
+            v = o.get(field_name)
+            if v not in (None, "") and key not in attrs:
+                attrs[key] = v if isinstance(v, str) else json.dumps(v)
+        if str(o.get("level") or "").upper() == "ERROR":
+            attrs["status"] = "error"
+        return {
+            "traceID": trace_id,
+            "rootServiceName": "langfuse",
+            "rootTraceName": card_name,
+            "startTimeUnixNano": str(start_ns) if start_ns else "0",
+            "durationMs": duration_ms,
+            "spanSets": [
+                {
+                    "spans": [
+                        {
+                            "spanID": o.get("id"),
+                            "name": card_name,
+                            "attributes": otlp_attrs_from_dict(attrs),
+                        }
+                    ],
+                    "matched": 1,
+                }
+            ],
+        }
 
     def _trace_row(self, t: Dict[str, Any], f: StructuredFilter) -> Optional[Dict[str, Any]]:
         trace_id = t.get("id")
@@ -269,9 +390,21 @@ class LangfuseAdapter(BackendAdapter):
             return None
 
         attrs: Dict[str, Any] = {"name": name}
-        # The trace list carries the trace's total cost but no token
-        # counts or model; those live on the observations, which
-        # ``get_trace`` fetches. Only report what the list states (#179).
+        # The list item's ``metadata.attributes`` are the root span's
+        # attributes (verified on Langfuse 3 against the 2026-10 image): the
+        # model, the turn's token totals and the session id come from there,
+        # so the card reads like the other backends' (#246).
+        meta = t.get("metadata") if isinstance(t.get("metadata"), dict) else {}
+        root_attrs = meta.get("attributes") if isinstance(meta.get("attributes"), dict) else {}
+        for k in _CARD_ATTRIBUTE_KEYS:
+            if root_attrs.get(k) not in (None, ""):
+                attrs[k] = root_attrs[k]
+        for key, field_name in (("input.value", "input"), ("output.value", "output")):
+            v = t.get(field_name)
+            if v not in (None, "") and key not in attrs:
+                attrs[key] = v if isinstance(v, str) else json.dumps(v)
+        # The trace list carries the trace's total cost; the token counts of
+        # the observations are summed on the root (above).
         total_cost = t.get("totalCost")
         if (
             isinstance(total_cost, (int, float))
@@ -356,7 +489,10 @@ class LangfuseAdapter(BackendAdapter):
                     "traceId": trace_id,
                     "spanId": obs.get("id"),
                     "parentSpanId": obs.get("parentObservationId") or None,
-                    "name": obs.get("name") or obs.get("type") or "",
+                    # Langfuse drops the exporter's ``tool.`` prefix from a
+                    # TOOL observation's name; the span tree uses the name
+                    # the exporter gave the span, as every other backend does.
+                    "name": _span_name(obs),
                     "kind": _OTLP_INTERNAL,
                     "startTimeUnixNano": str(start_ns) if start_ns else "0",
                     "endTimeUnixNano": str(end_ns) if end_ns else "0",

@@ -160,8 +160,29 @@ export function traceAttrs(trace: any): Record<string, any> {
       if (d !== null && d !== undefined && d !== "") out[a.key] = d;
     }
   }
+  // Turn totals live on the root: when the matched spans include both the
+  // root and an api span (a free-text search on Tempo matches every span
+  // whose input or output mentions the text), the api span's per-call usage
+  // must not pass for the turn's total.
+  const root = spans.find((s: any) => priority(s) === 3);
+  if (root && spans.length > 1) {
+    for (const a of root.attributes || []) {
+      if (!a.key || !TURN_TOTAL_KEYS.has(a.key)) continue;
+      const d = decodeAttrValue(a.value);
+      if (d !== null && d !== undefined && d !== "") out[a.key] = d;
+    }
+  }
   return out;
 }
+const TURN_TOTAL_KEYS = new Set([
+  "gen_ai.usage.total_tokens",
+  "gen_ai.usage.input_tokens",
+  "gen_ai.usage.output_tokens",
+  "llm.token_count.total",
+  "llm.token_count.prompt",
+  "llm.token_count.completion",
+  "hermes.cost.usage",
+]);
 // Whole-trace span count. Adapters that know it send ``spanCount``; Tempo
 // sends per-service stats. ``spanSets[0].spans`` is the MATCHED spans (one
 // per trace in roots-only mode), never the trace size, so it is not a

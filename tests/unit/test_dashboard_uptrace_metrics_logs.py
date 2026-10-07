@@ -339,16 +339,16 @@ class TestTraces:
         p = _params(url)
         assert url.startswith("https://uptrace.lan:443/internal/v1/spans/1?")
         assert p["query"] == [
-            'where service_name = "hermes-agent" | where _name like "agent" | where _status_code = "ok" | where _duration >= 100ms'
+            'where _parent_id = "" | where service_name = "hermes-agent" | where _name like "agent" | where _status_code = "ok" | where _duration >= 100ms'
         ]
-        # Roots are kept client-side: four rows per requested trace, plus one
-        # so has_more is exact.
+        # 2.1 filters roots on the server: one row per trace, plus one so
+        # has_more is exact.
         assert (p["time_start"], p["time_end"], p["system[]"], p["sort_dir"], p["limit"]) == (
             ["1790000000000"],
             ["1790500000000"],
             ["spans:all"],
             ["desc"],
-            ["41"],
+            ["11"],
         )
         assert out["has_more"] is False and out["next_before_ns"] is None
         assert [t["rootTraceName"] for t in out["traces"]] == ["agent"]  # the api child is dropped
@@ -393,19 +393,79 @@ class TestMetrics:
         start, end = 1790294400 - 3600, 1790298000 + 3600
         out = adapter.metrics_query("hermes_token_usage", start, end, 3600, group_by="model")
         p = _params(fake_http[-1][0])
+        # a cumulative value is per process: the instance is a series key
         assert (p["metric"], p["alias"], p["query"]) == (
             ["hermes_token_usage"],
             ["$m"],
-            ["$m group by model"],
+            ["$m group by model, service_instance_id"],
         )
         assert (
             out["instrument"] == "counter"
-            and out["mql"] == "$m group by model"
+            and out["mql"] == "$m group by model, service_instance_id"
             and out["agg"] == "sum"
         )
         # The series' attrs come back typed (``model::str``); the label is still found.
         assert out["series"]["nvidia/nemotron-3-nano-omni"] == [None, 26748.0, None, None]
         assert out["series"]["nvidia/nemotron-3-super"] == [None, 42342.0, 100.0, None]
+
+    def test_two_processes_in_one_interval_count_their_own_increases(self, adapter, monkeypatch):
+        # Two one-shot turns (2 and 4 calls) whose cumulative series overlap:
+        # summed by Uptrace they would read 2, 6, 6 (increases 2 + 4 = 6 by
+        # luck) or 6, 6 (increase 6 then 0) depending on the interval; per
+        # process each counts its first value and nothing more.
+        monkeypatch.setattr(adapter, "_instrument_of", lambda *a, **k: "counter")
+        t = [1790000000000, 1790000030000, 1790000060000]
+        ts = {
+            "timeseries": [
+                {
+                    "attrs": {"model::str": "m", "service_instance_id::str": "a"},
+                    "time": t,
+                    "value": [2, 2, None],
+                },
+                {
+                    "attrs": {"model::str": "m", "service_instance_id::str": "b"},
+                    "time": t,
+                    "value": [None, 4, 4],
+                },
+            ]
+        }
+        monkeypatch.setattr(adapter, "_get", lambda *a, **k: ts)
+        out = adapter.metrics_query(
+            "hermes_model_usage", 1789999990, 1790000090, 100, group_by="model"
+        )
+        assert sum(v for v in out["series"]["m"] if v) == 6.0
+
+    def test_histogram_count_is_sum_over_avg_per_process(self, adapter, monkeypatch):
+        # count($m) is the number of samples (1 per process per interval);
+        # three tool calls of 100, 200 and 300 ms read sum 600 / avg 200 = 3.
+        monkeypatch.setattr(adapter, "_instrument_of", lambda *a, **k: "histogram")
+        t = [1790000000000, 1790000030000]
+        answers = {
+            "sum($m) group by service_instance_id": {
+                "timeseries": [
+                    {"attrs": {"service_instance_id::str": "a"}, "time": t, "value": [600, 600]}
+                ]
+            },
+            "avg($m) group by service_instance_id": {
+                "timeseries": [
+                    {"attrs": {"service_instance_id::str": "a"}, "time": t, "value": [200, 200]}
+                ]
+            },
+        }
+        seen = []
+
+        def fake_get(path, start, end, params, **kw):
+            q = dict(params)["query"]
+            seen.append(q)
+            return answers[q]
+
+        monkeypatch.setattr(adapter, "_get", fake_get)
+        out = adapter.metrics_query(
+            "hermes_tool_duration", 1789999990, 1790000090, 100, agg="count"
+        )
+        assert seen == list(answers)
+        assert sum(v for v in out["series"]["_"] if v) == 3.0
+        assert out["mql"] == "sum($m) / avg($m) group by service_instance_id"
 
     def test_a_counter_forward_filled_by_uptrace_counts_once(self, adapter, monkeypatch):
         # Uptrace answers the cumulative value at each interval end and repeats

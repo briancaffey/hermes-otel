@@ -194,8 +194,25 @@
         if (d !== null && d !== void 0 && d !== "") out[a.key] = d;
       }
     }
+    const root = spans.find((s) => priority(s) === 3);
+    if (root && spans.length > 1) {
+      for (const a of root.attributes || []) {
+        if (!a.key || !TURN_TOTAL_KEYS.has(a.key)) continue;
+        const d = decodeAttrValue(a.value);
+        if (d !== null && d !== void 0 && d !== "") out[a.key] = d;
+      }
+    }
     return out;
   }
+  var TURN_TOTAL_KEYS = /* @__PURE__ */ new Set([
+    "gen_ai.usage.total_tokens",
+    "gen_ai.usage.input_tokens",
+    "gen_ai.usage.output_tokens",
+    "llm.token_count.total",
+    "llm.token_count.prompt",
+    "llm.token_count.completion",
+    "hermes.cost.usage"
+  ]);
   function traceSpanCount(trace) {
     if (typeof trace.spanCount === "number" && trace.spanCount > 0) return trace.spanCount;
     if (typeof trace.span_count === "number" && trace.span_count > 0) return trace.span_count;

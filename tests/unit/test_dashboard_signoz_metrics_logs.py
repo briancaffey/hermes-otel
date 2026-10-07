@@ -180,19 +180,82 @@ class TestMetrics:
             "type": "Sum",
             "isColumn": True,
         }
+        # the latest cumulative value per process and step; the increases are
+        # taken by the adapter (SigNoz's own ``increase`` over-counts one-shot
+        # turns that share a step, #297)
         assert (q["timeAggregation"], q["spaceAggregation"], q["stepInterval"]) == (
-            "increase",
+            "latest",
             "sum",
             3600,
         )
-        assert q["groupBy"] == [{"key": "model", "type": "tag", "dataType": "string"}]
+        assert q["groupBy"] == [
+            {"key": "model", "type": "tag", "dataType": "string"},
+            {"key": "service.instance.id", "type": "tag", "dataType": "string"},
+        ]
         assert (body["start"], body["end"], body["step"]) == (start * 1000, end * 1000, 3600)
 
         assert out["name"] == "hermes.token.usage" and out["kind"] == "Sum" and out["agg"] == "sum"
         assert out["bucketS"] == 3600 and len(out["buckets"]) == 4
+        # cumulative per process: a series that starts in the window counts its
+        # first value; a drop (another process, or a restart) counts in full
         assert out["series"]["nvidia/nemotron-3-nano-omni"] == [None, 53739.0, None, None]
         assert out["series"]["nvidia/nemotron-3-super"] == [None, 79423.0, 100.0, None]
-        assert out["points"] == 3
+        assert out["points"] == 3 and out["cumulative"] is True
+
+    def test_two_processes_in_one_step_count_their_own_first_values(self, adapter, monkeypatch):
+        t = 1790294400000
+        data = {
+            "data": {
+                "result": [
+                    {
+                        "series": [
+                            {
+                                "labels": {"service.instance.id": "a"},
+                                "values": [
+                                    {"timestamp": t, "value": "2"},
+                                    {"timestamp": t + 60000, "value": "2"},
+                                ],
+                            },
+                            {
+                                "labels": {"service.instance.id": "b"},
+                                "values": [{"timestamp": t, "value": "4"}],
+                            },
+                        ]
+                    }
+                ]
+            }
+        }
+        monkeypatch.setattr(adapter, "_metric_kind", lambda name: "Sum")
+        monkeypatch.setattr(adapter, "_query_range", lambda body: data)
+        out = adapter.metrics_query(
+            "hermes.model.usage", 1790294400 - 60, 1790294400 + 180, 300, agg="sum"
+        )
+        assert sum(v for v in out["series"]["_"] if v) == 6.0
+
+    def test_list_rows_carry_the_entry_timestamp_and_numeric_tokens(self):
+        rows = sz._extract_v4_list_rows(
+            {
+                "data": {
+                    "result": [
+                        {
+                            "list": [
+                                {
+                                    "timestamp": "2026-10-07T01:01:10.739546Z",
+                                    "data": {"traceID": "t", "gen_ai.usage.total_tokens": 29070},
+                                }
+                            ]
+                        }
+                    ]
+                }
+            }
+        )
+        assert (
+            rows[0]["timestamp"] == "2026-10-07T01:01:10.739546Z"
+            and rows[0]["gen_ai.usage.total_tokens"] == 29070
+        )
+        assert abs(sz._ns_from_row(rows[0]) - 1791334870739546000) < 1_000  # float µs
+        cols = {c["key"]: c["dataType"] for c in sz._SIGNOZ_SELECT_COLUMNS}
+        assert cols["gen_ai.usage.total_tokens"] == "float64" and cols["llm.model_name"] == "string"
 
     def test_gauge_and_other_aggregates_map_to_builder_verbs(self, adapter, fake_http):
         adapter.metrics_query("hermes.tool.duration.max", 0, 7200, 60, agg="avg")
