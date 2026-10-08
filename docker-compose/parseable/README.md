@@ -32,7 +32,7 @@ capture_logs: true
 ## Verify
 ```bash
 for s in hermes-traces hermes-metrics hermes-logs; do
-  curl -s -u admin:admin http://localhost:8010/api/v1/logstream/$s/stats | python3 -c 'import sys,json; print(json.load(sys.stdin)["ingestion"]["count"])'
+  curl -s -u admin:admin http://localhost:8010/api/v1/logstream/$s/stats | jq .ingestion.count
 done
 ```
 Then UI → Datasets → `hermes-traces` (Explore), or the Traces / Agents views.

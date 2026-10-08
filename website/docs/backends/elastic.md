@@ -45,7 +45,7 @@ No API key is needed for a collector on a trusted network: when no key resolves,
 A complete local stack (Elasticsearch + Kibana + EDOT Collector) ships in [`docker-compose/elastic/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose/elastic), ports bound to 127.0.0.1 only (Elasticsearch 19201, Kibana 15602, collector 14319, so it runs alongside the other stacks):
 
 ```bash
-docker compose -f docker-compose/elastic/docker-compose.yml up -d
+docker compose -f docker-compose/elastic/docker-compose.yaml up -d
 uv run --extra dev python scripts/verify_elastic.py   # end-to-end smoke: export + verify in ES
 ./scripts/import_elastic_dashboard.sh                 # optional: hermes-otel dashboard in Kibana
 ```

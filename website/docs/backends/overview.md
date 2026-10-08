@@ -152,7 +152,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
 | [Latitude](https://github.com/latitude-dev/latitude-llm) (#230) | `latitude/` | not yet run (13 containers, ~15 GB of images) | `type: otlp`, `http://localhost:3002/v1/traces`, bearer key + `X-Latitude-Project` |
 
-Two of these are not open source: Sigiro publishes only a binary image, and Maple is source-available under FSL-1.1. [Jaeger v2](/backends/jaeger) (`jaeger-v2/`) and [Langfuse v4](/backends/langfuse) (`LANGFUSE_VERSION=4`) have their own stacks so the read-side issues #245 and #246 can be reproduced locally.
+[Elastic](/backends/elastic) (`elastic/`: Elasticsearch + Kibana + EDOT Collector, `type: elastic`) was added on 2026-10-07 and verified with hermes-otel 1.21.0. Two of these are not open source: Sigiro publishes only a binary image, and Maple is source-available under FSL-1.1. [Jaeger v2](/backends/jaeger) (`jaeger-v2/`) and [Langfuse v4](/backends/langfuse) (`LANGFUSE_VERSION=4`) have their own stacks so the read-side issues #245 and #246 can be reproduced locally.
 
 ## Planned
 

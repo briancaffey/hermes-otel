@@ -51,7 +51,8 @@ x-langwatch-env: &langwatch-env
   AUTH_PROVIDER: email
   # Local-only secrets; change all of them for anything reachable by others.
   NEXTAUTH_SECRET: hermes-otel-local-nextauth-secret
-  CREDENTIALS_SECRET: "0000000000000000000000000000000000000000000000000000000000000000"
+  # 64 hex chars; override with LANGWATCH_CREDENTIALS_SECRET=$(openssl rand -hex 32)
+  CREDENTIALS_SECRET: ${LANGWATCH_CREDENTIALS_SECRET:-0000000000000000000000000000000000000000000000000000000000000000}
   API_TOKEN_JWT_SECRET: hermes-otel-local-jwt-secret
   LW_VIRTUAL_KEY_PEPPER: hermes-otel-local-pepper
   LW_GATEWAY_INTERNAL_SECRET: hermes-otel-local-gateway-secret

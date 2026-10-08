@@ -2,7 +2,7 @@
 
 Bring the stack up first:
 
-    docker compose -f docker-compose/elastic/docker-compose.yml up -d
+    docker compose -f docker-compose/elastic/docker-compose.yaml up -d
     uv run --extra dev python scripts/verify_elastic.py
 
 The script resolves the backend exactly like the tracer would, emits one

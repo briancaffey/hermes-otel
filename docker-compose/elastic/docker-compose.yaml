@@ -1,9 +1,9 @@
-
 # Elastic backend smoke stack: single-node ES + Kibana + EDOT Collector.
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
 # Everything is bound to 127.0.0.1 only — nothing listens on an external
 # interface, and the ports avoid the default 9200/5601/4317/4318.
 #
-#   docker compose -f docker-compose/elastic/docker-compose.yml up -d
+#   docker compose -f docker-compose/elastic/docker-compose.yaml up -d
 #   uv run --extra dev python scripts/verify_elastic.py
 #
 # Kibana: http://127.0.0.1:15602 (security disabled — no login)

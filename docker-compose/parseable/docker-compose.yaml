@@ -42,7 +42,8 @@ services:
     restart: unless-stopped
     command: ["parseable", "local-store"]
     environment:
-      P_ADDR: 0.0.0.0:8000
+      # Bind address inside the container; override to bind one interface.
+      P_ADDR: ${PARSEABLE_BIND_HOST:-0.0.0.0}:8000
       P_USERNAME: admin
       P_PASSWORD: admin
       P_FS_DIR: /parseable/data
@@ -62,6 +63,7 @@ services:
       - parseable
     command: ["--config=/etc/otelcol/config.yaml"]
     environment:
+      OTEL_BIND_HOST: 0.0.0.0
       # base64("admin:admin")
       PARSEABLE_BASIC_AUTH: YWRtaW46YWRtaW4=
     volumes:

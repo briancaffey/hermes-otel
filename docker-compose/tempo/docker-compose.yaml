@@ -32,7 +32,9 @@ services:
     image: grafana/tempo:${TEMPO_VERSION:-3.1.0}
     container_name: hermes-otel-tempo
     restart: unless-stopped
-    command: ["-target=all", "-config.file=/etc/tempo.yaml"]
+    command: ["-target=all", "-config.file=/etc/tempo.yaml", "-config.expand-env=true"]
+    environment:
+      OTEL_BIND_HOST: 0.0.0.0
     volumes:
       - ./tempo.yaml:/etc/tempo.yaml:ro
       - tempo_data:/var/tempo

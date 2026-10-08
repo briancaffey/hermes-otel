@@ -42,6 +42,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Langfuse](langfuse/) 3 / 4 | 6 | :3000 | ✅ | ❌ | ❌ | `langfuse` | the polished LLM UI; `LANGFUSE_VERSION=4` for #246 |
 | [SigNoz](signoz/) | 5 | :3301 | ✅ | ✅ | ✅ | `signoz` | full APM with ClickHouse; heavy |
 | [Uptrace](uptrace/) | 4 | :14318 | ✅ | ✅ | ✅ | `uptrace` | all three signals with a DSN-style setup |
+| [Elastic](elastic/) | 3 | :15602 | ✅ | ✅ | ✅ | `elastic` | you already run Elastic: EDOT Collector in front of Elasticsearch + Kibana (verified 2026-10-07, 1.21.0) |
 | [Parseable OSS](parseable/) | 2 | :8010 | ✅ | ✅ | ✅ | `otlp` | SQL over Parquet; shows the collector-in-front pattern |
 | [OpenLIT](openlit/) | 2 | :3010 | ✅ | ✅ | ✅ | `otlp` | OTel-native LLM UI with all three signals, light |
 | [MLflow](mlflow/) | 1 | :5001 | ✅ | ❌ | ❌ | `otlp` | you already use MLflow; it prices traces itself |
@@ -129,7 +130,10 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 9090 | lgtm | Prometheus |
 | 9999 | sigiro | SQL query API |
 | 14317, 14318 | uptrace | OTLP gRPC / UI + OTLP HTTP |
+| 14319 | elastic | EDOT Collector OTLP/HTTP |
+| 15602 | elastic | Kibana |
 | 16686, 16696 | jaeger, jaeger-v2 | UI |
+| 19201 | elastic | Elasticsearch API |
 
 Check with `lsof -nP -iTCP:<port> -sTCP:LISTEN` when a stack refuses to bind;
 dev servers love 3000 and 8000.
@@ -137,16 +141,19 @@ dev servers love 3000 and 8000.
 ## Disk and memory
 
 - **Images are big.** Langtrace's app image is 4.5 GB, Langfuse v4 3.6 GB,
-  LangWatch 2.8 GB, Latitude about 3 GB *per service*. Docker Desktop's VM disk
+  LangWatch 2.8 GB, Elastic 5.8 GB across its three images, Latitude about
+  3 GB *per service*. Docker Desktop's VM disk
   fills up silently and the symptom is a Postgres that dies with "No space left
   on device" or a pull that fails mid-layer. Check with
   `docker run --rm alpine df -h /` and `docker rmi` what you are done with.
 - **Memory.** Idle footprints measured after one turn: Phoenix / Jaeger /
   Sigiro < 100 MB; Tempo+Grafana 260 MB; Maple 340 MB; OpenLIT 560 MB; Laminar
-  600 MB; Langtrace 780 MB; MLflow 1.2 GB; LangWatch 1.9 GB; Opik 2.1 GB;
-  Langfuse 3 GB. On a 6 GB Docker Desktop run one of the heavy ones at a time.
+  600 MB; Langtrace 780 MB; MLflow 1.2 GB; Elastic 1.6 GB (Elasticsearch
+  900 MB + Kibana 630 MB); LangWatch 1.9 GB; Opik 2.1 GB; Langfuse 3 GB. On a 6 GB Docker Desktop run one of the heavy ones at a time.
 - **CPU.** ClickHouse-based stacks (SigNoz, Uptrace, Langfuse, Opik, LangWatch,
-  Laminar, Langtrace, OpenLIT) are the ones that make a laptop fan spin.
+  Laminar, Langtrace, OpenLIT) and Elasticsearch are the ones that make a laptop
+  fan spin; a single Elasticsearch node that is starved goes `red` and indexes
+  nothing while the collector drops batches (see `elastic/README.md`).
 
 ## Caveats you will hit
 

@@ -4,10 +4,12 @@
 receivers:
   otlp:
     protocols:
+      # ${env:OTEL_BIND_HOST} is set to 0.0.0.0 by the compose service so the
+      # ports Docker publishes are reachable; override it to bind one interface.
       grpc:
-        endpoint: 0.0.0.0:4317
+        endpoint: ${env:OTEL_BIND_HOST}:4317
       http:
-        endpoint: 0.0.0.0:4318
+        endpoint: ${env:OTEL_BIND_HOST}:4318
 
 processors:
   batch:

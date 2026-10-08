@@ -44,7 +44,8 @@ capture_logs: true
 
 ## Verify
 ```bash
-NOW=$(date +%s000); curl -s -H "X-Auth-Token: $LANGWATCH_API_KEY" -X POST http://localhost:5560/api/traces/search \
+NOW=$(date +%s000); AUTH="X-Auth-Token: $LANGWATCH_API_KEY"
+curl -s -H "$AUTH" -X POST http://localhost:5560/api/traces/search \
   -H 'content-type: application/json' -d "{\"pageSize\":3,\"startDate\":$((NOW-3600000)),\"endDate\":$NOW}" | head -c 800
 docker exec hermes-otel-langwatch-clickhouse clickhouse-client --password langwatch -d langwatch \
   -q "select table, sum(rows) from system.parts where database='langwatch' and active group by table"

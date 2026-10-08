@@ -18,16 +18,16 @@ docker compose -f docker-compose/langtrace/docker-compose.yaml down -v
 UI: http://localhost:3040 — `admin@langtrace.ai` / `langtraceadminpw`.
 
 ## Get a project API key
-In the UI: create a project, then "Generate API Key". Or with curl (NextAuth
-credentials login, then the project and key endpoints):
+In the UI: create a project, then "Generate API Key". Or with curl and `jq`
+(NextAuth credentials login, then the project and key endpoints):
 ```bash
 B=http://localhost:3040; J=$(mktemp)
-CSRF=$(curl -s -c $J $B/api/auth/csrf | python3 -c 'import sys,json;print(json.load(sys.stdin)["csrfToken"])')
+CSRF=$(curl -s -c $J $B/api/auth/csrf | jq -r .csrfToken)
 curl -s -b $J -c $J -o /dev/null -X POST $B/api/auth/callback/credentials \
   --data-urlencode csrfToken=$CSRF --data-urlencode username=admin@langtrace.ai --data-urlencode password=langtraceadminpw --data-urlencode json=true
-TEAM=$(curl -s -b $J "$B/api/user?email=admin@langtrace.ai" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["teamId"])')
-PID=$(curl -s -b $J -X POST $B/api/project -H 'content-type: application/json' -d "{\"name\":\"hermes-otel\",\"description\":\"\",\"teamId\":\"$TEAM\",\"type\":\"default\"}" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["id"])')
-curl -s -b $J -X POST "$B/api/api-key?project_id=$PID" | python3 -c 'import sys,json;print(json.load(sys.stdin)["data"]["apiKey"])'
+TEAM=$(curl -s -b $J "$B/api/user?email=admin@langtrace.ai" | jq -r .data.teamId)
+PID=$(curl -s -b $J -X POST $B/api/project -H 'content-type: application/json' -d "{\"name\":\"hermes-otel\",\"description\":\"\",\"teamId\":\"$TEAM\",\"type\":\"default\"}" | jq -r .data.id)
+curl -s -b $J -X POST "$B/api/api-key?project_id=$PID" | jq -r .data.apiKey
 ```
 
 ## Point hermes-otel at it

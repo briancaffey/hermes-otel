@@ -2,7 +2,9 @@
 
 Single-node Elasticsearch + Kibana + EDOT Collector (Elastic Distribution of
 the OpenTelemetry Collector), all 9.5.5, every port bound to 127.0.0.1 and
-chosen not to collide with the other stacks in this directory.
+chosen not to collide with the other stacks in this directory. Compose names
+the project after the folder (`elastic`), so no `-p` flag is needed; the
+`backends:` type is `elastic` (see the [Elastic page](https://briancaffey.github.io/hermes-otel/backends/elastic)).
 
 | Service | Host port | Purpose |
 |---|---|---|
@@ -11,10 +13,10 @@ chosen not to collide with the other stacks in this directory.
 | Kibana | 15602 | UI, no login |
 
 ```bash
-docker compose -p elastic -f docker-compose/elastic/docker-compose.yml up -d
+docker compose -f docker-compose/elastic/docker-compose.yaml up -d
 uv run --extra dev python scripts/verify_elastic.py      # export + verify per signal
 ./scripts/import_elastic_dashboard.sh                    # optional hermes-otel dashboard
-docker compose -p elastic -f docker-compose/elastic/docker-compose.yml down -v
+docker compose -f docker-compose/elastic/docker-compose.yaml down -v
 ```
 
 Plugin entry for it (`$HERMES_HOME/hermes_otel.yaml`):

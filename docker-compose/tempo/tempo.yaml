@@ -16,10 +16,11 @@ distributor:
   receivers:
     otlp:
       protocols:
+        # Expanded by -config.expand-env; the compose service sets 0.0.0.0.
         grpc:
-          endpoint: "0.0.0.0:4317"
+          endpoint: "${OTEL_BIND_HOST}:4317"
         http:
-          endpoint: "0.0.0.0:4318"
+          endpoint: "${OTEL_BIND_HOST}:4318"
 
 storage:
   trace:

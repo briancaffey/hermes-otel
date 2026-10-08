@@ -33,6 +33,7 @@ map, disk/memory budget, the test loop).
 | **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
 | **OpenLIT, LangWatch, Sigiro, Maple, Parseable OSS** | traces + metrics + logs | :3010 / :5560 / SQL :9999 / :4388 / :8010 | the newer stacks; all via `type: otlp` |
 | **Opik, MLflow, Laminar, Langtrace** | traces (Laminar also logs) | :5173 / :5001 / :5667 / :3040 | LLM-specific UIs with no explicit `type:` yet |
+| **Elastic** | traces + metrics + logs | http://127.0.0.1:15602 (Kibana) | `type: elastic` against a local EDOT Collector; data streams, 5.8 GB of images |
 
 Every stack, its ports, the `backends:` snippet and what it actually stored
 from a Hermes turn: `docker-compose/README.md` (port map included). The

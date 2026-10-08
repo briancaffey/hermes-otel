@@ -10,7 +10,8 @@ receivers:
   otlp:
     protocols:
       http:
-        endpoint: 0.0.0.0:4318
+        # Set to 0.0.0.0 by the compose service; override to bind one interface.
+        endpoint: ${env:OTEL_BIND_HOST}:4318
 
 processors:
   batch:

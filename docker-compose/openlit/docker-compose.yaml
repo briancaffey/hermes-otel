@@ -73,6 +73,8 @@ services:
       clickhouse:
         condition: service_healthy
     environment:
+      # The embedded Collector's receiver bind address (otel-collector-config.yaml).
+      OTEL_BIND_HOST: 0.0.0.0
       # Upstream defaults this to "true" (anonymous usage telemetry).
       TELEMETRY_ENABLED: "false"
       INIT_DB_HOST: clickhouse

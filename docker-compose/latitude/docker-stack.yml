@@ -52,7 +52,7 @@ services:
       test:
         [
           "CMD-SHELL",
-          "curl -fsS http://localhost:$${LAT_API_PORT:-3001}/health || exit 1",
+          "curl -fsS http://localhost:3001/health || exit 1",
         ]
       interval: 15s
       timeout: 5s
