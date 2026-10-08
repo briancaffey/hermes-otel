@@ -52,7 +52,8 @@ docker compose -f docker-compose/phoenix.yaml up -d
 
 > ⚠️ **Port-conflict map.** Check these are free first (`lsof -i :PORT`):
 > 3000 Grafana · 4317/4318 OTLP gRPC/HTTP · 9090 Prometheus · 3100 Loki ·
-> 3200 Tempo · 5080 OpenObserve · 6006 Phoenix.
+> 3200 Tempo · 5080 OpenObserve · 6006 Phoenix · Elastic stack uses 14319 (EDOT),
+> 19201 (Elasticsearch), 15602 (Kibana) so it coexists with all of the above.
 > LGTM wants 4318 **and** 3100 — 3100 commonly collides with other dev
 > frontends. If so, copy `lgtm.yaml`, remap the host side (`3110:3100`), make
 > the volume path absolute, and bring it up from the copy. 4318 is also claimed

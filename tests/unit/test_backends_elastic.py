@@ -121,17 +121,35 @@ class TestElasticBackendType:
                 BackendConfig(type="elastic", endpoint="http://localhost:4318", namespace="UPPER")
             )
 
-    def test_leading_underscore_dataset_raises(self):
-        with pytest.raises(ValueError, match="dataset"):
-            backends.resolve(
-                BackendConfig(type="elastic", endpoint="http://localhost:4318", dataset="_x")
+    def test_dots_and_leading_underscore_allowed(self):
+        # Elastic's own default dataset is ``generic.otel``; dots are valid.
+        rb = backends.resolve(
+            BackendConfig(
+                type="elastic",
+                endpoint="http://localhost:4318",
+                dataset="hermes.otel",
+                namespace="_x",
             )
+        )
+        assert rb.resource_attributes == {
+            "data_stream.dataset": "hermes.otel",
+            "data_stream.namespace": "_x",
+        }
+
+    def test_metrics_or_logs_suffix_is_rewritten_to_traces(self):
+        # The pipeline derives /v1/metrics and /v1/logs from the traces URL, so
+        # a per-signal URL for another signal must not leak in as-is.
+        for suffix in ("/v1/metrics", "/v1/logs", "/v1/traces/"):
+            rb = backends.resolve(
+                BackendConfig(type="elastic", endpoint=f"http://localhost:4318{suffix}")
+            )
+            assert rb.endpoint == "http://localhost:4318/v1/traces"
 
     def test_no_dataset_no_resource_attributes(self):
         rb = backends.resolve(BackendConfig(type="elastic", endpoint="http://localhost:4318"))
         assert rb.resource_attributes is None
 
-    def test_user_headers_do_not_clobber_auth(self):
+    def test_user_headers_are_merged_on_top_of_auth(self):
         rb = backends.resolve(
             BackendConfig(
                 type="elastic",
@@ -142,6 +160,19 @@ class TestElasticBackendType:
         )
         assert rb.headers["Authorization"] == "ApiKey k"
         assert rb.headers["X-Custom"] == "v"
+
+    def test_user_authorization_header_wins_over_api_key(self):
+        # Same rule as every other resolver: an explicit ``headers:`` entry is
+        # the user's override, so a hand-written Authorization replaces ours.
+        rb = backends.resolve(
+            BackendConfig(
+                type="elastic",
+                endpoint="http://localhost:4318",
+                api_key="k",
+                headers={"Authorization": "Bearer secret-token"},
+            )
+        )
+        assert rb.headers["Authorization"] == "Bearer secret-token"
 
     def test_delta_temporality_preset(self):
         # ES does not handle cumulative histograms; elastic defaults to delta.
@@ -198,6 +229,16 @@ class TestElasticEnvMode:
         rb = backends.resolve_from_env()
         assert rb is not None
         assert rb.type == "elastic"
+
+    def test_otel_key_alone_does_not_select_elastic(self, monkeypatch):
+        # Elastic has no default host: a key without OTEL_ELASTIC_ENDPOINT can
+        # never resolve, so it is not an opt-in (it used to be, and the
+        # resolver's "requires endpoint" error was swallowed silently).
+        from _helpers import clear_backend_env
+
+        clear_backend_env(monkeypatch)
+        monkeypatch.setenv("OTEL_ELASTIC_API_KEY", "k")
+        assert backends.resolve_from_env() is None
 
     def test_vendor_key_alone_does_not_select_elastic(self, monkeypatch):
         # ELASTIC_API_KEY without an OTEL_* opt-in must not switch export on.

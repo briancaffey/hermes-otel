@@ -18,6 +18,9 @@ services:
       - xpack.security.enabled=false
       - xpack.license.self_generated.type=basic
       - ES_JAVA_OPTS=-Xms512m -Xmx512m
+      # Dev node: a Docker VM above the 90% high watermark would otherwise
+      # leave every shard unassigned and the cluster red (nothing indexes).
+      - cluster.routing.allocation.disk.threshold_enabled=false
     ulimits:
       memlock: {soft: -1, hard: -1}
     volumes:

@@ -620,7 +620,7 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "backend",
         "Single-backend mode: Elastic OTLP URL (mOTLP or EDOT Collector)",
     ),
-    ("OTEL_ELASTIC_API_KEY", "backend", "Elastic API key (preferred name)"),
+    ("OTEL_ELASTIC_API_KEY", "backend", "Elastic API key (preferred name; needs the endpoint too)"),
     ("ELASTIC_API_KEY", "backend", "Elastic API key fallback"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),

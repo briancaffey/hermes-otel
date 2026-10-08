@@ -229,6 +229,19 @@ The plugin sets `x-honeycomb-team` from the key automatically and enables all th
 
 The plugin sets the `wandb-api-key` header automatically. Weave is traces-only by default; set `metrics: true` / `logs: true` only if W&B documents ingest for those signals or you are pointing at a compatible collector. `wandb.entity` and `wandb.project` may also be supplied via top-level `resource_attributes`; conflicting values fail startup.
 
+#### `elastic`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** Elastic Cloud managed OTLP URL (`https://<deployment>.ingest.<region>.<csp>.elastic.cloud`) or a self-hosted EDOT Collector's OTLP/HTTP base. Also via `OTEL_ELASTIC_ENDPOINT`. A base URL gets `/v1/traces` appended; `/v1/metrics` and `/v1/logs` are derived from it |
+| `api_key` | string | Elastic API key (inline; discouraged). Sent as `Authorization: ApiKey <key>`; the header is omitted entirely when no key resolves (a local collector) |
+| `api_key_env` | string | Env var name holding the key (falls back to `OTEL_ELASTIC_API_KEY` / `ELASTIC_API_KEY`) |
+| `dataset` | string | Optional; copied to the `data_stream.dataset` Resource attribute. Lowercase letters, digits, `_` and `.`, no `-`, at most 100 characters. The collector appends `.otel` |
+| `namespace` | string | Optional; copied to the `data_stream.namespace` Resource attribute, same character rules |
+| `metrics_temporality` | string | Preset `delta` for this type (Elasticsearch does not take cumulative histograms); `cumulative` overrides |
+
+An invalid `dataset` / `namespace` skips the entry at startup with a warning rather than failing the agent. Both attributes are set on the shared Resource, so every configured backend receives them; two `elastic` entries with different values conflict at startup. See [Elastic](/backends/elastic).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

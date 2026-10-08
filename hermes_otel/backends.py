@@ -111,7 +111,9 @@ _ENV_OPT_IN = {
     ),
     "weave": ("OTEL_WEAVE_API_KEY", "OTEL_WEAVE_ENDPOINT", "OTEL_WEAVE_BASE_URL"),
     "honeycomb": ("OTEL_HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_ENDPOINT"),
-    "elastic": ("OTEL_ELASTIC_API_KEY", "OTEL_ELASTIC_ENDPOINT"),
+    # Endpoint only: Elastic has no default host, so a key on its own could
+    # never resolve and would only fail silently inside resolve_from_env().
+    "elastic": ("OTEL_ELASTIC_ENDPOINT",),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -602,12 +604,16 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
-# Valid data-stream name component: lowercase alphanumerics plus '_'
-# only. '-' is NOT allowed — a full stream name is
-# `<type>-<dataset>-<namespace>` and is split on '-', so a '-' inside
-# dataset or namespace would make the name unparseable; EDOT silently
-# rewrites it to '_'. Max component length is 100 bytes.
-_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9][a-z0-9_]{0,99}")
+# Valid data-stream name component (Elastic's own rule for
+# ``data_stream.dataset`` / ``data_stream.namespace``): lowercase letters,
+# digits, '_' and '.', at most 100 characters. '-' is NOT allowed — a full
+# stream name is ``<type>-<dataset>-<namespace>`` and is split on '-', so a
+# '-' inside a component would make the name unparseable; EDOT silently
+# rewrites it to '_'. Dots are fine and Elastic uses them itself
+# (``generic.otel``); the collector's ``otel`` mapping mode appends ``.otel``
+# to whatever dataset is sent, so ``dataset: hermes_otel`` lands in
+# ``traces-hermes_otel.otel-<namespace>``.
+_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9_.]{1,100}")
 
 
 def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
@@ -630,14 +636,18 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     the ``data_stream.dataset`` / ``data_stream.namespace`` Resource
     attributes, which Elasticsearch data-stream routing keys off. When unset,
     Elastic defaults the dataset per signal (``traces``, ``metrics``,
-    ``logs``).
+    ``logs``). Both attributes land on the plugin's single shared Resource,
+    so every configured backend receives them; two elastic entries with
+    different values conflict at init.
     """
     ep = (bc.endpoint or os.getenv("OTEL_ELASTIC_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("elastic requires endpoint (or set OTEL_ELASTIC_ENDPOINT)")
-    ep = ep.rstrip("/")
-    if not any(ep.endswith(s) for s in ("/v1/traces", "/v1/metrics", "/v1/logs")):
-        ep = f"{ep}/v1/traces"
+    # Normalise to the traces URL the pipeline keys off: a bare base gets the
+    # suffix, and a per-signal URL for another signal is rewritten so that the
+    # derived /v1/metrics and /v1/logs variants stay correct.
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
 
     key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY"])
     headers: Dict[str, str] = {}
@@ -653,7 +663,7 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
         if not _ELASTIC_DS_COMPONENT.fullmatch(value):
             raise ValueError(
                 f"elastic {field} {value!r} is not a valid data-stream component "
-                "(lowercase alphanumerics and '_' only, no '-'; max 100 chars)"
+                "(lowercase letters, digits, '_' and '.' only, no '-'; max 100 chars)"
             )
         resource_attrs[attr] = value
 

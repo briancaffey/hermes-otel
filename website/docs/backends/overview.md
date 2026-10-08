@@ -124,12 +124,12 @@ Single-backend selection is env-var-driven. First match wins:
 6. `OTEL_PARSEABLE_ENDPOINT` + `PARSEABLE_API_KEY` set → Parseable
 7. `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) + `WANDB_ENTITY` + `WANDB_PROJECT` set → W&B Weave
 8. `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) set → Honeycomb
-9. `OTEL_ELASTIC_ENDPOINT` set → Elastic (API key optional: a local EDOT Collector needs none)
-9. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-10. `OTEL_TEMPO_ENDPOINT` set → Tempo
-11. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+9. `OTEL_ELASTIC_ENDPOINT` set → Elastic (`OTEL_ELASTIC_API_KEY` optional: a local EDOT Collector needs none, and a key alone never opts in because Elastic has no default host)
+10. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+11. `OTEL_TEMPO_ENDPOINT` set → Tempo
+12. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
+Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
