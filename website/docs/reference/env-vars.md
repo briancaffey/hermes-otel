@@ -38,7 +38,7 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_PARSEABLE_API_KEY` / `PARSEABLE_API_KEY` | string | Parseable API key |
 | `PARSEABLE_TRACES_DATASET` / `PARSEABLE_METRICS_DATASET` / `PARSEABLE_LOGS_DATASET` | string | Parseable dataset per signal (defaults `hermes-traces` / `hermes-metrics` / `hermes-logs`) |
 | `OTEL_ELASTIC_ENDPOINT` | URL | Elastic OTLP endpoint (Elastic Cloud mOTLP or EDOT Collector); enables Elastic in env-var mode |
-| `OTEL_ELASTIC_API_KEY` | string | Elastic API key (`Authorization: ApiKey`); enables Elastic in env-var mode |
+| `OTEL_ELASTIC_API_KEY` | string | Elastic API key (`Authorization: ApiKey`); needs `OTEL_ELASTIC_ENDPOINT` to enable Elastic in env-var mode (there is no default host) |
 | `ELASTIC_API_KEY` | string | Elastic API key fallback; does not enable Elastic in env-var mode on its own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |

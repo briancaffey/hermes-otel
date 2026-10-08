@@ -16,6 +16,21 @@ exporters:
     # Plain HTTP, no TLS/auth — the compose stack runs ES with security off.
     insecure: true
     insecure_skip_verify: true
+    # A single cold node takes a while to create the index templates and
+    # data streams on the first bulk request, and a busy laptop can stall it
+    # for seconds at a time. With the defaults the exporter gives up
+    # ("bulk indexer flush error: context deadline exceeded") and drops the
+    # batch; keep trying instead.
+    timeout: 90s
+    retry:
+      enabled: true
+      max_retries: 10
+      initial_interval: 2s
+      max_interval: 30s
+    sending_queue:
+      enabled: true
+      num_consumers: 2
+      queue_size: 1000
 
 service:
   pipelines:

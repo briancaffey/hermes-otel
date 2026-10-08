@@ -104,7 +104,11 @@ class TestAuth:
         rec, url = recorder
         result = _run(
             url,
-            {"KIBANA_API_KEY": "sekret-key", "KIBANA_USERNAME": "elastic", "KIBANA_PASSWORD": "hunter2"},
+            {
+                "KIBANA_API_KEY": "sekret-key",
+                "KIBANA_USERNAME": "elastic",
+                "KIBANA_PASSWORD": "hunter2",
+            },
         )
         assert result.returncode == 0, result.stderr
         assert rec.headers.get("authorization") == "ApiKey sekret-key"

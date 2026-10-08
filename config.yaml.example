@@ -486,10 +486,12 @@
 #
 # backends:
 #   - type: elastic
-#     endpoint: https://<hash>.apm.<region>.gcp.elastic-cloud.com:443
+#     endpoint: https://<deployment>.ingest.<region>.<csp>.elastic.cloud
 #     api_key_env: OTEL_ELASTIC_API_KEY        # Elastic Cloud mOTLP key;
 #     #                                          omit for a local EDOT collector
-#     # Optional data-stream routing (Resource attributes):
+#     # Optional data-stream routing (Resource attributes). The collector
+#     # appends ".otel" to the dataset: these two land Hermes data in
+#     # traces-hermes_otel.otel-agents / metrics-… / logs-….
 #     # dataset: hermes_otel                   # -> data_stream.dataset
 #     # namespace: agents                      # -> data_stream.namespace
 #     # Self-hosted EDOT Collector instead:
