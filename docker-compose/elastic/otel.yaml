@@ -1,0 +1,24 @@
+receivers:
+  otlp:
+    protocols:
+      # Bind ${env:OTEL_BIND_HOST} (set to 0.0.0.0 in the compose service) so
+      # the ports published by Docker are reachable; override OTEL_BIND_HOST to
+      # bind a single interface instead.
+      http: {endpoint: "${env:OTEL_BIND_HOST}:4318"}
+
+processors:
+  batch: {}
+
+exporters:
+  elasticsearch:
+    endpoint: ${env:ES_ENDPOINT}
+    mapping: {mode: otel}
+    # Plain HTTP, no TLS/auth — the compose stack runs ES with security off.
+    insecure: true
+    insecure_skip_verify: true
+
+service:
+  pipelines:
+    traces: {receivers: [otlp], processors: [batch], exporters: [elasticsearch]}
+    metrics: {receivers: [otlp], processors: [batch], exporters: [elasticsearch]}
+    logs: {receivers: [otlp], processors: [batch], exporters: [elasticsearch]}

@@ -24,6 +24,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Parseable](/backends/parseable)** | Traces + metrics + logs | Self-hosted · Cloud | OSS · paid cloud |
 | **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
 | **[W&B Weave](/backends/weave)** | Traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account |
+| **[Elastic](/backends/elastic)** | Traces + metrics + logs | Elastic Cloud (mOTLP) · self-hosted EDOT Collector | Elastic license / cloud plan |
 | **[telemetry.dev](/backends/telemetry)** (via generic `otlp`) | Traces + metrics + logs | Cloud | Free tier + paid plans |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
@@ -59,6 +60,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want a hosted backend purpose-built for LLM/agent telemetry, `gen_ai.*`-native"**
 → [telemetry.dev](/backends/telemetry) — OTLP ingest with a single `Authorization: Bearer` header, via the generic `otlp` type.
 
+**"Our observability is already Elastic (self-hosted or Elastic Cloud)"**
+→ [Elastic](/backends/elastic) — one `type: elastic` entry covers the managed OTLP endpoint (`ApiKey` auth) and a self-hosted EDOT Collector (no key needed).
+
 **"My company already has an OTel collector / New Relic / Datadog"**
 → [Generic OTLP](/backends/otlp) — point at its ingest endpoint and it just works.
 
@@ -83,6 +87,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Parseable | ✅ | ✅ | ✅ |
 | Honeycomb | ✅ | ✅ | ✅ |
 | W&B Weave | ✅ | ❌ | ❌ |
+| Elastic | ✅ | ✅ | ✅ |
 | telemetry.dev | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
@@ -100,6 +105,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | Uptrace | prefers delta, converts cumulative | `delta` | recommended |
 | Honeycomb | either | cumulative (default) | not verified |
 | Parseable, generic `otlp` | depends on the collector behind it | cumulative (default) | depends |
+| Elastic | delta required (ES does not handle cumulative histograms) | `delta` | accepted |
 | Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
 
 Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
@@ -118,6 +124,7 @@ Single-backend selection is env-var-driven. First match wins:
 6. `OTEL_PARSEABLE_ENDPOINT` + `PARSEABLE_API_KEY` set → Parseable
 7. `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) + `WANDB_ENTITY` + `WANDB_PROJECT` set → W&B Weave
 8. `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) set → Honeycomb
+9. `OTEL_ELASTIC_ENDPOINT` set → Elastic (API key optional: a local EDOT Collector needs none)
 9. `OTEL_JAEGER_ENDPOINT` set → Jaeger
 10. `OTEL_TEMPO_ENDPOINT` set → Tempo
 11. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
@@ -131,7 +138,6 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 These are OTLP-compatible and should work today with the generic OTLP backend — first-class docs, docker-compose files, and smoke tests are on the roadmap:
 
 - [New Relic](https://newrelic.com) — cloud, 100 GB/mo free tier
-- [Elastic APM](https://www.elastic.co/observability/application-performance-monitoring) — self-host or Elastic Cloud
 - [Datadog](https://www.datadoghq.com) — cloud, trial only
 
 File an issue if you've tried one of these and hit friction — we'll prioritise.

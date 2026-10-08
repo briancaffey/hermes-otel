@@ -44,6 +44,7 @@ Pick one and export it before starting Hermes:
 | LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |
 | Honeycomb | `OTEL_HONEYCOMB_API_KEY` |
 | W&B Weave | `OTEL_WEAVE_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` |
+| Elastic | `OTEL_ELASTIC_ENDPOINT` (+ `OTEL_ELASTIC_API_KEY` for Elastic Cloud mOTLP; omit for a local EDOT Collector) |
 
 Vendor SDK variables already in your environment (`LANGFUSE_PUBLIC_KEY` /
 `LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`) are used as credential

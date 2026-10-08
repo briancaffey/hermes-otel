@@ -320,6 +320,11 @@
 #   honeycomb    — Honeycomb (SaaS). Traces + metrics + logs. Set `api_key`
 #                  (or `api_key_env`) and `region:` (us|eu); the plugin fills in
 #                  the endpoint and `x-honeycomb-team` header. See HONEYCOMB.md.
+#   elastic      — Elastic (Elastic Cloud mOTLP or self-hosted EDOT Collector).
+#                  Traces + metrics + logs. Set `endpoint` (required); `api_key`
+#                  (or `api_key_env`) is sent as `Authorization: ApiKey <key>`
+#                  and omitted when unset (local collector). Delta metrics
+#                  temporality by default (ES has no cumulative histograms).
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -470,6 +475,25 @@
 #     # dataset: hermes
 #     # endpoint:                             # optional; overrides the region default
 # capture_logs: true
+
+# ── Elastic quickstart ────────────────────────────────────────────────────────
+#
+# Elastic ingests OTLP via a managed endpoint (mOTLP) or a self-hosted
+# EDOT Collector. Auth uses `Authorization: ApiKey <key>` (NOT Bearer).
+# Metrics default to delta temporality (Elastic does not support cumulative
+# histograms). See website/docs/backends/elastic.md for the full guide,
+# including the bundled docker-compose stack and smoke script.
+#
+# backends:
+#   - type: elastic
+#     endpoint: https://<hash>.apm.<region>.gcp.elastic-cloud.com:443
+#     api_key_env: OTEL_ELASTIC_API_KEY        # Elastic Cloud mOTLP key;
+#     #                                          omit for a local EDOT collector
+#     # Optional data-stream routing (Resource attributes):
+#     # dataset: hermes_otel                   # -> data_stream.dataset
+#     # namespace: agents                      # -> data_stream.namespace
+#     # Self-hosted EDOT Collector instead:
+#     # endpoint: http://localhost:4318         # no api_key needed
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────
 #

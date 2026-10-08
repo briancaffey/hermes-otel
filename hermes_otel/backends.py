@@ -23,6 +23,7 @@ from __future__ import annotations
 import base64
 import dataclasses
 import os
+import re
 import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, Optional, Tuple
@@ -40,7 +41,16 @@ _TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave"}
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
 # we'd rather drop logs on the floor than spray 4xx errors at them. Users
 # can override per-backend via the ``logs:`` field in config.yaml.
-_LOGS_CAPABLE = {"signoz", "otlp", "lgtm", "uptrace", "openobserve", "parseable", "honeycomb"}
+_LOGS_CAPABLE = {
+    "signoz",
+    "otlp",
+    "lgtm",
+    "uptrace",
+    "openobserve",
+    "parseable",
+    "honeycomb",
+    "elastic",
+}
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
@@ -57,6 +67,7 @@ _DISPLAY_NAMES = {
     "parseable": "Parseable",
     "honeycomb": "Honeycomb",
     "weave": "W&B Weave",
+    "elastic": "Elastic",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -79,6 +90,7 @@ _ENV_PRIORITY = [
     "parseable",
     "weave",
     "honeycomb",
+    "elastic",
     "jaeger",
     "tempo",
     "phoenix",
@@ -99,6 +111,7 @@ _ENV_OPT_IN = {
     ),
     "weave": ("OTEL_WEAVE_API_KEY", "OTEL_WEAVE_ENDPOINT", "OTEL_WEAVE_BASE_URL"),
     "honeycomb": ("OTEL_HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_ENDPOINT"),
+    "elastic": ("OTEL_ELASTIC_API_KEY", "OTEL_ELASTIC_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -113,6 +126,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
         ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"),
     ),
     "honeycomb": (("HONEYCOMB_API_KEY",),),
+    "elastic": (("ELASTIC_API_KEY",),),
 }
 
 
@@ -588,6 +602,73 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+# Valid data-stream name component: lowercase alphanumerics plus '_'
+# only. '-' is NOT allowed — a full stream name is
+# `<type>-<dataset>-<namespace>` and is split on '-', so a '-' inside
+# dataset or namespace would make the name unparseable; EDOT silently
+# rewrites it to '_'. Max component length is 100 bytes.
+_ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9][a-z0-9_]{0,99}")
+
+
+def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve an Elastic OTLP backend (Elastic Cloud mOTLP or self-hosted EDOT).
+
+    Auth model: Elastic's managed OTLP endpoint (mOTLP) authenticates with an
+    API key in the standard ``Authorization`` header, but with the ``ApiKey``
+    scheme — ``Authorization: ApiKey <key>`` — not ``Bearer``. A key is
+    optional: a self-hosted EDOT Collector on your own network typically runs
+    without auth, so when no key resolves the header is omitted entirely.
+
+    Endpoint: required (no default) — Elastic's is either the cloud project's
+    mOTLP URL (``https://<hash>.apm.<region>.gcp.elastic-cloud.com:443``, one
+    endpoint for all signals) or your EDOT Collector's OTLP/HTTP address. A
+    bare base URL is given the ``/v1/traces`` suffix the pipeline expects;
+    ``tracer.py`` / ``log_handler.py`` derive the ``/v1/metrics`` and
+    ``/v1/logs`` variants from it.
+
+    Data streams: optional ``dataset`` / ``namespace`` fields are copied to
+    the ``data_stream.dataset`` / ``data_stream.namespace`` Resource
+    attributes, which Elasticsearch data-stream routing keys off. When unset,
+    Elastic defaults the dataset per signal (``traces``, ``metrics``,
+    ``logs``).
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_ELASTIC_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("elastic requires endpoint (or set OTEL_ELASTIC_ENDPOINT)")
+    ep = ep.rstrip("/")
+    if not any(ep.endswith(s) for s in ("/v1/traces", "/v1/metrics", "/v1/logs")):
+        ep = f"{ep}/v1/traces"
+
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY"])
+    headers: Dict[str, str] = {}
+    if key:
+        headers["Authorization"] = f"ApiKey {key}"
+    headers.update(bc.headers or {})
+
+    resource_attrs: Dict[str, str] = {}
+    for field, attr in (("dataset", "data_stream.dataset"), ("namespace", "data_stream.namespace")):
+        value = getattr(bc, field)
+        if not value:
+            continue
+        if not _ELASTIC_DS_COMPONENT.fullmatch(value):
+            raise ValueError(
+                f"elastic {field} {value!r} is not a valid data-stream component "
+                "(lowercase alphanumerics and '_' only, no '-'; max 100 chars)"
+            )
+        resource_attrs[attr] = value
+
+    return _ResolvedBackend(
+        type="elastic",
+        endpoint=ep,
+        display_name=_display(bc, "elastic"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("elastic", bc.metrics),
+        supports_logs=_logs_for("elastic", bc.logs),
+        resource_attributes=resource_attrs or None,
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -671,6 +752,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "parseable": _resolve_parseable,
     "honeycomb": _resolve_honeycomb,
     "weave": _resolve_weave,
+    "elastic": _resolve_elastic,
 }
 
 
@@ -733,6 +815,7 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
 _TEMPORALITY_PRESETS: Dict[str, str] = {
     "signoz": "delta",
     "uptrace": "delta",
+    "elastic": "delta",
 }
 
 

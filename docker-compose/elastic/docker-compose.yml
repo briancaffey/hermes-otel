@@ -1,0 +1,65 @@
+
+# Elastic backend smoke stack: single-node ES + Kibana + EDOT Collector.
+# Everything is bound to 127.0.0.1 only — nothing listens on an external
+# interface, and the ports avoid the default 9200/5601/4317/4318.
+#
+#   docker compose -f docker-compose/elastic/docker-compose.yml up -d
+#   uv run --extra dev python scripts/verify_elastic.py
+#
+# Kibana: http://127.0.0.1:15602 (security disabled — no login)
+# EDOT OTLP/HTTP ingest: http://127.0.0.1:14319/v1/{traces,metrics,logs}
+
+services:
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:9.5.5
+    container_name: hermes-otel-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - xpack.license.self_generated.type=basic
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ulimits:
+      memlock: {soft: -1, hard: -1}
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    ports:
+      - "127.0.0.1:19201:9200"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf localhost:9200/_cluster/health | grep -qE 'status.*(green|yellow)'"]
+      interval: 5s
+      retries: 60
+
+  kibana:
+    image: docker.elastic.co/kibana/kibana:9.5.5
+    container_name: hermes-otel-kibana
+    depends_on:
+      elasticsearch: {condition: service_healthy}
+    environment:
+      - ELASTICSEARCH_HOSTS=http://elasticsearch:9200
+      - XPACK_SECURITY_ENABLED=false
+    ports:
+      - "127.0.0.1:15602:5601"
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf localhost:5601/api/status | grep -q '\"level\":\"available\"'"]
+      interval: 10s
+      retries: 60
+
+  # Elastic Distribution of the OTel Collector; loads otel.yaml from the
+  # same directory. Ingest is unauthenticated (localhost) — exactly the
+  # "self-hosted EDOT Collector" path type: elastic supports with no key.
+  edot-collector:
+    image: docker.elastic.co/elastic-agent/elastic-otel-collector:9.5.5
+    container_name: hermes-otel-edot
+    command: ["--config=/etc/otelcol-contrib/config.yaml"]
+    volumes:
+      - ./otel.yaml:/etc/otelcol-contrib/config.yaml:ro
+    environment:
+      - ES_ENDPOINT=http://elasticsearch:9200
+      - OTEL_BIND_HOST=0.0.0.0
+    ports:
+      - "127.0.0.1:14319:4318"
+    depends_on:
+      elasticsearch: {condition: service_healthy}
+
+volumes:
+  esdata: {}

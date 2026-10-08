@@ -140,6 +140,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     },
     "parseable": {"api_key": ("OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY")},
     "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
+    "elastic": {"api_key": ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")},
     "weave": {
         "api_key": ("OTEL_WEAVE_API_KEY", "WANDB_API_KEY"),
         "entity": ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
@@ -233,6 +234,7 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "honeycomb": "fixed",
     "weave": "fixed",
     "otlp": None,
+    "elastic": None,
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -613,6 +615,13 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("OTEL_HONEYCOMB_ENDPOINT", "backend", "Single-backend mode: Honeycomb OTLP URL"),
     ("OTEL_HONEYCOMB_API_KEY", "backend", "Honeycomb API key (preferred name)"),
     ("HONEYCOMB_API_KEY", "backend", "Honeycomb API key fallback"),
+    (
+        "OTEL_ELASTIC_ENDPOINT",
+        "backend",
+        "Single-backend mode: Elastic OTLP URL (mOTLP or EDOT Collector)",
+    ),
+    ("OTEL_ELASTIC_API_KEY", "backend", "Elastic API key (preferred name)"),
+    ("ELASTIC_API_KEY", "backend", "Elastic API key fallback"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),

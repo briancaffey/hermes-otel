@@ -166,6 +166,9 @@ class BackendConfig:
     api_key_env: Optional[str] = None
     dataset: Optional[str] = None
     region: Optional[str] = None
+    # Elastic data-stream routing: copied to ``data_stream.dataset`` /
+    # ``data_stream.namespace`` Resource attributes.
+    namespace: Optional[str] = None
     # W&B Weave routing. Weave authenticates with ``api_key`` and routes spans
     # by OTel Resource attributes. These fields are copied to ``wandb.entity``
     # / ``wandb.project``; users can alternatively set them in top-level
