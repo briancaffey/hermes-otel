@@ -50,7 +50,24 @@ uv run --extra dev python scripts/verify_elastic.py   # end-to-end smoke: export
 ./scripts/import_elastic_dashboard.sh                 # optional: hermes-otel dashboard in Kibana
 ```
 
-The bundled dashboard (`docker-compose/elastic/dashboards.ndjson`) ships five panels — top span names, spans by operation, token usage by token type, tool-call duration by tool, and model usage (cost) by model — rendered with real session data in [`dashboard.png`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/elastic/dashboard.png). Kibana listens on `http://127.0.0.1:15602` (security disabled).
+The bundled dashboard (`docker-compose/elastic/dashboards.ndjson`) ships five panels — top span names, spans by operation, token usage by token type (sum of `hermes.token.usage`), tool-call duration by tool, and messages per model (sum of `hermes.model.usage`) — rendered with real session data in [`dashboard.png`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/elastic/dashboard.png). Kibana listens on `http://127.0.0.1:15602` (security disabled).
+
+### Importing into a security-enabled Kibana
+
+On a Kibana with security enabled (Elastic Cloud, or a local stack started with `xpack.security.enabled=true`), the unauthenticated import request is rejected with HTTP 401. Pass credentials via environment variables — they are never echoed or logged:
+
+```bash
+# API key (recommended): create one in Stack Management → API Keys, or
+# POST /_security/api_key with {"name": "hermes-otel-dashboard"}
+export KIBANA_API_KEY="<base64 api key>"
+./scripts/import_elastic_dashboard.sh https://<your-kibana>:5601
+
+# or basic auth
+export KIBANA_USERNAME=elastic KIBANA_PASSWORD="<password>"
+./scripts/import_elastic_dashboard.sh https://<your-kibana>:5601
+```
+
+`KIBANA_API_KEY` takes precedence when both are set; with neither set the request is sent unauthenticated, which keeps the no-login compose path working.
 
 ## Why a dedicated `type: elastic`
 
