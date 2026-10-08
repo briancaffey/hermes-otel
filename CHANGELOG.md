@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.22.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.21.0...hermes-otel-v1.22.0) (2026-10-08)
+
+
+### Features
+
+* **backends:** add Elastic backend (type: elastic) ([#319](https://github.com/briancaffey/hermes-otel/issues/319)) ([dc117b2](https://github.com/briancaffey/hermes-otel/commit/dc117b2ffc8433dc91dfe31edc403d70b4f203b6))
+
+
+### Bug Fixes
+
+* **elastic:** review follow-ups for the Elastic backend ([#321](https://github.com/briancaffey/hermes-otel/issues/321)) ([9c4be6d](https://github.com/briancaffey/hermes-otel/commit/9c4be6d8df4ea2041d08c373bbece3b96ef7791b))
+
 ## [1.21.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.20.1...hermes-otel-v1.21.0) (2026-10-07)
 
 
