@@ -202,6 +202,43 @@ class TestMetrics:
         assert out["series"]["nvidia/nemotron-3-super"] == [None, 79423.0, 100.0, None]
         assert out["points"] == 3 and out["cumulative"] is True
 
+    def test_points_floored_to_the_step_grid_before_the_window_start_still_count(
+        self, adapter, monkeypatch
+    ):
+        # SigNoz stamps a step's value at the step's start on an epoch-aligned
+        # grid: a window opening at :11 gets its first sample back at :00.
+        start_s, end_s = 1_791_587_951, 1_791_587_997  # 46 s, 11 s past a minute
+        floored_ms = (start_s - start_s % 60) * 1000
+        seen = {}
+
+        def fake_query_range(body):
+            seen["body"] = body
+            return {
+                "data": {
+                    "result": [
+                        {
+                            "series": [
+                                {
+                                    "labels": {"service.instance.id": "p1"},
+                                    "values": [{"timestamp": floored_ms, "value": "4"}],
+                                },
+                                {
+                                    "labels": {"service.instance.id": "p2"},
+                                    "values": [{"timestamp": floored_ms, "value": "2"}],
+                                },
+                            ]
+                        }
+                    ]
+                }
+            }
+
+        monkeypatch.setattr(adapter, "_metric_kind", lambda name: "Sum")
+        monkeypatch.setattr(adapter, "_query_range", fake_query_range)
+        out = adapter.metrics_query("hermes.model.usage", start_s, end_s, 60)
+        assert seen["body"]["start"] == floored_ms  # asked from the grid boundary
+        assert sum(v or 0 for v in out["series"]["_"]) == 6
+        assert out["buckets"][0] == floored_ms * 1_000_000
+
     def test_two_processes_in_one_step_count_their_own_first_values(self, adapter, monkeypatch):
         t = 1790294400000
         data = {
