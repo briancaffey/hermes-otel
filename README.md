@@ -65,7 +65,7 @@ Attributes are emitted in **both** conventions — OpenInference (`llm.*`, `inpu
 
 Tested with: [Phoenix](https://briancaffey.github.io/hermes-otel/backends/phoenix) · [Langfuse](https://briancaffey.github.io/hermes-otel/backends/langfuse) · [LangSmith](https://briancaffey.github.io/hermes-otel/backends/langsmith) · [SigNoz](https://briancaffey.github.io/hermes-otel/backends/signoz) · [Jaeger](https://briancaffey.github.io/hermes-otel/backends/jaeger) · [Grafana Tempo](https://briancaffey.github.io/hermes-otel/backends/tempo) · [Grafana LGTM](https://briancaffey.github.io/hermes-otel/backends/lgtm) · [Uptrace](https://briancaffey.github.io/hermes-otel/backends/uptrace) · [OpenObserve](https://briancaffey.github.io/hermes-otel/backends/openobserve) · [Parseable](https://briancaffey.github.io/hermes-otel/backends/parseable) · [Honeycomb](https://briancaffey.github.io/hermes-otel/backends/honeycomb) · [W&B Weave](https://briancaffey.github.io/hermes-otel/backends/weave) · [Elastic](https://briancaffey.github.io/hermes-otel/backends/elastic).
 
-Any OTLP/HTTP endpoint works as `type: otlp`. Several can be fed at once, each with its own export queue. Which backend carries which signal (Phoenix, Jaeger, Tempo, Langfuse and Weave are traces-only) and the ready-made Compose stacks under [`docker-compose/`](docker-compose/) are in the [backends overview](https://briancaffey.github.io/hermes-otel/backends/overview).
+Any OTLP/HTTP endpoint works as `type: otlp`. Several can be fed at once, each with its own export queue. Which backend carries which signal (Phoenix, Jaeger, Tempo, Langfuse and Weave are traces-only) is in the [backends overview](https://briancaffey.github.io/hermes-otel/backends/overview). Every self-hostable backend, plus the candidates tracked in #232, has a ready-made Compose stack under [`docker-compose/`](docker-compose/), one folder per backend; [`docker-compose/README.md`](docker-compose/README.md) is the manual with the comparison table and port map.
 
 ## Install
 
@@ -141,7 +141,7 @@ Hermes ships two observability surfaces of its own. hermes-otel is the third, ru
 | | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
 |---|---|---|---|
 | Scope | Gateway and cron health, content-free by design: no prompts, tool calls, tokens or per-run traces | Per-run traces | Per-run traces (session → LLM → API → tool → sub-agent → approval), GenAI/OpenInference attributes, metrics and logs |
-| Backends | Any OTLP receiver (`monitoring.export.otlp`) | Langfuse only | 12+ OTLP backends, fanned out in parallel |
+| Backends | Any OTLP receiver (`monitoring.export.otlp`) | Langfuse only | 13 backend types plus generic OTLP, fanned out in parallel |
 | Coexists with hermes-otel | Yes | Yes | |
 
 Docs for the core surfaces: [Gateway Monitoring](https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-monitoring) and the `plugins/observability/langfuse` directory in hermes-agent.

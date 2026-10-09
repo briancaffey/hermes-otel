@@ -2,8 +2,8 @@
 name: hermes-otel-backends
 description: >-
   Spin up, query, and tear down a local OTLP backend (Phoenix, Grafana LGTM,
-  OpenObserve, SigNoz, Jaeger, Tempo, Uptrace) for hermes-otel development and
-  demos. Use when you need to SEE traces/metrics/logs in a real UI, stand up a
+  OpenObserve, SigNoz, Jaeger, Tempo, Uptrace, Elastic, and the otlp-typed
+  candidates) for hermes-otel development and demos. Use when you need to SEE traces/metrics/logs in a real UI, stand up a
   backend for before/after validation, or debug "why don't I see my telemetry".
   Covers the one-folder-per-backend layout, the port-conflict map, which
   backend supports which signal, the UI URLs + logins, and the query gotchas
