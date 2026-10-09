@@ -35,16 +35,15 @@
 # Settings → Project API keys, or mint one without the UI:
 #   docker-compose/laminar/mint-api-key.sh      # prints the key
 #
-# Point the plugin at it (no explicit `type: laminar` yet, see issue #223):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: laminar
-#       endpoint: http://localhost:8100/v1/traces
-#       headers:
-#         Authorization: "Bearer ${LMNR_PROJECT_API_KEY}"
-#       metrics: false   # /v1/metrics answers 200 and drops the payload
-#       logs: false
+#     - type: laminar
+#       endpoint: http://localhost:8100
+#       api_key_env: LMNR_PROJECT_API_KEY
+#       # Metrics default off for this type: /v1/metrics answers 200 and drops
+#       # the payload. Logs default on.
+#   capture_logs: true
 #
 # Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
 

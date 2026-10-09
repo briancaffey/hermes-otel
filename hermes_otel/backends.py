@@ -51,7 +51,14 @@ _LOGS_CAPABLE = {
     "honeycomb",
     "elastic",
     "openlit",
+    "laminar",
 }
+
+# Backends that take traces and logs but silently drop metrics: Laminar's
+# /v1/metrics answers 200 and stores nothing (a placeholder handler), so a
+# user would never learn why their dashboards stay empty. Metrics default off
+# here; ``metrics: true`` on the entry still overrides (a collector in front).
+_NO_METRICS = {"laminar"}
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
@@ -72,6 +79,7 @@ _DISPLAY_NAMES = {
     "openlit": "OpenLIT",
     "mlflow": "MLflow",
     "opik": "Comet Opik",
+    "laminar": "Laminar",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -98,6 +106,7 @@ _ENV_PRIORITY = [
     "openlit",
     "mlflow",
     "opik",
+    "laminar",
     "jaeger",
     "tempo",
     "phoenix",
@@ -126,6 +135,8 @@ _ENV_OPT_IN = {
     "mlflow": ("OTEL_MLFLOW_ENDPOINT",),
     # Opik has a cloud default host, so a plugin-namespaced key is enough.
     "opik": ("OTEL_OPIK_API_KEY", "OTEL_OPIK_ENDPOINT"),
+    # Laminar has a cloud default host, so a plugin-namespaced key is enough.
+    "laminar": ("OTEL_LAMINAR_API_KEY", "OTEL_LAMINAR_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -144,6 +155,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "openlit": (("OPENLIT_API_KEY",),),
     "mlflow": (("MLFLOW_TRACKING_TOKEN",),),
     "opik": (("OPIK_API_KEY",),),
+    "laminar": (("LMNR_PROJECT_API_KEY",),),
 }
 
 
@@ -219,7 +231,7 @@ class _ResolvedBackend:
 def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
-    return backend_type not in _TRACES_ONLY
+    return backend_type not in _TRACES_ONLY and backend_type not in _NO_METRICS
 
 
 def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
@@ -856,6 +868,55 @@ def _resolve_opik(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+_LAMINAR_CLOUD = "https://api.lmnr.ai"
+
+
+def _resolve_laminar(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Laminar (cloud or self-hosted app-server, OTLP/HTTP).
+
+    Endpoint: the app-server base, ``http://localhost:8100`` for the bundled
+    stack (upstream publishes 8000; the frontend on 5667 does not ingest), or
+    the cloud ``https://api.lmnr.ai``, which is the default. Also via
+    ``OTEL_LAMINAR_ENDPOINT`` or the SDK's ``LMNR_BASE_URL``. A bare base gets
+    ``/v1/traces``; ``/v1/logs`` is derived from it.
+
+    Auth: a project API key is required on both editions (the key is what
+    names the project) and travels as ``Authorization: Bearer <key>``, from
+    ``api_key`` / ``api_key_env`` / ``OTEL_LAMINAR_API_KEY`` /
+    ``LMNR_PROJECT_API_KEY``.
+
+    Signals: traces and logs on (verified: log records are stored); metrics
+    OFF by default because ``/v1/metrics`` answers 200 and drops the payload.
+    """
+    key = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY"]
+    )
+    if not key:
+        raise ValueError(
+            "laminar requires api_key (or set OTEL_LAMINAR_API_KEY / LMNR_PROJECT_API_KEY)"
+        )
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_LAMINAR_ENDPOINT", "")
+        or os.getenv("LMNR_BASE_URL", "")
+        or _LAMINAR_CLOUD
+    ).strip()
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+
+    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="laminar",
+        endpoint=ep,
+        display_name=_display(bc, "laminar"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("laminar", bc.metrics),
+        supports_logs=_logs_for("laminar", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -943,6 +1004,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "openlit": _resolve_openlit,
     "mlflow": _resolve_mlflow,
     "opik": _resolve_opik,
+    "laminar": _resolve_laminar,
 }
 
 

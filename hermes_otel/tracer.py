@@ -1133,7 +1133,16 @@ class HermesOTelPlugin:
                 logger.info(
                     f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
                     + (" (query only)" if not b.supports_traces else "")
-                    + (" (traces only)" if b.supports_traces and not b.supports_metrics else "")
+                    + (
+                        " (traces + logs)"
+                        if b.supports_traces and not b.supports_metrics and b.supports_logs
+                        else ""
+                    )
+                    + (
+                        " (traces only)"
+                        if b.supports_traces and not b.supports_metrics and not b.supports_logs
+                        else ""
+                    )
                 )
 
             # Proceed when *either* an OTLP backend or the live store is active.

@@ -335,6 +335,10 @@
 #   opik         — Comet Opik (self-hosted or Comet cloud). Traces only. Set
 #                  `endpoint` for self-host (cloud is the default host); cloud
 #                  needs `api_key_env` + `workspace`; `project` picks the project.
+#   laminar      — Laminar (self-hosted app-server or Laminar cloud). Traces +
+#                  logs; metrics off (accepted and dropped upstream). Needs a
+#                  project `api_key` / `api_key_env` (Bearer); `endpoint` for
+#                  self-host, cloud is the default host.
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -546,6 +550,19 @@
 #     project: hermes-agent                     # optional projectName header
 #     # api_key_env: OPIK_API_KEY               # cloud: bare Authorization header
 #     # workspace: my-workspace                 # cloud: Comet-Workspace header
+
+# ── Laminar quickstart ────────────────────────────────────────────────────────
+#
+# Laminar ingests OTLP traces and logs on its app-server; a project API key
+# is required and identifies the project. The bundled stack
+# (docker-compose/laminar/) publishes the app-server on 8100 and
+# docker-compose/laminar/mint-api-key.sh prints a key without the UI.
+#
+# backends:
+#   - type: laminar
+#     endpoint: http://localhost:8100           # omit for Laminar cloud
+#     api_key_env: LMNR_PROJECT_API_KEY
+# capture_logs: true
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────
 #

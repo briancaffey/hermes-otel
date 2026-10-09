@@ -147,6 +147,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "workspace": ("OPIK_WORKSPACE",),
         "project": ("OPIK_PROJECT_NAME",),
     },
+    "laminar": {"api_key": ("OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY")},
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -251,6 +252,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "mlflow": "origin",
     # Self-host: UI and API on one port; cloud: the comet.com origin.
     "opik": "origin",
+    # UI on :5667, ingest on the app-server :8100/:8000 — origin only for a proxied host.
+    "laminar": "proxied",
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -660,6 +663,18 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("OPIK_URL_OVERRIDE", "backend", "Opik SDK base URL fallback (…/api form accepted)"),
     ("OPIK_WORKSPACE", "backend", "Opik workspace for the Comet-Workspace header (cloud)"),
     ("OPIK_PROJECT_NAME", "backend", "Opik project for the projectName header"),
+    (
+        "OTEL_LAMINAR_ENDPOINT",
+        "backend",
+        "Single-backend mode: Laminar app-server URL (default: Laminar cloud)",
+    ),
+    (
+        "OTEL_LAMINAR_API_KEY",
+        "backend",
+        "Laminar project API key (preferred name; enables Laminar in env-var mode)",
+    ),
+    ("LMNR_PROJECT_API_KEY", "backend", "Laminar project API key fallback"),
+    ("LMNR_BASE_URL", "backend", "Laminar SDK base URL fallback"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),
