@@ -43,6 +43,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_OPENLIT_ENDPOINT` | URL | OpenLIT OTLP/HTTP receiver base (`http://localhost:4338` for the bundled stack); enables OpenLIT in env-var mode |
 | `OTEL_OPENLIT_API_KEY` | string | OpenLIT API key (`Authorization: Bearer`); optional, needs `OTEL_OPENLIT_ENDPOINT` to enable OpenLIT in env-var mode |
 | `OPENLIT_API_KEY` | string | OpenLIT API key fallback; does not enable OpenLIT in env-var mode on its own |
+| `OTEL_MLFLOW_ENDPOINT` | URL | MLflow tracking server (`http://localhost:5001` for the bundled stack); enables MLflow in env-var mode |
+| `OTEL_MLFLOW_EXPERIMENT_ID` / `MLFLOW_EXPERIMENT_ID` | string | Experiment for the mandatory `x-mlflow-experiment-id` header (default `0`, the Default experiment) |
+| `OTEL_MLFLOW_API_KEY` / `MLFLOW_TRACKING_TOKEN` | string | Tracking token (`Authorization: Bearer`); optional, does not enable MLflow on its own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |

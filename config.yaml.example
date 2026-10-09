@@ -329,6 +329,9 @@
 #                  Traces + metrics + logs. Set `endpoint` (required, the
 #                  OTLP/HTTP base or the UI origin); optional `api_key` /
 #                  `api_key_env` sent as `Authorization: Bearer <key>`.
+#   mlflow       — MLflow tracking server (3.6+, self-hosted). Traces only. Set
+#                  `endpoint` (required) and `experiment_id` (default "0");
+#                  the plugin sends the mandatory x-mlflow-experiment-id header.
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -513,6 +516,20 @@
 #     endpoint: http://localhost:4338            # bundled stack; 4318 upstream
 #     # api_key_env: OTEL_OPENLIT_API_KEY         # optional; Bearer header
 # capture_logs: true
+
+# ── MLflow quickstart ─────────────────────────────────────────────────────────
+#
+# MLflow 3.6+ ingests OTLP traces on its tracking server and needs the
+# x-mlflow-experiment-id header on every request; the plugin sends it from
+# `experiment_id`. The bundled stack (docker-compose/mlflow/) listens on 5001.
+# Metrics and logs are off (no such routes on the server).
+#
+# backends:
+#   - type: mlflow
+#     endpoint: http://localhost:5001
+#     # experiment_id: "0"                     # default; the Default experiment
+#     # workspace: my-workspace                # optional X-MLFLOW-WORKSPACE
+#     # api_key_env: MLFLOW_TRACKING_TOKEN     # optional Bearer token
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────
 #

@@ -253,6 +253,19 @@ An invalid `dataset` / `namespace` skips the entry at startup with a warning rat
 
 See [OpenLIT](/backends/openlit).
 
+#### `mlflow`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** MLflow tracking server (`http://localhost:5001` for the bundled stack, `http://<host>:5000` upstream). Also via `OTEL_MLFLOW_ENDPOINT`. A base URL gets `/v1/traces` appended |
+| `experiment_id` | string | Experiment that receives the traces, sent as the mandatory `x-mlflow-experiment-id` header. Default `0` (the built-in Default experiment) |
+| `experiment_id_env` | string | Env var name holding the experiment id (falls back to `OTEL_MLFLOW_EXPERIMENT_ID` / `MLFLOW_EXPERIMENT_ID`) |
+| `workspace` | string | Optional; sent as `X-MLFLOW-WORKSPACE` |
+| `api_key` / `api_key_env` | string | Optional tracking token, sent as `Authorization: Bearer <token>` (falls back to `OTEL_MLFLOW_API_KEY` / `MLFLOW_TRACKING_TOKEN`) |
+| `metrics` / `logs` | bool | Default **off**: the server has no `/v1/metrics` or `/v1/logs` route (404) |
+
+See [MLflow](/backends/mlflow).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

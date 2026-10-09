@@ -35,7 +35,7 @@ from .plugin_config import BackendConfig, normalize_temporality
 # and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
 # traces only (#160). A collector in front of it can still take metrics:
 # set ``metrics: true`` on the entry explicitly.
-_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave"}
+_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -70,6 +70,7 @@ _DISPLAY_NAMES = {
     "weave": "W&B Weave",
     "elastic": "Elastic",
     "openlit": "OpenLIT",
+    "mlflow": "MLflow",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -94,6 +95,7 @@ _ENV_PRIORITY = [
     "honeycomb",
     "elastic",
     "openlit",
+    "mlflow",
     "jaeger",
     "tempo",
     "phoenix",
@@ -119,6 +121,7 @@ _ENV_OPT_IN = {
     "elastic": ("OTEL_ELASTIC_ENDPOINT",),
     # Endpoint only, same reasoning: no default host.
     "openlit": ("OTEL_OPENLIT_ENDPOINT",),
+    "mlflow": ("OTEL_MLFLOW_ENDPOINT",),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -135,6 +138,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "honeycomb": (("HONEYCOMB_API_KEY",),),
     "elastic": (("ELASTIC_API_KEY",),),
     "openlit": (("OPENLIT_API_KEY",),),
+    "mlflow": (("MLFLOW_TRACKING_TOKEN",),),
 }
 
 
@@ -726,6 +730,56 @@ def _resolve_openlit(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve an MLflow tracking server (OTLP/HTTP traces only, MLflow >= 3.6).
+
+    MLflow ingests spans at ``/v1/traces`` and routes them by the mandatory
+    ``x-mlflow-experiment-id`` header (400 without it). ``experiment_id``
+    defaults to ``"0"``, the built-in Default experiment, and can come from
+    ``experiment_id_env`` / ``OTEL_MLFLOW_EXPERIMENT_ID`` /
+    ``MLFLOW_EXPERIMENT_ID``. ``workspace`` adds ``X-MLFLOW-WORKSPACE``.
+
+    Auth: optional. A tracking token from ``api_key`` / ``api_key_env`` /
+    ``OTEL_MLFLOW_API_KEY`` / ``MLFLOW_TRACKING_TOKEN`` travels as
+    ``Authorization: Bearer <token>``; a plain local server needs none.
+
+    Signals: traces only. The server has no ``/v1/metrics`` or ``/v1/logs``
+    router (404), so both default off; MLflow derives token usage and cost
+    from the span attributes itself.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_MLFLOW_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("mlflow requires endpoint (or set OTEL_MLFLOW_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+
+    experiment = _resolve_secret(
+        bc.experiment_id,
+        bc.experiment_id_env,
+        ["OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"],
+    )
+    headers: Dict[str, str] = {"x-mlflow-experiment-id": str(experiment or "0").strip()}
+    workspace = (bc.workspace or "").strip()
+    if workspace:
+        headers["X-MLFLOW-WORKSPACE"] = workspace
+    token = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"]
+    )
+    if token:
+        headers["Authorization"] = f"Bearer {token}"
+    headers.update(bc.headers or {})
+
+    return _ResolvedBackend(
+        type="mlflow",
+        endpoint=ep,
+        display_name=_display(bc, "mlflow"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("mlflow", bc.metrics),
+        supports_logs=_logs_for("mlflow", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -811,6 +865,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "weave": _resolve_weave,
     "elastic": _resolve_elastic,
     "openlit": _resolve_openlit,
+    "mlflow": _resolve_mlflow,
 }
 
 
