@@ -47,7 +47,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenLIT](openlit/) | 2 | :3010 | ✅ | ✅ | ✅ | `openlit` | OTel-native LLM UI with all three signals, light |
 | [MLflow](mlflow/) | 1 | :5001 | ✅ | ❌ | ❌ | `mlflow` | you already use MLflow; it prices traces itself |
 | [Comet Opik](opik/) | 7 | :5173 | ✅ | ❌ | ❌ | `opik` | the best LLM-trace fit of the new batch (threads, span types, cost) |
-| [Laminar](laminar/) | 5 | :5667 | ✅ | ❌ | ✅ | `otlp` | agent-focused UI; scripted API key |
+| [Laminar](laminar/) | 5 | :5667 | ✅ | ❌ | ✅ | `laminar` | agent-focused UI; scripted API key |
 | [LangWatch](langwatch/) | 5 | :5560 | ✅ | ✅ | ✅ | `otlp` | all three signals in an LLM platform; slow first start |
 | [Langtrace](langtrace/) | 3 | :3040 | partial | ❌ | ❌ | `otlp` | evaluating #224 only (AGPL, stale, drops bool/double attrs) |
 | [Sigiro](sigiro/) | 1 | SQL :9999 | ✅ | ✅ | ✅ | `otlp` | scripted SQL checks; closed-source binary |

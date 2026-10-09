@@ -2,7 +2,7 @@
 slug: /
 sidebar_position: 0
 title: "hermes-otel"
-description: "OpenTelemetry plugin for Hermes Agent — automatically export LLM traces, tool calls, token metrics and logs to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Grafana Tempo and LGTM, Uptrace, OpenObserve, Parseable, Honeycomb, W&B Weave, Elastic, OpenLIT, MLflow, Comet Opik, or any OTLP collector."
+description: "OpenTelemetry plugin for Hermes Agent — automatically export LLM traces, tool calls, token metrics and logs to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Grafana Tempo and LGTM, Uptrace, OpenObserve, Parseable, Honeycomb, W&B Weave, Elastic, OpenLIT, MLflow, Comet Opik, Laminar, or any OTLP collector."
 hide_table_of_contents: true
 displayed_sidebar: docs
 ---
@@ -13,7 +13,7 @@ import Link from '@docusaurus/Link';
   <div className="container">
     <h1 className="hero__title--otel">OpenTelemetry for Hermes Agent</h1>
     <p className="hero__subtitle--otel">
-      Fan LLM traces, tool calls, API requests, and token metrics out to any OTLP-compatible observability backend — <strong>Phoenix</strong>, <strong>Langfuse</strong>, <strong>LangSmith</strong>, <strong>SigNoz</strong>, <strong>Jaeger</strong>, <strong>Grafana Tempo</strong> and <strong>LGTM</strong>, <strong>Uptrace</strong>, <strong>OpenObserve</strong>, <strong>Parseable</strong>, <strong>Honeycomb</strong>, <strong>W&amp;B Weave</strong>, <strong>Elastic</strong>, <strong>OpenLIT</strong>, <strong>MLflow</strong>, <strong>Comet Opik</strong>, or your own collector. One plugin, parallel fan-out, zero hot-path blocking.
+      Fan LLM traces, tool calls, API requests, and token metrics out to any OTLP-compatible observability backend — <strong>Phoenix</strong>, <strong>Langfuse</strong>, <strong>LangSmith</strong>, <strong>SigNoz</strong>, <strong>Jaeger</strong>, <strong>Grafana Tempo</strong> and <strong>LGTM</strong>, <strong>Uptrace</strong>, <strong>OpenObserve</strong>, <strong>Parseable</strong>, <strong>Honeycomb</strong>, <strong>W&amp;B Weave</strong>, <strong>Elastic</strong>, <strong>OpenLIT</strong>, <strong>MLflow</strong>, <strong>Comet Opik</strong>, <strong>Laminar</strong>, or your own collector. One plugin, parallel fan-out, zero hot-path blocking.
     </p>
     <div className="hero__ctas">
       <Link className="hero__cta hero__cta--primary" to="/getting-started/quickstart">Quickstart →</Link>
@@ -125,6 +125,10 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
     <div className="backend-card__name">Comet Opik</div>
     <div className="backend-card__desc">LLM evaluation and tracing platform; threads, span types, usage and cost per span. Self-hosted or Comet cloud. Traces only.</div>
   </Link>
+  <Link className="backend-card" to="/backends/laminar">
+    <div className="backend-card__name">Laminar</div>
+    <div className="backend-card__desc">Agent-focused tracing with span types, tokens and cost. Self-hosted or Laminar cloud. Traces + logs.</div>
+  </Link>
   <Link className="backend-card" to="/backends/otlp">
     <div className="backend-card__name">Generic OTLP</div>
     <div className="backend-card__desc">Any OTLP/HTTP collector. Drop in an endpoint and go.</div>
@@ -142,7 +146,7 @@ Hermes core ships content-free [gateway monitoring](https://hermes-agent.nousres
 | | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
 |---|---|---|---|
 | Scope | Gateway/cron health, content-free | Per-run traces | Per-run traces + metrics + logs |
-| Backends | Any OTLP receiver | Langfuse only | 16 backend types plus generic OTLP, fan-out |
+| Backends | Any OTLP receiver | Langfuse only | 17 backend types plus generic OTLP, fan-out |
 | Coexists with hermes-otel | Yes | Yes | |
 
 ## The span hierarchy

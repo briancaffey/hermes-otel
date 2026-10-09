@@ -49,6 +49,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_OPIK_ENDPOINT` | URL | Opik base URL (`http://localhost:5173` for the bundled stack; default Comet cloud); enables Opik in env-var mode |
 | `OTEL_OPIK_API_KEY` | string | Opik API key (bare `Authorization` header); enables Opik in env-var mode (cloud default host) |
 | `OPIK_API_KEY` / `OPIK_URL_OVERRIDE` / `OPIK_WORKSPACE` / `OPIK_PROJECT_NAME` | string | Opik SDK variables used as fallbacks for the key, base URL, `Comet-Workspace` and `projectName`; never enable export on their own |
+| `OTEL_LAMINAR_API_KEY` | string | Laminar project API key (`Authorization: Bearer`); enables Laminar in env-var mode (cloud default host) |
+| `OTEL_LAMINAR_ENDPOINT` | URL | Laminar app-server base (`http://localhost:8100` for the bundled stack); needs a key to resolve |
+| `LMNR_PROJECT_API_KEY` / `LMNR_BASE_URL` | string | Laminar SDK variables used as fallbacks for the key and base URL; never enable export on their own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |

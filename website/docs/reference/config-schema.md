@@ -278,6 +278,17 @@ See [MLflow](/backends/mlflow).
 
 See [Comet Opik](/backends/opik).
 
+#### `laminar`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | Laminar app-server base: `http://localhost:8100` for the bundled stack (upstream publishes 8000; the frontend port 5667 does not ingest). Default `https://api.lmnr.ai` (Laminar cloud). Also via `OTEL_LAMINAR_ENDPOINT` / `LMNR_BASE_URL` |
+| `api_key` / `api_key_env` | string | **Required.** Project API key, sent as `Authorization: Bearer <key>` (falls back to `OTEL_LAMINAR_API_KEY` / `LMNR_PROJECT_API_KEY`). The key names the project |
+| `metrics` | bool | Default **off**: `/v1/metrics` answers 200 and stores nothing. `true` only with a collector in front |
+| `logs` | bool | Default **on** (log records are stored) |
+
+See [Laminar](/backends/laminar).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

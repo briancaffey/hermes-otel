@@ -3,8 +3,8 @@
 [Laminar](https://github.com/lmnr-ai/lmnr) (Apache-2.0) is an agent-focused
 observability platform. This is upstream's "lite" compose (Postgres, ClickHouse,
 Quickwit, app-server, frontend) with its `.env` inlined, plus a `quickwit-init`
-job that upstream's published images are missing. Plugin type: `otlp` until
-`type: laminar` exists (#223).
+job that upstream's published images are missing. Plugin type: `laminar` (since
+hermes-otel 1.23, #223).
 
 ## Why pick it
 - Spans get Laminar's span types (LLM for `api.*`/`llm.*`, TOOL for `tool.*`),
@@ -31,12 +31,10 @@ workspace + project when the user has none, and calls `POST /api/cli/api-key`.
 ## Point hermes-otel at it
 ```yaml
 backends:
-  - type: otlp
-    name: laminar
-    endpoint: http://localhost:8100/v1/traces
-    headers:
-      Authorization: "Bearer ${LMNR_PROJECT_API_KEY}"
-    metrics: false      # answers 200 and drops the payload
+  - type: laminar
+    endpoint: http://localhost:8100
+    api_key_env: LMNR_PROJECT_API_KEY
+    # metrics are off by default for this type (answers 200 and drops the payload)
 capture_logs: true
 ```
 
