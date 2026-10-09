@@ -75,7 +75,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 
 | Backend | Traces | Metrics | Logs |
 |---|---|---|---|
-| Phoenix | ✅ | ✅ | ❌ |
+| Phoenix | ✅ | ❌ (rejects `/v1/metrics`; the plugin defaults `metrics: false`) | ❌ |
 | Langfuse | ✅ | ❌ | ❌ |
 | LangSmith | ✅ (via HTTP Run API, not OTLP) | ❌ | ❌ |
 | SigNoz | ✅ | ✅ | ✅ |

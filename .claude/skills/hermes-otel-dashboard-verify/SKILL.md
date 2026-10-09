@@ -208,14 +208,14 @@ knows about it. Keep this table true; the harness reads its own copy in
 
 | type | traces | metrics | logs | start | source used | notes |
 |---|---|---|---|---|---|---|
-| lgtm | ✅ | ✅ Prometheus | ✅ Loki | `docker compose -p lgtm -f docker-compose/lgtm.yaml up -d` (the running local copy maps Grafana to :3001) | `lgtm-local` | counters via raw `query_range` with first-sample counting; roots via `nestedSetParent < 0`; Tempo anchors regexes, so prefixes carry `.*` |
-| openobserve | ✅ | ✅ | ✅ | `docker compose -p openobserve -f docker-compose/openobserve.yaml up -d` | `openobserve-local` | healthcheck false-negative; process identity from `start_time`; links to `/web/traces/trace-details` |
+| lgtm | ✅ | ✅ Prometheus | ✅ Loki | `docker compose -f docker-compose/lgtm/docker-compose.yaml up -d` (the running local copy maps Grafana to :3001) | `lgtm-local` | counters via raw `query_range` with first-sample counting; roots via `nestedSetParent < 0`; Tempo anchors regexes, so prefixes carry `.*` |
+| openobserve | ✅ | ✅ | ✅ | `docker compose -f docker-compose/openobserve/docker-compose.yaml up -d` | `openobserve-local` | healthcheck false-negative; process identity from `start_time`; links to `/web/traces/trace-details` |
 | signoz | ✅ | ✅ | ✅ | `docker compose -f docker-compose/signoz/docker-compose.yaml up -d` (heavy) | `signoz-local` | 30-min JWT; detail via GET `/api/v1/traces/{id}` |
-| uptrace | ✅ | ✅ | ✅ | `docker compose -p uptrace -f <copy of docker-compose/uptrace.yaml with 8124/9009/5433 remaps> up -d` (UI + OTLP on 14318) | `uptrace-local` | needs `endpoint` + `dsn` + `user_token` (compose defaults `project1_secret` / `user1_secret`); cumulative `$m` points |
-| jaeger | ✅ | — | — | `docker compose -p jaeger -f <copy of docker-compose/jaeger.yaml with OTLP on 4320> up -d` (4318 is LGTM's) | `jaeger-local` | `status_ok` and `free_text` are `none`, roots client-side |
+| uptrace | ✅ | ✅ | ✅ | `docker compose -f <copy of docker-compose/uptrace/docker-compose.yaml with 8124/9009/5433 remaps> up -d` (UI + OTLP on 14318) | `uptrace-local` | needs `endpoint` + `dsn` + `user_token` (compose defaults `project1_secret` / `user1_secret`); cumulative `$m` points |
+| jaeger | ✅ | — | — | `docker compose -f <copy of docker-compose/jaeger/docker-compose.yaml with OTLP on 4320> up -d` (4318 is LGTM's) | `jaeger-local` | `status_ok` and `free_text` are `none`, roots client-side |
 | tempo | ✅ | — | — | part of lgtm (query_port 3200) | `tempo-local` | TraceQL |
-| phoenix | ✅ | — | — | `docker compose -f docker-compose/phoenix.yaml up -d` | `phoenix-local` | `status=error` means the root errored, not any span |
-| langfuse | ✅ | — | — | `docker compose -p langfuse -f <copy of docker-compose/langfuse.yaml with web on 3002> up -d` (heavy; keys `lf_pk_hermes_dev` / `lf_sk_hermes_dev`) | `langfuse-local` | v3 works; v4 events-only deployments answer 404 on `/api/public/traces` (#246): expect a `kind=config` error, not rows. Trace timestamp ≈ root start (±100 ms tolerated) |
+| phoenix | ✅ | — | — | `docker compose -f docker-compose/phoenix/docker-compose.yaml up -d` | `phoenix-local` | `status=error` means the root errored, not any span |
+| langfuse | ✅ | — | — | `docker compose -f <copy of docker-compose/langfuse/docker-compose.yaml with web on 3002> up -d` (heavy; keys `lf_pk_hermes_dev` / `lf_sk_hermes_dev`) | `langfuse-local` | v3 works; v4 events-only deployments answer 404 on `/api/public/traces` (#246): expect a `kind=config` error, not rows. Trace timestamp ≈ root start (±100 ms tolerated) |
 
 ## 6. Results (2026-10-06, hermes-otel working tree after this round)
 
