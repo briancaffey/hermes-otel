@@ -37,6 +37,7 @@ map, disk/memory budget, the test loop).
 | **Comet Opik** | traces | http://localhost:5173 (no login) | `type: opik`, threads = sessions, per-span type/model/cost |
 | **Laminar** | traces + logs | http://localhost:5667 (any email) | `type: laminar`, key from `laminar/mint-api-key.sh`, metrics dropped upstream |
 | **LangWatch** | traces + metrics + logs | http://localhost:5560 (sign up) | `type: langwatch`, key from `langwatch/mint-api-key.py` (Playwright), ~5 min first start |
+| **Latitude** | traces | http://localhost:3000 (magic link via Mailpit :8025) | `type: latitude`, key + project slug, 13 containers / 15 GB of images |
 | **Langtrace** | traces (partial) | :3040 | generic `otlp` with caveats (#224) |
 | **Elastic** | traces + metrics + logs | http://127.0.0.1:15602 (Kibana) | `type: elastic` against a local EDOT Collector; data streams, 5.8 GB of images |
 

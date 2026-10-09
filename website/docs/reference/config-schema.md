@@ -300,6 +300,17 @@ See [Laminar](/backends/laminar).
 
 See [LangWatch](/backends/langwatch).
 
+#### `latitude`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | Latitude ingest base: `http://localhost:3002` for the bundled stack. Default `https://ingest.latitude.so` (Latitude cloud). Also via `OTEL_LATITUDE_ENDPOINT` / `LATITUDE_INGEST_URL`. A base URL gets `/v1/traces` appended |
+| `api_key` / `api_key_env` | string | **Required.** API key, sent as `Authorization: Bearer <key>` (falls back to `OTEL_LATITUDE_API_KEY` / `LATITUDE_API_KEY`) |
+| `project` / `project_env` | string | **Required.** Project slug for the mandatory `X-Latitude-Project` header (falls back to `LATITUDE_PROJECT`); spans without a project are rejected |
+| `metrics` / `logs` | bool | Default **off**: the ingest service has only `/v1/traces` |
+
+See [Latitude](/backends/latitude).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

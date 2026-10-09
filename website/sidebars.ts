@@ -40,6 +40,7 @@ const sidebars: SidebarsConfig = {
         'backends/opik',
         'backends/laminar',
         'backends/langwatch',
+        'backends/latitude',
         'backends/telemetry',
         'backends/multi-backend',
       ],

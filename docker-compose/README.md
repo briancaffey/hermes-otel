@@ -52,7 +52,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Langtrace](langtrace/) | 3 | :3040 | partial | ❌ | ❌ | `otlp` | evaluating #224 only (AGPL, stale, drops bool/double attrs) |
 | [Sigiro](sigiro/) | 1 | SQL :9999 | ✅ | ✅ | ✅ | `otlp` | scripted SQL checks; closed-source binary |
 | [Maple Local](maple/) | 1 | :4388 | ✅ | ✅ | ✅ | `otlp` | single binary with UI + SQL; FSL licence |
-| [Latitude](latitude/) | 13 | :3000 | untested | ❌ | ❌ | `otlp` | you have ~15 GB of disk and a reason (#230) |
+| [Latitude](latitude/) | 13 | :3000 | ✅ | ❌ | ❌ | `latitude` | you have ~15 GB of disk and a reason (#230) |
 
 Not here, and why: **AgentOps** builds from source, needs the Supabase CLI and
 a JWT exchange the plugin cannot do (#231); **Monocle** is an SDK, not a

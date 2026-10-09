@@ -26,17 +26,14 @@
 # Ingest needs a project API key and the project slug: after signing in,
 # create a project, then Settings → API keys.
 #
-# Point the plugin at it (no explicit `type: latitude` yet, see issue #230):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: latitude
-#       endpoint: http://localhost:3002/v1/traces
-#       headers:
-#         Authorization: "Bearer ${LATITUDE_API_KEY}"
-#         X-Latitude-Project: <project slug>
-#       metrics: false   # ingest has only /v1/traces
-#       logs: false
+#     - type: latitude
+#       endpoint: http://localhost:3002
+#       api_key_env: LATITUDE_API_KEY
+#       project: <project slug>        # mandatory X-Latitude-Project header
+#       # Metrics and logs default off for this type: ingest has only /v1/traces.
 #
 # Latitude also ships its own Hermes plugin (latitude-telemetry-hermes);
 # running both double-traces every turn.

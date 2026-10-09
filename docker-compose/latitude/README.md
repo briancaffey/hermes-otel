@@ -7,7 +7,7 @@ vendored with one edit: `env_file: .env.production` → `latitude.env`) and adds
 Mailpit to catch the magic-link sign-in emails. Twelve upstream containers:
 web, api, ingest, workers, workflows, a one-shot migrations job, pgvector
 Postgres, ClickHouse, two Redis, Temporal, SeaweedFS. Issue #230. Plugin type:
-`otlp`.
+`latitude` (since hermes-otel 1.23).
 
 ## Status: not yet run end to end
 `docker compose config` resolves all 13 services, but on 2026-10-05 the pull did
@@ -28,14 +28,11 @@ http://localhost:3002.
 Create a project in the UI, then Settings → API keys.
 ```yaml
 backends:
-  - type: otlp
-    name: latitude
-    endpoint: http://localhost:3002/v1/traces
-    headers:
-      Authorization: "Bearer ${LATITUDE_API_KEY}"
-      X-Latitude-Project: <project slug>      # mandatory; spans without a project are rejected
-    metrics: false
-    logs: false
+  - type: latitude
+    endpoint: http://localhost:3002
+    api_key_env: LATITUDE_API_KEY
+    project: <project slug>      # mandatory; spans without a project are rejected
+    # metrics and logs are off by default for this type (ingest has only /v1/traces)
 ```
 
 ## Caveats

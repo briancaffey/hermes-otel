@@ -342,6 +342,9 @@
 #   langwatch    — LangWatch (self-hosted or cloud). Traces + metrics + logs under
 #                  /api/otel. Needs a project `api_key` / `api_key_env` (Bearer);
 #                  `endpoint` for self-host, cloud is the default host.
+#   latitude     — Latitude (self-hosted ingest or Latitude cloud). Traces only.
+#                  Needs `api_key` / `api_key_env` (Bearer) and `project` (the slug
+#                  for X-Latitude-Project); `endpoint` for self-host.
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -579,6 +582,19 @@
 #     endpoint: http://localhost:5560           # omit for LangWatch cloud
 #     api_key_env: LANGWATCH_API_KEY            # sk-lw-…
 # capture_logs: true
+
+# ── Latitude quickstart ───────────────────────────────────────────────────────
+#
+# Latitude's ingest service takes OTLP traces with a bearer key and the
+# mandatory X-Latitude-Project header; both come from the UI (Settings →
+# API keys, and the project slug). The bundled stack
+# (docker-compose/latitude/) publishes ingest on 3002. Traces only.
+#
+# backends:
+#   - type: latitude
+#     endpoint: http://localhost:3002           # omit for Latitude cloud
+#     api_key_env: LATITUDE_API_KEY
+#     project: my-project-slug
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────
 #

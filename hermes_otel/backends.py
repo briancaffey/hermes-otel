@@ -35,7 +35,7 @@ from .plugin_config import BackendConfig, normalize_temporality
 # and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
 # traces only (#160). A collector in front of it can still take metrics:
 # set ``metrics: true`` on the entry explicitly.
-_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow", "opik"}
+_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow", "opik", "latitude"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -82,6 +82,7 @@ _DISPLAY_NAMES = {
     "opik": "Comet Opik",
     "laminar": "Laminar",
     "langwatch": "LangWatch",
+    "latitude": "Latitude",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -110,6 +111,7 @@ _ENV_PRIORITY = [
     "opik",
     "laminar",
     "langwatch",
+    "latitude",
     "jaeger",
     "tempo",
     "phoenix",
@@ -142,6 +144,8 @@ _ENV_OPT_IN = {
     "laminar": ("OTEL_LAMINAR_API_KEY", "OTEL_LAMINAR_ENDPOINT"),
     # LangWatch has a cloud default host, so a plugin-namespaced key is enough.
     "langwatch": ("OTEL_LANGWATCH_API_KEY", "OTEL_LANGWATCH_ENDPOINT"),
+    # Latitude has a cloud default host, so a plugin-namespaced key is enough.
+    "latitude": ("OTEL_LATITUDE_API_KEY", "OTEL_LATITUDE_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -162,6 +166,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "opik": (("OPIK_API_KEY",),),
     "laminar": (("LMNR_PROJECT_API_KEY",),),
     "langwatch": (("LANGWATCH_API_KEY",),),
+    "latitude": (("LATITUDE_API_KEY",), ("LATITUDE_PROJECT",)),
 }
 
 
@@ -989,6 +994,63 @@ def _resolve_langwatch(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+_LATITUDE_CLOUD = "https://ingest.latitude.so"
+
+
+def _resolve_latitude(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Latitude (cloud ingest or self-hosted ingest service, traces only).
+
+    Endpoint: the ingest service base, ``http://localhost:3002`` for the
+    bundled stack, or the cloud ``https://ingest.latitude.so`` (the default).
+    Also via ``OTEL_LATITUDE_ENDPOINT`` / ``LATITUDE_INGEST_URL``. A bare base
+    gets ``/v1/traces``.
+
+    Auth and routing: ``Authorization: Bearer <api key>`` (``api_key`` /
+    ``api_key_env`` / ``OTEL_LATITUDE_API_KEY`` / ``LATITUDE_API_KEY``) and the
+    mandatory ``X-Latitude-Project`` header from ``project`` / ``project_env``
+    / ``LATITUDE_PROJECT``: spans without a project are rejected, so both are
+    required here and a missing one skips the entry at startup with a clear
+    message.
+
+    Signals: traces only (the ingest service has /v1/traces and health
+    routes only).
+    """
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_LATITUDE_API_KEY", "LATITUDE_API_KEY"])
+    if not key:
+        raise ValueError(
+            "latitude requires api_key (or set OTEL_LATITUDE_API_KEY / LATITUDE_API_KEY)"
+        )
+    project = _resolve_secret(bc.project, bc.project_env, ["LATITUDE_PROJECT"])
+    if not project:
+        raise ValueError(
+            "latitude requires project (the project slug for X-Latitude-Project; "
+            "or set LATITUDE_PROJECT)"
+        )
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_LATITUDE_ENDPOINT", "")
+        or os.getenv("LATITUDE_INGEST_URL", "")
+        or _LATITUDE_CLOUD
+    ).strip()
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+
+    headers: Dict[str, str] = {
+        "Authorization": f"Bearer {key}",
+        "X-Latitude-Project": project,
+    }
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="latitude",
+        endpoint=ep,
+        display_name=_display(bc, "latitude"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("latitude", bc.metrics),
+        supports_logs=_logs_for("latitude", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -1078,6 +1140,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "opik": _resolve_opik,
     "laminar": _resolve_laminar,
     "langwatch": _resolve_langwatch,
+    "latitude": _resolve_latitude,
 }
 
 
