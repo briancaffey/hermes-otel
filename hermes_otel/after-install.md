@@ -50,6 +50,7 @@ Pick one and export it before starting Hermes:
 | Comet Opik | `OTEL_OPIK_API_KEY` + `OPIK_WORKSPACE` (cloud) or `OTEL_OPIK_ENDPOINT` (self-hosted); traces only |
 | Laminar | `OTEL_LAMINAR_API_KEY` (+ `OTEL_LAMINAR_ENDPOINT` for a self-hosted app-server); traces + logs |
 | LangWatch | `OTEL_LANGWATCH_API_KEY` (+ `OTEL_LANGWATCH_ENDPOINT` for a self-hosted stack) |
+| Latitude | `OTEL_LATITUDE_API_KEY` + `LATITUDE_PROJECT` (+ `OTEL_LATITUDE_ENDPOINT` for a self-hosted ingest); traces only |
 
 Vendor SDK variables already in your environment (`LANGFUSE_PUBLIC_KEY` /
 `LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`) are used as credential

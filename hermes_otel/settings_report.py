@@ -152,6 +152,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "api_key": ("OTEL_LANGWATCH_API_KEY", "LANGWATCH_API_KEY"),
         "project": ("LANGWATCH_PROJECT_ID",),
     },
+    "latitude": {
+        "api_key": ("OTEL_LATITUDE_API_KEY", "LATITUDE_API_KEY"),
+        "project": ("LATITUDE_PROJECT",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -260,6 +264,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "laminar": "proxied",
     # UI and OTLP on one port (5560 / app.langwatch.ai).
     "langwatch": "origin",
+    # Ingest on :3002, UI on :3000 — origin only for a proxied hostname.
+    "latitude": "proxied",
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -698,6 +704,23 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "backend",
         "LangWatch project id for the X-Project-Id header (service keys)",
     ),
+    (
+        "OTEL_LATITUDE_ENDPOINT",
+        "backend",
+        "Single-backend mode: Latitude ingest URL (default: Latitude cloud)",
+    ),
+    (
+        "OTEL_LATITUDE_API_KEY",
+        "backend",
+        "Latitude API key (preferred name; enables Latitude in env-var mode)",
+    ),
+    ("LATITUDE_API_KEY", "backend", "Latitude API key fallback"),
+    (
+        "LATITUDE_PROJECT",
+        "backend",
+        "Latitude project slug for the mandatory X-Latitude-Project header",
+    ),
+    ("LATITUDE_INGEST_URL", "backend", "Latitude ingest URL fallback"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),

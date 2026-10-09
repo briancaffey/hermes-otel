@@ -55,6 +55,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_LANGWATCH_API_KEY` | string | LangWatch project API key (`sk-lw-…`, `Authorization: Bearer`); enables LangWatch in env-var mode (cloud default host) |
 | `OTEL_LANGWATCH_ENDPOINT` | URL | LangWatch base (`http://localhost:5560` for the bundled stack); needs a key to resolve |
 | `LANGWATCH_API_KEY` / `LANGWATCH_ENDPOINT` / `LANGWATCH_PROJECT_ID` | string | LangWatch SDK variables used as fallbacks for the key, base URL and `X-Project-Id`; never enable export on their own |
+| `OTEL_LATITUDE_API_KEY` | string | Latitude API key (`Authorization: Bearer`); enables Latitude in env-var mode together with `LATITUDE_PROJECT` (cloud default host) |
+| `OTEL_LATITUDE_ENDPOINT` | URL | Latitude ingest base (`http://localhost:3002` for the bundled stack); needs a key and project to resolve |
+| `LATITUDE_API_KEY` / `LATITUDE_PROJECT` / `LATITUDE_INGEST_URL` | string | Latitude variables used for the key, the mandatory `X-Latitude-Project` slug and the ingest URL; never enable export on their own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
