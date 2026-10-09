@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.22.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.22.0...hermes-otel-v1.22.1) (2026-10-09)
+
+
+### Documentation
+
+* **backends:** bring every backend list up to date after Elastic and the compose layout ([#323](https://github.com/briancaffey/hermes-otel/issues/323)) ([e4696b8](https://github.com/briancaffey/hermes-otel/commit/e4696b8f23a3b4d0ad064adf51695a692afe4838))
+* **backends:** one folder per local backend, compose stacks for every open-issue candidate ([#279](https://github.com/briancaffey/hermes-otel/issues/279)) ([0e701e3](https://github.com/briancaffey/hermes-otel/commit/0e701e314a775710046656e81bc1d4a057074ad6))
+
 ## [1.22.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.21.0...hermes-otel-v1.22.0) (2026-10-08)
 
 
