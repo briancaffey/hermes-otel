@@ -213,3 +213,17 @@ class TestOpenObserveEventColumn:
             assert a.logs_search(LogFilter(event_name="hermes.tool.call"), 0, 10, 50) == []
             with pytest.raises(HTTPException):
                 a.logs_search(LogFilter(), 0, 10, 50)  # a plain query still surfaces the error
+        # the wording current builds use (seen live 2026-10-09, #299)
+        err2 = HTTPException(
+            status_code=502,
+            detail='Backend returned 400: {"code":20004,"message":"unknown field \'event_name\'","hint":"no similar field found; use the stream schema endpoint to list fields"}',
+        )
+        with patch.object(a, "_search", side_effect=err2):
+            assert a.logs_search(LogFilter(events_only=True), 0, 10, 50) == []
+            with pytest.raises(HTTPException):
+                a.logs_search(LogFilter(), 0, 10, 50)
+        # an unrelated 400 on an events query is still an error
+        err3 = HTTPException(status_code=502, detail="Backend returned 400: unknown field 'foo'")
+        with patch.object(a, "_search", side_effect=err3):
+            with pytest.raises(HTTPException):
+                a.logs_search(LogFilter(events_only=True), 0, 10, 50)

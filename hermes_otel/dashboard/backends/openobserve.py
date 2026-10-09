@@ -105,6 +105,15 @@ def _sql_escape(v: Any) -> str:
     return str(v).replace("\\", "\\\\").replace("'", "''")
 
 
+def _is_missing_event_column(exc: Exception) -> bool:
+    """True when OpenObserve refused the query because the logs stream has no
+    ``event_name`` column yet (no event was ever ingested)."""
+    text = str(getattr(exc, "detail", "") or exc)
+    return "event_name" in text and (
+        "No field named" in text or "unknown field" in text or "Search field not found" in text
+    )
+
+
 @register
 class OpenObserveAdapter(BackendAdapter):
     handles = frozenset({"openobserve", "openobserver"})
@@ -573,10 +582,12 @@ class OpenObserveAdapter(BackendAdapter):
             rows = self._search(sql, start_s, end_s, int(limit), "logs")
         except HTTPException as exc:
             # OpenObserve rejects a WHERE on a column the stream has never seen
-            # ("Search field not found … No field named event_name"). Until an
-            # event has been ingested there are no events to show: answer empty
-            # instead of failing the whole Logs tab (#268).
-            if wants_events and "No field named event_name" in str(exc.detail):
+            # ("Search field not found … No field named event_name" on older
+            # builds, ``{"code":20004,"message":"unknown field 'event_name'"}``
+            # on current ones, seen 2026-10-09). Until an event has been
+            # ingested there are no events to show: answer empty instead of
+            # failing the whole Logs tab (#268, #299).
+            if wants_events and _is_missing_event_column(exc):
                 return []
             raise
         out: List[Dict[str, Any]] = []
