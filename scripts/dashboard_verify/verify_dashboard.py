@@ -356,12 +356,15 @@ class Verifier:
             self.entry = entry
             self.filters = entry.get("filters") or {}
             want = self.expect.get(entry.get("type"), {})
+
+            def _flag_ok(key: str) -> bool:
+                # ``optional``: the type serves the signal only when the entry
+                # names a store for it (``tempo`` with ``prometheus_url`` /
+                # ``loki_url``); either answer is right.
+                return want.get(key) == "optional" or bool(entry.get(key)) == bool(want.get(key))
+
             ok = bool(entry.get("supported")) and (
-                not want
-                or (
-                    bool(entry.get("metrics")) == bool(want.get("metrics"))
-                    and bool(entry.get("logs")) == bool(want.get("logs"))
-                )
+                not want or (_flag_ok("metrics") and _flag_ok("logs"))
             )
             self.r.add(
                 "S1",
@@ -589,7 +592,9 @@ class Verifier:
             # T4: trace_url
             url = (det or {}).get("ui_url") if isinstance(det, dict) else None
             want_ui = self.expect.get(self.entry.get("type"), {}).get("ui", True)
-            if want_ui:
+            if want_ui == "optional" and not url:
+                self.r.add("T4", None, f"{rid}: no ui_url on the entry; no link expected")
+            elif want_ui:
                 self.r.add("T4", bool(url) and tid in str(url), f"{rid}: ui_url={url}")
             else:
                 self.r.add("T4", None, f"{rid}: no UI expected; ui_url={url}")
@@ -1245,8 +1250,14 @@ class Verifier:
                 line = text(page, "span:has-text('line')")
                 _, resp = self.api(self.tpath("/logs/search"), limit=100, lookback_hours=hours)
                 api_n = len((resp or {}).get("logs") or [])
+                # The stream is live (the gateway and the dashboard process log
+                # too): a line that lands between the page's request and ours
+                # is not a defect. Accept the page's count against the API's
+                # answer before or after it.
+                _, resp2 = self.api(self.tpath("/logs/search"), limit=100, lookback_hours=hours)
+                api_n2 = len((resp2 or {}).get("logs") or [])
                 probs = []
-                if num(line) != api_n:
+                if num(line) not in (api_n, api_n2):
                     probs.append(f"line count {line!r} vs API {api_n}")
                 older = page.locator(PANEL + "button:has-text('Older')")
                 older_on = older.count() > 0 and older.first.is_enabled()
@@ -1261,11 +1272,18 @@ class Verifier:
                     if not p2:
                         probs.append("Older did not reach page 2")
                 goto(page, "logs-warn", tab="logs", lookback=hours, size=100, level=30)
+                _, resp_w0 = self.api(
+                    self.tpath("/logs/search"), limit=100, lookback_hours=hours, min_level=30
+                )
                 line_w = text(page, "span:has-text('line')")
                 _, resp = self.api(
                     self.tpath("/logs/search"), limit=100, lookback_hours=hours, min_level=30
                 )
-                if num(line_w) != len((resp or {}).get("logs") or []):
+                warn_counts = {
+                    len((resp_w0 or {}).get("logs") or []),
+                    len((resp or {}).get("logs") or []),
+                }
+                if num(line_w) not in warn_counts:
                     probs.append(
                         f"level=30 count {line_w!r} vs API {len((resp or {}).get('logs') or [])}"
                     )

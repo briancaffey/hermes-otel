@@ -26,6 +26,7 @@ from urllib import parse as _urlparse
 
 from . import _loki, _prometheus, register
 from .base import (
+    FILTER_KEYS,
     BackendAdapter,
     BackendError,
     ConfigError,
@@ -50,6 +51,7 @@ _DEFAULT_TEMPO_QUERY_PORT = 3200
 # not name ``prometheus_url`` / ``loki_url`` explicitly.
 _DEFAULT_PROMETHEUS_PORT = 9090
 _DEFAULT_LOKI_PORT = 3100
+_DEFAULT_SEARCH_FETCH = 500
 
 _CARD_SELECT_ATTRS = (
     ".llm.model_name",
@@ -148,6 +150,18 @@ class TempoAdapter(BackendAdapter):
         "roots_only": "server",
     }
 
+    def filter_support_for(self, f: StructuredFilter) -> Dict[str, str]:
+        """A raw TraceQL query is sent verbatim and replaces every structured
+        predicate (roots-only, status, names, attributes, text): those fields
+        are reported as ignored so the page can say so. ``min_duration`` is
+        still honoured, client-side on the rows' ``durationMs``."""
+        if not (f.raw or "").strip():
+            return {}
+        out = {k: "none" for k in FILTER_KEYS}
+        out["raw"] = "server"
+        out["min_duration"] = "client"
+        return out
+
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
         endpoint = cfg.get("endpoint") or ""
@@ -168,6 +182,13 @@ class TempoAdapter(BackendAdapter):
         )
         self.supports_metrics = self.prometheus_url is not None
         self.supports_logs = self.loki_url is not None
+        # How many traces to ask Tempo for per page (``search_fetch``); the
+        # page is cut to ``limit`` after sorting newest-first. See
+        # ``_search_params``.
+        try:
+            self.search_fetch = max(1, int(cfg.get("search_fetch") or _DEFAULT_SEARCH_FETCH))
+        except (TypeError, ValueError):
+            self.search_fetch = _DEFAULT_SEARCH_FETCH
         self.metrics_match = cfg.get("metrics_match") or None
         self.loki_selector = cfg.get("loki_selector") or _loki.DEFAULT_SELECTOR
 
@@ -296,7 +317,13 @@ class TempoAdapter(BackendAdapter):
             # strictly_older_traces() drops it exactly.
             end = min(end, int(f.before_ns) // 1_000_000_000 + 1)
         params: Dict[str, Any] = {
-            "limit": int(limit) + 1,
+            # Tempo stops at ``limit`` matches in whatever order its blocks
+            # answer, not the newest ones (verified on Tempo 3.0.3: ``limit=3``
+            # over four traces skipped a newer trace for an older one in
+            # about half the calls, ``most_recent=true`` included). Over-fetch
+            # and take the newest ``limit`` rows here, so keyset paging never
+            # loses a trace that sits between two pages.
+            "limit": max(int(limit) + 1, int(self.search_fetch)),
             "start": int(start_s),
             "end": end,
             "q": q,
@@ -305,8 +332,10 @@ class TempoAdapter(BackendAdapter):
             # One span per set: the root in roots-only mode, the first matched
             # span when widened (one card per trace, as the other backends).
             params["spss"] = 1
-        if f.raw and f.raw.strip() and f.min_duration_ms and f.min_duration_ms > 0:
-            params["minDuration"] = f"{f.min_duration_ms}ms"
+        # ``minDuration`` is NOT sent next to a TraceQL ``q``: Tempo ignores it
+        # there (verified on grafana/otel-lgtm 0.34, 2026-10-09). Without a raw
+        # query the bound is a predicate in the query; with one it is applied
+        # to the rows' ``durationMs`` after the fetch (see ``search``).
         return params
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
@@ -329,6 +358,12 @@ class TempoAdapter(BackendAdapter):
 
         result: Dict[str, Any] = data if isinstance(data, dict) else {"traces": []}
         traces = [t for t in (result.get("traces") or []) if isinstance(t, dict)]
+
+        if (f.raw or "").strip() and f.min_duration_ms and f.min_duration_ms > 0:
+            # A raw query carries no ``duration >=`` predicate of ours and
+            # Tempo ignores ``minDuration`` next to ``q``: bound the rows here.
+            floor = float(f.min_duration_ms)
+            traces = [t for t in traces if float(t.get("durationMs") or 0) >= floor]
 
         # Roots-only is in the query (``nestedSetParent < 0``); a raw query is
         # the user's own and is not second-guessed.

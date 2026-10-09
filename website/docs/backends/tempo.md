@@ -81,7 +81,9 @@ The upstream example bundles Prometheus. To route the plugin's metrics there:
 The dashboard's Tempo adapter reads traces from Tempo's query API (`query_port`,
 default `3200`). Tempo stores no metrics or logs, but a Tempo entry that names a
 `prometheus_url` and/or `loki_url` gets the same metrics and logs surface as
-`type: lgtm` — see [Grafana LGTM → Dashboard](/backends/lgtm#dashboard).
+`type: lgtm` — see [Grafana LGTM → Dashboard](/backends/lgtm#dashboard), including
+the `search_fetch` over-fetch that keeps paging complete and how a native
+TraceQL query interacts with the other search fields.
 
 ## Multi-backend config
 
