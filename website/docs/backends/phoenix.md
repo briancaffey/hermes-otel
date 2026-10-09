@@ -16,7 +16,7 @@ A ready-to-use compose file ships with the plugin:
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -f docker-compose/phoenix.yaml up -d
+docker compose -f docker-compose/phoenix/docker-compose.yaml up -d
 ```
 
 Then:

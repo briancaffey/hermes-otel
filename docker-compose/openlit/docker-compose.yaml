@@ -1,0 +1,104 @@
+# OpenLIT — OTel-native LLM observability (traces + metrics + logs).
+#
+# Trimmed from the upstream root compose file at
+#   github.com/openlit/openlit/blob/main/docker-compose.yml
+# Two containers:
+#
+#   clickhouse  — telemetry storage (the otel_* tables)
+#   openlit     — UI + an embedded OpenTelemetry Collector (OTLP receiver →
+#                 ClickHouse exporter) run by an OpAMP supervisor
+#
+# The Collector config in openlit/otel-collector-config.yaml is REQUIRED with
+# the released image (2.1.0, what `latest` resolves to on 2026-10-05): without
+# the mount nothing listens on 4317/4318 and exports fail with "connection
+# reset". Upstream main replaced the Collector with a first-party receiver
+# (openlit PR #1588); once that ships in an image the mount is simply unused.
+#
+# Dropped from upstream: the ClickHouse log-tuning config and the init script
+# (the Collector's ClickHouse exporter creates the otel_* tables on start), the
+# OAuth variables, and the published ClickHouse ports (8123/9000 collide with
+# the uptrace and signoz stacks).
+#
+# Usage:
+#   docker compose -f docker-compose/openlit/docker-compose.yaml up -d
+#   # UI:  http://localhost:3010   (user@openlit.io / openlituser)
+#   docker compose -f docker-compose/openlit/docker-compose.yaml down
+#   docker compose -f docker-compose/openlit/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side remapped so the stack coexists with LGTM/Jaeger on 4318
+# and Langfuse/Grafana on 3000; override with the env vars):
+#   3010  OpenLIT UI (also proxies /v1/*)   OPENLIT_UI_PORT
+#   4337  OTLP/gRPC receiver                OPENLIT_OTLP_GRPC_PORT (not used by the plugin)
+#   4338  OTLP/HTTP receiver                OPENLIT_OTLP_HTTP_PORT  ← plugin exports here
+#
+# Point the plugin at it (no explicit `type: openlit` yet, see issue #222):
+#
+#   backends:
+#     - type: otlp
+#       name: openlit
+#       endpoint: http://localhost:4338/v1/traces
+#       # headers: {Authorization: "Bearer <openlit api key>"}   # optional; scopes
+#       #   ingest to an org/project. Without a key data lands in the default DB.
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:24.4.1
+    container_name: hermes-otel-openlit-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: default
+      CLICKHOUSE_PASSWORD: OPENLIT
+      CLICKHOUSE_DB: openlit
+    volumes:
+      - openlit_clickhouse:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user=default --password=OPENLIT --query='SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 20s
+
+  openlit:
+    image: ghcr.io/openlit/openlit:${OPENLIT_VERSION:-latest}
+    container_name: hermes-otel-openlit
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      # The embedded Collector's receiver bind address (otel-collector-config.yaml).
+      OTEL_BIND_HOST: 0.0.0.0
+      # Upstream defaults this to "true" (anonymous usage telemetry).
+      TELEMETRY_ENABLED: "false"
+      INIT_DB_HOST: clickhouse
+      INIT_DB_PORT: 8123
+      INIT_DB_DATABASE: openlit
+      INIT_DB_USERNAME: default
+      INIT_DB_PASSWORD: OPENLIT
+      SQLITE_DATABASE_URL: file:/app/client/data/data.db
+      PORT: 3000
+      DOCKER_PORT: 3000
+    ports:
+      - "${OPENLIT_UI_PORT:-3010}:3000"
+      - "${OPENLIT_OTLP_GRPC_PORT:-4337}:4317"
+      - "${OPENLIT_OTLP_HTTP_PORT:-4338}:4318"
+    volumes:
+      - openlit_data:/app/client/data
+      - ./otel-collector-config.yaml:/etc/otel/otel-collector-config.yaml:ro
+    healthcheck:
+      test: ["CMD", "node", "-e", "fetch('http://localhost:3000').then(r=>{process.exit(r.ok?0:1)}).catch(()=>process.exit(1))"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 30s
+
+volumes:
+  openlit_clickhouse:
+  openlit_data:

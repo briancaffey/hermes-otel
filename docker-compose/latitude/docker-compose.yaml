@@ -1,0 +1,57 @@
+# Latitude — prompt engineering + agent observability (traces only over OTLP).
+#
+# Wraps the upstream single-host stack, vendored unchanged except for one
+# line (env_file: .env.production → latitude.env) under latitude/:
+#   github.com/latitude-dev/latitude-llm/blob/development/docker-stack.yml
+#   docs: Deployment → Single-host
+# Twelve containers from upstream (web, api, ingest, workers, workflows, a
+# one-shot migrations job, pgvector Postgres, ClickHouse, two Redis, Temporal,
+# SeaweedFS) plus Mailpit added here to catch the magic-link sign-in emails.
+# This is the heaviest stack in this directory; expect several GB of images
+# and a few minutes for the first start while migrations run.
+#
+# Usage:
+#   docker compose -f docker-compose/latitude/docker-compose.yaml up -d
+#   # UI:   http://localhost:3000   (register with any email, then open the
+#   #        magic link in Mailpit at http://localhost:8025)
+#   docker compose -f docker-compose/latitude/docker-compose.yaml down
+#   docker compose -f docker-compose/latitude/docker-compose.yaml down -v   # nuke data
+#
+# Ports (upstream's; 3000 collides with the Langfuse stack and Grafana):
+#   3000  Latitude web UI
+#   3001  Latitude API + MCP server
+#   3002  Latitude ingest: OTLP/HTTP /v1/traces   ← plugin exports here
+#   8025  Mailpit UI (magic-link emails)
+#
+# Ingest needs a project API key and the project slug: after signing in,
+# create a project, then Settings → API keys.
+#
+# Point the plugin at it (no explicit `type: latitude` yet, see issue #230):
+#
+#   backends:
+#     - type: otlp
+#       name: latitude
+#       endpoint: http://localhost:3002/v1/traces
+#       headers:
+#         Authorization: "Bearer ${LATITUDE_API_KEY}"
+#         X-Latitude-Project: <project slug>
+#       metrics: false   # ingest has only /v1/traces
+#       logs: false
+#
+# Latitude also ships its own Hermes plugin (latitude-telemetry-hermes);
+# running both double-traces every turn.
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+include:
+  - path: ./docker-stack.yml
+    project_directory: .
+    env_file: ./latitude.env
+
+services:
+  mailpit:
+    image: axllent/mailpit:${LATITUDE_MAILPIT_VERSION:-v1.30}
+    container_name: hermes-otel-latitude-mailpit
+    restart: unless-stopped
+    ports:
+      - "${LATITUDE_MAILPIT_PORT:-8025}:8025"

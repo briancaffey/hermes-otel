@@ -16,7 +16,7 @@ A compose file ships with the plugin:
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -p openobserve -f docker-compose/openobserve.yaml up -d
+docker compose -f docker-compose/openobserve/docker-compose.yaml up -d
 ```
 
 Open http://localhost:5080 and log in with the default admin:
@@ -131,7 +131,7 @@ Traces fan out to both; metrics and logs go only to OpenObserve (Phoenix ingests
 
 **"401 Unauthorized in agent logs"**
 
-Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve.yaml` match what you're passing to the plugin.
+Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve/docker-compose.yaml` match what you're passing to the plugin.
 
 **"I see `✓ OpenObserve at ...` but no traces appear"**
 

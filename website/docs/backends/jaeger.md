@@ -16,7 +16,7 @@ The plugin ships a single-container compose file:
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -f docker-compose/jaeger.yaml up -d
+docker compose -f docker-compose/jaeger/docker-compose.yaml up -d
 ```
 
 Then:
@@ -27,6 +27,13 @@ export OTEL_PROJECT_NAME="hermes-otel-jaeger"
 ```
 
 UI at http://localhost:16686.
+
+That file runs `jaegertracing/all-in-one`, the v1 line that ended with 1.76.0. For the
+OpenTelemetry-Collector-based **Jaeger v2** (what the Helm chart deploys) use
+`docker-compose/jaeger-v2/docker-compose.yaml`: UI on http://localhost:16696, OTLP/HTTP on
+`http://localhost:4368/v1/traces`. Export works the same; the read side differs, since
+v2 serves only `/api/v3/...` on the UI port and the classic `/api/traces` is 404
+(issue #245), which is also what breaks the dashboard's Jaeger adapter against v2.
 
 ## Multi-backend config
 

@@ -14,10 +14,10 @@
 # Uptrace — no collector middleman needed.
 #
 # Usage:
-#   docker compose -p uptrace -f docker-compose/uptrace.yaml up -d
+#   docker compose -f docker-compose/uptrace/docker-compose.yaml up -d
 #   # UI:  http://localhost:14318   (admin@uptrace.local / admin)
-#   docker compose -p uptrace -f docker-compose/uptrace.yaml down
-#   docker compose -p uptrace -f docker-compose/uptrace.yaml down -v   # nuke data
+#   docker compose -f docker-compose/uptrace/docker-compose.yaml down
+#   docker compose -f docker-compose/uptrace/docker-compose.yaml down -v   # nuke data
 #
 # Ports:
 #   5432   Postgres              (shared metadata; collides with a host pg)
@@ -99,7 +99,7 @@ services:
     volumes:
       # Path is relative to THIS compose file, not the invocation cwd.
       # Resolves to docker-compose/uptrace/uptrace.yml on disk.
-      - ./uptrace/uptrace.yml:/etc/uptrace/config.yml
+      - ./uptrace.yml:/etc/uptrace/config.yml
     ports:
       - "14317:4317"   # OTLP gRPC
       - "14318:80"     # UI + OTLP/HTTP

@@ -2,7 +2,7 @@
 
 Prerequisites:
   - hermes-agent API server running:  API_SERVER_ENABLED=true hermes gateway
-  - OpenObserve running (docker compose -f docker-compose/openobserve.yaml up -d)
+  - OpenObserve running (docker compose -f docker-compose/openobserve/docker-compose.yaml up -d)
   - the plugin configured with an openobserve backend and capture_logs: true
   - OPENOBSERVE_URL / OPENOBSERVE_USER / OPENOBSERVE_PASSWORD (defaults: the compose stack)
 

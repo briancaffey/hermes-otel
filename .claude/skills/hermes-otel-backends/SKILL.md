@@ -5,7 +5,7 @@ description: >-
   OpenObserve, SigNoz, Jaeger, Tempo, Uptrace) for hermes-otel development and
   demos. Use when you need to SEE traces/metrics/logs in a real UI, stand up a
   backend for before/after validation, or debug "why don't I see my telemetry".
-  Covers the docker-compose project-name trap, the port-conflict map, which
+  Covers the one-folder-per-backend layout, the port-conflict map, which
   backend supports which signal, the UI URLs + logins, and the query gotchas
   that bite everyone (Prometheus histogram _sum/_count, the 5-minute staleness
   window, OpenObserve PromQL, Phoenix GraphQL for spans).
@@ -17,8 +17,10 @@ hermes-otel fans telemetry out to any OTLP/HTTP backend. For development you
 usually want ONE running locally so you can look at what the plugin emits. This
 skill removes every sharp edge between "I made a change" and "I see it in a UI".
 
-Compose files live in `docker-compose/` at the repo root. READMEs with extra
-detail sit under `docker-compose/<backend>/`.
+One folder per backend under `docker-compose/`: `<name>/docker-compose.yaml`
+plus a `README.md` with the login, the `backends:` snippet, a verify query and
+the caveats. `docker-compose/README.md` is the manual (comparison table, port
+map, disk/memory budget, the test loop).
 
 ## 1. Pick a backend
 
@@ -28,34 +30,45 @@ detail sit under `docker-compose/<backend>/`.
 | **Grafana LGTM** | traces + metrics + logs | http://localhost:3000 | the nicest graphs (Tempo + Mimir + Loki in one image) |
 | **Phoenix** | traces only | http://localhost:6006 | LLM-span inspection, OpenInference panels |
 | **SigNoz** | traces + metrics + logs | http://localhost:3301 | full APM, but a heavy multi-container stack |
-| **Jaeger / Tempo** | traces only | :16686 / :3200 | trace-only quick looks |
+| **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
+| **OpenLIT, LangWatch, Sigiro, Maple, Parseable OSS** | traces + metrics + logs | :3010 / :5560 / SQL :9999 / :4388 / :8010 | the newer stacks; all via `type: otlp` |
+| **Opik, MLflow, Laminar, Langtrace** | traces (Laminar also logs) | :5173 / :5001 / :5667 / :3040 | LLM-specific UIs with no explicit `type:` yet |
+| **Elastic** | traces + metrics + logs | http://127.0.0.1:15602 (Kibana) | `type: elastic` against a local EDOT Collector; data streams, 5.8 GB of images |
+
+Every stack, its ports, the `backends:` snippet and what it actually stored
+from a Hermes turn: `docker-compose/README.md` (port map included). The
+header comment of each compose file repeats the usage and the snippet.
 
 For metrics work use **OpenObserve** or **LGTM** (Phoenix rejects `/v1/metrics`
 with 405). For a first look at LLM spans, **Phoenix** is the friendliest.
 
 ## 2. Bring it up
 
-> ⚠️ **The project-name trap.** For `lgtm`, `openobserve`, and `uptrace` you
-> MUST pass `-p <name>` explicitly. `docker compose -f <file>` alone silently
-> no-ops on these — nothing starts and you get no error.
+> Since October 2026 every backend lives in its own folder
+> (`docker-compose/<name>/docker-compose.yaml`), so Compose names the project
+> after the folder and **no `-p` flag is needed**. (The old flat layout put every
+> file in one directory, which made them all share the project name
+> `docker-compose` and silently no-op; if you see `-p` in old notes, drop it.)
 
 ```bash
 # OpenObserve (clean, single container)
-docker compose -p openobserve -f docker-compose/openobserve.yaml up -d
+docker compose -f docker-compose/openobserve/docker-compose.yaml up -d
 
 # Grafana LGTM (single container, all three signals)
-docker compose -p lgtm -f docker-compose/lgtm.yaml up -d   # wait ~30s
+docker compose -f docker-compose/lgtm/docker-compose.yaml up -d   # wait ~30s
 
 # Phoenix (traces only)
-docker compose -f docker-compose/phoenix.yaml up -d
+docker compose -f docker-compose/phoenix/docker-compose.yaml up -d
 ```
 
 > ⚠️ **Port-conflict map.** Check these are free first (`lsof -i :PORT`):
 > 3000 Grafana · 4317/4318 OTLP gRPC/HTTP · 9090 Prometheus · 3100 Loki ·
-> 3200 Tempo · 5080 OpenObserve · 6006 Phoenix · Elastic stack uses 14319 (EDOT),
-> 19201 (Elasticsearch), 15602 (Kibana) so it coexists with all of the above.
+> 3200 Tempo · 5080 OpenObserve · 6006 Phoenix. The newer stacks use
+> `43x8` for OTLP/HTTP and `30x0` for UIs so they never collide with these
+> (Elastic: 14319 collector, 19201 Elasticsearch, 15602 Kibana); the full
+> map is in `docker-compose/README.md`.
 > LGTM wants 4318 **and** 3100 — 3100 commonly collides with other dev
-> frontends. If so, copy `lgtm.yaml`, remap the host side (`3110:3100`), make
+> frontends. If so, copy `lgtm/docker-compose.yaml`, remap the host side (`3110:3100`), make
 > the volume path absolute, and bring it up from the copy. 4318 is also claimed
 > by Jaeger/SigNoz — run only one OTLP-HTTP backend at a time.
 
@@ -129,18 +142,29 @@ In **OpenObserve**: Metrics → set the PromQL box to `..._sum` → Run query.
 ## 6. Tear down
 
 ```bash
-docker compose -p openobserve -f docker-compose/openobserve.yaml down       # keep data
-docker compose -p openobserve -f docker-compose/openobserve.yaml down -v     # nuke data
+docker compose -f docker-compose/openobserve/docker-compose.yaml down       # keep data
+docker compose -f docker-compose/openobserve/docker-compose.yaml down -v     # nuke data
 docker rm -f hermes-otel-openobserve hermes-otel-lgtm                        # blunt instrument
 ```
 
 ## Per-backend cheat sheet
 
-| Backend | `-p` needed | OTLP endpoint | metrics | logs | notes |
+| Backend | `-p` needed (never, since the folder layout) | OTLP endpoint | metrics | logs | notes |
 |---|---|---|---|---|---|
-| openobserve | **yes** | `:5080/api/default/v1/traces` | ✅ | ✅ | needs `user`/`password`; healthcheck false-negative |
-| lgtm | **yes** | `:4318/v1/traces` | ✅ | ✅ | Loki 3100 conflicts; ~30s to ready |
-| uptrace | **yes** | per `dsn:` | ✅ | ✅ | takes a `dsn:` for the `uptrace-dsn` header |
+| openobserve | no | `:5080/api/default/v1/traces` | ✅ | ✅ | needs `user`/`password`; healthcheck false-negative |
+| lgtm | no | `:4318/v1/traces` | ✅ | ✅ | Loki 3100 conflicts; ~30s to ready |
+| uptrace | no | per `dsn:` | ✅ | ✅ | takes a `dsn:` for the `uptrace-dsn` header |
 | phoenix | no | `:6006/v1/traces` | ❌ 405 | ❌ | set `metrics: false`; spans via GraphQL |
 | signoz | no | `:4328/v1/traces` | ✅ | ✅ | OTLP remapped to 4328 to dodge 4318 |
-| jaeger / tempo | no | `:4318/v1/traces` | ❌ | ❌ | traces only |
+| jaeger / tempo | no | `:4318/v1/traces` / `:4358/v1/traces` | ❌ | ❌ | traces only |
+| jaeger-v2 | no | `:4368/v1/traces` | ❌ | ❌ | read API is `/api/v3/...` only |
+| openlit | no | `:4338/v1/traces` | ✅ | ✅ | `type: otlp`; mounted collector config is required with the 2.1.0 image |
+| mlflow | no | `:5001/v1/traces` | ❌ 404 | ❌ 404 | `type: otlp` + header `x-mlflow-experiment-id: "0"` |
+| opik | no | `:5173/api/v1/private/otel/v1/traces` | ❌ 404 | ❌ 404 | `type: otlp`; first start ~1 min; trace usage double-counts the `agent` roll-up |
+| laminar | no | `:8100/v1/traces` | ❌ dropped | ✅ | `type: otlp` + bearer key from `laminar/mint-api-key.sh` |
+| langwatch | no | `:5560/api/otel/v1/traces` | ✅ | ✅ | `type: otlp` + bearer key; ~5 min to healthy; key needs the onboarding wizard |
+| langtrace | no | `:3040/api/trace` | ❌ | ❌ | `type: otlp` + `x-api-key`; drops bool/double attributes; 4.5 GB image |
+| sigiro | no | `:4378/v1/traces` | ✅ | ✅ | `type: otlp`; SQL at `POST :9999/v1/query` |
+| maple | no | `:4388/v1/traces` | ✅ | ✅ | `type: otlp`; `up -d --build`; SQL at `POST :4388/local/query {"sql":…}` |
+| parseable (OSS) | no | `:4348/v1/traces` (collector) | ✅ | ✅ | `type: otlp`, never `type: parseable` against OSS |
+| latitude | no | `:3002/v1/traces` | ❌ | ❌ | 13 containers, ~15 GB of images; untested |

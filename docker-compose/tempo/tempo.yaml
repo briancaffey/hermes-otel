@@ -1,0 +1,34 @@
+# Single-binary Tempo with local-disk storage. Adapted from
+# github.com/grafana/tempo (v3.1.0) example/docker-compose/single-binary/tempo.yaml
+# with the metrics-generator and its Prometheus remote-write removed (this
+# stack has no Prometheus; use the LGTM stack for span metrics).
+
+stream_over_http_enabled: true
+
+server:
+  http_listen_port: 3200
+  log_level: info
+
+distributor:
+  # Tempo truncates attribute values at 2048 bytes by default, which cuts
+  # gen_ai.input.messages / llm.input_messages under content_capture: full.
+  max_attribute_bytes: 131072
+  receivers:
+    otlp:
+      protocols:
+        # Expanded by -config.expand-env; the compose service sets 0.0.0.0.
+        grpc:
+          endpoint: "${OTEL_BIND_HOST}:4317"
+        http:
+          endpoint: "${OTEL_BIND_HOST}:4318"
+
+storage:
+  trace:
+    backend: local
+    wal:
+      path: /var/tempo/wal
+    local:
+      path: /var/tempo/blocks
+
+usage_report:
+  reporting_enabled: false

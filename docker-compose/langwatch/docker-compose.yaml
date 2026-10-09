@@ -1,0 +1,147 @@
+# LangWatch — LLM observability and evaluation (traces + metrics + logs routes).
+#
+# Trimmed from the upstream compose file at
+#   github.com/langwatch/langwatch/blob/main/infra/compose.yml
+# with platform/app/.env.example inlined. Five containers:
+#
+#   app         — UI + API + OTLP/HTTP under /api/otel
+#   workers     — background processing of ingested traces
+#   postgres    — users, projects, API keys
+#   redis       — queues
+#   clickhouse  — traces (upstream's `clickhouse-serverless` image, 2 GB cap)
+#
+# Dropped from upstream: langwatch_nlp (workflows / topic clustering) and
+# langevals (evaluators). Tracing works without them; evaluations and the
+# optimization studio do not. Upstream states 4 CPU / 8 GB for the full
+# stack.
+#
+# Usage:
+#   docker compose -f docker-compose/langwatch/docker-compose.yaml up -d
+#   # UI:  http://localhost:5560   (sign up with any email + password)
+#   docker compose -f docker-compose/langwatch/docker-compose.yaml down
+#   docker compose -f docker-compose/langwatch/docker-compose.yaml down -v   # nuke data
+#
+# Ports (postgres, redis and clickhouse are not published):
+#   5560  LangWatch UI + API + OTLP/HTTP   LANGWATCH_PORT   ← plugin exports here
+#
+# Ingest needs a project API key: sign up, finish onboarding (it creates the
+# first project), then copy the key from Settings → API keys.
+#
+# Point the plugin at it (no explicit `type: langwatch` yet, see issue #229):
+#
+#   backends:
+#     - type: otlp
+#       name: langwatch
+#       endpoint: http://localhost:5560/api/otel/v1/traces
+#       headers:
+#         Authorization: "Bearer ${LANGWATCH_API_KEY}"
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+x-langwatch-env: &langwatch-env
+  SKIP_ENV_VALIDATION: "true"
+  NODE_ENV: production
+  ENVIRONMENT: local
+  INSTALL_METHOD: docker
+  BASE_HOST: http://localhost:${LANGWATCH_PORT:-5560}
+  NEXTAUTH_URL: http://localhost:${LANGWATCH_PORT:-5560}
+  LANGWATCH_API_URL: http://localhost:${LANGWATCH_PORT:-5560}
+  LANGWATCH_ENDPOINT: http://app:5560
+  AUTH_PROVIDER: email
+  # Local-only secrets; change all of them for anything reachable by others.
+  NEXTAUTH_SECRET: hermes-otel-local-nextauth-secret
+  # 64 hex chars; override with LANGWATCH_CREDENTIALS_SECRET=$(openssl rand -hex 32)
+  CREDENTIALS_SECRET: ${LANGWATCH_CREDENTIALS_SECRET:-0000000000000000000000000000000000000000000000000000000000000000}
+  API_TOKEN_JWT_SECRET: hermes-otel-local-jwt-secret
+  LW_VIRTUAL_KEY_PEPPER: hermes-otel-local-pepper
+  LW_GATEWAY_INTERNAL_SECRET: hermes-otel-local-gateway-secret
+  LW_GATEWAY_JWT_SECRET: hermes-otel-local-gateway-jwt
+  DATABASE_URL: postgresql://prisma:prisma@postgres:5432/mydb?schema=mydb
+  CLICKHOUSE_URL: http://default:langwatch@clickhouse:8123/langwatch
+  CLICKHOUSE_BACKUP_METRICS_ENABLED: "false"
+  REDIS_URL: redis://redis:6379
+  # Not started in this stack (see header).
+  LANGWATCH_NLP_SERVICE: http://langwatch_nlp:5561
+  LANGEVALS_ENDPOINT: http://langevals:5562
+  DISABLE_USAGE_STATS: "true"
+
+x-langwatch-deps: &langwatch-deps
+  postgres:
+    condition: service_healthy
+  redis:
+    condition: service_healthy
+  clickhouse:
+    condition: service_healthy
+
+services:
+  app:
+    image: langwatch/langwatch:${LANGWATCH_VERSION:-latest}
+    container_name: hermes-otel-langwatch
+    restart: unless-stopped
+    environment: *langwatch-env
+    depends_on: *langwatch-deps
+    ports:
+      - "${LANGWATCH_PORT:-5560}:5560"
+
+  workers:
+    image: langwatch/langwatch:${LANGWATCH_VERSION:-latest}
+    container_name: hermes-otel-langwatch-workers
+    restart: unless-stopped
+    command: ["pnpm", "run", "start:workers"]
+    working_dir: /app/platform/app
+    environment: *langwatch-env
+    depends_on: *langwatch-deps
+
+  postgres:
+    image: postgres:16
+    container_name: hermes-otel-langwatch-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: mydb
+      POSTGRES_USER: prisma
+      POSTGRES_PASSWORD: prisma
+    volumes:
+      - langwatch_postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U prisma -d mydb"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  redis:
+    image: redis:alpine
+    container_name: hermes-otel-langwatch-redis
+    restart: unless-stopped
+    volumes:
+      - langwatch_redis:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  clickhouse:
+    image: langwatch/clickhouse-serverless:${LANGWATCH_CLICKHOUSE_VERSION:-0.4.0}
+    container_name: hermes-otel-langwatch-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_PASSWORD: langwatch
+    volumes:
+      - langwatch_clickhouse:/var/lib/clickhouse
+    deploy:
+      resources:
+        limits:
+          memory: 2g
+          cpus: "1.0"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://127.0.0.1:8123/ping || exit 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 30s
+
+volumes:
+  langwatch_postgres:
+  langwatch_redis:
+  langwatch_clickhouse:

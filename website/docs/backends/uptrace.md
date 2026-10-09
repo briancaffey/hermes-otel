@@ -16,7 +16,7 @@ The plugin ships a trimmed compose that boots just what hermes-otel needs (Click
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
-docker compose -p uptrace -f docker-compose/uptrace.yaml up -d
+docker compose -f docker-compose/uptrace/docker-compose.yaml up -d
 ```
 
 Wait ~20s for ClickHouse to finish applying migrations, then open the UI at http://localhost:14318 and log in with the seeded admin:
@@ -69,7 +69,7 @@ export UPTRACE_DSN='http://project1_secret@localhost:14318?grpc=14317'
 | 14317 | Uptrace | OTLP/gRPC receiver |
 | 14318 | Uptrace | **UI + OTLP/HTTP receiver — the plugin exports here** |
 
-Port 14318 was picked specifically to avoid the standard 4318 used by LGTM / Jaeger / SigNoz, so Uptrace can run alongside them. The only likely conflict is port 5432 with a host-installed PostgreSQL — stop it or remap in `docker-compose/uptrace.yaml`.
+Port 14318 was picked specifically to avoid the standard 4318 used by LGTM / Jaeger / SigNoz, so Uptrace can run alongside them. The only likely conflict is port 5432 with a host-installed PostgreSQL — stop it or remap in `docker-compose/uptrace/docker-compose.yaml`.
 
 ## What you'll see in the UI
 
@@ -109,7 +109,7 @@ Uptrace 2.1 and 2.0 spell that API differently (2.1 has one route per signal,
 `time_gte`/`time_lt`). The adapter asks the server once per process which one it
 speaks and remembers the answer; the dashboard's status shows it as `api_dialect`.
 The 2.1 spelling was taken from Uptrace's own UI requests and checked against
-2.1.0-beta.5 (the version `docker-compose/uptrace.yaml` pins); the 2.0 spelling
+2.1.0-beta.5 (the version `docker-compose/uptrace/docker-compose.yaml` pins); the 2.0 spelling
 is the one recorded against 2.0.2 when the adapter was written.
 
 Metrics go through MQL (`metric=<name>&alias=$m` plus `$m group by model`,

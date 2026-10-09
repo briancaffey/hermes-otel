@@ -412,7 +412,7 @@ def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
     Functionally identical to :func:`_resolve_otlp` — the LGTM container
     exposes a standard OTLP HTTP receiver on the collector at :4318. We
     keep this as a distinct type purely so users running the shipped
-    ``docker-compose/lgtm.yaml`` can declare ``type: lgtm`` in config.yaml
+    ``docker-compose/lgtm/docker-compose.yaml`` can declare ``type: lgtm`` in config.yaml
     and self-document the intent, instead of ``type: otlp name: lgtm``.
     The display name defaults to ``LGTM`` so startup logs say what they
     actually are.

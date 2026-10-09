@@ -1,9 +1,13 @@
 # Langfuse self-hosted stack for local demo + E2E testing.
 #
 # Usage:
-#   docker compose -p langfuse -f docker-compose/langfuse.yaml up -d
+#   docker compose -f docker-compose/langfuse/docker-compose.yaml up -d
 #   # wait ~60s for all services to be ready
-#   docker compose -p langfuse -f docker-compose/langfuse.yaml down -v
+#   docker compose -f docker-compose/langfuse/docker-compose.yaml down -v
+#
+# Langfuse v4 (issue #246): the same stack runs the v4 images with
+#   LANGFUSE_VERSION=4 docker compose -f docker-compose/langfuse/docker-compose.yaml up -d
+# Use `down -v` when switching major versions; the two do not share data.
 #
 # Pre-seeded API keys (via headless initialization):
 #   Public key:  lf_pk_hermes_dev
@@ -19,7 +23,7 @@
 
 services:
   langfuse-web:
-    image: docker.io/langfuse/langfuse:3
+    image: docker.io/langfuse/langfuse:${LANGFUSE_VERSION:-3}
     depends_on:
       postgres:
         condition: service_healthy
@@ -70,7 +74,7 @@ services:
       start_period: 60s
 
   langfuse-worker:
-    image: docker.io/langfuse/langfuse-worker:3
+    image: docker.io/langfuse/langfuse-worker:${LANGFUSE_VERSION:-3}
     depends_on:
       postgres:
         condition: service_healthy

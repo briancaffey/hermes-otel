@@ -144,11 +144,11 @@ def langfuse_service():
     """Start the Langfuse stack via docker compose for E2E tests.
 
     If Langfuse is already running on port 3000, reuse it.
-    Otherwise, bring up the stack from docker-compose/langfuse.yaml
+    Otherwise, bring up the stack from docker-compose/langfuse/docker-compose.yaml
     and tear it down after the session.
 
     Keys are resolved from (in order): environment variables, ~/.hermes/.env,
-    then the pre-seeded keys from docker-compose/langfuse.yaml.
+    then the pre-seeded keys from docker-compose/langfuse/docker-compose.yaml.
 
     Yields a dict with: base_url, public_key, secret_key, otel_endpoint.
     """

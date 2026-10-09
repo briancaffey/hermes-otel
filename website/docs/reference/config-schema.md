@@ -154,7 +154,7 @@ Alias over `otlp` with a dedicated display name and all signals on by default. S
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | **Required.** OTLP traces endpoint — `http://localhost:4318/v1/traces` for the bundled `docker-compose/lgtm.yaml` |
+| `endpoint` | string | **Required.** OTLP traces endpoint — `http://localhost:4318/v1/traces` for the bundled `docker-compose/lgtm/docker-compose.yaml` |
 | `metrics` | bool | Default: `true` |
 | `logs` | bool | Default: `true` |
 | `query_port` | int | Dashboard read path: Tempo's query API port (default `3200`) |

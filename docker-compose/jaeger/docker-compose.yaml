@@ -1,0 +1,30 @@
+# Jaeger v1 all-in-one (traces only, in-memory).
+#
+# Usage:
+#   docker compose -f docker-compose/jaeger/docker-compose.yaml up -d
+#   # UI:  http://localhost:16686   (no login)
+#   docker compose -f docker-compose/jaeger/docker-compose.yaml down
+#
+# Ports:
+#   16686  Jaeger UI + classic query API (/api/traces)
+#   4318   OTLP/HTTP   ← plugin exports here (collides with LGTM; run one at a time)
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: jaeger
+#       endpoint: http://localhost:4318/v1/traces
+#
+# For Jaeger v2 see ../jaeger-v2. Details and caveats: README.md in this folder.
+
+services:
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    container_name: hermes-otel-jaeger
+    ports:
+      - "16686:16686"  # UI
+      - "4318:4318"    # OTLP HTTP collector — plugin target
+      # 4317 (gRPC) intentionally omitted so Jaeger can coexist with Phoenix
+      # and other OTLP collectors on the same host. The plugin uses HTTP.
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true

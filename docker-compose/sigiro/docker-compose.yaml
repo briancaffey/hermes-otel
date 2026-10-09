@@ -1,0 +1,46 @@
+# Sigiro — single-binary OTLP store with a SQL query API (traces + metrics + logs).
+#
+# From the vendor's quickstart (sigiro.com/docs/tutorials/quickstart): one
+# container, DuckLake catalog + Parquet files on a local volume, no collector.
+# Note: the image is public but no source repository or licence was found
+# (2026-10-05); treat it as a free binary, not as open source. Issue #71.
+#
+# Usage:
+#   docker compose -f docker-compose/sigiro/docker-compose.yaml up -d
+#   # Query API: http://localhost:9999/v1/query   (no UI, no login)
+#   docker compose -f docker-compose/sigiro/docker-compose.yaml down
+#   docker compose -f docker-compose/sigiro/docker-compose.yaml down -v   # nuke data
+#
+# Ports (OTLP moved off 4317/4318 so it coexists with LGTM and Jaeger):
+#   4378  OTLP/HTTP            SIGIRO_OTLP_HTTP_PORT   ← plugin exports here
+#   4377  OTLP/gRPC            SIGIRO_OTLP_GRPC_PORT   (not used by the plugin)
+#   9999  SQL query API        SIGIRO_QUERY_PORT
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: otlp
+#       name: sigiro
+#       endpoint: http://localhost:4378/v1/traces
+#   capture_logs: true
+#
+# Query it:
+#   curl -s -X POST http://localhost:9999/v1/query \
+#     --data-binary "SELECT span_name, count(*) FROM sigiro_spans WHERE service_name = 'hermes-agent' GROUP BY 1"
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  sigiro:
+    image: ghcr.io/sigiroai/sigiro:${SIGIRO_VERSION:-latest}
+    container_name: hermes-otel-sigiro
+    restart: unless-stopped
+    volumes:
+      - sigiro_data:/var/lib/sigiro
+    ports:
+      - "${SIGIRO_OTLP_GRPC_PORT:-4377}:4317"
+      - "${SIGIRO_OTLP_HTTP_PORT:-4378}:4318"
+      - "${SIGIRO_QUERY_PORT:-9999}:9999"
+
+volumes:
+  sigiro_data:

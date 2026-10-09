@@ -18,7 +18,7 @@ using the root admin credentials (or any user you create in the UI).
 
 ```bash
 # From the plugin root:
-docker compose -p openobserve -f docker-compose/openobserve.yaml up -d
+docker compose -f docker-compose/openobserve/docker-compose.yaml up -d
 
 # Open http://localhost:5080 and log in with the seeded admin:
 #   root@example.com / Complexpass#123
@@ -86,8 +86,8 @@ No collisions with any other hermes-otel stack.
 ## Tearing down
 
 ```bash
-docker compose -p openobserve -f docker-compose/openobserve.yaml down
-docker compose -p openobserve -f docker-compose/openobserve.yaml down -v   # also drops the volume
+docker compose -f docker-compose/openobserve/docker-compose.yaml down
+docker compose -f docker-compose/openobserve/docker-compose.yaml down -v   # also drops the volume
 ```
 
 ## Signals supported
