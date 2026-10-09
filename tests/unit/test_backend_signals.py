@@ -18,4 +18,4 @@ class TestPhoenixIsTracesOnly:
         assert rb.supports_metrics is True
 
     def test_traces_only_set_matches_the_docs(self):
-        assert _TRACES_ONLY == {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow"}
+        assert _TRACES_ONLY == {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow", "opik"}

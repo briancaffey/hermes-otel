@@ -266,6 +266,18 @@ See [OpenLIT](/backends/openlit).
 
 See [MLflow](/backends/mlflow).
 
+#### `opik`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | Opik base URL: `http://localhost:5173` for the bundled stack, or a full `…/api/v1/private/otel/v1/traces` URL. Default `https://www.comet.com/opik` (Comet cloud). Also via `OTEL_OPIK_ENDPOINT` or the SDK's `OPIK_URL_OVERRIDE` |
+| `api_key` / `api_key_env` | string | Comet API key, sent as a bare `Authorization: <key>` header (Opik's scheme; falls back to `OTEL_OPIK_API_KEY` / `OPIK_API_KEY`). Not needed on a self-hosted deployment |
+| `workspace` | string | Comet workspace → `Comet-Workspace` header (cloud; falls back to `OPIK_WORKSPACE`) |
+| `project` / `project_env` | string | Opik project → `projectName` header (falls back to `OPIK_PROJECT_NAME`; Opik uses "Default Project" when absent) |
+| `metrics` / `logs` | bool | Default **off**: only `/traces` exists under the OTLP prefix |
+
+See [Comet Opik](/backends/opik).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

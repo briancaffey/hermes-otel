@@ -46,6 +46,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_MLFLOW_ENDPOINT` | URL | MLflow tracking server (`http://localhost:5001` for the bundled stack); enables MLflow in env-var mode |
 | `OTEL_MLFLOW_EXPERIMENT_ID` / `MLFLOW_EXPERIMENT_ID` | string | Experiment for the mandatory `x-mlflow-experiment-id` header (default `0`, the Default experiment) |
 | `OTEL_MLFLOW_API_KEY` / `MLFLOW_TRACKING_TOKEN` | string | Tracking token (`Authorization: Bearer`); optional, does not enable MLflow on its own |
+| `OTEL_OPIK_ENDPOINT` | URL | Opik base URL (`http://localhost:5173` for the bundled stack; default Comet cloud); enables Opik in env-var mode |
+| `OTEL_OPIK_API_KEY` | string | Opik API key (bare `Authorization` header); enables Opik in env-var mode (cloud default host) |
+| `OPIK_API_KEY` / `OPIK_URL_OVERRIDE` / `OPIK_WORKSPACE` / `OPIK_PROJECT_NAME` | string | Opik SDK variables used as fallbacks for the key, base URL, `Comet-Workspace` and `projectName`; never enable export on their own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |

@@ -34,7 +34,8 @@ map, disk/memory budget, the test loop).
 | **OpenLIT, LangWatch, Sigiro, Maple, Parseable OSS** | traces + metrics + logs | :3010 / :5560 / SQL :9999 / :4388 / :8010 | the newer stacks; all via `type: otlp` |
 | **OpenLIT** | traces + metrics + logs | http://localhost:3010 (user@openlit.io / openlituser) | `type: openlit`, OTel-native LLM UI, light |
 | **MLflow** | traces | http://localhost:5001 (no login) | `type: mlflow`, experiment header, MLflow's own cost roll-up |
-| **Opik, Laminar, Langtrace** | traces (Laminar also logs) | :5173 / :5667 / :3040 | LLM-specific UIs with no explicit `type:` yet |
+| **Comet Opik** | traces | http://localhost:5173 (no login) | `type: opik`, threads = sessions, per-span type/model/cost |
+| **Laminar, Langtrace** | traces (Laminar also logs) | :5667 / :3040 | LLM-specific UIs with no explicit `type:` yet |
 | **Elastic** | traces + metrics + logs | http://127.0.0.1:15602 (Kibana) | `type: elastic` against a local EDOT Collector; data streams, 5.8 GB of images |
 
 Every stack, its ports, the `backends:` snippet and what it actually stored
