@@ -3,8 +3,7 @@
 [OpenLIT](https://github.com/openlit/openlit) (Apache-2.0) is an OTel-native LLM
 observability stack: ClickHouse plus one app container with the UI and OTLP
 ingest. It is the only candidate from #232 that stores **all three signals** on
-the standard `/v1/*` paths. Plugin type: `otlp` until `type: openlit` exists
-(#222).
+the standard `/v1/*` paths. Plugin type: `openlit` (since hermes-otel 1.23, #222).
 
 ## Why pick it
 - Traces, metrics and logs with zero auth for local use.
@@ -22,10 +21,9 @@ UI: http://localhost:3010 — `user@openlit.io` / `openlituser` (upstream defaul
 ## Point hermes-otel at it
 ```yaml
 backends:
-  - type: otlp
-    name: openlit
-    endpoint: http://localhost:4338/v1/traces
-    # headers: {Authorization: "Bearer <openlit api key>"}   # optional org/project scoping
+  - type: openlit
+    endpoint: http://localhost:4338
+    # api_key_env: OTEL_OPENLIT_API_KEY   # optional org/project scoping (Bearer header)
 capture_logs: true
 ```
 

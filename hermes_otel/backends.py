@@ -50,6 +50,7 @@ _LOGS_CAPABLE = {
     "parseable",
     "honeycomb",
     "elastic",
+    "openlit",
 }
 
 # Display names used in logs. Preferred over ``type.capitalize()`` because
@@ -68,6 +69,7 @@ _DISPLAY_NAMES = {
     "honeycomb": "Honeycomb",
     "weave": "W&B Weave",
     "elastic": "Elastic",
+    "openlit": "OpenLIT",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -91,6 +93,7 @@ _ENV_PRIORITY = [
     "weave",
     "honeycomb",
     "elastic",
+    "openlit",
     "jaeger",
     "tempo",
     "phoenix",
@@ -114,6 +117,8 @@ _ENV_OPT_IN = {
     # Endpoint only: Elastic has no default host, so a key on its own could
     # never resolve and would only fail silently inside resolve_from_env().
     "elastic": ("OTEL_ELASTIC_ENDPOINT",),
+    # Endpoint only, same reasoning: no default host.
+    "openlit": ("OTEL_OPENLIT_ENDPOINT",),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -129,6 +134,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     ),
     "honeycomb": (("HONEYCOMB_API_KEY",),),
     "elastic": (("ELASTIC_API_KEY",),),
+    "openlit": (("OPENLIT_API_KEY",),),
 }
 
 
@@ -679,6 +685,47 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+def _resolve_openlit(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve an OpenLIT backend (self-hosted, OTLP/HTTP, all three signals).
+
+    OpenLIT runs an OTLP receiver next to its UI: ``/v1/traces``, ``/v1/metrics``
+    and ``/v1/logs`` on port 4318 of the app container (the UI port does not
+    proxy them on the 2.1.0 image). ``endpoint`` is required (no default host); a bare base
+    URL gets the ``/v1/traces`` suffix and ``tracer.py`` / ``log_handler.py``
+    derive the other two from it.
+
+    Auth: optional. An OpenLIT API key scopes ingest to an organisation,
+    project and environment and travels as ``Authorization: Bearer <key>``;
+    without one the data lands in the deployment's ``INIT_DB_*`` defaults,
+    which is what a local compose stack wants. When no key resolves the header
+    is omitted entirely.
+
+    Signals: traces, metrics and logs all on by default; OpenLIT stores every
+    OTel metric type with cumulative temporality, so no preset is needed.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_OPENLIT_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("openlit requires endpoint (or set OTEL_OPENLIT_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY"])
+    headers: Dict[str, str] = {}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
+    headers.update(bc.headers or {})
+
+    return _ResolvedBackend(
+        type="openlit",
+        endpoint=ep,
+        display_name=_display(bc, "openlit"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("openlit", bc.metrics),
+        supports_logs=_logs_for("openlit", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -763,6 +810,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "honeycomb": _resolve_honeycomb,
     "weave": _resolve_weave,
     "elastic": _resolve_elastic,
+    "openlit": _resolve_openlit,
 }
 
 

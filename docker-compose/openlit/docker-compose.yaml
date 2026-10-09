@@ -31,14 +31,13 @@
 #   4337  OTLP/gRPC receiver                OPENLIT_OTLP_GRPC_PORT (not used by the plugin)
 #   4338  OTLP/HTTP receiver                OPENLIT_OTLP_HTTP_PORT  ← plugin exports here
 #
-# Point the plugin at it (no explicit `type: openlit` yet, see issue #222):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: openlit
-#       endpoint: http://localhost:4338/v1/traces
-#       # headers: {Authorization: "Bearer <openlit api key>"}   # optional; scopes
-#       #   ingest to an org/project. Without a key data lands in the default DB.
+#     - type: openlit
+#       endpoint: http://localhost:4338
+#       # api_key_env: OTEL_OPENLIT_API_KEY   # optional; scopes ingest to an
+#       #   org/project (Bearer header). Without a key data lands in the default DB.
 #   capture_logs: true
 #
 # Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.

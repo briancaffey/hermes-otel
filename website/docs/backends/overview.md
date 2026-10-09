@@ -25,6 +25,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
 | **[W&B Weave](/backends/weave)** | Traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account |
 | **[Elastic](/backends/elastic)** | Traces + metrics + logs | Elastic Cloud (mOTLP) · self-hosted EDOT Collector | Elastic license / cloud plan |
+| **[OpenLIT](/backends/openlit)** | Traces + metrics + logs | Local (docker compose, 2 containers) · Helm | OSS (Apache-2.0), no account |
 | **[telemetry.dev](/backends/telemetry)** (via generic `otlp`) | Traces + metrics + logs | Cloud | Free tier + paid plans |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
@@ -60,6 +61,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"I want a hosted backend purpose-built for LLM/agent telemetry, `gen_ai.*`-native"**
 → [telemetry.dev](/backends/telemetry) — OTLP ingest with a single `Authorization: Bearer` header, via the generic `otlp` type.
 
+**"I want an OTel-native LLM UI with all three signals, self-hosted and light"**
+→ [OpenLIT](/backends/openlit) — two containers, `gen_ai.*`-aware views, traces + metrics + logs on the standard `/v1/*` paths.
+
 **"Our observability is already Elastic (self-hosted or Elastic Cloud)"**
 → [Elastic](/backends/elastic) — one `type: elastic` entry covers the managed OTLP endpoint (`ApiKey` auth) and a self-hosted EDOT Collector (no key needed).
 
@@ -88,6 +92,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Honeycomb | ✅ | ✅ | ✅ |
 | W&B Weave | ✅ | ❌ | ❌ |
 | Elastic | ✅ | ✅ | ✅ |
+| OpenLIT | ✅ | ✅ | ✅ |
 | telemetry.dev | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
@@ -106,6 +111,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | Honeycomb | either | cumulative (default) | not verified |
 | Parseable, generic `otlp` | depends on the collector behind it | cumulative (default) | depends |
 | Elastic | delta required (ES does not handle cumulative histograms) | `delta` | accepted |
+| OpenLIT | cumulative stored as-is (verified) | cumulative (default) | stored (exponential histogram type) |
 | Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
 
 Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
@@ -125,11 +131,12 @@ Single-backend selection is env-var-driven. First match wins:
 7. `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) + `WANDB_ENTITY` + `WANDB_PROJECT` set → W&B Weave
 8. `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) set → Honeycomb
 9. `OTEL_ELASTIC_ENDPOINT` set → Elastic (`OTEL_ELASTIC_API_KEY` optional: a local EDOT Collector needs none, and a key alone never opts in because Elastic has no default host)
-10. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-11. `OTEL_TEMPO_ENDPOINT` set → Tempo
-12. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+10. `OTEL_OPENLIT_ENDPOINT` set → OpenLIT (`OTEL_OPENLIT_API_KEY` optional, same rule)
+11. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+12. `OTEL_TEMPO_ENDPOINT` set → Tempo
+13. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
+Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
@@ -137,11 +144,11 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 
 Every self-hostable backend above, plus the candidates tracked in [#232](https://github.com/briancaffey/hermes-otel/issues/232), has its own folder under [`docker-compose/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose) in the repo: `docker compose -f docker-compose/<name>/docker-compose.yaml up -d`, and `down -v` to remove it with its data. Each folder has a README (why pick it, logins, the `backends:` snippet, verification query, caveats), and [`docker-compose/README.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/README.md) is the manual: the comparison table, the port map, disk/memory budgets and the test loop.
 
-Backends without an explicit `type:` yet are driven through the generic `otlp` type; each was verified end to end on 2026-10-05 with hermes-otel 1.19.0:
+Backends without an explicit `type:` yet are driven through the generic `otlp` type; each was verified end to end on 2026-10-05 with hermes-otel 1.19.0 (OpenLIT has had `type: openlit` since 1.23):
 
 | Backend | Compose file | Stored from a Hermes turn | Plugin config |
 |---|---|---|---|
-| [OpenLIT](https://github.com/openlit/openlit) (#222) | `openlit/` | traces + metrics + logs | `type: otlp`, `http://localhost:4338/v1/traces` |
+| [OpenLIT](https://github.com/openlit/openlit) (#222) | `openlit/` | traces + metrics + logs | `type: openlit`, `http://localhost:4338` (explicit type since 1.23) |
 | [MLflow](https://mlflow.org) (#221) | `mlflow/` | traces (with MLflow's own token and cost roll-ups) | `type: otlp`, `http://localhost:5001/v1/traces`, header `x-mlflow-experiment-id: "0"`, `metrics: false`, `logs: false` |
 | [Comet Opik](https://github.com/comet-ml/opik) (#220) | `opik/` | traces (threads, span types, cost) | `type: otlp`, `http://localhost:5173/api/v1/private/otel/v1/traces`, `metrics: false`, `logs: false` |
 | [Laminar](https://github.com/lmnr-ai/lmnr) (#223) | `laminar/` | traces + logs; metrics accepted and dropped | `type: otlp`, `http://localhost:8100/v1/traces`, `Authorization: Bearer <project key>`, `metrics: false` |

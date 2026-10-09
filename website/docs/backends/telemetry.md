@@ -1,5 +1,5 @@
 ---
-sidebar_position: 14
+sidebar_position: 15
 title: "telemetry.dev"
 description: "Send Hermes traces, metrics, and logs to telemetry.dev — hosted LLM/agent observability built on the gen_ai.* semantic conventions, using the generic otlp type."
 ---
