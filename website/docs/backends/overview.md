@@ -29,6 +29,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[MLflow](/backends/mlflow)** | Traces | Local (docker compose, 1 container) · Helm · Databricks | OSS (Apache-2.0), no account |
 | **[Comet Opik](/backends/opik)** | Traces | Local (docker compose, 7 containers) · Helm · Comet cloud | OSS (Apache-2.0) · free cloud tier |
 | **[Laminar](/backends/laminar)** | Traces + logs | Local (docker compose, 5 containers) · Helm · Laminar cloud | OSS (Apache-2.0) · free cloud tier |
+| **[LangWatch](/backends/langwatch)** | Traces + metrics + logs | Local (docker compose, 5 containers) · Helm · LangWatch cloud | OSS (Apache-2.0) · free cloud tier |
 | **[telemetry.dev](/backends/telemetry)** (via generic `otlp`) | Traces + metrics + logs | Cloud | Free tier + paid plans |
 | **[Generic OTLP](/backends/otlp)** | Depends on collector | Anywhere | — |
 
@@ -76,6 +77,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"An agent-focused trace UI that also keeps the agent's log lines"**
 → [Laminar](/backends/laminar) — span types, tokens and cost per call, plus log records next to the trace; metrics are off because Laminar drops them.
 
+**"An LLM platform with all three signals and an evaluation workflow"**
+→ [LangWatch](/backends/langwatch) — traces, metrics and logs under one `/api/otel` prefix; thread id = the Hermes session.
+
 **"Our observability is already Elastic (self-hosted or Elastic Cloud)"**
 → [Elastic](/backends/elastic) — one `type: elastic` entry covers the managed OTLP endpoint (`ApiKey` auth) and a self-hosted EDOT Collector (no key needed).
 
@@ -108,6 +112,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | MLflow | ✅ | ❌ | ❌ |
 | Comet Opik | ✅ | ❌ | ❌ |
 | Laminar | ✅ | ❌ (accepted and dropped; off by default) | ✅ |
+| LangWatch | ✅ | ✅ | ✅ |
 | telemetry.dev | ✅ | ✅ | ✅ |
 | Generic OTLP | ✅ | depends on collector | depends on collector |
 
@@ -150,11 +155,12 @@ Single-backend selection is env-var-driven. First match wins:
 11. `OTEL_MLFLOW_ENDPOINT` set → MLflow (`MLFLOW_EXPERIMENT_ID` optional, default `0`)
 12. `OTEL_OPIK_API_KEY` (cloud, with `OPIK_WORKSPACE`) or `OTEL_OPIK_ENDPOINT` set → Comet Opik
 13. `OTEL_LAMINAR_API_KEY` set (cloud, or with `OTEL_LAMINAR_ENDPOINT`) → Laminar
-14. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-15. `OTEL_TEMPO_ENDPOINT` set → Tempo
-16. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+14. `OTEL_LANGWATCH_API_KEY` set (cloud, or with `OTEL_LANGWATCH_ENDPOINT`) → LangWatch
+15. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+16. `OTEL_TEMPO_ENDPOINT` set → Tempo
+17. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
+Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
@@ -162,7 +168,7 @@ Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see
 
 Every self-hostable backend above, plus the candidates tracked in [#232](https://github.com/briancaffey/hermes-otel/issues/232), has its own folder under [`docker-compose/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose) in the repo: `docker compose -f docker-compose/<name>/docker-compose.yaml up -d`, and `down -v` to remove it with its data. Each folder has a README (why pick it, logins, the `backends:` snippet, verification query, caveats), and [`docker-compose/README.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/README.md) is the manual: the comparison table, the port map, disk/memory budgets and the test loop.
 
-Backends without an explicit `type:` yet are driven through the generic `otlp` type; each was verified end to end on 2026-10-05 with hermes-otel 1.19.0 (OpenLIT, MLflow, Opik and Laminar have explicit types since 1.23):
+Backends without an explicit `type:` yet are driven through the generic `otlp` type; each was verified end to end on 2026-10-05 with hermes-otel 1.19.0 (OpenLIT, MLflow, Opik, Laminar and LangWatch have explicit types since 1.23):
 
 | Backend | Compose file | Stored from a Hermes turn | Plugin config |
 |---|---|---|---|
@@ -170,7 +176,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [MLflow](https://mlflow.org) (#221) | `mlflow/` | traces (with MLflow's own token and cost roll-ups) | `type: mlflow`, `http://localhost:5001` (explicit type since 1.23) |
 | [Comet Opik](https://github.com/comet-ml/opik) (#220) | `opik/` | traces (threads, span types, cost) | `type: opik`, `http://localhost:5173` (explicit type since 1.23) |
 | [Laminar](https://github.com/lmnr-ai/lmnr) (#223) | `laminar/` | traces + logs; metrics accepted and dropped | `type: laminar`, `http://localhost:8100`, `api_key_env` (explicit type since 1.23) |
-| [LangWatch](https://github.com/langwatch/langwatch) (#229) | `langwatch/` | traces + metrics + logs | `type: otlp`, `http://localhost:5560/api/otel/v1/traces`, `Authorization: Bearer <project key>` |
+| [LangWatch](https://github.com/langwatch/langwatch) (#229) | `langwatch/` | traces + metrics + logs | `type: langwatch`, `http://localhost:5560`, `api_key_env` (explicit type since 1.23) |
 | [Langtrace](https://github.com/Scale3-Labs/langtrace) (#224) | `langtrace/` | traces (string and int attributes only) | `type: otlp`, `http://localhost:3040/api/trace`, header `x-api-key`, `metrics: false`, `logs: false` |
 | [Sigiro](https://sigiro.com) (#71) | `sigiro/` | traces + metrics + logs | `type: otlp`, `http://localhost:4378/v1/traces` |
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |

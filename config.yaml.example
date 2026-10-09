@@ -339,6 +339,9 @@
 #                  logs; metrics off (accepted and dropped upstream). Needs a
 #                  project `api_key` / `api_key_env` (Bearer); `endpoint` for
 #                  self-host, cloud is the default host.
+#   langwatch    — LangWatch (self-hosted or cloud). Traces + metrics + logs under
+#                  /api/otel. Needs a project `api_key` / `api_key_env` (Bearer);
+#                  `endpoint` for self-host, cloud is the default host.
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -562,6 +565,19 @@
 #   - type: laminar
 #     endpoint: http://localhost:8100           # omit for Laminar cloud
 #     api_key_env: LMNR_PROJECT_API_KEY
+# capture_logs: true
+
+# ── LangWatch quickstart ──────────────────────────────────────────────────────
+#
+# LangWatch ingests all three signals under /api/otel; the plugin completes
+# the paths from the base URL. The bundled stack (docker-compose/langwatch/)
+# listens on 5560 and docker-compose/langwatch/mint-api-key.py creates the
+# first project and prints its key.
+#
+# backends:
+#   - type: langwatch
+#     endpoint: http://localhost:5560           # omit for LangWatch cloud
+#     api_key_env: LANGWATCH_API_KEY            # sk-lw-…
 # capture_logs: true
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────

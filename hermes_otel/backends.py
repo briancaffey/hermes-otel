@@ -52,6 +52,7 @@ _LOGS_CAPABLE = {
     "elastic",
     "openlit",
     "laminar",
+    "langwatch",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -80,6 +81,7 @@ _DISPLAY_NAMES = {
     "mlflow": "MLflow",
     "opik": "Comet Opik",
     "laminar": "Laminar",
+    "langwatch": "LangWatch",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -107,6 +109,7 @@ _ENV_PRIORITY = [
     "mlflow",
     "opik",
     "laminar",
+    "langwatch",
     "jaeger",
     "tempo",
     "phoenix",
@@ -137,6 +140,8 @@ _ENV_OPT_IN = {
     "opik": ("OTEL_OPIK_API_KEY", "OTEL_OPIK_ENDPOINT"),
     # Laminar has a cloud default host, so a plugin-namespaced key is enough.
     "laminar": ("OTEL_LAMINAR_API_KEY", "OTEL_LAMINAR_ENDPOINT"),
+    # LangWatch has a cloud default host, so a plugin-namespaced key is enough.
+    "langwatch": ("OTEL_LANGWATCH_API_KEY", "OTEL_LANGWATCH_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -156,6 +161,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "mlflow": (("MLFLOW_TRACKING_TOKEN",),),
     "opik": (("OPIK_API_KEY",),),
     "laminar": (("LMNR_PROJECT_API_KEY",),),
+    "langwatch": (("LANGWATCH_API_KEY",),),
 }
 
 
@@ -917,6 +923,72 @@ def _resolve_laminar(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+_LANGWATCH_CLOUD = "https://app.langwatch.ai"
+_LANGWATCH_OTEL_PATH = "/api/otel"
+
+
+def _langwatch_traces_url(endpoint: str) -> str:
+    """Normalise a LangWatch ``endpoint`` to the full OTLP traces URL.
+
+    LangWatch serves OTLP under ``/api/otel``: accept the base URL, the
+    ``/api/otel`` prefix, or a full per-signal URL, and complete to
+    ``<base>/api/otel/v1/traces`` (metrics and logs are derived from it).
+    """
+    ep = endpoint.strip().rstrip("/")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep).rstrip("/")
+    if not ep.endswith(_LANGWATCH_OTEL_PATH):
+        ep = ep + _LANGWATCH_OTEL_PATH
+    return ep + "/v1/traces"
+
+
+def _resolve_langwatch(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve LangWatch (cloud or self-hosted, OTLP/HTTP, all three signals).
+
+    Endpoint: the LangWatch base (self-host ``http://localhost:5560``, cloud
+    ``https://app.langwatch.ai``, the default) or any form
+    ``_langwatch_traces_url`` accepts. Also via ``OTEL_LANGWATCH_ENDPOINT`` or
+    the SDK's ``LANGWATCH_ENDPOINT``.
+
+    Auth: a project API key (``sk-lw-…``) is required and travels as
+    ``Authorization: Bearer <key>`` (``api_key`` / ``api_key_env`` /
+    ``OTEL_LANGWATCH_API_KEY`` / ``LANGWATCH_API_KEY``). A service key needs
+    ``X-Project-Id`` as well: ``project`` / ``project_env`` /
+    ``LANGWATCH_PROJECT_ID``.
+
+    Signals: traces, metrics and logs all on (``/api/otel/v1/{traces,metrics,
+    logs}`` exist and store; verified against the compose stack).
+    """
+    key = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_LANGWATCH_API_KEY", "LANGWATCH_API_KEY"]
+    )
+    if not key:
+        raise ValueError(
+            "langwatch requires api_key (or set OTEL_LANGWATCH_API_KEY / LANGWATCH_API_KEY)"
+        )
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_LANGWATCH_ENDPOINT", "")
+        or os.getenv("LANGWATCH_ENDPOINT", "")
+        or _LANGWATCH_CLOUD
+    ).strip()
+    ep = _langwatch_traces_url(ep)
+
+    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
+    project = _resolve_secret(bc.project, bc.project_env, ["LANGWATCH_PROJECT_ID"])
+    if project:
+        headers["X-Project-Id"] = project
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="langwatch",
+        endpoint=ep,
+        display_name=_display(bc, "langwatch"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("langwatch", bc.metrics),
+        supports_logs=_logs_for("langwatch", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -1005,6 +1077,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "mlflow": _resolve_mlflow,
     "opik": _resolve_opik,
     "laminar": _resolve_laminar,
+    "langwatch": _resolve_langwatch,
 }
 
 

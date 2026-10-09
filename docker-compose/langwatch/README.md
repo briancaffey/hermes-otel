@@ -4,8 +4,8 @@
 observability and evaluation platform whose OTLP routes cover **traces, metrics
 and logs** under `/api/otel`. Trimmed from upstream's `infra/compose.yml` to the
 app, the workers, Postgres, Redis and upstream's ClickHouse image; the NLP and
-evaluator services are left out. Plugin type: `otlp` until `type: langwatch`
-exists (#229).
+evaluator services are left out. Plugin type: `langwatch` (since hermes-otel 1.23,
+#229).
 
 ## Why pick it
 - All three signals stored (verified in ClickHouse: `stored_spans`,
@@ -24,21 +24,23 @@ UI: http://localhost:5560. Health: `curl -i localhost:5560/api/health` returns
 
 ## Get a project API key
 Sign up (any email + password), finish the onboarding wizard (organisation →
-starting point → it creates the first project), then Settings → API keys. The
+starting point → it creates the first project), then Settings → API keys. Or
+let Playwright do the wizard and print the key:
+```bash
+export LANGWATCH_API_KEY=$(uv run --with playwright python docker-compose/langwatch/mint-api-key.py)
+```
+(`uv run --with playwright python -m playwright install chromium` once.) The
 same key is readable from Postgres once the project exists:
 ```bash
 docker exec hermes-otel-langwatch-postgres psql -U prisma -d mydb -At -c 'select "apiKey" from mydb."Project"'
 ```
-The wizard has no headless path (auth is Better Auth with a multi-step form).
 
 ## Point hermes-otel at it
 ```yaml
 backends:
-  - type: otlp
-    name: langwatch
-    endpoint: http://localhost:5560/api/otel/v1/traces
-    headers:
-      Authorization: "Bearer ${LANGWATCH_API_KEY}"     # sk-lw-…
+  - type: langwatch
+    endpoint: http://localhost:5560
+    api_key_env: LANGWATCH_API_KEY      # sk-lw-…
 capture_logs: true
 ```
 

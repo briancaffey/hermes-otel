@@ -52,6 +52,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_LAMINAR_API_KEY` | string | Laminar project API key (`Authorization: Bearer`); enables Laminar in env-var mode (cloud default host) |
 | `OTEL_LAMINAR_ENDPOINT` | URL | Laminar app-server base (`http://localhost:8100` for the bundled stack); needs a key to resolve |
 | `LMNR_PROJECT_API_KEY` / `LMNR_BASE_URL` | string | Laminar SDK variables used as fallbacks for the key and base URL; never enable export on their own |
+| `OTEL_LANGWATCH_API_KEY` | string | LangWatch project API key (`sk-lw-…`, `Authorization: Bearer`); enables LangWatch in env-var mode (cloud default host) |
+| `OTEL_LANGWATCH_ENDPOINT` | URL | LangWatch base (`http://localhost:5560` for the bundled stack); needs a key to resolve |
+| `LANGWATCH_API_KEY` / `LANGWATCH_ENDPOINT` / `LANGWATCH_PROJECT_ID` | string | LangWatch SDK variables used as fallbacks for the key, base URL and `X-Project-Id`; never enable export on their own |
 | `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
 | `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
 | `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
