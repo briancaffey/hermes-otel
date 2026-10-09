@@ -47,6 +47,7 @@ Pick one and export it before starting Hermes:
 | Elastic | `OTEL_ELASTIC_ENDPOINT` (+ `OTEL_ELASTIC_API_KEY` for Elastic Cloud mOTLP; omit for a local EDOT Collector) |
 | OpenLIT | `OTEL_OPENLIT_ENDPOINT` (+ `OTEL_OPENLIT_API_KEY` to scope ingest to an org/project; omit for a local stack) |
 | MLflow | `OTEL_MLFLOW_ENDPOINT` (+ `MLFLOW_EXPERIMENT_ID`, default `0`; traces only) |
+| Comet Opik | `OTEL_OPIK_API_KEY` + `OPIK_WORKSPACE` (cloud) or `OTEL_OPIK_ENDPOINT` (self-hosted); traces only |
 
 Vendor SDK variables already in your environment (`LANGFUSE_PUBLIC_KEY` /
 `LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`) are used as credential

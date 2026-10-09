@@ -5,7 +5,7 @@ LLM observability platforms and accepts OTLP/HTTP traces on a vendor path.
 Trimmed from upstream's compose (2.2.90) to MySQL, Redis, ZooKeeper, ClickHouse,
 MinIO (+ a one-shot bucket job), the Java backend and the nginx frontend.
 Dropped: python-backend (code evaluators), guardrails, demo data, and the
-self-tracing collector. Plugin type: `otlp` until `type: opik` exists (#220).
+self-tracing collector. Plugin type: `opik` (since hermes-otel 1.23, #220).
 
 ## Why pick it
 - The best fit of the #232 batch for Hermes traces: `thread_id` = session id,
@@ -25,13 +25,10 @@ UI: http://localhost:5173 (no login).
 ## Point hermes-otel at it
 ```yaml
 backends:
-  - type: otlp
-    name: opik
-    endpoint: http://localhost:5173/api/v1/private/otel/v1/traces
-    headers:
-      projectName: hermes-agent      # optional; default is "Default Project"
-    metrics: false
-    logs: false
+  - type: opik
+    endpoint: http://localhost:5173
+    project: hermes-agent            # optional; default is "Default Project"
+    # metrics and logs are off by default for this type (no such routes)
 ```
 
 ## Verify

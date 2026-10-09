@@ -28,16 +28,13 @@
 # Ports (nothing else is published):
 #   5173  Opik UI + API + OTLP/HTTP under /api   OPIK_PORT   ← plugin exports here
 #
-# Point the plugin at it (no explicit `type: opik` yet, see issue #220):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: opik
-#       endpoint: http://localhost:5173/api/v1/private/otel/v1/traces
-#       headers:
-#         projectName: hermes-agent    # optional; default is "Default Project"
-#       metrics: false                 # no metrics endpoint
-#       logs: false                    # no logs endpoint
+#     - type: opik
+#       endpoint: http://localhost:5173
+#       project: hermes-agent          # optional; default is "Default Project"
+#       # Metrics and logs default off for this type: no such routes.
 #
 # Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
 

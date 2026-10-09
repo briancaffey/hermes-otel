@@ -332,6 +332,9 @@
 #   mlflow       — MLflow tracking server (3.6+, self-hosted). Traces only. Set
 #                  `endpoint` (required) and `experiment_id` (default "0");
 #                  the plugin sends the mandatory x-mlflow-experiment-id header.
+#   opik         — Comet Opik (self-hosted or Comet cloud). Traces only. Set
+#                  `endpoint` for self-host (cloud is the default host); cloud
+#                  needs `api_key_env` + `workspace`; `project` picks the project.
 #   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
 #                  only by default. Set `api_key_env`, `entity`, and `project`;
 #                  the plugin fills in the endpoint, `wandb-api-key` header, and
@@ -530,6 +533,19 @@
 #     # experiment_id: "0"                     # default; the Default experiment
 #     # workspace: my-workspace                # optional X-MLFLOW-WORKSPACE
 #     # api_key_env: MLFLOW_TRACKING_TOKEN     # optional Bearer token
+
+# ── Comet Opik quickstart ─────────────────────────────────────────────────────
+#
+# Opik ingests OTLP traces on /api/v1/private/otel/v1/traces; the plugin
+# completes the path from the base URL. Self-hosted (docker-compose/opik/)
+# needs no auth; Comet cloud needs the API key and workspace.
+#
+# backends:
+#   - type: opik
+#     endpoint: http://localhost:5173           # omit for Comet cloud
+#     project: hermes-agent                     # optional projectName header
+#     # api_key_env: OPIK_API_KEY               # cloud: bare Authorization header
+#     # workspace: my-workspace                 # cloud: Comet-Workspace header
 
 # ── W&B Weave quickstart ──────────────────────────────────────────────────────
 #

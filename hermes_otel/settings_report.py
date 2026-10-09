@@ -142,6 +142,11 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
     "elastic": {"api_key": ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")},
     "openlit": {"api_key": ("OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY")},
+    "opik": {
+        "api_key": ("OTEL_OPIK_API_KEY", "OPIK_API_KEY"),
+        "workspace": ("OPIK_WORKSPACE",),
+        "project": ("OPIK_PROJECT_NAME",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -244,6 +249,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "openlit": "proxied",
     # UI, REST API and OTLP ingest share one port.
     "mlflow": "origin",
+    # Self-host: UI and API on one port; cloud: the comet.com origin.
+    "opik": "origin",
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -647,6 +654,12 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "MLflow tracking token (preferred name; needs the endpoint too)",
     ),
     ("MLFLOW_TRACKING_TOKEN", "backend", "MLflow tracking token fallback"),
+    ("OTEL_OPIK_ENDPOINT", "backend", "Single-backend mode: Opik base URL (default: Comet cloud)"),
+    ("OTEL_OPIK_API_KEY", "backend", "Opik API key (preferred name; enables Opik in env-var mode)"),
+    ("OPIK_API_KEY", "backend", "Opik API key fallback"),
+    ("OPIK_URL_OVERRIDE", "backend", "Opik SDK base URL fallback (…/api form accepted)"),
+    ("OPIK_WORKSPACE", "backend", "Opik workspace for the Comet-Workspace header (cloud)"),
+    ("OPIK_PROJECT_NAME", "backend", "Opik project for the projectName header"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),

@@ -35,7 +35,7 @@ from .plugin_config import BackendConfig, normalize_temporality
 # and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
 # traces only (#160). A collector in front of it can still take metrics:
 # set ``metrics: true`` on the entry explicitly.
-_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow"}
+_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow", "opik"}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -71,6 +71,7 @@ _DISPLAY_NAMES = {
     "elastic": "Elastic",
     "openlit": "OpenLIT",
     "mlflow": "MLflow",
+    "opik": "Comet Opik",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -96,6 +97,7 @@ _ENV_PRIORITY = [
     "elastic",
     "openlit",
     "mlflow",
+    "opik",
     "jaeger",
     "tempo",
     "phoenix",
@@ -122,6 +124,8 @@ _ENV_OPT_IN = {
     # Endpoint only, same reasoning: no default host.
     "openlit": ("OTEL_OPENLIT_ENDPOINT",),
     "mlflow": ("OTEL_MLFLOW_ENDPOINT",),
+    # Opik has a cloud default host, so a plugin-namespaced key is enough.
+    "opik": ("OTEL_OPIK_API_KEY", "OTEL_OPIK_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -139,6 +143,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "elastic": (("ELASTIC_API_KEY",),),
     "openlit": (("OPENLIT_API_KEY",),),
     "mlflow": (("MLFLOW_TRACKING_TOKEN",),),
+    "opik": (("OPIK_API_KEY",),),
 }
 
 
@@ -780,6 +785,77 @@ def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+_OPIK_CLOUD = "https://www.comet.com/opik"
+_OPIK_OTEL_PATH = "/api/v1/private/otel"
+
+
+def _opik_traces_url(endpoint: str) -> str:
+    """Normalise an Opik ``endpoint`` to the full OTLP traces URL.
+
+    Opik ingests on a vendor path, ``<base>/api/v1/private/otel/v1/traces``.
+    Accept the forms people write (the UI base, the SDK's ``…/api`` URL
+    override, the ``…/api/v1/private/otel`` prefix, or the full traces URL)
+    and complete them.
+    """
+    ep = endpoint.strip().rstrip("/")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep).rstrip("/")
+    if ep.endswith(_OPIK_OTEL_PATH):
+        return ep + "/v1/traces"
+    if ep.endswith("/api"):
+        return ep + "/v1/private/otel/v1/traces"
+    return ep + _OPIK_OTEL_PATH + "/v1/traces"
+
+
+def _resolve_opik(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve Comet Opik (cloud or self-hosted, OTLP/HTTP traces only).
+
+    Endpoint: the Opik base URL (self-host ``http://localhost:5173``, cloud
+    ``https://www.comet.com/opik``) or any of the forms ``_opik_traces_url``
+    accepts; defaults to the cloud host when unset. Also via
+    ``OTEL_OPIK_ENDPOINT`` or the SDK's ``OPIK_URL_OVERRIDE``.
+
+    Headers: cloud needs ``Authorization: <api key>`` (the bare key, no
+    ``Bearer``) and ``Comet-Workspace``; ``projectName`` picks the project on
+    both editions and falls back to Opik's "Default Project" when absent. A
+    self-hosted deployment works without any of them, so every header is
+    optional and omitted when nothing resolves. Values come from ``api_key`` /
+    ``api_key_env`` / ``OTEL_OPIK_API_KEY`` / ``OPIK_API_KEY``, ``workspace`` /
+    ``OPIK_WORKSPACE`` and ``project`` / ``project_env`` / ``OPIK_PROJECT_NAME``.
+
+    Signals: traces only. The backend resource declares ``/traces`` alone;
+    ``/metrics`` and ``/logs`` under the same prefix answer 404.
+    """
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_OPIK_ENDPOINT", "")
+        or os.getenv("OPIK_URL_OVERRIDE", "")
+        or _OPIK_CLOUD
+    ).strip()
+    ep = _opik_traces_url(ep)
+
+    headers: Dict[str, str] = {}
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_OPIK_API_KEY", "OPIK_API_KEY"])
+    if key:
+        headers["Authorization"] = key
+    workspace = (bc.workspace or os.getenv("OPIK_WORKSPACE", "")).strip()
+    if workspace:
+        headers["Comet-Workspace"] = workspace
+    project = _resolve_secret(bc.project, bc.project_env, ["OPIK_PROJECT_NAME"])
+    if project:
+        headers["projectName"] = project
+    headers.update(bc.headers or {})
+
+    return _ResolvedBackend(
+        type="opik",
+        endpoint=ep,
+        display_name=_display(bc, "opik"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("opik", bc.metrics),
+        supports_logs=_logs_for("opik", bc.logs),
+    )
+
+
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     """Build Weave's OTLP traces endpoint from a W&B base URL."""
     base = (base_url or "").strip().rstrip("/")
@@ -866,6 +942,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "elastic": _resolve_elastic,
     "openlit": _resolve_openlit,
     "mlflow": _resolve_mlflow,
+    "opik": _resolve_opik,
 }
 
 

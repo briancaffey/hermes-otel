@@ -171,7 +171,8 @@ class BackendConfig:
     namespace: Optional[str] = None
     # MLflow routing: ``experiment_id`` → the mandatory ``x-mlflow-experiment-id``
     # header (default ``"0"``, the built-in Default experiment); ``workspace``
-    # → the optional ``X-MLFLOW-WORKSPACE`` header.
+    # → the optional ``X-MLFLOW-WORKSPACE`` header. Opik reuses ``workspace``
+    # for ``Comet-Workspace`` and ``project`` for ``projectName``.
     experiment_id: Optional[str] = None
     experiment_id_env: Optional[str] = None
     workspace: Optional[str] = None
