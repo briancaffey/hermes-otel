@@ -36,6 +36,7 @@ const sidebars: SidebarsConfig = {
         'backends/weave',
         'backends/elastic',
         'backends/openlit',
+        'backends/mlflow',
         'backends/telemetry',
         'backends/multi-backend',
       ],

@@ -169,6 +169,12 @@ class BackendConfig:
     # Elastic data-stream routing: copied to ``data_stream.dataset`` /
     # ``data_stream.namespace`` Resource attributes.
     namespace: Optional[str] = None
+    # MLflow routing: ``experiment_id`` → the mandatory ``x-mlflow-experiment-id``
+    # header (default ``"0"``, the built-in Default experiment); ``workspace``
+    # → the optional ``X-MLFLOW-WORKSPACE`` header.
+    experiment_id: Optional[str] = None
+    experiment_id_env: Optional[str] = None
+    workspace: Optional[str] = None
     # W&B Weave routing. Weave authenticates with ``api_key`` and routes spans
     # by OTel Resource attributes. These fields are copied to ``wandb.entity``
     # / ``wandb.project``; users can alternatively set them in top-level

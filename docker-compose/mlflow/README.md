@@ -4,7 +4,7 @@
 server since 3.6 and renders them in its GenAI Traces UI; MLflow's own docs
 already show Hermes traced through this plugin. One container with SQLite,
 trimmed from upstream's compose (which adds Postgres and an S3 store). Plugin
-type: `otlp` until `type: mlflow` exists (#221).
+type: `mlflow` (since hermes-otel 1.23, #221).
 
 ## Why pick it
 - MLflow computes its own trace-level token usage and **cost**
@@ -24,13 +24,10 @@ UI: http://localhost:5001 (no login) → Experiments → Default → Traces.
 ## Point hermes-otel at it
 ```yaml
 backends:
-  - type: otlp
-    name: mlflow
-    endpoint: http://localhost:5001/v1/traces
-    headers:
-      x-mlflow-experiment-id: "0"     # required; 0 is the built-in Default experiment
-    metrics: false
-    logs: false
+  - type: mlflow
+    endpoint: http://localhost:5001
+    # experiment_id: "0"     # default; the built-in Default experiment
+    # metrics and logs are off by default for this type (no such routes)
 ```
 
 ## Verify

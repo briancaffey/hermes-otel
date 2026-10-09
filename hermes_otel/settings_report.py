@@ -142,6 +142,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
     "elastic": {"api_key": ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")},
     "openlit": {"api_key": ("OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY")},
+    "mlflow": {
+        "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
+        "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
+    },
     "weave": {
         "api_key": ("OTEL_WEAVE_API_KEY", "WANDB_API_KEY"),
         "entity": ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
@@ -238,6 +242,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "elastic": None,
     # UI on :3000, OTLP on :4318 — the origin only when a proxied hostname is used.
     "openlit": "proxied",
+    # UI, REST API and OTLP ingest share one port.
+    "mlflow": "origin",
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -628,6 +634,19 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("OTEL_OPENLIT_ENDPOINT", "backend", "Single-backend mode: OpenLIT OTLP/HTTP URL"),
     ("OTEL_OPENLIT_API_KEY", "backend", "OpenLIT API key (preferred name; needs the endpoint too)"),
     ("OPENLIT_API_KEY", "backend", "OpenLIT API key fallback"),
+    ("OTEL_MLFLOW_ENDPOINT", "backend", "Single-backend mode: MLflow tracking server URL"),
+    (
+        "OTEL_MLFLOW_EXPERIMENT_ID",
+        "backend",
+        "MLflow experiment id for the x-mlflow-experiment-id header (preferred name)",
+    ),
+    ("MLFLOW_EXPERIMENT_ID", "backend", "MLflow experiment id fallback"),
+    (
+        "OTEL_MLFLOW_API_KEY",
+        "backend",
+        "MLflow tracking token (preferred name; needs the endpoint too)",
+    ),
+    ("MLFLOW_TRACKING_TOKEN", "backend", "MLflow tracking token fallback"),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),

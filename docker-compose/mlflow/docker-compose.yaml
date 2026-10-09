@@ -14,16 +14,13 @@
 #   5001  MLflow UI + REST API + OTLP/HTTP (/v1/traces)   MLFLOW_PORT
 #         (container port 5000; macOS AirPlay Receiver owns host 5000)
 #
-# Point the plugin at it (no explicit `type: mlflow` yet, see issue #221):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: mlflow
-#       endpoint: http://localhost:5001/v1/traces
-#       headers:
-#         x-mlflow-experiment-id: "0"   # required; 0 is the built-in Default experiment
-#       metrics: false                  # MLflow has no /v1/metrics
-#       logs: false                     # ... and no /v1/logs
+#     - type: mlflow
+#       endpoint: http://localhost:5001
+#       # experiment_id: "0"   # default; 0 is the built-in Default experiment.
+#       # Metrics and logs default off for this type: no /v1/metrics or /v1/logs.
 #
 # Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
 
