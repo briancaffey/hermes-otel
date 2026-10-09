@@ -39,6 +39,7 @@ const sidebars: SidebarsConfig = {
         'backends/mlflow',
         'backends/opik',
         'backends/laminar',
+        'backends/langwatch',
         'backends/telemetry',
         'backends/multi-backend',
       ],

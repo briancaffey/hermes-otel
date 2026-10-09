@@ -27,14 +27,12 @@
 # Ingest needs a project API key: sign up, finish onboarding (it creates the
 # first project), then copy the key from Settings → API keys.
 #
-# Point the plugin at it (no explicit `type: langwatch` yet, see issue #229):
+# Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: langwatch
-#       endpoint: http://localhost:5560/api/otel/v1/traces
-#       headers:
-#         Authorization: "Bearer ${LANGWATCH_API_KEY}"
+#     - type: langwatch
+#       endpoint: http://localhost:5560
+#       api_key_env: LANGWATCH_API_KEY   # sk-lw-…; mint-api-key.py prints one
 #   capture_logs: true
 #
 # Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.

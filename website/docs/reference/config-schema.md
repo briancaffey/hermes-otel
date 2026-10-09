@@ -289,6 +289,17 @@ See [Comet Opik](/backends/opik).
 
 See [Laminar](/backends/laminar).
 
+#### `langwatch`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | LangWatch base: `http://localhost:5560` for the bundled stack, or the `/api/otel` prefix, or a full per-signal URL. Default `https://app.langwatch.ai`. Also via `OTEL_LANGWATCH_ENDPOINT` / `LANGWATCH_ENDPOINT` |
+| `api_key` / `api_key_env` | string | **Required.** Project API key (`sk-lw-…`), sent as `Authorization: Bearer <key>` (falls back to `OTEL_LANGWATCH_API_KEY` / `LANGWATCH_API_KEY`) |
+| `project` / `project_env` | string | Optional project id → `X-Project-Id`, needed only with a service key (falls back to `LANGWATCH_PROJECT_ID`) |
+| `metrics` / `logs` / `traces` | bool | All three default **on**; the plugin derives `/api/otel/v1/metrics` and `/api/otel/v1/logs` from the traces URL |
+
+See [LangWatch](/backends/langwatch).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

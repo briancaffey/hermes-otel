@@ -148,6 +148,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "project": ("OPIK_PROJECT_NAME",),
     },
     "laminar": {"api_key": ("OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY")},
+    "langwatch": {
+        "api_key": ("OTEL_LANGWATCH_API_KEY", "LANGWATCH_API_KEY"),
+        "project": ("LANGWATCH_PROJECT_ID",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -254,6 +258,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "opik": "origin",
     # UI on :5667, ingest on the app-server :8100/:8000 — origin only for a proxied host.
     "laminar": "proxied",
+    # UI and OTLP on one port (5560 / app.langwatch.ai).
+    "langwatch": "origin",
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
@@ -675,6 +681,23 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ),
     ("LMNR_PROJECT_API_KEY", "backend", "Laminar project API key fallback"),
     ("LMNR_BASE_URL", "backend", "Laminar SDK base URL fallback"),
+    (
+        "OTEL_LANGWATCH_ENDPOINT",
+        "backend",
+        "Single-backend mode: LangWatch base URL (default: LangWatch cloud)",
+    ),
+    (
+        "OTEL_LANGWATCH_API_KEY",
+        "backend",
+        "LangWatch project API key (preferred name; enables LangWatch in env-var mode)",
+    ),
+    ("LANGWATCH_API_KEY", "backend", "LangWatch API key fallback"),
+    ("LANGWATCH_ENDPOINT", "backend", "LangWatch SDK base URL fallback"),
+    (
+        "LANGWATCH_PROJECT_ID",
+        "backend",
+        "LangWatch project id for the X-Project-Id header (service keys)",
+    ),
     ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
     ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
     ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),
