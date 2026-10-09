@@ -242,6 +242,17 @@ The plugin sets the `wandb-api-key` header automatically. Weave is traces-only b
 
 An invalid `dataset` / `namespace` skips the entry at startup with a warning rather than failing the agent. Both attributes are set on the shared Resource, so every configured backend receives them; two `elastic` entries with different values conflict at startup. See [Elastic](/backends/elastic).
 
+#### `openlit`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** The OpenLIT OTLP/HTTP receiver base: `http://localhost:4338` for the bundled stack, `http://<host>:4318` upstream (the UI port does not proxy OTLP on the 2.1.0 image). Also via `OTEL_OPENLIT_ENDPOINT`. A base URL gets `/v1/traces` appended; `/v1/metrics` and `/v1/logs` are derived from it |
+| `api_key` | string | OpenLIT API key (inline; discouraged). Sent as `Authorization: Bearer <key>` to scope ingest to an organisation, project and environment; the header is omitted when no key resolves |
+| `api_key_env` | string | Env var name holding the key (falls back to `OTEL_OPENLIT_API_KEY` / `OPENLIT_API_KEY`) |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; all three default **on** |
+
+See [OpenLIT](/backends/openlit).
+
 ## Env var interpolation in `headers:`
 
 Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:

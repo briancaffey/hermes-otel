@@ -44,7 +44,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Uptrace](uptrace/) | 4 | :14318 | ✅ | ✅ | ✅ | `uptrace` | all three signals with a DSN-style setup |
 | [Elastic](elastic/) | 3 | :15602 | ✅ | ✅ | ✅ | `elastic` | you already run Elastic: EDOT Collector in front of Elasticsearch + Kibana (verified 2026-10-07, 1.21.0) |
 | [Parseable OSS](parseable/) | 2 | :8010 | ✅ | ✅ | ✅ | `otlp` | SQL over Parquet; shows the collector-in-front pattern |
-| [OpenLIT](openlit/) | 2 | :3010 | ✅ | ✅ | ✅ | `otlp` | OTel-native LLM UI with all three signals, light |
+| [OpenLIT](openlit/) | 2 | :3010 | ✅ | ✅ | ✅ | `openlit` | OTel-native LLM UI with all three signals, light |
 | [MLflow](mlflow/) | 1 | :5001 | ✅ | ❌ | ❌ | `otlp` | you already use MLflow; it prices traces itself |
 | [Comet Opik](opik/) | 7 | :5173 | ✅ | ❌ | ❌ | `otlp` | the best LLM-trace fit of the new batch (threads, span types, cost) |
 | [Laminar](laminar/) | 5 | :5667 | ✅ | ❌ | ✅ | `otlp` | agent-focused UI; scripted API key |
