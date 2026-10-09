@@ -523,7 +523,7 @@ class TestTempo:
         monkeypatch.setattr(tempo, "http_get_json", fake)
         page = self._adapter().search(StructuredFilter(before_ns=25 * NS), 0, 100, 1)
         q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
-        assert (q["limit"], q["end"]) == ("2", "26")
+        assert (q["limit"], q["end"]) == (str(tempo._DEFAULT_SEARCH_FETCH), "26")
         # ids come back padded to 32 hex digits (Tempo drops leading zeros)
         assert [t["traceID"] for t in page["traces"]] == ["b".zfill(32)]
         assert page["has_more"] is True and page["next_before_ns"] == 20 * NS
@@ -579,6 +579,91 @@ class TestTempo:
         trace["rootTraceName"] = "agent"
         page = self._adapter().search(StructuredFilter(name_prefix="agent"), 0, 10, 5)
         assert page["traces"][0]["rootTraceName"] == "agent"
+
+    def test_search_over_fetches_and_cuts_the_newest_rows(self, monkeypatch):
+        # Tempo stops at ``limit`` matches in block order, not the newest
+        # (Tempo 3.0.3, live): ask for ``search_fetch`` rows and cut here.
+        seen = {}
+        rows = [
+            {"traceID": t, "rootTraceName": "agent", "startTimeUnixNano": str(s)}
+            for t, s in (("old", 10 * NS), ("new", 30 * NS), ("mid", 20 * NS))
+        ]
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {"traces": rows}
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        page = self._adapter().search(StructuredFilter(), 0, 100, 2)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert q["limit"] == str(tempo._DEFAULT_SEARCH_FETCH)
+        assert [t["traceID"] for t in page["traces"]] == [
+            "new",
+            "mid",
+        ]  # non-hex ids stay as they are
+        assert page["has_more"] is True and page["next_before_ns"] == 20 * NS
+        # configurable per entry, never below limit + 1
+        a = tempo.TempoAdapter(
+            {"type": "tempo", "endpoint": "http://localhost:4318/v1/traces", "search_fetch": 2}
+        )
+        a.search(StructuredFilter(), 0, 100, 5)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert q["limit"] == "6"
+
+    def test_raw_query_bounds_duration_client_side_and_sends_no_min_duration(self, monkeypatch):
+        # Tempo ignores ``minDuration`` next to a TraceQL ``q`` (verified live on
+        # grafana/otel-lgtm 0.34): the bound is applied to the rows instead.
+        seen = {}
+        rows = [
+            {
+                "traceID": "a",
+                "rootTraceName": "agent",
+                "startTimeUnixNano": str(30 * NS),
+                "durationMs": 12110,
+            },
+            {
+                "traceID": "b",
+                "rootTraceName": "agent",
+                "startTimeUnixNano": str(20 * NS),
+                "durationMs": 1938,
+            },
+            {"traceID": "c", "rootTraceName": "agent", "startTimeUnixNano": str(10 * NS)},
+        ]
+
+        def fake(url, headers=None, timeout=None):
+            seen["url"] = url
+            return {"traces": rows}
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        page = self._adapter().search(StructuredFilter(raw="{}", min_duration_ms=5000), 0, 100, 50)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert q["q"].startswith("{}") and "minDuration" not in q
+        assert [t["traceID"] for t in page["traces"]] == ["a".zfill(32)]
+        # without a raw query the bound stays a predicate and nothing is dropped here
+        page = self._adapter().search(StructuredFilter(min_duration_ms=5000), 0, 100, 50)
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(seen["url"]).query))
+        assert "duration >= 5000ms" in q["q"] and len(page["traces"]) == 3
+
+    def test_raw_query_reports_the_structured_fields_as_ignored(self):
+        from hermes_otel.dashboard.backends.base import split_applied_filters
+
+        a = self._adapter()
+        f = StructuredFilter(
+            raw="{ span.foo = 1 }",
+            min_duration_ms=10,
+            status="error",
+            name_prefix="tool.",
+            attr_equals={"tool.name": "terminal"},
+            free_text="x",
+        )
+        applied, ignored = split_applied_filters(a, f)
+        assert applied == ["min_duration", "raw"]
+        assert ignored == ["name", "tool", "status_error", "free_text", "roots_only"]
+        # the declaration itself is unchanged for ordinary searches
+        applied, ignored = split_applied_filters(
+            a, StructuredFilter(status="error", name_prefix="tool.")
+        )
+        assert applied == ["name", "status_error", "roots_only"] and ignored == []
 
     def test_trace_url_is_grafana_explore_only_with_ui_url(self):
         assert self._adapter().trace_url("abc") is None

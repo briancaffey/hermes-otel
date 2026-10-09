@@ -137,6 +137,7 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | `endpoint` | string | **Required.** Traces only (metrics/logs off); use `type: lgtm` for the all-in-one Grafana container |
 | `query_port` | int | Dashboard read path: Tempo's query API port (default `3200`) |
 | `prometheus_url` / `loki_url` | string | Optional. Naming them gives a Tempo entry the same dashboard metrics/logs as `lgtm` |
+| `search_fetch` | int | Dashboard read path: traces asked of Tempo per search page before the newest `limit` are kept (default `500`; Tempo's own `limit` is not newest-first). Also on `lgtm` entries |
 
 #### `otlp`
 

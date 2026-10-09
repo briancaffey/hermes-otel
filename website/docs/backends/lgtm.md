@@ -100,7 +100,17 @@ the pieces live elsewhere, name them:
     prometheus_url: https://prometheus.example
     metrics_match: '{__name__=~"hermes_.*"}'   # optional: keep a shared Prometheus's instrument list short
     loki_url: "off"                        # or https://loki.example; off when there is no Loki yet
+    search_fetch: 500                      # optional: traces fetched per page (Tempo's limit is not newest-first)
 ```
+
+Tempo's search API returns the first `limit` matches it finds, in block order,
+not the newest ones (Tempo 3.0.3: `limit=3` over four traces skipped a newer
+trace in about half the calls). The adapter therefore asks for `search_fetch`
+traces per page and keeps the newest `limit` itself, so keyset paging stays
+complete; raise it for windows holding more than 500 traces. A native TraceQL
+query in the search bar replaces the structured predicates (the page marks
+them ignored) and the minimum duration is applied to the returned rows,
+because Tempo ignores `minDuration` next to a `q`.
 
 Prometheus renames OTLP instruments (`hermes.token.usage` → `hermes_token_usage_total`,
 histograms grow `_sum`/`_count`); counters are charted as `increase()` per

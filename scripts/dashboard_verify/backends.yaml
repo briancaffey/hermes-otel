@@ -41,11 +41,11 @@ types:
     status_semantics: root
     quirks: status_ok and free_text are none; roots client-side
   tempo:
-    metrics: false
-    logs: false
-    ui: false
+    metrics: optional   # true when the entry sets prometheus_url
+    logs: optional      # true when the entry sets loki_url (not "off")
+    ui: optional        # a Grafana link when the entry sets ui_url
     status_semantics: root
-    quirks: TraceQL; same engine as lgtm traces
+    quirks: TraceQL; same engine as lgtm traces; metrics/logs/ui only with prometheus_url / loki_url / ui_url on the entry
   phoenix:
     metrics: false
     logs: false

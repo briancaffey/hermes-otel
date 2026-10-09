@@ -218,6 +218,15 @@ def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str],
     """``(applied, ignored)``: which of the filter's set fields the adapter honours
     (server- or client-side) and which it drops."""
     support = filter_support_of(adapter)
+    per_request = getattr(adapter, "filter_support_for", None)
+    if callable(per_request):
+        # An adapter may honour fewer fields for this particular filter (a
+        # raw query that replaces the structured predicates, #296).
+        override = per_request(f) or {}
+        support = {
+            k: (override.get(k) if override.get(k) in FILTER_LEVELS else support[k])
+            for k in support
+        }
     used = f.set_fields()
     applied = [k for k in used if support.get(k) != "none"]
     ignored = [k for k in used if support.get(k) == "none"]
