@@ -576,7 +576,16 @@ class SigNozAdapter(BackendAdapter):
             groupBy=group,
             stepInterval=int(bucket_s),
         )
-        data = self._query_range(_composite(query, "graph", start_s, end_s, bucket_s))
+        # SigNoz stamps each step's value at the step's START on a grid aligned
+        # to multiples of ``stepInterval`` since the epoch, so a sample taken 11 s
+        # into a minute comes back at the minute boundary, *before* a window
+        # that opened at :11. Ask from that boundary and treat it as the
+        # window's start, otherwise the first-value rule below drops every
+        # series that began inside a short window (verified on v0.119:
+        # a 46 s batch read 0 tokens / 0 calls, #297).
+        step = max(1, int(bucket_s))
+        grid_start_s = int(start_s) - int(start_s) % step
+        data = self._query_range(_composite(query, "graph", grid_start_s, end_s, bucket_s))
         if cumulative:
             samples = [
                 (
@@ -589,7 +598,7 @@ class SigNozAdapter(BackendAdapter):
             points = [
                 (ts_ns, value, ident.split("\x00", 1)[0])
                 for ts_ns, value, ident in counter_increases(
-                    samples, window_start_ns=start_s * 1_000_000_000
+                    samples, window_start_ns=grid_start_s * 1_000_000_000
                 )
             ]
         else:
