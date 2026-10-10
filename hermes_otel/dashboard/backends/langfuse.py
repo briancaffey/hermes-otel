@@ -126,24 +126,38 @@ def _as_text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
 
-# ``GENERATION`` carries LLM-specific fields we want to surface as
-# Otel-style attributes on the normalized shape.
-def _obs_to_card_attrs(obs: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {"name": obs.get("name") or ""}
+# One observation's attributes for the span tree. An OTLP-ingested
+# observation (every one the plugin exports) keeps the span's attributes
+# verbatim under ``metadata.attributes`` (verified on Langfuse 3 against the
+# 2026-10 image, #246); those are the attributes every other backend returns
+# and the ones the detail header reads (model, the turn's token roll-up on
+# the ``agent`` root, tools, cost), so they are lifted first-class. Langfuse's
+# own derived fields (``model``, ``usage``, ``input``/``output``) are the
+# fallback for observations written through its SDKs, which carry no
+# ``metadata.attributes``. ``usage`` is skipped for an OTLP observation: it
+# is derived from the same ``gen_ai.usage.*`` attributes for a GENERATION and
+# zero-filled for every other type, and a zero on the root stopped the header
+# from summing the ``api.*`` spans (#346).
+def _obs_to_card_attrs(
+    obs: Dict[str, Any], span_attrs: Optional[Dict[str, Any]] = None
+) -> Dict[str, Any]:
+    out: Dict[str, Any] = {k: v for k, v in (span_attrs or {}).items() if v is not None}
+    otlp = bool(out)
+    out["name"] = obs.get("name") or ""
     t = obs.get("type")
     if isinstance(t, str):
         out["langfuse.type"] = t
     if obs.get("model"):
-        out["llm.model_name"] = obs["model"]
+        out.setdefault("llm.model_name", obs["model"])
     # Langfuse doesn't model "provider" as a distinct field — fall
     # through to modelParameters / metadata.
     params = obs.get("modelParameters")
     if isinstance(params, dict):
         for k, v in params.items():
-            out[f"llm.parameters.{k}"] = v
+            out.setdefault(f"llm.parameters.{k}", v)
 
     usage = obs.get("usage") or {}
-    if isinstance(usage, dict):
+    if not otlp and isinstance(usage, dict):
         if usage.get("input") is not None:
             out["gen_ai.usage.input_tokens"] = usage["input"]
         if usage.get("output") is not None:
@@ -155,10 +169,10 @@ def _obs_to_card_attrs(obs: Dict[str, Any]) -> Dict[str, Any]:
     # as strings to line up with the way other backends render them.
     inp = obs.get("input")
     if inp is not None:
-        out["input.value"] = _as_text(inp)
+        out.setdefault("input.value", _as_text(inp))
     outp = obs.get("output")
     if outp is not None:
-        out["output.value"] = _as_text(outp)
+        out.setdefault("output.value", _as_text(outp))
 
     level = obs.get("level")
     if level:
@@ -166,6 +180,14 @@ def _obs_to_card_attrs(obs: Dict[str, Any]) -> Dict[str, Any]:
         # into the shared ``status`` attribute used by the card.
         out["status"] = "error" if level == "ERROR" else "ok"
     return out
+
+
+def _span_attributes_of(obs: Dict[str, Any]) -> Dict[str, Any]:
+    """The exported span's attributes Langfuse keeps under ``metadata.attributes``
+    for an OTLP-ingested observation; ``{}`` for one written through an SDK."""
+    meta = obs.get("metadata") if isinstance(obs.get("metadata"), dict) else {}
+    attrs = meta.get("attributes")
+    return attrs if isinstance(attrs, dict) else {}
 
 
 @register
@@ -660,8 +682,7 @@ class LangfuseAdapter(BackendAdapter):
         if f.min_duration_ms and duration_ms < int(f.min_duration_ms):
             return None
         attrs: Dict[str, Any] = {"name": card_name}
-        meta = o.get("metadata") if isinstance(o.get("metadata"), dict) else {}
-        span_attrs = meta.get("attributes") if isinstance(meta.get("attributes"), dict) else {}
+        span_attrs = _span_attributes_of(o)
         for k in _CARD_ATTRIBUTE_KEYS:
             if span_attrs.get(k) not in (None, ""):
                 attrs[k] = span_attrs[k]
@@ -716,8 +737,7 @@ class LangfuseAdapter(BackendAdapter):
         # attributes (verified on Langfuse 3 against the 2026-10 image): the
         # model, the turn's token totals and the session id come from there,
         # so the card reads like the other backends' (#246).
-        meta = t.get("metadata") if isinstance(t.get("metadata"), dict) else {}
-        root_attrs = meta.get("attributes") if isinstance(meta.get("attributes"), dict) else {}
+        root_attrs = _span_attributes_of(t)
         for k in _CARD_ATTRIBUTE_KEYS:
             if root_attrs.get(k) not in (None, ""):
                 attrs[k] = root_attrs[k]
@@ -798,12 +818,16 @@ class LangfuseAdapter(BackendAdapter):
         observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
         spans_otlp: List[Dict[str, Any]] = []
         for obs in observations:
-            attrs = _obs_to_card_attrs(obs)
+            span_attrs = _span_attributes_of(obs)
+            attrs = _obs_to_card_attrs(obs, span_attrs)
             # Carry through any free-form metadata so it's still visible
-            # in the attribute table.
+            # in the attribute table; the span's own attributes were lifted
+            # above and are not repeated as one ``metadata.attributes`` blob.
             metadata = obs.get("metadata") or {}
             if isinstance(metadata, dict):
                 for k, v in metadata.items():
+                    if k == "attributes" and span_attrs:
+                        continue
                     attrs[f"metadata.{k}"] = v
 
             start_ns = _iso_to_ns(obs.get("startTime"))

@@ -578,6 +578,24 @@ class Verifier:
             berr = Counter(s["name"] for s in spans if s["error"])
             if lerr != berr:
                 probs.append(f"error spans {dict(berr)} vs live {dict(lerr)}")
+            # The detail header reads the model and the turn's token roll-up
+            # from the ROOT span's attributes, so the backend's root must carry
+            # what the list row (already checked against Live in T2) shows. A
+            # backend that hands back its own zero-filled usage instead of the
+            # exported attributes passes T2 and fails here (#346).
+            broots = [s for s in spans if not s["parent"]]
+            if len(broots) == 1:
+                ra = broots[0]["attrs"]
+                rmodel = ra.get("gen_ai.request.model") or ra.get("llm.model_name") or ""
+                if rmodel != (lrow.get("model") or ""):
+                    probs.append(f"root model {rmodel!r} vs live {lrow.get('model')!r}")
+                rtok_raw = ra.get("gen_ai.usage.total_tokens") or ra.get("llm.token_count.total")
+                try:
+                    rtok = float(rtok_raw) if rtok_raw not in (None, "") else None
+                except (TypeError, ValueError):
+                    rtok = None
+                if not close(rtok, lrow.get("tokens"), 0):
+                    probs.append(f"root tokens {rtok} vs live {lrow.get('tokens')}")
             self.r.add(
                 "T3",
                 not probs,
@@ -585,7 +603,8 @@ class Verifier:
                 + (
                     "; ".join(probs)
                     if probs
-                    else f"{len(spans)} spans, names and statuses match, one root, no orphans"
+                    else f"{len(spans)} spans, names and statuses match, one root, no orphans, "
+                    f"root carries model and {lrow.get('tokens')} tokens"
                 ),
             )
             o["backend_spans"] = spans
