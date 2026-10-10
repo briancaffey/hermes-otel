@@ -1,0 +1,101 @@
+<template>
+<div data-composition-id="s03" data-width="1920" data-height="1080" data-duration="31.83">
+<style>
+[data-composition-id="s03"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s03"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s03"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s03"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s03"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s03"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s03"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s03"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s03"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s03"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s03"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s03"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s03"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s03"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s03"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s03"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s03"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s03"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s03"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s03"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s03"] .badges { display:flex; gap:12px; }
+[data-composition-id="s03"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s03"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s03"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s03"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s03"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s03"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s03"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s03"] .code .c { color:#8a8a92; } [data-composition-id="s03"] .code .k { color:#3d8bff; } [data-composition-id="s03"] .code .s { color:#ffb300; } [data-composition-id="s03"] .code .p { color:#34d399; }
+[data-composition-id="s03"] .line { display:block; }
+
+[data-composition-id="s03"] .left { position:absolute; left:96px; top:120px; width:600px; }
+[data-composition-id="s03"] .right { position:absolute; left:800px; top:120px; width:1024px; }
+[data-composition-id="s03"] .hook { font-family:"IBM Plex Mono", monospace; font-size:22px; color:#e6e6ea; padding:14px 18px; border:1px solid #2a2a30;
+  border-radius:8px; background:#121216; margin-top:12px; display:flex; align-items:center; gap:14px; }
+[data-composition-id="s03"] .hook i { width:10px; height:10px; border-radius:50%; background:#3d8bff; display:block; flex:none; }
+[data-composition-id="s03"] .arrow { position:absolute; left:716px; top:470px; width:68px; height:4px; background:#3d8bff; transform-origin:left center; }
+[data-composition-id="s03"] .arrow:after { content:""; position:absolute; right:-2px; top:-8px; border:10px solid transparent; border-left:14px solid #3d8bff; }
+[data-composition-id="s03"] .tree { margin-top:28px; }
+[data-composition-id="s03"] .row { position:relative; height:40px; margin-top:6px; }
+[data-composition-id="s03"] .bar { position:absolute; top:0; height:26px; border-radius:5px; transform-origin:left center; }
+[data-composition-id="s03"] .lbl { position:absolute; top:26px; font-family:"IBM Plex Mono", monospace; font-size:15px; color:#c9c9cf; white-space:nowrap; }
+[data-composition-id="s03"] .chips { display:flex; flex-wrap:wrap; gap:10px; margin-top:28px; }
+[data-composition-id="s03"] .chip { font-family:"IBM Plex Mono", monospace; font-size:19px; padding:8px 14px; border-radius:6px; background:#121216;
+  border:1px solid #3d8bff; color:#9ec5ff; }
+</style>
+<div id="s03-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div>
+<div class="left">
+  <div class="kicker">Hermes lifecycle hooks</div>
+  <div class="h2" id="s03-lt" style="margin-top:16px">Every turn fires hooks.</div>
+  <div id="s03-hooks" style="margin-top:20px"><div class="hook" id="s03-h0"><i></i>on_session_start</div><div class="hook" id="s03-h1"><i></i>pre_llm_call / post_llm_call</div><div class="hook" id="s03-h2"><i></i>pre_api_request / post_api_request</div><div class="hook" id="s03-h3"><i></i>pre_tool_call / post_tool_call</div><div class="hook" id="s03-h4"><i></i>pre_approval_request</div><div class="hook" id="s03-h5"><i></i>subagent_start / subagent_stop</div><div class="hook" id="s03-h6"><i></i>on_session_end</div></div>
+</div>
+<div class="arrow" id="s03-arrow"></div>
+<div class="right">
+  <div class="kicker">one trace per turn</div>
+  <div class="h2" id="s03-rt" style="margin-top:16px">Hooks become spans.</div>
+  <div class="tree" id="s03-tree"><div class="row" id="s03-r0"><div class="bar" style="left:0%;width:100%;background:#34d399;margin-left:0px"></div><div class="lbl" style="right:0;text-align:right">agent</div></div><div class="row" id="s03-r1"><div class="bar" style="left:0.5%;width:99%;background:#3d8bff;margin-left:28px"></div><div class="lbl" style="right:0;text-align:right">llm.nvidia/nemotron-3-super-120b-a12b</div></div><div class="row" id="s03-r2"><div class="bar" style="left:1%;width:42%;background:#3d8bff;margin-left:56px"></div><div class="lbl" style="left:calc(1% + 56px)">api.nvidia/nemotron-3-super-120b-a12b</div></div><div class="row" id="s03-r3"><div class="bar" style="left:44%;width:4%;background:#ffb300;margin-left:56px"></div><div class="lbl" style="left:calc(44% + 56px)">tool.web_extract</div></div><div class="row" id="s03-r4"><div class="bar" style="left:49%;width:14%;background:#3d8bff;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">api.nvidia/nemotron-3-super-120b-a12b</div></div><div class="row" id="s03-r5"><div class="bar" style="left:64%;width:6%;background:#ffb300;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">tool.write_file</div></div><div class="row" id="s03-r6"><div class="bar" style="left:71%;width:8%;background:#3d8bff;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">api.nvidia/nemotron-3-super-120b-a12b</div></div><div class="row" id="s03-r7"><div class="bar" style="left:80%;width:1.5%;background:#ffb300;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">tool.terminal</div></div><div class="row" id="s03-r8"><div class="bar" style="left:82%;width:9%;background:#3d8bff;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">api.nvidia/nemotron-3-super-120b-a12b</div></div><div class="row" id="s03-r9"><div class="bar" style="left:92%;width:1%;background:#ffb300;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">tool.read_file</div></div><div class="row" id="s03-r10"><div class="bar" style="left:94%;width:1%;background:#ffb300;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">tool.skill_view</div></div><div class="row" id="s03-r11"><div class="bar" style="left:96%;width:4%;background:#3d8bff;margin-left:56px"></div><div class="lbl" style="right:0;text-align:right">api.nvidia/nemotron-3-super-120b-a12b</div></div></div>
+  <div class="chips" id="s03-chips"><div class="chip" id="s03-c0">gen_ai.request.model</div><div class="chip" id="s03-c1">gen_ai.usage.input_tokens</div><div class="chip" id="s03-c2">gen_ai.usage.output_tokens</div><div class="chip" id="s03-c3">gen_ai.tool.name</div><div class="chip" id="s03-c4">gen_ai.tool.call.arguments</div><div class="chip" id="s03-c5">otel.status_code</div><div class="chip" id="s03-c6">error.message</div></div>
+</div>
+<div class="meta"><span>hermes-otel · tour</span><span>how it works · hooks → spans</span><span>03 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s03-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+
+  tl.from("#s03-lt", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 1.10);
+  tl.from("#s03-hooks .hook", {opacity:0, x:-24, duration:0.45, stagger:1.05, ease:"power3.out"}, 4.49);
+  tl.fromTo("#s03-arrow", {scaleX:0, opacity:0}, {scaleX:1, opacity:1, duration:0.5, ease:"power4.out"}, 12.47);
+  tl.from("#s03-rt", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 12.67);
+  tl.from("#s03-r0 .bar", {scaleX:0, duration:0.7, ease:"power4.out"}, 13.07);
+  tl.from("#s03-r0 .lbl", {opacity:0, duration:0.4}, 13.37);
+  tl.from("#s03-r1 .bar", {scaleX:0, duration:0.7, ease:"power4.out"}, 16.69);
+  tl.from("#s03-r1 .lbl", {opacity:0, duration:0.4}, 16.99);
+  tl.from(["#s03-r2 .bar","#s03-r3 .bar","#s03-r4 .bar","#s03-r5 .bar","#s03-r6 .bar","#s03-r7 .bar","#s03-r8 .bar","#s03-r9 .bar","#s03-r10 .bar","#s03-r11 .bar"], {scaleX:0, duration:0.5, stagger:0.22, ease:"power4.out"}, 17.49);
+  tl.from(["#s03-r2 .lbl","#s03-r3 .lbl","#s03-r4 .lbl","#s03-r5 .lbl","#s03-r6 .lbl","#s03-r7 .lbl","#s03-r8 .lbl","#s03-r9 .lbl","#s03-r10 .lbl","#s03-r11 .lbl"], {opacity:0, duration:0.4, stagger:0.22}, 17.69);
+  tl.from("#s03-chips .chip", {opacity:0, scale:0.9, duration:0.4, stagger:0.14, ease:"back.out(1.6)"}, 24.30);
+
+  tl.to("#s03-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 31.33);
+  window.__timelines["s03"] = tl;
+})();
+</script>
+</div>
+</template>

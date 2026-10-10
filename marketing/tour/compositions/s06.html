@@ -1,0 +1,105 @@
+<template>
+<div data-composition-id="s06" data-width="1920" data-height="1080" data-duration="46.16">
+<style>
+[data-composition-id="s06"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s06"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s06"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s06"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s06"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s06"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s06"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s06"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s06"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s06"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s06"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s06"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s06"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s06"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s06"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s06"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s06"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s06"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s06"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s06"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s06"] .badges { display:flex; gap:12px; }
+[data-composition-id="s06"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s06"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s06"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s06"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s06"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s06"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s06"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s06"] .code .c { color:#8a8a92; } [data-composition-id="s06"] .code .k { color:#3d8bff; } [data-composition-id="s06"] .code .s { color:#ffb300; } [data-composition-id="s06"] .code .p { color:#34d399; }
+[data-composition-id="s06"] .line { display:block; }
+
+[data-composition-id="s06"] .fr { left:96px; top:200px; width:1728px; height:780px; }
+[data-composition-id="s06"] .fr .shot { height:1080px; }
+[data-composition-id="s06"] .ph { position:absolute; inset:0; opacity:0; }
+[data-composition-id="s06"] .tabs { position:absolute; left:96px; top:112px; display:flex; gap:12px; }
+[data-composition-id="s06"] .tab { padding:10px 20px; border-radius:8px; border:1px solid #2a2a30; background:#121216; font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; color:#8a8a92; }
+[data-composition-id="s06"] .tab.on { color:#0a0a0c; background:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s06"] .hd { position:absolute; left:96px; top:48px; display:flex; gap:24px; align-items:baseline; }
+[data-composition-id="s06"] .hd .h2 { font-size:44px; }
+</style>
+<div id="s06-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div>
+<div class="hd"><div class="kicker">the dashboard tab</div><div class="h2" id="s06-t">Hermes web UI → OTel</div></div>
+<div class="tabs" id="s06-tabs"><div class="tab" id="s06-tab0">Live</div><div class="tab" id="s06-tab1">Traces</div><div class="tab" id="s06-tab2">Trace detail</div><div class="tab" id="s06-tab3">Metrics</div><div class="tab" id="s06-tab4">Logs</div><div class="tab" id="s06-tab5">Sessions</div></div>
+<div class="frame fr" id="s06-fr"><div class="ph" id="s06-p0"><div class="shot" id="s06-s0" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-live.jpg)"></div></div><div class="ph" id="s06-p1"><div class="shot" id="s06-s1" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-traces.jpg)"></div></div><div class="ph" id="s06-p2"><div class="shot" id="s06-s2" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-detail-hero.jpg)"></div></div><div class="ph" id="s06-p3"><div class="shot" id="s06-s3" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-metrics.jpg)"></div></div><div class="ph" id="s06-p4"><div class="shot" id="s06-s4" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-logs.jpg)"></div></div><div class="ph" id="s06-p5"><div class="shot" id="s06-s5" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-sessions.jpg)"></div></div></div>
+<div class="meta"><span>hermes-otel · tour</span><span>dashboard · lgtm-local</span><span>06 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s06-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+  tl.from("#s06-t", {opacity:0, y:20, duration:0.6, ease:"expo.out"}, 1.10);
+  tl.from("#s06-tabs .tab", {opacity:0, y:12, duration:0.4, stagger:0.08, ease:"power3.out"}, 1.40);
+  tl.from("#s06-fr", {opacity:0, y:30, duration:0.7, ease:"expo.out"}, 1.70);
+  tl.to("#s06-p0", {opacity:1, duration:0.45, ease:"power2.out"}, 1.70);
+  tl.to("#s06-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.70);
+  tl.fromTo("#s06-s0", {y:0}, {y:-120, duration:12.85, ease:"none"}, 1.70);
+  tl.to("#s06-p1", {opacity:1, duration:0.45, ease:"power2.out"}, 14.55);
+  tl.to("#s06-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 14.55);
+  tl.to("#s06-p0", {opacity:0, duration:0.45, ease:"power2.out"}, 14.55);
+  tl.to("#s06-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 14.55);
+  tl.fromTo("#s06-s1", {y:0}, {y:-300, duration:5.99, ease:"none"}, 14.55);
+  tl.to("#s06-p2", {opacity:1, duration:0.45, ease:"power2.out"}, 20.54);
+  tl.to("#s06-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 20.54);
+  tl.to("#s06-p1", {opacity:0, duration:0.45, ease:"power2.out"}, 20.54);
+  tl.to("#s06-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 20.54);
+  tl.fromTo("#s06-s2", {y:0}, {y:-300, duration:10.67, ease:"none"}, 20.54);
+  tl.to("#s06-p3", {opacity:1, duration:0.45, ease:"power2.out"}, 31.21);
+  tl.to("#s06-tab3", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 31.21);
+  tl.to("#s06-p2", {opacity:0, duration:0.45, ease:"power2.out"}, 31.21);
+  tl.to("#s06-tab2", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 31.21);
+  tl.fromTo("#s06-s3", {y:0}, {y:-120, duration:4.87, ease:"none"}, 31.21);
+  tl.to("#s06-p4", {opacity:1, duration:0.45, ease:"power2.out"}, 36.08);
+  tl.to("#s06-tab4", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 36.08);
+  tl.to("#s06-p3", {opacity:0, duration:0.45, ease:"power2.out"}, 36.08);
+  tl.to("#s06-tab3", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 36.08);
+  tl.fromTo("#s06-s4", {y:0}, {y:-300, duration:6.36, ease:"none"}, 36.08);
+  tl.to("#s06-p5", {opacity:1, duration:0.45, ease:"power2.out"}, 42.44);
+  tl.to("#s06-tab5", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 42.44);
+  tl.to("#s06-p4", {opacity:0, duration:0.45, ease:"power2.out"}, 42.44);
+  tl.to("#s06-tab4", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 42.44);
+  tl.fromTo("#s06-s5", {y:0}, {y:-120, duration:3.22, ease:"none"}, 42.44);
+  tl.fromTo("#s06-s2", {scale:1}, {scale:1.12, transformOrigin:"20% 40%", immediateRender:false, duration:8.31, ease:"power1.inOut"}, 22.90);
+  tl.to("#s06-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 45.66);
+  window.__timelines["s06"] = tl;
+})();
+</script>
+</div>
+</template>

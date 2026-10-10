@@ -1,0 +1,92 @@
+<template>
+<div data-composition-id="s05" data-width="1920" data-height="1080" data-duration="22.27">
+<style>
+[data-composition-id="s05"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s05"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s05"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s05"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s05"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s05"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s05"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s05"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s05"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s05"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s05"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s05"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s05"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s05"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s05"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s05"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s05"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s05"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s05"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s05"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s05"] .badges { display:flex; gap:12px; }
+[data-composition-id="s05"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s05"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s05"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s05"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s05"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s05"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s05"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s05"] .code .c { color:#8a8a92; } [data-composition-id="s05"] .code .k { color:#3d8bff; } [data-composition-id="s05"] .code .s { color:#ffb300; } [data-composition-id="s05"] .code .p { color:#34d399; }
+[data-composition-id="s05"] .line { display:block; }
+
+[data-composition-id="s05"] .left { position:absolute; left:96px; top:120px; width:760px; }
+[data-composition-id="s05"] .right { position:absolute; left:920px; top:120px; width:904px; }
+[data-composition-id="s05"] .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-top:28px; }
+[data-composition-id="s05"] .ty { font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; padding:16px 10px; text-align:center; border-radius:8px;
+  background:#121216; border:1px solid #2a2a30; color:#e6e6ea; }
+[data-composition-id="s05"] .fan { position:absolute; left:96px; top:790px; width:760px; height:200px; }
+[data-composition-id="s05"] .node { position:absolute; left:0; top:60px; padding:16px 24px; border-radius:10px; background:#3d8bff; color:#0a0a0c; font-weight:900; font-size:26px; }
+[data-composition-id="s05"] .ln { position:absolute; left:220px; height:4px; background:#3d8bff; transform-origin:left center; }
+[data-composition-id="s05"] .env { margin-top:24px; font-family:"IBM Plex Mono", monospace; font-size:22px; color:#9a9aa2; }
+[data-composition-id="s05"] .env b { color:#f5f5f7; font-weight:400; }
+</style>
+<div id="s05-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div>
+<div class="left">
+  <div class="kicker">configure</div>
+  <div class="h2" id="s05-t" style="margin-top:12px">One entry. Any backend.</div>
+  <div class="code" id="s05-code" style="margin-top:28px"><span class="line"><span class="c"># ~/.hermes/hermes_otel.yaml</span></span><span class="line"><span class="k">backends</span>:</span><span class="line">  - <span class="k">type</span>: <span class="p">lgtm</span></span><span class="line">    <span class="k">endpoint</span>: <span class="s">http://localhost:4318/v1/traces</span></span><span class="line">    <span class="k">metrics</span>: <span class="p">true</span></span><span class="line">  - <span class="k">type</span>: <span class="p">phoenix</span></span><span class="line">    <span class="k">endpoint</span>: <span class="s">http://localhost:6006/v1/traces</span></span></div>
+  <div class="env" id="s05-env">or one variable · <b>OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces</b></div>
+</div>
+<div class="right">
+  <div class="kicker">19 backend types</div>
+  <div class="grid" id="s05-grid"><div class="ty" id="s05-t0">phoenix</div><div class="ty" id="s05-t1">langfuse</div><div class="ty" id="s05-t2">lgtm</div><div class="ty" id="s05-t3">tempo</div><div class="ty" id="s05-t4">signoz</div><div class="ty" id="s05-t5">uptrace</div><div class="ty" id="s05-t6">jaeger</div><div class="ty" id="s05-t7">openobserve</div><div class="ty" id="s05-t8">elastic</div><div class="ty" id="s05-t9">honeycomb</div><div class="ty" id="s05-t10">weave</div><div class="ty" id="s05-t11">openlit</div><div class="ty" id="s05-t12">mlflow</div><div class="ty" id="s05-t13">opik</div><div class="ty" id="s05-t14">laminar</div><div class="ty" id="s05-t15">langwatch</div><div class="ty" id="s05-t16">latitude</div><div class="ty" id="s05-t17">parseable</div><div class="ty" id="s05-t18">otlp</div></div>
+</div>
+<div class="fan" id="s05-fan"><div class="node">hermes-otel</div><div class="ln" id="s05-ln0" style="top:80px;width:540px;transform:rotate(-8deg)"></div><div class="ln" id="s05-ln1" style="top:82px;width:520px;transform:rotate(0deg)"></div><div class="ln" id="s05-ln2" style="top:84px;width:540px;transform:rotate(8deg)"></div></div>
+<div class="meta"><span>hermes-otel · tour</span><span>how it works · backends</span><span>05 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s05-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+
+  tl.from("#s05-t", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 1.10);
+  tl.from("#s05-code .line", {opacity:0, x:-12, duration:0.35, stagger:0.18, ease:"power3.out"}, 1.40);
+  tl.from("#s05-env", {opacity:0, duration:0.5}, 3.50);
+  tl.from("#s05-grid .ty", {opacity:0, scale:0.85, duration:0.4, stagger:0.48, ease:"back.out(1.6)"}, 6.62);
+  tl.from("#s05-fan .node", {opacity:0, scale:0.9, duration:0.4, ease:"back.out(1.6)"}, 16.79);
+  tl.fromTo(["#s05-ln0","#s05-ln1","#s05-ln2"], {scaleX:0}, {scaleX:1, duration:0.8, stagger:0.1, ease:"power3.out"}, 17.09);
+  tl.to(["#s05-t0","#s05-t2","#s05-t4"], {borderColor:"#3d8bff", color:"#9ec5ff", duration:0.4, stagger:0.1}, 17.69);
+
+  tl.to("#s05-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 21.77);
+  window.__timelines["s05"] = tl;
+})();
+</script>
+</div>
+</template>

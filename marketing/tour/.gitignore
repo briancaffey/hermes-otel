@@ -1,0 +1,6 @@
+# regenerable or too large for the repo
+assets/shots/
+assets/voice/_sentences/
+renders/
+snapshots/
+node_modules/

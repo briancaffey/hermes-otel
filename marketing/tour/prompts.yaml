@@ -1,0 +1,133 @@
+# Prompt library for scripts/turn_batch/run_batch.py.
+#
+# Each prompt is one Hermes turn that exercises a known slice of what the
+# plugin captures, so the batch's telemetry is predictable: run_batch.py runs
+# them in series through `hermes -p <profile> chat -Q --yolo -q ...` (never
+# `-z`: a one-shot run disables Python logging, so it exports no logs), and
+# check_batch.py then reads every source (live store + each configured backend)
+# and compares what landed with the `expect:` block.
+#
+# Placeholders: {marker} is "<token>-<id>" (the run token plus the prompt id;
+# the runner also appends "(batch marker: <marker>)" to every prompt so each
+# turn can be found by text in any backend), {token} is the run token,
+# {workdir} a scratch directory the runner creates.
+#
+# expect keys (all optional):
+#   status            ok | error       root span status
+#   llm_calls_min     int              api.* spans
+#   tools_min/max     int              tool.* spans
+#   tool_names_any    [substr, ...]    at least one tool span's tool.name contains one of these
+#   span_names_any    [substr, ...]    at least one span name contains one of these
+#   output_contains   text             found in some span's output.value
+#   logs_min          int              trace-correlated log records (log-capable sources only)
+#   log_levels_any    [INFO, WARNING]  at least one record at one of these levels
+
+profile: minimal
+
+prompts:
+  - id: shell-echo
+    why: one terminal tool call; the simplest full turn (agent → llm → api → tool)
+    prompt: "Run exactly this shell command and reply with only its output: echo {marker}-out"
+    expect:
+      status: ok
+      llm_calls_min: 1
+      tools_min: 1
+      tool_names_any: [terminal]
+      output_contains: "{marker}-out"
+      logs_min: 3
+      log_levels_any: [INFO]
+
+  - id: no-tools
+    why: a turn with no tool call at all; only llm and api spans
+    prompt: "Reply with exactly this text and nothing else: {marker}-plain"
+    expect:
+      status: ok
+      llm_calls_min: 1
+      tools_max: 0
+      output_contains: "{marker}-plain"
+      logs_min: 1
+
+  - id: file-roundtrip
+    why: file toolset write then read; two tool spans of different tools
+    prompt: "Write the text 'hello {marker}' to a new file at {workdir}/{token}.txt, then read that file back and reply with its exact contents."
+    expect:
+      status: ok
+      tools_min: 2
+      tool_names_any: [write, read, file]
+      output_contains: "hello {marker}"
+      logs_min: 3
+
+  - id: missing-file
+    why: a tool that fails while the turn succeeds; error text in the tool output
+    prompt: "Read the file /nonexistent/{token}/missing.txt and reply with the exact error message you got, then the text {marker}-done."
+    expect:
+      status: ok
+      tools_min: 1
+      tool_names_any: [read, file, terminal]
+      logs_min: 2
+
+  - id: shell-nonzero
+    why: a shell command with a non-zero exit code
+    prompt: "Run exactly this shell command and reply with only its output: ls /nonexistent/{token} 2>&1; echo {marker}-exit=$?"
+    expect:
+      status: ok
+      tools_min: 1
+      tool_names_any: [terminal]
+      output_contains: "{marker}-exit="
+      logs_min: 3
+
+  - id: multi-tool
+    why: several tool calls in one turn, so more than one api round-trip
+    prompt: "Run these three shell commands one at a time, each as its own separate tool call, then reply with the three outputs: (1) echo {marker}-one (2) echo {marker}-two (3) echo {marker}-three"
+    expect:
+      status: ok
+      llm_calls_min: 2
+      tools_min: 3
+      tool_names_any: [terminal]
+      output_contains: "{marker}-three"
+      logs_min: 6
+
+  - id: long-output
+    why: a tool result far above preview_max_chars, to see truncation land intact
+    prompt: "Run exactly this shell command and reply with only the last line of its output: seq 1 400 | sed 's/^/{marker}-line-/'"
+    expect:
+      status: ok
+      tools_min: 1
+      tool_names_any: [terminal]
+      logs_min: 3
+
+  - id: web-fetch
+    why: the web toolset; a network-bound tool span
+    prompt: "Use the web fetch tool on https://example.com/ and reply with the page's title text followed by {marker}-web."
+    expect:
+      status: ok
+      tools_min: 1
+      tool_names_any: [web, fetch]
+      logs_min: 2
+
+  - id: skill-load
+    why: loading a skill opens a skill.<name> span for the rest of the turn
+    prompt: "Using the skills tool, view the skill named systematic-debugging, then reply with its first heading and the text {marker}-skill."
+    expect:
+      status: ok
+      tools_min: 1
+      span_names_any: [skill.systematic-debugging]
+      logs_min: 2
+
+  - id: hero-research
+    why: the showcase turn for the video — web, file write, shell, file read and a skill in one turn, several api round-trips
+    prompt: "Do a small research task, each step as its own tool call: (1) fetch https://example.com/ with the web fetch tool and note its title; (2) write a markdown file {workdir}/{token}-notes.md containing a heading 'Research notes', the page title, and the line 'marker: {marker}'; (3) run the shell command 'wc -w {workdir}/{token}-notes.md'; (4) read the notes file back; (5) using the skills tool, view the skill named systematic-debugging and note its first heading. Then reply with a four-line summary of what you found, ending with {marker}-hero."
+    expect:
+      status: ok
+      llm_calls_min: 3
+      tools_min: 4
+      logs_min: 6
+
+  - id: slow-tools
+    why: tool spans long enough to read on a waterfall, in sequence
+    prompt: "Run these two shell commands one at a time as separate tool calls and reply with both outputs: (1) sleep 2; echo {marker}-slow-one (2) sleep 1; echo {marker}-slow-two"
+    expect:
+      status: ok
+      tools_min: 2
+      tool_names_any: [terminal]
+      output_contains: "{marker}-slow-two"

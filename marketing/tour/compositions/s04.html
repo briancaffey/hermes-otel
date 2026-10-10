@@ -1,0 +1,104 @@
+<template>
+<div data-composition-id="s04" data-width="1920" data-height="1080" data-duration="25.98">
+<style>
+[data-composition-id="s04"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s04"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s04"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s04"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s04"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s04"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s04"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s04"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s04"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s04"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s04"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s04"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s04"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s04"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s04"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s04"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s04"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s04"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s04"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s04"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s04"] .badges { display:flex; gap:12px; }
+[data-composition-id="s04"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s04"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s04"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s04"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s04"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s04"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s04"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s04"] .code .c { color:#8a8a92; } [data-composition-id="s04"] .code .k { color:#3d8bff; } [data-composition-id="s04"] .code .s { color:#ffb300; } [data-composition-id="s04"] .code .p { color:#34d399; }
+[data-composition-id="s04"] .line { display:block; }
+
+[data-composition-id="s04"] .cols { position:absolute; left:96px; top:230px; display:flex; gap:32px; }
+[data-composition-id="s04"] .col { width:554px; height:520px; border:1px solid #2a2a30; border-radius:16px; background:#121216; padding:36px; position:relative; overflow:hidden; }
+[data-composition-id="s04"] .col .name { font-weight:900; font-size:44px; letter-spacing:-.02em; }
+[data-composition-id="s04"] .col .desc { font-size:24px; line-height:1.4; color:#c9c9cf; margin-top:14px; }
+[data-composition-id="s04"] .ico { position:absolute; left:36px; right:36px; bottom:36px; height:200px; }
+[data-composition-id="s04"] .wf .b { position:absolute; height:22px; border-radius:4px; background:#3d8bff; transform-origin:left center; }
+[data-composition-id="s04"] .bars { display:flex; align-items:flex-end; gap:16px; height:200px; }
+[data-composition-id="s04"] .bars .b { width:48px; background:#34d399; border-radius:4px 4px 0 0; transform-origin:bottom center; }
+[data-composition-id="s04"] .lg .ln { font-family:"IBM Plex Mono", monospace; font-size:18px; color:#c9c9cf; margin-top:10px; white-space:nowrap; overflow:hidden; }
+[data-composition-id="s04"] .lg .ln b { color:#fbbf24; font-weight:400; }
+[data-composition-id="s04"] .pipe { position:absolute; left:96px; top:812px; width:1728px; height:120px; border:1px solid #2a2a30; border-radius:16px; background:#121216;
+  display:flex; align-items:center; justify-content:space-between; padding:0 40px; }
+[data-composition-id="s04"] .pipe .lbl { font-weight:900; font-size:40px; letter-spacing:-.02em; }
+[data-composition-id="s04"] .pipe .lbl span { color:#3d8bff; }
+[data-composition-id="s04"] .pipe .cond { position:relative; width:900px; height:6px; background:#2a2a30; border-radius:3px; overflow:hidden; }
+[data-composition-id="s04"] .pipe .cond i { position:absolute; left:0; top:0; height:6px; width:100%; background:#3d8bff; display:block; transform-origin:left center; }
+[data-composition-id="s04"] .pipe .to { font-family:"IBM Plex Mono", monospace; font-size:22px; color:#c9c9cf; letter-spacing:.08em; }
+</style>
+<div id="s04-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div>
+<div style="position:absolute;left:96px;top:96px">
+  <div class="kicker">three signals, one turn</div>
+  <div class="h2" id="s04-t" style="margin-top:12px">Traces, metrics and logs, from the same hooks.</div>
+</div>
+<div class="cols">
+  <div class="col" id="s04-c1"><div class="name" style="color:#3d8bff">Traces</div><div class="desc">The shape and timing of the turn, span by span.</div>
+    <div class="ico wf" id="s04-wf"><div class="b" style="left:0%;width:100%;top:0px;background:#34d399"></div><div class="b" style="left:2%;width:96%;top:32px;background:#3d8bff"></div><div class="b" style="left:4%;width:40%;top:64px;background:#3d8bff"></div><div class="b" style="left:46%;width:8%;top:96px;background:#ffb300"></div><div class="b" style="left:56%;width:20%;top:128px;background:#3d8bff"></div><div class="b" style="left:78%;width:6%;top:160px;background:#ffb300"></div></div></div>
+  <div class="col" id="s04-c2"><div class="name" style="color:#34d399">Metrics</div><div class="desc">Tokens, cost, calls and tool durations, added up over time.</div>
+    <div class="ico bars" id="s04-bars"><div class="b" style="height:60px"></div><div class="b" style="height:90px"></div><div class="b" style="height:70px"></div><div class="b" style="height:140px"></div><div class="b" style="height:110px"></div><div class="b" style="height:180px"></div><div class="b" style="height:150px"></div><div class="b" style="height:200px"></div></div></div>
+  <div class="col" id="s04-c3"><div class="name" style="color:#fbbf24">Logs</div><div class="desc">The agent's own log lines, stamped with the trace id.</div>
+    <div class="ico lg" id="s04-lg"><div class="ln">INFO API call #1 in=7162 out=507 <b>ddca10f9</b></div><div class="ln">INFO tool web_extract done <b>ddca10f9</b></div><div class="ln">INFO tool write_file done <b>ddca10f9</b></div><div class="ln">INFO tool terminal done <b>ddca10f9</b></div><div class="ln">INFO Turn ended: text_response <b>ddca10f9</b></div></div></div>
+</div>
+<div class="pipe" id="s04-pipe"><div class="lbl">OTLP<span>/HTTP</span></div><div class="cond"><i id="s04-cond"></i></div><div class="to">→ any backend · no vendor lock-in</div></div>
+<div class="meta"><span>hermes-otel · tour</span><span>how it works · signals</span><span>04 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s04-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+
+  tl.from("#s04-t", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 1.10);
+  tl.from(["#s04-c1","#s04-c2","#s04-c3"], {opacity:0, y:30, duration:0.6, stagger:0.12, ease:"expo.out"}, 1.50);
+  tl.to("#s04-c1", {borderColor:"#3d8bff", duration:0.4}, 3.56);
+  tl.from("#s04-wf .b", {scaleX:0, duration:0.5, stagger:0.1, ease:"power4.out"}, 3.56);
+  tl.to("#s04-c2", {borderColor:"#34d399", duration:0.4}, 6.34);
+  tl.from("#s04-bars .b", {scaleY:0, duration:0.6, stagger:0.08, ease:"power4.out"}, 6.34);
+  tl.to("#s04-c3", {borderColor:"#fbbf24", duration:0.4}, 11.02);
+  tl.from("#s04-lg .ln", {opacity:0, x:-14, duration:0.4, stagger:0.25, ease:"power3.out"}, 11.02);
+  tl.from("#s04-pipe", {opacity:0, y:30, duration:0.6, ease:"expo.out"}, 18.36);
+  tl.fromTo("#s04-cond", {scaleX:0}, {scaleX:1, duration:1.6, ease:"power2.inOut"}, 18.76);
+
+  tl.to("#s04-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 25.48);
+  window.__timelines["s04"] = tl;
+})();
+</script>
+</div>
+</template>

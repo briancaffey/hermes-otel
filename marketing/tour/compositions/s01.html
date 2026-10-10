@@ -1,0 +1,97 @@
+<template>
+<div data-composition-id="s01" data-width="1920" data-height="1080" data-duration="17.86">
+<style>
+[data-composition-id="s01"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s01"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s01"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s01"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s01"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s01"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s01"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s01"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s01"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s01"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s01"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s01"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s01"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s01"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s01"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s01"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s01"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s01"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s01"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s01"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s01"] .badges { display:flex; gap:12px; }
+[data-composition-id="s01"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s01"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s01"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s01"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s01"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s01"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s01"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s01"] .code .c { color:#8a8a92; } [data-composition-id="s01"] .code .k { color:#3d8bff; } [data-composition-id="s01"] .code .s { color:#ffb300; } [data-composition-id="s01"] .code .p { color:#34d399; }
+[data-composition-id="s01"] .line { display:block; }
+
+[data-composition-id="s01"] .hero { position:absolute; left:0; top:0; width:1920px; height:1200px; background-image:url(assets/frames/lgtm-local-detail-hero.jpg);
+  background-size:1920px auto; background-repeat:no-repeat; transform-origin:50% 30%; }
+[data-composition-id="s01"] .dim { position:absolute; inset:0; background:rgba(10,10,12,.78); }
+[data-composition-id="s01"] .copy { position:absolute; left:96px; bottom:140px; width:1300px; }
+[data-composition-id="s01"] .big { font-weight:900; font-size:220px; line-height:.9; letter-spacing:-.04em; }
+[data-composition-id="s01"] .big small { font-size:80px; letter-spacing:-.02em; color:#9a9aa2; margin-left:16px; }
+[data-composition-id="s01"] .stats { display:flex; gap:48px; margin-top:36px; }
+[data-composition-id="s01"] .stat { font-family:"IBM Plex Mono", monospace; font-size:34px; color:#f5f5f7; }
+[data-composition-id="s01"] .stat b { color:#3d8bff; font-weight:700; }
+[data-composition-id="s01"] .q { position:absolute; left:96px; top:200px; width:1500px; font-weight:900; font-size:112px; line-height:1.0; letter-spacing:-.03em; opacity:0; }
+[data-composition-id="s01"] .q em { font-style:normal; color:#ffb300; }
+[data-composition-id="s01"] .span-tag { position:absolute; right:96px; top:72px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.08em; }
+</style>
+<div id="s01-wrap" class="wrap">
+<div class="bg"></div>
+
+<div id="s01-hero" class="hero"></div>
+<div class="dim"></div>
+<div class="span-tag"><span id="s01-tag">trace ddca10f94a46… · 14 spans · lgtm-local</span></div>
+<div id="s01-copy" class="copy">
+  <div class="big"><span id="s01-n">16.98</span><small>seconds</small></div>
+  <div class="stats">
+    <div class="stat" id="s01-st1"><b>6</b> model calls</div>
+    <div class="stat" id="s01-st2"><b>5</b> tools</div>
+    <div class="stat" id="s01-st3"><b>52.2k</b> tokens</div>
+  </div>
+</div>
+<div id="s01-q1" class="q">Which step was <em>slow</em>?<br>Which one <em>failed</em>?</div>
+<div id="s01-q2" class="q">Every turn,<br>a <em>black box</em>.</div>
+<div class="meta"><span>hermes-otel · tour</span><span>one turn, recorded</span><span>01 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  
+
+  tl.fromTo("#s01-hero", {scale:1.0}, {scale:1.08, duration:17.86, ease:"none"}, 0);
+  tl.from("#s01-copy", {opacity:0, y:40, duration:0.7, ease:"expo.out"}, 0.15);
+  tl.from(["#s01-st1","#s01-st2","#s01-st3"], {opacity:0, y:18, duration:0.5, stagger:0.12, ease:"power3.out"}, 4.02);
+  tl.to("#s01-copy", {opacity:0, y:-30, duration:0.5, ease:"power2.in"}, 9.24);
+  tl.to("#s01-q1", {opacity:1, duration:0.6, ease:"expo.out"}, 9.54);
+  tl.from("#s01-q1", {y:40, duration:0.6, ease:"expo.out"}, 9.54);
+  tl.to("#s01-q1", {opacity:0, duration:0.4, ease:"power2.in"}, 13.56);
+  tl.to("#s01-q2", {opacity:1, duration:0.6, ease:"expo.out"}, 13.76);
+  tl.from("#s01-q2", {y:40, duration:0.6, ease:"expo.out"}, 13.76);
+
+  tl.to("#s01-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 17.36);
+  window.__timelines["s01"] = tl;
+})();
+</script>
+</div>
+</template>
