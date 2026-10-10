@@ -1,5 +1,41 @@
 # Changelog
 
+## [1.23.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.22.1...hermes-otel-v1.23.0) (2026-10-10)
+
+
+### Features
+
+* **backends:** add Comet Opik backend (type: opik) ([#328](https://github.com/briancaffey/hermes-otel/issues/328)) ([bd87de6](https://github.com/briancaffey/hermes-otel/commit/bd87de60520eaf712dc9c020386eb40a0c4280be)), closes [#220](https://github.com/briancaffey/hermes-otel/issues/220)
+* **backends:** add Laminar backend (type: laminar) ([#329](https://github.com/briancaffey/hermes-otel/issues/329)) ([89ea286](https://github.com/briancaffey/hermes-otel/commit/89ea286e061adcd38df481825e4b4fa801a2da87)), closes [#223](https://github.com/briancaffey/hermes-otel/issues/223)
+* **backends:** add LangWatch backend (type: langwatch) ([#330](https://github.com/briancaffey/hermes-otel/issues/330)) ([1e4a8d5](https://github.com/briancaffey/hermes-otel/commit/1e4a8d5fd39c363abf7a9f2f8862131097acce7f)), closes [#229](https://github.com/briancaffey/hermes-otel/issues/229)
+* **backends:** add Latitude backend (type: latitude) ([#331](https://github.com/briancaffey/hermes-otel/issues/331)) ([fc2d59d](https://github.com/briancaffey/hermes-otel/commit/fc2d59d7454f826c37a9b074d3fd0536b5130936)), closes [#230](https://github.com/briancaffey/hermes-otel/issues/230)
+* **backends:** add MLflow backend (type: mlflow) ([#326](https://github.com/briancaffey/hermes-otel/issues/326)) ([b22da78](https://github.com/briancaffey/hermes-otel/commit/b22da78dfc61d1ca6cd40abdadce916595390fc1)), closes [#221](https://github.com/briancaffey/hermes-otel/issues/221)
+* **backends:** add OpenLIT backend (type: openlit) ([#324](https://github.com/briancaffey/hermes-otel/issues/324)) ([7d2682a](https://github.com/briancaffey/hermes-otel/commit/7d2682a424697df95ecbc5d544ce576768dd0f67)), closes [#222](https://github.com/briancaffey/hermes-otel/issues/222)
+* **dashboard:** Jaeger adapter speaks Jaeger v2's /api/v3 query API ([#338](https://github.com/briancaffey/hermes-otel/issues/338)) ([d74c88e](https://github.com/briancaffey/hermes-otel/commit/d74c88ea1cb3b826acb02d418e2d567b0a318193))
+* **dashboard:** Langfuse adapter reads Langfuse v4 (events_only) through the v2 observations and metrics APIs ([#340](https://github.com/briancaffey/hermes-otel/issues/340)) ([8662483](https://github.com/briancaffey/hermes-otel/commit/8662483d01710228fb95f90f436206b0d691ab94))
+
+
+### Bug Fixes
+
+* **dashboard:** epoch windows, bounded live-store readers, one home resolver, window defaults documented ([#341](https://github.com/briancaffey/hermes-otel/issues/341)) ([a1b1354](https://github.com/briancaffey/hermes-otel/commit/a1b1354db1ac04818da0147c4f5b8a74bf5a89c1))
+* **dashboard:** OpenObserve events-only answers empty before the first event on current builds ([#335](https://github.com/briancaffey/hermes-otel/issues/335)) ([4d9e4af](https://github.com/briancaffey/hermes-otel/commit/4d9e4af17366a83bef52d7de209c068f4a293754))
+* **dashboard:** Phoenix roots via parent_id on Phoenix 20; widened search is one card per trace ([#339](https://github.com/briancaffey/hermes-otel/issues/339)) ([b6e9429](https://github.com/briancaffey/hermes-otel/commit/b6e9429cf5833cd0b0c582dbf604f34a142dfe79))
+* **dashboard:** Settings judges the config file's origin against the profile's home and marks deprecated spellings ([#342](https://github.com/briancaffey/hermes-otel/issues/342)) ([6c10bd3](https://github.com/briancaffey/hermes-otel/commit/6c10bd30fd0638c0b50a4e646271746f07b0e2b2))
+* **dashboard:** SigNoz metrics open on the step grid so a short window keeps its first samples ([#336](https://github.com/briancaffey/hermes-otel/issues/336)) ([f134f37](https://github.com/briancaffey/hermes-otel/commit/f134f37780d0bee56dbc6276a8b97effa6afd878))
+* **dashboard:** Tempo paging over-fetches the newest rows; a raw TraceQL query keeps min duration and reports replaced fields ([#334](https://github.com/briancaffey/hermes-otel/issues/334)) ([f723771](https://github.com/briancaffey/hermes-otel/commit/f7237715420e0ebd5974fd4d23c2a4205526470a))
+* **dashboard:** the light theme applies, every Select has a name, expandable rows are not nested buttons ([#343](https://github.com/briancaffey/hermes-otel/issues/343)) ([692ec52](https://github.com/briancaffey/hermes-otel/commit/692ec529abfd8cdfcf536a34de4080298019bb95))
+* **dashboard:** Uptrace logs filter by span via _parent_id; widened pages fetch per-trace rows and keep an exact cursor ([#337](https://github.com/briancaffey/hermes-otel/issues/337)) ([62db1b8](https://github.com/briancaffey/hermes-otel/commit/62db1b881288b00814243890902a59da82d642ec))
+* **elastic:** dashboard follow-ups from the [#333](https://github.com/briancaffey/hermes-otel/issues/333) review; CSS-usage test accepts className: sites ([#345](https://github.com/briancaffey/hermes-otel/issues/345)) ([7e77b04](https://github.com/briancaffey/hermes-otel/commit/7e77b04351f53ad5ba1dbc0015e2886ecb23f66d))
+* **elastic:** harden dashboard import script; make tool-duration panel render on all backends ([#333](https://github.com/briancaffey/hermes-otel/issues/333)) ([2ae8c2a](https://github.com/briancaffey/hermes-otel/commit/2ae8c2abf90564c4700ea44acf14cf78c5b0d7d3)), closes [#318](https://github.com/briancaffey/hermes-otel/issues/318)
+
+
+### Documentation
+
+* dashboard.md backend row. ([4d9e4af](https://github.com/briancaffey/hermes-otel/commit/4d9e4af17366a83bef52d7de209c068f4a293754))
+* dashboard.md Uptrace row. ([62db1b8](https://github.com/briancaffey/hermes-otel/commit/62db1b881288b00814243890902a59da82d642ec))
+* **dashboard:** list the six new backend types without a dashboard adapter ([#332](https://github.com/briancaffey/hermes-otel/issues/332)) ([a615a07](https://github.com/briancaffey/hermes-otel/commit/a615a07dba778300a5c82f9f94b2b12374bf49a7))
+* **dashboard:** record the 2026-10-09 verification of every backend and the verify skill's results ([#344](https://github.com/briancaffey/hermes-otel/issues/344)) ([1663029](https://github.com/briancaffey/hermes-otel/commit/1663029a90eb554785445ba981ec9cc7d5ec32ba))
+
 ## [1.22.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.22.0...hermes-otel-v1.22.1) (2026-10-09)
 
 
