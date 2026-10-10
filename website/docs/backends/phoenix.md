@@ -69,6 +69,9 @@ Phoenix ingests traces only: its server answers `405` on `/v1/metrics` and `/v1/
 
 The bundled dashboard's Phoenix adapter shows the project named by `project_name` (on the backend entry, else the top-level key). If that project does not exist on the server the dashboard reports `Phoenix project '…' not found; available: …` instead of quietly showing another project's traces. With no `project_name` configured it shows the first project that has traces and says which one in its status (`project_resolved`, `project_fallback: true`).
 
+Phoenix 20 removed the `rootSpansOnly` / `orphanSpanAsRootSpan` arguments of `Project.spans`; the adapter introspects the schema once per query URL and sends `parent_id is None` in the filter condition instead, so older and current builds both work (verified on 20.20.0, 2026-10-09).
+
+
 ## Troubleshooting
 
 **"No traces show up in Phoenix"**
