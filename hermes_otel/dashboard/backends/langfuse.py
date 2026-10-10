@@ -69,6 +69,31 @@ _CARD_ATTRIBUTE_KEYS = (
 # OpenInference span kinds the exporter sets, as Langfuse types them.
 _OBSERVATION_TYPES = {"tool": "TOOL", "api": "GENERATION", "llm": "GENERATION", "agent": "AGENT"}
 
+# Langfuse v4 in its default ``events_only`` mode has no ``/api/public/traces``
+# (404 with a sentence about the mode, #246). What it keeps: the v2
+# observations list (``/api/public/v2/observations``: one row per observation
+# with ``traceId``, ``parentObservationId``, ``isRootObservation``, ``type``,
+# ``name``, ``startTime``/``endTime``, ``latency`` in seconds, ``level``,
+# ``sessionId``; no input/output/usage/metadata) and the v2 metrics API, which
+# answers token totals, cost, observation count and the model per trace. The
+# API is probed once per query URL; ``query_api: v3|v4`` on the entry pins it.
+_API_CACHE: Dict[str, str] = {}
+_V2_OBSERVATIONS = "/api/public/v2/observations"
+_V2_METRICS = "/api/public/v2/metrics"
+_V4_FILTER_SUPPORT = {
+    "service": "none",
+    "name": "client",  # ``name=`` is exact; a prefix is checked on the rows
+    "model": "none",
+    "session": "server",  # ``sessionId=``
+    "tool": "none",
+    "min_duration": "client",  # ``latency`` on the rows
+    "status_error": "server",  # ``level=ERROR`` on the listed observation
+    "status_ok": "none",
+    "free_text": "none",
+    "raw": "server",  # ``k=v`` query parameters of the v2 list
+    "roots_only": "server",  # the root is the AGENT observation (``isRootObservation``)
+}
+
 
 def _iso_utc(ts_s: int) -> str:
     return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat().replace("+00:00", "Z")
@@ -174,10 +199,15 @@ class LangfuseAdapter(BackendAdapter):
         self.public_key = resolve_env_or_literal(cfg, "public_key", "public_key_env")
         self.secret_key = resolve_env_or_literal(cfg, "secret_key", "secret_key_env")
         self._project_id_cache: Optional[str] = None
+        api = str(cfg.get("query_api") or "auto").strip().lower()
+        self.query_api = api if api in ("v3", "v4") else "auto"
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_url"] = self.query_url
+        base["query_api"] = (
+            self.query_api if self.query_api != "auto" else _API_CACHE.get(self.query_url, "auto")
+        )
         base["auth_required"] = not (self.public_key and self.secret_key)
         if base["auth_required"]:
             base["auth_hint"] = (
@@ -202,6 +232,296 @@ class LangfuseAdapter(BackendAdapter):
 
     def _raw_params(self, raw: Optional[str]) -> Dict[str, str]:
         return parse_kv_tokens(raw)
+
+    def _api(self) -> str:
+        """``v3`` (the trace endpoints answer) or ``v4`` (``events_only``: the
+        trace list is a 404 naming the mode). Probed once per query URL; an
+        unreachable or unauthenticated server is reported, not guessed."""
+        if self.query_api != "auto":
+            return self.query_api
+        cached = _API_CACHE.get(self.query_url)
+        if cached:
+            return cached
+        api = "v3"
+        try:
+            http_get_json(
+                f"{self.query_url}/api/public/traces?limit=1", headers=self._headers(), timeout=10.0
+            )
+        except BackendError as exc:
+            if exc.kind == "not_found" and "events_only" in str(exc.detail):
+                api = "v4"
+            elif exc.kind != "not_found":
+                raise
+        _API_CACHE[self.query_url] = api
+        return api
+
+    def filter_support_for(self, f: Optional[StructuredFilter] = None) -> Dict[str, str]:
+        """The v2 observations list honours more of the search bar than the
+        v3 trace list (session, roots, an error level) and less of the rest."""
+        return dict(_V4_FILTER_SUPPORT) if self._api() == "v4" else {}
+
+    def _v4_list(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
+        url = f"{self.query_url}{_V2_OBSERVATIONS}?" + _urlparse.urlencode(params, doseq=True)
+        data = http_get_json(url, headers=self._headers(), timeout=15.0)
+        items = data.get("data") if isinstance(data, dict) else None
+        return [o for o in (items if isinstance(items, list) else []) if isinstance(o, dict)]
+
+    def _v4_trace_facts(
+        self, trace_ids: List[str], start_s: int, end_s: int
+    ) -> Dict[str, Dict[str, Any]]:
+        """Per trace, from the v2 metrics API: token totals, cost, observation
+        count and the model (``providedModelName``), which the observation rows
+        do not carry. One request per page; a failure of the metrics route
+        leaves the cards without those numbers rather than failing the list."""
+        if not trace_ids:
+            return {}
+        query = {
+            "view": "observations",
+            # children start after their root; give the window a margin
+            "fromTimestamp": _iso_utc(max(0, int(start_s) - 60)),
+            "toTimestamp": _iso_utc(int(end_s) + 3600),
+            "metrics": [
+                {"measure": "totalTokens", "aggregation": "sum"},
+                {"measure": "inputTokens", "aggregation": "sum"},
+                {"measure": "outputTokens", "aggregation": "sum"},
+                {"measure": "totalCost", "aggregation": "sum"},
+                {"measure": "count", "aggregation": "count"},
+            ],
+            "dimensions": [{"field": "traceId"}, {"field": "providedModelName"}],
+            "filters": [
+                {
+                    "column": "traceId",
+                    "operator": "any of",
+                    "value": list(trace_ids),
+                    "type": "stringOptions",
+                }
+            ],
+            "orderBy": [{"field": "sum_totalTokens", "direction": "desc"}],
+            "config": {"row_limit": max(100, len(trace_ids) * 8)},
+        }
+        url = f"{self.query_url}{_V2_METRICS}?query=" + _urlparse.quote(json.dumps(query))
+        try:
+            data = http_get_json(url, headers=self._headers(), timeout=20.0)
+        except BackendError as exc:
+            if exc.kind in ("auth", "config"):
+                raise
+            return {}
+        out: Dict[str, Dict[str, Any]] = {}
+        rows = data.get("data") if isinstance(data, dict) else None
+        for r in rows if isinstance(rows, list) else []:
+            if not isinstance(r, dict) or not r.get("traceId"):
+                continue
+            facts = out.setdefault(
+                str(r["traceId"]), {"tokens": 0, "input": 0, "output": 0, "cost": 0.0, "count": 0}
+            )
+            for key, field in (
+                ("tokens", "sum_totalTokens"),
+                ("input", "sum_inputTokens"),
+                ("output", "sum_outputTokens"),
+                ("count", "count_count"),
+            ):
+                v = r.get(field)
+                if isinstance(v, (int, float)) and not isinstance(v, bool):
+                    facts[key] += int(v)
+            cost = r.get("sum_totalCost")
+            if isinstance(cost, (int, float)) and not isinstance(cost, bool):
+                facts["cost"] += float(cost)
+            if r.get("providedModelName") and not facts.get("model"):
+                facts["model"] = str(r["providedModelName"])
+        return out
+
+    @staticmethod
+    def _facts_to_attrs(facts: Dict[str, Any]) -> Dict[str, Any]:
+        attrs: Dict[str, Any] = {}
+        if facts.get("tokens"):
+            attrs["gen_ai.usage.total_tokens"] = facts["tokens"]
+            attrs["gen_ai.usage.input_tokens"] = facts.get("input", 0)
+            attrs["gen_ai.usage.output_tokens"] = facts.get("output", 0)
+        if facts.get("cost"):
+            attrs["hermes.cost.usage"] = float(facts["cost"])
+        if facts.get("model"):
+            attrs["llm.model_name"] = facts["model"]
+        return attrs
+
+    def _search_v4(
+        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
+    ) -> Dict[str, Any]:
+        """The trace list from the v2 observations: root observations (the
+        AGENT type, one per Hermes turn) in the window, or, widened by the kind
+        filter, the typed observations with one card per trace. Token totals,
+        cost, model and the span count join from the metrics API."""
+        prefix = f.name_prefix or ""
+        widened = bool(not f.roots_only and prefix)
+        obs_type = _OBSERVATION_TYPES.get(prefix.rstrip(".")) if widened else "AGENT"
+        want = int(limit) + 1
+        end_s_eff = int(end_s)
+        if f.before_ns:
+            end_s_eff = min(end_s_eff, int(f.before_ns) // 1_000_000_000 + 1)
+        session = f.attr_equals.get("hermes.session_id") or f.attr_equals.get("sessionId")
+        rows: List[Dict[str, Any]] = []
+        card_attrs: Dict[str, Dict[str, Any]] = {}
+        seen: set = set()
+        for page in range(1, _MAX_PAGES + 1):
+            params: Dict[str, Any] = {
+                "page": page,
+                "limit": _MAX_PAGE_SIZE,
+                "fromStartTime": _iso_utc(start_s),
+                "toStartTime": _iso_utc(end_s_eff),
+            }
+            if obs_type:
+                params["type"] = obs_type
+            if f.name_regex:
+                params["name"] = f.name_regex
+            if session:
+                params["sessionId"] = session
+            if f.status == "error":
+                params["level"] = "ERROR"
+            raw = self._raw_params(f.raw)
+            raw.pop("page", None)
+            raw.pop("limit", None)
+            params.update(raw)
+            items = self._v4_list(params)
+            for o in items:
+                if not widened and o.get("isRootObservation") is False:
+                    continue  # a nested AGENT (a sub-agent) is not a turn
+                name = str(o.get("name") or "")
+                card_name = f"tool.{name}" if o.get("type") == "TOOL" else name
+                if prefix and not card_name.startswith(prefix):
+                    continue
+                trace_id = o.get("traceId")
+                if not trace_id or trace_id in seen:
+                    continue
+                row = self._observation_row(o, trace_id, card_name, f)
+                if row is None:
+                    continue
+                attrs: Dict[str, Any] = {"name": card_name}
+                if o.get("sessionId"):
+                    attrs["hermes.session_id"] = o["sessionId"]
+                if o.get("type") == "TOOL":
+                    attrs["tool.name"] = name
+                if str(o.get("level") or "").upper() == "ERROR":
+                    attrs["status"] = "error"
+                seen.add(trace_id)
+                rows.append(row)
+                card_attrs[trace_id] = attrs
+            if len(rows) >= want or len(items) < _MAX_PAGE_SIZE:
+                break
+        page_out = trace_page(strictly_older_traces(rows, f), limit)
+        facts = self._v4_trace_facts(
+            [t["traceID"] for t in page_out["traces"]], int(start_s), end_s_eff
+        )
+        for t in page_out["traces"]:
+            attrs = dict(card_attrs.get(t["traceID"], {}))
+            tf = facts.get(t["traceID"]) or {}
+            attrs.update(self._facts_to_attrs(tf))
+            if tf.get("count"):
+                t["spanCount"] = int(tf["count"])
+            t["spanSets"][0]["spans"][0]["attributes"] = otlp_attrs_from_dict(attrs)
+        return page_out
+
+    def _get_trace_v4(self, trace_id: str) -> Dict[str, Any]:
+        """The trace's observations as spans. The v2 rows carry no input,
+        output or per-observation usage; the trace's totals from the metrics
+        API go on the root so the header can show them."""
+        observations: List[Dict[str, Any]] = []
+        for page in range(1, _MAX_PAGES + 1):
+            items = self._v4_list({"traceId": trace_id, "limit": _MAX_PAGE_SIZE, "page": page})
+            observations.extend(items)
+            if len(items) < _MAX_PAGE_SIZE:
+                break
+        if not observations:
+            raise BackendError(404, f"Trace {trace_id} not found in Langfuse", "not_found")
+        spans_otlp: List[Dict[str, Any]] = []
+        for obs in observations:
+            attrs: Dict[str, Any] = {"name": _span_name(obs)}
+            if isinstance(obs.get("type"), str):
+                attrs["langfuse.type"] = obs["type"]
+            if obs.get("type") == "TOOL" and obs.get("name"):
+                attrs["tool.name"] = obs["name"]
+            for key in ("sessionId", "userId", "environment", "version"):
+                if obs.get(key):
+                    attrs[f"langfuse.{key}"] = obs[key]
+            if obs.get("sessionId"):
+                attrs["hermes.session_id"] = obs["sessionId"]
+            start_ns = _iso_to_ns(obs.get("startTime"))
+            end_ns = _iso_to_ns(obs.get("endTime"))
+            spans_otlp.append(
+                {
+                    "traceId": trace_id,
+                    "spanId": obs.get("id"),
+                    "parentSpanId": obs.get("parentObservationId") or None,
+                    "name": _span_name(obs),
+                    "kind": _OTLP_INTERNAL,
+                    "startTimeUnixNano": str(start_ns) if start_ns else "0",
+                    "endTimeUnixNano": str(end_ns) if end_ns else "0",
+                    "attributes": otlp_attrs_from_dict(attrs),
+                    "status": otlp_status(
+                        "error" if obs.get("level") == "ERROR" else "ok",
+                        obs.get("statusMessage") or "",
+                    ),
+                }
+            )
+        span_ids = {sp["spanId"] for sp in spans_otlp}
+        roots = [
+            sp
+            for sp in spans_otlp
+            if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids
+        ]
+        starts = [
+            int(sp["startTimeUnixNano"]) for sp in spans_otlp if sp["startTimeUnixNano"] != "0"
+        ]
+        ends = [int(sp["endTimeUnixNano"]) for sp in spans_otlp if sp["endTimeUnixNano"] != "0"]
+        if len(roots) == 1:
+            root = roots[0]
+            root["parentSpanId"] = None
+            if starts and ends:
+                facts = self._v4_trace_facts(
+                    [trace_id], min(starts) // 1_000_000_000, max(ends) // 1_000_000_000
+                )
+                have = {a["key"] for a in root["attributes"]}
+                extra = {
+                    k: v
+                    for k, v in self._facts_to_attrs(facts.get(trace_id) or {}).items()
+                    if k not in have
+                }
+                root["attributes"].extend(otlp_attrs_from_dict(extra))
+        else:
+            synthetic_id = f"synthetic-{trace_id[:16]}"
+            spans_otlp.insert(
+                0,
+                {
+                    "traceId": trace_id,
+                    "spanId": synthetic_id,
+                    "parentSpanId": None,
+                    "name": "trace",
+                    "kind": _OTLP_INTERNAL,
+                    "startTimeUnixNano": str(min(starts)) if starts else "0",
+                    "endTimeUnixNano": str(max(ends)) if ends else "0",
+                    "attributes": otlp_attrs_from_dict(
+                        {
+                            "langfuse.trace_id": trace_id,
+                            "synthetic": True,
+                            "synthetic.reason": (
+                                "Langfuse holds no single root observation for this trace"
+                            ),
+                        }
+                    ),
+                    "status": otlp_status("ok"),
+                },
+            )
+            for sp in spans_otlp[1:]:
+                if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids:
+                    sp["parentSpanId"] = synthetic_id
+        return {
+            "batches": [
+                {
+                    "resource": {"attributes": otlp_attrs_from_dict({"service.name": "langfuse"})},
+                    "scopeSpans": [{"spans": spans_otlp}],
+                }
+            ],
+            "span_count": len(observations),
+            "truncated": False,
+        }
 
     def _list_params(
         self, f: StructuredFilter, start_s: int, end_s: int, limit: int, page: int = 1
@@ -247,6 +567,8 @@ class LangfuseAdapter(BackendAdapter):
         return [t for t in (raw_list if isinstance(raw_list, list) else []) if isinstance(t, dict)]
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
+        if self._api() == "v4":
+            return self._search_v4(f, start_s, end_s, limit)
         if not f.roots_only and f.name_prefix and not (f.raw or "").strip():
             return self._search_observations(f, start_s, end_s, limit)
         want = int(limit) + 1
@@ -466,6 +788,8 @@ class LangfuseAdapter(BackendAdapter):
         return f"{self.query_url}/project/{pid}/traces/{trace_id}" if pid else None
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
+        if self._api() == "v4":
+            return self._get_trace_v4(trace_id)
         url = f"{self.query_url}/api/public/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         if not isinstance(data, dict) or not data.get("id"):

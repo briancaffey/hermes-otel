@@ -219,7 +219,7 @@ def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str],
     (server- or client-side) and which it drops."""
     support = filter_support_of(adapter)
     per_request = getattr(adapter, "filter_support_for", None)
-    if callable(per_request):
+    if callable(per_request) and not isinstance(adapter, type):
         # An adapter may honour fewer fields for this particular filter (a
         # raw query that replaces the structured predicates, #296).
         override = per_request(f) or {}

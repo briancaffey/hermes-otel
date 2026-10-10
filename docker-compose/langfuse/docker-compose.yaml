@@ -18,8 +18,9 @@
 # UI:             http://localhost:3000
 #
 # Langfuse v3 requires a blob store for async event upload. We use the
-# bundled MinIO with a one-shot init container (minio-init) that creates
-# the bucket before langfuse-web starts.
+# bundled MinIO (Chainguard's image, as upstream's compose does since MinIO
+# stopped publishing to Docker Hub and quay.io) and create the bucket as a
+# directory before the server starts, so no init container is needed.
 
 services:
   langfuse-web:
@@ -31,8 +32,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_started
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     ports:
       - "3000:3000"
     environment:
@@ -82,8 +83,8 @@ services:
         condition: service_healthy
       clickhouse:
         condition: service_started
-      minio-init:
-        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
     environment:
       DATABASE_URL: postgresql://langfuse:langfuse@postgres:5432/langfuse
       CLICKHOUSE_URL: http://clickhouse:8123
@@ -138,30 +139,18 @@ services:
       - /var/log/clickhouse-server
 
   minio:
-    image: docker.io/minio/minio
-    command: server /data --console-address ":9001"
+    image: cgr.dev/chainguard/minio
+    entrypoint: sh
+    # create the 'langfuse' bucket before starting the service (upstream's trick)
+    command: -c 'mkdir -p /data/langfuse && minio server --address ":9000" --console-address ":9001" /data'
     environment:
       MINIO_ROOT_USER: minio
       MINIO_ROOT_PASSWORD: miniosecret
     healthcheck:
-      test: ["CMD", "curl", "-f", "http://localhost:9000/minio/health/live"]
+      test: ["CMD", "mc", "ready", "local"]
       interval: 3s
-      timeout: 3s
+      timeout: 5s
       retries: 20
+      start_period: 2s
     tmpfs:
       - /data
-
-  # One-shot: create the Langfuse event bucket so langfuse-web/worker can
-  # start cleanly. Exits successfully once the bucket exists.
-  minio-init:
-    image: docker.io/minio/mc
-    depends_on:
-      minio:
-        condition: service_healthy
-    entrypoint: >
-      /bin/sh -c "
-      mc alias set local http://minio:9000 minio miniosecret &&
-      (mc mb --ignore-existing local/langfuse) &&
-      echo 'bucket ready'
-      "
-    restart: "no"

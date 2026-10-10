@@ -1662,6 +1662,252 @@ class TestLangfuse:
         ]
         assert names == ["agent", "tool.terminal"]
 
+    # ── Langfuse v4 (events_only): v2 observations + v2 metrics (#246) ──
+    @staticmethod
+    def _v4_obs(tid, oid, typ, name, start, latency_s, parent=None, root=False, level="DEFAULT"):
+        return {
+            "id": oid,
+            "traceId": tid,
+            "parentObservationId": parent,
+            "isRootObservation": root,
+            "type": typ,
+            "name": name,
+            "startTime": start,
+            "endTime": start,
+            "latency": latency_s,
+            "level": level,
+            "statusMessage": None,
+            "sessionId": "sess-1",
+            "environment": "default",
+        }
+
+    def _v4_fake(self, monkeypatch, observations, metrics_rows):
+        seen = []
+
+        def fake(url, headers=None, timeout=None):
+            seen.append(url)
+            if "/api/public/traces" in url:
+                raise BackendError(
+                    404,
+                    "Backend returned 404: This endpoint is not available on deployments running in Langfuse v4 events_only mode.",
+                    "not_found",
+                )
+            if "/api/public/v2/metrics" in url:
+                return {"data": metrics_rows}
+            if "/api/public/v2/observations" in url:
+                q = dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query))
+                rows = observations
+                if q.get("traceId"):
+                    rows = [o for o in rows if o["traceId"] == q["traceId"]]
+                if q.get("type"):
+                    rows = [o for o in rows if o["type"] == q["type"]]
+                if q.get("sessionId"):
+                    rows = [o for o in rows if o["sessionId"] == q["sessionId"]]
+                if q.get("level"):
+                    rows = [o for o in rows if o["level"] == q["level"]]
+                return {"data": rows, "meta": {}}
+            if "/api/public/projects" in url:
+                return {"data": [{"id": "test-project"}]}
+            raise AssertionError(url)
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        monkeypatch.setattr(langfuse, "_API_CACHE", {})
+        return seen
+
+    def _v4_adapter(self):
+        return langfuse.LangfuseAdapter(
+            {
+                "type": "langfuse",
+                "endpoint": "http://localhost:3002",
+                "public_key": "pk",
+                "secret_key": "sk",
+            }
+        )
+
+    def test_v4_is_detected_once_and_cards_join_the_metrics(self, monkeypatch):
+        obs = [
+            self._v4_obs(
+                "t1", "r1", "AGENT", "agent", "2026-10-09T20:53:10.000Z", 19.094, root=True
+            ),
+            self._v4_obs(
+                "t1", "g1", "GENERATION", "api.m", "2026-10-09T20:53:11.000Z", 1.1, parent="r1"
+            ),
+            self._v4_obs(
+                "t1", "x1", "TOOL", "terminal", "2026-10-09T20:53:12.000Z", 1.0, parent="r1"
+            ),
+            self._v4_obs("t2", "r2", "AGENT", "agent", "2026-10-09T20:52:00.000Z", 2.0, root=True),
+            self._v4_obs(
+                "t2", "a2", "AGENT", "sub-agent", "2026-10-09T20:52:01.000Z", 1.0, parent="r2"
+            ),
+        ]
+        metrics = [
+            {
+                "traceId": "t1",
+                "providedModelName": "nvidia/m",
+                "sum_totalTokens": 14183,
+                "sum_inputTokens": 13985,
+                "sum_outputTokens": 198,
+                "sum_totalCost": 0,
+                "count_count": 3,
+            },
+            {
+                "traceId": "t1",
+                "providedModelName": None,
+                "sum_totalTokens": 0,
+                "sum_inputTokens": 0,
+                "sum_outputTokens": 0,
+                "sum_totalCost": 0,
+                "count_count": 2,
+            },
+            {
+                "traceId": "t2",
+                "providedModelName": None,
+                "sum_totalTokens": 0,
+                "sum_inputTokens": 0,
+                "sum_outputTokens": 0,
+                "sum_totalCost": 0.5,
+                "count_count": 2,
+            },
+        ]
+        seen = self._v4_fake(monkeypatch, obs, metrics)
+        a = self._v4_adapter()
+        out = a.search(StructuredFilter(), 1_790_000_000, 1_790_500_000, 10)
+        assert sum("/api/public/traces" in u for u in seen) == 1  # probed once
+        assert a.status()["query_api"] == "v4"
+        rows = {t["traceID"]: t for t in out["traces"]}
+        assert list(rows) == ["t1", "t2"]  # newest first, the nested AGENT is not a turn
+        t1 = rows["t1"]
+        attrs = {
+            x["key"]: list(x["value"].values())[0]
+            for x in t1["spanSets"][0]["spans"][0]["attributes"]
+        }
+        assert t1["durationMs"] == 19094 and t1["spanCount"] == 5
+        assert (
+            attrs["gen_ai.usage.total_tokens"] == "14183" and attrs["llm.model_name"] == "nvidia/m"
+        )
+        assert attrs["hermes.session_id"] == "sess-1"
+        t2_attrs = {
+            x["key"]: list(x["value"].values())[0]
+            for x in rows["t2"]["spanSets"][0]["spans"][0]["attributes"]
+        }
+        assert "gen_ai.usage.total_tokens" not in t2_attrs and t2_attrs["hermes.cost.usage"] == 0.5
+        # the list sent the root type and the window
+        q = dict(
+            _urlparse.parse_qsl(
+                _urlparse.urlparse([u for u in seen if "v2/observations" in u][0]).query
+            )
+        )
+        assert q["type"] == "AGENT" and q["fromStartTime"].endswith("Z") and q["limit"] == "100"
+        # per-request filter support: session is server-side on v4, model never
+        from hermes_otel.dashboard.backends.base import split_applied_filters
+
+        applied, ignored = split_applied_filters(
+            a, StructuredFilter(attr_equals={"hermes.session_id": "sess-1", "llm.model_name": "x"})
+        )
+        assert applied == ["session", "roots_only"] and ignored == ["model"]
+        # a second search makes no probe
+        a.search(StructuredFilter(attr_equals={"hermes.session_id": "sess-1"}), 0, 10, 5)
+        assert sum("/api/public/traces" in u for u in seen) == 1
+        assert "sessionId=sess-1" in seen[-2] or "sessionId=sess-1" in seen[-1]
+
+    def test_v4_kind_filter_lists_the_typed_observations_one_card_per_trace(self, monkeypatch):
+        obs = [
+            self._v4_obs(
+                "t1", "x2", "TOOL", "terminal", "2026-10-09T20:53:13.000Z", 1.0, parent="r1"
+            ),
+            self._v4_obs(
+                "t1", "x1", "TOOL", "terminal", "2026-10-09T20:53:12.000Z", 1.0, parent="r1"
+            ),
+            self._v4_obs(
+                "t3", "x9", "TOOL", "read_file", "2026-10-09T20:50:00.000Z", 1.0, parent="r3"
+            ),
+        ]
+        self._v4_fake(monkeypatch, obs, [])
+        out = self._v4_adapter().search(
+            StructuredFilter(name_prefix="tool.", roots_only=False),
+            1_790_000_000,
+            1_790_500_000,
+            10,
+        )
+        assert [(t["traceID"], t["rootTraceName"]) for t in out["traces"]] == [
+            ("t1", "tool.terminal"),
+            ("t3", "tool.read_file"),
+        ]
+
+    def test_v4_detail_keeps_the_real_root_and_carries_the_totals(self, monkeypatch):
+        obs = [
+            self._v4_obs("t1", "r1", "AGENT", "agent", "2026-10-09T20:53:10.000Z", 19.0, root=True),
+            self._v4_obs(
+                "t1", "g1", "GENERATION", "api.m", "2026-10-09T20:53:11.000Z", 1.1, parent="r1"
+            ),
+            self._v4_obs(
+                "t1",
+                "x1",
+                "TOOL",
+                "terminal",
+                "2026-10-09T20:53:12.000Z",
+                1.0,
+                parent="r1",
+                level="ERROR",
+            ),
+        ]
+        metrics = [
+            {
+                "traceId": "t1",
+                "providedModelName": "nvidia/m",
+                "sum_totalTokens": 100,
+                "sum_inputTokens": 90,
+                "sum_outputTokens": 10,
+                "sum_totalCost": 0,
+                "count_count": 3,
+            }
+        ]
+        self._v4_fake(monkeypatch, obs, metrics)
+        det = self._v4_adapter().get_trace("t1")
+        spans = det["batches"][0]["scopeSpans"][0]["spans"]
+        assert det["span_count"] == 3 and [sp["name"] for sp in spans] == [
+            "agent",
+            "api.m",
+            "tool.terminal",
+        ]
+        root = spans[0]
+        assert root["parentSpanId"] is None and not any(
+            a["key"] == "synthetic" for a in root["attributes"]
+        )
+        root_attrs = {a["key"]: list(a["value"].values())[0] for a in root["attributes"]}
+        assert (
+            root_attrs["gen_ai.usage.total_tokens"] == "100"
+            and root_attrs["llm.model_name"] == "nvidia/m"
+        )
+        assert spans[2]["status"]["code"] == 2 and spans[1]["parentSpanId"] == "r1"
+        with pytest.raises(BackendError) as exc:
+            self._v4_adapter().get_trace("missing")
+        assert exc.value.kind == "not_found"
+
+    def test_query_api_pin_skips_the_probe(self, monkeypatch):
+        calls = []
+
+        def fake(url, headers=None, timeout=None):
+            calls.append(url)
+            return {"data": []}
+
+        monkeypatch.setattr(langfuse, "http_get_json", fake)
+        monkeypatch.setattr(langfuse, "_API_CACHE", {})
+        a = langfuse.LangfuseAdapter(
+            {
+                "type": "langfuse",
+                "endpoint": "http://localhost:3002",
+                "public_key": "pk",
+                "secret_key": "sk",
+                "query_api": "v4",
+            }
+        )
+        a.search(StructuredFilter(), 0, 10, 5)
+        assert all(
+            "/api/public/v2/observations" in u or "/api/public/v2/metrics" in u for u in calls
+        )
+        assert a.status()["query_api"] == "v4"
+
     def test_page_size_is_capped_at_the_api_maximum(self, monkeypatch):
         urls = []
 
