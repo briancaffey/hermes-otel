@@ -17,15 +17,14 @@
 #   4318  OTLP HTTP receiver   ← plugin exports here
 #   9090  Prometheus UI         (Mimir speaks Prometheus under the hood)
 #
-# Conflicts: port 3000 collides with the phoenix stack. Bring up one or
-# the other, not both. Jaeger (4318) and SigNoz (4328/4318) also claim the
+# Conflicts: port 3000 collides with the langfuse and latitude stacks. Bring
+# up one or the other, not both. Jaeger (4318) and SigNoz (4328/4318) also claim the
 # OTLP HTTP port — LGTM wins on 4318 when running alongside them.
 #
 # Point the plugin at it:
 #
 #   backends:
-#     - type: otlp
-#       name: lgtm
+#     - type: lgtm
 #       endpoint: http://localhost:4318/v1/traces
 #
 #   capture_logs: true   # ship Python logs to Loki too

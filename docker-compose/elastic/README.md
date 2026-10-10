@@ -41,3 +41,20 @@ Notes:
 - Images total about 5.8 GB (Elasticsearch 2.0, Kibana 2.6, collector 1.2).
 - `dashboards.ndjson` is a Kibana saved-objects export (two data views plus a
   five-panel dashboard); `dashboard.png` is what it renders.
+
+## Quirks
+- `Authorization: ApiKey <key>`, not Bearer, and only on Elastic Cloud; the
+  local EDOT Collector takes none, so the plugin omits the header when no key
+  resolves and a key alone never opts in (there is no default host).
+- Routing is by **resource attribute** (`data_stream.dataset` /
+  `data_stream.namespace`, `[a-z0-9_.]` only, `.otel` appended by the
+  collector), so it reaches every configured backend and two `elastic` entries
+  with different values conflict at init.
+- Metrics are sent as **delta** (type preset): Elasticsearch does not handle
+  cumulative histograms.
+- The one silent failure in this directory: the exporter reports `SUCCESS`
+  while a red cluster indexes nothing. Watch `_cluster/health` and the
+  collector's `bulk indexer flush error` lines.
+- No dashboard adapter; Kibana is the UI.
+
+The cross-backend comparison is in [`../QUIRKS.md`](../QUIRKS.md).

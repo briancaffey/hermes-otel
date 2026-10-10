@@ -9,7 +9,8 @@ type: `jaeger`.
 
 ## Why pick it
 - One tiny container (about 25 MB resident), in-memory storage, no login.
-- The dashboard's Jaeger adapter reads it back (it does not read v2 yet, #245).
+- The dashboard's Jaeger adapter reads it back, and reads v2 through its
+  `/api/v3` routes too (probed once per URL, `query_api: v1|v3` pins it, #245).
 - Good for a plain span-tree look when you do not need LLM-specific panels.
 
 ## Start / stop

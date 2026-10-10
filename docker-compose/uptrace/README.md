@@ -104,3 +104,18 @@ in ~20s instead of ~60s and drops dependency on files we'd otherwise have
 to vendor from the upstream repo (Grafana datasources, Vector config,
 TLS keys). If you want the full experience, clone
 github.com/uptrace/uptrace and run their example directly.
+
+## Quirks
+- Auth is a **DSN** in the `uptrace-dsn` header, not a key; `type: uptrace`
+  takes `dsn` / `dsn_env` and never parses it.
+- Metrics are sent as **delta** (type preset, #233).
+- The dashboard needs a **user** token (`user_token_env`), not the project
+  token in the DSN, and speaks two API dialects (2.0 `/tracing/...` and 2.1
+  one route per signal), probed once per process (#243, #298).
+- Uptrace writes its own spans and log lines into the same project, so the
+  adapter pins queries to the agent's service name (`service_name: off` lifts it).
+- Counters are forward-filled and a histogram's `count($m)` is the number of
+  samples, not observations; the adapter computes increases and counts itself.
+- Host ports 5432, 8123 and 9000 collide with other Postgres / ClickHouse stacks.
+
+The cross-backend comparison is in [`../QUIRKS.md`](../QUIRKS.md).

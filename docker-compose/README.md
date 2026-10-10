@@ -7,6 +7,7 @@ per backend, each self-contained:
 ```
 docker-compose/
 ├── README.md                 ← this manual
+├── QUIRKS.md                 ← what each backend does differently, and the treatment
 ├── all.sh                    ← up / down / nuke / status / list across folders
 └── <backend>/
     ├── docker-compose.yaml   ← the stack; header comment = usage + ports + plugin snippet
@@ -157,14 +158,19 @@ dev servers love 3000 and 8000.
 
 ## Caveats you will hit
 
+The full per-category comparison (ingest paths, auth schemes, routing, signals
+and their failure modes, temporality, token maths, attribute limits, read APIs,
+footprint) is in [`QUIRKS.md`](QUIRKS.md). The ones below are the first you meet.
+
 - **Signals a backend silently drops.** Laminar answers 200 on `/v1/metrics`
   and stores nothing; set `metrics: false`. MLflow, Opik and Latitude have no
   metrics/logs routes at all (404) — the generic `otlp` type defaults both on,
   so turn them off per entry or the debug log fills with failures.
-- **Trace-level token totals double in Opik and LangWatch.** Both sum usage over
-  every span and the plugin's `agent` span carries the turn's roll-up, so a
-  turn with 24 299 prompt tokens shows 48 598 at trace level. Per-span numbers
-  are right. Worth settling before `type: opik` / `type: langwatch` exist.
+- **Trace-level token totals used to double in Opik and LangWatch.** Both sum
+  usage over every span and the plugin's `agent` span carries the turn's
+  roll-up. The `opik` and `langwatch` types send the root without that
+  roll-up (`root_usage: false` preset, #327; PR #353, open on 2026-10-10,
+  so 1.23 still doubles); set `root_usage: true` on the entry to keep it.
 - **Attribute truncation.** Tempo cuts attribute values at 2048 bytes by
   default (`tempo/tempo.yaml` raises it). Langtrace drops bool and double
   attributes outright.
