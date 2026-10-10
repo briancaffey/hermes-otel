@@ -58,9 +58,11 @@ UI at http://localhost:3000.
 
 The same file runs **Langfuse v4** with `LANGFUSE_VERSION=4 docker compose -f
 docker-compose/langfuse/docker-compose.yaml up -d` (use `down -v` when switching major versions). Export
-works unchanged on v4; its default `events_only` mode removes `/api/public/traces`,
-`/api/public/observations` and `/api/public/sessions` (all 404), so the dashboard's Langfuse
-adapter cannot read it back until it moves to `/api/public/v2/observations` (issue #246).
+works unchanged on v4. Its default `events_only` mode removes `/api/public/traces`,
+`/api/public/observations` and `/api/public/sessions` (all 404, #246); the dashboard's Langfuse
+adapter detects that once per query URL and reads v4 through `/api/public/v2/observations`
+and `/api/public/v2/metrics` instead (see [Dashboard](#dashboard)). Verified on 4.56.0 and on
+3.225.11 on 2026-10-09; `query_api: v3` or `v4` on the entry pins the API.
 
 ## Multi-backend config
 
@@ -96,7 +98,9 @@ Langfuse doesn't accept OTLP metrics — it's trace-only. The plugin auto-skips 
 
 ## Dashboard
 
-Langfuse traces have no root observation, so the bundled dashboard builds one top-level node per trace from the trace record to hold the tree together. That node carries `synthetic: true` and a `synthetic.reason`, so it is never mistaken for a span the agent emitted; the observations below it are Langfuse's own.
+A trace ingested through OTLP keeps its real root observation (the plugin's `agent` span); only when Langfuse holds no single parentless observation does the bundled dashboard build one top-level node from the trace record to hold the tree together. That node carries `synthetic: true` and a `synthetic.reason`, so it is never mistaken for a span the agent emitted.
+
+**Langfuse v4** (`events_only`, the default): the trace list is built from the AGENT root observations of `/api/public/v2/observations` (one per Hermes turn; session id, an `ERROR` level and the native `k=v` parameters filter server-side, name prefix and minimum duration on the rows), and each page's token totals, cost, observation count and model join from one `/api/public/v2/metrics` query grouped by trace. The detail is the trace's observations with their parent links and status; the v4 public API carries no input, output or per-observation usage, so the previews and per-span tokens are absent and the trace's totals sit on the root. Langfuse Cloud retires the v3 endpoints on 2026-11-16, so cloud projects read through this path from then on.
 
 ## Troubleshooting
 

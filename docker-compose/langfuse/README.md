@@ -3,7 +3,7 @@
 [Langfuse](https://langfuse.com) (MIT core, some EE folders) is the most
 polished LLM tracing UI of the self-hostable set: sessions, generations, cost
 attribution, prompt management. This stack is upstream's self-host compose
-(web, worker, Postgres, Redis, ClickHouse, MinIO) with headless init that seeds
+(web, worker, Postgres, Redis, ClickHouse, MinIO from Chainguard's image, since MinIO no longer publishes to Docker Hub or quay.io) with headless init that seeds
 an org, a project and API keys. Explicit plugin type: `langfuse`.
 
 ## Why pick it

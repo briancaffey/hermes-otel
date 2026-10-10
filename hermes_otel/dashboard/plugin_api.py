@@ -61,6 +61,7 @@ from hermes_otel.dashboard.backends import (  # noqa: E402  (after the import ch
     resolve_adapter,
 )
 from hermes_otel.dashboard.backends.base import (  # noqa: E402
+    FILTER_LEVELS,
     LOG_PAGE_SLACK,
     BackendError,
     LogFilter,
@@ -539,6 +540,19 @@ def status(
         }
         if cls is not None:
             out["filters"] = filter_support_of(cls)
+            per_request = getattr(inst, "filter_support_for", None)
+            if callable(per_request):
+                # What this entry honours may depend on the server it talks
+                # to (Langfuse v4 vs v3): the instance knows, the class does
+                # not. Probing failures leave the declaration as is.
+                try:
+                    override = per_request(StructuredFilter()) or {}
+                except Exception:
+                    override = {}
+                out["filters"] = {
+                    k: (override.get(k) if override.get(k) in FILTER_LEVELS else v)
+                    for k, v in out["filters"].items()
+                }
         return out
 
     backend_list = [_caps(b) for b in backends]

@@ -108,6 +108,7 @@ Shared fields (all optional unless noted):
 | `secret_key` | string | Langfuse secret key (inline; discouraged) |
 | `secret_key_env` | string | Env var name holding the secret key |
 | `base_url` | string | Langfuse base URL (e.g. `https://cloud.langfuse.com`); the plugin appends `/api/public/otel/v1/traces` |
+| `query_api` | string | Dashboard read path: `v3` (trace endpoints), `v4` (`events_only`: v2 observations + v2 metrics), or `auto` (default: probed once per query URL) |
 | `endpoint` | string | Override; skips `base_url` construction |
 
 Basic Auth header is constructed automatically from public + secret keys.
