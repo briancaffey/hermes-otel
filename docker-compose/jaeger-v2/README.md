@@ -6,8 +6,8 @@ chart deploys. Traces only, in-memory. Explicit plugin type: `jaeger`.
 
 ## Why pick it
 - Same UI as v1, current release line (2.21.0 pinned here).
-- Reproduces issue #245 on a laptop: the dashboard's Jaeger adapter speaks the
-  v1 API, which v2 does not serve.
+- Exercises the dashboard adapter's v3 path (#245): v2 serves only `/api/v3/...`,
+  which the adapter detects and speaks.
 - Can run next to the v1 stack (different host ports).
 
 ## Start / stop
@@ -33,6 +33,7 @@ curl -s 'http://localhost:16696/api/v3/traces?query.service_name=hermes-agent&qu
 ## Caveats
 - Verified 2026-10-05: `/api/services` and `/api/traces` are **404** on 16686;
   only `/api/v3/...` (gRPC-gateway of the v3 QueryService, OTLP-JSON shaped)
-  answers. The plugin dashboard cannot read v2 until #245 lands.
+  answers. The plugin dashboard reads v2 through that API since #245 landed
+  (probed once per query URL; `query_api: v3` pins it).
 - In-memory storage; traces are lost on restart.
 - Traces only.

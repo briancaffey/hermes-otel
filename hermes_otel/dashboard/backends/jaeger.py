@@ -1,4 +1,5 @@
-"""Jaeger adapter — classic HTTP query API at ``/api/traces``.
+"""Jaeger adapter — classic HTTP query API at ``/api/traces`` (Jaeger v1) and the
+v3 query API at ``/api/v3/...`` that Jaeger v2 serves on the same port (#245).
 
 Self-hosted Jaeger usually runs unauthenticated on localhost. Cloud
 offerings (Grafana Cloud Traces, etc.) put an API gateway in front;
@@ -17,8 +18,9 @@ plugin's own ``resource_attributes.service.name``, else ``hermes-agent``.
 
 from __future__ import annotations
 
+import datetime as _dt
 import json
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
 from . import default_service_name, register
@@ -88,6 +90,110 @@ def _int(value: Any) -> int:
             return 0
 
 
+# Jaeger v2 serves only ``/api/v3/...`` on the query port (the classic routes
+# are 404, #245). The API is probed once per query URL; ``query_api: v1|v3``
+# on the entry pins it.
+_API_PROBE_CACHE: Dict[str, str] = {}
+
+
+def _rfc3339(ns: int) -> str:
+    """``query.startTimeMin`` / ``Max`` take RFC 3339 timestamps."""
+    secs, rem = divmod(int(ns), 1_000_000_000)
+    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    return f"{base}.{rem:09d}Z"
+
+
+def _otlp_value(value: Any) -> Any:
+    """Unwrap an OTLP JSON ``AnyValue`` (``{"stringValue": ...}``)."""
+    if not isinstance(value, dict):
+        return value
+    for key in ("stringValue", "boolValue", "doubleValue"):
+        if key in value:
+            return value[key]
+    if "intValue" in value:
+        try:
+            return int(value["intValue"])
+        except (TypeError, ValueError):
+            return value["intValue"]
+    if "arrayValue" in value:
+        return [_otlp_value(v) for v in (value["arrayValue"] or {}).get("values") or []]
+    if "kvlistValue" in value:
+        return {
+            kv.get("key"): _otlp_value(kv.get("value"))
+            for kv in (value["kvlistValue"] or {}).get("values") or []
+        }
+    return value
+
+
+def _v3_traces_to_v1(data: Any) -> List[Dict[str, Any]]:
+    """Regroup a v3 answer (``result.resourceSpans``, OTLP JSON, hex ids) into
+    the classic ``data[]`` trace shape so one search path serves both APIs:
+    ``spans[].tags`` from the attributes plus ``otel.status_code`` /
+    ``otel.status_description`` / ``error`` from the status, ``CHILD_OF``
+    references from ``parentSpanId``, one process per resource."""
+    result = data.get("result") if isinstance(data, dict) else None
+    resource_spans = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
+    traces: Dict[str, Dict[str, Any]] = {}
+    for idx, rs in enumerate(resource_spans or []):
+        if not isinstance(rs, dict):
+            continue
+        res_attrs = {
+            a.get("key"): _otlp_value(a.get("value"))
+            for a in ((rs.get("resource") or {}).get("attributes") or [])
+            if isinstance(a, dict)
+        }
+        pid = f"p{idx}"
+        process = {"serviceName": str(res_attrs.get("service.name") or ""), "tags": []}
+        for scope in rs.get("scopeSpans") or []:
+            for sp in (scope or {}).get("spans") or []:
+                if not isinstance(sp, dict):
+                    continue
+                tid = str(sp.get("traceId") or "")
+                if not tid:
+                    continue
+                tags = [
+                    {"key": a.get("key"), "type": "string", "value": _otlp_value(a.get("value"))}
+                    for a in sp.get("attributes") or []
+                    if isinstance(a, dict) and a.get("key")
+                ]
+                status = sp.get("status") or {}
+                code = status.get("code")
+                if code == 2 or code == "STATUS_CODE_ERROR":
+                    tags.append({"key": "otel.status_code", "type": "string", "value": "ERROR"})
+                    tags.append({"key": "error", "type": "bool", "value": True})
+                elif code == 1 or code == "STATUS_CODE_OK":
+                    tags.append({"key": "otel.status_code", "type": "string", "value": "OK"})
+                if status.get("message"):
+                    tags.append(
+                        {
+                            "key": "otel.status_description",
+                            "type": "string",
+                            "value": str(status.get("message")),
+                        }
+                    )
+                start_ns = _int(sp.get("startTimeUnixNano"))
+                end_ns = _int(sp.get("endTimeUnixNano"))
+                parent = sp.get("parentSpanId") or None
+                v1_span = {
+                    "traceID": tid,
+                    "spanID": sp.get("spanId"),
+                    "operationName": sp.get("name") or "",
+                    "startTime": start_ns // 1000,
+                    "duration": max(0, end_ns - start_ns) // 1000,
+                    "references": (
+                        [{"refType": "CHILD_OF", "traceID": tid, "spanID": parent}]
+                        if parent
+                        else []
+                    ),
+                    "tags": tags,
+                    "processID": pid,
+                }
+                trace = traces.setdefault(tid, {"traceID": tid, "spans": [], "processes": {}})
+                trace["spans"].append(v1_span)
+                trace["processes"][pid] = process
+    return list(traces.values())
+
+
 @register
 class JaegerAdapter(BackendAdapter):
     handles = frozenset({"jaeger"})
@@ -118,12 +224,81 @@ class JaegerAdapter(BackendAdapter):
         # Optional bearer for cloud-hosted Jaeger / authenticated proxy.
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
         self.default_service = default_service_name(cfg)
+        # ``query_api``: ``v1`` (classic ``/api/traces``), ``v3`` (Jaeger v2's
+        # ``/api/v3``), or ``auto`` (probed once per query URL).
+        api = str(cfg.get("query_api") or "auto").strip().lower()
+        self.query_api = api if api in ("v1", "v3") else "auto"
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_url"] = self.query_url
         base["default_service"] = self.default_service
+        base["query_api"] = (
+            self.query_api
+            if self.query_api != "auto"
+            else _API_PROBE_CACHE.get(self.query_url, "auto")
+        )
         return base
+
+    def _api(self) -> str:
+        """``v1`` or ``v3``: the entry's pin, else probed once per query URL.
+        The classic ``/api/services`` wins when it answers (Jaeger 1.x, whose
+        ``all-in-one`` also exposes a ``/api/v3`` gateway with snake_case
+        parameters, verified 2026-10-09); only a server without it (Jaeger
+        v2, where the classic routes are 404) is spoken to as v3. An
+        unreachable or unauthenticated server is reported, not guessed."""
+        if self.query_api != "auto":
+            return self.query_api
+        cached = _API_PROBE_CACHE.get(self.query_url)
+        if cached:
+            return cached
+        api = "v1"
+        try:
+            data = http_get_json(
+                f"{self.query_url}/api/services", headers=self._headers(), timeout=10.0
+            )
+            classic = isinstance(data, dict) and "data" in data
+        except BackendError as exc:
+            if exc.kind != "not_found":
+                raise
+            classic = False
+        if not classic:
+            try:
+                data = http_get_json(
+                    f"{self.query_url}/api/v3/services", headers=self._headers(), timeout=10.0
+                )
+                if isinstance(data, dict) and "services" in data:
+                    api = "v3"
+            except BackendError as exc:
+                if exc.kind != "not_found":
+                    raise
+        _API_PROBE_CACHE[self.query_url] = api
+        return api
+
+    def _build_query_v3(
+        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
+    ) -> List[Tuple[str, str]]:
+        """The v3 grammar (verified on Jaeger 2.21.0): camelCase keys,
+        RFC 3339 bounds, ``searchDepth`` for the limit, ``durationMin`` as
+        ``<n>ms`` and the tag map JSON-encoded in ``query.attributes``
+        (``attributes[k]=v`` and ``attributes.k=v`` are silently ignored)."""
+        end_ns = int(end_s) * 1_000_000_000
+        if f.before_ns:
+            end_ns = min(end_ns, int(f.before_ns))
+        params: List[Tuple[str, str]] = [
+            ("query.serviceName", f.service or self.default_service),
+            ("query.startTimeMin", _rfc3339(int(start_s) * 1_000_000_000)),
+            ("query.startTimeMax", _rfc3339(end_ns)),
+            ("query.searchDepth", str(int(limit) + 1)),
+        ]
+        if f.name_regex:
+            params.append(("query.operationName", f.name_regex))
+        if f.min_duration_ms and f.min_duration_ms > 0:
+            params.append(("query.durationMin", f"{int(f.min_duration_ms)}ms"))
+        tags = self._tags(f)
+        if tags:
+            params.append(("query.attributes", json.dumps(tags)))
+        return params
 
     def _headers(self) -> Dict[str, str]:
         hdr: Dict[str, str] = {}
@@ -230,12 +405,23 @@ class JaegerAdapter(BackendAdapter):
     # ── Public API ───────────────────────────────────────────────────
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        params = self._build_query(f, start_s, end_s, limit)
-        url = f"{self.query_url}/api/traces?{_urlparse.urlencode(params)}"
-        data = http_get_json(url, headers=self._headers(), timeout=15.0)
-
-        items = data.get("data") if isinstance(data, dict) else None
-        items = items if isinstance(items, list) else []
+        if self._api() == "v3":
+            v3_params = self._build_query_v3(f, start_s, end_s, limit)
+            url = f"{self.query_url}/api/v3/traces?{_urlparse.urlencode(v3_params)}"
+            try:
+                data = http_get_json(url, headers=self._headers(), timeout=15.0)
+            except BackendError as exc:
+                # Jaeger v2 answers an empty search with 404 "No traces found".
+                if exc.kind != "not_found":
+                    raise
+                data = {}
+            items: List[Any] = _v3_traces_to_v1(data)
+        else:
+            params = self._build_query(f, start_s, end_s, limit)
+            url = f"{self.query_url}/api/traces?{_urlparse.urlencode(params)}"
+            data = http_get_json(url, headers=self._headers(), timeout=15.0)
+            raw_items = data.get("data") if isinstance(data, dict) else None
+            items = raw_items if isinstance(raw_items, list) else []
 
         traces: List[Dict[str, Any]] = []
         for t in items:
@@ -308,6 +494,26 @@ class JaegerAdapter(BackendAdapter):
         return f"{self.query_url}/trace/{trace_id}"
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
+        if self._api() == "v3":
+            # OTLP JSON with hex ids: the detail's own shape, passed through.
+            url = f"{self.query_url}/api/v3/traces/{trace_id}"
+            try:
+                data = http_get_json(url, headers=self._headers(), timeout=20.0)
+            except BackendError as exc:
+                if exc.kind == "not_found":
+                    raise BackendError(404, f"Trace {trace_id} not found in Jaeger", "not_found")
+                raise
+            result = data.get("result") if isinstance(data, dict) else None
+            batches = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
+            batches = [b for b in (batches or []) if isinstance(b, dict)]
+            n = sum(
+                len((scope or {}).get("spans") or [])
+                for b in batches
+                for scope in b.get("scopeSpans") or []
+            )
+            if n == 0:
+                raise BackendError(404, f"Trace {trace_id} not found in Jaeger", "not_found")
+            return {"batches": batches, "span_count": n, "truncated": False}
         url = f"{self.query_url}/api/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         items = data.get("data") if isinstance(data, dict) else None
