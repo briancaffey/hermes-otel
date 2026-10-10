@@ -34,7 +34,7 @@ curl -s http://localhost:6006/graphql -H 'content-type: application/json' \
 ```
 
 ## Caveats
-- Traces only. `/v1/metrics` answers 405, `/v1/logs` is not served; the
+- Traces only. `/v1/metrics` and `/v1/logs` both answer 405 (#160); the
   `phoenix` type turns both signals off for you.
 - `arizephoenix/phoenix:latest` is unpinned; the UI changes often.
 - Data lives in the container's SQLite unless you add a volume; `down -v` or

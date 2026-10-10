@@ -71,7 +71,7 @@ see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 
 **Conflicts to watch for:**
 
-- **Port 3000** collides with the phoenix stack. Run one or the other,
+- **Port 3000** collides with the langfuse and latitude stacks. Run one or the other,
   not both. If you want both, remap LGTM's Grafana:
   `ports: ["3001:3000", ...]`.
 - **Port 4318** collides with jaeger and the HTTP side of signoz. Pick
@@ -119,3 +119,18 @@ supervised by a small init:
 For production you'd split these across containers / hosts; for local
 development the single-container form keeps the setup friction at "one
 docker command."
+
+## Quirks
+- `type: lgtm` is the generic `otlp` type with a name; all three signals on.
+- Prometheus wants **cumulative** counters (delta is dropped unless the
+  collector runs `otlp-deltatocumulative`), renames instruments
+  (`hermes.token.usage` → `hermes_token_usage_total`, histograms grow
+  `_sum` / `_count` / `_bucket`), and treats a series as stale five minutes
+  after its last sample, so a one-shot turn vanishes from "now" queries.
+- The dashboard reads counters as raw samples rather than `increase()`, which
+  never counts a series' first sample (a one-shot run would read 0, #296).
+- Tempo truncates attribute values at 2048 bytes by default and drops the
+  leading zeros of trace ids (the adapter re-pads them to 32 hex digits).
+- Keeps 3000 and 4318, so it cannot run beside Langfuse / Latitude or Jaeger.
+
+The cross-backend comparison is in [`../QUIRKS.md`](../QUIRKS.md).

@@ -167,6 +167,10 @@ Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
+## What each backend does differently
+
+Every one of these speaks OTLP, and every one of them differs in where it listens, which header carries the key, which signals it stores, which metric temporality it wants, how it totals tokens over a trace, what it truncates, and which API gives the data back. [Backend quirks](/backends/quirks) is the per-category comparison and lists, per backend, what the plugin does about each difference. In the repo the same catalog is [`docker-compose/QUIRKS.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/QUIRKS.md).
+
 ## Running one locally
 
 Every self-hostable backend above, plus the candidates tracked in [#232](https://github.com/briancaffey/hermes-otel/issues/232), has its own folder under [`docker-compose/`](https://github.com/briancaffey/hermes-otel/tree/main/docker-compose) in the repo: `docker compose -f docker-compose/<name>/docker-compose.yaml up -d`, and `down -v` to remove it with its data. Each folder has a README (why pick it, logins, the `backends:` snippet, verification query, caveats), and [`docker-compose/README.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/README.md) is the manual: the comparison table, the port map, disk/memory budgets and the test loop.

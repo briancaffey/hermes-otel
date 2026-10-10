@@ -177,8 +177,9 @@ Restart `hermes gateway` and confirm:
 [hermes-otel] ✓ SigNoz at http://localhost:4328/v1/traces
 ```
 
-The plugin sends both traces and metrics to the SigNoz otel-collector over
-OTLP/HTTP. No ingestion key is required for the self-hosted stack.
+The plugin sends traces, metrics and logs to the SigNoz otel-collector over
+OTLP/HTTP (metrics as delta, the type's preset). No ingestion key is required
+for the self-hosted stack.
 
 ### SigNoz Cloud
 
@@ -204,3 +205,21 @@ trace and metric exporters.
   file for local use — do not expose this stack to the public internet.
 - `VERSION` and `OTELCOL_TAG` env vars pin the SigNoz image and collector
   versions (`v0.119.0` / `v0.144.2` at time of import).
+
+## Quirks
+- Nothing is accepted until an admin exists (see *First-run setup*): the
+  collector runs a `nop` pipeline and resets connections while every
+  healthcheck stays green.
+- Cloud auth is the `signoz-ingestion-key` header, not `Authorization`.
+- Metrics are sent as **delta** (type preset, #233); exponential histograms
+  are delta-only and self-hosted-only.
+- The query API sits on the UI port (3301) and **requires auth even on
+  localhost**; the OSS build has no PAT endpoint, so the dashboard's
+  `api_key_env` is a 30-minute session JWT, sent as both `SIGNOZ-API-KEY` and
+  `Authorization: Bearer`.
+- SigNoz's own `increase` over-counts one-shot turns that share a step, so the
+  adapter reads the latest cumulative value per process and takes the
+  differences itself (#297); events filter on the `event.name` attribute
+  because there is no column for the OTLP `event_name` field (#268).
+
+The cross-backend comparison is in [`../QUIRKS.md`](../QUIRKS.md).

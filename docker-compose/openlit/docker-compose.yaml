@@ -27,7 +27,7 @@
 #
 # Ports (host side remapped so the stack coexists with LGTM/Jaeger on 4318
 # and Langfuse/Grafana on 3000; override with the env vars):
-#   3010  OpenLIT UI (also proxies /v1/*)   OPENLIT_UI_PORT
+#   3010  OpenLIT UI (does not ingest)      OPENLIT_UI_PORT
 #   4337  OTLP/gRPC receiver                OPENLIT_OTLP_GRPC_PORT (not used by the plugin)
 #   4338  OTLP/HTTP receiver                OPENLIT_OTLP_HTTP_PORT  ← plugin exports here
 #

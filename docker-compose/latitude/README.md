@@ -9,11 +9,14 @@ web, api, ingest, workers, workflows, a one-shot migrations job, pgvector
 Postgres, ClickHouse, two Redis, Temporal, SeaweedFS. Issue #230. Plugin type:
 `latitude` (since hermes-otel 1.23).
 
-## Status: not yet run end to end
-`docker compose config` resolves all 13 services, but on 2026-10-05 the pull did
-not fit the Docker disk available: the application images are about **3 GB
-each** (web 3.17 GB, ingest 2.68 GB, api 2.71 GB, plus workers, workflows and
-migrations ≈ 15 GB). Budget that, plus several GB of RAM, before starting it.
+## Status: verified 2026-10-09
+One real `hermes` turn through `type: latitude` into this stack: two span
+batches `SUCCESS`, and Latitude's ClickHouse held 5 spans, 1 trace and 1
+session for the project named in the header (details on the docs page). The
+application images are about **3 GB each** (web 3.17 GB, ingest 2.68 GB, api
+2.71 GB, plus workers, workflows and migrations: about 18 GB in all, which did
+not fit the Docker disk on 2026-10-05). Budget that, plus several GB of RAM,
+before starting it.
 
 ## Start / stop
 ```bash
