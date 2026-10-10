@@ -19,18 +19,28 @@
 set -euo pipefail
 
 KIBANA="${1:-http://127.0.0.1:15602}"
+KIBANA="${KIBANA%/}"   # a trailing slash would double up in the URLs below
 HERE="$(cd "$(dirname "$0")/.." && pwd)"
 NDJSON="$HERE/docker-compose/elastic/dashboards.ndjson"
+
+# A newline or carriage return in a credential would end the curl config line
+# and let the rest be read as another directive: refuse it up front, in the
+# main shell (an `exit` inside a command substitution only ends the subshell).
+reject_newlines() {
+  local v
+  for v in "$@"; do
+    case "$v" in
+      *$'\n'* | *$'\r'*)
+        echo "error: credentials must not contain newlines" >&2
+        exit 1
+        ;;
+    esac
+  done
+}
 
 # Escape a value for use inside a double-quoted curl config string.
 cfg_escape() {
   local v="$1"
-  case "$v" in
-    *$'\n'* | *$'\r'*)
-      echo "error: credentials must not contain newlines" >&2
-      exit 1
-      ;;
-  esac
   v="${v//\\/\\\\}"
   v="${v//\"/\\\"}"
   printf '%s' "$v"
@@ -39,17 +49,14 @@ cfg_escape() {
 # curl config fed on stdin; stays empty for the unauthenticated local stack.
 AUTH_CFG=""
 if [[ -n "${KIBANA_API_KEY:-}" ]]; then
+  reject_newlines "$KIBANA_API_KEY"
   AUTH_CFG="header = \"Authorization: ApiKey $(cfg_escape "$KIBANA_API_KEY")\""
 elif [[ -n "${KIBANA_USERNAME:-}" ]]; then
   if [[ -z "${KIBANA_PASSWORD:-}" ]]; then
     echo "error: KIBANA_USERNAME is set but KIBANA_PASSWORD is empty" >&2
     exit 1
   fi
-  if [[ "$KIBANA_USERNAME" == *$'\n'* || "$KIBANA_USERNAME" == *$'\r'* \
-     || "$KIBANA_PASSWORD" == *$'\n'* || "$KIBANA_PASSWORD" == *$'\r'* ]]; then
-    echo "error: credentials must not contain newlines" >&2
-    exit 1
-  fi
+  reject_newlines "$KIBANA_USERNAME" "$KIBANA_PASSWORD"
   AUTH_CFG="user = \"$(cfg_escape "$KIBANA_USERNAME"):$(cfg_escape "$KIBANA_PASSWORD")\""
 fi
 

@@ -21,14 +21,19 @@ PLUGIN_CSS = ROOT / "hermes_otel" / "dashboard" / "dist" / "style.css"
 _MAP_VALUE = re.compile(r'"((?:text|bg|border)-[a-z]+(?:-[a-z]+)*(?:-\d{2,3})?(?:/\d+)?)"')
 
 
+_CLASS_SITES = re.compile(r"className\s*[=:]\s*")
+
+
 def _class_attr_literals(text: str):
-    """Yield the string literals of every ``className=`` attribute."""
+    """Yield the string literals of every ``className=`` attribute, and of a
+    ``className:`` property (the ``React.createElement`` form ``sdk.ts`` uses
+    for the host-component wrappers, #289)."""
     i = 0
     while True:
-        i = text.find("className=", i)
-        if i < 0:
+        m = _CLASS_SITES.search(text, i)
+        if m is None:
             return
-        i += len("className=")
+        i = m.end()
         if text[i] == '"':
             j = text.index('"', i + 1)
             yield text[i + 1 : j]

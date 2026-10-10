@@ -52,7 +52,7 @@ uv run --extra dev python scripts/verify_elastic.py   # end-to-end smoke: export
 
 Give the single node a minute after `up -d` before the first export: the first bulk request has to create the index templates and data streams, and on a busy laptop that can exceed the collector's request timeout, in which case the collector logs `bulk indexer flush error: context deadline exceeded` and drops the batch. The bundled `otel.yaml` sets a 90 s request timeout with retries and a queue for exactly this, and the compose file turns the disk watermark off so a Docker VM above 90 % full does not leave the cluster red with unassigned shards.
 
-The bundled dashboard (`docker-compose/elastic/dashboards.ndjson`) ships five panels — top span names, spans by operation, token usage by token type (sum of `hermes.token.usage`), tool-call duration by tool (median, as a bar chart), and messages per model (sum of `hermes.model.usage`) — rendered with real session data in [`dashboard.png`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/elastic/dashboard.png). Kibana listens on `http://127.0.0.1:15602` (security disabled).
+The bundled dashboard (`docker-compose/elastic/dashboards.ndjson`) ships five panels — top span names, spans by operation, token usage by token type (sum of `hermes.token.usage`), tool-call duration by tool (the median per tool as a table, computed with ES|QL from the `tool.*` spans' `duration`, which is a plain long on both the EDOT and the managed-OTLP mappings), and messages per model (sum of `hermes.model.usage`) — rendered with the sample session that `scripts/verify_elastic.py` exports in [`dashboard.png`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/elastic/dashboard.png). Kibana listens on `http://127.0.0.1:15602` (security disabled).
 
 ### Importing into a security-enabled Kibana
 
@@ -69,7 +69,7 @@ export KIBANA_USERNAME=elastic KIBANA_PASSWORD="<password>"
 ./scripts/import_elastic_dashboard.sh https://<your-kibana>:5601
 ```
 
-`KIBANA_API_KEY` takes precedence when both are set; with neither set the request is sent unauthenticated, which keeps the no-login compose path working.
+`KIBANA_API_KEY` takes precedence when both are set; with neither set the request is sent unauthenticated, which keeps the no-login compose path working. Import the file once: it is sent with `createNewCopies=true`, and a second import creates a copy whose panels no longer resolve their data views (every panel shows an error badge). To reimport, delete the `hermes-otel` dashboard and its two data views in Kibana first.
 
 The credentials are passed to `curl` on stdin rather than on its command line, so they do not show up in `ps` output. The script exits non-zero if Kibana is unreachable, answers with a non-200 status, or answers 200 with `"success": false` (it then lists the object ids that failed to import); on success it prints the `successCount`.
 
