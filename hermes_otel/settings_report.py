@@ -462,16 +462,45 @@ def _display_value(
 
 
 def _config_path_source(path: Optional[Path]) -> str:
-    """Which rule of :func:`resolve_config_path` picked ``path``."""
+    """Which rule of :func:`resolve_config_path` picked ``path``.
+
+    Judged against the home in force for this report (a profile's own under
+    a multiplexed gateway or a ``?profile=`` dashboard request, #286), not
+    only the module constants, which are computed once from the process home.
+    """
     if path is None:
         return "none"
     if os.environ.get(pc.CONFIG_PATH_ENV, "").strip():
         return "env"
-    if path == pc.DURABLE_CONFIG_PATH:
+    home = hermes_home()
+    if path in (pc.DURABLE_CONFIG_PATH, home / "hermes_otel.yaml"):
         return "durable"
-    if path == pc.DEFAULT_CONFIG_PATH:
+    if path in (pc.DEFAULT_CONFIG_PATH, home / "plugins" / "hermes_otel" / "config.yaml"):
         return "legacy"
     return "explicit"
+
+
+def _deprecated_keys(data: Any) -> List[Dict[str, Any]]:
+    """Top-level keys the file spells the old, flat way (``capture_logs``,
+    ``log_level`` …) when the ``logs:`` block is the preferred spelling (#266).
+    They keep working; the Settings tab marks them so a user can migrate."""
+    if not isinstance(data, dict):
+        return []
+    flat = set()
+
+    def walk(node: Any) -> None:
+        for v in node.values():
+            if isinstance(v, dict):
+                walk(v)
+            else:
+                flat.add(v)
+
+    walk(pc._LOGS_BLOCK)
+    return [
+        {"key": k, "note": "flat spelling; the logs: block is the preferred form"}
+        for k in data
+        if isinstance(k, str) and k in flat
+    ]
 
 
 def _plugin_version() -> Optional[str]:
@@ -960,9 +989,8 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     """Everything the Settings tab shows, as one JSON-serialisable dict."""
     path = pc.resolve_config_path()
     exists = bool(path and path.exists())
-    yaml_data = (
-        pc.normalize_yaml_data(pc._load_yaml(path), notice=False) if path is not None else {}
-    )
+    raw_yaml = pc._load_yaml(path) if path is not None else {}
+    yaml_data = pc.normalize_yaml_data(raw_yaml, notice=False) if path is not None else {}
     reports, effective = field_reports(yaml_data, reveal=reveal)
 
     raw_text: Optional[str] = None
@@ -981,6 +1009,9 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     unknown = [
         {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc._ALLOWED_KEYS
     ]
+    # The flat spellings of the ``logs:`` block are read from the file as
+    # written (normalisation folds the block onto them).
+    deprecated = _deprecated_keys(raw_yaml)
     # Counts are of values written somewhere; a field derived from another
     # (content_capture and its legacy flags) is not counted twice.
     written = [r for r in reports if not r.get("derived_from")]
@@ -1004,6 +1035,7 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
             "durable_path": str(pc.DURABLE_CONFIG_PATH),
             "legacy_path": str(pc.DEFAULT_CONFIG_PATH),
             "unknown_keys": unknown,
+            "deprecated_keys": deprecated,
         },
         "counts": counts,
         "groups": [g for g, _ in FIELD_GROUPS],
@@ -1022,7 +1054,9 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
             "note": (
                 "Resolved by the dashboard process from the same file and environment "
                 "the gateway and CLI read at their start. A gateway started before an "
-                "edit keeps its old values until it restarts."
+                "edit keeps its old values until it restarts, and with plugins.isolation: "
+                "host the dashboard router runs in a plugin-host process whose environment "
+                "can differ from the gateway's."
             ),
         },
         "capture_summary": capture_summary(effective),

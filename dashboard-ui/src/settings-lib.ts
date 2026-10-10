@@ -112,6 +112,7 @@ export type SettingsReport = {
     durable_path: string;
     legacy_path: string;
     unknown_keys: { key: string; note: string | null }[];
+    deprecated_keys?: { key: string; note: string | null }[];
   };
   counts: { env: number; file: number; default: number; changed: number };
   groups: string[];

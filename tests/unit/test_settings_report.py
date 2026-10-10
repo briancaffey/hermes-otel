@@ -483,3 +483,39 @@ class TestMaskingGaps:
         assert backends["openobserve"]["headers"] == {"x-honeycomb-team": MASK, "x-team": "blue"}
         revealed = {b["name"]: b for b in build_settings_report(reveal=True)["fields"][-1]["value"]}
         assert revealed["openobserve"]["headers"]["x-honeycomb-team"] == "hcaik"
+
+
+class TestProfileAwareReport:
+    """#286: a profile's own file is 'durable', and flat log spellings are marked."""
+
+    def test_path_source_is_judged_against_the_home_in_force(self, tmp_path, monkeypatch):
+        pytest.importorskip("yaml")
+        profile = tmp_path / "profiles" / "minimal"
+        profile.mkdir(parents=True)
+        (profile / "hermes_otel.yaml").write_text("project_name: p\n", encoding="utf-8")
+        monkeypatch.setenv("HERMES_HOME", str(profile))
+        monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
+        # the module constants still point at another home (computed at import)
+        monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", tmp_path / "elsewhere" / "hermes_otel.yaml")
+        monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", tmp_path / "elsewhere" / "config.yaml")
+        monkeypatch.setattr(pc, "resolve_config_path", lambda: profile / "hermes_otel.yaml")
+        from hermes_otel.settings_report import _config_path_source
+
+        assert _config_path_source(profile / "hermes_otel.yaml") == "durable"
+        assert _config_path_source(profile / "plugins" / "hermes_otel" / "config.yaml") == "legacy"
+        assert _config_path_source(tmp_path / "somewhere.yaml") == "explicit"
+
+    def test_flat_log_spellings_are_listed_as_deprecated(self, home):
+        (home / "hermes_otel.yaml").write_text(
+            "capture_logs: true\nlog_level: INFO\nproject_name: p\n", encoding="utf-8"
+        )
+        rep = build_settings_report()
+        assert [d["key"] for d in rep["config"]["deprecated_keys"]] == ["capture_logs", "log_level"]
+        assert "logs: block" in rep["config"]["deprecated_keys"][0]["note"]
+        # the block spelling is the preferred form: nothing to mark
+        (home / "hermes_otel.yaml").write_text(
+            "logs:\n  capture: true\n  level: INFO\nproject_name: p\n", encoding="utf-8"
+        )
+        rep = build_settings_report()
+        assert rep["config"]["deprecated_keys"] == []
+        assert rep["process"]["note"].startswith("Resolved by the dashboard process")

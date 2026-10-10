@@ -290,6 +290,22 @@ function ConfigFileLine({ r }: { r: SettingsReport }) {
           ))}
         </div>
       ) : null}
+      {c.deprecated_keys && c.deprecated_keys.length ? (
+        <div className="mt-1 text-muted-foreground">
+          <span className="otel-warn">deprecated spelling:</span>{" "}
+          {c.deprecated_keys.map((u, i) => (
+            <span key={u.key}>
+              {i ? ", " : ""}
+              <span className="font-mono">{u.key}</span>
+            </span>
+          ))}{" "}
+          (the <span className="font-mono">logs:</span> block is the preferred form; see the{" "}
+          <a className="otel-link" href={`${DOCS_BASE}/configuration/logs#configuration`} target="_blank" rel="noreferrer">
+            logs configuration
+          </a>
+          )
+        </div>
+      ) : null}
     </div>
   );
 }
