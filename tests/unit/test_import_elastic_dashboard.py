@@ -139,8 +139,16 @@ class TestAuth:
             {"KIBANA_USERNAME": "eve\nil", "KIBANA_PASSWORD": "pw-secret"},
             {"KIBANA_USERNAME": "elastic", "KIBANA_PASSWORD": "pw\nsecret"},
             {"KIBANA_USERNAME": "elastic\r", "KIBANA_PASSWORD": "pw-secret"},
+            {"KIBANA_API_KEY": "key\nwith-newline"},
+            {"KIBANA_API_KEY": "key\rwith-cr"},
         ],
-        ids=["username_newline", "password_newline", "username_carriage_return"],
+        ids=[
+            "username_newline",
+            "password_newline",
+            "username_carriage_return",
+            "api_key_newline",
+            "api_key_carriage_return",
+        ],
     )
     def test_newline_in_credentials_rejected_before_request(self, recorder, env_extra):
         rec, url = recorder
@@ -233,6 +241,15 @@ class TestTransportFailure:
         result = _run(url, {"KIBANA_API_KEY": "sekret-key"})
         assert result.returncode == 1
         assert "sekret-key" not in result.stdout + result.stderr
+
+
+class TestKibanaUrl:
+    def test_trailing_slash_is_tolerated(self, recorder):
+        rec, url = recorder
+        result = _run(url + "/", {})
+        assert result.returncode == 0, result.stderr
+        assert rec.requests == 1
+        assert f"Open {url}/app/dashboards" in result.stdout  # no doubled slash
 
 
 class TestImportBody:
@@ -341,14 +358,18 @@ class TestArtifact:
         """A Lens datatable probes every column for click-to-filter on load. The
         `hermes.tool.duration` ES histogram field is not filterable, so a datatable
         column over it throws a console TypeError (`field can not be used for
-        filtering`). It must be charted with an XY visualization instead."""
+        filtering`). It must be read through ES|QL or an XY chart instead, never a
+        form-based datatable column; every histogram field the stack maps gets the
+        same treatment (`hermes.session.duration` is one too on EDOT 9.5.5)."""
         path = os.path.join(REPO, "docker-compose", "elastic", "dashboards.ndjson")
         objs = [json.loads(line) for line in open(path)]
         metrics = next(o for o in objs if o["id"] == "hermes-otel-metrics")
         fields = {f["name"]: f for f in json.loads(metrics["attributes"]["fields"])}
         histogram_fields = {n for n, f in fields.items() if f["type"] == "histogram"}
-        assert "hermes.tool.duration" in histogram_fields
-        assert not fields["hermes.tool.duration"]["searchable"]
+        assert {"hermes.tool.duration", "hermes.session.duration"} <= histogram_fields
+        for name in histogram_fields:
+            assert fields[name]["esTypes"] == ["histogram"], name
+            assert not fields[name]["searchable"], name
 
         dash = next(o for o in objs if o["type"] == "dashboard")
         offenders = []
