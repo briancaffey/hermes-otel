@@ -1,0 +1,81 @@
+{
+ "source": "lgtm-local",
+ "token": "V261010-lgtm",
+ "traces": {
+  "hero-research": "ddca10f94a46bbb2a22262b1eb29ee37",
+  "multi-tool": "7e4a4164923705f9db0145072ac08e46",
+  "missing-file": "e3a44fc99c01e8a86bc0a28d09f7c194",
+  "web-fetch": "887fc19e5c076297eb87b6609e61bca1",
+  "skill-load": "74182f32549206371426040ab4264420",
+  "slow-tools": "a8f71dd843ae49f9827305e90eb7886e",
+  "file-roundtrip": "4bab7533891c915afb174721955afe64",
+  "shell-echo": "8d0afa31ae1c7f76683724ccb283984f",
+  "no-tools": "d9314b4f83ae84a98c38502ccf4320e7",
+  "long-output": "cdd84f0fd5be77e4359738dccf2f42e8",
+  "shell-nonzero": "1bbdf048325c7c9f1f0bc2bf89832577"
+ },
+ "captured_at": "2026-10-09T23:11:47",
+ "status": {
+  "type": "lgtm",
+  "metrics": true,
+  "logs": true,
+  "query_url": "http://localhost:3200"
+ },
+ "backend_links": {
+  "hero-research": {
+   "trace_id": "ddca10f94a46bbb2a22262b1eb29ee37",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22ddca10f94a46bbb2a22262b1eb29ee37%22%7D%5D%7D%7D",
+   "span_count": 14
+  },
+  "multi-tool": {
+   "trace_id": "7e4a4164923705f9db0145072ac08e46",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%227e4a4164923705f9db0145072ac08e46%22%7D%5D%7D%7D",
+   "span_count": 9
+  },
+  "missing-file": {
+   "trace_id": "e3a44fc99c01e8a86bc0a28d09f7c194",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22e3a44fc99c01e8a86bc0a28d09f7c194%22%7D%5D%7D%7D",
+   "span_count": 5
+  },
+  "web-fetch": {
+   "trace_id": "887fc19e5c076297eb87b6609e61bca1",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22887fc19e5c076297eb87b6609e61bca1%22%7D%5D%7D%7D",
+   "span_count": 5
+  },
+  "skill-load": {
+   "trace_id": "74182f32549206371426040ab4264420",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%2274182f32549206371426040ab4264420%22%7D%5D%7D%7D",
+   "span_count": 6
+  },
+  "slow-tools": {
+   "trace_id": "a8f71dd843ae49f9827305e90eb7886e",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22a8f71dd843ae49f9827305e90eb7886e%22%7D%5D%7D%7D",
+   "span_count": 7
+  },
+  "file-roundtrip": {
+   "trace_id": "4bab7533891c915afb174721955afe64",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%224bab7533891c915afb174721955afe64%22%7D%5D%7D%7D",
+   "span_count": 7
+  },
+  "shell-echo": {
+   "trace_id": "8d0afa31ae1c7f76683724ccb283984f",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%228d0afa31ae1c7f76683724ccb283984f%22%7D%5D%7D%7D",
+   "span_count": 5
+  },
+  "no-tools": {
+   "trace_id": "d9314b4f83ae84a98c38502ccf4320e7",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22d9314b4f83ae84a98c38502ccf4320e7%22%7D%5D%7D%7D",
+   "span_count": 3
+  },
+  "long-output": {
+   "trace_id": "cdd84f0fd5be77e4359738dccf2f42e8",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%22cdd84f0fd5be77e4359738dccf2f42e8%22%7D%5D%7D%7D",
+   "span_count": 5
+  },
+  "shell-nonzero": {
+   "trace_id": "1bbdf048325c7c9f1f0bc2bf89832577",
+   "ui_url": "http://localhost:3001/explore?schemaVersion=1&panes=%7B%22a%22%3A%7B%22datasource%22%3A%22tempo%22%2C%22queries%22%3A%5B%7B%22refId%22%3A%22A%22%2C%22datasource%22%3A%7B%22type%22%3A%22tempo%22%2C%22uid%22%3A%22tempo%22%7D%2C%22queryType%22%3A%22traceql%22%2C%22query%22%3A%221bbdf048325c7c9f1f0bc2bf89832577%22%7D%5D%7D%7D",
+   "span_count": 5
+  }
+ }
+}

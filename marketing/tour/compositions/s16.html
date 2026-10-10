@@ -1,0 +1,83 @@
+<template>
+<div data-composition-id="s16" data-width="1920" data-height="1080" data-duration="12.56">
+<style>
+[data-composition-id="s16"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s16"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s16"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s16"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s16"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s16"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s16"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s16"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s16"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s16"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s16"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s16"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s16"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s16"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s16"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s16"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s16"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s16"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s16"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s16"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s16"] .badges { display:flex; gap:12px; }
+[data-composition-id="s16"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s16"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s16"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s16"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s16"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s16"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s16"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s16"] .code .c { color:#8a8a92; } [data-composition-id="s16"] .code .k { color:#3d8bff; } [data-composition-id="s16"] .code .s { color:#ffb300; } [data-composition-id="s16"] .code .p { color:#34d399; }
+[data-composition-id="s16"] .line { display:block; }
+
+[data-composition-id="s16"] .glow { left:300px; top:-800px; }
+[data-composition-id="s16"] .left { position:absolute; left:96px; top:140px; width:980px; }
+[data-composition-id="s16"] .lock { position:absolute; left:96px; top:560px; opacity:0; }
+[data-composition-id="s16"] .title { font-weight:900; font-size:150px; line-height:.92; letter-spacing:-.04em; }
+[data-composition-id="s16"] .title span { color:#3d8bff; }
+[data-composition-id="s16"] .tag { font-weight:900; font-size:60px; letter-spacing:-.02em; margin-top:18px; color:#ffb300; }
+[data-composition-id="s16"] .url { position:absolute; left:96px; bottom:120px; font-family:"IBM Plex Mono", monospace; font-size:28px; color:#c9c9cf; letter-spacing:.04em; opacity:0; }
+</style>
+<div id="s16-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div><div class="glow" data-layout-allow-overflow></div>
+<div class="left" id="s16-left">
+  <div class="kicker">install</div>
+  <div class="code" id="s16-code" style="margin-top:20px"><span class="line"><span class="c">$</span> hermes plugins install hermes-otel</span><span class="line"> </span><span class="line"><span class="c"># ~/.hermes/hermes_otel.yaml</span></span><span class="line"><span class="k">backends</span>:</span><span class="line">  - <span class="k">type</span>: <span class="p">phoenix</span></span><span class="line">    <span class="k">endpoint</span>: <span class="s">http://localhost:6006/v1/traces</span></span><span class="line"> </span><span class="line"><span class="c">$</span> hermes gateway restart</span></div>
+</div>
+<div class="lock" id="s16-lock"><div class="title">HERMES <span>OTEL</span></div><div class="tag" id="s16-tag">See every span.</div></div>
+<div class="url" id="s16-url">briancaffey.github.io/hermes-otel · github.com/briancaffey/hermes-otel</div>
+<div class="meta"><span>hermes-otel · tour</span><span>install</span><span>16 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s16-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+
+  tl.from("#s16-code .line", {opacity:0, x:-12, duration:0.35, stagger:0.14, ease:"power3.out"}, 1.10);
+  tl.to("#s16-left", {y:-60, duration:0.6, ease:"power3.inOut"}, 6.11);
+  tl.to("#s16-lock", {opacity:1, duration:0.6, ease:"expo.out"}, 6.51);
+  tl.from("#s16-lock", {y:40, duration:0.7, ease:"expo.out"}, 6.51);
+  tl.from("#s16-tag", {opacity:0, x:-20, duration:0.5, ease:"power3.out"}, 10.05);
+  tl.to("#s16-url", {opacity:1, duration:0.5}, 10.65);
+
+  tl.to("#s16-wrap", {opacity:0, duration:0.9, ease:"power2.in"}, 11.66);
+  window.__timelines["s16"] = tl;
+})();
+</script>
+</div>
+</template>

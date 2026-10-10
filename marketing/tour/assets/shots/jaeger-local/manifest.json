@@ -1,0 +1,81 @@
+{
+ "source": "jaeger-local",
+ "token": "V261010-jaeger",
+ "traces": {
+  "hero-research": "4765e51b7d65e234b6546e9bb6d8a23e",
+  "multi-tool": "7b16ea8686acd7b25ef01538dfce6750",
+  "missing-file": "1545e0d8b123ce61ef4d0281e5637625",
+  "web-fetch": "740e73bed57ec2fd7e8390c9e98792d4",
+  "skill-load": "eb6d3faa32b297eed9b8e94d2f7c7abe",
+  "slow-tools": "53bccf011f793fedeeb6d9a648e6c873",
+  "file-roundtrip": "33304586de4502e1ffc0283680fa25d5",
+  "shell-echo": "b440102cf92afd06742d00271442e586",
+  "no-tools": "44459bea869c5d141616bdabda0f7e36",
+  "long-output": "cb24930869b0167d0b5b1650b901f8b4",
+  "shell-nonzero": "d26ad2918ae5ddb2c0a35b8e800efebb"
+ },
+ "captured_at": "2026-10-10T00:03:41",
+ "status": {
+  "type": "jaeger",
+  "metrics": false,
+  "logs": false,
+  "query_url": "http://localhost:16686"
+ },
+ "backend_links": {
+  "hero-research": {
+   "trace_id": "4765e51b7d65e234b6546e9bb6d8a23e",
+   "ui_url": "http://localhost:16686/trace/4765e51b7d65e234b6546e9bb6d8a23e",
+   "span_count": 14
+  },
+  "multi-tool": {
+   "trace_id": "7b16ea8686acd7b25ef01538dfce6750",
+   "ui_url": "http://localhost:16686/trace/7b16ea8686acd7b25ef01538dfce6750",
+   "span_count": 9
+  },
+  "missing-file": {
+   "trace_id": "1545e0d8b123ce61ef4d0281e5637625",
+   "ui_url": "http://localhost:16686/trace/1545e0d8b123ce61ef4d0281e5637625",
+   "span_count": 5
+  },
+  "web-fetch": {
+   "trace_id": "740e73bed57ec2fd7e8390c9e98792d4",
+   "ui_url": "http://localhost:16686/trace/740e73bed57ec2fd7e8390c9e98792d4",
+   "span_count": 5
+  },
+  "skill-load": {
+   "trace_id": "eb6d3faa32b297eed9b8e94d2f7c7abe",
+   "ui_url": "http://localhost:16686/trace/eb6d3faa32b297eed9b8e94d2f7c7abe",
+   "span_count": 6
+  },
+  "slow-tools": {
+   "trace_id": "53bccf011f793fedeeb6d9a648e6c873",
+   "ui_url": "http://localhost:16686/trace/53bccf011f793fedeeb6d9a648e6c873",
+   "span_count": 7
+  },
+  "file-roundtrip": {
+   "trace_id": "33304586de4502e1ffc0283680fa25d5",
+   "ui_url": "http://localhost:16686/trace/33304586de4502e1ffc0283680fa25d5",
+   "span_count": 7
+  },
+  "shell-echo": {
+   "trace_id": "b440102cf92afd06742d00271442e586",
+   "ui_url": "http://localhost:16686/trace/b440102cf92afd06742d00271442e586",
+   "span_count": 5
+  },
+  "no-tools": {
+   "trace_id": "44459bea869c5d141616bdabda0f7e36",
+   "ui_url": "http://localhost:16686/trace/44459bea869c5d141616bdabda0f7e36",
+   "span_count": 3
+  },
+  "long-output": {
+   "trace_id": "cb24930869b0167d0b5b1650b901f8b4",
+   "ui_url": "http://localhost:16686/trace/cb24930869b0167d0b5b1650b901f8b4",
+   "span_count": 5
+  },
+  "shell-nonzero": {
+   "trace_id": "d26ad2918ae5ddb2c0a35b8e800efebb",
+   "ui_url": "http://localhost:16686/trace/d26ad2918ae5ddb2c0a35b8e800efebb",
+   "span_count": 5
+  }
+ }
+}

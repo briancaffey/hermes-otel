@@ -1,0 +1,332 @@
+{
+ "S01": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 2.6,
+    "text": "Your agent just ran for seventeen seconds."
+   },
+   {
+    "start": 2.92,
+    "dur": 5.2,
+    "text": "It made six model calls, used five different tools and spent fifty-two thousand tokens."
+   },
+   {
+    "start": 8.44,
+    "dur": 3.9,
+    "text": "Which step was slow, which one failed, and what did it actually read?"
+   },
+   {
+    "start": 12.66,
+    "dur": 2.69,
+    "text": "If every turn is a black box, you are guessing."
+   }
+  ],
+  "total": 15.36
+ },
+ "S02": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 3.16,
+    "text": "Hermes O-Tel is OpenTelemetry for Hermes Agent."
+   },
+   {
+    "start": 3.48,
+    "dur": 3.81,
+    "text": "One plugin, every turn recorded, any backend you already run."
+   }
+  ],
+  "total": 7.29
+ },
+ "S03": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 3.07,
+    "text": "Hermes fires lifecycle hooks as a turn unfolds."
+   },
+   {
+    "start": 3.39,
+    "dur": 7.66,
+    "text": "Session start, each L-L-M call, each A-P-I request, each tool call, approvals, sub-agents, session end."
+   },
+   {
+    "start": 11.37,
+    "dur": 3.9,
+    "text": "The plugin subscribes to those hooks and turns them into one trace per turn."
+   },
+   {
+    "start": 15.59,
+    "dur": 7.29,
+    "text": "The agent span is the root, the model call nests inside it, and every A-P-I request and tool call hangs off that."
+   },
+   {
+    "start": 23.2,
+    "dur": 6.13,
+    "text": "Each span carries the model, the token counts, the tool name and its arguments, the status and the error text."
+   }
+  ],
+  "total": 29.33
+ },
+ "S04": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 2.14,
+    "text": "The same turn produces three signals."
+   },
+   {
+    "start": 2.46,
+    "dur": 2.46,
+    "text": "Traces show the shape and timing of the turn."
+   },
+   {
+    "start": 5.24,
+    "dur": 4.37,
+    "text": "Metrics add up tokens, cost, calls and tool durations over time."
+   },
+   {
+    "start": 9.92,
+    "dur": 7.01,
+    "text": "Logs carry the agent's own log lines, stamped with the trace id, so a line can be read next to the span that wrote it."
+   },
+   {
+    "start": 17.26,
+    "dur": 6.22,
+    "text": "All three leave over O-T-L-P, the standard wire protocol, so nothing in the plugin is tied to one vendor."
+   }
+  ],
+  "total": 23.48
+ },
+ "S05": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 5.2,
+    "text": "Point it at a backend with one entry in a yaml file, or with a single environment variable."
+   },
+   {
+    "start": 5.52,
+    "dur": 9.85,
+    "text": "Nineteen backend types are supported, from Phoenix and Langfuse to Grafana, SigNoz, Elastic and Honeycomb, plus a generic O-T-L-P entry for anything else."
+   },
+   {
+    "start": 15.69,
+    "dur": 4.09,
+    "text": "Several can run at once, and every signal fans out to all of them in parallel."
+   }
+  ],
+  "total": 19.77
+ },
+ "S06": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 3.81,
+    "text": "The plugin also ships a dashboard tab for the Hermes web UI."
+   },
+   {
+    "start": 4.13,
+    "dur": 5.81,
+    "text": "It keeps a live, local record of every turn, and it can read the same turns back from the backend you chose."
+   },
+   {
+    "start": 10.25,
+    "dur": 2.88,
+    "text": "This is the Live tab, filling in as the agent works."
+   },
+   {
+    "start": 13.45,
+    "dur": 5.67,
+    "text": "The Traces tab lists every turn, with its model, span count, tokens and the status of each tool."
+   },
+   {
+    "start": 19.44,
+    "dur": 2.04,
+    "text": "Open a turn and you get the full waterfall."
+   },
+   {
+    "start": 21.8,
+    "dur": 7.99,
+    "text": "Here the agent fetched a page, wrote a file, ran a shell command, read the file back and loaded a skill, with a model call before each step."
+   },
+   {
+    "start": 30.11,
+    "dur": 4.55,
+    "text": "The Metrics tab totals tokens by type, calls by model and tool durations."
+   },
+   {
+    "start": 34.98,
+    "dur": 6.04,
+    "text": "The Logs tab shows the agent's log lines, filtered by level, logger, session or a single trace."
+   },
+   {
+    "start": 41.34,
+    "dur": 2.32,
+    "text": "And the Sessions view groups turns by conversation."
+   }
+  ],
+  "total": 43.66
+ },
+ "S07": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 2.97,
+    "text": "The same run, read back from seven different backends."
+   },
+   {
+    "start": 3.29,
+    "dur": 3.76,
+    "text": "Every screenshot you are about to see comes from the same recorded workload."
+   }
+  ],
+  "total": 7.05
+ },
+ "S08": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 2.51,
+    "text": "Grafana with Tempo, Prometheus and Loki."
+   },
+   {
+    "start": 2.83,
+    "dur": 8.92,
+    "text": "The waterfall in Tempo matches the dashboard span for span, the token counters land in Prometheus, and the log lines sit in Loki with the trace id attached."
+   }
+  ],
+  "total": 11.74
+ },
+ "S09": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 3.07,
+    "text": "OpenObserve takes all three signals on a single port."
+   },
+   {
+    "start": 3.39,
+    "dur": 4.46,
+    "text": "Traces, logs and metrics, each in its own stream, searchable with SQL."
+   }
+  ],
+  "total": 7.84
+ },
+ "S10": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 3.99,
+    "text": "SigNoz, with its query builder over traces, metrics and logs."
+   },
+   {
+    "start": 4.31,
+    "dur": 4.41,
+    "text": "The dashboard reads it through the same API the SigNoz UI uses."
+   }
+  ],
+  "total": 8.73
+ },
+ "S11": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 5.76,
+    "text": "Uptrace groups the spans, charts the counters and keeps every log line next to the span that produced it."
+   }
+  ],
+  "total": 5.76
+ },
+ "S12": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 4.64,
+    "text": "Jaeger, the classic trace store, in both its version one and version two lines."
+   },
+   {
+    "start": 4.96,
+    "dur": 3.34,
+    "text": "Traces only, and the dashboard says so instead of pretending."
+   }
+  ],
+  "total": 8.31
+ },
+ "S13": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 6.97,
+    "text": "Arize Phoenix speaks OpenInference, so each span shows up typed as an agent, an L-L-M call or a tool."
+   },
+   {
+    "start": 7.29,
+    "dur": 7.48,
+    "text": "The plugin emits both attribute conventions, so Phoenix and the Gen-A-I backends read the same data."
+   }
+  ],
+  "total": 14.76
+ },
+ "S14": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 5.48,
+    "text": "Langfuse turns the turn into a trace of observations, with sessions and token usage per generation."
+   },
+   {
+    "start": 5.8,
+    "dur": 2.97,
+    "text": "Version three and version four are both supported."
+   }
+  ],
+  "total": 8.77
+ },
+ "S15": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 4.18,
+    "text": "Every adapter is checked against its backend with a real workload before a release."
+   },
+   {
+    "start": 4.5,
+    "dur": 5.57,
+    "text": "The dashboard compares the backend's answer with its own live record, span for span and token for token."
+   },
+   {
+    "start": 10.39,
+    "dur": 3.53,
+    "text": "What a backend cannot store is marked as such, never substituted."
+   }
+  ],
+  "total": 13.92
+ },
+ "S16": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 4.09,
+    "text": "Install it with one command, add one backend entry, restart Hermes."
+   },
+   {
+    "start": 4.41,
+    "dur": 2.97,
+    "text": "From the next turn on, every run leaves a complete record."
+   },
+   {
+    "start": 7.7,
+    "dur": 0.93,
+    "text": "Hermes O-Tel."
+   },
+   {
+    "start": 8.95,
+    "dur": 1.11,
+    "text": "See every span."
+   }
+  ],
+  "total": 10.06
+ }
+}

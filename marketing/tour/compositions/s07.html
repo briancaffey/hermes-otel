@@ -1,0 +1,78 @@
+<template>
+<div data-composition-id="s07" data-width="1920" data-height="1080" data-duration="9.55">
+<style>
+[data-composition-id="s07"] { position:absolute; inset:0; overflow:hidden; }
+[data-composition-id="s07"] .wrap * { box-sizing:border-box; }
+[data-composition-id="s07"] .wrap { position:absolute; inset:0; width:1920px; height:1080px; overflow:hidden; background:#0a0a0c;
+  font-family: Montserrat, sans-serif; color:#f5f5f7; }
+[data-composition-id="s07"] .bg { position:absolute; inset:0; background:#0a0a0c; }
+[data-composition-id="s07"] .gridbg { position:absolute; inset:0;
+  background-image: linear-gradient(rgba(245,245,247,.04) 1px, transparent 1px),
+                    linear-gradient(90deg, rgba(245,245,247,.04) 1px, transparent 1px);
+  background-size: 96px 96px; background-position: 96px 56px; }
+[data-composition-id="s07"] .glow { position:absolute; width:1600px; height:1600px; border-radius:50%;
+  background: radial-gradient(circle, rgba(61,139,255,.18) 0%, rgba(61,139,255,0) 62%); }
+[data-composition-id="s07"] .mono { font-family: "IBM Plex Mono", monospace; font-variant-numeric: tabular-nums; }
+[data-composition-id="s07"] .meta { position:absolute; left:96px; right:96px; bottom:40px; display:flex; justify-content:space-between;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; color:#9a9aa2; text-transform:uppercase; }
+[data-composition-id="s07"] .marks { position:absolute; inset:0; pointer-events:none; }
+[data-composition-id="s07"] .mark { position:absolute; width:22px; height:22px; border:1px solid rgba(245,245,247,.35); }
+[data-composition-id="s07"] .mark.tl { left:48px; top:48px; border-right:0; border-bottom:0; }
+[data-composition-id="s07"] .mark.tr { right:48px; top:48px; border-left:0; border-bottom:0; }
+[data-composition-id="s07"] .mark.bl { left:48px; bottom:48px; border-right:0; border-top:0; }
+[data-composition-id="s07"] .mark.br { right:48px; bottom:48px; border-left:0; border-top:0; }
+[data-composition-id="s07"] .kicker { font-family:"IBM Plex Mono", monospace; font-size:22px; letter-spacing:.12em; text-transform:uppercase; color:#3d8bff; font-weight:700; }
+[data-composition-id="s07"] .h1 { font-weight:900; font-size:96px; line-height:1.0; letter-spacing:-.02em; }
+[data-composition-id="s07"] .h2 { font-weight:900; font-size:64px; line-height:1.05; letter-spacing:-.02em; }
+[data-composition-id="s07"] .body { font-weight:400; font-size:30px; line-height:1.4; color:#c9c9cf; }
+[data-composition-id="s07"] .frame { position:absolute; border:1px solid #2a2a30; border-radius:12px; background:#121216; overflow:hidden; }
+[data-composition-id="s07"] .shot { position:absolute; left:0; top:0; width:100%; background-size:100% auto; background-repeat:no-repeat; background-position:top left; }
+[data-composition-id="s07"] .badges { display:flex; gap:12px; }
+[data-composition-id="s07"] .badge { display:inline-flex; align-items:center; gap:10px; padding:8px 16px; border-radius:999px; border:1px solid;
+  font-family:"IBM Plex Mono", monospace; font-size:18px; font-weight:700; letter-spacing:.08em; text-transform:uppercase; }
+[data-composition-id="s07"] .badge.t { color:#3d8bff; border-color:#3d8bff; }
+[data-composition-id="s07"] .badge.m { color:#34d399; border-color:#34d399; }
+[data-composition-id="s07"] .badge.l { color:#fbbf24; border-color:#fbbf24; }
+[data-composition-id="s07"] .badge.off { color:#8a8a92; border-color:#3a3a40; text-decoration: line-through; }
+[data-composition-id="s07"] .pill { display:inline-block; padding:8px 18px; border-radius:8px; background:#121216; border:1px solid #2a2a30;
+  font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; letter-spacing:.06em; color:#f5f5f7; }
+[data-composition-id="s07"] .code { font-family:"IBM Plex Mono", monospace; font-size:26px; line-height:1.55; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:12px; padding:32px 40px; white-space:pre; overflow:hidden; }
+[data-composition-id="s07"] .code .c { color:#8a8a92; } [data-composition-id="s07"] .code .k { color:#3d8bff; } [data-composition-id="s07"] .code .s { color:#ffb300; } [data-composition-id="s07"] .code .p { color:#34d399; }
+[data-composition-id="s07"] .line { display:block; }
+
+[data-composition-id="s07"] .glow { left:400px; top:-900px; }
+[data-composition-id="s07"] .c { position:absolute; left:96px; top:300px; width:1728px; }
+[data-composition-id="s07"] .names { display:flex; flex-wrap:wrap; gap:16px; margin-top:48px; }
+[data-composition-id="s07"] .nm { padding:18px 28px; border-radius:10px; border:1px solid #2a2a30; background:#121216; font-weight:700; font-size:30px; }
+[data-composition-id="s07"] .sub { margin-top:40px; font-family:"IBM Plex Mono", monospace; font-size:24px; color:#9a9aa2; letter-spacing:.04em; }
+</style>
+<div id="s07-wrap" class="wrap">
+<div class="bg"></div>
+
+<div class="gridbg"></div><div class="glow" data-layout-allow-overflow></div>
+<div class="c">
+  <div class="kicker">gallery</div>
+  <div class="h1" id="s07-t" style="margin-top:12px">Same workload.<br>Seven backends.</div>
+  <div class="names" id="s07-names"><div class="nm" id="s07-n0">Grafana LGTM</div><div class="nm" id="s07-n1">OpenObserve</div><div class="nm" id="s07-n2">SigNoz</div><div class="nm" id="s07-n3">Uptrace</div><div class="nm" id="s07-n4">Jaeger</div><div class="nm" id="s07-n5">Arize Phoenix</div><div class="nm" id="s07-n6">Langfuse</div></div>
+  <div class="sub" id="s07-sub">marketing/tour/prompts.yaml · 11 prompts · replayed against each backend · dashboard left, backend's own UI right</div>
+</div>
+<div class="meta"><span>hermes-otel · tour</span><span>gallery</span><span>07 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+
+</div>
+<script>
+window.__timelines = window.__timelines || {};
+(function () {
+  const tl = gsap.timeline({ paused: true });
+  tl.fromTo("#s07-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
+
+  tl.from("#s07-t", {opacity:0, y:40, duration:0.7, ease:"expo.out"}, 1.10);
+  tl.from("#s07-names .nm", {opacity:0, y:16, duration:0.4, stagger:0.1, ease:"power3.out"}, 1.70);
+  tl.from("#s07-sub", {opacity:0, duration:0.5}, 4.39);
+
+  tl.to("#s07-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 9.05);
+  window.__timelines["s07"] = tl;
+})();
+</script>
+</div>
+</template>

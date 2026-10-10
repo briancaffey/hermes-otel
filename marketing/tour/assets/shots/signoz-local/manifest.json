@@ -1,0 +1,79 @@
+{
+ "source": "signoz-local",
+ "token": "V261010-signoz",
+ "traces": {
+  "hero-research": "d9ca0bdac2577d62fcb4f1e0f25267a8",
+  "multi-tool": "d026c20d0e515719de22e79abfe43251",
+  "missing-file": "87a2c98d478cf5b7ad124947a3fad79c",
+  "web-fetch": "6bef84c8e45cf41d6424ca1df880b21f",
+  "skill-load": "55b5664a74e660c782b9582c2ee61f40",
+  "slow-tools": "6fad87af04bfbc24243dd18973fe06a0",
+  "file-roundtrip": "e3b5e4b9aed9788287de309e3f66fc33",
+  "shell-echo": "41f8ff307f3ba97c5776c31c0264043c",
+  "no-tools": "d5f19ddaf17400686e4809cc541f6319",
+  "long-output": "2a75509a3c3b62675a7924c055023310",
+  "shell-nonzero": "bc0d5d29186e39d731743a074ab7196e"
+ },
+ "captured_at": "2026-10-09T23:31:54",
+ "status": {
+  "type": "signoz",
+  "metrics": true,
+  "logs": true,
+  "query_url": "http://localhost:3301"
+ },
+ "backend_links": {
+  "hero-research": {
+   "trace_id": "d9ca0bdac2577d62fcb4f1e0f25267a8",
+   "ui_url": "http://localhost:3301/trace/d9ca0bdac2577d62fcb4f1e0f25267a8",
+   "span_count": 14
+  },
+  "multi-tool": {
+   "trace_id": "d026c20d0e515719de22e79abfe43251",
+   "ui_url": "http://localhost:3301/trace/d026c20d0e515719de22e79abfe43251",
+   "span_count": 9
+  },
+  "missing-file": {
+   "trace_id": "87a2c98d478cf5b7ad124947a3fad79c",
+   "ui_url": "http://localhost:3301/trace/87a2c98d478cf5b7ad124947a3fad79c",
+   "span_count": 5
+  },
+  "web-fetch": {
+   "trace_id": "6bef84c8e45cf41d6424ca1df880b21f",
+   "ui_url": "http://localhost:3301/trace/6bef84c8e45cf41d6424ca1df880b21f",
+   "span_count": 5
+  },
+  "skill-load": {
+   "trace_id": "55b5664a74e660c782b9582c2ee61f40",
+   "ui_url": "http://localhost:3301/trace/55b5664a74e660c782b9582c2ee61f40",
+   "span_count": 6
+  },
+  "slow-tools": {
+   "trace_id": "6fad87af04bfbc24243dd18973fe06a0",
+   "ui_url": "http://localhost:3301/trace/6fad87af04bfbc24243dd18973fe06a0",
+   "span_count": 7
+  },
+  "file-roundtrip": {
+   "trace_id": "e3b5e4b9aed9788287de309e3f66fc33",
+   "ui_url": "http://localhost:3301/trace/e3b5e4b9aed9788287de309e3f66fc33",
+   "span_count": 7
+  },
+  "shell-echo": {
+   "trace_id": "41f8ff307f3ba97c5776c31c0264043c",
+   "error": "HTTP Error 404: Not Found"
+  },
+  "no-tools": {
+   "trace_id": "d5f19ddaf17400686e4809cc541f6319",
+   "error": "HTTP Error 404: Not Found"
+  },
+  "long-output": {
+   "trace_id": "2a75509a3c3b62675a7924c055023310",
+   "ui_url": "http://localhost:3301/trace/2a75509a3c3b62675a7924c055023310",
+   "span_count": 7
+  },
+  "shell-nonzero": {
+   "trace_id": "bc0d5d29186e39d731743a074ab7196e",
+   "ui_url": "http://localhost:3301/trace/bc0d5d29186e39d731743a074ab7196e",
+   "span_count": 5
+  }
+ }
+}
