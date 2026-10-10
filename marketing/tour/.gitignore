@@ -1,6 +1,11 @@
-# regenerable or too large for the repo
-assets/shots/
+# Only sources are committed. assets/shots/ (raw PNG captures) stays in git: it is the
+# input for the frames and reusable in docs. Everything below is regenerated or too large.
+# prep_frames.py rebuilds these from assets/shots
+assets/frames/
+# synth_voice.py rebuilds these; cues.json and durations.json are kept
+assets/voice/*.mp3
 assets/voice/_sentences/
 renders/
 snapshots/
 node_modules/
+.DS_Store

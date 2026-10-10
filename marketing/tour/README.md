@@ -12,13 +12,18 @@ marketing/tour/
   prompts.yaml       the workload replayed against every backend (turn_batch format)
   capture/           Playwright capture of the Hermes dashboard and of each backend's own UI
   tools/             synth_voice.py (TTS → assets/voice), prep_frames.py, build_comp.py
-  assets/shots/      raw captures per source (+ manifest.json with the trace ids)
-  assets/frames/     1920-wide JPEGs the composition uses
-  assets/voice/      per-scene narration MP3s, cues.json, durations.json
+  assets/shots/      raw 3200x2000 captures per source (+ manifest.json with the trace ids) — committed
+  assets/frames/     1920-wide JPEGs the composition uses — generated, not in git
+  assets/voice/      per-scene narration MP3s (not in git), cues.json + durations.json (in git)
   index.html         orchestrator (generated)
   compositions/      one sub-composition per scene (generated)
-  renders/           output MP4s
+  renders/           output MP4s — not in git
 ```
+
+Only sources are committed: the script, the capture and build tools, the raw screenshots and the
+cue timings. After a fresh clone, steps 2 and 3 below regenerate the narration (needs the Magpie
+TTS service; unchanged sentences are not re-synthesised when the cache exists) and the frames
+before the composition can be rendered.
 
 ## Rebuild
 
