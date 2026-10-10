@@ -129,6 +129,9 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | Field | Type | Description |
 |---|---|---|
 | `endpoint` | string | **Required.** e.g. `http://localhost:4318/v1/traces`. Traces only (metrics/logs off) |
+| `query_port` | int | Dashboard read path: the Jaeger UI/query port (default `16686`) |
+| `query_api` | string | Dashboard read path: `v1` (classic `/api/traces`), `v3` (Jaeger v2's `/api/v3`), or `auto` (default: probed once per query URL) |
+| `service_name` | string | Dashboard read path: the service every search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
 
 #### `tempo`
 

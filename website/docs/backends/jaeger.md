@@ -31,9 +31,15 @@ UI at http://localhost:16686.
 That file runs `jaegertracing/all-in-one`, the v1 line that ended with 1.76.0. For the
 OpenTelemetry-Collector-based **Jaeger v2** (what the Helm chart deploys) use
 `docker-compose/jaeger-v2/docker-compose.yaml`: UI on http://localhost:16696, OTLP/HTTP on
-`http://localhost:4368/v1/traces`. Export works the same; the read side differs, since
-v2 serves only `/api/v3/...` on the UI port and the classic `/api/traces` is 404
-(issue #245), which is also what breaks the dashboard's Jaeger adapter against v2.
+`http://localhost:4368/v1/traces`. Export works the same. On the read side v2 serves only
+`/api/v3/...` on the UI port (the classic `/api/traces` is 404, #245); the dashboard's
+Jaeger adapter probes once per query URL (the classic `/api/services` first, which wins
+when it answers, then `/api/v3/services`) and speaks whichever API the server has, so a
+v1 and a v2 entry need the same two keys (`endpoint`, `query_port`). The classic API is
+preferred because Jaeger 1.x's `all-in-one` also exposes an `/api/v3` gateway, with
+snake_case parameters that differ from v2's.
+`query_api: v1` or `v3` on the entry pins it. Verified on 2.21.0 (2026-10-09): search,
+filters, keyset paging and the trace detail all come from `/api/v3/traces`.
 
 ## Multi-backend config
 

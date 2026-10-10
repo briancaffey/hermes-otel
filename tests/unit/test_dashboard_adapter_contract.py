@@ -940,6 +940,219 @@ class TestJaeger:
         attrs = {a["key"]: a["value"] for a in card["spanSets"][0]["spans"][0]["attributes"]}
         assert attrs["status"] == {"stringValue": "error"}
 
+    # ── Jaeger v2: the v3 query API (#245) ──────────────────────────
+    @staticmethod
+    def _v3_result(*traces):
+        """OTLP JSON as ``/api/v3/traces`` answers it: one resourceSpans per
+        trace, hex ids, ``status.code`` 1/2, attributes as AnyValues."""
+        rs = []
+        for tid, spans in traces:
+            rs.append(
+                {
+                    "resource": {
+                        "attributes": [
+                            {"key": "service.name", "value": {"stringValue": "hermes-agent"}}
+                        ]
+                    },
+                    "scopeSpans": [
+                        {
+                            "spans": [
+                                {
+                                    "traceId": tid,
+                                    "spanId": sid,
+                                    "parentSpanId": parent,
+                                    "name": name,
+                                    "startTimeUnixNano": str(start),
+                                    "endTimeUnixNano": str(start + dur),
+                                    "attributes": [
+                                        {"key": k, "value": {"stringValue": v}}
+                                        for k, v in attrs.items()
+                                    ],
+                                    "status": status,
+                                }
+                                for sid, parent, name, start, dur, attrs, status in spans
+                            ]
+                        }
+                    ],
+                }
+            )
+        return {"result": {"resourceSpans": rs}}
+
+    def _v3_fake(self, monkeypatch, search_result, trace_result=None):
+        calls = []
+
+        def fake(url, headers=None, timeout=None):
+            calls.append(url)
+            if url.endswith("/api/services"):
+                # Jaeger v2: the classic routes are 404
+                raise BackendError(404, "Backend returned 404: 404 page not found", "not_found")
+            if url.endswith("/api/v3/services"):
+                return {"services": ["jaeger", "hermes-agent"]}
+            if "/api/v3/traces?" in url:
+                if isinstance(search_result, Exception):
+                    raise search_result
+                return search_result
+            if "/api/v3/traces/" in url:
+                if isinstance(trace_result, Exception):
+                    raise trace_result
+                return trace_result
+            raise AssertionError(f"unexpected v1 call {url}")
+
+        monkeypatch.setattr(jaeger, "http_get_json", fake)
+        monkeypatch.setattr(jaeger, "_API_PROBE_CACHE", {})
+        return calls
+
+    def test_v3_is_probed_once_and_search_speaks_the_v3_grammar(self, monkeypatch):
+        t_root = (
+            "a" * 32,
+            [
+                (
+                    "r1",
+                    None,
+                    "agent",
+                    2_000_000_000_000,
+                    5_000_000,
+                    {"tool.name": "terminal"},
+                    {"code": 1},
+                ),
+                (
+                    "c1",
+                    "r1",
+                    "tool.terminal",
+                    2_000_000_000_010,
+                    100_000,
+                    {"tool.name": "terminal"},
+                    {"code": 1},
+                ),
+            ],
+        )
+        t_child = (
+            "b" * 32,
+            [
+                (
+                    "r2",
+                    None,
+                    "agent",
+                    1_000_000_000_000,
+                    5_000_000,
+                    {},
+                    {"code": 2, "message": "boom"},
+                ),
+                (
+                    "c2",
+                    "r2",
+                    "tool.terminal",
+                    1_000_000_000_010,
+                    100_000,
+                    {"tool.name": "terminal"},
+                    {"code": 1},
+                ),
+            ],
+        )
+        calls = self._v3_fake(monkeypatch, self._v3_result(t_root, t_child))
+        a = self._adapter()
+        out = a.search(StructuredFilter(attr_equals={"tool.name": "terminal"}), 0, 3000, 5)
+        assert calls[0].endswith("/api/services") and calls[1].endswith("/api/v3/services")
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(calls[2]).query))
+        assert q["query.serviceName"] == "hermes-agent" and q["query.searchDepth"] == "6"
+        assert q["query.startTimeMin"] == "1970-01-01T00:00:00.000000000Z"
+        assert q["query.startTimeMax"] == "1970-01-01T00:50:00.000000000Z"
+        assert json.loads(q["query.attributes"]) == {"tool.name": "terminal"}
+        # roots-only re-checks the root: trace b matches only through its child
+        assert [t["traceID"] for t in out["traces"]] == ["a" * 32]
+        row = out["traces"][0]
+        assert (
+            row["spanCount"] == 2
+            and row["durationMs"] == 5
+            and row["rootServiceName"] == "hermes-agent"
+        )
+        # the probe is cached: a second search makes no services call
+        a.search(StructuredFilter(status="error"), 0, 3000, 5)
+        assert sum(u.endswith("/api/v3/services") for u in calls) == 1
+        q = dict(_urlparse.parse_qsl(_urlparse.urlparse(calls[-1]).query))
+        assert json.loads(q["query.attributes"]) == {"error": "true"}
+        # status comes from the OTLP status on v3 rows
+        out = a.search(StructuredFilter(), 0, 3000, 5)
+        by_id = {t["traceID"]: t for t in out["traces"]}
+        attrs = {
+            x["key"]: x["value"] for x in by_id["b" * 32]["spanSets"][0]["spans"][0]["attributes"]
+        }
+        assert attrs["status"] == {"stringValue": "error"}
+
+    def test_v3_empty_search_is_a_page_and_an_unknown_trace_is_not_found(self, monkeypatch):
+        self._v3_fake(
+            monkeypatch,
+            BackendError(404, "Backend returned 404: No traces found", "not_found"),
+            BackendError(404, "Backend returned 404: No traces found", "not_found"),
+        )
+        a = self._adapter()
+        page = a.search(StructuredFilter(), 0, 3000, 5)
+        assert page == {"traces": [], "next_before_ns": None, "has_more": False}
+        with pytest.raises(BackendError) as exc:
+            a.get_trace("f" * 32)
+        assert exc.value.kind == "not_found"
+
+    def test_v3_detail_passes_resource_spans_through(self, monkeypatch):
+        t = (
+            "c" * 32,
+            [
+                ("r1", None, "agent", 2_000_000_000_000, 5_000_000, {}, {"code": 1}),
+                (
+                    "c1",
+                    "r1",
+                    "api.x",
+                    2_000_000_000_010,
+                    100_000,
+                    {"llm.model_name": "m"},
+                    {"code": 1},
+                ),
+            ],
+        )
+        self._v3_fake(monkeypatch, {}, self._v3_result(t))
+        det = self._adapter().get_trace("c" * 32)
+        assert det["span_count"] == 2 and det["truncated"] is False
+        spans = det["batches"][0]["scopeSpans"][0]["spans"]
+        assert spans[1]["parentSpanId"] == "r1" and spans[1]["status"] == {"code": 1}
+        assert self._adapter().trace_url("c" * 32) == "http://localhost:16686/trace/" + "c" * 32
+
+    def test_query_api_pin_skips_the_probe_and_v1_stays_v1(self, monkeypatch):
+        calls = []
+
+        def fake(url, headers=None, timeout=None):
+            calls.append(url)
+            if url.endswith("/api/v3/services"):
+                # Jaeger 1.x all-in-one serves this too (snake_case params):
+                # the classic API must still win when it answers
+                return {"services": ["hermes-agent"]}
+            return {"data": []}
+
+        monkeypatch.setattr(jaeger, "http_get_json", fake)
+        monkeypatch.setattr(jaeger, "_API_PROBE_CACHE", {})
+        pinned = jaeger.JaegerAdapter(
+            {"type": "jaeger", "endpoint": "http://localhost:16686", "query_api": "v1"}
+        )
+        pinned.search(StructuredFilter(), 0, 10, 5)
+        assert "/api/traces?" in calls[-1] and not any("v3" in u for u in calls)
+        # auto on a v1 server: one classic probe answers, no v3 probe, cached
+        a = self._adapter()
+        a.search(StructuredFilter(), 0, 10, 5)
+        a.search(StructuredFilter(), 0, 10, 5)
+        assert sum(u.endswith("/api/services") for u in calls) == 1
+        assert not any(u.endswith("/api/v3/services") for u in calls)
+        assert all("/api/traces?" in u for u in calls if "?" in u)
+        assert a.status()["query_api"] == "v1"
+        # an unreachable server is reported, never guessed
+        monkeypatch.setattr(jaeger, "_API_PROBE_CACHE", {})
+        monkeypatch.setattr(
+            jaeger,
+            "http_get_json",
+            lambda *a, **k: (_ for _ in ()).throw(
+                BackendError(502, "Backend unreachable", "backend")
+            ),
+        )
+        with pytest.raises(BackendError, match="unreachable"):
+            self._adapter().search(StructuredFilter(), 0, 10, 5)
+
     def test_default_service_follows_the_plugin_resource(self, monkeypatch):
         monkeypatch.setattr(
             backends, "top_level_config", lambda: {"resource_attributes": {"service.name": "bot"}}
