@@ -16,13 +16,11 @@ function SessionCard({ row, open, onToggle, children, partial }: { row: SessionR
     <div className={row.errors ? "otel-card-bg border border-destructive/30" : "otel-card-bg border border-border"}>
       <Clickable
         onActivate={onToggle}
-        aria-expanded={open}
+        toggle
+        open={open}
         label={`${open ? "collapse" : "expand"} session ${row.session}`}
         className="otel-row flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
       >
-        <span className="w-3 shrink-0 text-xs text-muted-foreground" aria-hidden>
-          {open ? "▾" : "▸"}
-        </span>
         <span className="font-mono text-sm" title={row.session}>
           {row.session}
         </span>

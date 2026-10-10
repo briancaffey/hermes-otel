@@ -67,7 +67,11 @@ export function schemeOf(background: string): "light" | "dark" {
   if (m) rgb = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
   else {
     const n = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(background);
+    // Chromium serialises a color-mix() result as color(srgb r g b) with 0..1 floats,
+    // which is what the host's theme variables compute to (#289).
+    const c = /color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i.exec(background);
     if (n) rgb = [Number(n[1]), Number(n[2]), Number(n[3])];
+    else if (c) rgb = [Number(c[1]) * 255, Number(c[2]) * 255, Number(c[3]) * 255];
     else {
       const o = /oklch\(\s*([\d.]+%?)/i.exec(background);
       if (o) {
@@ -88,8 +92,14 @@ function useScheme(): "light" | "dark" {
   const name = theme?.themeName || "";
   return useMemo(() => {
     try {
+      // The page's own background is what the host's theme painted; the
+      // variable probe below is the fallback for a host whose body is
+      // transparent (the host defines --background, not --color-background,
+      // so the variable alone never detected the light theme, #289).
+      const painted = getComputedStyle(document.body).backgroundColor;
+      if (painted && !/rgba\(\s*0,\s*0,\s*0,\s*0\)|transparent/i.test(painted)) return schemeOf(painted);
       const probe = document.createElement("div");
-      probe.style.background = "var(--color-background)";
+      probe.style.background = "var(--background, var(--color-background))";
       probe.style.display = "none";
       document.body.appendChild(probe);
       const bg = getComputedStyle(probe).backgroundColor;
@@ -162,7 +172,7 @@ function OtelDashboard() {
             </button>
           );
         })}
-        <span className="ml-auto pr-1 font-mono text-[11px] text-muted-foreground/60" title="absolute times are shown in this timezone">
+        <span className="ml-auto pr-1 font-mono text-[11px] text-muted-foreground" title="absolute times are shown in this timezone">
           {tz ? `${tz} · ` : ""}hermes-otel
         </span>
       </div>

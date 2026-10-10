@@ -41,23 +41,27 @@
   --otel-chart-8: #94a3b8;
 }
 .otel-root[data-otel-scheme="light"] {
-  --otel-kind-agent: #047857;
-  --otel-kind-llm: #0369a1;
+  /* Darkened on 2026-10-09 so text in these colours clears 4.5:1 on the
+     host's light backgrounds (axe, #289): agent/llm/warn carry pill and
+     badge text, error replaces the host's destructive red (3.4:1). */
+  --otel-kind-agent: #065f46;
+  --otel-kind-llm: #075985;
+  --otel-level-error: #b91c1c;
   --otel-kind-api: #0e7490;
-  --otel-kind-tool: #b45309;
+  --otel-kind-tool: #9a3412;
   --otel-kind-skill: #059669;
   --otel-kind-approval: #be185d;
   --otel-kind-subagent: #6d28d9;
   --otel-kind-cron: #7c3aed;
   --otel-kind-other: #64748b;
-  --otel-level-warn: #b45309;
-  --otel-level-info: #0369a1;
-  --otel-cost: #047857;
+  --otel-level-warn: #9a3412;
+  --otel-level-info: #075985;
+  --otel-cost: #065f46;
   --otel-bad: #b91c1c;
-  --otel-role-user: #047857;
-  --otel-role-assistant: #0369a1;
+  --otel-role-user: #065f46;
+  --otel-role-assistant: #075985;
   --otel-role-system: #64748b;
-  --otel-role-tool: #b45309;
+  --otel-role-tool: #9a3412;
   --otel-chart-1: #0369a1;
   --otel-chart-2: #047857;
   --otel-chart-3: #b45309;
@@ -951,4 +955,45 @@
   .lg\:grid-cols-2 {
     grid-template-columns: repeat(2, minmax(0, 1fr));
   }
+}
+
+/* ── accessibility helpers (#289) ──────────────────────────────────── */
+/* Text for assistive technology only: names the host's Select triggers,
+   which carry no label of their own. */
+.otel-sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+/* A Select's accessible-name wrapper: no box of its own. */
+.otel-select-label {
+  display: contents;
+}
+/* The keyboard control of an expandable row: the row itself stays a plain
+   container (a button must not nest buttons), this is what Tab reaches. */
+.otel-row-toggle {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1rem;
+  min-width: 1rem;
+  height: 1.25rem;
+  margin-right: 0.125rem;
+  border-radius: 0.25rem;
+  color: var(--color-muted-foreground);
+  background: transparent;
+  border: 0;
+  font-size: 0.75rem;
+  line-height: 1;
+  cursor: pointer;
+}
+.otel-row-toggle:focus-visible {
+  outline: 2px solid var(--color-ring, currentColor);
+  outline-offset: 1px;
 }

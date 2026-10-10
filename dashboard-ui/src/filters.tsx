@@ -87,7 +87,7 @@ export function FilterBar({
       <div className="otel-search-grid">
         {show("status") ? (
           <Field label="status" support={sup("status")}>
-            <Select value={filters.status} onValueChange={(v: string) => set("status", v)} className="h-8">
+            <Select value={filters.status} onValueChange={(v: string) => set("status", v)} className="h-8" aria-label="status">
               <SelectOption value="">any</SelectOption>
               <SelectOption value="ok">ok</SelectOption>
               <SelectOption value="error">error</SelectOption>
@@ -96,7 +96,7 @@ export function FilterBar({
         ) : null}
         {show("kind") ? (
           <Field label="kind" support={sup("kind")}>
-            <Select value={filters.kind} onValueChange={(v: string) => set("kind", v)} className="h-8">
+            <Select value={filters.kind} onValueChange={(v: string) => set("kind", v)} className="h-8" aria-label="kind">
               <SelectOption value="">any</SelectOption>
               {KINDS.map((k) => (
                 <SelectOption key={k} value={k}>
@@ -137,7 +137,7 @@ export function FilterBar({
           </Field>
         ) : null}
         <Field label="lookback">
-          <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8">
+          <Select value={String(filters.lookback)} onValueChange={(v: string) => set("lookback", Number(v))} className="h-8" aria-label="lookback">
             {LOOKBACKS.map((l) => (
               <SelectOption key={l.hours} value={String(l.hours)}>
                 {l.label}

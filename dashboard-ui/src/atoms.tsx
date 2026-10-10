@@ -34,6 +34,8 @@ export function Clickable({
   children,
   label,
   as = "div",
+  toggle,
+  open,
   ...rest
 }: {
   onActivate: () => void;
@@ -41,9 +43,35 @@ export function Clickable({
   children: any;
   label?: string;
   as?: string;
+  /** An expandable row that holds buttons of its own: a button must not nest
+   *  buttons (axe: nested-interactive, #289), so the row stays a plain
+   *  container that the mouse can click anywhere, and a real toggle button
+   *  at its start is what the keyboard reaches. */
+  toggle?: boolean;
+  open?: boolean;
   [k: string]: any;
 }) {
   const Tag = as as any;
+  if (toggle) {
+    const { "aria-expanded": _ignored, ...plain } = rest as any;
+    return (
+      <Tag className={className} onClick={onActivate} {...plain}>
+        <button
+          type="button"
+          className="otel-row-toggle"
+          aria-expanded={!!open}
+          aria-label={label}
+          onClick={(e: any) => {
+            e.stopPropagation();
+            onActivate();
+          }}
+        >
+          {open ? "▾" : "▸"}
+        </button>
+        {children}
+      </Tag>
+    );
+  }
   return (
     <Tag
       role="button"

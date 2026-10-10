@@ -225,6 +225,9 @@ describe("shell helpers", () => {
   it("tells a light host theme from a dark one", () => {
     expect(schemeOf("rgb(255, 255, 255)")).toBe("light");
     expect(schemeOf("#0b0f14")).toBe("dark");
+    // Chromium's serialisation of a color-mix() background (the host's theme variables)
+    expect(schemeOf("color(srgb 0.909804 0.94902 0.992157)")).toBe("light");
+    expect(schemeOf("color(srgb 0.0156863 0.109804 0.109804)")).toBe("dark");
     expect(schemeOf("oklch(0.98 0 0)")).toBe("light");
     expect(schemeOf("hsl(220 10% 10%)")).toBe("dark");
   });

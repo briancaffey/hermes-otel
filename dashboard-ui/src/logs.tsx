@@ -97,7 +97,8 @@ export function LogRow({
     <div className={cn("border-b border-border/60 last:border-b-0", expanded ? "bg-muted/30" : "otel-hoverable", edge)}>
       <Clickable
         onActivate={() => onToggle?.()}
-        aria-expanded={!!expanded}
+        toggle
+        open={!!expanded}
         label={`${expanded ? "collapse" : "expand"} log line`}
         className="otel-row flex cursor-pointer items-start gap-2 px-3 py-1"
         title={expanded ? "collapse" : "expand attributes"}
