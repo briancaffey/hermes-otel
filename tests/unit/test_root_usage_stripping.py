@@ -9,6 +9,7 @@ its usage attributes, every other exporter still gets them.
 
 from __future__ import annotations
 
+import os
 from unittest.mock import patch
 
 from opentelemetry.sdk.resources import Resource
@@ -210,7 +211,7 @@ class TestResolvePreset:
 
 class TestPipelineWiring:
     def test_only_the_preset_backend_gets_the_wrapper(self, monkeypatch):
-        for var in list(__import__("os").environ):
+        for var in list(os.environ):
             if var.startswith(("OTEL_", "LANGFUSE_", "LANGSMITH_", "PHOENIX_")):
                 monkeypatch.delenv(var, raising=False)
         cfg = HermesOtelConfig(
