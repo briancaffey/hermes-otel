@@ -407,18 +407,25 @@ class UptraceAdapter(BackendAdapter):
         # can still hide older roots behind its own children (#298).
         root_filter = d.get("root_filter", "")
         server_roots = bool(f.roots_only and root_filter)
+        # Rows are spans. Roots on 2.1 are one row per trace, so ``limit + 1``
+        # makes has_more exact. Widened (the kind/tool filter) or on 2.0, a
+        # trace contributes several rows (three ``tool.terminal`` spans of one
+        # turn filled a two-row page and hid the other turn, #298): ask for
+        # more, dedupe, and when the fetch came back full say so.
+        rows_wanted = int(limit) + 1 if server_roots else int(limit) * 4 + 1
         params: List[Tuple[str, Any]] = [
             *self._systems(d["span_systems"]),
             ("query", self._build_uql(f, root_filter)),
             *d["sort"],
-            ("limit", int(limit) + 1 if (server_roots or not f.roots_only) else int(limit) * 4 + 1),
+            ("limit", rows_wanted),
         ]
         end_ms = None
         if f.before_ns:
             end_ms = int(f.before_ns) // 1_000_000 + 1
         data = self._get(self._path("spans"), start_s, end_s, params, end_ms=end_ms)
+        rows = (data.get("spans") if isinstance(data, dict) else None) or []
         traces: Dict[str, Dict[str, Any]] = {}
-        for sp in (data.get("spans") if isinstance(data, dict) else None) or []:
+        for sp in rows:
             trace_id = sp.get("traceId")
             if not trace_id:
                 continue
@@ -428,7 +435,29 @@ class UptraceAdapter(BackendAdapter):
             if trace_id in traces and not is_root:
                 continue
             traces[trace_id] = _search_hit(sp, trace_id)
-        return trace_page(strictly_older_traces(list(traces.values()), f), limit)
+        page = trace_page(strictly_older_traces(list(traces.values()), f), limit)
+        if not page["has_more"] and len(rows) >= rows_wanted and page["traces"]:
+            # The fetch was cut by Uptrace, so older rows exist even though
+            # they collapsed into fewer traces than the page holds.
+            page["has_more"] = True
+            page["next_before_ns"] = min(
+                int(t.get("startTimeUnixNano") or 0) for t in page["traces"]
+            )
+        if page["has_more"] and not f.roots_only:
+            # Widened rows are spans: a shown trace's older matching spans
+            # would come back on the next page. Move the cursor below the
+            # oldest fetched row of every trace on this page.
+            shown = {t.get("traceID") for t in page["traces"]}
+            oldest = [
+                _row_start_ns(sp)
+                for sp in rows
+                if sp.get("traceId") in shown and _row_start_ns(sp) > 0
+            ]
+            if oldest:
+                page["next_before_ns"] = min(
+                    int(page["next_before_ns"] or 0) or min(oldest), *oldest
+                )
+        return page
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = self._api_url(self._path("trace", trace_id=trace_id), [])
@@ -574,6 +603,12 @@ class UptraceAdapter(BackendAdapter):
             clauses.append(f'where service_name = "{_esc(self.service_name)}"')
         if f.trace_id:
             clauses.append(f'where _trace_id = "{_esc(f.trace_id)}"')
+        if f.span_id:
+            # A log record written inside a span is stored with that span as
+            # its parent (the row's ``parentId``; UQL column ``_parent_id``,
+            # verified on 2.1.0-beta.5: ``_span_id`` is "unsupported attr",
+            # #298).
+            clauses.append(f'where _parent_id = "{_esc(f.span_id)}"')
         if f.session:
             clauses.append(f'where hermes_session_id = "{_esc(f.session)}"')
         if f.logger:
@@ -626,6 +661,14 @@ class UptraceAdapter(BackendAdapter):
 
 def _attrs_dotted(raw: Any) -> Dict[str, Any]:
     return {_dotted(k): v for k, v in plain_attrs(raw).items()}
+
+
+def _row_start_ns(sp: Dict[str, Any]) -> int:
+    """Start of a raw span/log row in ns (``time`` is RFC 3339)."""
+    try:
+        return int(_search_hit(sp, str(sp.get("traceId") or "")).get("startTimeUnixNano") or 0)
+    except Exception:
+        return 0
 
 
 def _search_hit(sp: Dict[str, Any], trace_id: str) -> Dict[str, Any]:

@@ -362,6 +362,62 @@ class TestTraces:
         keys = {a["key"] for a in t["spanSets"][0]["spans"][0]["attributes"]}
         assert {"llm.model_name", "status"} <= keys  # typed, underscored keys come back dotted
 
+    def test_widened_search_fetches_more_rows_and_says_more_when_the_fetch_is_full(
+        self, adapter, monkeypatch
+    ):
+        # Rows are spans: three tool spans of one turn can fill a page that
+        # should hold two traces (#298). Ask for limit*4+1 rows and, when the
+        # fetch came back full, report has_more even if the rows collapsed.
+        seen = {}
+
+        def fake_get(path, start_s, end_s, params=(), end_ms=None):
+            seen["params"] = dict(params)
+            rows = [
+                {
+                    "id": f"s{i}",
+                    "traceId": "t1",
+                    "parentId": "root",
+                    "name": "tool.terminal",
+                    "time": 1791147194000 - i * 1000,  # epoch ms, one second apart
+                    "duration": 1_000_000,
+                    "attrs": {},
+                }
+                for i in range(5)
+            ]
+            return {"spans": rows}
+
+        monkeypatch.setattr(adapter, "_dialect", lambda: up._DIALECTS["2.1"])
+        monkeypatch.setattr(adapter, "_get", fake_get)
+        out = adapter.search(
+            StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False),
+            1_790_000_000,
+            1_790_500_000,
+            1,
+        )
+        assert seen["params"]["limit"] == 5  # 1 * 4 + 1
+        assert [t["traceID"] for t in out["traces"]] == ["t1"]
+        assert out["has_more"] is True
+        # the cursor sits below the OLDEST fetched row of the shown trace, so
+        # its other matching spans do not come back on the next page
+        assert out["next_before_ns"] == int(out["traces"][0]["startTimeUnixNano"]) - 4_000_000_000
+        # roots-only on 2.1 stays exact: limit + 1
+        adapter.search(StructuredFilter(), 1_790_000_000, 1_790_500_000, 1)
+        assert seen["params"]["limit"] == 2
+
+    def test_logs_by_span_id_filter_on_the_parent_column(self, adapter, fake_http):
+        from hermes_otel.dashboard.backends.base import LogFilter
+
+        adapter.logs_search(
+            LogFilter(trace_id="t" * 32, span_id="965c1c4e965c1c4e"),
+            1_790_000_000,
+            1_790_500_000,
+            10,
+        )
+        url, _ = fake_http[-1]
+        q = _params(url)["query"][0]
+        assert 'where _trace_id = "' + "t" * 32 + '"' in q
+        assert 'where _parent_id = "965c1c4e965c1c4e"' in q  # not _span_id (unsupported attr)
+
     def test_get_trace_builds_otlp_batches_with_dotted_attributes(self, adapter, fake_http):
         d = adapter.get_trace(TRACE)
         assert fake_http[-1][0] == f"https://uptrace.lan:443/internal/v1/traces/1/{TRACE}"
