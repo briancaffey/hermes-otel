@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.23.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.23.0...hermes-otel-v1.23.1) (2026-10-10)
+
+
+### Bug Fixes
+
+* **dashboard:** Langfuse v3 trace detail reads the exported span attributes, so the header shows the model and token roll-up ([#351](https://github.com/briancaffey/hermes-otel/issues/351)) ([863d516](https://github.com/briancaffey/hermes-otel/commit/863d5162fadd659d43ff5ccbc94a89d83dbee71b)), closes [#346](https://github.com/briancaffey/hermes-otel/issues/346)
+
 ## [1.23.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.22.1...hermes-otel-v1.23.0) (2026-10-10)
 
 
