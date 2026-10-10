@@ -97,7 +97,10 @@ live store of the same profile, read through `/live/*`.
   compare as 32 hex digits (Tempo drops leading zeros).
 - `T3` the detail agrees with Live: same span count, same multiset of span
   names, the root has no parent, every child's parent is in the trace, the
-  same spans are `ERROR`.
+  same spans are `ERROR`, and the root's own attributes carry the model and
+  total tokens the list row shows (the header reads them from the root, so a
+  backend handing back zero-filled usage instead of the exported attributes
+  fails here, #346).
 - `T4` `trace_url` (the "open in" link) is present for backends with a UI and
   contains the trace id.
 
@@ -252,6 +255,12 @@ supplementary probes in the session scratchpad covered the per-issue checklists.
 | jaeger-local, jaeger-v2-local | all-in-one:latest, 2.21.0 | PASS 38 · SKIP 10 each | the v3 query API (#338) |
 | phoenix-local | 20.20.0 | PASS 39 · SKIP 9 | `parent_id is None` on Phoenix 20; one card per trace when widened (#339) |
 | langfuse-local (v3, v4) | 3.225.11, 4.56.0 | PASS 35 · SKIP 13, PASS 36 · SKIP 12 | the v4 read path over v2 observations + metrics; compose MinIO image (#340) |
+
+## 6c. Results (2026-10-10, #346)
+
+| source | image | result | fixed on the way |
+|---|---|---|---|
+| langfuse-local (v3) | 3.225.11 | PASS 35 · SKIP 13 (batch `B261010-144912`) | the v3 detail lifts `metadata.attributes` onto each span, so the header shows the root's model and token roll-up instead of Langfuse's zero-filled `usage`; `T3` now checks the root's model and tokens against the list row, which is what let #346 through on 2026-10-09 |
 
 ## 7. Definition of done (per backend)
 
