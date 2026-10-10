@@ -1426,6 +1426,138 @@ class TestPhoenix:
         assert seen["vars"]["first"] == 2 and "'tool.' in name" in seen["vars"]["filterCondition"]
         assert [t["traceID"] for t in out["traces"]] == ["t1"] and out["has_more"] is True
 
+    # ── Phoenix 20: ``rootSpansOnly`` is gone, roots are a filter predicate ──
+    @staticmethod
+    def _gql_fake(monkeypatch, spans_args, spans):
+        """A Phoenix that answers the project list, the schema introspection
+        (``spans_args``: the argument names of ``Project.spans``) and the
+        span search (``spans``: node dicts)."""
+        seen = {"bodies": []}
+
+        def fake(url, body, headers=None, timeout=None):
+            seen["bodies"].append(body)
+            q = body.get("query", "")
+            if "projects(" in q:
+                return {
+                    "data": {
+                        "projects": {
+                            "edges": [
+                                {"node": {"id": "P1", "name": "hermes-minimal", "hasTraces": True}}
+                            ]
+                        }
+                    }
+                }
+            if "__type" in q:
+                return {
+                    "data": {
+                        "__type": {
+                            "fields": [{"name": "spans", "args": [{"name": a} for a in spans_args]}]
+                        }
+                    }
+                }
+            return {
+                "data": {
+                    "node": {
+                        "name": "hermes-minimal",
+                        "spans": {"edges": [{"node": sp} for sp in spans]},
+                    }
+                }
+            }
+
+        monkeypatch.setattr(phoenix, "http_post_json", fake)
+        monkeypatch.setattr(phoenix, "_ROOT_ARGS_CACHE", {})
+        return seen
+
+    @staticmethod
+    def _node(tid, sid, name, start_ms, parent=None):
+        return {
+            "spanId": sid,
+            "name": name,
+            "latencyMs": 5,
+            "statusCode": "OK",
+            "startTime": f"2026-10-09T20:18:{start_ms:02d}.000+00:00",
+            "endTime": f"2026-10-09T20:18:{start_ms + 1:02d}.000+00:00",
+            "parentId": parent,
+            "attributes": "{}",
+            "context": {"traceId": tid, "spanId": sid},
+            "trace": {"numSpans": 3},
+        }
+
+    def test_without_root_args_roots_become_a_parent_id_predicate(self, monkeypatch):
+        seen = self._gql_fake(
+            monkeypatch,
+            ["first", "timeRange", "filterCondition", "sort", "traceFilterCondition"],
+            [self._node("t1", "r1", "agent", 10)],
+        )
+        a = phoenix.PhoenixAdapter(
+            {
+                "type": "phoenix",
+                "endpoint": "http://localhost:6006",
+                "project_name": "hermes-minimal",
+            }
+        )
+        out = a.search(StructuredFilter(status="error"), 0, 10, 5)
+        search = seen["bodies"][-1]
+        assert (
+            "rootSpansOnly" not in search["query"] and "orphanSpanAsRootSpan" not in search["query"]
+        )
+        assert "rootsOnly" not in search["variables"]
+        assert (
+            search["variables"]["filterCondition"] == "parent_id is None and status_code == 'ERROR'"
+        )
+        assert [t["traceID"] for t in out["traces"]] == ["t1"]
+        # a widened search has no predicate of ours and the schema is not probed again
+        a.search(StructuredFilter(name_prefix="tool.", roots_only=False), 0, 10, 5)
+        assert seen["bodies"][-1]["variables"]["filterCondition"] == "'tool.' in name"
+        assert sum("__type" in b.get("query", "") for b in seen["bodies"]) == 1
+
+    def test_with_root_args_the_legacy_variables_are_sent(self, monkeypatch):
+        seen = self._gql_fake(
+            monkeypatch,
+            ["first", "rootSpansOnly", "orphanSpanAsRootSpan", "filterCondition", "sort"],
+            [self._node("t1", "r1", "agent", 10)],
+        )
+        a = phoenix.PhoenixAdapter(
+            {
+                "type": "phoenix",
+                "endpoint": "http://localhost:6006",
+                "project_name": "hermes-minimal",
+            }
+        )
+        a.search(StructuredFilter(status="error"), 0, 10, 5)
+        search = seen["bodies"][-1]
+        assert "rootSpansOnly: $rootsOnly" in search["query"]
+        assert (
+            search["variables"]["rootsOnly"] is True
+            and search["variables"]["orphanAsRoot"] is False
+        )
+        assert search["variables"]["filterCondition"] == "status_code == 'ERROR'"
+
+    def test_widened_search_is_one_card_per_trace_and_says_more_when_full(self, monkeypatch):
+        # two tool spans of one trace, newest first, plus one of another
+        spans = [
+            self._node("t1", "s3", "tool.terminal", 30, parent="r1"),
+            self._node("t1", "s2", "tool.terminal", 20, parent="r1"),
+            self._node("t2", "s9", "tool.terminal", 15, parent="r2"),
+            self._node("t1", "s1", "tool.terminal", 10, parent="r1"),
+            self._node("t3", "s8", "tool.terminal", 5, parent="r3"),
+        ]
+        seen = self._gql_fake(monkeypatch, ["first", "filterCondition", "sort"], spans)
+        a = phoenix.PhoenixAdapter(
+            {
+                "type": "phoenix",
+                "endpoint": "http://localhost:6006",
+                "project_name": "hermes-minimal",
+            }
+        )
+        out = a.search(StructuredFilter(name_prefix="tool.", roots_only=False), 0, 100, 1)
+        assert seen["bodies"][-1]["variables"]["first"] == 5  # 1 * 4 + 1
+        assert [t["traceID"] for t in out["traces"]] == ["t1"]
+        assert out["traces"][0]["spanSets"][0]["spans"][0]["name"] == "tool.terminal"
+        assert out["has_more"] is True
+        # the cursor sits below t1's OLDEST fetched span (s1 at :10), not the shown one (:30)
+        assert out["next_before_ns"] == phoenix._iso_to_ns("2026-10-09T20:18:10.000+00:00")
+
     def test_detail_reports_truncation_and_the_whole_count(self, monkeypatch):
         a = self._adapter()
         a._project_id_cache = "P1"

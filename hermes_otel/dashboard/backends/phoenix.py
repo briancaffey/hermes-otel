@@ -101,6 +101,15 @@ _CARD_ATTR_KEYS = frozenset(
 )
 
 
+# Whether ``Project.spans`` still takes ``rootSpansOnly`` /
+# ``orphanSpanAsRootSpan``: Phoenix 20.x dropped both (``parent_id is None``
+# in the filter condition is the replacement, verified on 20.20.0,
+# 2026-10-09); older builds still have them. Probed once per query URL.
+_ROOT_ARGS_CACHE: Dict[str, bool] = {}
+
+_SPANS_ARGS_QUERY = '{ __type(name: "Project") { fields { name args { name } } } }'
+
+
 @register
 class PhoenixAdapter(BackendAdapter):
     handles = frozenset({"phoenix"})
@@ -317,12 +326,41 @@ class PhoenixAdapter(BackendAdapter):
 
     # ── Public API ───────────────────────────────────────────────────
 
+    def _supports_root_args(self) -> bool:
+        """True when ``Project.spans`` takes ``rootSpansOnly`` (Phoenix < 20);
+        introspected once per query URL. An answer that does not describe
+        the field at all (a proxy, a fake) keeps the legacy arguments."""
+        cached = _ROOT_ARGS_CACHE.get(self.query_url)
+        if cached is not None:
+            return cached
+        supported = True
+        try:
+            data = self._gql(_SPANS_ARGS_QUERY, {})
+            fields = ((data.get("__type") or {}).get("fields")) if isinstance(data, dict) else None
+            spans = next(
+                (x for x in (fields or []) if isinstance(x, dict) and x.get("name") == "spans"),
+                None,
+            )
+            if spans is not None:
+                names = {a.get("name") for a in (spans.get("args") or []) if isinstance(a, dict)}
+                supported = "rootSpansOnly" in names
+        except BackendError:
+            raise
+        except Exception:
+            supported = True
+        _ROOT_ARGS_CACHE[self.query_url] = supported
+        return supported
+
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         project_id = self._resolve_project_id()
         if not project_id:
             return {"traces": []}
 
         fc = self._build_filter_condition(f)
+        legacy_root_args = self._supports_root_args()
+        if f.roots_only and not legacy_root_args:
+            # Current Phoenix: roots are a filter-condition predicate.
+            fc = "parent_id is None" + (f" and {fc}" if fc else "")
         end_ns = end_s * 1_000_000_000
         if f.before_ns:
             end_ns = min(end_ns, int(f.before_ns))
@@ -337,55 +375,67 @@ class PhoenixAdapter(BackendAdapter):
         # be treated as "root". That leaks non-root spans
         # (``api.*`` / ``tool.*``) into the roots-only view when their
         # actual parent is paginated out. Force it off for "root only".
-        query = """
+        root_vars = "$rootsOnly: Boolean!, $orphanAsRoot: Boolean!," if legacy_root_args else ""
+        root_args = (
+            "rootSpansOnly: $rootsOnly, orphanSpanAsRootSpan: $orphanAsRoot,"
+            if legacy_root_args
+            else ""
+        )
+        query = f"""
         query SearchSpans(
           $projectId: ID!,
           $first: Int!,
           $timeRange: TimeRange!,
           $filterCondition: String,
-          $rootsOnly: Boolean!,
-          $orphanAsRoot: Boolean!,
+          {root_vars}
           $sort: SpanSort
-        ) {
-          node(id: $projectId) {
-            ... on Project {
+        ) {{
+          node(id: $projectId) {{
+            ... on Project {{
               name
               spans(
                 first: $first,
-                rootSpansOnly: $rootsOnly,
-                orphanSpanAsRootSpan: $orphanAsRoot,
+                {root_args}
                 timeRange: $timeRange,
                 filterCondition: $filterCondition,
                 sort: $sort
-              ) {
-                edges { node {
+              ) {{
+                edges {{ node {{
                   spanId name latencyMs statusCode startTime endTime
                   parentId spanKind attributes
-                  context { traceId spanId }
-                  input { value mimeType }
-                  output { value mimeType }
+                  context {{ traceId spanId }}
+                  input {{ value mimeType }}
+                  output {{ value mimeType }}
                   tokenCountTotal tokenCountPrompt tokenCountCompletion
                   numChildSpans
-                  trace { numSpans }
-                } }
-              }
-            }
-          }
-        }
+                  trace {{ numSpans }}
+                }} }}
+              }}
+            }}
+          }}
+        }}
         """
         data = self._gql(
             query,
             {
                 "projectId": project_id,
-                # One beyond the page so has_more is exact (trace_page).
-                "first": int(limit) + 1,
+                # One beyond the page so has_more is exact (trace_page). Widened
+                # (the kind filter) the rows are spans and several of one trace
+                # share a page, so ask for more and dedupe below.
+                "first": int(limit) + 1 if f.roots_only else int(limit) * 4 + 1,
                 "timeRange": time_range,
                 "filterCondition": fc,
-                "rootsOnly": bool(f.roots_only),
-                # ``orphan-as-root`` is on when the user wants "any
-                # span" (so orphans aren't dropped), off when they want
-                # strict roots.
-                "orphanAsRoot": not bool(f.roots_only),
+                **(
+                    {
+                        "rootsOnly": bool(f.roots_only),
+                        # ``orphan-as-root`` is on when the user wants "any
+                        # span" (so orphans aren't dropped), off when they
+                        # want strict roots.
+                        "orphanAsRoot": not bool(f.roots_only),
+                    }
+                    if legacy_root_args
+                    else {}
+                ),
                 # Newest first — matches what the trace list UI wants
                 # (latest activity at top) and lines up with the other
                 # adapters.
@@ -397,10 +447,19 @@ class PhoenixAdapter(BackendAdapter):
         edges = ((project.get("spans") or {}).get("edges")) or []
 
         traces: List[Dict[str, Any]] = []
+        seen_traces: set = set()
+        oldest_fetched: Dict[str, int] = {}
         for e in edges:
             span = e.get("node") or {}
             trace_id = (span.get("context") or {}).get("traceId")
             if not trace_id:
+                continue
+            row_start = _iso_to_ns(span.get("startTime"))
+            if row_start:
+                oldest_fetched[trace_id] = min(oldest_fetched.get(trace_id, row_start), row_start)
+            if not f.roots_only and trace_id in seen_traces:
+                # One card per trace, named after its newest matching span,
+                # as the other adapters show a widened search.
                 continue
             # Defensive: even with orphanSpanAsRootSpan=false, drop
             # anything that still has a parentId when the user asked
@@ -409,6 +468,7 @@ class PhoenixAdapter(BackendAdapter):
                 continue
             if f.name_prefix and not str(span.get("name") or "").startswith(f.name_prefix):
                 continue
+            seen_traces.add(trace_id)
             start_ns = _iso_to_ns(span.get("startTime"))
             card_attrs = self._span_to_card_attrs(span)
             # ``Trace.numSpans`` is the authoritative total — count
@@ -441,7 +501,26 @@ class PhoenixAdapter(BackendAdapter):
                     ],
                 }
             )
-        return trace_page(strictly_older_traces(traces, f), limit)
+        page = trace_page(strictly_older_traces(traces, f), limit)
+        if not f.roots_only and not page["has_more"] and len(edges) > int(limit) * 4 and traces:
+            # The fetch came back full: older spans exist even though they
+            # collapsed into fewer traces than the page holds.
+            page["has_more"] = True
+            page["next_before_ns"] = min(
+                int(t.get("startTimeUnixNano") or 0) for t in page["traces"]
+            )
+        if not f.roots_only and page["has_more"] and page["traces"]:
+            # Widened rows are spans: move the cursor below the oldest
+            # fetched span of every trace on this page, so a trace's other
+            # matching spans do not bring it back on the next page.
+            shown = [
+                oldest_fetched[t["traceID"]]
+                for t in page["traces"]
+                if t["traceID"] in oldest_fetched
+            ]
+            if shown:
+                page["next_before_ns"] = min(int(page["next_before_ns"] or 0) or min(shown), *shown)
+        return page
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         project_id = self._resolve_project_id()
