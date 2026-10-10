@@ -76,6 +76,7 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
+| `gen_ai.usage.*`, `llm.token_count.*` | int | The turn's token roll-up: the sum of its `api.*` spans, same keys as there (optional). Withheld from a backend whose entry has `root_usage: false`, the preset for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); the `api.*` spans and `hermes.cost.*` are never touched |
 | `hermes.cost.usage` | float | The turn's USD cost: the sum of its API calls' `hermes.cost.usage`, set **only when every call was priced** (optional) |
 | `hermes.cost.status` | string | `actual` (every call provider-reported) · `estimated` · `partial` (some calls priced, some not: no total) · `included` (subscription route) · `unknown` (no price for the model); absent when no call reported usage |
 | `gen_ai.response.model` | string | Model at turn end |

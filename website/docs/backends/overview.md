@@ -136,7 +136,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | OpenLIT | cumulative stored as-is (verified) | cumulative (default) | stored (exponential histogram type) |
 | Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
 
-Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
+Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. Backends that total a trace by summing every span's `gen_ai.usage.*` (Opik, LangWatch) are sent the `agent` root without its token roll-up (`root_usage: false`, the preset for those two types; `true` elsewhere), so their trace totals equal the sum of the `api.*` spans while Phoenix, Langfuse and the rest keep the roll-up on the root. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
 
 **Short-lived runs.** `hermes -z` exports metrics once, when it exits. A single cumulative point from a fresh process counts as zero on Datadog and New Relic (they treat the first point as a baseline) and goes stale after five minutes on Prometheus; the same run exported as delta counts in full on every delta-capable backend. Long-lived gateways are unaffected either way.
 

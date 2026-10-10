@@ -355,6 +355,12 @@
 # (for example Tempo query URL) while trace export still goes through an OTel
 # Collector entry. `trace: false` is accepted as a friendly alias.
 #
+# `root_usage: false` sends this backend the `agent` / `cron` root without
+# its token roll-up (`gen_ai.usage.*` / `llm.token_count.*`); the api.* spans
+# and `hermes.cost.*` are untouched and every other backend still gets the
+# roll-up. Preset off for `opik` and `langwatch`, which sum usage over every
+# span and would show twice the turn's tokens (#327); `true` overrides.
+#
 # `ui_url:` links the entry's card in the dashboard's Settings tab to the
 # backend's web UI (needed where the UI is not on the OTLP origin, e.g.
 # Grafana for `lgtm`, Jaeger's :16686, SigNoz's :8080).

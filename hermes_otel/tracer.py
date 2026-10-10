@@ -33,7 +33,7 @@ from .debug_utils import (
     logger,
     remove_sdk_log_forwarding,
 )
-from .helpers import derive_signal_endpoint, package_version
+from .helpers import derive_signal_endpoint, is_usage_key, package_version, without_usage_keys
 from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .plugin_config import (
     BackendConfig,
@@ -55,7 +55,7 @@ try:
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
+    from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
 
@@ -124,7 +124,73 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
     }
 
 
+def _is_usage_rollup_span(span: Any) -> bool:
+    attrs = getattr(span, "attributes", None) or {}
+    return attrs.get("openinference.span.kind") == "AGENT" and any(is_usage_key(k) for k in attrs)
+
+
+def strip_root_usage(spans: Any) -> Any:
+    """``spans`` with every AGENT-kind span rebuilt without its usage attributes.
+
+    Spans that carry no roll-up are passed through as the same objects; the
+    sequence keeps its order. Pure, so the per-backend wrapper and its tests
+    share it.
+    """
+    if not _OTEL_AVAILABLE or not any(_is_usage_rollup_span(sp) for sp in spans):
+        return spans
+    out = []
+    for sp in spans:
+        if not _is_usage_rollup_span(sp):
+            out.append(sp)
+            continue
+        kept = without_usage_keys(sp.attributes or {})
+        out.append(
+            ReadableSpan(
+                name=sp.name,
+                context=sp.get_span_context(),
+                parent=sp.parent,
+                resource=sp.resource,
+                attributes=kept,
+                events=sp.events,
+                links=sp.links,
+                kind=sp.kind,
+                status=sp.status,
+                start_time=sp.start_time,
+                end_time=sp.end_time,
+                instrumentation_scope=sp.instrumentation_scope,
+            )
+        )
+    return out
+
+
 if _OTEL_AVAILABLE:
+
+    class _RootUsageStrippingExporter(SpanExporter):
+        """Delegating exporter that drops the token roll-up from agent-kind spans.
+
+        The plugin puts the turn's usage total on the ``agent`` / ``cron``
+        root as well as on each ``api.*`` span. Backends that compute
+        trace-level usage by summing every span (Opik, LangWatch) then show
+        twice the real tokens, and Opik doubles its estimated cost the same
+        way. Bound to one backend's exporter, this wrapper rebuilds each
+        AGENT-kind span without ``gen_ai.usage.*`` / ``llm.token_count.*``
+        (``hermes.cost.*`` and everything else stay) so only that backend's
+        copy changes; every other exporter and the live store still get the
+        roll-up (#327).
+        """
+
+        def __init__(self, inner: Any) -> None:
+            self._inner = inner
+
+        def export(self, spans: Any) -> Any:
+            return self._inner.export(strip_root_usage(spans))
+
+        def shutdown(self) -> None:
+            self._inner.shutdown()
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            flush = getattr(self._inner, "force_flush", None)
+            return flush(timeout_millis) if flush else True
 
     class _LoggingSpanExporter(SpanExporter):
         """Delegating exporter that records every batch's outcome in the debug log.
@@ -1090,9 +1156,12 @@ class HermesOTelPlugin:
                 hdrs = self._merge_headers(b.headers)
                 if b.supports_traces:
                     try:
-                        exporter = _LoggingSpanExporter(
-                            OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs), b.display_name
-                        )
+                        inner: Any = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
+                        if not b.root_usage:
+                            # This backend sums usage over every span (#327).
+                            inner = _RootUsageStrippingExporter(inner)
+                            debug_log(f"root usage stripped for {b.display_name}")
+                        exporter = _LoggingSpanExporter(inner, b.display_name)
                         processor = BatchSpanProcessor(
                             exporter,
                             max_queue_size=self.config.span_batch_max_queue_size,
