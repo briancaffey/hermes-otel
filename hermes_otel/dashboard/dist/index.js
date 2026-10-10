@@ -15,7 +15,13 @@
   var createContext = hooks.createContext || SDK.React && SDK.React.createContext;
   var useTheme = SDK.useTheme;
   var C = SDK.components || {};
-  var { Card, CardHeader, CardContent, Badge, Button, Input, Label, Select, SelectOption, Checkbox } = C;
+  var { Card, CardHeader, CardContent, Badge, Button, Input, Label, SelectOption, Checkbox } = C;
+  var HostSelect = C.Select;
+  function Select({ "aria-label": ariaLabel, ...props }) {
+    const el = React.createElement(HostSelect, props);
+    if (!ariaLabel) return el;
+    return React.createElement("label", { className: "otel-select-label" }, React.createElement("span", { className: "otel-sr-only" }, ariaLabel), el);
+  }
   var API = "/api/plugins/hermes_otel";
   function pageProfile() {
     try {
@@ -724,9 +730,28 @@
     children,
     label,
     as = "div",
+    toggle,
+    open,
     ...rest
   }) {
     const Tag = as;
+    if (toggle) {
+      const { "aria-expanded": _ignored, ...plain } = rest;
+      return /* @__PURE__ */ React.createElement(Tag, { className, onClick: onActivate, ...plain }, /* @__PURE__ */ React.createElement(
+        "button",
+        {
+          type: "button",
+          className: "otel-row-toggle",
+          "aria-expanded": !!open,
+          "aria-label": label,
+          onClick: (e) => {
+            e.stopPropagation();
+            onActivate();
+          }
+        },
+        open ? "\u25BE" : "\u25B8"
+      ), children);
+    }
     return /* @__PURE__ */ React.createElement(
       Tag,
       {
@@ -2010,7 +2035,7 @@
     const usable = backends.filter((b) => backendUsable(b, need));
     const unusable = backends.filter((b) => !backendUsable(b, need));
     const isLive = source === LIVE;
-    return /* @__PURE__ */ React.createElement("div", { className: cn("inline-flex flex-wrap items-center gap-2", className) }, /* @__PURE__ */ React.createElement("label", { className: "inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground", htmlFor: "otel-source" }, isLive ? /* @__PURE__ */ React.createElement(IconZap, { size: 12, className: "otel-c-agent" }) : /* @__PURE__ */ React.createElement(IconDatabase, { size: 12 }), "source"), /* @__PURE__ */ React.createElement(Select, { id: "otel-source", value: source, onValueChange: onChange, className: "otel-w-56 h-8" }, /* @__PURE__ */ React.createElement(SelectOption, { value: LIVE }, "Live (in-process)"), usable.map((b) => /* @__PURE__ */ React.createElement(SelectOption, { key: b.name, value: b.name }, b.type !== b.name ? `${b.name} (${b.type})` : b.name))), unusable.length ? /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-muted-foreground", title: unusable.map((b) => `${b.name}: ${unusableReason(b, need)}`).join("\n") }, unusable.length, " backend", unusable.length === 1 ? "" : "s", " cannot serve this tab") : null);
+    return /* @__PURE__ */ React.createElement("div", { className: cn("inline-flex flex-wrap items-center gap-2", className) }, /* @__PURE__ */ React.createElement("label", { className: "inline-flex items-center gap-1.5 text-[11px] font-medium uppercase tracking-wide text-muted-foreground", htmlFor: "otel-source" }, isLive ? /* @__PURE__ */ React.createElement(IconZap, { size: 12, className: "otel-c-agent" }) : /* @__PURE__ */ React.createElement(IconDatabase, { size: 12 }), "source"), /* @__PURE__ */ React.createElement(Select, { id: "otel-source", value: source, onValueChange: onChange, className: "otel-w-56 h-8", "aria-label": "source" }, /* @__PURE__ */ React.createElement(SelectOption, { value: LIVE }, "Live (in-process)"), usable.map((b) => /* @__PURE__ */ React.createElement(SelectOption, { key: b.name, value: b.name }, b.type !== b.name ? `${b.name} (${b.type})` : b.name))), unusable.length ? /* @__PURE__ */ React.createElement("span", { className: "text-[11px] text-muted-foreground", title: unusable.map((b) => `${b.name}: ${unusableReason(b, need)}`).join("\n") }, unusable.length, " backend", unusable.length === 1 ? "" : "s", " cannot serve this tab") : null);
   }
 
   // src/logs.tsx
@@ -2041,7 +2066,8 @@
       Clickable,
       {
         onActivate: () => onToggle == null ? void 0 : onToggle(),
-        "aria-expanded": !!expanded,
+        toggle: true,
+        open: !!expanded,
         label: `${expanded ? "collapse" : "expand"} log line`,
         className: "otel-row flex cursor-pointer items-start gap-2 px-3 py-1",
         title: expanded ? "collapse" : "expand attributes"
@@ -2979,7 +3005,7 @@
           onSubmit();
         }
       },
-      /* @__PURE__ */ React.createElement("div", { className: "otel-search-grid" }, show("status") ? /* @__PURE__ */ React.createElement(Field, { label: "status", support: sup("status") }, /* @__PURE__ */ React.createElement(Select, { value: filters.status, onValueChange: (v) => set("status", v), className: "h-8" }, /* @__PURE__ */ React.createElement(SelectOption, { value: "" }, "any"), /* @__PURE__ */ React.createElement(SelectOption, { value: "ok" }, "ok"), /* @__PURE__ */ React.createElement(SelectOption, { value: "error" }, "error"))) : null, show("kind") ? /* @__PURE__ */ React.createElement(Field, { label: "kind", support: sup("kind") }, /* @__PURE__ */ React.createElement(Select, { value: filters.kind, onValueChange: (v) => set("kind", v), className: "h-8" }, /* @__PURE__ */ React.createElement(SelectOption, { value: "" }, "any"), KINDS.map((k) => /* @__PURE__ */ React.createElement(SelectOption, { key: k, value: k }, k)))) : null, show("tool") ? /* @__PURE__ */ React.createElement(Field, { label: "tool", support: sup("tool") }, input("tool", "terminal")) : null, show("model") ? /* @__PURE__ */ React.createElement(Field, { label: "model", support: sup("model") }, input("model", backend ? "exact model name" : "substring")) : null, show("session") ? /* @__PURE__ */ React.createElement(Field, { label: "session id", support: sup("session") }, input("session", "20260920_0814\u2026")) : null, show("minDurationMs") ? /* @__PURE__ */ React.createElement(Field, { label: "min duration (ms)", support: sup("minDurationMs") }, input("minDurationMs", "0", "number")) : null, show("text") ? /* @__PURE__ */ React.createElement(Field, { label: "text", support: sup("text") }, input("text", backend ? "in the prompt" : "anywhere in attributes")) : null, show("traceId") ? /* @__PURE__ */ React.createElement(Field, { label: "trace id", support: sup("traceId") }, input("traceId", "trace id")) : null, /* @__PURE__ */ React.createElement(Field, { label: "lookback" }, /* @__PURE__ */ React.createElement(Select, { value: String(filters.lookback), onValueChange: (v) => set("lookback", Number(v)), className: "h-8" }, LOOKBACKS.map((l) => /* @__PURE__ */ React.createElement(SelectOption, { key: l.hours, value: String(l.hours) }, l.label))))),
+      /* @__PURE__ */ React.createElement("div", { className: "otel-search-grid" }, show("status") ? /* @__PURE__ */ React.createElement(Field, { label: "status", support: sup("status") }, /* @__PURE__ */ React.createElement(Select, { value: filters.status, onValueChange: (v) => set("status", v), className: "h-8", "aria-label": "status" }, /* @__PURE__ */ React.createElement(SelectOption, { value: "" }, "any"), /* @__PURE__ */ React.createElement(SelectOption, { value: "ok" }, "ok"), /* @__PURE__ */ React.createElement(SelectOption, { value: "error" }, "error"))) : null, show("kind") ? /* @__PURE__ */ React.createElement(Field, { label: "kind", support: sup("kind") }, /* @__PURE__ */ React.createElement(Select, { value: filters.kind, onValueChange: (v) => set("kind", v), className: "h-8", "aria-label": "kind" }, /* @__PURE__ */ React.createElement(SelectOption, { value: "" }, "any"), KINDS.map((k) => /* @__PURE__ */ React.createElement(SelectOption, { key: k, value: k }, k)))) : null, show("tool") ? /* @__PURE__ */ React.createElement(Field, { label: "tool", support: sup("tool") }, input("tool", "terminal")) : null, show("model") ? /* @__PURE__ */ React.createElement(Field, { label: "model", support: sup("model") }, input("model", backend ? "exact model name" : "substring")) : null, show("session") ? /* @__PURE__ */ React.createElement(Field, { label: "session id", support: sup("session") }, input("session", "20260920_0814\u2026")) : null, show("minDurationMs") ? /* @__PURE__ */ React.createElement(Field, { label: "min duration (ms)", support: sup("minDurationMs") }, input("minDurationMs", "0", "number")) : null, show("text") ? /* @__PURE__ */ React.createElement(Field, { label: "text", support: sup("text") }, input("text", backend ? "in the prompt" : "anywhere in attributes")) : null, show("traceId") ? /* @__PURE__ */ React.createElement(Field, { label: "trace id", support: sup("traceId") }, input("traceId", "trace id")) : null, /* @__PURE__ */ React.createElement(Field, { label: "lookback" }, /* @__PURE__ */ React.createElement(Select, { value: String(filters.lookback), onValueChange: (v) => set("lookback", Number(v)), className: "h-8", "aria-label": "lookback" }, LOOKBACKS.map((l) => /* @__PURE__ */ React.createElement(SelectOption, { key: l.hours, value: String(l.hours) }, l.label))))),
       backend && (show("q") || show("service")) ? /* @__PURE__ */ React.createElement("div", { className: "otel-search-grid" }, show("q") ? /* @__PURE__ */ React.createElement(Field, { label: rawLabel, className: "otel-span-2", support: sup("q") }, input("q", (status == null ? void 0 : status.raw_placeholder) || "")) : null, show("service") ? /* @__PURE__ */ React.createElement(Field, { label: "service", support: sup("service") }, input("service", "any")) : null, show("rootsOnly") ? /* @__PURE__ */ React.createElement(
         "label",
         {
@@ -3013,11 +3039,11 @@
       Clickable,
       {
         onActivate: onToggle,
-        "aria-expanded": open,
+        toggle: true,
+        open,
         label: `${open ? "collapse" : "expand"} session ${row.session}`,
         className: "otel-row flex cursor-pointer flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2"
       },
-      /* @__PURE__ */ React.createElement("span", { className: "w-3 shrink-0 text-xs text-muted-foreground", "aria-hidden": true }, open ? "\u25BE" : "\u25B8"),
       /* @__PURE__ */ React.createElement("span", { className: "font-mono text-sm", title: row.session }, row.session),
       row.platform ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, row.platform) : null,
       row.errors ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "text-[10px]" }, row.errors, " error", row.errors === 1 ? "" : "s") : null,
@@ -4095,7 +4121,9 @@
     if (m) rgb = [0, 2, 4].map((i) => parseInt(m[1].slice(i, i + 2), 16));
     else {
       const n = /rgba?\(\s*([\d.]+)[,\s]+([\d.]+)[,\s]+([\d.]+)/i.exec(background);
+      const c = /color\(\s*srgb\s+([\d.]+)\s+([\d.]+)\s+([\d.]+)/i.exec(background);
       if (n) rgb = [Number(n[1]), Number(n[2]), Number(n[3])];
+      else if (c) rgb = [Number(c[1]) * 255, Number(c[2]) * 255, Number(c[3]) * 255];
       else {
         const o = /oklch\(\s*([\d.]+%?)/i.exec(background);
         if (o) {
@@ -4115,8 +4143,10 @@
     const name = (theme == null ? void 0 : theme.themeName) || "";
     return useMemo(() => {
       try {
+        const painted = getComputedStyle(document.body).backgroundColor;
+        if (painted && !/rgba\(\s*0,\s*0,\s*0,\s*0\)|transparent/i.test(painted)) return schemeOf(painted);
         const probe = document.createElement("div");
-        probe.style.background = "var(--color-background)";
+        probe.style.background = "var(--background, var(--color-background))";
         probe.style.display = "none";
         document.body.appendChild(probe);
         const bg = getComputedStyle(probe).backgroundColor;
@@ -4180,7 +4210,7 @@
         /* @__PURE__ */ React.createElement(Icon, { size: 15 }),
         t.label
       );
-    }), /* @__PURE__ */ React.createElement("span", { className: "ml-auto pr-1 font-mono text-[11px] text-muted-foreground/60", title: "absolute times are shown in this timezone" }, tz ? `${tz} \xB7 ` : "", "hermes-otel")), /* @__PURE__ */ React.createElement(SourceProvider, null, TABS.map((t) => {
+    }), /* @__PURE__ */ React.createElement("span", { className: "ml-auto pr-1 font-mono text-[11px] text-muted-foreground", title: "absolute times are shown in this timezone" }, tz ? `${tz} \xB7 ` : "", "hermes-otel")), /* @__PURE__ */ React.createElement(SourceProvider, null, TABS.map((t) => {
       const on = t.id === tab;
       const Page = t.Page;
       const body = /* @__PURE__ */ React.createElement(PageBoundary, { name: t.label }, /* @__PURE__ */ React.createElement(Page, null));

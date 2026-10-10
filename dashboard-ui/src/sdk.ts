@@ -36,7 +36,16 @@ export const useTheme: (() => { themeName?: string } | undefined) | undefined = 
 
 // Native UI components (shadcn primitives provided by the host).
 export const C: any = SDK.components || {};
-export const { Card, CardHeader, CardContent, Badge, Button, Input, Label, Select, SelectOption, Checkbox } = C;
+export const { Card, CardHeader, CardContent, Badge, Button, Input, Label, SelectOption, Checkbox } = C;
+const HostSelect = C.Select;
+/** The host's Select drops `aria-label` on its trigger button (axe: button-name, #289).
+ *  Wrapping it in a `display: contents` label with screen-reader-only text gives the
+ *  trigger an accessible name without touching layout. */
+export function Select({ "aria-label": ariaLabel, ...props }: any) {
+  const el = React.createElement(HostSelect, props);
+  if (!ariaLabel) return el;
+  return React.createElement("label", { className: "otel-select-label" }, React.createElement("span", { className: "otel-sr-only" }, ariaLabel), el);
+}
 
 export const API = "/api/plugins/hermes_otel";
 

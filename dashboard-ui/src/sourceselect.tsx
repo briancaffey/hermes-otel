@@ -37,7 +37,7 @@ export function SourceSelect({
         {isLive ? <IconZap size={12} className="otel-c-agent" /> : <IconDatabase size={12} />}
         source
       </label>
-      <Select id="otel-source" value={source} onValueChange={onChange} className="otel-w-56 h-8">
+      <Select id="otel-source" value={source} onValueChange={onChange} className="otel-w-56 h-8" aria-label="source">
         <SelectOption value={LIVE}>Live (in-process)</SelectOption>
         {usable.map((b) => (
           <SelectOption key={b.name} value={b.name}>
