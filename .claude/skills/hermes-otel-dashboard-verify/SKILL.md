@@ -210,12 +210,12 @@ knows about it. Keep this table true; the harness reads its own copy in
 |---|---|---|---|---|---|---|
 | lgtm | ✅ | ✅ Prometheus | ✅ Loki | `docker compose -f docker-compose/lgtm/docker-compose.yaml up -d` (the running local copy maps Grafana to :3001) | `lgtm-local` | counters via raw `query_range` with first-sample counting; roots via `nestedSetParent < 0`; Tempo anchors regexes, so prefixes carry `.*` |
 | openobserve | ✅ | ✅ | ✅ | `docker compose -f docker-compose/openobserve/docker-compose.yaml up -d` | `openobserve-local` | healthcheck false-negative; process identity from `start_time`; links to `/web/traces/trace-details` |
-| signoz | ✅ | ✅ | ✅ | `docker compose -f docker-compose/signoz/docker-compose.yaml up -d` (heavy) | `signoz-local` | 30-min JWT; detail via GET `/api/v1/traces/{id}` |
-| uptrace | ✅ | ✅ | ✅ | `docker compose -f <copy of docker-compose/uptrace/docker-compose.yaml with 8124/9009/5433 remaps> up -d` (UI + OTLP on 14318) | `uptrace-local` | needs `endpoint` + `dsn` + `user_token` (compose defaults `project1_secret` / `user1_secret`); cumulative `$m` points |
-| jaeger | ✅ | — | — | `docker compose -f <copy of docker-compose/jaeger/docker-compose.yaml with OTLP on 4320> up -d` (4318 is LGTM's) | `jaeger-local` | `status_ok` and `free_text` are `none`, roots client-side |
+| signoz | ✅ | ✅ | ✅ | `docker compose -f docker-compose/signoz/docker-compose.yaml up -d` (heavy) | `signoz-local` | the OSS build has no PAT endpoint: `api_key` is a 30-min JWT from `POST /api/v2/sessions/email_password`; metrics open on the step grid; detail via GET `/api/v1/traces/{id}` |
+| uptrace | ✅ | ✅ | ✅ | `docker compose -f <copy of docker-compose/uptrace/docker-compose.yaml with Postgres on 5433> -p uptrace up -d` (UI + OTLP on 14318) | `uptrace-local` | needs `endpoint` + `dsn` + `user_token` (compose defaults `project1_secret` / `user1_secret`); widened pages fetch `limit*4+1` rows; logs by span via `_parent_id` |
+| jaeger | ✅ | — | — | `docker compose -f docker-compose/jaeger/docker-compose.yaml up -d` (v1, OTLP 4318 / UI 16686) and `docker-compose/jaeger-v2` (2.21.0, OTLP 4368 / UI 16696, the `/api/v3` API) | `jaeger-local`, `jaeger-v2-local` | the API is probed once per query URL (classic first); `status_ok` and `free_text` are `none`, roots client-side |
 | tempo | ✅ | — | — | part of lgtm (query_port 3200) | `tempo-local` | TraceQL |
-| phoenix | ✅ | — | — | `docker compose -f docker-compose/phoenix/docker-compose.yaml up -d` | `phoenix-local` | `status=error` means the root errored, not any span |
-| langfuse | ✅ | — | — | `docker compose -f <copy of docker-compose/langfuse/docker-compose.yaml with web on 3002> up -d` (heavy; keys `lf_pk_hermes_dev` / `lf_sk_hermes_dev`) | `langfuse-local` | v3 works; v4 events-only deployments answer 404 on `/api/public/traces` (#246): expect a `kind=config` error, not rows. Trace timestamp ≈ root start (±100 ms tolerated) |
+| phoenix | ✅ | — | — | `docker compose -f docker-compose/phoenix/docker-compose.yaml up -d` | `phoenix-local` | `status=error` means the root errored, not any span; Phoenix 20 has no `rootSpansOnly` (schema probed once, `parent_id is None` instead) |
+| langfuse | ✅ | — | — | `docker compose -f <copy of docker-compose/langfuse/docker-compose.yaml with web on 3002> -p langfuse up -d` (heavy; keys `lf_pk_hermes_dev` / `lf_sk_hermes_dev`; `LANGFUSE_VERSION=4` for v4) | `langfuse-local` | v3 through the trace endpoints; v4 events-only through `/api/public/v2/observations` + `/v2/metrics` (probed once; `query_api` pins). Trace timestamp ≈ root start (±100 ms tolerated) |
 
 ## 6. Results (2026-10-06, hermes-otel working tree after this round)
 
@@ -236,6 +236,22 @@ Batches of four turns on the minimal profile; every source scored clean
 Page-side: the trace card takes turn totals from the root span when several
 spans are matched. Harness-side learnings are in the check descriptions
 above and in `backends.yaml`.
+
+## 6b. Results (2026-10-09, milestone 8 close-out, one local compose stack at a time)
+
+A fresh batch per backend (plus `--batch` re-scores after each fix); the
+supplementary probes in the session scratchpad covered the per-issue checklists.
+
+| source | image | result | fixed on the way |
+|---|---|---|---|
+| lgtm-local | otel-lgtm 0.34.0 / Tempo 3.0.3 | PASS 51 | Tempo paging over-fetches (`search_fetch`); a raw TraceQL query keeps min duration client-side and reports the replaced fields (#334) |
+| tempo-local, tempo-nologs | same stack as `type: tempo` | PASS 51 · PASS 35/SKIP 13 | harness: `optional` signal expectations |
+| openobserve-local | latest | PASS 51 | events-only before the first event answered empty on current builds (#335) |
+| signoz-local | v0.119.0 | PASS 51 | metrics query opens on the step grid (a short window read 0) (#336) |
+| uptrace-local | 2.1.0-beta.5 | PASS 51 | logs by span via `_parent_id`; widened pages per-trace with an exact cursor (#337) |
+| jaeger-local, jaeger-v2-local | all-in-one:latest, 2.21.0 | PASS 38 · SKIP 10 each | the v3 query API (#338) |
+| phoenix-local | 20.20.0 | PASS 39 · SKIP 9 | `parent_id is None` on Phoenix 20; one card per trace when widened (#339) |
+| langfuse-local (v3, v4) | 3.225.11, 4.56.0 | PASS 35 · SKIP 13, PASS 36 · SKIP 12 | the v4 read path over v2 observations + metrics; compose MinIO image (#340) |
 
 ## 7. Definition of done (per backend)
 
