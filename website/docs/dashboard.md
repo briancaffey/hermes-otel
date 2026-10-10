@@ -111,6 +111,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 | `GET /live/traces/{trace_id}` | The trace's spans and its summary row (`partial` included) |
 | `GET /live/sessions` (`lookback_hours`, `limit`) | One row per session: turns, spans, errors, tokens, cost, tool calls, newest first; `has_more` when more sessions than `limit` exist in the window |
 | `GET /live/metrics/names` | Every instrument in the store with its point count (the whole buffer, not a window) |
+| window defaults | `lookback_hours` defaults to 1 on the trace, metric and log routes and to 24 on `/live/sessions` and the loggers routes; `start_s` / `end_s` (unix seconds, `0` is the epoch) replace it, and `start_s` after `end_s` is a 422 |
 | `GET /live/metrics/query` (`name`, `group_by`, `agg`, `lookback_hours` or `start_s`/`end_s`, `bucket_s`) | Time buckets for one instrument, optionally split by an attribute. More than 5,000 buckets (window ÷ `bucket_s`) is a `422` |
 | `GET /live/logs/search` (`trace_id`, `span_id`, `session`, `min_level` on the Python scale: 10 debug, 20 info, 30 warn, 40 error, `logger`, `text`, `event_name`, `events_only`, `lookback_hours` or an absolute `start_s`/`end_s` window, `limit`, `before_ns`) | One page of filtered log lines, newest first: `{logs, next_before_ns, has_more}`. Pass `next_before_ns` back as `before_ns` for the next (older) page. Rows carry the OTel `severity_number` next to the level |
 | `GET /live/loggers` | Logger names with counts |

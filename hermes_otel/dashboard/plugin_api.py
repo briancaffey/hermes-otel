@@ -330,10 +330,11 @@ def _window(
 ) -> "tuple[int, int]":
     # The default window ends now, to the nanosecond: a row written a fraction
     # of a second ago must not fall outside a window truncated to the second.
-    end_ns = int(end_s) * 1_000_000_000 if end_s else time.time_ns()
+    # ``0`` is the epoch, not "unset" (#290): only ``None`` falls back.
+    end_ns = int(end_s) * 1_000_000_000 if end_s is not None else time.time_ns()
     start_ns = (
         int(start_s) * 1_000_000_000
-        if start_s
+        if start_s is not None
         else end_ns - int(lookback_hours * 3600) * 1_000_000_000
     )
     if start_ns > end_ns:
@@ -637,8 +638,10 @@ def _parse_filter(
 def _window_s(lookback_hours: float, start_s: Optional[int], end_s: Optional[int]):
     """``(start_s, end_s)`` for a backend route: an absolute window when given,
     else the lookback ending now."""
-    end = int(end_s) if end_s else int(time.time())
-    start = int(start_s) if start_s else end - int(lookback_hours * 3600)
+    end = int(end_s) if end_s is not None else int(time.time())
+    start = int(start_s) if start_s is not None else end - int(lookback_hours * 3600)
+    if start > end:
+        raise HTTPException(status_code=422, detail="start_s must not be after end_s")
     return start, end
 
 

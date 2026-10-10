@@ -41,8 +41,16 @@ def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
 
 
 def _hermes_home() -> Path:
-    """Hermes's scope-aware home (the profile's own inside a multiplexed
-    gateway, #70) when Hermes is importable, else ``$HERMES_HOME`` / ``~/.hermes``."""
+    """The plugin's own resolver (``hermes_otel.hermes_home``: Hermes's
+    scope-aware home when Hermes is importable, else ``$HERMES_HOME`` /
+    ``~/.hermes``) when the package is importable; the same rule inline when
+    this package was loaded by file path as a top-level ``backends`` (#290)."""
+    try:
+        from hermes_otel.hermes_home import resolve_hermes_home
+
+        return resolve_hermes_home()
+    except Exception:
+        pass
     try:
         from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
 
