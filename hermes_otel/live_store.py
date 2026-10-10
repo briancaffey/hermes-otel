@@ -1140,6 +1140,7 @@ def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
     if current is not None and str(getattr(current, "db_path", "")) == path:
         return current
     with _LIVE_LOCK:
+        _evict_stale_readers(keep=path)
         store = _STORES_BY_PATH.get(path)
         if store is None and create:
             try:
@@ -1147,7 +1148,35 @@ def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
             except Exception:  # pragma: no cover
                 return None
             _STORES_BY_PATH[path] = store
+            _evict_stale_readers(keep=path)
     return store
+
+
+# Readers kept at most, beyond the one being asked for: a dashboard that has
+# served many profiles does not hold a connection per profile forever (#290).
+MAX_READERS = 16
+
+
+def _evict_stale_readers(keep: str) -> None:
+    """Drop readers whose file no longer exists, then the oldest beyond
+    ``MAX_READERS``; ``keep`` is never dropped. Caller holds ``_LIVE_LOCK``."""
+    for p in list(_STORES_BY_PATH):
+        if p != keep and not os.path.exists(p):
+            _close_reader(_STORES_BY_PATH.pop(p))
+    while len(_STORES_BY_PATH) > MAX_READERS:
+        oldest = next((p for p in _STORES_BY_PATH if p != keep), None)
+        if oldest is None:
+            break
+        _close_reader(_STORES_BY_PATH.pop(oldest))
+
+
+def _close_reader(store: Any) -> None:
+    close = getattr(store, "close", None)
+    if callable(close):
+        try:
+            close()
+        except Exception:  # pragma: no cover
+            pass
 
 
 def _configured_limits() -> Dict[str, Any]:

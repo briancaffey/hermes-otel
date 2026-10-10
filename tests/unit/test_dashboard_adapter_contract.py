@@ -2006,3 +2006,86 @@ class TestLangfuse:
         with pytest.raises(BackendError) as exc:
             self._adapter().trace_url("t")
         assert exc.value.kind == "auth"
+
+
+# ── #290 leftovers: windows, readers, the home resolver, the status report ──
+
+
+class TestApiLeftovers:
+    def test_epoch_window_start_is_a_value_not_unset(self):
+        start_ns, end_ns = plugin_api._window(1.0, 0, 100)
+        assert (start_ns, end_ns) == (0, 100 * 10**9)
+        assert plugin_api._window_s(1.0, 0, 100) == (0, 100)
+        with pytest.raises(Exception, match="start_s must not be after end_s"):
+            plugin_api._window_s(1.0, 200, 100)
+
+    def test_query_host_override_rewrites_every_host(self, monkeypatch):
+        from hermes_otel.dashboard.backends.base import rewrite_host_for_docker
+
+        monkeypatch.delenv("HERMES_OTEL_QUERY_HOST", raising=False)
+        monkeypatch.setattr("hermes_otel.dashboard.backends.base._IN_DOCKER", False)
+        assert rewrite_host_for_docker("localhost") == "localhost"
+        monkeypatch.setenv("HERMES_OTEL_QUERY_HOST", "10.0.0.5")
+        assert rewrite_host_for_docker("localhost") == "10.0.0.5"
+        assert rewrite_host_for_docker("phoenix.lan") == "10.0.0.5"
+
+    def test_stale_live_store_readers_are_evicted(self, tmp_path, monkeypatch):
+        from hermes_otel import live_store as ls
+
+        monkeypatch.setattr(ls, "_LIVE_STORE", None)
+        monkeypatch.setattr(ls, "_STORES_BY_PATH", {})
+        monkeypatch.setattr(ls, "MAX_READERS", 2)
+        paths = [str(tmp_path / f"p{i}" / "hermes_otel_live.db") for i in range(4)]
+        for p_ in paths:
+            Path(p_).parent.mkdir()
+        stores = []
+        for p_ in paths[:3]:
+            monkeypatch.setenv("HERMES_OTEL_LIVE_DB", p_)
+            stores.append(ls.get_live_store_for_home(create=True))
+        # three opened, the cap is two beyond the current: the oldest went
+        assert paths[0] not in ls._STORES_BY_PATH and paths[2] in ls._STORES_BY_PATH
+        # a file that disappeared is dropped on the next call for another path
+        for name in ("hermes_otel_live.db", "hermes_otel_live.db-wal", "hermes_otel_live.db-shm"):
+            f = Path(paths[1]).parent / name
+            if f.exists():
+                f.unlink()
+        monkeypatch.setenv("HERMES_OTEL_LIVE_DB", paths[3])
+        ls.get_live_store_for_home(create=True)
+        assert paths[1] not in ls._STORES_BY_PATH and paths[3] in ls._STORES_BY_PATH
+
+    def test_dashboard_home_follows_the_plugin_resolver(self, tmp_path, monkeypatch):
+        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
+        from hermes_otel.hermes_home import resolve_hermes_home
+
+        assert backends._hermes_home() == resolve_hermes_home()
+
+    def test_status_reports_the_resolved_phoenix_project_after_a_search(self, client, monkeypatch):
+        def fake(url, body, headers=None, timeout=None):
+            q = body.get("query", "")
+            if "projects(" in q:
+                return {
+                    "data": {
+                        "projects": {
+                            "edges": [
+                                {"node": {"id": "P0", "name": "default", "hasTraces": False}},
+                                {"node": {"id": "P1", "name": "hermes-minimal", "hasTraces": True}},
+                            ]
+                        }
+                    }
+                }
+            if "__type" in q:
+                return {
+                    "data": {"__type": {"fields": [{"name": "spans", "args": [{"name": "first"}]}]}}
+                }
+            return {"data": {"node": {"name": "hermes-minimal", "spans": {"edges": []}}}}
+
+        monkeypatch.setattr(phoenix, "http_post_json", fake)
+        monkeypatch.setattr(phoenix, "_ROOT_ARGS_CACHE", {})
+        before = client.get("/status", params={"backend": "phx"}).json()
+        assert before["project_resolved"] is None
+        assert (
+            client.get("/traces/search", params={"backend": "phx", "lookback_hours": 1}).status_code
+            == 200
+        )
+        after = client.get("/status", params={"backend": "phx"}).json()
+        assert after["project_resolved"] == "hermes-minimal" and after["project_fallback"] is True
