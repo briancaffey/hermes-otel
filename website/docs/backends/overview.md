@@ -18,6 +18,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[SigNoz](/backends/signoz)** | Traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud |
 | **[Jaeger](/backends/jaeger)** | Traces | Local (single container) | OSS, no account needed |
 | **[Zipkin](/backends/zipkin)** | Traces | Local (single container, the `zipkin-otel` image) | OSS (Apache-2.0), no account |
+| **[GreptimeDB](/backends/greptime)** | Traces + metrics + logs | Local (single container) · Helm · GreptimeCloud | OSS (Apache-2.0), no account |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
@@ -45,6 +46,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 
 **"I want traces *and* the token/tool/cost metrics dashboard"**
 → [SigNoz](/backends/signoz), [LGTM](/backends/lgtm) or [OpenObserve](/backends/openobserve) — they accept OTLP metrics as well as traces (Phoenix does not).
+
+**"I want all three signals in one open-source database I can query with SQL"**
+→ [GreptimeDB](/backends/greptime) — one container, OTLP in under `/v1/otlp`, SQL, PromQL and a Jaeger-compatible API out; the dashboard adapter reads all three signals.
 
 **"I want all three signals — traces, metrics, AND logs — in Grafana, in one container"**
 → [Grafana LGTM](/backends/lgtm) — `grafana/otel-lgtm` bundles Grafana + Tempo + Loki + Mimir + a collector. Pair with `capture_logs: true` and you get [trace-id-correlated logs](/configuration/logs) out of the box.
@@ -103,6 +107,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | SigNoz | ✅ | ✅ | ✅ |
 | Jaeger | ✅ | ❌ | ❌ |
 | Zipkin | ✅ | ❌ (`/v1/metrics` is 404) | ❌ (`/v1/logs` answers 202 but stores a record only as a span annotation; off by default) |
+| GreptimeDB | ✅ | ✅ (no exponential histograms) | ✅ |
 | Grafana Tempo | ✅ | ❌ | ❌ |
 | Grafana LGTM | ✅ | ✅ | ✅ |
 | Uptrace | ✅ | ✅ | ✅ |
@@ -130,6 +135,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 |---|---|---|---|
 | Grafana LGTM, Tempo-side Prometheus, Mimir | cumulative (delta is dropped unless `otlp-deltatocumulative` is on) | cumulative (default) | Prometheus 3.8+ native histograms; Mimir only with native-histogram ingestion enabled |
 | OpenObserve | cumulative works; delta handling undocumented | cumulative (default) | not documented |
+| GreptimeDB | either: stores cumulative and delta points as sent | cumulative (default) | **rejected** (`ExponentialHistogram is not supported yet`); keep `metrics_histogram: explicit` |
 | SigNoz | recommends delta; exponential histograms are delta-only and self-hosted-only | `delta` | self-hosted only |
 | Uptrace | prefers delta, converts cumulative | `delta` | recommended |
 | Honeycomb | either | cumulative (default) | not verified |
@@ -161,10 +167,11 @@ Single-backend selection is env-var-driven. First match wins:
 13. `OTEL_LAMINAR_API_KEY` set (cloud, or with `OTEL_LAMINAR_ENDPOINT`) → Laminar
 14. `OTEL_LANGWATCH_API_KEY` set (cloud, or with `OTEL_LANGWATCH_ENDPOINT`) → LangWatch
 15. `OTEL_LATITUDE_API_KEY` + `LATITUDE_PROJECT` set (cloud, or with `OTEL_LATITUDE_ENDPOINT`) → Latitude
-16. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-17. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
-18. `OTEL_TEMPO_ENDPOINT` set → Tempo
-19. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+16. `OTEL_GREPTIME_ENDPOINT` set → GreptimeDB (`OTEL_GREPTIME_DB`, `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` optional)
+17. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+18. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
+19. `OTEL_TEMPO_ENDPOINT` set → Tempo
+20. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
 Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
@@ -192,6 +199,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
 | [Zipkin](https://github.com/openzipkin-contrib/zipkin-otel) (#364) | `zipkin/` | traces (7 spans from one turn; every attribute a string tag) | `type: zipkin`, `http://localhost:9411` (the `zipkin-otel` image; stock Zipkin has no OTLP) |
+| [GreptimeDB](https://github.com/GreptimeTeam/greptimedb) (#363) | `greptime/` | traces + metrics + logs (7 spans, 28 log rows, 27 metric tables from one turn) | `type: greptime`, `http://localhost:4398` (the trace pipeline header on traces only) |
 | [Latitude](https://github.com/latitude-dev/latitude-llm) (#230) | `latitude/` | traces (13 containers, ~15 GB of images) | `type: latitude`, `http://localhost:3002`, `api_key_env` + `project` (explicit type since 1.23) |
 
 [Elastic](/backends/elastic) (`elastic/`: Elasticsearch + Kibana + EDOT Collector, `type: elastic`) was added on 2026-10-07 and verified with hermes-otel 1.21.0. Two of these are not open source: Sigiro publishes only a binary image, and Maple is source-available under FSL-1.1. [Jaeger v2](/backends/jaeger) (`jaeger-v2/`) and [Langfuse v4](/backends/langfuse) (`LANGFUSE_VERSION=4`) have their own stacks so the read-side issues #245 and #246 can be reproduced locally.

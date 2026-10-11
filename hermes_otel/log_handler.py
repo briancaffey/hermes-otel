@@ -747,7 +747,8 @@ def build_log_processors(
         # on conflict, which keeps resolver-built auth headers intact. Mirrors
         # HermesOTelPlugin._merge_headers and the documented precedence.
         merged: Dict[str, str] = dict(extra_headers or {})
-        merged.update(b.logs_headers or b.headers or {})
+        # ``logs_headers`` set (even empty) replaces the trace headers (#363).
+        merged.update((b.logs_headers if b.logs_headers is not None else b.headers) or {})
         endpoint = _derive_logs_endpoint(b.endpoint)
         try:
             exporter = _LoggingLogExporter(

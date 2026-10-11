@@ -322,5 +322,6 @@ for _name in (
     "langfuse",
     "jaeger",
     "zipkin",
+    "greptime",
 ):
     _safe_import(_name)

@@ -305,6 +305,9 @@
 #   jaeger       — Jaeger. Traces only.
 #   zipkin       — Zipkin through the zipkin-otel image (stock Zipkin has no
 #                  OTLP endpoint). Traces only; endpoint is the :9411 origin.
+#   greptime     — GreptimeDB (standalone or cluster). Traces + metrics + logs
+#                  under /v1/otlp; the plugin sends the trace pipeline header
+#                  on traces only. Optional `db`, `user` + `password`.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -407,6 +410,13 @@
 #   - type: zipkin
 #     endpoint: http://localhost:9411        # ghcr.io/openzipkin-contrib/zipkin-otel
 #     # query_port: 9411           # dashboard read path (API v2 + UI, same port)
+#
+#   - type: greptime
+#     endpoint: http://localhost:4398        # bundled stack (upstream 4000); OTLP under /v1/otlp
+#     # db: public                 # X-Greptime-DB-Name on every signal
+#     # user_env: OTEL_GREPTIME_USER          # Basic auth, only with a user provider
+#     # password_env: OTEL_GREPTIME_PASSWORD
+#     # headers: {x-greptime-hints: ttl=7d}   # retention; none by default
 #
 #   - type: tempo
 #     endpoint: http://localhost:3200/v1/traces

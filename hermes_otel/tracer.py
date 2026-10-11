@@ -1205,7 +1205,12 @@ class HermesOTelPlugin:
                 if b.supports_metrics:
                     metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
                     try:
-                        metric_hdrs = self._merge_headers(b.metrics_headers or b.headers)
+                        # ``metrics_headers`` set (even empty) means "these, not the
+                        # trace headers": GreptimeDB's trace pipeline header must not
+                        # reach the other signals (#363).
+                        metric_hdrs = self._merge_headers(
+                            b.metrics_headers if b.metrics_headers is not None else b.headers
+                        )
                         temporality = b.metrics_temporality or self.config.metrics_temporality
                         m_exporter = OTLPMetricExporter(
                             endpoint=metrics_endpoint,

@@ -156,6 +156,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "api_key": ("OTEL_LATITUDE_API_KEY", "LATITUDE_API_KEY"),
         "project": ("LATITUDE_PROJECT",),
     },
+    "greptime": {
+        "user": ("OTEL_GREPTIME_USER",),
+        "password": ("OTEL_GREPTIME_PASSWORD",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -249,6 +253,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "jaeger": "proxied",
     # UI at /zipkin on the OTLP port (the root redirects there).
     "zipkin": "origin",
+    # Dashboard at /dashboard on the one HTTP port that also ingests OTLP.
+    "greptime": "origin",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -651,6 +657,18 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("OTEL_SIGNOZ_INGESTION_KEY", "backend", "SigNoz Cloud ingestion key"),
     ("OTEL_JAEGER_ENDPOINT", "backend", "Single-backend mode: Jaeger OTLP URL"),
     ("OTEL_ZIPKIN_ENDPOINT", "backend", "Single-backend mode: Zipkin OTLP URL (zipkin-otel image)"),
+    (
+        "OTEL_GREPTIME_ENDPOINT",
+        "backend",
+        "Single-backend mode: GreptimeDB HTTP origin (OTLP under /v1/otlp)",
+    ),
+    (
+        "OTEL_GREPTIME_DB",
+        "backend",
+        "GreptimeDB database for all three signals (X-Greptime-DB-Name; default public)",
+    ),
+    ("OTEL_GREPTIME_USER", "backend", "GreptimeDB user for Basic auth (only with a user provider)"),
+    ("OTEL_GREPTIME_PASSWORD", "backend", "GreptimeDB password for Basic auth"),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

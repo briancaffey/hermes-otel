@@ -46,6 +46,12 @@ types:
     ui: true
     status_semantics: root
     quirks: zipkin-otel contrib image (stock Zipkin has no OTLP); every tag is a string, coerced back on read; status_ok and free_text are none; roots client-side; spanName exact; window = endTs + lookback
+  greptime:
+    metrics: true
+    logs: true
+    ui: false   # the embedded dashboard has no documented deep link to one trace
+    status_semantics: root
+    quirks: Jaeger-compatible API under /v1/jaeger (v1 grammar, service required, roots client-side); metrics as raw SQL samples per table with first-sample counting (PromQL range vectors answer empty); logs via SQL with json_get_string bracket paths; status_ok and free_text are none
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

@@ -28,6 +28,7 @@ const sidebars: SidebarsConfig = {
         'backends/signoz',
         'backends/jaeger',
         'backends/zipkin',
+        'backends/greptime',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',

@@ -26,6 +26,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_SIGNOZ_ENDPOINT` | URL | SigNoz OTLP endpoint (self-host: `http://localhost:4328/v1/traces`) |
 | `OTEL_SIGNOZ_INGESTION_KEY` | `sz-...` | SigNoz Cloud ingestion key |
 | `OTEL_JAEGER_ENDPOINT` | URL | Jaeger OTLP endpoint (`http://localhost:4318/v1/traces`) |
+| `OTEL_GREPTIME_ENDPOINT` | URL | GreptimeDB HTTP origin (`http://localhost:4398` for the bundled stack; OTLP under `/v1/otlp`); enables GreptimeDB in env-var mode |
+| `OTEL_GREPTIME_DB` | string | GreptimeDB database for all three signals (`X-Greptime-DB-Name`; default `public`) |
+| `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` | string | Basic auth for a GreptimeDB with a user provider; both needed, omitted otherwise; never enable export on their own |
 | `OTEL_ZIPKIN_ENDPOINT` | URL | Zipkin origin or OTLP endpoint (`http://localhost:9411`; the `zipkin-otel` image, traces only); enables Zipkin in env-var mode |
 | `OTEL_TEMPO_ENDPOINT` | URL | Tempo OTLP endpoint |
 | `OTEL_PHOENIX_ENDPOINT` | URL | Phoenix OTLP endpoint (`http://localhost:6006/v1/traces`) |

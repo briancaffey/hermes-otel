@@ -1,0 +1,57 @@
+# GreptimeDB standalone — one observability database for traces, metrics and
+# logs over OTLP/HTTP, read back with SQL, PromQL and a Jaeger-compatible API.
+#
+# Upstream: github.com/GreptimeTeam/greptimedb (Apache-2.0). The start command
+# is the documented standalone one
+# (docs.greptime.com/getting-started/installation/greptimedb-standalone).
+#
+# Usage:
+#   docker compose -f docker-compose/greptime/docker-compose.yaml up -d
+#   # UI:  http://localhost:4398/dashboard   (no login)
+#   docker compose -f docker-compose/greptime/docker-compose.yaml down
+#   docker compose -f docker-compose/greptime/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side; override with the env var):
+#   4398  HTTP (4000 in the container): OTLP ingest (/v1/otlp/v1/*), SQL
+#         (/v1/sql), PromQL (/v1/prometheus), Jaeger API (/v1/jaeger) and the
+#         dashboard                                           GREPTIME_HTTP_PORT
+#         Remapped from upstream's 4000 because dev servers love that port
+#         (a Node server on [::1]:4000 makes "localhost:4000" hang while the
+#         container answers on 127.0.0.1). gRPC 4001, MySQL 4002 and
+#         PostgreSQL 4003 stay inside the container: the plugin and the
+#         dashboard adapter only need HTTP.
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: greptime
+#       endpoint: http://localhost:4398
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  greptime:
+    image: greptime/greptimedb:${GREPTIME_VERSION:-v1.2.1}
+    container_name: hermes-otel-greptime
+    restart: unless-stopped
+    command:
+      - standalone
+      - start
+      - --http-addr=${GREPTIME_BIND_HOST:-0.0.0.0}:4000
+      - --grpc-bind-addr=${GREPTIME_BIND_HOST:-0.0.0.0}:4001
+      - --mysql-addr=${GREPTIME_BIND_HOST:-0.0.0.0}:4002
+      - --postgres-addr=${GREPTIME_BIND_HOST:-0.0.0.0}:4003
+    ports:
+      - "${GREPTIME_HTTP_PORT:-4398}:4000"
+    volumes:
+      - greptime_data:/greptimedb_data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -sf http://localhost:4000/health || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 10s
+
+volumes:
+  greptime_data:

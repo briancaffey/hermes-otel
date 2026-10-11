@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -145,6 +145,23 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | `api_key` / `api_key_env` | string | Dashboard read path: a bearer token for an authenticating proxy in front of Zipkin; none upstream |
 
 See [Zipkin](/backends/zipkin).
+
+#### `greptime`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** The GreptimeDB HTTP origin, e.g. `http://localhost:4398` (bundled stack) or `http://<host>:4000`; a `/v1/otlp` prefix or any `/v1/otlp/v1/<signal>` URL also works. Also via `OTEL_GREPTIME_ENDPOINT`. Traces carry `X-Greptime-Pipeline-Name: greptime_trace_v1`; metrics and logs do not |
+| `db` / `db_env` | string | Optional database (`X-Greptime-DB-Name` on every signal; fallback `OTEL_GREPTIME_DB`; server default `public`) |
+| `user` / `user_env`, `password` / `password_env` | string | Optional Basic auth for a server with a user provider (fallbacks `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD`); omitted when either is missing |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; all three default **on** |
+| `query_port` | int | Dashboard read path: the HTTP port (default: the endpoint's port, else `4000`) |
+| `query_path` | string | Dashboard read path: where the Jaeger-compatible API hangs (default `/v1/jaeger`) |
+| `search_fetch` | int | Dashboard read path: traces asked for per search before the page is cut here (default `500`; GreptimeDB's `limit` keeps arbitrary traces, not the newest) |
+| `logs_table` | string | Dashboard read path: the OTLP logs table (default `opentelemetry_logs`) |
+| `metrics_match` | string | Dashboard read path: a PromQL series selector narrowing the metric list (default: the plugin's namespaces) |
+| `service_name` | string | Dashboard read path: the service every trace search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
+
+See [GreptimeDB](/backends/greptime).
 
 #### `tempo`
 

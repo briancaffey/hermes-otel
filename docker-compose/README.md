@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [GreptimeDB](greptime/) | 1 | :4398 | ✅ | ✅ | ✅ | `greptime` | one open-source database, SQL over everything; the dashboard adapter reads all three signals |
 | [Zipkin](zipkin/) | 1 | :9411 | ✅ | ❌ | ❌ | `zipkin` | the classic UI with OTLP from the `zipkin-otel` image; one JVM, the dashboard adapter reads it |
 | [Jaeger v2](jaeger-v2/) | 1 | :16696 | ✅ | ❌ | ❌ | `jaeger` | reproducing #245 (v2 has only `/api/v3`) |
 | [Tempo](tempo/) | 2 | :3020 | ✅ | ❌ | ❌ | `tempo` | standalone Tempo + Grafana, what `type: tempo` targets |
@@ -118,6 +119,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 4368 | jaeger-v2 | OTLP/HTTP |
 | 4377, 4378 | sigiro | OTLP gRPC / HTTP |
 | 4388 | maple | UI + OTLP/HTTP |
+| 4398 | greptime | HTTP: OTLP (/v1/otlp), SQL, PromQL, Jaeger API, dashboard (upstream 4000) |
 | 5001 | mlflow | UI + OTLP/HTTP |
 | 5080, 5081 | openobserve | UI + OTLP/HTTP, OTLP/gRPC |
 | 5173 | opik | UI + API |

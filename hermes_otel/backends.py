@@ -63,6 +63,7 @@ _LOGS_CAPABLE = {
     "openlit",
     "laminar",
     "langwatch",
+    "greptime",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -94,6 +95,7 @@ _DISPLAY_NAMES = {
     "laminar": "Laminar",
     "langwatch": "LangWatch",
     "latitude": "Latitude",
+    "greptime": "GreptimeDB",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -123,6 +125,7 @@ _ENV_PRIORITY = [
     "laminar",
     "langwatch",
     "latitude",
+    "greptime",
     "jaeger",
     "zipkin",
     "tempo",
@@ -455,6 +458,72 @@ def _resolve_zipkin(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("zipkin", bc.metrics),
         supports_logs=_logs_for("zipkin", bc.logs),
+    )
+
+
+# GreptimeDB's OTLP prefix and the pipeline its trace ingest requires.
+_GREPTIME_OTLP_PREFIX = "/v1/otlp"
+_GREPTIME_TRACE_PIPELINE = "greptime_trace_v1"
+
+
+def _resolve_greptime(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve a GreptimeDB backend (standalone or cluster, OTLP/HTTP, all three
+    signals).
+
+    GreptimeDB ingests OTLP under ``/v1/otlp``: ``/v1/otlp/v1/traces``,
+    ``/v1/otlp/v1/metrics`` and ``/v1/otlp/v1/logs`` on its HTTP port (4000
+    upstream, 4398 in the bundled stack). ``endpoint`` is required (no default
+    host); a bare origin, the ``/v1/otlp`` prefix or any of the three full URLs
+    all resolve to the traces URL, and ``tracer.py`` / ``log_handler.py``
+    derive the other two from it.
+
+    Headers: traces **must** carry ``X-Greptime-Pipeline-Name:
+    greptime_trace_v1`` (the only pipeline the trace model accepts; without it
+    the batch is rejected). Metrics and logs do not take it (a pipeline name on
+    the logs route would select a log pipeline of that name), so they get their
+    own header sets. ``db`` / ``db_env`` (fallback ``OTEL_GREPTIME_DB``) sets
+    ``X-Greptime-DB-Name``; unset means the server default, ``public``. Basic
+    auth from ``user`` + ``password`` (fallbacks ``OTEL_GREPTIME_USER`` /
+    ``OTEL_GREPTIME_PASSWORD``) when the server runs with a user provider;
+    omitted entirely when neither resolves, which is what a local stack wants.
+
+    Signals: traces, metrics and logs all on by default. GreptimeDB stores
+    cumulative and delta points as sent (no preset) and rejects exponential
+    histograms, which the plugin does not emit by default.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_GREPTIME_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("greptime requires endpoint (or set OTEL_GREPTIME_ENDPOINT)")
+    ep = ep.rstrip("/")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep).rstrip("/")
+    if ep.endswith(_GREPTIME_OTLP_PREFIX):
+        ep = ep[: -len(_GREPTIME_OTLP_PREFIX)].rstrip("/")
+    ep = f"{ep}{_GREPTIME_OTLP_PREFIX}/v1/traces"
+
+    common: Dict[str, str] = {}
+    db = _resolve_secret(bc.db, bc.db_env, ["OTEL_GREPTIME_DB"])
+    if db:
+        common["X-Greptime-DB-Name"] = db
+    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_GREPTIME_USER"])
+    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_GREPTIME_PASSWORD"])
+    if user and pw:
+        common["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    common.update(bc.headers or {})
+    trace_headers = {"X-Greptime-Pipeline-Name": _GREPTIME_TRACE_PIPELINE, **common}
+    # A user-supplied pipeline header (another trace model, e.g. v2) wins.
+    if bc.headers and "X-Greptime-Pipeline-Name" in bc.headers:
+        trace_headers["X-Greptime-Pipeline-Name"] = bc.headers["X-Greptime-Pipeline-Name"]
+
+    return _ResolvedBackend(
+        type="greptime",
+        endpoint=ep,
+        display_name=_display(bc, "greptime"),
+        headers=trace_headers,
+        metrics_headers=dict(common),
+        logs_headers=dict(common),
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("greptime", bc.metrics),
+        supports_logs=_logs_for("greptime", bc.logs),
     )
 
 
@@ -1175,6 +1244,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "signoz": _resolve_signoz,
     "jaeger": _resolve_jaeger,
     "zipkin": _resolve_zipkin,
+    "greptime": _resolve_greptime,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

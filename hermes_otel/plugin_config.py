@@ -188,6 +188,9 @@ class BackendConfig:
     entity_env: Optional[str] = None
     project: Optional[str] = None
     project_env: Optional[str] = None
+    # greptime: the database the signals land in (X-Greptime-DB-Name; default public)
+    db: Optional[str] = None
+    db_env: Optional[str] = None
 
 
 @dataclass(frozen=True)

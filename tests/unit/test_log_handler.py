@@ -111,6 +111,24 @@ class TestBuildLogProcessors:
         call_kwargs = fake_otlp_exporter.call_args.kwargs
         assert call_kwargs["endpoint"] == "http://collector:4318/v1/logs"
 
+    def test_empty_logs_headers_replace_the_trace_headers(self, fake_otlp_exporter):
+        # GreptimeDB (#363): the trace pipeline header must not reach /v1/logs
+        # (400 "Unsupported pipeline for logs"), so an empty ``logs_headers``
+        # means "none", not "fall back to the trace headers".
+        backends = [
+            _ResolvedBackend(
+                type="greptime",
+                endpoint="http://g:4000/v1/otlp/v1/traces",
+                headers={"X-Greptime-Pipeline-Name": "greptime_trace_v1"},
+                logs_headers={},
+                supports_logs=True,
+            )
+        ]
+        log_handler.build_log_processors(backends, extra_headers={"X-Global": "b"})
+        kwargs = fake_otlp_exporter.call_args.kwargs
+        assert kwargs["endpoint"] == "http://g:4000/v1/otlp/v1/logs"
+        assert kwargs["headers"] == {"X-Global": "b"}
+
     def test_merges_extra_headers_over_backend_headers(self, fake_otlp_exporter):
         backends = [
             _ResolvedBackend(
@@ -663,7 +681,12 @@ class TestTracerLogsPipelineWiring:
             assert plugin._logger_provider is not None
             assert plugin._log_processors == []
             assert any("live store only" in r.message for r in caplog.records)
-            assert not any(r.levelname == "WARNING" for r in caplog.records)
+            # Only the plugin's own warnings count: an earlier test's shut-down
+            # global MeterProvider makes the OTel SDK log one of its own here.
+            assert not any(
+                r.levelname == "WARNING" and r.name.startswith("hermes_otel")
+                for r in caplog.records
+            )
         finally:
             log_handler.uninstall_handler(None)
             store.close()

@@ -198,6 +198,13 @@ def _v3_traces_to_v1(data: Any) -> List[Dict[str, Any]]:
 class JaegerAdapter(BackendAdapter):
     handles = frozenset({"jaeger"})
     query_lang_label = "Jaeger tags (key=value)"
+    default_query_port = _DEFAULT_JAEGER_QUERY_PORT
+    default_query_path = ""
+    # How many traces a search asks the server for. Jaeger returns the newest
+    # ``limit`` traces, so one beyond the page is enough (``None``); a store
+    # whose ``limit`` keeps arbitrary traces sets a fetch size and the page is
+    # cut here (GreptimeDB, #363). ``search_fetch`` on the entry overrides.
+    default_search_fetch: Optional[int] = None
     raw_placeholder = "http.status_code=500 error=true"
     filter_support = {
         "service": "server",
@@ -219,8 +226,14 @@ class JaegerAdapter(BackendAdapter):
         parsed = _urlparse.urlparse(endpoint)
         host = parsed.hostname or "localhost"
         scheme = parsed.scheme or "http"
-        port = cfg.get("query_port") or parsed.port or _DEFAULT_JAEGER_QUERY_PORT
+        port = cfg.get("query_port") or parsed.port or self.default_query_port
         self.query_url = f"{scheme}://{rewrite_host_for_docker(host)}:{port}"
+        # Where ``/api/...`` hangs: the origin for Jaeger itself, a prefix for
+        # stores that embed a Jaeger-compatible API (GreptimeDB's
+        # ``/v1/jaeger``, #363). ``query_path`` on the entry overrides.
+        path = cfg.get("query_path")
+        path = (path if isinstance(path, str) else self.default_query_path).strip("/")
+        self.api_base = f"{self.query_url}/{path}" if path else self.query_url
         # Optional bearer for cloud-hosted Jaeger / authenticated proxy.
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
         self.default_service = default_service_name(cfg)
@@ -228,6 +241,11 @@ class JaegerAdapter(BackendAdapter):
         # ``/api/v3``), or ``auto`` (probed once per query URL).
         api = str(cfg.get("query_api") or "auto").strip().lower()
         self.query_api = api if api in ("v1", "v3") else "auto"
+        try:
+            fetch = cfg.get("search_fetch")
+            self.search_fetch = int(fetch) if fetch else self.default_search_fetch
+        except (TypeError, ValueError):
+            self.search_fetch = self.default_search_fetch
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -236,7 +254,7 @@ class JaegerAdapter(BackendAdapter):
         base["query_api"] = (
             self.query_api
             if self.query_api != "auto"
-            else _API_PROBE_CACHE.get(self.query_url, "auto")
+            else _API_PROBE_CACHE.get(self.api_base, "auto")
         )
         return base
 
@@ -249,13 +267,13 @@ class JaegerAdapter(BackendAdapter):
         unreachable or unauthenticated server is reported, not guessed."""
         if self.query_api != "auto":
             return self.query_api
-        cached = _API_PROBE_CACHE.get(self.query_url)
+        cached = _API_PROBE_CACHE.get(self.api_base)
         if cached:
             return cached
         api = "v1"
         try:
             data = http_get_json(
-                f"{self.query_url}/api/services", headers=self._headers(), timeout=10.0
+                f"{self.api_base}/api/services", headers=self._headers(), timeout=10.0
             )
             classic = isinstance(data, dict) and "data" in data
         except BackendError as exc:
@@ -265,14 +283,14 @@ class JaegerAdapter(BackendAdapter):
         if not classic:
             try:
                 data = http_get_json(
-                    f"{self.query_url}/api/v3/services", headers=self._headers(), timeout=10.0
+                    f"{self.api_base}/api/v3/services", headers=self._headers(), timeout=10.0
                 )
                 if isinstance(data, dict) and "services" in data:
                     api = "v3"
             except BackendError as exc:
                 if exc.kind != "not_found":
                     raise
-        _API_PROBE_CACHE[self.query_url] = api
+        _API_PROBE_CACHE[self.api_base] = api
         return api
 
     def _build_query_v3(
@@ -289,7 +307,7 @@ class JaegerAdapter(BackendAdapter):
             ("query.serviceName", f.service or self.default_service),
             ("query.startTimeMin", _rfc3339(int(start_s) * 1_000_000_000)),
             ("query.startTimeMax", _rfc3339(end_ns)),
-            ("query.searchDepth", str(int(limit) + 1)),
+            ("query.searchDepth", str(self._fetch_limit(limit))),
         ]
         if f.name_regex:
             params.append(("query.operationName", f.name_regex))
@@ -305,6 +323,13 @@ class JaegerAdapter(BackendAdapter):
         if self.api_key:
             hdr["Authorization"] = f"Bearer {self.api_key}"
         return hdr
+
+    def _fetch_limit(self, limit: int) -> int:
+        """Traces to ask for: one beyond the page, or the over-fetch size when
+        the server's ``limit`` does not keep the newest traces."""
+        if self.search_fetch:
+            return max(int(limit) + 1, int(self.search_fetch))
+        return int(limit) + 1
 
     # ── Filter translation ───────────────────────────────────────────
 
@@ -328,8 +353,8 @@ class JaegerAdapter(BackendAdapter):
             end_us = min(end_us, int(f.before_ns) // 1000)
         params: Dict[str, Any] = {
             "service": f.service or self.default_service,
-            # One beyond the page so has_more is exact.
-            "limit": int(limit) + 1,
+            # One beyond the page so has_more is exact (or the over-fetch size).
+            "limit": self._fetch_limit(limit),
             "start": int(start_s) * 1_000_000,
             "end": end_us,
         }
@@ -407,7 +432,7 @@ class JaegerAdapter(BackendAdapter):
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         if self._api() == "v3":
             v3_params = self._build_query_v3(f, start_s, end_s, limit)
-            url = f"{self.query_url}/api/v3/traces?{_urlparse.urlencode(v3_params)}"
+            url = f"{self.api_base}/api/v3/traces?{_urlparse.urlencode(v3_params)}"
             try:
                 data = http_get_json(url, headers=self._headers(), timeout=15.0)
             except BackendError as exc:
@@ -418,7 +443,7 @@ class JaegerAdapter(BackendAdapter):
             items: List[Any] = _v3_traces_to_v1(data)
         else:
             params = self._build_query(f, start_s, end_s, limit)
-            url = f"{self.query_url}/api/traces?{_urlparse.urlencode(params)}"
+            url = f"{self.api_base}/api/traces?{_urlparse.urlencode(params)}"
             data = http_get_json(url, headers=self._headers(), timeout=15.0)
             raw_items = data.get("data") if isinstance(data, dict) else None
             items = raw_items if isinstance(raw_items, list) else []
@@ -496,7 +521,7 @@ class JaegerAdapter(BackendAdapter):
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         if self._api() == "v3":
             # OTLP JSON with hex ids: the detail's own shape, passed through.
-            url = f"{self.query_url}/api/v3/traces/{trace_id}"
+            url = f"{self.api_base}/api/v3/traces/{trace_id}"
             try:
                 data = http_get_json(url, headers=self._headers(), timeout=20.0)
             except BackendError as exc:
@@ -514,7 +539,7 @@ class JaegerAdapter(BackendAdapter):
             if n == 0:
                 raise BackendError(404, f"Trace {trace_id} not found in Jaeger", "not_found")
             return {"batches": batches, "span_count": n, "truncated": False}
-        url = f"{self.query_url}/api/traces/{trace_id}"
+        url = f"{self.api_base}/api/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         items = data.get("data") if isinstance(data, dict) else None
         if not items:
