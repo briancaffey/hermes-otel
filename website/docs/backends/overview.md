@@ -227,6 +227,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [LangWatch](https://github.com/langwatch/langwatch) (#229) | `langwatch/` | traces + metrics + logs | `type: langwatch`, `http://localhost:5560`, `api_key_env` (explicit type since 1.23) |
 | [Langtrace](https://github.com/Scale3-Labs/langtrace) (#224) | `langtrace/` | traces (string and int attributes only) | `type: otlp`, `http://localhost:3040/api/trace`, header `x-api-key`, `metrics: false`, `logs: false` |
 | [Sigiro](https://sigiro.com) (#71) | `sigiro/` | traces + metrics + logs | `type: otlp`, `http://localhost:4378/v1/traces` |
+| [otel-desktop-viewer](https://github.com/CtrlSpice/otel-desktop-viewer) (#367) | `otel-desktop-viewer/` | traces + metrics + logs (5 spans, 27 log records, 13 metric names from one turn) | `type: otlp`, `http://localhost:4428/v1/traces`; UI :3070, JSON-RPC `POST /rpc`. [otel-tui](/backends/viewers) is the terminal sibling: a `docker run` line in the same README, `:4438` |
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
 | [Zipkin](https://github.com/openzipkin-contrib/zipkin-otel) (#364) | `zipkin/` | traces (7 spans from one turn; every attribute a string tag) | `type: zipkin`, `http://localhost:9411` (the `zipkin-otel` image; stock Zipkin has no OTLP) |

@@ -60,6 +60,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Langtrace](langtrace/) | 3 | :3040 | partial | ❌ | ❌ | `otlp` | evaluating #224 only (AGPL, stale, drops bool/double attrs) |
 | [Sigiro](sigiro/) | 1 | SQL :9999 | ✅ | ✅ | ✅ | `otlp` | scripted SQL checks; closed-source binary |
 | [Maple Local](maple/) | 1 | :4388 | ✅ | ✅ | ✅ | `otlp` | single binary with UI + SQL; FSL licence |
+| [otel-desktop-viewer](otel-desktop-viewer/) | 1 | :3070 | ✅ | ✅ | ✅ | `otlp` | the lightest browser UI (DuckDB, JSON-RPC); otel-tui's `docker run` line is in the same README |
 | [Latitude](latitude/) | 13 | :3000 | ✅ | ❌ | ❌ | `latitude` | you have ~15 GB of disk and a reason (#230) |
 
 Not here, and why: **AgentOps** builds from source, needs the Supabase CLI and
@@ -115,6 +116,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 3040 | langtrace | UI + `/api/trace` ingest |
 | 3050 | clickstack | HyperDX UI (upstream 8080) |
 | 3060 | agenta | nginx front door: UI, `/api`, OTLP at `/api/otlp/v1/traces` (upstream 80) |
+| 3070 | otel-desktop-viewer | UI + JSON-RPC `POST /rpc` (upstream 8000) |
 | 3100, 3200 | lgtm | Loki, Tempo |
 | 3110 | gigapipe | OTLP + Tempo/Prometheus/Loki APIs + UI (upstream 3100) |
 | 3210 | tempo | Tempo API |
@@ -130,6 +132,8 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 4398 | greptime | HTTP: OTLP (/v1/otlp), SQL, PromQL, Jaeger API, dashboard (upstream 4000) |
 | 4407, 4408 | clickstack | OTLP gRPC / HTTP (upstream 4317 / 4318) |
 | 4418 | aspire | OTLP/HTTP (upstream 18890) |
+| 4428 | otel-desktop-viewer | OTLP/HTTP |
+| 4438 | otel-tui | OTLP/HTTP (`docker run`, no compose file) |
 | 5001 | mlflow | UI + OTLP/HTTP |
 | 5080, 5081 | openobserve | UI + OTLP/HTTP, OTLP/gRPC |
 | 5173 | opik | UI + API |

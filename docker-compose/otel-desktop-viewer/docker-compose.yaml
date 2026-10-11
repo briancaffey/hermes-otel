@@ -1,0 +1,62 @@
+# otel-desktop-viewer — a single-binary OTLP viewer (traces, metrics, logs) on
+# an embedded DuckDB, with a small JSON-RPC read API. Apache-2.0.
+#   github.com/CtrlSpice/otel-desktop-viewer   (v0.5.0, 2026-08-24)
+#
+# The release image is headless: it runs the same binary the desktop/brew
+# install uses, with the UI served on --browser-port instead of opened in a
+# browser. No login, no auth, no telemetry of its own. Generic plugin type
+# (`type: otlp`): stock OTLP/HTTP paths, nothing to translate (#367).
+#
+# Usage:
+#   docker compose -f docker-compose/otel-desktop-viewer/docker-compose.yaml up -d
+#   # UI:  http://localhost:3070   (no login)
+#   docker compose -f docker-compose/otel-desktop-viewer/docker-compose.yaml down      # data stays in the volume
+#   docker compose -f docker-compose/otel-desktop-viewer/docker-compose.yaml down -v   # and wipe it
+#
+# Ports (host side; override with the env vars):
+#   3070  UI + JSON-RPC (/rpc) + OTLP JSON export (/export/...)   ODV_PORT          (upstream 8000)
+#   4428  OTLP/HTTP  /v1/traces /v1/metrics /v1/logs             ODV_OTLP_PORT     (upstream 4318)   ← plugin exports here
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: otlp
+#       endpoint: http://localhost:4428/v1/traces
+#       metrics: true
+#       logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  otel-desktop-viewer:
+    image: ghcr.io/ctrlspice/otel-desktop-viewer:${ODV_VERSION:-v0.5.0}
+    container_name: hermes-otel-otel-desktop-viewer
+    restart: unless-stopped
+    # The image's CMD is the same flags with an in-memory database; `--db`
+    # keeps the data across restarts (DuckDB file in the named volume) and
+    # `--db-max-size` is the upstream default for a file-backed store.
+    command:
+      - --host
+      - ${ODV_BIND_HOST:-0.0.0.0}
+      - --grpc
+      - "4317"
+      - --http
+      - "4318"
+      - --browser-port
+      - "8000"
+      - --db
+      - /data/otel-desktop-viewer.duckdb
+      - --db-max-size
+      - ${ODV_DB_MAX_SIZE:-2GB}
+    ports:
+      - "${ODV_PORT:-3070}:8000"
+      - "${ODV_OTLP_PORT:-4428}:4318"
+    volumes:
+      - odv-data:/data
+    # The binary runs as root in the release image and the image has no
+    # shell or curl, so there is no in-container healthcheck; from the host:
+    #   curl -s -o /dev/null -w '%{http_code}' http://localhost:3070/
+    # (200 once the UI is up, a second or two after start).
+
+volumes:
+  odv-data:

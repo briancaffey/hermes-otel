@@ -64,6 +64,8 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | telemetry.dev | `otlp` | std on `ingest.telemetry.dev` | SaaS | generic; derived |
 | Langtrace | `otlp` | custom `/api/trace` (no `/v1/`) | ingest and UI share :3040 | generic, URL used verbatim; derivation does not apply |
 | Sigiro | `otlp` | std :4378 (gRPC :4377) | SQL API :9999, no UI | generic; derived |
+| otel-desktop-viewer | `otlp` | std :4428 (upstream 4318) | UI + JSON-RPC :3070 (upstream 8000) | generic; derived |
+| otel-tui | `otlp` | std :4438 (upstream 4318) | no UI port: a TTY (`docker attach`) | generic; derived |
 | Maple Local | `otlp` | std :4388 | ingest and UI share :4388 | generic; derived |
 
 Transport everywhere is OTLP/HTTP with protobuf bodies
@@ -100,6 +102,8 @@ is the one backend that refuses protobuf, hence its collector.
 | telemetry.dev | `Authorization: Bearer td_live_…` via `headers` | yes | cloud UI |
 | Langtrace | `x-api-key` via `headers` | yes | UI, or the NextAuth curl recipe in its README |
 | Sigiro, Maple | none | no | none |
+| otel-desktop-viewer | none | no | none |
+| otel-tui | none by default; `Authorization: Bearer` when `AUTH_TOKEN` is set | no | the env var you set |
 
 Five different spellings of "here is my key" on the `Authorization` header
 alone: Basic (Langfuse, OpenObserve), Bearer (OpenLIT, MLflow, Laminar,
@@ -187,6 +191,7 @@ because the plugin's debug log only sees the HTTP status.
 | telemetry.dev | yes | yes | yes | — | generic `otlp`: all on |
 | Langtrace | partial | no | no | not served | generic `otlp`: set `metrics: false`, `logs: false` on the entry |
 | Sigiro, Maple | yes | yes | yes | — | generic `otlp`: all on |
+| otel-desktop-viewer, otel-tui | yes | yes | yes | — (otel-tui: no exponential histograms, which the plugin does not emit) | generic `otlp`: all on |
 
 Three failure modes, one of them invisible: a 404/405 you can see in the
 debug log, a connection reset you can see, and Laminar's 200-with-nothing
@@ -215,7 +220,7 @@ installed, so one-shot runs export all three signals (logs only since 1.24.0).
 | VictoriaMetrics | cumulative natively; delta stored as-is since v1.132 | cumulative | converted to `vmrange` histograms | **a server flag**: with `-opentelemetry.usePrometheusNaming` (the bundled stack) `hermes_token_usage_total` / `…_seconds_sum`; without it the dotted OTel names "as is"; every resource attribute promoted to a label by default |
 | ClickStack | either, stored as sent by the ClickHouse exporter | cumulative | stored (`otel_metrics_exponential_histogram`) | **dotted** OTel names kept (`hermes.token.usage`); one table per type (`otel_metrics_sum` / `_gauge` / `_histogram` with `Count` + `Sum`), `TimeUnix` in seconds, `Attributes` map with the original keys |
 | GreptimeDB | either, stored as sent (no conversion) | cumulative | **rejected** ("not supported yet") | one table per metric in Prometheus spelling (`hermes_token_usage_total`, `…_seconds_sum` / `_count` / `_bucket`), `greptime_timestamp` ms + `greptime_value`, one TAG column per label |
-| Parseable, generic `otlp`, Sigiro, Maple | whatever the collector / store does | cumulative | Sigiro has an `exp_histogram` table | — |
+| Parseable, generic `otlp`, Sigiro, Maple, otel-desktop-viewer, otel-tui | whatever the collector / store does | cumulative | Sigiro has an `exp_histogram` table | — |
 | Datadog, New Relic, Logfire (generic `otlp`) | **delta required** (Datadog rejects cumulative sums; Logfire dashboards stay empty; New Relic prefers delta) | none yet (#232): set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them | — |
 | LangWatch | stored (73 metric points from one turn, 2026-10) | cumulative | — | — |
 
@@ -371,6 +376,8 @@ healthy is from the folder READMEs.
 | Latitude | 13 | — | ~2 min after an ~18 GB pull | magic-link sign-in via Mailpit; create project; copy key | ships its **own** Hermes plugin: running both double-traces every turn | MIT |
 | Langtrace | 3 | ~780 MB | — | login `admin@langtrace.ai` | upstream ClickHouse healthcheck on `localhost` resolves to `::1` and never passes; 4.45 GB image; last release 2025-04 | AGPL-3.0 |
 | Sigiro | 1 | 76 MB | seconds | none | closed source, `latest` only | proprietary |
+| otel-desktop-viewer | 1 | ~105 MB | ~1 s | none | the image's CMD is in-memory; the folder adds `--db` on a volume. No shell or curl in the image (healthcheck from the host) | Apache-2.0 |
+| otel-tui | 1 (`docker run -d -i -t`, no compose) | ~30 MB | seconds | `docker attach` | needs a TTY and an open stdin; no ENTRYPOINT (`/otel-tui`) | Apache-2.0 |
 | Maple Local | 1 | ~340 MB | seconds (`up -d --build`) | none | built from a release tarball; needs `libchdb.so` beside the binary | FSL-1.1 (source-available) |
 
 Anonymous usage telemetry is switched off in every file where upstream has a
@@ -628,6 +635,13 @@ Format: **quirk** → treatment (issue).
 - Custom path `/api/trace`, `x-api-key` → `type: otlp` with the full URL and `headers`; URL derivation does not apply, so `metrics: false`, `logs: false`.
 - **Drops bool and double attributes**, reads only `resourceSpans[0]` of a batch → documented as "partial"; not promoted to a type (#224). AGPL-3.0, stale (last release 2025-04), 4.45 GB image.
 - Upstream ClickHouse healthcheck on `localhost` resolves to `::1` and never passes → `127.0.0.1` in the compose.
+
+### otel-desktop-viewer and otel-tui (generic `otlp`, #367)
+- Both are stock OTLP/HTTP receivers without auth → `type: otlp` with the full `/v1/traces` URL, metrics and logs derived and on; one container (viewer) or one `docker run -d -i -t` (otel-tui, which only works attached to a terminal, so no compose file).
+- The viewer's JSON-RPC (`POST /rpc`, v0.5.0) takes **named** parameters with times in Unix nanoseconds; its `query` parameter is the UI's *parsed* tree, a query string answers `Invalid query` → filter `searchTraces` results client-side (`rootSpan.name`, `errorCount`, `spanCount`).
+- Upstream `main` documents `GET /export/traces/{id}` and a read-only SQL `query` method; the v0.5.0 image has neither (unknown `GET` paths return the SPA's HTML with `200`) → not relied on; pin `ODV_VERSION`.
+- otel-tui's Metrics tab lists one row per metric **per export batch**: 13 metric names appeared three times after one turn. Memory only with fixed caps; log records from outside a turn show `N/A` as the trace id; a trace with an error span is marked `[!]`.
+- Verified 2026-10-11: viewer v0.5.0 stored 5 spans, 27 log records, 13 metric names (74 data points) from one turn; otel-tui 0.7.5 showed the same five-span timeline.
 
 ### Sigiro and Maple Local (generic `otlp`)
 - Standard paths, no auth, all three signals, SQL query endpoints (`POST :9999/v1/query`; `POST :4388/local/query`) → generic `otlp`; no adapter uses the SQL.
