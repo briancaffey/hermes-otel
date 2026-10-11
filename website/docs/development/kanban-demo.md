@@ -17,7 +17,7 @@ uv run --extra dev python scripts/kanban_demo/run_demo.py --profile minimal \
 ## What happens
 
 1. Every `hermes kanban` call is pointed at a **scratch board** (`HERMES_KANBAN_DB` under `scripts/kanban_demo/out/<token>/board/`). The real `~/.hermes/kanban.db` is never opened, and the gateway's embedded dispatcher, which ticks the real board, never sees these cards.
-2. Three cards are created for the profile: **complete** (the worker calls `kanban_complete`), **block** (`kanban_block` with a reason) and **runaway** (`sleep 900` under a `--max-runtime` cap, so the dispatcher kills the worker and the breaker auto-blocks the card).
+2. Four cards are created for the profile: **complete** (the worker calls `kanban_complete`), **block** (`kanban_block` with a reason), **crash** (the worker runs `kill -9 $PPID`, so the next dispatch pass finds it dead and `on_kanban_worker_exited` fires) and **runaway** (`sleep 900` under a `--max-runtime` cap, so the dispatcher kills the worker and the breaker auto-blocks the card; Hermes fires no hook for that, which the demo checks).
 3. `hermes -p <profile> kanban dispatch --json` runs every few seconds until every card is `done` or `blocked`, which is what the gateway's dispatcher does every 60 s. The dispatcher-side hooks fire in those `dispatch` processes; the worker-side hooks fire in each spawned worker. All run under one profile, so one live store and one backend receive everything.
 4. The profile's live store is read for the `kanban.*` spans, each worker trace whose root carries a demo card, the `hermes.kanban.task.count` points and the `hermes.kanban.transition` events. With `--jaeger-url`, every trace tagged with a card id is resolved and linked.
 5. A fixed set of checks is scored and `report.md` written next to the board.
@@ -28,7 +28,8 @@ uv run --extra dev python scripts/kanban_demo/run_demo.py --profile minimal \
 | `kanban.claim` and `kanban.spawn` roots per card, spawn carries a pid | the dispatcher-side hooks fire in the `dispatch` process and never nest under a session |
 | `kanban.complete` has a session and a parent; the worker's root is stamped `completed` | the worker-side hook landed inside the worker's own trace, findable by span-only readers |
 | `kanban.block` is status OK with the reason | a blocked card is a hand-off, not an error |
-| `kanban.worker_exit` fired for the runaway card as an ERROR span | the kill after the runtime cap is visible and counts as a failure |
+| `kanban.worker_exit` fired for the crash card | a dead worker is noticed on the next dispatch pass (a CLI pass reports `exit_kind=unknown`; the gateway's dispatcher knows the kind and the span is then ERROR) |
+| no `kanban.*` span for the runaway card | a runtime-cap kill and a breaker auto-block fire no Hermes hook; the board's event log carries them |
 | `hermes.kanban.task.count` has claimed / completed / blocked points | the counter reaches the store from both processes |
 | `hermes.kanban.transition` events recorded | the events pipeline carries the transitions (`capture_logs` on) |
 

@@ -2,8 +2,9 @@
 name: hermes-otel-kanban-demo
 description: >-
   Exercise Hermes' kanban board end to end on a scratch board (a card that
-  completes, one that blocks, one that runs away and is killed by its runtime
-  cap) and read the resulting telemetry back from the plugin's live store and
+  completes, one that blocks, one whose worker crashes, one that runs away
+  and is killed by its runtime cap) and read the telemetry back from the
+  plugin's live store and
   from Jaeger: the dispatcher-side kanban.claim / spawn / worker_exit spans,
   the worker-side kanban.complete / block spans inside each worker's trace,
   the hermes.kanban.task.count points and the hermes.kanban.transition events.
@@ -57,10 +58,13 @@ cap (`--runaway-seconds`, default 45) and the dispatcher pass that notices.
    directory. The real board (`~/.hermes/kanban.db`) is never opened. The
    gateway's own dispatcher ticks the real board only, so it never sees these
    cards.
-2. Creates three cards assigned to the profile, each with `--max-retries 1`:
-   `complete` (call `kanban_complete`), `block` (call `kanban_block`), and
-   `runaway` (`sleep 900`, with `--max-runtime` so the dispatcher's next pass
-   kills the worker and the breaker auto-blocks the card).
+2. Creates four cards assigned to the profile, each with `--max-retries 1`:
+   `complete` (call `kanban_complete`), `block` (call `kanban_block`),
+   `crash` (the worker runs `kill -9 $PPID`, so the next dispatch pass finds
+   it dead and `on_kanban_worker_exited` fires) and `runaway` (`sleep 900`
+   under `--max-runtime`, so the dispatcher kills the worker and the breaker
+   auto-blocks the card; Hermes fires no hook for that, which the demo
+   checks).
 3. Runs `hermes -p <profile> kanban dispatch --json` every `--tick-seconds`
    until all three cards are terminal (`done` / `blocked`), exactly what the
    gateway's embedded dispatcher does every 60 s.
@@ -81,7 +85,8 @@ cap (`--runaway-seconds`, default 45) and the dispatcher pass that notices.
 | `kanban.complete` has a session and a parent | the worker-side hook landed inside the worker's own trace |
 | the `complete` worker's root is stamped `completed` | span-only readers (the dashboard's live store) can find the card's turn |
 | `kanban.block` is status OK with the reason | a blocked card is a human hand-off, not an error |
-| `kanban.worker_exit` fired for the runaway card, as an ERROR span | the kill after the runtime cap is visible, and counts as a failure |
+| `kanban.worker_exit` fired for the crash card | a dead worker is noticed on the next dispatch pass; a CLI pass reports `exit_kind=unknown` (it cannot reap a process it did not spawn), the gateway's dispatcher knows the kind and the span is then ERROR |
+| no `kanban.*` span for the runaway card | a runtime-cap kill and the breaker's auto-block fire no Hermes hook; the board's own event log carries them |
 | `hermes.kanban.task.count` has claimed / completed / blocked points | the counter reaches the live store from both processes |
 | `hermes.kanban.transition` events recorded | the events pipeline carries the transitions (needs `capture_logs` on) |
 
@@ -103,7 +108,7 @@ tag search `hermes.kanban.task_id=<id>` returns all of them.
 - **No `kanban.*` spans at all:** the profile's plugin dir is not this
   branch; sync it (`rsync -a --delete --exclude __pycache__ hermes_otel/
   ~/.hermes/profiles/<profile>/plugins/hermes_otel/`).
-- **`worker_exit` missing for the runaway card:** the cap had not expired
-  before the last pass; raise `--max-wait` or lower `--runaway-seconds`.
+- **`worker_exit` missing for the crash card:** the pass that noticed the
+  dead worker had not run yet; raise `--max-wait`.
 - **No events:** `capture_logs` is off for the profile; spans and metrics
   still prove the hooks.
