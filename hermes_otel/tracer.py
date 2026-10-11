@@ -643,9 +643,12 @@ from .log_handler import _LiveLogNoiseFilter  # noqa: E402,F401
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())
 
 # Env vars the Hermes kanban dispatcher sets on a worker -> resource attribute.
+# Only these three: the dispatcher also exports the DB and workspace paths and
+# the claim lock, which are a private layout and a token, not identity.
 _KANBAN_ENV_ATTRS = (
     ("HERMES_KANBAN_TASK", "hermes.kanban.task_id"),
     ("HERMES_KANBAN_BOARD", "hermes.kanban.board"),
+    ("HERMES_KANBAN_RUN_ID", "hermes.kanban.run_id"),
 )
 
 
@@ -991,11 +994,14 @@ class HermesOTelPlugin:
         attrs["hermes.profile"] = self.profile_name
         # Kanban worker identity: the dispatcher exports these into a worker's
         # environment, so everything a card's run emits can be joined back to
-        # the card. Omitted entirely outside a kanban worker.
-        for env_name, attr_name in _KANBAN_ENV_ATTRS:
-            value = os.getenv(env_name, "").strip()
-            if value:
-                attrs[attr_name] = value
+        # the card and to the attempt. Keyed on the task: Hermes pins the
+        # current board into HERMES_KANBAN_BOARD at the start of EVERY chat
+        # (hermes-agent #20074), so the board alone does not mark a worker.
+        if os.getenv("HERMES_KANBAN_TASK", "").strip():
+            for env_name, attr_name in _KANBAN_ENV_ATTRS:
+                value = os.getenv(env_name, "").strip()
+                if value:
+                    attrs[attr_name] = value
         if self.config.global_tags:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:

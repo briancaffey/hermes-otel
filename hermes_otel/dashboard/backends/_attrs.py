@@ -92,6 +92,7 @@ KNOWN_ATTRIBUTES = (
     "hermes.cost.usage",
     "hermes.cron.job_id",
     "hermes.kanban.board",
+    "hermes.kanban.run_id",
     "hermes.kanban.task_id",
     "hermes.link",
     "hermes.log.attribution",

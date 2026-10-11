@@ -79,11 +79,17 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 
 | Attribute | Source |
 |---|---|
-| `service.name` | `OTEL_PROJECT_NAME` (falls back to `"hermes-agent"`) |
+| `service.name` | `hermes-agent` (override via `resource_attributes:`) |
+| `service.instance.id` | A UUID per process, so two Hermes processes never share a metric series |
 | `service.version` | `hermes-otel` plugin version |
-| `otel.scope.name` | `hermes-otel` |
-| `openinference.project.name` | Same as `service.name` |
-| *plus* any `resource_attributes:` / `global_tags:` from `config.yaml` |
+| `process.pid` | Process id |
+| `hermes.profile` | The Hermes profile this process serves (also on the root span) |
+| `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.run_id` | A dispatcher-spawned kanban worker's card, board and attempt; absent elsewhere |
+| `openinference.project.name` | `project_name` / `OTEL_PROJECT_NAME` (the Phoenix project) |
+| `host.name` | Only with `host_metrics: true` |
+| *plus* any `resource_attributes:` / `global_tags:` from `hermes_otel.yaml` |
+
+The full list with every source is in the [span attributes reference](/reference/span-attributes#resource-on-every-span).
 
 ## Why dual-convention rather than pick one?
 
