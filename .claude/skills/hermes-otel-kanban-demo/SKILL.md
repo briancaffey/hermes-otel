@@ -20,7 +20,7 @@ dispatcher (the gateway's embedded one, or `hermes kanban dispatch`) that
 claims a ready card and spawns a worker, and the worker itself, a fresh
 `hermes -p <assignee> chat` process that reads the card with `kanban_show`
 and ends it with `kanban_complete` or `kanban_block`. The plugin observes six
-hooks across those processes ([hooks reference](../../../website/docs/reference/hooks.md#kanban-board-transitions)):
+hooks across those processes ([hooks reference](https://briancaffey.github.io/hermes-otel/reference/hooks#kanban-board-transitions)):
 
 | process | hook | span |
 |---|---|---|
