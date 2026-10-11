@@ -52,6 +52,12 @@ types:
     ui: false   # the embedded dashboard has no documented deep link to one trace
     status_semantics: root
     quirks: Jaeger-compatible API under /v1/jaeger (v1 grammar, service required, roots client-side); metrics as raw SQL samples per table with first-sample counting (PromQL range vectors answer empty); logs via SQL with json_get_string bracket paths; status_ok and free_text are none
+  clickstack:
+    metrics: true
+    logs: true
+    ui: optional   # a HyperDX search link when the entry sets ui_url
+    status_semantics: root
+    quirks: ClickHouse SQL over HTTP (user api/api on the all-in-one); every map value a string, coerced back; dotted metric names, histograms listed as .sum/.count; counters from raw cumulative samples with first-sample counting; SeverityText lower-cased by the collector
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

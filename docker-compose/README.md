@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [ClickStack](clickstack/) | 1 | :3050 | ✅ | ✅ | ✅ | `clickstack` | ClickHouse's own stack (HyperDX), standard OTel tables; key from `mint-api-key.sh`; adapter reads all three |
 | [GreptimeDB](greptime/) | 1 | :4398 | ✅ | ✅ | ✅ | `greptime` | one open-source database, SQL over everything; the dashboard adapter reads all three signals |
 | [Zipkin](zipkin/) | 1 | :9411 | ✅ | ❌ | ❌ | `zipkin` | the classic UI with OTLP from the `zipkin-otel` image; one JVM, the dashboard adapter reads it |
 | [Jaeger v2](jaeger-v2/) | 1 | :16696 | ✅ | ❌ | ❌ | `jaeger` | reproducing #245 (v2 has only `/api/v3`) |
@@ -108,6 +109,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 3010 | openlit | UI |
 | 3020 | tempo | Grafana |
 | 3040 | langtrace | UI + `/api/trace` ingest |
+| 3050 | clickstack | HyperDX UI (upstream 8080) |
 | 3100, 3200 | lgtm | Loki, Tempo |
 | 3210 | tempo | Tempo API |
 | 3301 | signoz | UI |
@@ -120,6 +122,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 4377, 4378 | sigiro | OTLP gRPC / HTTP |
 | 4388 | maple | UI + OTLP/HTTP |
 | 4398 | greptime | HTTP: OTLP (/v1/otlp), SQL, PromQL, Jaeger API, dashboard (upstream 4000) |
+| 4407, 4408 | clickstack | OTLP gRPC / HTTP (upstream 4317 / 4318) |
 | 5001 | mlflow | UI + OTLP/HTTP |
 | 5080, 5081 | openobserve | UI + OTLP/HTTP, OTLP/gRPC |
 | 5173 | opik | UI + API |
@@ -131,6 +134,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 8025 | latitude | Mailpit |
 | 8100, 8101 | laminar | app-server HTTP / gRPC |
 | 8123, 9000 | uptrace | ClickHouse |
+| 8124 | clickstack | ClickHouse HTTP (upstream 8123; user api/api from the host) |
 | 9090 | lgtm | Prometheus |
 | 9411 | zipkin | UI + API v2 + OTLP/HTTP (one port) |
 | 9999 | sigiro | SQL query API |
@@ -145,7 +149,7 @@ dev servers love 3000 and 8000.
 
 ## Disk and memory
 
-- **Images are big.** Langtrace's app image is 4.5 GB, Langfuse v4 3.6 GB,
+- **Images are big.** ClickStack's all-in-one is 2.6 GB, Langtrace's app image is 4.5 GB, Langfuse v4 3.6 GB,
   LangWatch 2.8 GB, Elastic 5.8 GB across its three images, Latitude about
   3 GB *per service*. Docker Desktop's VM disk
   fills up silently and the symptom is a Postgres that dies with "No space left

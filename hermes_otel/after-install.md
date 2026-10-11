@@ -41,6 +41,7 @@ Pick one and export it before starting Hermes:
 | Phoenix | `OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces` |
 | Zipkin | `OTEL_ZIPKIN_ENDPOINT=http://localhost:9411` (the `zipkin-otel` image; traces only) |
 | GreptimeDB | `OTEL_GREPTIME_ENDPOINT=http://localhost:4398` (traces + metrics + logs; `OTEL_GREPTIME_DB` optional) |
+| ClickStack | `OTEL_CLICKSTACK_ENDPOINT=http://localhost:4408` + `OTEL_CLICKSTACK_API_KEY` (the team's ingestion key; traces + metrics + logs) |
 | Grafana LGTM / any OTLP collector | no env-var mode: add `backends: [{type: lgtm, endpoint: http://localhost:4318/v1/traces, metrics: true}]` to `$HERMES_HOME/hermes_otel.yaml` |
 | Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` |
 | LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |

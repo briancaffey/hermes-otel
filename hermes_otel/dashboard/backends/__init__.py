@@ -323,5 +323,6 @@ for _name in (
     "jaeger",
     "zipkin",
     "greptime",
+    "clickstack",
 ):
     _safe_import(_name)

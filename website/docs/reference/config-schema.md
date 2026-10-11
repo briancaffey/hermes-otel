@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -162,6 +162,23 @@ See [Zipkin](/backends/zipkin).
 | `service_name` | string | Dashboard read path: the service every trace search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
 
 See [GreptimeDB](/backends/greptime).
+
+#### `clickstack`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** The ClickStack Collector's OTLP/HTTP base, e.g. `http://localhost:4408` (bundled stack) or `http://<host>:4318`. Also via `OTEL_CLICKSTACK_ENDPOINT`. A base URL gets `/v1/traces`; the other two signals are derived |
+| `api_key` / `api_key_env` | string | **Required.** The team's ingestion API key, sent as a bare `authorization: <key>` header (fallbacks `OTEL_CLICKSTACK_API_KEY`, `HYPERDX_API_KEY`); a missing key skips the entry |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; all three default **on** |
+| `query_port` | int | Dashboard read path: the ClickHouse HTTP port (default `8123`; `8124` on the bundled stack) |
+| `user` / `user_env`, `password` / `password_env` | string | Dashboard read path: ClickHouse credentials (`api` / `api` on the all-in-one image; its `default` user only answers from inside the container) |
+| `database` | string | Dashboard read path: the ClickHouse database (default `default`) |
+| `traces_table`, `logs_table` | string | Dashboard read path: table names (defaults `otel_traces`, `otel_logs`) |
+| `metrics_match` | string | Dashboard read path: a regular expression on metric names (default: the plugin's namespaces) |
+| `ui_url` | string | Dashboard read path: the HyperDX UI origin for the "open in" search link |
+| `service_name` | string | Dashboard read path: the service every trace search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
+
+See [ClickStack](/backends/clickstack).
 
 #### `tempo`
 

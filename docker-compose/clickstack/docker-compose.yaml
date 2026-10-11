@@ -1,0 +1,62 @@
+# ClickStack (HyperDX) — ClickHouse's open-source observability stack, one
+# all-in-one image: ClickHouse + an OpenTelemetry Collector + MongoDB + the
+# HyperDX UI. Traces, metrics and logs in the standard OTel ClickHouse tables.
+#
+# Upstream: github.com/hyperdxio/hyperdx (MIT); image renamed from
+# docker.hyperdx.io/hyperdx/hyperdx-all-in-one to clickhouse/clickstack-all-in-one
+# (docs: clickhouse.com/docs/use-cases/observability/clickstack/deployment/all-in-one).
+# Upstream's docker-compose.yml splits the same pieces into four containers and
+# leaves ClickHouse unpublished; this folder keeps the one-container image and
+# publishes ClickHouse so the dashboard adapter and the verify queries can read
+# the tables directly.
+#
+# Usage:
+#   docker compose -f docker-compose/clickstack/docker-compose.yaml up -d
+#   # UI:  http://localhost:3050   (create an account on first visit; no default login)
+#   docker compose -f docker-compose/clickstack/docker-compose.yaml down
+#   docker compose -f docker-compose/clickstack/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side remapped; override with the env vars):
+#   3050  HyperDX UI (8080 in the container)             CLICKSTACK_UI_PORT
+#   4407  OTLP/gRPC receiver (4317)                       CLICKSTACK_OTLP_GRPC_PORT (not used by the plugin)
+#   4408  OTLP/HTTP receiver (4318)   ← plugin exports here   CLICKSTACK_OTLP_HTTP_PORT
+#   8124  ClickHouse HTTP (8123; user default, no password)   CLICKSTACK_CLICKHOUSE_PORT
+#
+# Ingest is gated by an INGESTION API KEY minted in the UI (Team Settings →
+# API Keys) and sent as a bare `authorization: <key>` header; README.md has the
+# headless recipe. Point the plugin at it:
+#
+#   backends:
+#     - type: clickstack
+#       endpoint: http://localhost:4408
+#       api_key_env: OTEL_CLICKSTACK_API_KEY
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  clickstack:
+    image: clickhouse/clickstack-all-in-one:${CLICKSTACK_VERSION:-latest}
+    container_name: hermes-otel-clickstack
+    restart: unless-stopped
+    environment:
+      # Default retention of the otel_* tables (upstream default: 3 days).
+      TABLES_TTL: ${CLICKSTACK_TABLES_TTL:-3}
+      # Where the UI tells browsers to find the API (the UI proxies it; keep the host port).
+      FRONTEND_URL: http://localhost:${CLICKSTACK_UI_PORT:-3050}
+    ports:
+      - "${CLICKSTACK_UI_PORT:-3050}:8080"
+      - "${CLICKSTACK_OTLP_GRPC_PORT:-4407}:4317"
+      - "${CLICKSTACK_OTLP_HTTP_PORT:-4408}:4318"
+      - "${CLICKSTACK_CLICKHOUSE_PORT:-8124}:8123"
+    volumes:
+      - clickstack_mongo:/data/db
+      - clickstack_clickhouse:/var/lib/clickhouse
+      - clickstack_clickhouse_logs:/var/log/clickhouse-server
+    # The image ships its own HEALTHCHECK (curl /api/health on 8080, 1 min
+    # start period); nothing to add here.
+
+volumes:
+  clickstack_mongo:
+  clickstack_clickhouse:
+  clickstack_clickhouse_logs:

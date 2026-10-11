@@ -64,6 +64,7 @@ _LOGS_CAPABLE = {
     "laminar",
     "langwatch",
     "greptime",
+    "clickstack",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -96,6 +97,7 @@ _DISPLAY_NAMES = {
     "langwatch": "LangWatch",
     "latitude": "Latitude",
     "greptime": "GreptimeDB",
+    "clickstack": "ClickStack",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -125,6 +127,7 @@ _ENV_PRIORITY = [
     "laminar",
     "langwatch",
     "latitude",
+    "clickstack",
     "greptime",
     "jaeger",
     "zipkin",
@@ -161,6 +164,8 @@ _ENV_OPT_IN = {
     "langwatch": ("OTEL_LANGWATCH_API_KEY", "OTEL_LANGWATCH_ENDPOINT"),
     # Latitude has a cloud default host, so a plugin-namespaced key is enough.
     "latitude": ("OTEL_LATITUDE_API_KEY", "OTEL_LATITUDE_ENDPOINT"),
+    # Endpoint only: ClickStack has no default host, so a key alone never resolves.
+    "clickstack": ("OTEL_CLICKSTACK_ENDPOINT",),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -182,6 +187,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "laminar": (("LMNR_PROJECT_API_KEY",),),
     "langwatch": (("LANGWATCH_API_KEY",),),
     "latitude": (("LATITUDE_API_KEY",), ("LATITUDE_PROJECT",)),
+    "clickstack": (("HYPERDX_API_KEY",),),
 }
 
 
@@ -524,6 +530,56 @@ def _resolve_greptime(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("greptime", bc.metrics),
         supports_logs=_logs_for("greptime", bc.logs),
+    )
+
+
+def _resolve_clickstack(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve a ClickStack / HyperDX backend (all-in-one or split stack,
+    OTLP/HTTP, all three signals).
+
+    ClickStack's bundled OpenTelemetry Collector listens on the standard
+    ``/v1/traces``, ``/v1/metrics`` and ``/v1/logs`` paths (port 4318 in the
+    container, 4408 in the bundled stack) and **requires the team's ingestion
+    API key** on every request, as a bare ``authorization: <key>`` header (no
+    ``Bearer``). ``endpoint`` is required (no default host); a bare base URL
+    gets the ``/v1/traces`` suffix and ``tracer.py`` / ``log_handler.py``
+    derive the other two from it.
+
+    The key comes from ``api_key`` / ``api_key_env``, else
+    ``OTEL_CLICKSTACK_API_KEY`` / ``HYPERDX_API_KEY`` (the vendor SDK's own
+    variable). Without one the Collector answers 401 for every batch, so a
+    missing key skips the entry at startup instead of filling the debug log
+    with failures; the key is minted in the UI (Team Settings → API Keys) or
+    read from the all-in-one's MongoDB (docker-compose/clickstack/README.md).
+
+    Signals: traces, metrics and logs all on; the ClickHouse exporter stores
+    every metric type as sent, so no temporality preset.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_CLICKSTACK_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("clickstack requires endpoint (or set OTEL_CLICKSTACK_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+
+    key = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY"]
+    )
+    if not key:
+        raise ValueError(
+            "clickstack requires api_key / api_key_env (the team's ingestion API key; "
+            "or set OTEL_CLICKSTACK_API_KEY)"
+        )
+    headers: Dict[str, str] = {"authorization": key}
+    headers.update(bc.headers or {})
+
+    return _ResolvedBackend(
+        type="clickstack",
+        endpoint=ep,
+        display_name=_display(bc, "clickstack"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("clickstack", bc.metrics),
+        supports_logs=_logs_for("clickstack", bc.logs),
     )
 
 
@@ -1245,6 +1301,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "jaeger": _resolve_jaeger,
     "zipkin": _resolve_zipkin,
     "greptime": _resolve_greptime,
+    "clickstack": _resolve_clickstack,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

@@ -26,6 +26,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_SIGNOZ_ENDPOINT` | URL | SigNoz OTLP endpoint (self-host: `http://localhost:4328/v1/traces`) |
 | `OTEL_SIGNOZ_INGESTION_KEY` | `sz-...` | SigNoz Cloud ingestion key |
 | `OTEL_JAEGER_ENDPOINT` | URL | Jaeger OTLP endpoint (`http://localhost:4318/v1/traces`) |
+| `OTEL_CLICKSTACK_ENDPOINT` | URL | ClickStack Collector OTLP/HTTP base (`http://localhost:4408` for the bundled stack); with a key, enables ClickStack in env-var mode |
+| `OTEL_CLICKSTACK_API_KEY` | string | ClickStack ingestion API key (bare `authorization` header); required |
+| `HYPERDX_API_KEY` | string | ClickStack / HyperDX key fallback (the vendor SDK's variable); does not enable export on its own |
 | `OTEL_GREPTIME_ENDPOINT` | URL | GreptimeDB HTTP origin (`http://localhost:4398` for the bundled stack; OTLP under `/v1/otlp`); enables GreptimeDB in env-var mode |
 | `OTEL_GREPTIME_DB` | string | GreptimeDB database for all three signals (`X-Greptime-DB-Name`; default `public`) |
 | `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` | string | Basic auth for a GreptimeDB with a user provider; both needed, omitted otherwise; never enable export on their own |

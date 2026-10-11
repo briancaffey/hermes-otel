@@ -308,6 +308,9 @@
 #   greptime     — GreptimeDB (standalone or cluster). Traces + metrics + logs
 #                  under /v1/otlp; the plugin sends the trace pipeline header
 #                  on traces only. Optional `db`, `user` + `password`.
+#   clickstack   — ClickStack / HyperDX (ClickHouse's OSS stack). Traces +
+#                  metrics + logs on the standard paths; needs the team's
+#                  ingestion `api_key` (bare authorization header).
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -410,6 +413,15 @@
 #   - type: zipkin
 #     endpoint: http://localhost:9411        # ghcr.io/openzipkin-contrib/zipkin-otel
 #     # query_port: 9411           # dashboard read path (API v2 + UI, same port)
+#
+#   - type: clickstack
+#     endpoint: http://localhost:4408        # the Collector's OTLP/HTTP (4318 in the container)
+#     api_key_env: OTEL_CLICKSTACK_API_KEY   # docker-compose/clickstack/mint-api-key.sh prints it
+#     # dashboard read path (ClickHouse over HTTP):
+#     # query_port: 8124
+#     # user: api
+#     # password: api
+#     # ui_url: http://localhost:3050
 #
 #   - type: greptime
 #     endpoint: http://localhost:4398        # bundled stack (upstream 4000); OTLP under /v1/otlp

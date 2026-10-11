@@ -160,6 +160,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "user": ("OTEL_GREPTIME_USER",),
         "password": ("OTEL_GREPTIME_PASSWORD",),
     },
+    "clickstack": {"api_key": ("OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY")},
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -255,6 +256,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "zipkin": "origin",
     # Dashboard at /dashboard on the one HTTP port that also ingests OTLP.
     "greptime": "origin",
+    # UI on :8080, OTLP on the Collector's :4318 — origin only for a proxied hostname.
+    "clickstack": "proxied",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -669,6 +672,21 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ),
     ("OTEL_GREPTIME_USER", "backend", "GreptimeDB user for Basic auth (only with a user provider)"),
     ("OTEL_GREPTIME_PASSWORD", "backend", "GreptimeDB password for Basic auth"),
+    (
+        "OTEL_CLICKSTACK_ENDPOINT",
+        "backend",
+        "Single-backend mode: ClickStack Collector OTLP/HTTP base",
+    ),
+    (
+        "OTEL_CLICKSTACK_API_KEY",
+        "backend",
+        "ClickStack ingestion API key (bare authorization header; preferred name)",
+    ),
+    (
+        "HYPERDX_API_KEY",
+        "backend",
+        "ClickStack / HyperDX ingestion API key fallback (the vendor SDK variable)",
+    ),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),
