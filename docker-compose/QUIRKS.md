@@ -214,9 +214,9 @@ running gateways are unaffected either way.
 | Elastic | raw fields; Kibana dashboard uses `hermes.token.usage`, `hermes.model.usage`, tool durations | n/a | no | any field |
 | OpenLIT | `gen_ai.request.model`, `gen_ai.usage.*`, `gen_ai.tool.*` | n/a | no | `hermes.session_id` on logs |
 | MLflow | translators for GenAI semconv, OpenInference and OpenLLMetry | **computes itself** (`mlflow.trace.tokenUsage`), reads the root | yes (`mlflow.trace.cost`, priced models only) | `mlflow.trace.session` = Hermes session id |
-| Comet Opik | GenAI semconv and OpenInference; `gen_ai.request.model`, `gen_ai.provider.name` | **sums every span** → would double | yes (`total_estimated_cost`, null for unknown models; the doubling also doubled the cost) | `thread_id` = Hermes session |
+| Comet Opik | GenAI semconv and OpenInference; `gen_ai.request.model`, `gen_ai.provider.name` | **sums every span** → root roll-up dropped (`root_usage: false`, 1.24.0) | yes (`total_estimated_cost`, null for unknown models; before 1.24.0 the doubling also doubled the cost) | `thread_id` = Hermes session |
 | Laminar | `gen_ai.usage.*`; span types LLM (`api.*`, `llm.*`) and TOOL | reads the root | yes (0 for unknown models) | — |
-| LangWatch | `gen_ai.*` | **sums every span** → would double | — | `thread_id` = Hermes session |
+| LangWatch | `gen_ai.*` | **sums every span** → root roll-up dropped (`root_usage: false`, 1.24.0) | — | `thread_id` = Hermes session |
 | Latitude | GenAI semconv, explicitly | per span columns (`cost_*`) | yes | session column |
 | telemetry.dev | `gen_ai.*` only; OpenInference attributes ignored | — | — | `gen_ai.conversation.id` on the root |
 | Langtrace | its own `gen_ai.*`-based schema | — | — | — |
@@ -232,8 +232,8 @@ Three things the plugin does here:
    LangWatch) would then show twice the tokens, so for those two types the
    exporter bound to that entry rebuilds the root without
    `gen_ai.usage.*` / `llm.token_count.*` (`root_usage: false`, the
-   `_NO_ROOT_USAGE_PRESETS` preset, #327; PR #353, open on 2026-10-10, so on
-   1.23 the totals still double). Phoenix, Langfuse, MLflow and
+   `_NO_ROOT_USAGE_PRESETS` preset, #327, on `main` since #353 for 1.24.0; on
+   1.23 and earlier the totals double). Phoenix, Langfuse, MLflow and
    Laminar read the root's own numbers and keep it. Only that backend's copy
    changes; every other exporter and the live store still get the roll-up.
 3. It sets `session.id`, `gen_ai.conversation.id` and the legacy
@@ -469,7 +469,7 @@ Format: **quirk** → treatment (issue).
 - Vendor prefix `/api/v1/private/otel` → `_opik_traces_url` completes the UI base, the SDK's `…/api` override, the prefix, or the full URL; cloud default host.
 - Cloud auth is the **bare key** in `Authorization` (no Bearer) plus `Comet-Workspace`; self-hosted needs nothing → every header optional and omitted when unresolved.
 - `/metrics` and `/logs` under the prefix 404 → `_TRACES_ONLY`.
-- **Sums `gen_ai.usage.*` over every span**, so the root's roll-up doubled trace tokens and the estimated cost (28 560 shown for 14 280 real, #327) → `root_usage: false` preset; after it, the trace total equals the `api.*` spans (PR #353, open on 2026-10-10). Opik maps `agent` → `general`, `api.*` / `llm.*` → `llm`; HTTP only, gRPC errors.
+- **Sums `gen_ai.usage.*` over every span**, so the root's roll-up doubled trace tokens and the estimated cost (28 560 shown for 14 280 real, #327) → `root_usage: false` preset; after it, the trace total equals the `api.*` spans (#353, 1.24.0; one turn re-run live went from 27 914 to 13 953 prompt tokens). Opik maps `agent` → `general`, `api.*` / `llm.*` → `llm`; HTTP only, gRPC errors.
 - First start takes one to three minutes while ClickHouse and MySQL migrate.
 
 ### Laminar (`laminar`)
@@ -481,7 +481,7 @@ Format: **quirk** → treatment (issue).
 ### LangWatch (`langwatch`)
 - Vendor prefix `/api/otel` for all three signals → `_langwatch_traces_url` completes the base or the prefix; derived metrics and logs URLs.
 - Project key required; a service key additionally needs `X-Project-Id` → `project` / `LANGWATCH_PROJECT_ID`.
-- **Sums `gen_ai.usage.*` over every span** (48 598 shown for a turn whose calls total 24 299, #327) → `root_usage: false` preset (PR #353, open on 2026-10-10); not re-run after the fix. Common wrong paths (`/v1/traces`, `/api/v1/traces`) are rewritten server-side; 10 MiB per request.
+- **Sums `gen_ai.usage.*` over every span** (48 598 shown for a turn whose calls total 24 299, #327) → `root_usage: false` preset (#353, 1.24.0); not re-run after the fix. Common wrong paths (`/v1/traces`, `/api/v1/traces`) are rewritten server-side; 10 MiB per request.
 - About five minutes of ClickHouse migrations before `/api/health` answers 204; the key exists only after the onboarding wizard → `mint-api-key.py` or the Postgres read.
 
 ### Latitude (`latitude`)
@@ -539,9 +539,9 @@ The short version, for the overview page and the video:
    detail shape and one metric panel, with the one-shot-process counter
    problem solved per backend.
 
-## Open as of 2026-10-10
+## Open as of 2026-10-11
 
-- `root_usage` (#327) is PR #353, not yet on `main`; LangWatch was not re-run after it.
+- `root_usage` (#327, #353, 1.24.0) was verified live on Opik only; LangWatch was not re-run after it.
 - Elastic Cloud managed OTLP: contributor-verified only (#333).
 - Latitude per-span columns never inspected (PR #331); Uptrace 2.0 dialect not re-run since 2.0.2 (PR #277).
 - Logfire, Datadog, New Relic, Azure Monitor need accounts (#225-#228); AgentOps needs a token-exchange design (#231).
