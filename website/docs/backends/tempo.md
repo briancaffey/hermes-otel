@@ -85,6 +85,10 @@ default `3200`). Tempo stores no metrics or logs, but a Tempo entry that names a
 the `search_fetch` over-fetch that keeps paging complete and how a native
 TraceQL query interacts with the other search fields.
 
+## Query over MCP
+
+Traceloop's `opentelemetry-mcp` server reads this stack with `BACKEND_TYPE=tempo BACKEND_URL=http://localhost:3210` (the Tempo HTTP port, not Grafana), so Hermes, Claude Code or Cursor can search the traces and sum token usage over MCP. All eleven tools were verified against a Hermes workload. Setup, observed output and the caveats, including Tempo's base64 span ids: [Query your traces over MCP](/configuration/mcp-query-server).
+
 ## Multi-backend config
 
 ```yaml

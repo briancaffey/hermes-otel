@@ -61,6 +61,10 @@ Jaeger is not LLM-specific, so:
 
 For LLM-native UI, pair Jaeger with a fan-out to Phoenix or Langfuse — see [Multi-backend](/backends/multi-backend).
 
+## Query over MCP
+
+Traceloop's `opentelemetry-mcp` server reads this stack with `BACKEND_TYPE=jaeger BACKEND_URL=http://localhost:16686`, so Hermes, Claude Code or Cursor can search the traces and sum token usage over MCP. All eleven tools were verified against a Hermes workload; Jaeger **v2** does not work (its UI port serves only `/api/v3`). Setup, observed output and the caveats: [Query your traces over MCP](/configuration/mcp-query-server).
+
 ## Metrics caveat
 
 Jaeger is **traces-only** — no OTLP metrics ingest. The plugin auto-detects this and skips the metrics exporter when Jaeger is the only backend.

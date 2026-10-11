@@ -73,6 +73,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"Standard distributed tracing stack, no LLM-specific UI needed"**
 → [Jaeger](/backends/jaeger), [Zipkin](/backends/zipkin) or [Grafana Tempo](/backends/tempo) — all three are traces-only; pair with Prometheus if you need metrics. Zipkin is the lightest read API of the three and the dashboard adapter reads it.
 
+**"I want Claude Code, Cursor or Hermes itself to search the traces over MCP"**
+→ [Jaeger](/backends/jaeger) (v1) or [Grafana Tempo](/backends/tempo), read by Traceloop's `opentelemetry-mcp` server; verified setup and caveats in [Query your traces over MCP](/configuration/mcp-query-server).
+
 **"I want a cloud backend with a generous free tier and all three signals"**
 → [Honeycomb](/backends/honeycomb) — OTLP-native; set `OTEL_HONEYCOMB_API_KEY` and a region.
 

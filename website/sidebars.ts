@@ -69,6 +69,7 @@ const sidebars: SidebarsConfig = {
         'configuration/batch-export',
         'configuration/logs',
         'configuration/mcp-trace-propagation',
+        'configuration/mcp-query-server',
         'configuration/host-metrics',
         'configuration/profiles',
       ],

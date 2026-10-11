@@ -128,7 +128,7 @@ agent                             13.22 s  ▇▇▇▇▇▇▇▇▇▇▇▇�
 ── 10 spans · 13.22 s · 39,919 tokens
 ```
 
-`status`, `traces`, `trace`, `span`, `sessions`, `stats`, `metrics`, `logs` and read-only `sql`, each with `--json`, `--since` and `--source <backend>`: see [The observability skill](https://briancaffey.github.io/hermes-otel/skill).
+`status`, `traces`, `trace`, `span`, `sessions`, `stats`, `metrics`, `logs` and read-only `sql`, each with `--json`, `--since` and `--source <backend>`: see [The observability skill](https://briancaffey.github.io/hermes-otel/skill). Traces on Jaeger or Tempo can also be searched from Claude Code, Cursor or Hermes itself through Traceloop's `opentelemetry-mcp` server: [Query your traces over MCP](https://briancaffey.github.io/hermes-otel/configuration/mcp-query-server).
 
 ## How it works
 

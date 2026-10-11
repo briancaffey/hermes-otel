@@ -72,5 +72,6 @@ from any thread or event loop.
 
 ## See also
 
+- [Query your traces over MCP](/configuration/mcp-query-server): the other direction, an MCP server that reads the traces back; its own client spans show the gap described here.
 - [Hooks reference](/reference/hooks): which hooks are registered on which Hermes version.
 - [Span hierarchy](/architecture/span-hierarchy): how the agent's spans nest.
