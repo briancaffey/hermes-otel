@@ -69,6 +69,8 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
 _HANDLER_MARKER = "_hermes_otel_log_handler"
 # Logger level before install_handler lowered it, stamped on the handler.
 _PREVIOUS_LEVEL_ATTR = "_hermes_otel_previous_level"
+# ``(previous, lifted)`` ``logging.disable`` thresholds, stamped when install lifted one.
+_PREVIOUS_DISABLE_ATTR = "_hermes_otel_previous_disable"
 
 # Loggers whose records we never forward, by default: the OTel SDK (an export
 # failure logged and re-exported would feed the next export), the HTTP client
@@ -874,6 +876,7 @@ def install_handler(
     setattr(handler, _PREVIOUS_LEVEL_ATTR, target.level)
     if target.level == logging.NOTSET or target.level > level:
         target.setLevel(level)
+    _lift_global_disable(handler, level)
 
     debug_log(
         f"log_handler installed: target={attach_logger or 'root'} "
@@ -883,12 +886,36 @@ def install_handler(
     return provider
 
 
+def _lift_global_disable(handler: logging.Handler, level: int) -> None:
+    """Undo a process-wide ``logging.disable()`` that would starve *handler*.
+
+    ``logging.disable(n)`` short-circuits ``Logger.isEnabledFor`` for every
+    logger, so records never reach any handler. ``hermes -z`` (one-shot) calls
+    ``logging.disable(CRITICAL)`` to keep stderr clean, which made
+    ``logs.capture`` export zero records from every one-shot run. Lower the
+    threshold just far enough that records at or above *level* flow again;
+    anything below stays suppressed. The prior value is stamped on the handler
+    so uninstall can restore it.
+    """
+    manager = logging.root.manager
+    previous = manager.disable
+    if previous < level:
+        return
+    lifted = max(level - 1, logging.NOTSET)
+    logging.disable(lifted)
+    setattr(handler, _PREVIOUS_DISABLE_ATTR, (previous, lifted))
+    debug_log(
+        f"log_handler: lifted logging.disable({previous}) to {lifted} so records "
+        f"at {logging.getLevelName(level)}+ reach the handler"
+    )
+
+
 def _remove_prior_handlers(target: logging.Logger) -> None:
     """Strip any marker-tagged handlers we installed previously.
 
     Only touches handlers we own — leaves the consumer's own handlers
-    (stderr, file, syslog, ...) alone. Restores the logger level the
-    handler recorded at install time.
+    (stderr, file, syslog, ...) alone. Restores the logger level (and any
+    ``logging.disable`` threshold) the handler recorded at install time.
     """
     for h in list(target.handlers):
         if getattr(h, _HANDLER_MARKER, False):
@@ -896,6 +923,10 @@ def _remove_prior_handlers(target: logging.Logger) -> None:
             previous = getattr(h, _PREVIOUS_LEVEL_ATTR, None)
             if previous is not None:
                 target.setLevel(previous)
+            disable = getattr(h, _PREVIOUS_DISABLE_ATTR, None)
+            # Only restore if nobody changed the threshold since we lifted it.
+            if disable is not None and logging.root.manager.disable == disable[1]:
+                logging.disable(disable[0])
 
 
 def uninstall_handler(attach_logger: Optional[str] = None) -> None:

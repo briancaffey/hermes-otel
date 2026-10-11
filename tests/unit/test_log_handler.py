@@ -946,3 +946,54 @@ class TestLiveSinkOnTheProvider:
         f = log_handler._python_to_severity
         assert (f(logging.DEBUG), f(logging.INFO), f(logging.WARNING)) == (5, 9, 13)
         assert (f(logging.ERROR), f(logging.CRITICAL), f(0)) == (17, 21, 1)
+
+
+@pytest.fixture
+def restore_logging_disable():
+    """Put the process-wide ``logging.disable`` threshold back after the test."""
+    saved = logging.root.manager.disable
+    yield
+    logging.disable(saved)
+
+
+class TestGlobalDisable:
+    """``hermes -z`` calls ``logging.disable(CRITICAL)``; capture must still see records."""
+
+    def _install(self, level=logging.INFO):
+        from opentelemetry.sdk.resources import Resource
+
+        seen = []
+        proc = MagicMock()
+        proc.on_emit.side_effect = lambda rec: seen.append(rec)
+        provider = log_handler.install_handler(
+            resource=Resource.create({"service.name": "hermes-otel-test"}),
+            processors=[(proc, _ResolvedBackend(type="otlp", endpoint="x", supports_logs=True))],
+            level=level,
+        )
+        return provider, proc
+
+    def test_records_reach_the_processor_under_logging_disable(
+        self, clean_root_logger, restore_logging_disable
+    ):
+        logging.disable(logging.CRITICAL)
+        _provider, proc = self._install()
+        logging.getLogger("hermes.oneshot.test").info("tool ran")
+        assert proc.on_emit.called, "logs.capture got nothing while logging.disable was set"
+
+    def test_below_capture_level_stays_suppressed(self, clean_root_logger, restore_logging_disable):
+        logging.disable(logging.CRITICAL)
+        _provider, proc = self._install(level=logging.INFO)
+        logging.getLogger("hermes.oneshot.test").debug("chatty")
+        assert not proc.on_emit.called
+
+    def test_uninstall_restores_the_threshold(self, clean_root_logger, restore_logging_disable):
+        logging.disable(logging.CRITICAL)
+        self._install()
+        assert logging.root.manager.disable < logging.INFO
+        log_handler.uninstall_handler()
+        assert logging.root.manager.disable == logging.CRITICAL
+
+    def test_untouched_when_nothing_is_disabled(self, clean_root_logger, restore_logging_disable):
+        logging.disable(logging.NOTSET)
+        self._install()
+        assert logging.root.manager.disable == logging.NOTSET

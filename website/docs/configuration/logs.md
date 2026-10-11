@@ -191,6 +191,7 @@ The first form is `logs.capture` (with `events on` when both switches are set), 
 - **Shared resource.** Logs, events, traces and metrics inherit the same `Resource` (`service.name`, `service.version`, `hermes.profile`, `global_tags`, `resource_attributes`, `project_name`).
 - **Per-backend fan-out.** Each log-capable backend gets its own `BatchLogRecordProcessor` (queue and worker thread, tuned by `logs.batch.*`) behind its own rules filter; a slow Loki cannot block a fast SigNoz.
 - **Flushed with the rest.** The logger provider's `force_flush` runs from the same turn-end and `atexit` paths as spans and metrics.
+- **One-shot runs.** `hermes -z` calls `logging.disable(CRITICAL)` to keep stderr clean, which drops every record before any handler sees it. When capture is on, installing the handler lowers that process-wide threshold to just below `level`, so records at `level` and above are exported; anything below stays suppressed, and shutdown restores the previous threshold.
 - **Events and metrics.** The counters stay the aggregate; an event is the per-occurrence record. Nothing is derived from one to the other.
 
 ## Verifying
