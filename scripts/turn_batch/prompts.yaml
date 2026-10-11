@@ -2,8 +2,8 @@
 #
 # Each prompt is one Hermes turn that exercises a known slice of what the
 # plugin captures, so the batch's telemetry is predictable: run_batch.py runs
-# them in series through `hermes -p <profile> chat -Q --yolo -q ...` (never
-# `-z`: a one-shot run disables Python logging, so it exports no logs), and
+# them in series through `hermes -p <profile> chat -Q --yolo -q ...` (not
+# `-z`: a one-shot run swallows Hermes's stderr, which the batch keeps), and
 # check_batch.py then reads every source (live store + each configured backend)
 # and compares what landed with the `expect:` block.
 #

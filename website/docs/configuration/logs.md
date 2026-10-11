@@ -140,9 +140,9 @@ Hermes' record factory puts `hermes_home` (the resolved home directory) and `ses
 
 Secrets are redacted from the body and from every string attribute before any sink sees the record, with Hermes's own `agent.redact` (the same redactor behind `agent.log`, honouring `security.redact_secrets` / `HERMES_REDACT_SECRETS` per profile) when the plugin runs inside Hermes, and with a built-in set (provider key prefixes, bearer and basic auth, `Authorization` and `x-api-key` style headers, `key=value` credential assignments, URL userinfo) when it does not. Measured cost with Hermes's redactor: about 34 µs for a typical 75-character line, 73 µs per 1 KB, 75 ms per 1 MB of plain text and up to 580 ms per 1 MB when it contains secrets; a busy turn's few hundred lines cost a few tens of milliseconds in total. The built-in set runs at 8 µs to 84 µs for the same sizes.
 
-### One-shot runs export no logs
+### One-shot runs
 
-`hermes -z "..."` disables Python logging for the whole process (`logging.disable(CRITICAL)`), before any handler can see a record, so a one-shot run exports traces and metrics but never logs. To exercise the logs signal from a script, use `hermes chat -Q --yolo -q "..."` (the gateway and the interactive CLI keep logging on).
+`hermes -z "..."` disables Python logging for the whole process (`logging.disable(CRITICAL)`) to keep its stderr clean. Since 1.24.0 the plugin lifts that threshold to the capture level while its handler is installed, so a one-shot run exports logs like every other mode (before that it exported traces and metrics only). `hermes chat -Q --yolo -q "..."` remains the scripted form that also shows Hermes's own stderr.
 
 ## Which backends accept logs?
 
@@ -191,7 +191,7 @@ The first form is `logs.capture` (with `events on` when both switches are set), 
 - **Shared resource.** Logs, events, traces and metrics inherit the same `Resource` (`service.name`, `service.version`, `hermes.profile`, `global_tags`, `resource_attributes`, `project_name`).
 - **Per-backend fan-out.** Each log-capable backend gets its own `BatchLogRecordProcessor` (queue and worker thread, tuned by `logs.batch.*`) behind its own rules filter; a slow Loki cannot block a fast SigNoz.
 - **Flushed with the rest.** The logger provider's `force_flush` runs from the same turn-end and `atexit` paths as spans and metrics.
-- **One-shot runs.** `hermes -z` calls `logging.disable(CRITICAL)` to keep stderr clean, which drops every record before any handler sees it. When capture is on, installing the handler lowers that process-wide threshold to just below `level`, so records at `level` and above are exported; anything below stays suppressed, and shutdown restores the previous threshold.
+- **One-shot runs.** `hermes -z` calls `logging.disable(CRITICAL)` to keep stderr clean, which drops every record before any handler sees it. When capture is on, installing the handler lowers that process-wide threshold to just below `level`, so records at `level` and above are exported; anything below stays suppressed, and uninstalling the handler restores the previous threshold.
 - **Events and metrics.** The counters stay the aggregate; an event is the per-occurrence record. Nothing is derived from one to the other.
 
 ## Verifying

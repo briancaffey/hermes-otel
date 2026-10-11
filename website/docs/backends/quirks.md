@@ -173,8 +173,9 @@ and Elastic's red-cluster drop that you cannot. The per-type defaults
 user never has to discover the invisible ones. The generic `otlp` type cannot
 know, so it defaults every signal on and you turn them off per entry.
 
-`hermes -z` (one-shot) exports traces and metrics but **no logs**: one-shot
-mode disables Python logging before the handler sees a record.
+`hermes -z` (one-shot) disables Python logging process-wide to keep its stderr
+clean; the plugin lifts that threshold to the capture level while its handler is
+installed, so one-shot runs export all three signals (logs only since 1.24.0).
 
 ### E. Metrics: temporality, histograms, names, staleness
 

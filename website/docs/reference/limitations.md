@@ -104,10 +104,6 @@ A log line gets a turn's trace and span ids from one of three exact sources: a s
 
 Exported log records and live-store rows are redacted with Hermes' `agent.redact` (credential shapes, auth headers, URL userinfo, vault values) or the plugin's smaller built-in set outside Hermes. Neither recognises names, e-mail addresses or free-text personal data; use a Collector processor or `content_capture` for those. Masked values keep a head and tail by design, so a leaked key can still be identified.
 
-## One-shot runs (`hermes -z`) export no logs
-
-Hermes disables Python logging for a one-shot run before the plugin's handler can see a record, so `-z` exports spans and metrics only. Use `hermes chat -Q --yolo -q "..."`, the interactive CLI or the gateway when you need the logs signal.
-
 ## Debug log has no rotation
 
 Enabling `HERMES_OTEL_DEBUG=true` appends to `~/.hermes/plugins/hermes_otel/debug.log` forever. No rotation, no size cap.

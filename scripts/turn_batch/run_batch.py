@@ -5,7 +5,7 @@
     python scripts/turn_batch/run_batch.py --only shell-echo,no-tools --profile minimal
 
 Each prompt becomes one ``hermes -p <profile> chat -Q --yolo -q "<prompt>"`` run
-(never ``-z``: a one-shot run disables Python logging, so it exports no logs).
+(not ``-z``: a one-shot run swallows Hermes's stderr, which the batch keeps).
 The prompts run in series so their telemetry does not interleave. Every prompt
 gets a marker, ``<token>-<id>``, substituted into its text and appended as
 ``(batch marker: ...)`` so check_batch.py can find each turn by text in any
