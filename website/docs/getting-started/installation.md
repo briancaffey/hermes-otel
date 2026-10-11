@@ -20,19 +20,17 @@ Span data, including prompts, tool arguments and tool output as previews clipped
 ## From the plugin catalog
 
 ```bash
-hermes plugins install hermes-otel
+hermes plugins install hermes_otel
 hermes plugins enable hermes_otel
 ```
 
 :::note Two names
-The catalog key is `hermes-otel`; the manifest name, and therefore the install directory and the id you `enable`, is `hermes_otel`. `hermes plugins install hermes-otel` prints the installed name. `hermes plugins list` shows the source as `catalog:community@<sha>`.
-:::
-
-:::caution Listing in progress
-The catalog entry is tracked in [issue #134](https://github.com/briancaffey/hermes-otel/issues/134). Until it is merged upstream, use the repository install below; it is the same plugin, just not yet catalog-reviewed.
+The catalog entry and the manifest share the name `hermes_otel`; it is also the install directory and the id you `enable`. Only the GitHub repository is spelled `hermes-otel`. `hermes plugins list` shows a catalog install as `catalog:community@<sha>` with the pinned version, which lags the newest release until a sha-bump PR lands upstream.
 :::
 
 ## From this repository
+
+To run the newest `main` before it reaches the catalog pin:
 
 ```bash
 hermes plugins install briancaffey/hermes-otel/hermes_otel --enable
@@ -67,7 +65,7 @@ Hermes leaves the venv alone when you install with `--no-deps`, when `security.a
 
 ## Upgrading {#upgrading}
 
-**Catalog installs** are pinned to a reviewed commit. `hermes plugins update hermes-otel` compares the installed commit with the catalog pin and reinstalls at the new one when they differ; nothing moves until a sha-bump lands in the catalog.
+**Catalog installs** are pinned to a reviewed commit. `hermes plugins update hermes_otel` compares the installed commit with the catalog pin and reinstalls at the new one when they differ; nothing moves until a sha-bump lands in the catalog.
 
 **Repository installs** are a plain copy with no `.git`, so `hermes plugins update` refuses with *"was not installed from git"*. Upgrade by reinstalling:
 

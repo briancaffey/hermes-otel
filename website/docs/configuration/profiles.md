@@ -13,7 +13,7 @@ Hermes can run several agents from one installation: each **profile** has its ow
 Hermes discovers plugins from each profile's own home, so a profile that has not had the plugin installed and enabled runs with no telemetry at all, and nothing tells you. Install and enable it in every profile you want traced:
 
 ```bash
-hermes -p <name> plugins install hermes-otel        # from the catalog, or briancaffey/hermes-otel/hermes_otel
+hermes -p <name> plugins install hermes_otel        # from the catalog, or briancaffey/hermes-otel/hermes_otel
 hermes -p <name> plugins enable hermes_otel
 ```
 

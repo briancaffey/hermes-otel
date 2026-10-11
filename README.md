@@ -70,15 +70,15 @@ Any OTLP/HTTP endpoint works as `type: otlp`. Several can be fed at once, each w
 ## Install
 
 ```bash
-hermes plugins install hermes-otel        # from the Hermes plugin catalog
+hermes plugins install hermes_otel        # from the Hermes plugin catalog
 hermes plugins enable hermes_otel         # the manifest name; installing does not enable
 ```
 
-Hermes 0.21+ installs the plugin's Python dependencies (the three `opentelemetry-*` packages) into its own virtualenv automatically and re-applies them after every `hermes update`. Restart the gateway afterwards if one is running. `hermes plugins update hermes-otel` moves a catalog install to the newest reviewed commit.
+Hermes 0.21+ installs the plugin's Python dependencies (the three `opentelemetry-*` packages) into its own virtualenv automatically and re-applies them after every `hermes update`. Restart the gateway afterwards if one is running. `hermes plugins update hermes_otel` moves a catalog install to the newest reviewed commit.
 
 **What leaves your machine.** Span data goes only to the OTLP backends you configure. By default (`content_capture: full`) that includes the complete prompt and response of every model call, unclipped, plus previews of tool arguments and output clipped to 1200 characters. With none configured the plugin keeps a local SQLite store under `$HERMES_HOME` for the dashboard and sends nothing. `content_capture: preview` keeps only the clipped previews and `content_capture: off` drops content entirely while keeping the structure; see [Conversation capture](https://briancaffey.github.io/hermes-otel/configuration/conversation-capture) and [Privacy mode](https://briancaffey.github.io/hermes-otel/configuration/privacy). The dashboard's **Settings** tab shows every setting in force, where each came from (file, environment variable or default) and the config file itself.
 
-:construction: Until the [catalog listing](https://github.com/briancaffey/hermes-otel/issues/134) is merged, install from this repository instead (same plugin, not yet catalog-reviewed):
+To run the newest code before it reaches the catalog pin, install from this repository instead (same plugin, newest `main`, not catalog-reviewed):
 
 ```bash
 hermes plugins install briancaffey/hermes-otel/hermes_otel --enable

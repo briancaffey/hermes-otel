@@ -76,7 +76,7 @@ Tags are `hermes-otel-vX.Y.Z` (the component name is part of the tag), and GitHu
 
 1. Runs `googleapis/release-please-action`, which opens or updates the Release PR, or cuts the release when the Release PR was just merged.
 2. While a Release PR is open, merges `main` into its branch and refreshes `uv.lock` (release-please bumps `pyproject.toml` but never the lockfile, and only rebases the branch when the release notes change), so the PR's checks stay current.
-3. When a release was just created, renders the plugin-catalog entry for it (next section), uploads it to the GitHub release as `hermes-otel.yaml`, and prints it in the job summary.
+3. When a release was just created, renders the plugin-catalog entry for it (next section), uploads it to the GitHub release as `hermes_otel.yaml`, and prints it in the job summary.
 
 ### Why a PAT instead of `GITHUB_TOKEN`?
 
@@ -87,15 +87,15 @@ The `GH_PAT` secret is a personal access token with `contents: write` + `pull-re
 
 ## After the release: bump the plugin-catalog pin
 
-hermes-otel is listed in the [Hermes plugin catalog](https://github.com/NousResearch/hermes-agent/tree/main/plugin-catalog) (tracked in [issue #134](https://github.com/briancaffey/hermes-otel/issues/134) until the first entry is merged). The catalog pins an exact commit, so users on `hermes plugins install hermes-otel` only see a release once a **sha-bump PR** updates `sha` and `version` in `plugin-catalog/hermes-otel.yaml` upstream. Every release therefore ends with one more step:
+hermes-otel is listed in the [Hermes plugin catalog](https://github.com/NousResearch/hermes-agent/tree/main/plugin-catalog) as `hermes_otel` (first entry merged 2026-10-04, NousResearch/hermes-agent#128750). The catalog pins an exact commit, so users on `hermes plugins install hermes_otel` only see a release once a **sha-bump PR** updates `sha` and `version` in `plugin-catalog/hermes_otel.yaml` upstream. Every release therefore ends with one more step:
 
-1. Download `hermes-otel.yaml` from the GitHub release (or copy it from the release-please job summary). It is rendered by `scripts/render_catalog_entry.py` from the released commit's `plugin.yaml`, so its `sha`, `version`, `provides_hooks` and `requires_hermes` already match the tag. To render it by hand:
+1. Download `hermes_otel.yaml` from the GitHub release (or copy it from the release-please job summary). It is rendered by `scripts/render_catalog_entry.py` from the released commit's `plugin.yaml`, so its `sha`, `version`, `provides_hooks` and `requires_hermes` already match the tag. To render it by hand:
 
    ```bash
    python scripts/render_catalog_entry.py --sha "$(git rev-parse hermes-otel-vX.Y.Z)" --version X.Y.Z
    ```
 
-2. In a fork of `NousResearch/hermes-agent`, replace `plugin-catalog/hermes-otel.yaml` with that file and open a PR titled `plugin-catalog: bump hermes-otel to X.Y.Z`. Upstream CI clones this repo at the pinned sha and runs `hermes plugins validate --install-deps`; the `Catalog admission checks` job in this repo's CI runs the same gates on every PR, so the upstream check should already be green.
+2. In a fork of `NousResearch/hermes-agent`, replace `plugin-catalog/hermes_otel.yaml` with that file and open a PR titled `plugin-catalog: bump hermes_otel to X.Y.Z`. Upstream CI clones this repo at the pinned sha and runs `hermes plugins validate --install-deps`; the `Catalog admission checks` job in this repo's CI runs the same gates on every PR, so the upstream check should already be green.
 
 3. Reviewers look at the commit range between the old and new sha, so keep the PR body to the release notes link and anything a reviewer must know (new hooks, new dependencies, new env vars).
 
@@ -123,8 +123,8 @@ git commit -am "chore(main): release hermes-otel X.Y.Z"
 git tag hermes-otel-vX.Y.Z
 git push origin main --tags
 gh release create hermes-otel-vX.Y.Z --notes-from-tag
-python scripts/render_catalog_entry.py --sha "$(git rev-parse HEAD)" --version X.Y.Z -o hermes-otel.yaml
-gh release upload hermes-otel-vX.Y.Z hermes-otel.yaml
+python scripts/render_catalog_entry.py --sha "$(git rev-parse HEAD)" --version X.Y.Z -o hermes_otel.yaml
+gh release upload hermes-otel-vX.Y.Z hermes_otel.yaml
 ```
 
 ## Version alignment

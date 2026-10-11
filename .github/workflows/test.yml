@@ -212,9 +212,9 @@ jobs:
       - name: Render the catalog entry and run the upstream structural validator
         run: |
           set -euo pipefail
-          python scripts/render_catalog_entry.py --sha "$GITHUB_SHA" -o "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
-          cat "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
-          python "$RUNNER_TEMP/hermes-agent/scripts/validate_plugin_catalog.py" "$RUNNER_TEMP/plugin-catalog/hermes-otel.yaml"
+          python scripts/render_catalog_entry.py --sha "$GITHUB_SHA" -o "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
+          cat "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
+          python "$RUNNER_TEMP/hermes-agent/scripts/validate_plugin_catalog.py" "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
       - name: No self-updating code in the install artifact (catalog rule 3)
         run: |
           set -euo pipefail

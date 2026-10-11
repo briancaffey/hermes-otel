@@ -13,11 +13,11 @@ This walks you end-to-end: install the plugin, start a local [Phoenix](https://g
 hermes-otel is a [Hermes Agent](https://github.com/nousresearch/hermes-agent) plugin. From the plugin catalog:
 
 ```bash
-hermes plugins install hermes-otel
+hermes plugins install hermes_otel
 hermes plugins enable hermes_otel
 ```
 
-Or, until the [catalog listing](https://github.com/briancaffey/hermes-otel/issues/134) is merged, from this repository:
+Or, for the newest `main` ahead of the catalog pin, from this repository:
 
 ```bash
 hermes plugins install briancaffey/hermes-otel/hermes_otel --enable

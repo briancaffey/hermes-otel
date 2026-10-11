@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Render the Hermes plugin-catalog entry for hermes-otel from the shipped manifest.
 
-The catalog (``plugin-catalog/hermes-otel.yaml`` in NousResearch/hermes-agent)
+The catalog (``plugin-catalog/hermes_otel.yaml`` in NousResearch/hermes-agent)
 pins an exact commit and repeats the plugin's declared capabilities; every
 release needs a sha-bump PR upstream that updates ``sha`` and ``version``
 together. This script makes that PR a file copy: it reads
@@ -26,7 +26,9 @@ import yaml
 REPO_ROOT = Path(__file__).resolve().parent.parent
 MANIFEST = REPO_ROOT / "hermes_otel" / "plugin.yaml"
 
-CATALOG_NAME = "hermes-otel"
+# The manifest name: upstream renamed the entry from hermes-otel to it at merge
+# (NousResearch/hermes-agent e759ba25, 2026-10-04).
+CATALOG_NAME = "hermes_otel"
 REPO_URL = "https://github.com/briancaffey/hermes-otel"
 SUBDIR = "hermes_otel"
 MAINTAINER = "briancaffey"

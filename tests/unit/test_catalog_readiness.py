@@ -50,12 +50,15 @@ class TestManifestV2:
         # plugin sends where, installs and stores); catalog review adds one
         # when it is missing. Measured across the 22 catalog entries carrying
         # one on 2026-09-20: summary 61-365 chars, whole description 199-597.
+        # Ours is the wording the maintainer wrote into the merged entry
+        # (hermes-agent e759ba25, 2026-10-04): 687 chars. The renderer copies
+        # it verbatim so a sha-bump PR never rewrites the reviewed text.
         desc = " ".join(_manifest()["description"].split())
         assert desc.startswith("OpenTelemetry for Hermes Agent")
         assert desc.count("Disclosure — ") == 1, desc
         summary = desc.split("Disclosure — ")[0]
         assert len(summary) <= 200, len(summary)
-        assert len(desc) <= 600, len(desc)
+        assert len(desc) <= 700, len(desc)
         assert desc.endswith("."), desc
 
     def test_disclosure_states_what_leaves_the_machine(self):
@@ -67,7 +70,8 @@ class TestManifestV2:
             "backends you configure",
             "SQLite",
             "$HERMES_HOME",
-            "opentelemetry-exporter-otlp-proto-http",
+            "exporter-otlp-proto-http",
+            "owner-only SQLite",
         ):
             assert fact in disclosure, fact
 
@@ -207,7 +211,7 @@ class TestCatalogEntry:
         mod = _render_module()
         entry = yaml.safe_load(mod.render(mod.build_entry(_manifest(), sha=SHA)))
         m = _manifest()
-        assert entry["name"] == "hermes-otel" and entry["subdir"] == "hermes_otel"
+        assert entry["name"] == "hermes_otel" and entry["subdir"] == "hermes_otel"
         assert entry["sha"] == SHA and entry["version"] == str(m["version"])
         assert entry["requires_hermes"] == m["requires_hermes"]
         assert entry["description"] == " ".join(m["description"].split())
@@ -241,6 +245,6 @@ class TestCatalogEntry:
 
     def test_cli_writes_the_file(self, tmp_path):
         mod = _render_module()
-        out = tmp_path / "plugin-catalog" / "hermes-otel.yaml"
+        out = tmp_path / "plugin-catalog" / "hermes_otel.yaml"
         assert mod.main(["--sha", SHA, "-o", str(out)]) == 0
-        assert yaml.safe_load(out.read_text())["name"] == "hermes-otel"
+        assert yaml.safe_load(out.read_text())["name"] == "hermes_otel"
