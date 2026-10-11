@@ -642,6 +642,12 @@ from .log_handler import _LiveLogNoiseFilter  # noqa: E402,F401
 # the same backend get distinct Resources and therefore distinct series.
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())
 
+# Env vars the Hermes kanban dispatcher sets on a worker -> resource attribute.
+_KANBAN_ENV_ATTRS = (
+    ("HERMES_KANBAN_TASK", "hermes.kanban.task_id"),
+    ("HERMES_KANBAN_BOARD", "hermes.kanban.board"),
+)
+
 
 class HermesOTelPlugin:
     """OpenTelemetry tracer manager for the Hermes plugin.
@@ -983,6 +989,13 @@ class HermesOTelPlugin:
         # attribute so backends can split traces and metrics per agent even
         # where span attributes are not filterable; also on the root span.
         attrs["hermes.profile"] = self.profile_name
+        # Kanban worker identity: the dispatcher exports these into a worker's
+        # environment, so everything a card's run emits can be joined back to
+        # the card. Omitted entirely outside a kanban worker.
+        for env_name, attr_name in _KANBAN_ENV_ATTRS:
+            value = os.getenv(env_name, "").strip()
+            if value:
+                attrs[attr_name] = value
         if self.config.global_tags:
             attrs.update(self.config.global_tags)
         if self.config.resource_attributes:
