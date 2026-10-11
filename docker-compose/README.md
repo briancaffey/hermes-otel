@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [VictoriaMetrics family](victoria/) | 3 | :10428 / :9428 / :8428 (vmui) | ✅ | ✅ | ✅ | `victoria` | three single binaries, one entry; Jaeger + Prometheus + LogsQL reads; ~35 MB |
 | [ClickStack](clickstack/) | 1 | :3050 | ✅ | ✅ | ✅ | `clickstack` | ClickHouse's own stack (HyperDX), standard OTel tables; key from `mint-api-key.sh`; adapter reads all three |
 | [GreptimeDB](greptime/) | 1 | :4398 | ✅ | ✅ | ✅ | `greptime` | one open-source database, SQL over everything; the dashboard adapter reads all three signals |
 | [Zipkin](zipkin/) | 1 | :9411 | ✅ | ❌ | ❌ | `zipkin` | the classic UI with OTLP from the `zipkin-otel` image; one JVM, the dashboard adapter reads it |
@@ -135,6 +136,9 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 8100, 8101 | laminar | app-server HTTP / gRPC |
 | 8123, 9000 | uptrace | ClickHouse |
 | 8124 | clickstack | ClickHouse HTTP (upstream 8123; user api/api from the host) |
+| 8428 | victoria | VictoriaMetrics: OTLP, Prometheus API, vmui |
+| 9428 | victoria | VictoriaLogs: OTLP, LogsQL, vmui |
+| 10428 | victoria | VictoriaTraces: OTLP, Jaeger API, vmui |
 | 9090 | lgtm | Prometheus |
 | 9411 | zipkin | UI + API v2 + OTLP/HTTP (one port) |
 | 9999 | sigiro | SQL query API |

@@ -58,6 +58,12 @@ types:
     ui: optional   # a HyperDX search link when the entry sets ui_url
     status_semantics: root
     quirks: ClickHouse SQL over HTTP (user api/api on the all-in-one); every map value a string, coerced back; dotted metric names, histograms listed as .sum/.count; counters from raw cumulative samples with first-sample counting; SeverityText lower-cased by the collector
+  victoria:
+    metrics: optional   # true when the entry names metrics_endpoint / prometheus_url
+    logs: optional      # true when the entry names logs_endpoint / logs_url
+    ui: false           # vmui's TraceID mode has no documented deep link
+    status_semantics: root
+    quirks: VictoriaTraces Jaeger-compatible API under /select/jaeger (v1 grammar, every tag a string, error tag true/false); metrics through the Prometheus reader on VictoriaMetrics (Prometheus naming flag); logs through LogsQL NDJSON; status_ok and free_text are none; roots client-side
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

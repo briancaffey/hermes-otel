@@ -29,6 +29,10 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_CLICKSTACK_ENDPOINT` | URL | ClickStack Collector OTLP/HTTP base (`http://localhost:4408` for the bundled stack); with a key, enables ClickStack in env-var mode |
 | `OTEL_CLICKSTACK_API_KEY` | string | ClickStack ingestion API key (bare `authorization` header); required |
 | `HYPERDX_API_KEY` | string | ClickStack / HyperDX key fallback (the vendor SDK's variable); does not enable export on its own |
+| `OTEL_VICTORIA_ENDPOINT` | URL | VictoriaTraces origin (`http://localhost:10428`; OTLP at `/insert/opentelemetry/v1/traces`); enables the Victoria type in env-var mode |
+| `OTEL_VICTORIA_METRICS_ENDPOINT` | URL | VictoriaMetrics origin (`http://localhost:8428`; OTLP at `/opentelemetry/v1/metrics`); metrics are off without it |
+| `OTEL_VICTORIA_LOGS_ENDPOINT` | URL | VictoriaLogs origin (`http://localhost:9428`; OTLP at `/insert/opentelemetry/v1/logs`); logs are off without it |
+| `OTEL_VICTORIA_USER` / `OTEL_VICTORIA_PASSWORD` | string | Basic auth for stores started with `-httpAuth.*`; both needed, omitted otherwise |
 | `OTEL_GREPTIME_ENDPOINT` | URL | GreptimeDB HTTP origin (`http://localhost:4398` for the bundled stack; OTLP under `/v1/otlp`); enables GreptimeDB in env-var mode |
 | `OTEL_GREPTIME_DB` | string | GreptimeDB database for all three signals (`X-Greptime-DB-Name`; default `public`) |
 | `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` | string | Basic auth for a GreptimeDB with a user provider; both needed, omitted otherwise; never enable export on their own |

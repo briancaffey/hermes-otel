@@ -1,0 +1,87 @@
+# VictoriaTraces + VictoriaLogs + VictoriaMetrics — three single-binary stores,
+# one per signal, each ingesting OTLP/HTTP directly (no collector).
+#
+# Upstream (all Apache-2.0): github.com/VictoriaMetrics/VictoriaTraces,
+# VictoriaLogs and VictoriaMetrics. Each repo ships its own compose file under
+# deployment/docker (compose-vt-single.yml, compose-vl-single.yml,
+# compose-vm-single.yml) with Grafana and a demo app; none runs all three.
+# This folder runs the three stores alone, with the flags those files use.
+#
+# VictoriaTraces is pre-1.0 ("on-disk data structures and API endpoints may
+# change", README); pinned v0.12.0.
+#
+# Usage:
+#   docker compose -f docker-compose/victoria/docker-compose.yaml up -d
+#   # UIs: http://localhost:10428/select/vmui  (traces)
+#   #      http://localhost:9428/select/vmui/  (logs)
+#   #      http://localhost:8428/vmui          (metrics)      no logins
+#   docker compose -f docker-compose/victoria/docker-compose.yaml down
+#   docker compose -f docker-compose/victoria/docker-compose.yaml down -v   # nuke data
+#
+# Ports (upstream defaults, nothing else in this directory uses them):
+#   10428  VictoriaTraces: OTLP /insert/opentelemetry/v1/traces, Jaeger API /select/jaeger, vmui   VICTORIA_TRACES_PORT
+#    9428  VictoriaLogs:   OTLP /insert/opentelemetry/v1/logs, LogsQL /select/logsql, vmui         VICTORIA_LOGS_PORT
+#    8428  VictoriaMetrics: OTLP /opentelemetry/v1/metrics, Prometheus API /api/v1, vmui           VICTORIA_METRICS_PORT
+#
+# Point the plugin at it (one entry, three per-signal URLs):
+#
+#   backends:
+#     - type: victoria
+#       endpoint: http://localhost:10428          # traces
+#       metrics_endpoint: http://localhost:8428   # VictoriaMetrics
+#       logs_endpoint: http://localhost:9428      # VictoriaLogs
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  victoria-traces:
+    image: victoriametrics/victoria-traces:${VICTORIA_TRACES_VERSION:-v0.12.0}
+    container_name: hermes-otel-victoria-traces
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/victoria-traces-data
+      - -retentionPeriod=7d
+      - -httpListenAddr=:10428
+    ports:
+      - "${VICTORIA_TRACES_PORT:-10428}:10428"
+    volumes:
+      - victoria_traces:/victoria-traces-data
+
+  victoria-logs:
+    image: victoriametrics/victoria-logs:${VICTORIA_LOGS_VERSION:-v1.53.0}
+    container_name: hermes-otel-victoria-logs
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/victoria-logs-data
+      - -retentionPeriod=7d
+      - -httpListenAddr=:9428
+    ports:
+      - "${VICTORIA_LOGS_PORT:-9428}:9428"
+    volumes:
+      - victoria_logs:/victoria-logs-data
+
+  victoria-metrics:
+    image: victoriametrics/victoria-metrics:${VICTORIA_METRICS_VERSION:-v1.153.0}
+    container_name: hermes-otel-victoria-metrics
+    restart: unless-stopped
+    command:
+      - -storageDataPath=/victoria-metrics-data
+      - -retentionPeriod=1
+      - -httpListenAddr=:8428
+      # Store OTLP metrics under Prometheus names (hermes_token_usage_total,
+      # …_seconds_sum), the spelling the dashboard's Prometheus reader and the
+      # LGTM stack use; without the flag names stay dotted ("as is").
+      - -opentelemetry.usePrometheusNaming
+    ports:
+      - "${VICTORIA_METRICS_PORT:-8428}:8428"
+    volumes:
+      - victoria_metrics:/victoria-metrics-data
+
+  # The images are built from scratch (no shell, no curl), so Compose cannot
+  # probe them from inside; each answers GET /health with "OK" from the host.
+
+volumes:
+  victoria_traces:
+  victoria_logs:
+  victoria_metrics:

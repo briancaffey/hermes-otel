@@ -749,7 +749,7 @@ def build_log_processors(
         merged: Dict[str, str] = dict(extra_headers or {})
         # ``logs_headers`` set (even empty) replaces the trace headers (#363).
         merged.update((b.logs_headers if b.logs_headers is not None else b.headers) or {})
-        endpoint = _derive_logs_endpoint(b.endpoint)
+        endpoint = b.logs_endpoint or _derive_logs_endpoint(b.endpoint)
         try:
             exporter = _LoggingLogExporter(
                 OTLPLogExporter(endpoint=endpoint, headers=merged or None), b.display_name

@@ -65,6 +65,7 @@ _LOGS_CAPABLE = {
     "langwatch",
     "greptime",
     "clickstack",
+    "victoria",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -98,6 +99,7 @@ _DISPLAY_NAMES = {
     "latitude": "Latitude",
     "greptime": "GreptimeDB",
     "clickstack": "ClickStack",
+    "victoria": "Victoria",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -129,6 +131,7 @@ _ENV_PRIORITY = [
     "latitude",
     "clickstack",
     "greptime",
+    "victoria",
     "jaeger",
     "zipkin",
     "tempo",
@@ -246,6 +249,11 @@ class _ResolvedBackend:
     headers: Optional[Dict[str, str]] = None
     metrics_headers: Optional[Dict[str, str]] = None
     logs_headers: Optional[Dict[str, str]] = None
+    # Full per-signal URLs when a backend keeps its signals on different
+    # hosts or paths (VictoriaMetrics' three stores, #366); ``None`` means
+    # derive ``/v1/metrics`` / ``/v1/logs`` from the traces URL.
+    metrics_endpoint: Optional[str] = None
+    logs_endpoint: Optional[str] = None
     supports_traces: bool = True
     supports_metrics: bool = True
     supports_logs: bool = False
@@ -580,6 +588,82 @@ def _resolve_clickstack(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("clickstack", bc.metrics),
         supports_logs=_logs_for("clickstack", bc.logs),
+    )
+
+
+_VICTORIA_TRACES_PATH = "/insert/opentelemetry/v1/traces"
+_VICTORIA_METRICS_PATH = "/opentelemetry/v1/metrics"
+_VICTORIA_LOGS_PATH = "/insert/opentelemetry/v1/logs"
+
+
+def _victoria_url(raw: str, path: str) -> str:
+    """An origin, or the full ingest URL, of one Victoria store → that store's
+    OTLP URL. Any ``/insert/opentelemetry/v1/<signal>``, ``/opentelemetry/v1/<signal>``
+    or ``/v1/<signal>`` tail is replaced by the store's own path."""
+    base = re.sub(r"(/insert)?(/opentelemetry)?/v1/(traces|metrics|logs)$", "", raw.rstrip("/"))
+    return f"{base.rstrip('/')}{path}"
+
+
+def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve the VictoriaMetrics family: VictoriaTraces, VictoriaMetrics and
+    VictoriaLogs, three single-binary stores with one OTLP/HTTP route each.
+
+    ``endpoint`` is VictoriaTraces (``:10428``, traces land on
+    ``/insert/opentelemetry/v1/traces``); ``metrics_endpoint`` is
+    VictoriaMetrics (``:8428``, ``/opentelemetry/v1/metrics``) and
+    ``logs_endpoint`` VictoriaLogs (``:9428``, ``/insert/opentelemetry/v1/logs``).
+    Each takes an origin or the full URL, also via ``OTEL_VICTORIA_ENDPOINT``,
+    ``OTEL_VICTORIA_METRICS_ENDPOINT`` and ``OTEL_VICTORIA_LOGS_ENDPOINT``. The
+    three stores are separate processes, so a signal whose store is not named
+    is simply off: there is no host to derive it on.
+
+    Headers: none upstream. Basic auth from ``user`` + ``password`` (fallbacks
+    ``OTEL_VICTORIA_USER`` / ``OTEL_VICTORIA_PASSWORD``) when the stores run
+    with ``-httpAuth.*``. Logs carry ``VL-Stream-Fields: service.name`` so
+    VictoriaLogs keys its streams on the service, not on every resource
+    attribute (``service.instance.id`` changes with every Hermes process);
+    ``headers`` can override it.
+
+    Signals: traces on; metrics and logs on when their store is named.
+    VictoriaMetrics stores cumulative points natively (no preset); exponential
+    histograms become its ``vmrange`` histograms.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_VICTORIA_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError(
+            "victoria requires endpoint (VictoriaTraces; or set OTEL_VICTORIA_ENDPOINT)"
+        )
+    traces_url = _victoria_url(ep, _VICTORIA_TRACES_PATH)
+    m_ep = (bc.metrics_endpoint or os.getenv("OTEL_VICTORIA_METRICS_ENDPOINT", "")).strip()
+    l_ep = (bc.logs_endpoint or os.getenv("OTEL_VICTORIA_LOGS_ENDPOINT", "")).strip()
+    metrics_url = _victoria_url(m_ep, _VICTORIA_METRICS_PATH) if m_ep else None
+    logs_url = _victoria_url(l_ep, _VICTORIA_LOGS_PATH) if l_ep else None
+
+    if bc.metrics is True and not metrics_url:
+        raise ValueError("victoria metrics need metrics_endpoint (VictoriaMetrics)")
+    if bc.logs is True and not logs_url:
+        raise ValueError("victoria logs need logs_endpoint (VictoriaLogs)")
+
+    common: Dict[str, str] = {}
+    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_VICTORIA_USER"])
+    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_VICTORIA_PASSWORD"])
+    if user and pw:
+        common["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    common.update(bc.headers or {})
+    log_headers = {"VL-Stream-Fields": "service.name", **common}
+
+    return _ResolvedBackend(
+        type="victoria",
+        endpoint=traces_url,
+        display_name=_display(bc, "victoria"),
+        headers=dict(common),
+        metrics_headers=dict(common),
+        logs_headers=log_headers,
+        metrics_endpoint=metrics_url,
+        logs_endpoint=logs_url,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("victoria", bc.metrics) and metrics_url is not None,
+        supports_logs=_logs_for("victoria", bc.logs) and logs_url is not None,
     )
 
 
@@ -1302,6 +1386,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "zipkin": _resolve_zipkin,
     "greptime": _resolve_greptime,
     "clickstack": _resolve_clickstack,
+    "victoria": _resolve_victoria,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

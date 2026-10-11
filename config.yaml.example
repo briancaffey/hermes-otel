@@ -311,6 +311,9 @@
 #   clickstack   — ClickStack / HyperDX (ClickHouse's OSS stack). Traces +
 #                  metrics + logs on the standard paths; needs the team's
 #                  ingestion `api_key` (bare authorization header).
+#   victoria     — VictoriaTraces + VictoriaMetrics + VictoriaLogs: `endpoint`,
+#                  `metrics_endpoint`, `logs_endpoint` name the three stores; a
+#                  signal whose store is not named is off.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -422,6 +425,11 @@
 #     # user: api
 #     # password: api
 #     # ui_url: http://localhost:3050
+#
+#   - type: victoria
+#     endpoint: http://localhost:10428          # VictoriaTraces (/insert/opentelemetry/v1/traces)
+#     metrics_endpoint: http://localhost:8428   # VictoriaMetrics (/opentelemetry/v1/metrics)
+#     logs_endpoint: http://localhost:9428      # VictoriaLogs (/insert/opentelemetry/v1/logs)
 #
 #   - type: greptime
 #     endpoint: http://localhost:4398        # bundled stack (upstream 4000); OTLP under /v1/otlp

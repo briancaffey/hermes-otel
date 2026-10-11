@@ -1203,7 +1203,11 @@ class HermesOTelPlugin:
                         continue
 
                 if b.supports_metrics:
-                    metrics_endpoint = self._derive_metrics_endpoint(b.endpoint)
+                    # A backend with its own metrics store names the URL (#366);
+                    # the rest serve /v1/metrics next to /v1/traces.
+                    metrics_endpoint = b.metrics_endpoint or self._derive_metrics_endpoint(
+                        b.endpoint
+                    )
                     try:
                         # ``metrics_headers`` set (even empty) means "these, not the
                         # trace headers": GreptimeDB's trace pipeline header must not

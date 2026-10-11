@@ -30,6 +30,7 @@ const sidebars: SidebarsConfig = {
         'backends/zipkin',
         'backends/greptime',
         'backends/clickstack',
+        'backends/victoria',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',

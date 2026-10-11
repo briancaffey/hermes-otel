@@ -161,6 +161,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "password": ("OTEL_GREPTIME_PASSWORD",),
     },
     "clickstack": {"api_key": ("OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY")},
+    "victoria": {
+        "user": ("OTEL_VICTORIA_USER",),
+        "password": ("OTEL_VICTORIA_PASSWORD",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -258,6 +262,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "greptime": "origin",
     # UI on :8080, OTLP on the Collector's :4318 — origin only for a proxied hostname.
     "clickstack": "proxied",
+    # VictoriaTraces serves vmui on the port it ingests on (/select/vmui).
+    "victoria": "origin",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -687,6 +693,27 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "backend",
         "ClickStack / HyperDX ingestion API key fallback (the vendor SDK variable)",
     ),
+    (
+        "OTEL_VICTORIA_ENDPOINT",
+        "backend",
+        "Single-backend mode: VictoriaTraces origin (OTLP at /insert/opentelemetry/v1/traces)",
+    ),
+    (
+        "OTEL_VICTORIA_METRICS_ENDPOINT",
+        "backend",
+        "VictoriaMetrics origin (OTLP at /opentelemetry/v1/metrics); metrics off without it",
+    ),
+    (
+        "OTEL_VICTORIA_LOGS_ENDPOINT",
+        "backend",
+        "VictoriaLogs origin (OTLP at /insert/opentelemetry/v1/logs); logs off without it",
+    ),
+    (
+        "OTEL_VICTORIA_USER",
+        "backend",
+        "Basic auth user for the Victoria stores (only with -httpAuth.*)",
+    ),
+    ("OTEL_VICTORIA_PASSWORD", "backend", "Basic auth password for the Victoria stores"),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

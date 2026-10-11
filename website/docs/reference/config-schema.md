@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -179,6 +179,22 @@ See [GreptimeDB](/backends/greptime).
 | `service_name` | string | Dashboard read path: the service every trace search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
 
 See [ClickStack](/backends/clickstack).
+
+#### `victoria`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** VictoriaTraces origin or ingest URL (`http://localhost:10428` → `/insert/opentelemetry/v1/traces`). Also via `OTEL_VICTORIA_ENDPOINT` |
+| `metrics_endpoint` | string | VictoriaMetrics origin or ingest URL (`http://localhost:8428` → `/opentelemetry/v1/metrics`); metrics are off without it. Also via `OTEL_VICTORIA_METRICS_ENDPOINT` |
+| `logs_endpoint` | string | VictoriaLogs origin or ingest URL (`http://localhost:9428` → `/insert/opentelemetry/v1/logs`); logs are off without it. Also via `OTEL_VICTORIA_LOGS_ENDPOINT` |
+| `user` / `user_env`, `password` / `password_env` | string | Optional Basic auth sent to all three stores (fallbacks `OTEL_VICTORIA_USER` / `OTEL_VICTORIA_PASSWORD`) |
+| `headers` | map | Extra headers on every signal; a `VL-Stream-Fields` entry replaces the default `service.name` the type sends on logs |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; an explicit `metrics: true` / `logs: true` needs the matching store named, else the entry is skipped with a hint |
+| `prometheus_url`, `logs_url` | string | Dashboard read path: the VictoriaMetrics and VictoriaLogs origins (default: `metrics_endpoint` / `logs_endpoint`) |
+| `query_port`, `query_path`, `search_fetch` | int / string / int | Dashboard read path: VictoriaTraces' port (default the endpoint's, else `10428`), the Jaeger-compatible API prefix (default `/select/jaeger`) and the traces fetched per search before the page is cut (default `500`) |
+| `metrics_match`, `service_name` | string | Dashboard read path: a PromQL series selector for the metric list; the service every trace search names |
+
+See [VictoriaMetrics family](/backends/victoria).
 
 #### `tempo`
 

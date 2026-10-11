@@ -324,5 +324,6 @@ for _name in (
     "zipkin",
     "greptime",
     "clickstack",
+    "victoria",
 ):
     _safe_import(_name)
