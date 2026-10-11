@@ -116,7 +116,7 @@ def main(argv: List[str] | None = None) -> int:
         "--out",
         type=Path,
         default=None,
-        help="output dir (default: ~/.hermes/turn_batches/<token>)",
+        help="output dir (default: $HERMES_HOME/turn_batches/<token>, else ~/.hermes/turn_batches/<token>)",
     )
     ap.add_argument("--timeout", type=float, default=300.0, help="seconds per turn")
     ap.add_argument("--sleep", type=float, default=3.0, help="seconds between turns")
@@ -131,7 +131,14 @@ def main(argv: List[str] | None = None) -> int:
     data = load_prompts(args.prompts)
     profile = args.profile or data.get("profile") or "default"
     token = args.token or default_token()
-    out_dir = args.out or (Path.home() / ".hermes" / "turn_batches" / token)
+    # Same rule as scripts/dashboard_verify: a scratch HERMES_HOME keeps its
+    # batches, so the verifier finds the manifest where the turns ran (#364).
+    home = (
+        Path(os.environ["HERMES_HOME"]).expanduser()
+        if os.environ.get("HERMES_HOME")
+        else Path.home() / ".hermes"
+    )
+    out_dir = args.out or (home / "turn_batches" / token)
     out_dir.mkdir(parents=True, exist_ok=True)
     workdir = out_dir / "workdir"
     workdir.mkdir(exist_ok=True)

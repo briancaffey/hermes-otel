@@ -31,6 +31,7 @@ map, disk/memory budget, the test loop).
 | **Phoenix** | traces only | http://localhost:6006 | LLM-span inspection, OpenInference panels |
 | **SigNoz** | traces + metrics + logs | http://localhost:3301 | full APM, but a heavy multi-container stack |
 | **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
+| **Zipkin** | traces only | http://localhost:9411/zipkin (no login) | `type: zipkin`, the `zipkin-otel` image (stock Zipkin has no OTLP); one port for ingest, API v2 and UI; adapter reads it |
 | **OpenLIT, LangWatch, Sigiro, Maple, Parseable OSS** | traces + metrics + logs | :3010 / :5560 / SQL :9999 / :4388 / :8010 | the newer stacks; all via `type: otlp` |
 | **OpenLIT** | traces + metrics + logs | http://localhost:3010 (user@openlit.io / openlituser) | `type: openlit`, OTel-native LLM UI, light |
 | **MLflow** | traces | http://localhost:5001 (no login) | `type: mlflow`, experiment header, MLflow's own cost roll-up |
@@ -164,6 +165,7 @@ docker rm -f hermes-otel-openobserve hermes-otel-lgtm                        # b
 | signoz | no | `:4328/v1/traces` | ✅ | ✅ | OTLP remapped to 4328 to dodge 4318 |
 | jaeger / tempo | no | `:4318/v1/traces` / `:4358/v1/traces` | ❌ | ❌ | traces only |
 | jaeger-v2 | no | `:4368/v1/traces` | ❌ | ❌ | read API is `/api/v3/...` only |
+| zipkin | no | `:9411` (the type appends `/v1/traces`) | ❌ 404 | ❌ annotations only | `type: zipkin`; `ghcr.io/openzipkin-contrib/zipkin-otel`; API v2 on the same port |
 | openlit | no | `:4338/v1/traces` | ✅ | ✅ | `type: otlp`; mounted collector config is required with the 2.1.0 image |
 | mlflow | no | `:5001/v1/traces` | ❌ 404 | ❌ 404 | `type: otlp` + header `x-mlflow-experiment-id: "0"` |
 | opik | no | `:5173/api/v1/private/otel/v1/traces` | ❌ 404 | ❌ 404 | `type: otlp`; first start ~1 min; trace usage double-counts the `agent` roll-up |

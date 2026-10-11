@@ -43,6 +43,7 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | LangSmith | (env only) | not OTLP: `POST /runs`, `PATCH /runs/{id}` | cloud only | separate code path (`langsmith_backend.py`), not a `backends:` entry |
 | SigNoz | `signoz` | std | collector :4328 here (upstream 4318); UI/API :3301 | derived |
 | Jaeger v1 / v2 | `jaeger` | std | v1 ingest :4318, UI :16686; v2 ingest :4368, UI :16696 | endpoint used as given |
+| Zipkin | `zipkin` | std, traces only | ingest, API v2 and UI share :9411, **on the `zipkin-otel` image only** (stock Zipkin has no OTLP) | completes the origin to `/v1/traces`; no default host |
 | Tempo | `tempo` | std | ingest :4358 here, API :3210, Grafana :3020 | endpoint used as given |
 | Grafana LGTM | `lgtm` | std | collector :4318 (gRPC :4317), Grafana :3000, Loki :3100, Tempo :3200, Prometheus :9090 | derived; `lgtm` is a self-documenting alias of `otlp` |
 | Uptrace | `uptrace` | std | ingest and UI share :14318; gRPC :14317 | derived |
@@ -75,7 +76,7 @@ is the one backend that refuses protobuf, hence its collector.
 | Langfuse | `Authorization: Basic base64(public:secret)` plus `x-langfuse-ingestion-version: 4` | yes, both keys | pre-seeded by headless init (`lf_pk_hermes_dev` / `lf_sk_hermes_dev`) |
 | LangSmith | `x-api-key` | yes | cloud account |
 | SigNoz | `signoz-ingestion-key` (cloud); nothing self-hosted | cloud only | cloud UI |
-| Jaeger, Tempo, LGTM | none (Grafana Cloud: `Authorization: Basic <token>` via `headers`) | no | none |
+| Jaeger, Zipkin, Tempo, LGTM | none (Grafana Cloud: `Authorization: Basic <token>` via `headers`) | no | none |
 | Uptrace | `uptrace-dsn: http://<project_token>@host:14318?grpc=14317` | yes | seeded in `uptrace.yml` (`project_tokens[0].token`) |
 | OpenObserve | `Authorization: Basic base64(email:password)` | yes | seeded root user (`root@example.com` / `Complexpass#123`) |
 | Parseable (type) | `X-API-Key` | yes | Cloud / Enterprise UI. OSS has no API keys: any `X-API-Key` is a 401, so the collector adds Basic auth instead |
@@ -115,7 +116,7 @@ variable is the opt-in (#259).
 | Phoenix | project = resource attribute `openinference.project.name` | top-level `project_name` |
 | Langfuse | project = the key pair | none |
 | SigNoz | none | none |
-| Jaeger / Tempo / LGTM | `service.name` | `project_name` / `resource_attributes` |
+| Jaeger / Zipkin / Tempo / LGTM | `service.name` | `project_name` / `resource_attributes` |
 | Uptrace | project = the DSN | `dsn` |
 | OpenObserve | org in the URL path, stream in the `stream-name` header (default `default`; a bad name is a 400) | `stream_name` |
 | Parseable | one dataset per signal: `X-P-Stream: hermes-{traces,metrics,logs}` plus `X-P-Log-Source: otel-{traces,metrics,logs}` | `traces_dataset`, `metrics_dataset`, `logs_dataset` |
@@ -148,6 +149,7 @@ because the plugin's debug log only sees the HTTP status.
 | LangSmith | yes | no | no | not OTLP | n/a |
 | SigNoz | yes | yes | yes | before first-run setup the collector runs a `nop` pipeline and resets the connection | all on |
 | Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | `_TRACES_ONLY` |
+| Zipkin | yes | no | no | `/v1/metrics` is 404; `/v1/logs` answers 202 and keeps a record only as an annotation on a span it can name through an `event.name` attribute, which the plugin's records lack, so nothing is stored (verified 2026-10-11) | `_TRACES_ONLY` |
 | Tempo | yes | no | no | not served | `_TRACES_ONLY` (even behind a collector that would accept them; set `metrics: true` explicitly) |
 | Grafana LGTM | yes | yes | yes | — | all on |
 | Uptrace | yes | yes | yes | — | all on |
@@ -212,7 +214,7 @@ running gateways are unaffected either way.
 | Langfuse | `gen_ai.*` (including legacy `gen_ai.system`) | reads the root; zero-fills `usage` on non-GENERATION observations | yes | `session.id` (automatic grouping) |
 | LangSmith | mapped by the plugin to Run API fields plus `usage_metadata` | per run | — | session id → thread |
 | SigNoz | `gen_ai.*` in its LLM views; otherwise raw tags | n/a (span table) | via a derived metric | any attribute |
-| Jaeger, Tempo, LGTM | none; raw tags | n/a | no | any attribute (Tempo: TraceQL) |
+| Jaeger, Zipkin, Tempo, LGTM | none; raw tags (Zipkin: every value a string) | n/a | no | any attribute (Tempo: TraceQL; Zipkin: `annotationQuery`) |
 | Uptrace, OpenObserve | all attributes searchable, keys **flattened with underscores** | n/a | no | `hermes_session_id` |
 | Honeycomb | columns auto-created from whatever arrives (`gen_ai.*`, `llm.*`) | n/a | no | any column |
 | W&B Weave | `gen_ai.*`; `wandb.thread_id`, `wandb.is_turn=true` on the root | per call | — | `gen_ai.conversation.id` / `wandb.thread_id` |
@@ -250,6 +252,7 @@ Three things the plugin does here:
 | Backend | Limit | Treatment |
 |---|---|---|
 | Tempo | truncates attribute values at **2048 bytes** by default; cut `gen_ai.input.messages` under `content_capture: full` | `tempo/tempo.yaml` sets `distributor.max_attribute_bytes: 131072` |
+| Zipkin | every attribute becomes a **string** tag (ints, bools and doubles unquoted, arrays comma-joined without brackets, kvlists as JSON); span links are dropped; INTERNAL spans lose their kind | the dashboard adapter coerces numeric and boolean strings back, except on id-like keys |
 | Langtrace | keeps **string and int** attributes only; **drops bool and double**; reads only `resourceSpans[0]` of a batch | documented; evaluation-only backend (#224) |
 | Langfuse | drops the exporter's `tool.` prefix on TOOL observations | the dashboard adapter restores it |
 | OpenObserve, Uptrace, Loki | dots in attribute names become underscores on storage (`llm.model_name` → `llm_model_name`), irreversibly | the adapters carry a `KNOWN_ATTRIBUTES` table to map them back (#158); collisions resolve to the name with more dots |
@@ -260,7 +263,7 @@ Three things the plugin does here:
 
 ### H. Reading it back: query API, auth, version splits
 
-The dashboard tab and the `observability` skill read eight types back
+The dashboard tab and the `observability` skill read nine types back
 through an adapter. Each one speaks a different API and, in four cases, two
 versions of it.
 
@@ -270,6 +273,7 @@ versions of it.
 | Langfuse | v3: `/api/public/traces`, `/api/public/traces/{id}`, `/api/public/observations`; v4: `/api/public/v2/observations` plus `/api/public/v2/metrics` | same Basic pair | **v3 vs v4**: v4 `events_only` removed `/api/public/traces`, `/observations`, `/sessions` (404 naming `events_only`); probed once per URL, `query_api: v3\|v4` pins (#246); cloud retires v3 routes 2026-11-16 | v3: list is per trace; detail root = observation with no parent, else a synthetic root (#159). v4: AGENT observations with `isRootObservation` |
 | SigNoz | `POST /api/v4/query_range` (query builder) for all three signals; `GET /api/v1/traces/{id}` | **always required**, even on localhost: sent as both `SIGNOZ-API-KEY` (PAT) and `Authorization: Bearer` (session JWT; the OSS build has no PAT endpoint, so the key is a 30-minute JWT) | — | `parentSpanID = ""` |
 | Jaeger | v1: `/api/traces`; v2: **`/api/v3/...`** (OTLP-JSON, the only API v2 serves) | optional Bearer (write: none) | **v1 vs v2** (#245): probed once per URL, classic first because Jaeger 1.x also exposes an `/api/v3` gateway with snake_case params; `query_api: v1\|v3` pins. v2 answers an empty search with 404 "No traces found" | client-side: the span with no `CHILD_OF` reference; every search must name a service |
+| Zipkin | API v2: `/api/v2/traces` (`serviceName`, `spanName` exact, `annotationQuery` as `k=v and k2=v2`, `endTs` + `lookback` in ms, `minDuration` in µs), `/api/v2/trace/{id}` | optional Bearer for a proxy (write: none) | — | client-side: the span with no `parentId`; `annotationQuery` matches any span of a trace, so roots-only re-checks the root |
 | Tempo / LGTM | Tempo `/api/search` (TraceQL) + `/api/traces/{id}`; Prometheus `/api/v1/query` (range vectors) and `/api/v1/query_range`; Loki `/loki/api/v1/query_range` | none | — | TraceQL `nestedSetParent < 0` with `spss=1`; trace ids re-padded to 32 hex digits because Tempo drops leading zeros |
 | Uptrace | `/internal/v1` in **two dialects** (2.1: `/spans/{p}`, `/logs/{p}`, `/metrics/{p}`, ms times, `::str` keys; 2.0: everything under `/tracing/{p}`); MQL for metrics | a **user** token (`user_token_env`), not the DSN's project token | **2.0 vs 2.1**, probed once per process via `/internal/v1/logs/{p}/systems` (2.0 answers with the SPA's HTML) (#243, #298) | 2.1: `_parent_id = ""` server-side; 2.0: client-side from `parentId` |
 | OpenObserve | `POST /api/{org}/_search?type=traces\|metrics\|logs` with SQL; stream schema endpoint for columns | same Basic pair | the parent column is named `reference_parent_span_id`, `reference` (a JSON string) or `parent_span_id` depending on the build; tried in order (#299) | that column `IS NULL OR = ''` |
@@ -303,6 +307,7 @@ healthy is from the folder READMEs.
 | Langfuse | 6 | ~3 GB | 20-60 s; traces appear 10-20 s after export (async via MinIO) | none (headless init seeds user and keys) | `LANGFUSE_VERSION=4` is a separate data set: `down -v` when switching | MIT core + EE folders |
 | SigNoz | 5 | — | 30-60 s | **mandatory** admin registration (`POST /api/v1/register`, 12+ char mixed password) or the collector stays `nop` and resets connections | — | OSS |
 | Jaeger v1 / v2 | 1 | ~25 MB | seconds | none | v1 line ended at 1.76.0 (Dec 2025); v2 pinned 2.21.0 | Apache-2.0 |
+| Zipkin | 1 | ~300 MB | ~20 s (JVM) | none | the stock image has no OTLP: the folder runs `ghcr.io/openzipkin-contrib/zipkin-otel` 0.3.0 (Zipkin 3.6.0), marked experimental upstream; in-memory store capped at 500 000 spans | Apache-2.0 |
 | Tempo | 2 | ~260 MB | search lags 20-30 s | none | metrics-generator removed from config; attribute limit raised (G) | AGPL-3.0 |
 | Grafana LGTM | 1 | — | ~30 s | Grafana admin/admin | `spanmetrics` connector dimensions set to the plugin's attribute names; skipped by `all.sh` because of port 3000 / 4318 | AGPL-3.0 |
 | Uptrace | 4 | — | ~20 s (upstream's compose: ~60 s) | none (DSN seeded) | trimmed from upstream's 12 services; pinned 2.1.0-beta.5 | OSS + premium features |
@@ -386,6 +391,16 @@ Format: **quirk** → treatment (issue).
 - Every search must name a service → `service_name`, else `resource_attributes.service.name`, else `hermes-agent`.
 - The query port is the UI port, not the OTLP port → set `query_port` (or `ui_url`) when the entry's endpoint is `:4318`.
 - Host port 4318 collides with LGTM.
+
+### Zipkin (`zipkin`)
+- The stock `openzipkin/zipkin` image has **no OTLP endpoint** → the folder runs the `zipkin-otel` contrib image (0.3.0 = Zipkin 3.6.0), where `POST /v1/traces` lives on the query port 9411 next to the UI and API v2. Marked experimental upstream; needs 128-bit trace ids, which OTLP always sends.
+- Traces only → `_TRACES_ONLY`: `/v1/metrics` is 404; `/v1/logs` is accepted (202) and stored only as an annotation on a span named by trace id, span id and an `event.name` attribute, which the plugin's log records do not carry.
+- Every attribute becomes a string tag (`"7589"`, `"true"`); arrays lose their brackets; links are dropped; INTERNAL spans have no kind → the adapter coerces numbers and booleans back on read, except on id-like keys.
+- Status is the `otel.status_code` tag plus an `error` tag carrying the message on ERROR; events are annotations whose value is the event name or `"name":{...}` → mapped back to OTLP status and events.
+- Search is `serviceName` + `annotationQuery` (`k=v and k2=v2`, no quoting, so a value containing ` and ` cannot be expressed), `spanName` exact, `minDuration` in µs, window `endTs` + `lookback` in ms → model, session, tool, error status and the raw query go server-side; the kind prefix and roots-only are client-side, and the root is re-checked because tags match any span (#295).
+- A span without `service.name` has no `localEndpoint` and is invisible to search → the plugin always sets one.
+- In-memory store (`STORAGE_TYPE=mem`, 500 000 spans, gone on restart); UI default lookback 15 min, `/api/v2/traces` default 24 h (`QUERY_LOOKBACK`).
+- Verified 2026-10-11: one turn stored 7 spans (`agent` root, `llm.*`, three `api.*`, `tool.terminal`, `tool.read_file`), about 300 MB resident.
 
 ### Grafana Tempo (`tempo`)
 - Traces only, and the type refuses metrics and logs even behind a collector that would take them → `_TRACES_ONLY`; set `metrics: true` / `logs: true` explicitly, or use `lgtm`.

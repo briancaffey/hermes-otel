@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [Zipkin](zipkin/) | 1 | :9411 | ✅ | ❌ | ❌ | `zipkin` | the classic UI with OTLP from the `zipkin-otel` image; one JVM, the dashboard adapter reads it |
 | [Jaeger v2](jaeger-v2/) | 1 | :16696 | ✅ | ❌ | ❌ | `jaeger` | reproducing #245 (v2 has only `/api/v3`) |
 | [Tempo](tempo/) | 2 | :3020 | ✅ | ❌ | ❌ | `tempo` | standalone Tempo + Grafana, what `type: tempo` targets |
 | [Langfuse](langfuse/) 3 / 4 | 6 | :3000 | ✅ | ❌ | ❌ | `langfuse` | the polished LLM UI; `LANGFUSE_VERSION=4` for #246 |
@@ -129,6 +130,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 8100, 8101 | laminar | app-server HTTP / gRPC |
 | 8123, 9000 | uptrace | ClickHouse |
 | 9090 | lgtm | Prometheus |
+| 9411 | zipkin | UI + API v2 + OTLP/HTTP (one port) |
 | 9999 | sigiro | SQL query API |
 | 14317, 14318 | uptrace | OTLP gRPC / UI + OTLP HTTP |
 | 14319 | elastic | EDOT Collector OTLP/HTTP |

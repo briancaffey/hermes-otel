@@ -1,0 +1,44 @@
+# Zipkin with OTLP ingest (traces only, in-memory).
+#
+# The stock openzipkin/zipkin image has NO OTLP endpoint: /v1/traces comes from
+# the zipkin-otel contrib module, published as its own image on top of the full
+# server (0.3.0 = Zipkin 3.6.0, released 2026-03-25):
+#   github.com/openzipkin-contrib/zipkin-otel
+#
+# One container. The module is marked experimental upstream and needs 128-bit
+# trace ids, which OTLP always sends.
+#
+# Usage:
+#   docker compose -f docker-compose/zipkin/docker-compose.yaml up -d
+#   # UI:  http://localhost:9411/zipkin   (no login)
+#   docker compose -f docker-compose/zipkin/docker-compose.yaml down
+#
+# Ports (host side; override with the env var):
+#   9411  Zipkin UI + API v2 + OTLP/HTTP (/v1/traces)   ZIPKIN_PORT   ← plugin exports here
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: zipkin
+#       endpoint: http://localhost:9411
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  zipkin:
+    image: ghcr.io/openzipkin-contrib/zipkin-otel:${ZIPKIN_OTEL_VERSION:-0.3.0}
+    container_name: hermes-otel-zipkin
+    restart: unless-stopped
+    environment:
+      # In-memory span store (upstream default); MEM_MAX_SPANS caps it at 500000.
+      STORAGE_TYPE: mem
+      # The OTLP/HTTP collector is on by default in the module; stated here so
+      # the knob is visible.
+      COLLECTOR_HTTP_OTEL_ENABLED: "true"
+      # How far back the UI and /api/v2/traces look without an explicit endTs
+      # (ms; upstream default is one day).
+      QUERY_LOOKBACK: "86400000"
+    ports:
+      - "${ZIPKIN_PORT:-9411}:9411"
+    # The image ships its own HEALTHCHECK (docker-healthcheck, 5 s interval,
+    # 30 s start period); nothing to add here.

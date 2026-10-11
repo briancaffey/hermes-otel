@@ -303,6 +303,8 @@
 #   langfuse     — Langfuse. Traces only (no OTLP metrics support upstream).
 #   signoz       — SigNoz (self-hosted or cloud). Traces + metrics + logs.
 #   jaeger       — Jaeger. Traces only.
+#   zipkin       — Zipkin through the zipkin-otel image (stock Zipkin has no
+#                  OTLP endpoint). Traces only; endpoint is the :9411 origin.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -401,6 +403,10 @@
 #
 #   - type: jaeger
 #     endpoint: http://localhost:4318/v1/traces
+#
+#   - type: zipkin
+#     endpoint: http://localhost:9411        # ghcr.io/openzipkin-contrib/zipkin-otel
+#     # query_port: 9411           # dashboard read path (API v2 + UI, same port)
 #
 #   - type: tempo
 #     endpoint: http://localhost:3200/v1/traces

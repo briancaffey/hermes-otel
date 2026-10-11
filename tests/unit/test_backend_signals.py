@@ -22,6 +22,7 @@ class TestPhoenixIsTracesOnly:
             "phoenix",
             "langfuse",
             "jaeger",
+            "zipkin",
             "tempo",
             "weave",
             "mlflow",

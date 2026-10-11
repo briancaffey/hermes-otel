@@ -247,6 +247,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "uptrace": "origin",
     "parseable": "origin",
     "jaeger": "proxied",
+    # UI at /zipkin on the OTLP port (the root redirects there).
+    "zipkin": "origin",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -648,6 +650,7 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("OTEL_SIGNOZ_ENDPOINT", "backend", "Single-backend mode: SigNoz OTLP URL"),
     ("OTEL_SIGNOZ_INGESTION_KEY", "backend", "SigNoz Cloud ingestion key"),
     ("OTEL_JAEGER_ENDPOINT", "backend", "Single-backend mode: Jaeger OTLP URL"),
+    ("OTEL_ZIPKIN_ENDPOINT", "backend", "Single-backend mode: Zipkin OTLP URL (zipkin-otel image)"),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

@@ -35,7 +35,17 @@ from .plugin_config import BackendConfig, normalize_temporality
 # and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
 # traces only (#160). A collector in front of it can still take metrics:
 # set ``metrics: true`` on the entry explicitly.
-_TRACES_ONLY = {"phoenix", "langfuse", "jaeger", "tempo", "weave", "mlflow", "opik", "latitude"}
+_TRACES_ONLY = {
+    "phoenix",
+    "langfuse",
+    "jaeger",
+    "zipkin",
+    "tempo",
+    "weave",
+    "mlflow",
+    "opik",
+    "latitude",
+}
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
 # to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
@@ -68,6 +78,7 @@ _DISPLAY_NAMES = {
     "langfuse": "Langfuse",
     "signoz": "SigNoz",
     "jaeger": "Jaeger",
+    "zipkin": "Zipkin",
     "tempo": "Tempo",
     "otlp": "OTLP",
     "lgtm": "LGTM",
@@ -113,6 +124,7 @@ _ENV_PRIORITY = [
     "langwatch",
     "latitude",
     "jaeger",
+    "zipkin",
     "tempo",
     "phoenix",
 ]
@@ -410,6 +422,39 @@ def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("jaeger", bc.metrics),
         supports_logs=_logs_for("jaeger", bc.logs),
+    )
+
+
+def _resolve_zipkin(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve a Zipkin backend (traces only, OTLP/HTTP through the zipkin-otel
+    contrib module).
+
+    The stock ``openzipkin/zipkin`` image has no OTLP endpoint; the
+    ``ghcr.io/openzipkin-contrib/zipkin-otel`` image serves ``POST /v1/traces``
+    on the query port (9411) next to the UI and the v2 API. ``endpoint`` is
+    required (no default host); a bare origin gets the ``/v1/traces`` suffix
+    and a ``/v1/metrics`` or ``/v1/logs`` URL is rewritten to it.
+
+    Auth: none upstream; anything in ``headers`` is passed through for a proxy.
+
+    Signals: traces only. The module answers ``/v1/metrics`` with 404 and keeps
+    a ``/v1/logs`` record only as an annotation on a span it can name, which
+    the plugin's log records never do, so both default off (``_TRACES_ONLY``).
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_ZIPKIN_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("zipkin requires endpoint (or set OTEL_ZIPKIN_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+    extra = dict(bc.headers or {})
+    return _ResolvedBackend(
+        type="zipkin",
+        endpoint=ep,
+        display_name=_display(bc, "zipkin"),
+        headers=extra or None,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("zipkin", bc.metrics),
+        supports_logs=_logs_for("zipkin", bc.logs),
     )
 
 
@@ -1129,6 +1174,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "langfuse": _resolve_langfuse,
     "signoz": _resolve_signoz,
     "jaeger": _resolve_jaeger,
+    "zipkin": _resolve_zipkin,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

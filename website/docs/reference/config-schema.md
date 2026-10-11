@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -134,6 +134,17 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | `query_port` | int | Dashboard read path: the Jaeger UI/query port (default `16686`) |
 | `query_api` | string | Dashboard read path: `v1` (classic `/api/traces`), `v3` (Jaeger v2's `/api/v3`), or `auto` (default: probed once per query URL) |
 | `service_name` | string | Dashboard read path: the service every search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
+
+#### `zipkin`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** The Zipkin origin, e.g. `http://localhost:9411` (a `/v1/traces` suffix is added; `/v1/metrics` or `/v1/logs` is rewritten). Also via `OTEL_ZIPKIN_ENDPOINT`. Traces only (metrics/logs off). Needs the `zipkin-otel` image: stock Zipkin has no OTLP endpoint |
+| `query_port` | int | Dashboard read path: the port serving API v2 and the UI (default: the endpoint's port, else `9411`) |
+| `service_name` | string | Dashboard read path: the service every search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
+| `api_key` / `api_key_env` | string | Dashboard read path: a bearer token for an authenticating proxy in front of Zipkin; none upstream |
+
+See [Zipkin](/backends/zipkin).
 
 #### `tempo`
 

@@ -40,6 +40,12 @@ types:
     ui: true
     status_semantics: root
     quirks: status_ok and free_text are none; roots client-side
+  zipkin:
+    metrics: false
+    logs: false
+    ui: true
+    status_semantics: root
+    quirks: zipkin-otel contrib image (stock Zipkin has no OTLP); every tag is a string, coerced back on read; status_ok and free_text are none; roots client-side; spanName exact; window = endTs + lookback
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

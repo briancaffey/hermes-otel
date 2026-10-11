@@ -313,5 +313,14 @@ def _safe_import(name: str) -> None:
         )
 
 
-for _name in ("tempo", "phoenix", "signoz", "uptrace", "openobserve", "langfuse", "jaeger"):
+for _name in (
+    "tempo",
+    "phoenix",
+    "signoz",
+    "uptrace",
+    "openobserve",
+    "langfuse",
+    "jaeger",
+    "zipkin",
+):
     _safe_import(_name)

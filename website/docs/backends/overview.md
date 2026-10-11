@@ -17,6 +17,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[LangSmith](/backends/langsmith)** | Traces | Cloud only (self-host = enterprise) | Free personal tier · paid tiers |
 | **[SigNoz](/backends/signoz)** | Traces + metrics + logs | Local (docker compose) · Cloud | OSS, no account · free tier + paid cloud |
 | **[Jaeger](/backends/jaeger)** | Traces | Local (single container) | OSS, no account needed |
+| **[Zipkin](/backends/zipkin)** | Traces | Local (single container, the `zipkin-otel` image) | OSS (Apache-2.0), no account |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
@@ -52,7 +53,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 → [LangSmith](/backends/langsmith) — free personal tier, zero extra infra.
 
 **"Standard distributed tracing stack, no LLM-specific UI needed"**
-→ [Jaeger](/backends/jaeger) or [Grafana Tempo](/backends/tempo) — both are traces-only; pair with Prometheus if you need metrics.
+→ [Jaeger](/backends/jaeger), [Zipkin](/backends/zipkin) or [Grafana Tempo](/backends/tempo) — all three are traces-only; pair with Prometheus if you need metrics. Zipkin is the lightest read API of the three and the dashboard adapter reads it.
 
 **"I want a cloud backend with a generous free tier and all three signals"**
 → [Honeycomb](/backends/honeycomb) — OTLP-native; set `OTEL_HONEYCOMB_API_KEY` and a region.
@@ -101,6 +102,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | LangSmith | ✅ (via HTTP Run API, not OTLP) | ❌ | ❌ |
 | SigNoz | ✅ | ✅ | ✅ |
 | Jaeger | ✅ | ❌ | ❌ |
+| Zipkin | ✅ | ❌ (`/v1/metrics` is 404) | ❌ (`/v1/logs` answers 202 but stores a record only as a span annotation; off by default) |
 | Grafana Tempo | ✅ | ❌ | ❌ |
 | Grafana LGTM | ✅ | ✅ | ✅ |
 | Uptrace | ✅ | ✅ | ✅ |
@@ -160,8 +162,9 @@ Single-backend selection is env-var-driven. First match wins:
 14. `OTEL_LANGWATCH_API_KEY` set (cloud, or with `OTEL_LANGWATCH_ENDPOINT`) → LangWatch
 15. `OTEL_LATITUDE_API_KEY` + `LATITUDE_PROJECT` set (cloud, or with `OTEL_LATITUDE_ENDPOINT`) → Latitude
 16. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-17. `OTEL_TEMPO_ENDPOINT` set → Tempo
-18. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+17. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
+18. `OTEL_TEMPO_ENDPOINT` set → Tempo
+19. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
 Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
@@ -188,6 +191,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [Sigiro](https://sigiro.com) (#71) | `sigiro/` | traces + metrics + logs | `type: otlp`, `http://localhost:4378/v1/traces` |
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
+| [Zipkin](https://github.com/openzipkin-contrib/zipkin-otel) (#364) | `zipkin/` | traces (7 spans from one turn; every attribute a string tag) | `type: zipkin`, `http://localhost:9411` (the `zipkin-otel` image; stock Zipkin has no OTLP) |
 | [Latitude](https://github.com/latitude-dev/latitude-llm) (#230) | `latitude/` | traces (13 containers, ~15 GB of images) | `type: latitude`, `http://localhost:3002`, `api_key_env` + `project` (explicit type since 1.23) |
 
 [Elastic](/backends/elastic) (`elastic/`: Elasticsearch + Kibana + EDOT Collector, `type: elastic`) was added on 2026-10-07 and verified with hermes-otel 1.21.0. Two of these are not open source: Sigiro publishes only a binary image, and Maple is source-available under FSL-1.1. [Jaeger v2](/backends/jaeger) (`jaeger-v2/`) and [Langfuse v4](/backends/langfuse) (`LANGFUSE_VERSION=4`) have their own stacks so the read-side issues #245 and #246 can be reproduced locally.

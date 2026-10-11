@@ -27,6 +27,7 @@ const sidebars: SidebarsConfig = {
         'backends/langsmith',
         'backends/signoz',
         'backends/jaeger',
+        'backends/zipkin',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',
