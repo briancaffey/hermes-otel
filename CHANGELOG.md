@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.24.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.23.0...hermes-otel-v1.24.0) (2026-10-11)
+
+
+### Features
+
+* **backends:** opik and langwatch entries drop the agent root's token roll-up (root_usage) so trace totals stop doubling ([#353](https://github.com/briancaffey/hermes-otel/issues/353)) ([768523b](https://github.com/briancaffey/hermes-otel/commit/768523b5a8985e4408ef6e3013ddf52d5453edb0))
+* **resource:** kanban worker task id, board and run id on the Resource ([#357](https://github.com/briancaffey/hermes-otel/issues/357)) ([f0894ba](https://github.com/briancaffey/hermes-otel/commit/f0894ba5c2989a4932df1854da2f9208bf1df2c8))
+
+
+### Bug Fixes
+
+* **dashboard:** Langfuse v3 trace detail reads the exported span attributes, so the header shows the model and token roll-up ([#351](https://github.com/briancaffey/hermes-otel/issues/351)) ([863d516](https://github.com/briancaffey/hermes-otel/commit/863d5162fadd659d43ff5ccbc94a89d83dbee71b)), closes [#346](https://github.com/briancaffey/hermes-otel/issues/346)
+* **logs:** export log records from one-shot (hermes -z) runs ([#358](https://github.com/briancaffey/hermes-otel/issues/358)) ([5d48bda](https://github.com/briancaffey/hermes-otel/commit/5d48bdaf5ec47a65264bbb46127a32ebc5a8cb39))
+
+
+### Documentation
+
+* **backends:** catalog what each backend does differently and the treatment hermes-otel gives it ([#356](https://github.com/briancaffey/hermes-otel/issues/356)) ([89ef1a9](https://github.com/briancaffey/hermes-otel/commit/89ef1a9df464076b854c9ab91a9aca9aaad0e1f3))
+* **backends:** quirks catalog records root_usage as shipped, not as an open PR ([#359](https://github.com/briancaffey/hermes-otel/issues/359)) ([9899872](https://github.com/briancaffey/hermes-otel/commit/9899872e974cb15f5dcabbf17ae6897d93c78e25))
+
 ## [1.23.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.22.1...hermes-otel-v1.23.0) (2026-10-10)
 
 
