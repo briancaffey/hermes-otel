@@ -82,6 +82,26 @@ Emitted from **`post_approval_response`**. Severity: INFO; WARN when denied or t
 | `hermes.approval.duration_ms` |  |
 | `gen_ai.tool.name` |  |
 
+### `hermes.kanban.transition`
+
+Emitted from **`kanban_task_claimed / on_kanban_worker_spawned / on_kanban_worker_exited / on_kanban_worker_stale_claim / kanban_task_completed / kanban_task_blocked`**. Severity: INFO; WARN when blocked or a claim went stale; ERROR when the worker crashed or was killed. Body: `kanban <outcome> <task_id>`.
+
+| Attribute | Content-gated |
+|---|---|
+| `hermes.kanban.event` |  |
+| `hermes.kanban.task_id` |  |
+| `hermes.kanban.board` |  |
+| `hermes.kanban.assignee` |  |
+| `hermes.kanban.run_id` |  |
+| `hermes.kanban.worker_pid` |  |
+| `hermes.kanban.exit_kind` |  |
+| `hermes.kanban.exit_code` |  |
+| `hermes.kanban.retry_status` |  |
+| `hermes.kanban.heartbeat_stale` |  |
+| `hermes.kanban.outcome` |  |
+| `hermes.kanban.summary` |  |
+| `hermes.kanban.reason` |  |
+
 ### `hermes.api.error`
 
 Emitted from **`api_request_error`**. Severity: ERROR; WARN when retryable. Body: `api error <error.type> from <provider>`.

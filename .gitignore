@@ -251,3 +251,4 @@ config.yaml.local
 # Claude Code parallel worktrees (local only)
 .claude/worktrees/
 scripts/dashboard_verify/out/
+scripts/kanban_demo/out/

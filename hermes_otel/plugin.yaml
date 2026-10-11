@@ -43,3 +43,9 @@ provides_hooks:
   - post_approval_response
   - transform_terminal_output
   - transform_llm_output
+  - kanban_task_claimed
+  - kanban_task_completed
+  - kanban_task_blocked
+  - on_kanban_worker_spawned
+  - on_kanban_worker_exited
+  - on_kanban_worker_stale_claim

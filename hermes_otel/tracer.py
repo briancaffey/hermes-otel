@@ -500,6 +500,14 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "int",
         labels=_MODEL_LABELS,
     ),
+    "kanban_task_count": InstrumentSpec(
+        "hermes.kanban.task.count",
+        "counter",
+        "{transition}",
+        "Kanban board transitions (claimed, spawned, completed, blocked, worker_exited, stale_claim) by board",
+        "one",
+        labels=("outcome", "board"),
+    ),
     "approval_count": InstrumentSpec(
         "hermes.approval.count",
         "counter",

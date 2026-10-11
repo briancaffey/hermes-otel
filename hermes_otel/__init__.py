@@ -53,6 +53,14 @@ def register(ctx):
         # content is never replaced (#33).
         ("transform_terminal_output", hooks.on_transform_terminal_output),
         ("transform_llm_output", hooks.on_transform_llm_output),
+        # Kanban board transitions (#31): dispatcher-side claim / spawn /
+        # exit / stale-claim and worker-side complete / block.
+        ("kanban_task_claimed", hooks.on_kanban_task_claimed),
+        ("kanban_task_completed", hooks.on_kanban_task_completed),
+        ("kanban_task_blocked", hooks.on_kanban_task_blocked),
+        ("on_kanban_worker_spawned", hooks.on_kanban_worker_spawned),
+        ("on_kanban_worker_exited", hooks.on_kanban_worker_exited),
+        ("on_kanban_worker_stale_claim", hooks.on_kanban_worker_stale_claim),
     ]:
         try:
             ctx.register_hook(hook_name, callback)

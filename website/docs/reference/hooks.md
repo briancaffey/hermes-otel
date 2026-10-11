@@ -150,7 +150,7 @@ Fires when the human answers (or the prompt times out).
 
 ### `mcp_request_headers` (pending upstream)
 
-Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "17 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "23 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
 
 ## Observers on transform hooks
 
@@ -174,6 +174,60 @@ Fires in the turn finalizer with the final response text.
 
 `transform_tool_result` is not subscribed: it fires after `post_tool_call` with the same result the plugin already saw there, so there is nothing new to observe and no reason to register a third behaviour-changing hook.
 
+## Kanban board transitions
+
+Hermes' kanban is a durable task board: a dispatcher (inside the gateway, or `hermes kanban dispatch`) claims a ready card and spawns a worker, a fresh `hermes -p <assignee> chat` process that finishes the card with `kanban_complete` or `kanban_block`. Six observer hooks fire around that lifecycle, in two processes, and the plugin turns each into one short `kanban.*` span, a `hermes.kanban.transition` event and a point on `hermes.kanban.task.count`. No span is shared across the processes; `hermes.kanban.task_id` and `hermes.kanban.run_id` on every span (and on the worker's Resource, see [resource attributes](/reference/span-attributes#resource-on-every-span)) are the join. All six return `None`; Hermes ignores their return value and every fire site is best-effort.
+
+### `kanban_task_claimed`
+
+Fires in the **dispatcher** process right before the worker is spawned, inside the board's dispatch lock.
+
+- **Span op:** `kanban.claim`, opened and closed at once, the root of its own trace (the dispatcher serves every session, so it never nests under whatever turn is in flight)
+- **Attributes:** `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.assignee`, `hermes.kanban.run_id`, `hermes.kanban.event=claimed`
+- **Metrics:** `hermes.kanban.task.count{outcome=claimed, board}`
+
+### `on_kanban_worker_spawned`
+
+Fires in the **dispatcher** after the worker's PID is persisted.
+
+- **Span op:** `kanban.spawn`, a root of its own
+- **Attributes:** the card identity plus `hermes.kanban.worker_pid`; `workspace_path` is deliberately not recorded (a filesystem path)
+
+### `on_kanban_worker_exited`
+
+Fires in the **dispatcher** when a tick finds a worker's process gone and reclaims its run.
+
+- **Span op:** `kanban.worker_exit`, a root of its own
+- **Attributes:** the card identity plus `hermes.kanban.exit_kind` (`clean_exit` · `rate_limited` · `nonzero_exit` · `signaled` · `unknown`), `hermes.kanban.exit_code`, `hermes.kanban.outcome`, `hermes.kanban.retry_status`
+- **Span status:** `ERROR` for `nonzero_exit` and `signaled` (a crash, or a kill such as the dispatcher's own runtime-cap SIGTERM); `OK` otherwise
+
+### `on_kanban_worker_stale_claim`
+
+Fires in the **dispatcher** when a claim's TTL expired with no heartbeat.
+
+- **Span op:** `kanban.stale_claim`, a root of its own, status `OK`
+- **Attributes:** the card identity plus `hermes.kanban.worker_pid`, `hermes.kanban.heartbeat_stale`, `hermes.kanban.retry_status`
+
+### `kanban_task_completed`
+
+Fires in the **worker** from inside the `kanban_complete` tool (or in a CLI process when a human runs `hermes kanban complete`).
+
+- **Span op:** `kanban.complete`, in the worker's own trace under its in-flight `llm` span (or turn root); a root of its own when no turn is in flight
+- **Attributes:** the card identity, `hermes.kanban.outcome=completed`, `hermes.kanban.summary` (preview-clipped; suppressed when `capture_previews=false`)
+- **Also:** the worker's `agent` root is stamped with `hermes.kanban.task_id`, `board`, `run_id` and `outcome`, so span-only readers (the bundled dashboard's live store) can find the card's turn
+
+### `kanban_task_blocked`
+
+Fires in the **worker** from inside `kanban_block` (or in the dispatcher when its breaker blocks a card, or on the CLI).
+
+- **Span op:** `kanban.block`, placed like `kanban.complete`
+- **Attributes:** the card identity, `hermes.kanban.outcome=blocked`, `hermes.kanban.reason` (preview-clipped)
+- **Span status:** always `OK`; a blocked card is waiting for a human, not an error. The event is emitted at WARN
+
+Two dispatcher outcomes fire no hook at all in Hermes: a worker killed by the card's runtime cap closes its run as `timed_out`, and the breaker's auto-block writes the card's status directly, so neither produces a `kanban.*` span (the worker's own trace ends interrupted, and the card's `task_events` carry the record). `on_kanban_worker_exited` covers a worker that died on its own.
+
+`on_kanban_task_updated` and `on_kanban_dispatch_tick` are not subscribed: field-name-only updates and one event per 60-second tick would add noise and nothing a trace needs.
+
 ## Hook → span mapping
 
 ```text
@@ -190,6 +244,12 @@ post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
 post_llm_call            close llm.{model}
 transform_llm_output     attr  agent/cron        (final response size; returns None)
+kanban_task_claimed      open+close kanban.claim        (dispatcher; own trace)
+on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; own trace)
+on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
+on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
+kanban_task_completed    open+close kanban.complete     (worker; in the turn's trace + root stamped)
+kanban_task_blocked      open+close kanban.block        (worker; OK + outcome=blocked)
 subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics

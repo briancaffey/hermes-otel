@@ -29,6 +29,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.cost.usage` | Counter | `USD` | `model`, `provider`, `cost_status` = `actual` · `estimated` | `post_api_request`: Hermes's own price for the call (`agent.usage_pricing.estimate_usage_cost`). Calls with an unknown price or on a subscription-included route record nothing, so a missing price never reads as `$0` |
 | `hermes.tool.duration` | Histogram | `ms` **(deprecated)** | `tool_name`, `gen_ai.tool.name` | `post_tool_call`; superseded by `gen_ai.execute_tool.duration` (seconds), removed in 2.0 |
 | `hermes.skill.inferred` | Counter | `{hit}` | `skill_name`, `source` = `skill_view` · `path_match` | `pre_tool_call` |
+| `hermes.kanban.task.count` | Counter | `{transition}` | `outcome` = `claimed` · `spawned` · `worker_exited` · `stale_claim` · `completed` · `blocked`, `board` | the six kanban hooks ([hooks](/reference/hooks#kanban-board-transitions)); the dispatcher's and the worker's points come from different processes |
 | `hermes.approval.count` | Counter | `{prompt}` | `choice` | `post_approval_response` |
 | `hermes.approval.duration` | Histogram | `ms` **(deprecated)** | `choice` | `post_approval_response`; superseded by `hermes.approval.wait.duration` (seconds), removed in 2.0 |
 | `hermes.approval.wait.duration` | Histogram | `s` | `choice` | `post_approval_response` (human / guardian decision wait) |

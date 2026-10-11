@@ -28,6 +28,7 @@ EXPECTED_KEYS = {
     "subagent_duration",
     "api_error_count",
     "retry_count",
+    "kanban_task_count",
     "approval_count",
     "approval_duration",
     # seconds-based successors (#233)

@@ -188,6 +188,36 @@ an error. Metrics: `hermes.approval.count` (by `choice` / `pattern_key`) and
 `hermes.approval.duration` (the wait histogram). These spans are observer-only —
 the plugin never vetoes or alters an approval.
 
+## `kanban.*` {#kanban}
+
+Hermes' kanban board runs work in two processes: a **dispatcher** (inside the
+gateway, or `hermes kanban dispatch`) claims a card and spawns a **worker**,
+a fresh `hermes -p <assignee> chat` process that finishes the card with
+`kanban_complete` or `kanban_block`. No span can be opened in one process and
+closed in the other, so every board transition is its own short span:
+
+```text
+dispatcher process                       worker process (one trace per card attempt)
+  kanban.claim        ← own trace          agent  (Resource + root: hermes.kanban.task_id / board / run_id)
+  kanban.spawn        ← own trace            llm.<model>
+  kanban.worker_exit  ← own trace, ERROR       api.<model>
+                         on crash / kill       tool.kanban_show
+  kanban.stale_claim  ← own trace              api.<model>
+                                               tool.kanban_complete
+                                               kanban.complete   ← outcome, summary
+```
+
+The dispatcher's spans are deliberately roots: the gateway serves every
+session, so nesting a claim under whatever turn happens to be in flight would
+mis-parent it. The worker's `kanban.complete` / `kanban.block` lands in the
+worker's own trace next to the tool that fired it, and the worker's `agent`
+root is stamped with the card identity and outcome so a span-only reader can
+find the card's turn. `hermes.kanban.task_id` and `hermes.kanban.run_id` on
+every span (and on the worker's Resource) are the join across the two
+processes; one card attempted three times has three run ids. Metrics:
+`hermes.kanban.task.count{outcome, board}`. Attributes:
+[span attributes](/reference/span-attributes#kanban).
+
 ## `subagent.*` {#subagent}
 
 One per delegated child agent (when the parent calls the `delegate_task` tool). Name is `subagent.{role}` (e.g. `subagent.leaf`, `subagent.researcher`).

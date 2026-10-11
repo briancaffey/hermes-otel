@@ -210,6 +210,23 @@ One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<
 | `hermes.approval.decided_by` | hermes | string | `aux_llm` for smart-guardian verdicts, empty for a human answer (optional) |
 | `hermes.approval.duration_ms` | hermes | float | Decision wait time |
 
+## `kanban.*`
+
+One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process (each the root of its own trace), `kanban.complete` and `kanban.block` in the worker's own trace. Opened and closed at once.
+
+| Attribute | Convention | Type | Meaning |
+|---|---|---|---|
+| `hermes.span_kind` | hermes | string | `kanban` |
+| `hermes.kanban.event` | hermes | string | `claimed` · `spawned` · `worker_exited` · `stale_claim` · `completed` · `blocked` |
+| `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.assignee`, `hermes.kanban.run_id` | hermes | string | The card, its board, the profile assigned to it and the attempt (`run_id` as a string); the join across the dispatcher's and the worker's traces |
+| `hermes.kanban.worker_pid` | hermes | int | The worker process (`kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim`) |
+| `hermes.kanban.exit_kind`, `hermes.kanban.exit_code`, `hermes.kanban.retry_status` | hermes | string, int, string | How the worker process ended (`clean_exit` · `rate_limited` · `nonzero_exit` · `signaled` · `unknown`), its exit code, and what the dispatcher does next (`kanban.worker_exit`; `retry_status` also on `kanban.stale_claim`) |
+| `hermes.kanban.heartbeat_stale` | hermes | bool | Whether the reclaimed claim had stopped heart-beating (`kanban.stale_claim`) |
+| `hermes.kanban.outcome` | hermes | string | `completed` · `blocked` on the worker-side spans and on the worker's `agent` root; the dispatcher's own outcome word on `kanban.worker_exit` (`crashed`, `timed_out`, …) |
+| `hermes.kanban.summary`, `hermes.kanban.reason` | hermes | string | The worker's hand-off summary (`kanban.complete`) or block reason (`kanban.block`), preview-clipped; absent when `capture_previews=false` |
+
+The worker's `agent` root additionally carries `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.run_id` and `hermes.kanban.outcome` once the card is completed or blocked.
+
 ## `subagent.*`
 
 One per delegated child agent (span kind `AGENT`); the child's own root nests beneath it (or is linked, cross-process).

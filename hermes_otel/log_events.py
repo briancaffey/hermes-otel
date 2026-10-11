@@ -31,6 +31,7 @@ API_ERROR = "hermes.api.error"
 SUBAGENT_START = "hermes.subagent.start"
 SUBAGENT_STOP = "hermes.subagent.stop"
 SESSION_FINALIZE = "hermes.session.finalize"
+KANBAN_TRANSITION = "hermes.kanban.transition"
 INFERENCE_DETAILS = "gen_ai.client.inference.operation.details"
 
 # Event-only attributes (the spans carry *_ms; events report seconds per semconv).
@@ -41,6 +42,7 @@ ATTR_TURN_DURATION_S = "hermes.turn.duration_s"
 TOOL_PREFIXES = ("gen_ai.tool.", "hermes.tool.")
 APPROVAL_PREFIXES = ("hermes.approval.", "gen_ai.tool.")
 SUBAGENT_PREFIXES = ("hermes.subagent.",)
+KANBAN_PREFIXES = ("hermes.kanban.",)
 TURN_END_PREFIXES = ("hermes.turn.", "gen_ai.usage.", "hermes.cost.", "hermes.session.")
 TURN_END_KEYS = ("error.type", "hermes.platform", "gen_ai.request.model", "gen_ai.provider.name")
 INFERENCE_PREFIXES = ("gen_ai.", "hermes.cost.")
@@ -61,6 +63,8 @@ CONTENT_ATTRIBUTES: Tuple[str, ...] = (
     "output.value",
     "hermes.subagent.goal",
     "hermes.subagent.summary",
+    "hermes.kanban.summary",
+    "hermes.kanban.reason",
 )
 CONTENT_MODES: Tuple[str, ...] = ("off", "preview", "full")
 _CONTENT_RANK = {"off": 0, "preview": 1, "full": 2}
@@ -129,6 +133,26 @@ EVENTS: Dict[str, Dict[str, Any]] = {
             "hermes.approval.timed_out",
             "hermes.approval.duration_ms",
             "gen_ai.tool.name",
+        ),
+    },
+    "hermes.kanban.transition": {
+        "hook": "kanban_task_claimed / on_kanban_worker_spawned / on_kanban_worker_exited / on_kanban_worker_stale_claim / kanban_task_completed / kanban_task_blocked",
+        "severity": "INFO; WARN when blocked or a claim went stale; ERROR when the worker crashed or was killed",
+        "body": "kanban <outcome> <task_id>",
+        "attributes": (
+            "hermes.kanban.event",
+            "hermes.kanban.task_id",
+            "hermes.kanban.board",
+            "hermes.kanban.assignee",
+            "hermes.kanban.run_id",
+            "hermes.kanban.worker_pid",
+            "hermes.kanban.exit_kind",
+            "hermes.kanban.exit_code",
+            "hermes.kanban.retry_status",
+            "hermes.kanban.heartbeat_stale",
+            "hermes.kanban.outcome",
+            "hermes.kanban.summary",
+            "hermes.kanban.reason",
         ),
     },
     "hermes.api.error": {

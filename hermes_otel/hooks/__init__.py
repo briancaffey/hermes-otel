@@ -24,6 +24,7 @@ Modules:
 * ``subagent``     — ``subagent_start`` / ``subagent_stop``
 * ``propagation``  — W3C ``traceparent`` (``get_current_traceparent``, ``mcp_request_headers``)
 * ``transforms``   — observers on ``transform_terminal_output`` / ``transform_llm_output``
+* ``kanban``       — ``kanban_task_*`` / ``on_kanban_worker_*`` board transitions
 """
 
 from __future__ import annotations
@@ -57,6 +58,14 @@ from .attributes import (
     _tool_host_utilization_attributes,
     _turn_attributes,
     _weave_turn_attributes,
+)
+from .kanban import (
+    on_kanban_task_blocked,
+    on_kanban_task_claimed,
+    on_kanban_task_completed,
+    on_kanban_worker_exited,
+    on_kanban_worker_spawned,
+    on_kanban_worker_stale_claim,
 )
 from .llm import (
     on_api_request_error,
@@ -96,6 +105,12 @@ __all__ = [
     "get_current_traceparent",
     "get_tracer",
     "on_api_request_error",
+    "on_kanban_task_blocked",
+    "on_kanban_task_claimed",
+    "on_kanban_task_completed",
+    "on_kanban_worker_exited",
+    "on_kanban_worker_spawned",
+    "on_kanban_worker_stale_claim",
     "on_mcp_request_headers",
     "on_post_api_request",
     "on_post_approval_response",
