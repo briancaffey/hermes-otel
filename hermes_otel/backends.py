@@ -45,6 +45,7 @@ _TRACES_ONLY = {
     "mlflow",
     "opik",
     "latitude",
+    "agenta",
 }
 
 # Backend types whose collectors accept OTLP logs. Everything else defaults
@@ -104,6 +105,7 @@ _DISPLAY_NAMES = {
     "victoria": "Victoria",
     "aspire": "Aspire Dashboard",
     "gigapipe": "Gigapipe",
+    "agenta": "Agenta",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -133,6 +135,7 @@ _ENV_PRIORITY = [
     "laminar",
     "langwatch",
     "latitude",
+    "agenta",
     "clickstack",
     "greptime",
     "victoria",
@@ -175,6 +178,8 @@ _ENV_OPT_IN = {
     "latitude": ("OTEL_LATITUDE_API_KEY", "OTEL_LATITUDE_ENDPOINT"),
     # Endpoint only: ClickStack has no default host, so a key alone never resolves.
     "clickstack": ("OTEL_CLICKSTACK_ENDPOINT",),
+    # Agenta has a cloud default host, so a plugin-namespaced key is enough.
+    "agenta": ("OTEL_AGENTA_API_KEY", "OTEL_AGENTA_ENDPOINT"),
 }
 
 # The vendor-variable sets that used to select each type on their own (before
@@ -197,6 +202,7 @@ _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
     "langwatch": (("LANGWATCH_API_KEY",),),
     "latitude": (("LATITUDE_API_KEY",), ("LATITUDE_PROJECT",)),
     "clickstack": (("HYPERDX_API_KEY",),),
+    "agenta": (("AGENTA_API_KEY",),),
 }
 
 
@@ -751,6 +757,53 @@ def _resolve_gigapipe(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("gigapipe", bc.metrics),
         supports_logs=_logs_for("gigapipe", bc.logs),
+    )
+
+
+_AGENTA_CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
+_AGENTA_OTLP_PATH = "/api/otlp/v1/traces"
+
+
+def _resolve_agenta(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve an Agenta backend (self-hosted or Agenta Cloud, traces only).
+
+    Agenta ingests OTLP traces at ``/api/otlp/v1/traces`` (protobuf only) and
+    nothing else: no metrics or logs routes. ``endpoint`` is the origin of a
+    self-hosted stack (``http://localhost:3060`` for the bundled one), or the
+    full ingest URL; without one the cloud host for ``region`` (``us`` default,
+    ``eu``) is used, so a cloud key alone is enough.
+
+    Auth: ``Authorization: ApiKey <project key>`` from ``api_key`` /
+    ``api_key_env`` (fallbacks ``OTEL_AGENTA_API_KEY``, ``AGENTA_API_KEY``, the
+    SDK's variable). The key is scoped to one project and routes the spans
+    there; a missing key skips the entry at startup instead of a 401 per batch.
+
+    Signals: traces only (``_TRACES_ONLY``).
+    """
+    region = (bc.region or "us").strip().lower()
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_AGENTA_ENDPOINT", "")
+        or os.getenv("AGENTA_HOST", "")
+        or _AGENTA_CLOUD.get(region, _AGENTA_CLOUD["us"])
+    ).strip()
+    ep = re.sub(r"(/api)?(/otlp)?(/v1/traces)?/?$", "", ep.rstrip("/"))
+    ep = f"{ep}{_AGENTA_OTLP_PATH}"
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_AGENTA_API_KEY", "AGENTA_API_KEY"])
+    if not key:
+        raise ValueError(
+            "agenta requires api_key / api_key_env (a project API key; or set OTEL_AGENTA_API_KEY)"
+        )
+    headers: Dict[str, str] = {"Authorization": f"ApiKey {key}"}
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="agenta",
+        endpoint=ep,
+        display_name=_display(bc, "agenta"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("agenta", bc.metrics),
+        supports_logs=_logs_for("agenta", bc.logs),
     )
 
 
@@ -1476,6 +1529,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "victoria": _resolve_victoria,
     "aspire": _resolve_aspire,
     "gigapipe": _resolve_gigapipe,
+    "agenta": _resolve_agenta,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

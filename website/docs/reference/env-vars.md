@@ -29,6 +29,9 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_CLICKSTACK_ENDPOINT` | URL | ClickStack Collector OTLP/HTTP base (`http://localhost:4408` for the bundled stack); with a key, enables ClickStack in env-var mode |
 | `OTEL_CLICKSTACK_API_KEY` | string | ClickStack ingestion API key (bare `authorization` header); required |
 | `HYPERDX_API_KEY` | string | ClickStack / HyperDX key fallback (the vendor SDK's variable); does not enable export on its own |
+| `OTEL_AGENTA_API_KEY` | string | Agenta project API key (`Authorization: ApiKey`); alone selects Agenta Cloud (US) in env-var mode |
+| `OTEL_AGENTA_ENDPOINT` | URL | Agenta origin for a self-hosted stack (`http://localhost:3060` for the bundled one); also an opt-in |
+| `AGENTA_API_KEY` / `AGENTA_HOST` | string / URL | The Agenta SDK's own variables; credential and host fallbacks that never enable export on their own |
 | `OTEL_GIGAPIPE_ENDPOINT` | URL | Gigapipe (qryn) origin (`http://localhost:3110` for the bundled stack); enables Gigapipe in env-var mode |
 | `OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD` | string | Basic auth for a Gigapipe started with `GIGAPIPE_LOGIN` / `GIGAPIPE_PASSWORD`; both needed, omitted otherwise |
 | `OTEL_ASPIRE_ENDPOINT` | URL | Aspire Dashboard OTLP/HTTP base (`http://localhost:4418` for the bundled stack); enables Aspire in env-var mode |

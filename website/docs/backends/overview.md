@@ -23,6 +23,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[VictoriaMetrics family](/backends/victoria)** | Traces + metrics + logs | Local (three single-binary containers) · Helm · VictoriaMetrics Cloud | OSS (Apache-2.0), no account |
 | **[Aspire Dashboard](/backends/aspire)** | Traces + metrics + logs | Local (single container) | OSS (MIT), no account |
 | **[Gigapipe](/backends/gigapipe)** (qryn) | Traces + metrics + logs | Local (Gigapipe + ClickHouse) · Gigapipe Cloud | OSS (AGPL-3.0), no account |
+| **[Agenta](/backends/agenta)** | Traces | Local (docker compose, eleven containers) · Agenta Cloud (US / EU) | OSS (MIT), local account · free cloud tier |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
@@ -96,6 +97,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"An agent-focused trace UI that also keeps the agent's log lines"**
 → [Laminar](/backends/laminar) — span types, tokens and cost per call, plus log records next to the trace; metrics are off because Laminar drops them.
 
+**"An open-source LLMOps platform that reads both conventions and queries back"**
+→ [Agenta](/backends/agenta) — OTLP traces with a project key; span types, token roll-ups and sessions computed server-side; the dashboard adapter reads `POST /api/spans/query`.
+
 **"An LLM platform with all three signals and an evaluation workflow"**
 → [LangWatch](/backends/langwatch) — traces, metrics and logs under one `/api/otel` prefix; thread id = the Hermes session.
 
@@ -125,6 +129,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | VictoriaMetrics family | ✅ | ✅ (when `metrics_endpoint` names VictoriaMetrics) | ✅ (when `logs_endpoint` names VictoriaLogs) |
 | Aspire Dashboard | ✅ | ✅ (no exponential histograms) | ✅ |
 | Gigapipe | ✅ | ✅ (cumulative only) | ✅ |
+| Agenta | ✅ | ❌ | ❌ |
 | Grafana Tempo | ✅ | ❌ | ❌ |
 | Grafana LGTM | ✅ | ✅ | ✅ |
 | Uptrace | ✅ | ✅ | ✅ |
@@ -188,17 +193,18 @@ Single-backend selection is env-var-driven. First match wins:
 13. `OTEL_LAMINAR_API_KEY` set (cloud, or with `OTEL_LAMINAR_ENDPOINT`) → Laminar
 14. `OTEL_LANGWATCH_API_KEY` set (cloud, or with `OTEL_LANGWATCH_ENDPOINT`) → LangWatch
 15. `OTEL_LATITUDE_API_KEY` + `LATITUDE_PROJECT` set (cloud, or with `OTEL_LATITUDE_ENDPOINT`) → Latitude
-16. `OTEL_CLICKSTACK_ENDPOINT` + `OTEL_CLICKSTACK_API_KEY` (or `HYPERDX_API_KEY`) set → ClickStack
-17. `OTEL_GREPTIME_ENDPOINT` set → GreptimeDB (`OTEL_GREPTIME_DB`, `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` optional)
-18. `OTEL_VICTORIA_ENDPOINT` set → VictoriaTraces (`OTEL_VICTORIA_METRICS_ENDPOINT` / `OTEL_VICTORIA_LOGS_ENDPOINT` switch metrics and logs on)
-19. `OTEL_ASPIRE_ENDPOINT` set → Aspire Dashboard (`OTEL_ASPIRE_API_KEY` optional)
-20. `OTEL_GIGAPIPE_ENDPOINT` set → Gigapipe (`OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD` optional)
-21. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-22. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
-23. `OTEL_TEMPO_ENDPOINT` set → Tempo
-24. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+16. `OTEL_AGENTA_API_KEY` set (cloud, or with `OTEL_AGENTA_ENDPOINT`) → Agenta
+17. `OTEL_CLICKSTACK_ENDPOINT` + `OTEL_CLICKSTACK_API_KEY` (or `HYPERDX_API_KEY`) set → ClickStack
+18. `OTEL_GREPTIME_ENDPOINT` set → GreptimeDB (`OTEL_GREPTIME_DB`, `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` optional)
+19. `OTEL_VICTORIA_ENDPOINT` set → VictoriaTraces (`OTEL_VICTORIA_METRICS_ENDPOINT` / `OTEL_VICTORIA_LOGS_ENDPOINT` switch metrics and logs on)
+20. `OTEL_ASPIRE_ENDPOINT` set → Aspire Dashboard (`OTEL_ASPIRE_API_KEY` optional)
+21. `OTEL_GIGAPIPE_ENDPOINT` set → Gigapipe (`OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD` optional)
+22. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+23. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
+24. `OTEL_TEMPO_ENDPOINT` set → Tempo
+25. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`, `HYPERDX_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
+Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`, `HYPERDX_API_KEY`, `AGENTA_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
@@ -224,6 +230,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
 | [Zipkin](https://github.com/openzipkin-contrib/zipkin-otel) (#364) | `zipkin/` | traces (7 spans from one turn; every attribute a string tag) | `type: zipkin`, `http://localhost:9411` (the `zipkin-otel` image; stock Zipkin has no OTLP) |
+| [Agenta](https://github.com/Agenta-AI/agenta) (#371) | `agenta/` | traces (7 spans with Agenta's token roll-ups from one turn) | `type: agenta`, `http://localhost:3060`, `api_key_env` (key from `agenta/mint-api-key.sh`) |
 | [Gigapipe](https://github.com/metrico/gigapipe) (#370) | `gigapipe/` | traces + metrics + logs (7 spans, 28 log lines, 27 metric names from one turn) | `type: gigapipe`, `http://localhost:3110` |
 | [Aspire Dashboard](https://aspire.dev/dashboard/standalone/) (#369) | `aspire/` | traces + metrics + logs (7 spans, 28 log rows from one turn; metrics in the UI only) | `type: aspire`, `http://localhost:4418`, `query_port: 18888` |
 | [VictoriaTraces + VictoriaLogs + VictoriaMetrics](https://docs.victoriametrics.com) (#366) | `victoria/` | traces + metrics + logs (7 spans, 28 log rows, 27 metric names from one turn) | `type: victoria`, `endpoint` :10428 + `metrics_endpoint` :8428 + `logs_endpoint` :9428 |

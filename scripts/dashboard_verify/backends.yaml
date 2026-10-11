@@ -78,6 +78,12 @@ types:
     loggers: false   # Gigapipe keeps no scope label: no logger filter, no loggers list
     status_semantics: root
     quirks: the LGTM adapter on one port; select() returns no attributes so cards come from the trace detail; detail JSON is pre-1.0 (instrumentationLibrarySpans, string values) and reshaped; counters via query_range on the 15 s rollup (range-vector instant queries answer empty); Loki labels only, no scope label (logger filter and loggers list unsupported), level label instead of severity
+  agenta:
+    metrics: false
+    logs: false
+    ui: false   # the observability page is /w/<workspace>/p/<project>/…, ids the entry cannot know
+    status_semantics: root
+    quirks: POST /api/spans/query with the project ApiKey (ingest is async, a few seconds); parent_id is null for roots, attributes with dotted keys, status is/is_not, contains for free text; no duration field (client-side); resource attributes not stored; service filter none (the key is the project)
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

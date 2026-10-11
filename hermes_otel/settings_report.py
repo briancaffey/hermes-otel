@@ -170,6 +170,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "user": ("OTEL_GIGAPIPE_USER",),
         "password": ("OTEL_GIGAPIPE_PASSWORD",),
     },
+    "agenta": {"api_key": ("OTEL_AGENTA_API_KEY", "AGENTA_API_KEY")},
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -273,6 +274,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "aspire": "proxied",
     # The built-in qryn-view UI, the OTLP routes and the query APIs share one port.
     "gigapipe": "origin",
+    # UI and /api (ingest included) behind one front door; cloud: the same origin.
+    "agenta": "origin",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -736,6 +739,13 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "Basic auth user for Gigapipe (only with GIGAPIPE_LOGIN/PASSWORD)",
     ),
     ("OTEL_GIGAPIPE_PASSWORD", "backend", "Basic auth password for Gigapipe"),
+    ("OTEL_AGENTA_ENDPOINT", "backend", "Agenta origin for a self-hosted stack (cloud by default)"),
+    (
+        "OTEL_AGENTA_API_KEY",
+        "backend",
+        "Agenta project API key (Authorization: ApiKey; preferred name)",
+    ),
+    ("AGENTA_API_KEY", "backend", "Agenta project API key fallback (the SDK variable)"),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

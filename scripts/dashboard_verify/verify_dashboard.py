@@ -1123,11 +1123,7 @@ class Verifier:
                 if lrow.get("model") and str(lrow["model"]).split("/")[-1][:12] not in card_text:
                     probs.append("model not on the card")
                 tok = lrow.get("tokens")
-                if (
-                    tok
-                    and f"{int(tok):,}" not in card_text
-                    and f"{tok / 1000:.1f}k" not in card_text
-                ):
+                if tok and not any(form in card_text for form in token_forms(tok)):
                     probs.append(f"tokens {int(tok):,} not on the card")
                 record(f"traces-{rid}")
                 self.r.add(
@@ -1423,6 +1419,21 @@ def write_report(
             indent=2,
         )
     )
+
+
+def token_forms(tok: float) -> List[str]:
+    """How the UI's ``fmtTokens`` may print a count: ``17,250`` below 10k,
+    ``17.3k`` to one decimal up to 100k, ``172k`` above. JavaScript's
+    ``toFixed`` rounds a tie up (17.25 → ``17.3``) where Python's format
+    rounds it to even (``17.2``), so round half up here."""
+    from decimal import ROUND_HALF_UP, Decimal
+
+    k = Decimal(str(tok)) / 1000
+    return [
+        f"{int(tok):,}",
+        f"{k.quantize(Decimal('0.1'), rounding=ROUND_HALF_UP)}k",
+        f"{k.quantize(Decimal('1'), rounding=ROUND_HALF_UP)}k",
+    ]
 
 
 def main(argv: Optional[List[str]] = None) -> int:

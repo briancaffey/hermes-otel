@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [Agenta](agenta/) | 11 | :3060 | ✅ | ❌ | ❌ | `agenta` | OSS LLMOps platform; both conventions read server-side; key from `mint-api-key.sh`; ~2 GB |
 | [Gigapipe](gigapipe/) | 2 | :3110 | ✅ | ✅ | ✅ | `gigapipe` | OTLP in, Tempo + Prometheus + Loki APIs out of one port; the LGTM adapter reads it |
 | [Aspire Dashboard](aspire/) | 1 | :18888 | ✅ | ✅ | ✅ | `aspire` | see a turn in seconds; GenAI visualizer; read API for traces + logs; ~75 MB |
 | [VictoriaMetrics family](victoria/) | 3 | :10428 / :9428 / :8428 (vmui) | ✅ | ✅ | ✅ | `victoria` | three single binaries, one entry; Jaeger + Prometheus + LogsQL reads; ~35 MB |
@@ -113,6 +114,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 3020 | tempo | Grafana |
 | 3040 | langtrace | UI + `/api/trace` ingest |
 | 3050 | clickstack | HyperDX UI (upstream 8080) |
+| 3060 | agenta | nginx front door: UI, `/api`, OTLP at `/api/otlp/v1/traces` (upstream 80) |
 | 3100, 3200 | lgtm | Loki, Tempo |
 | 3110 | gigapipe | OTLP + Tempo/Prometheus/Loki APIs + UI (upstream 3100) |
 | 3210 | tempo | Tempo API |
@@ -158,7 +160,7 @@ dev servers love 3000 and 8000.
 
 ## Disk and memory
 
-- **Images are big.** ClickStack's all-in-one is 2.6 GB, Langtrace's app image is 4.5 GB, Langfuse v4 3.6 GB,
+- **Images are big.** Agenta's trimmed stack is about 4 GB across seven images, ClickStack's all-in-one is 2.6 GB, Langtrace's app image is 4.5 GB, Langfuse v4 3.6 GB,
   LangWatch 2.8 GB, Elastic 5.8 GB across its three images, Latitude about
   3 GB *per service*. Docker Desktop's VM disk
   fills up silently and the symptom is a Postgres that dies with "No space left

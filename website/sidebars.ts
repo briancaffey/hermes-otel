@@ -33,6 +33,7 @@ const sidebars: SidebarsConfig = {
         'backends/victoria',
         'backends/aspire',
         'backends/gigapipe',
+        'backends/agenta',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',

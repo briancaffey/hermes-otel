@@ -28,4 +28,5 @@ class TestPhoenixIsTracesOnly:
             "mlflow",
             "opik",
             "latitude",
+            "agenta",
         }

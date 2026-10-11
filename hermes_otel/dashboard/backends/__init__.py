@@ -327,5 +327,6 @@ for _name in (
     "victoria",
     "aspire",
     "gigapipe",
+    "agenta",
 ):
     _safe_import(_name)

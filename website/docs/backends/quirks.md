@@ -43,6 +43,7 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | LangSmith | (env only) | not OTLP: `POST /runs`, `PATCH /runs/{id}` | cloud only | separate code path (`langsmith_backend.py`), not a `backends:` entry |
 | SigNoz | `signoz` | std | collector :4328 here (upstream 4318); UI/API :3301 | derived |
 | Jaeger v1 / v2 | `jaeger` | std | v1 ingest :4318, UI :16686; v2 ingest :4368, UI :16696 | endpoint used as given |
+| Agenta | `agenta` | vendor prefix `/api/otlp/v1/traces`, traces only, **protobuf only** (JSON → 400), 10 MB cap | one front door (nginx :3060 here, Traefik :80 upstream) for UI, API and ingest | completes origin / `/api` / `/api/otlp` to the full URL; cloud host from `region` when unset |
 | Gigapipe | `gigapipe` | std, **one port** for ingest, the Tempo / Prometheus / Loki APIs and the UI (:3110 here, 3100 upstream) | 3100 collides with LGTM's Loki → remapped; ClickHouse unpublished | completes base URL, derived; no default host |
 | Aspire Dashboard | `aspire` | std on the OTLP/HTTP port (:4418 here, 18890 in-container) | UI + read API on :18888, OTLP/gRPC 18889 and MCP 18891 unpublished | completes base URL, derived; no default host |
 | VictoriaTraces / Logs / Metrics | `victoria` | **three hosts**: `/insert/opentelemetry/v1/traces` on :10428, `/opentelemetry/v1/metrics` on :8428, `/insert/opentelemetry/v1/logs` on :9428 | upstream ports, nothing else here uses them | `endpoint` + `metrics_endpoint` + `logs_endpoint`, each an origin or full URL; the type introduced per-signal URLs on the exporter side; a signal without its store is off |
@@ -81,6 +82,7 @@ is the one backend that refuses protobuf, hence its collector.
 | Langfuse | `Authorization: Basic base64(public:secret)` plus `x-langfuse-ingestion-version: 4` | yes, both keys | pre-seeded by headless init (`lf_pk_hermes_dev` / `lf_sk_hermes_dev`) |
 | LangSmith | `x-api-key` | yes | cloud account |
 | SigNoz | `signoz-ingestion-key` (cloud); nothing self-hosted | cloud only | cloud UI |
+| Agenta | `Authorization: ApiKey <project key>` (Bearer accepted too) | yes; a missing key skips the entry | `agenta/mint-api-key.sh` (SuperTokens sign-up, header session, `POST /api/keys`) or the project settings |
 | Gigapipe | none by default; `Authorization: Basic` from `user` + `password` for `GIGAPIPE_LOGIN` / `GIGAPIPE_PASSWORD` deployments; `X-Scope-OrgID` is not read | no | none |
 | Aspire Dashboard | none in anonymous mode; `x-otlp-api-key` from `api_key` when `DASHBOARD__OTLP__AUTHMODE=ApiKey` (the read API wants the same value as `x-api-key`) | no | none |
 | VictoriaTraces / Logs / Metrics | none; `Authorization: Basic` from `user` + `password` for `-httpAuth.*` deployments; logs carry `VL-Stream-Fields: service.name` | no | none |
@@ -128,6 +130,7 @@ variable is the opt-in (#259).
 | SigNoz | none | none |
 | GreptimeDB | database (`X-Greptime-DB-Name`, default `public`), then `service.name` | `db` / `db_env` |
 | ClickStack | the key = the team; `ServiceName` column | `api_key` |
+| Agenta | the key = the project; `ag.session.id` from `session.id`; resource attributes dropped | `api_key` |
 | Gigapipe | `service.name` (Tempo `rootServiceName`, Prometheus `job`, Loki `service_name` label) | `project_name` / `resource_attributes` |
 | Aspire Dashboard | a *resource* = `service.name` + `service.instance.id` (one per Hermes process); the API's `resource=` takes the bare service name only while one instance exists, so the adapter names every instance | `project_name` / `resource_attributes` |
 | VictoriaTraces / Logs / Metrics | `service.name` (VictoriaTraces and VictoriaLogs stream field; a VictoriaMetrics label) | `project_name` / `resource_attributes`; `headers: {VL-Stream-Fields: …}` for the log stream key |
@@ -164,6 +167,7 @@ because the plugin's debug log only sees the HTTP status.
 | LangSmith | yes | no | no | not OTLP | n/a |
 | SigNoz | yes | yes | yes | before first-run setup the collector runs a `nop` pipeline and resets the connection | all on |
 | Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | `_TRACES_ONLY` |
+| Agenta | yes | no | no | only `/api/otlp/v1/traces` is mounted (404 elsewhere); ingest is asynchronous via a Redis stream, 200 = accepted | `_TRACES_ONLY` |
 | Gigapipe | yes | yes (cumulative only) | yes | delta points rejected one by one in `partial_success`; `/v1/logs` answers 204 | all on |
 | Aspire Dashboard | yes | yes (Gauge, Sum, Histogram; **exponential histograms rejected**, "is not supported") | yes | — | all on |
 | VictoriaTraces / Logs / Metrics | yes | yes (its own store) | yes (its own store) | a signal whose store is not named has nowhere to go; an explicit `metrics: true` / `logs: true` without the store skips the entry with a hint | on per named store |
@@ -239,6 +243,7 @@ running gateways are unaffected either way.
 | Langfuse | `gen_ai.*` (including legacy `gen_ai.system`) | reads the root; zero-fills `usage` on non-GENERATION observations | yes | `session.id` (automatic grouping) |
 | LangSmith | mapped by the plugin to Run API fields plus `usage_metadata` | per run | — | session id → thread |
 | SigNoz | `gen_ai.*` in its LLM views; otherwise raw tags | n/a (span table) | via a derived metric | any attribute |
+| Agenta | OpenInference, OpenLLMetry **and** OTel GenAI adapters server-side: `ag.type.span` (`agent` / `chat` / `tool`), `ag.metrics.tokens` | **cumulative down the tree**: the root's total equalled the sum of the `api.*` spans (no double count; `root_usage` kept) | yes, for priced models (`ag.metrics.costs`) | `ag.session.id` ← `session.id` |
 | Gigapipe | none; raw tags, TraceQL | n/a | no | any attribute (TraceQL) |
 | Aspire Dashboard | **GenAI visualizer** for chat-completion spans (`gen_ai.input.messages` / `gen_ai.output.messages`, tool definitions since 13.1); otherwise raw attributes | n/a | no | any attribute in the UI |
 | VictoriaTraces | none; attributes stored with `span_attr:` / `resource_attr:` / `scope_attr:` prefixes, searchable in vmui | n/a | no | any attribute (Jaeger `tags`) |
@@ -282,6 +287,7 @@ Three things the plugin does here:
 | Backend | Limit | Treatment |
 |---|---|---|
 | Tempo | truncates attribute values at **2048 bytes** by default; cut `gen_ai.input.messages` under `content_capture: full` | `tempo/tempo.yaml` sets `distributor.max_attribute_bytes: 131072` |
+| Agenta | attributes stored as **nested objects** per namespace (`gen_ai.usage.total_tokens` → `{gen_ai: {usage: {total_tokens}}}`) plus Agenta's `ag.*`; resource attributes dropped; 10 MB batch cap | the adapter flattens to dotted keys and drops the `ag.data` / `ag.meta` copies |
 | Gigapipe | every attribute value a **string** on read (`/api/traces/{id}`); log attributes become Loki **labels** (dots → underscores), the scope name is dropped; 64 MiB request cap | the adapter coerces values back; logger filter and loggers list unsupported |
 | Aspire Dashboard | 128 attributes per item (`DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTECOUNT`), no value-length cap by default; 100 000 traces and logs, 50 000 metric points per dimension, oldest evicted | documented |
 | VictoriaTraces / Logs | every Jaeger tag typed `string` (`"23571"`, `"false"`), the OTLP status an `error` tag; log field values strings; 1000 fields per line, 64 MiB per trace request, `-search.maxTraces` 1000; VictoriaMetrics 40 labels per series, 4096-char values | the adapter coerces tag values back and reads the status from `error` |
@@ -298,7 +304,7 @@ Three things the plugin does here:
 
 ### H. Reading it back: query API, auth, version splits
 
-The dashboard tab and the `observability` skill read fourteen types back
+The dashboard tab and the `observability` skill read fifteen types back
 through an adapter. Each one speaks a different API and, in four cases, two
 versions of it.
 
@@ -308,6 +314,7 @@ versions of it.
 | Langfuse | v3: `/api/public/traces`, `/api/public/traces/{id}`, `/api/public/observations`; v4: `/api/public/v2/observations` plus `/api/public/v2/metrics` | same Basic pair | **v3 vs v4**: v4 `events_only` removed `/api/public/traces`, `/observations`, `/sessions` (404 naming `events_only`); probed once per URL, `query_api: v3\|v4` pins (#246); cloud retires v3 routes 2026-11-16 | v3: list is per trace; detail root = observation with no parent, else a synthetic root (#159). v4: AGENT observations with `isRootObservation` |
 | SigNoz | `POST /api/v4/query_range` (query builder) for all three signals; `GET /api/v1/traces/{id}` | **always required**, even on localhost: sent as both `SIGNOZ-API-KEY` (PAT) and `Authorization: Bearer` (session JWT; the OSS build has no PAT endpoint, so the key is a 30-minute JWT) | — | `parentSpanID = ""` |
 | Jaeger | v1: `/api/traces`; v2: **`/api/v3/...`** (OTLP-JSON, the only API v2 serves) | optional Bearer (write: none) | **v1 vs v2** (#245): probed once per URL, classic first because Jaeger 1.x also exposes an `/api/v3` gateway with snake_case params; `query_api: v1\|v3` pins. v2 answers an empty search with 404 "No traces found" | client-side: the span with no `CHILD_OF` reference; every search must name a service |
+| Agenta | `POST /api/spans/query` (`TracingQuery`: `windowing` oldest/newest/limit/order, `filtering` trees of `{field, key, value, operator}`; `parent_id is null` = roots, `span_name is`/`startswith`, `status_code is`/`is_not`, `attributes` + dotted `key` with `eq`/`gt`/`contains`; no duration field; nested `or` groups dropped) | the same `ApiKey` as the write side | v0.122 verified | `parent_id is null` server-side |
 | Gigapipe | the three Grafana APIs on one port: Tempo `/api/search` (TraceQL `q`, `start`/`end` in **seconds**; `select()` returns no attributes → cards from `/api/traces/{id}`, which is pre-1.0 OTLP JSON with `instrumentationLibrarySpans` and string values), Prometheus `/api/v1/*` (a range-vector instant query answers **empty** → counters via `query_range` at step 15), Loki `/loki/api/v1/*` (labels only, `level` label, no scope label) | none (Basic when configured) | 5.x; v5.5.3 verified | `nestedSetParent < 0` works server-side |
 | Aspire Dashboard | `GET /api/telemetry/{resources,traces,spans,logs}` and `/traces/{id}` → **OTLP JSON** with `totalCount` / `returnedCount`; filters on 13.6.1: `resource`, `limit`, `offset`, and on logs `traceId` + `search`; **no time window, no metrics route**; `?resource=<unknown>` → 404 | `x-api-key` when the API is key-protected (anonymous mode: none) | 13.6+ (the API is new) | client-side: the span with no `parentSpanId` in the fetched trace |
 | VictoriaTraces / Logs / Metrics | traces: Jaeger v1 JSON under `/select/jaeger` (`service` required, `tags` on plain keys, `operation` exact, `minDuration` with unit, `start`/`end` µs; `limit` ordering undocumented → over-fetch 500); metrics: the Prometheus API on VictoriaMetrics, range-vector instant queries included; logs: `POST /select/logsql/query` → NDJSON (`_msg`, `_time` RFC 3339 ns, `trace_id`, `span_id`, `severity_number`, `scope.name`, dotted attribute fields), `stats by (…)` for loggers; **no Loki query API** | optional Basic (same as write) | VictoriaTraces pre-1.0 | client-side: the span with no `CHILD_OF` reference |
@@ -347,6 +354,7 @@ healthy is from the folder READMEs.
 | Langfuse | 6 | ~3 GB | 20-60 s; traces appear 10-20 s after export (async via MinIO) | none (headless init seeds user and keys) | `LANGFUSE_VERSION=4` is a separate data set: `down -v` when switching | MIT core + EE folders |
 | SigNoz | 5 | — | 30-60 s | **mandatory** admin registration (`POST /api/v1/register`, 12+ char mixed password) or the collector stays `nop` and resets connections | — | OSS |
 | Jaeger v1 / v2 | 1 | ~25 MB | seconds | none | v1 line ended at 1.76.0 (Dec 2025); v2 pinned 2.21.0 | Apache-2.0 |
+| Agenta | 11 (trimmed from 15-17) | ~2 GB (api ~900 MB) | ~1-2 min | sign up + mint a key (`mint-api-key.sh`) | runner (`SYS_ADMIN` + `/dev/fuse`), playground services, cron, mobile UI, Composio and Traefik (Docker socket) dropped; nginx front door; PostHog key emptied; ~4 GB of images | MIT (ee/ separate) |
 | Gigapipe | 2 | ~16 MB + ~300 MB ClickHouse | ~10 s | none | `BULK_MAX_AGE_MS=100` so a one-shot turn is queryable at once; qryn-view UI built into the image | AGPL-3.0 |
 | Aspire Dashboard | 1 | ~75 MB | ~10 s | none (anonymous mode) | the `app` user cannot write a volume mounted on a fresh path ("Access to the path is denied" crash loop) → the volume sits on `/home/app`; `PERSISTENCE_MODE=Resume` or the data vanishes on a clean shutdown; no shell for a healthcheck | MIT |
 | VictoriaTraces / Logs / Metrics | 3 | ~35 MB total | seconds (`/health` → `OK`) | none | images built from scratch (no shell): Compose cannot health-check them; a 30 s `-search.latencyOffset` hides the newest samples; VictoriaTraces pre-1.0, pinned v0.12.0 | Apache-2.0 |
@@ -436,6 +444,15 @@ Format: **quirk** → treatment (issue).
 - Every search must name a service → `service_name`, else `resource_attributes.service.name`, else `hermes-agent`.
 - The query port is the UI port, not the OTLP port → set `query_port` (or `ui_url`) when the entry's endpoint is `:4318`.
 - Host port 4318 collides with LGTM.
+
+### Agenta (`agenta`)
+- Traces only, protobuf only, behind a project key → `type: agenta` completes the origin to `/api/otlp/v1/traces`, sends `Authorization: ApiKey`, defaults to the cloud host for `region`, and skips the entry when no key resolves.
+- Sign-ups are open and sessions are header-based SuperTokens → `mint-api-key.sh` signs up (or in), reads `st-access-token` from the headers and mints a key with `POST /api/keys`.
+- Server-side adapters for OpenInference, OpenLLMetry and OTel GenAI type every span and compute `ag.metrics.tokens` cumulatively down the tree; the root's total equalled the sum of the `api.*` spans → no `root_usage` preset.
+- Attributes are stored as nested objects per namespace and resource attributes are dropped → the adapter flattens to dotted keys, drops Agenta's `ag.data` / `ag.meta` copies and labels the resource with the entry's service name.
+- `POST /api/spans/query`: `parent_id is null` for roots, `attributes` with a dotted `key`, `status_code is`/`is_not`, `contains` for free text, no duration field, and a nested `or` group is accepted but silently dropped → every search-bar field server-side except the minimum duration, with free text as two flat queries (input, then output) merged client-side; `service` none (the key is the project); ingest is asynchronous (a few seconds).
+- The upstream stack is 15-17 containers with a FUSE sandbox runner and Traefik on the Docker socket → the folder keeps eleven (nginx front door on 3060), enough for ingest and the UI's tracing views.
+- Verified 2026-10-11 (api v0.122.x): 7 spans typed `agent` / `chat` / `tool` from one turn; dashboard verify harness PASS 35 / SKIP 13 from a fresh four-turn batch (skips = UI deep link, metrics, logs); ~2 GB resident.
 
 ### Gigapipe (`gigapipe`, formerly qryn)
 - One port for OTLP ingest and the Tempo, Prometheus and Loki APIs → the `lgtm` adapter subclass defaults every sibling URL to the entry's origin; 3100 remapped to 3110 (LGTM's Loki).

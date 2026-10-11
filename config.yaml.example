@@ -318,6 +318,9 @@
 #                  on the standard paths; optional `api_key` → x-otlp-api-key.
 #   gigapipe     — Gigapipe (formerly qryn): OTLP in and the Tempo, Prometheus
 #                  and Loki APIs out of one port. Traces + metrics + logs.
+#   agenta       — Agenta (self-hosted or Agenta Cloud). Traces only. Needs a
+#                  project `api_key` / `api_key_env` (Authorization: ApiKey);
+#                  `endpoint` for self-host, cloud (`region`) is the default.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -432,6 +435,10 @@
 #
 #   - type: gigapipe
 #     endpoint: http://localhost:3110         # one port: ingest, query APIs and UI
+#
+#   - type: agenta
+#     endpoint: http://localhost:3060         # self-hosted; omit for Agenta Cloud (region: us|eu)
+#     api_key_env: OTEL_AGENTA_API_KEY        # docker-compose/agenta/mint-api-key.sh prints one
 #
 #   - type: aspire
 #     endpoint: http://localhost:4418         # OTLP/HTTP (18890 in the container)

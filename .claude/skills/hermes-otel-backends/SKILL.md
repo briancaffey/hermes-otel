@@ -31,6 +31,7 @@ map, disk/memory budget, the test loop).
 | **Phoenix** | traces only | http://localhost:6006 | LLM-span inspection, OpenInference panels |
 | **SigNoz** | traces + metrics + logs | http://localhost:3301 | full APM, but a heavy multi-container stack |
 | **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
+| **Agenta** | traces | http://localhost:3060 (account from `agenta/mint-api-key.sh`: hermes@example.com / HermesOtel-local-1) | `type: agenta` + `api_key_env` (ApiKey header); 11 containers ~2 GB; async ingest; adapter reads `/api/spans/query` |
 | **Gigapipe (qryn)** | traces + metrics + logs | http://localhost:3110 (qryn-view, no login) | `type: gigapipe`; one port for OTLP and the Tempo/Prometheus/Loki APIs; the LGTM adapter reads it; cumulative metrics only |
 | **Aspire Dashboard** | traces + metrics + logs | http://localhost:18888 (no login) | `type: aspire`; read API `/api/telemetry/*` (OTLP JSON, no time filters) for traces + logs; metrics in the UI only; exp. histograms rejected |
 | **VictoriaMetrics family** | traces + metrics + logs | vmui on :10428 /select/vmui, :9428 /select/vmui/, :8428 /vmui (no login) | `type: victoria` with `endpoint` + `metrics_endpoint` + `logs_endpoint`; Jaeger API `/select/jaeger`, Prometheus API, LogsQL `/select/logsql/query`; adapter reads all three; 30 s latency offset |
@@ -170,6 +171,7 @@ docker rm -f hermes-otel-openobserve hermes-otel-lgtm                        # b
 | signoz | no | `:4328/v1/traces` | ✅ | ✅ | OTLP remapped to 4328 to dodge 4318 |
 | jaeger / tempo | no | `:4318/v1/traces` / `:4358/v1/traces` | ❌ | ❌ | traces only |
 | jaeger-v2 | no | `:4368/v1/traces` | ❌ | ❌ | read API is `/api/v3/...` only |
+| agenta | no | `:3060/api/otlp/v1/traces` (the type appends it) | ❌ 404 | ❌ 404 | `type: agenta`; protobuf only; key from `mint-api-key.sh`; spans appear a few seconds after export |
 | gigapipe | no | `:3110/v1/traces` | ✅ | ✅ | `type: gigapipe`; PromQL range-vector instant queries answer empty (adapter uses query_range); Loki labels only, no logger |
 | aspire | no | `:4418/v1/traces` | ✅ | ✅ | `type: aspire`; `query_port: 18888`; volume on /home/app (app user); Resume persistence |
 | victoria | no | `:10428` traces, `:8428` metrics, `:9428` logs (the type appends the paths) | ✅ | ✅ | `type: victoria`; Prometheus naming flag set in the compose file; VictoriaLogs stream = service.name |

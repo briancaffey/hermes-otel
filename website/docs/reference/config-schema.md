@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -221,6 +221,19 @@ See [Aspire Dashboard](/backends/aspire).
 | `search_fetch`, `metrics_match`, `loki_selector`, `ui_url` | as for `lgtm` | Dashboard read path |
 
 See [Gigapipe](/backends/gigapipe).
+
+#### `agenta`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | Agenta's origin for a self-hosted stack, e.g. `http://localhost:3060` (an origin, `/api`, `/api/otlp` or the full `/api/otlp/v1/traces` URL). Also via `OTEL_AGENTA_ENDPOINT` / `AGENTA_HOST`. Unset: Agenta Cloud for `region` |
+| `region` | string | `us` (default) or `eu`: the cloud host when `endpoint` is unset |
+| `api_key` / `api_key_env` | string | **Required.** A project API key → `Authorization: ApiKey <key>` (fallbacks `OTEL_AGENTA_API_KEY`, `AGENTA_API_KEY`); a missing key skips the entry. The dashboard adapter reads with the same key |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; metrics and logs default **off** (Agenta mounts only the traces route) |
+| `ui_url` | string | Dashboard read path: the project's observability page for an "open in" link (the adapter cannot derive the workspace and project ids) |
+| `service_name` | string | Dashboard read path: the service shown on cards and in the detail's resource (Agenta stores no resource attributes) |
+
+See [Agenta](/backends/agenta).
 
 #### `tempo`
 
