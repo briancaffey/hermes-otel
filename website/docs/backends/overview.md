@@ -22,6 +22,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[ClickStack](/backends/clickstack)** (HyperDX) | Traces + metrics + logs | Local (one all-in-one container) · upstream compose · Helm · ClickHouse Cloud | OSS (MIT), local account on first run |
 | **[VictoriaMetrics family](/backends/victoria)** | Traces + metrics + logs | Local (three single-binary containers) · Helm · VictoriaMetrics Cloud | OSS (Apache-2.0), no account |
 | **[Aspire Dashboard](/backends/aspire)** | Traces + metrics + logs | Local (single container) | OSS (MIT), no account |
+| **[Gigapipe](/backends/gigapipe)** (qryn) | Traces + metrics + logs | Local (Gigapipe + ClickHouse) · Gigapipe Cloud | OSS (AGPL-3.0), no account |
 | **[Grafana Tempo](/backends/tempo)** | Traces | Local (docker compose) · Grafana Cloud | OSS, no account · free tier + paid cloud |
 | **[Grafana LGTM](/backends/lgtm)** | Traces + metrics + logs | Local (single container) | OSS, no account |
 | **[Uptrace](/backends/uptrace)** | Traces + metrics + logs | Local (docker compose) · Self-hosted | OSS · premium license for HA features |
@@ -49,6 +50,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 
 **"I want traces *and* the token/tool/cost metrics dashboard"**
 → [SigNoz](/backends/signoz), [LGTM](/backends/lgtm) or [OpenObserve](/backends/openobserve) — they accept OTLP metrics as well as traces (Phoenix does not).
+
+**"I want the Grafana APIs without running Grafana's stores"**
+→ [Gigapipe](/backends/gigapipe) — OTLP in, the Tempo, Prometheus and Loki APIs out of one port on ClickHouse; the plugin reads it with its LGTM adapters.
 
 **"I run VictoriaMetrics and want traces and logs in the same family"**
 → [VictoriaTraces + VictoriaMetrics + VictoriaLogs](/backends/victoria) — one entry, three stores; the dashboard reads them through the Jaeger, Prometheus and LogsQL APIs.
@@ -120,6 +124,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | ClickStack | ✅ | ✅ | ✅ |
 | VictoriaMetrics family | ✅ | ✅ (when `metrics_endpoint` names VictoriaMetrics) | ✅ (when `logs_endpoint` names VictoriaLogs) |
 | Aspire Dashboard | ✅ | ✅ (no exponential histograms) | ✅ |
+| Gigapipe | ✅ | ✅ (cumulative only) | ✅ |
 | Grafana Tempo | ✅ | ❌ | ❌ |
 | Grafana LGTM | ✅ | ✅ | ✅ |
 | Uptrace | ✅ | ✅ | ✅ |
@@ -149,6 +154,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | OpenObserve | cumulative works; delta handling undocumented | cumulative (default) | not documented |
 | ClickStack | either: the ClickHouse exporter stores every point as sent | cumulative (default) | stored (`otel_metrics_exponential_histogram`) |
 | VictoriaMetrics | cumulative natively; delta stored as-is since v1.132 (query with `sum_over_time`) | cumulative (default) | converted to VictoriaMetrics `vmrange` histograms |
+| Gigapipe | **cumulative only**: delta points are rejected one by one (`partial_success`) | cumulative (default) | converted to `_bucket` / `_sum` / `_count` |
 | Aspire Dashboard | either (stored as sent) | cumulative (default) | **rejected** ("is not supported"); keep `metrics_histogram: explicit` |
 | GreptimeDB | either: stores cumulative and delta points as sent | cumulative (default) | **rejected** (`ExponentialHistogram is not supported yet`); keep `metrics_histogram: explicit` |
 | SigNoz | recommends delta; exponential histograms are delta-only and self-hosted-only | `delta` | self-hosted only |
@@ -186,10 +192,11 @@ Single-backend selection is env-var-driven. First match wins:
 17. `OTEL_GREPTIME_ENDPOINT` set → GreptimeDB (`OTEL_GREPTIME_DB`, `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` optional)
 18. `OTEL_VICTORIA_ENDPOINT` set → VictoriaTraces (`OTEL_VICTORIA_METRICS_ENDPOINT` / `OTEL_VICTORIA_LOGS_ENDPOINT` switch metrics and logs on)
 19. `OTEL_ASPIRE_ENDPOINT` set → Aspire Dashboard (`OTEL_ASPIRE_API_KEY` optional)
-20. `OTEL_JAEGER_ENDPOINT` set → Jaeger
-21. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
-22. `OTEL_TEMPO_ENDPOINT` set → Tempo
-23. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
+20. `OTEL_GIGAPIPE_ENDPOINT` set → Gigapipe (`OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD` optional)
+21. `OTEL_JAEGER_ENDPOINT` set → Jaeger
+22. `OTEL_ZIPKIN_ENDPOINT` set → Zipkin
+23. `OTEL_TEMPO_ENDPOINT` set → Tempo
+24. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
 Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`, `HYPERDX_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
@@ -217,6 +224,7 @@ Backends without an explicit `type:` yet are driven through the generic `otlp` t
 | [Maple Local](https://maple.dev/local/) (#49) | `maple/` | traces + metrics + logs | `type: otlp`, `http://localhost:4388/v1/traces` |
 | [Parseable OSS](https://www.parseable.com) (#238) | `parseable/` | traces + metrics + logs, through the bundled collector | `type: otlp`, `http://localhost:4348/v1/traces` |
 | [Zipkin](https://github.com/openzipkin-contrib/zipkin-otel) (#364) | `zipkin/` | traces (7 spans from one turn; every attribute a string tag) | `type: zipkin`, `http://localhost:9411` (the `zipkin-otel` image; stock Zipkin has no OTLP) |
+| [Gigapipe](https://github.com/metrico/gigapipe) (#370) | `gigapipe/` | traces + metrics + logs (7 spans, 28 log lines, 27 metric names from one turn) | `type: gigapipe`, `http://localhost:3110` |
 | [Aspire Dashboard](https://aspire.dev/dashboard/standalone/) (#369) | `aspire/` | traces + metrics + logs (7 spans, 28 log rows from one turn; metrics in the UI only) | `type: aspire`, `http://localhost:4418`, `query_port: 18888` |
 | [VictoriaTraces + VictoriaLogs + VictoriaMetrics](https://docs.victoriametrics.com) (#366) | `victoria/` | traces + metrics + logs (7 spans, 28 log rows, 27 metric names from one turn) | `type: victoria`, `endpoint` :10428 + `metrics_endpoint` :8428 + `logs_endpoint` :9428 |
 | [ClickStack](https://github.com/hyperdxio/hyperdx) (#365) | `clickstack/` | traces + metrics + logs (7 spans, 28 log rows, 13 metric names from one turn) | `type: clickstack`, `http://localhost:4408`, `api_key_env` (key from `clickstack/mint-api-key.sh`) |

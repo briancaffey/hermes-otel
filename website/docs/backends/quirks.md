@@ -43,6 +43,7 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | LangSmith | (env only) | not OTLP: `POST /runs`, `PATCH /runs/{id}` | cloud only | separate code path (`langsmith_backend.py`), not a `backends:` entry |
 | SigNoz | `signoz` | std | collector :4328 here (upstream 4318); UI/API :3301 | derived |
 | Jaeger v1 / v2 | `jaeger` | std | v1 ingest :4318, UI :16686; v2 ingest :4368, UI :16696 | endpoint used as given |
+| Gigapipe | `gigapipe` | std, **one port** for ingest, the Tempo / Prometheus / Loki APIs and the UI (:3110 here, 3100 upstream) | 3100 collides with LGTM's Loki → remapped; ClickHouse unpublished | completes base URL, derived; no default host |
 | Aspire Dashboard | `aspire` | std on the OTLP/HTTP port (:4418 here, 18890 in-container) | UI + read API on :18888, OTLP/gRPC 18889 and MCP 18891 unpublished | completes base URL, derived; no default host |
 | VictoriaTraces / Logs / Metrics | `victoria` | **three hosts**: `/insert/opentelemetry/v1/traces` on :10428, `/opentelemetry/v1/metrics` on :8428, `/insert/opentelemetry/v1/logs` on :9428 | upstream ports, nothing else here uses them | `endpoint` + `metrics_endpoint` + `logs_endpoint`, each an origin or full URL; the type introduced per-signal URLs on the exporter side; a signal without its store is off |
 | ClickStack | `clickstack` | std on the bundled Collector :4408 (4318 in-container) | UI :3050 (8080), ClickHouse :8124 (8123) published for reads | completes base URL, derived; no default host |
@@ -80,6 +81,7 @@ is the one backend that refuses protobuf, hence its collector.
 | Langfuse | `Authorization: Basic base64(public:secret)` plus `x-langfuse-ingestion-version: 4` | yes, both keys | pre-seeded by headless init (`lf_pk_hermes_dev` / `lf_sk_hermes_dev`) |
 | LangSmith | `x-api-key` | yes | cloud account |
 | SigNoz | `signoz-ingestion-key` (cloud); nothing self-hosted | cloud only | cloud UI |
+| Gigapipe | none by default; `Authorization: Basic` from `user` + `password` for `GIGAPIPE_LOGIN` / `GIGAPIPE_PASSWORD` deployments; `X-Scope-OrgID` is not read | no | none |
 | Aspire Dashboard | none in anonymous mode; `x-otlp-api-key` from `api_key` when `DASHBOARD__OTLP__AUTHMODE=ApiKey` (the read API wants the same value as `x-api-key`) | no | none |
 | VictoriaTraces / Logs / Metrics | none; `Authorization: Basic` from `user` + `password` for `-httpAuth.*` deployments; logs carry `VL-Stream-Fields: service.name` | no | none |
 | ClickStack | **bare** `authorization: <team ingestion key>` (a `Bearer` prefix is accepted too) | **yes**: 401 without, "does not match expected scheme or token" with a wrong one; a missing key skips the entry | `clickstack/mint-api-key.sh` (registers the first account, reads the key from the all-in-one's MongoDB), or Team Settings → API Keys |
@@ -126,6 +128,7 @@ variable is the opt-in (#259).
 | SigNoz | none | none |
 | GreptimeDB | database (`X-Greptime-DB-Name`, default `public`), then `service.name` | `db` / `db_env` |
 | ClickStack | the key = the team; `ServiceName` column | `api_key` |
+| Gigapipe | `service.name` (Tempo `rootServiceName`, Prometheus `job`, Loki `service_name` label) | `project_name` / `resource_attributes` |
 | Aspire Dashboard | a *resource* = `service.name` + `service.instance.id` (one per Hermes process); the API's `resource=` takes the bare service name only while one instance exists, so the adapter names every instance | `project_name` / `resource_attributes` |
 | VictoriaTraces / Logs / Metrics | `service.name` (VictoriaTraces and VictoriaLogs stream field; a VictoriaMetrics label) | `project_name` / `resource_attributes`; `headers: {VL-Stream-Fields: …}` for the log stream key |
 | Jaeger / Zipkin / Tempo / LGTM | `service.name` | `project_name` / `resource_attributes` |
@@ -161,6 +164,7 @@ because the plugin's debug log only sees the HTTP status.
 | LangSmith | yes | no | no | not OTLP | n/a |
 | SigNoz | yes | yes | yes | before first-run setup the collector runs a `nop` pipeline and resets the connection | all on |
 | Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | `_TRACES_ONLY` |
+| Gigapipe | yes | yes (cumulative only) | yes | delta points rejected one by one in `partial_success`; `/v1/logs` answers 204 | all on |
 | Aspire Dashboard | yes | yes (Gauge, Sum, Histogram; **exponential histograms rejected**, "is not supported") | yes | — | all on |
 | VictoriaTraces / Logs / Metrics | yes | yes (its own store) | yes (its own store) | a signal whose store is not named has nowhere to go; an explicit `metrics: true` / `logs: true` without the store skips the entry with a hint | on per named store |
 | ClickStack | yes | yes | yes | nothing listens on 4317/4318 until the first team exists (the Collector gets its receivers over OpAMP); then 401 without the key | all on |
@@ -206,6 +210,7 @@ installed, so one-shot runs export all three signals (logs only since 1.24.0).
 | Elastic | **delta required**: ES does not handle cumulative histograms and converts cumulative counters lossily | **delta** | accepted | ES data streams |
 | Honeycomb | either | cumulative | not verified | — |
 | OpenLIT | cumulative stored as-is (verified) | cumulative | stored (exponential histogram type) | ClickHouse `otel_metrics_*` tables |
+| Gigapipe | **cumulative only** (delta rejected per point) | cumulative | converted to `_bucket` / `_sum` / `_count` | Prometheus spelling per the OTLP-to-Prometheus spec (`hermes_token_usage_total`, `target_info`, `otel_scope_*`); PromQL served from the 15 s rollup |
 | Aspire Dashboard | either, stored as sent | cumulative | **rejected** | dotted OTel names, in the UI only (no metrics read route) |
 | VictoriaMetrics | cumulative natively; delta stored as-is since v1.132 | cumulative | converted to `vmrange` histograms | **a server flag**: with `-opentelemetry.usePrometheusNaming` (the bundled stack) `hermes_token_usage_total` / `…_seconds_sum`; without it the dotted OTel names "as is"; every resource attribute promoted to a label by default |
 | ClickStack | either, stored as sent by the ClickHouse exporter | cumulative | stored (`otel_metrics_exponential_histogram`) | **dotted** OTel names kept (`hermes.token.usage`); one table per type (`otel_metrics_sum` / `_gauge` / `_histogram` with `Count` + `Sum`), `TimeUnix` in seconds, `Attributes` map with the original keys |
@@ -234,6 +239,7 @@ running gateways are unaffected either way.
 | Langfuse | `gen_ai.*` (including legacy `gen_ai.system`) | reads the root; zero-fills `usage` on non-GENERATION observations | yes | `session.id` (automatic grouping) |
 | LangSmith | mapped by the plugin to Run API fields plus `usage_metadata` | per run | — | session id → thread |
 | SigNoz | `gen_ai.*` in its LLM views; otherwise raw tags | n/a (span table) | via a derived metric | any attribute |
+| Gigapipe | none; raw tags, TraceQL | n/a | no | any attribute (TraceQL) |
 | Aspire Dashboard | **GenAI visualizer** for chat-completion spans (`gen_ai.input.messages` / `gen_ai.output.messages`, tool definitions since 13.1); otherwise raw attributes | n/a | no | any attribute in the UI |
 | VictoriaTraces | none; attributes stored with `span_attr:` / `resource_attr:` / `scope_attr:` prefixes, searchable in vmui | n/a | no | any attribute (Jaeger `tags`) |
 | ClickStack | none; every attribute searchable in HyperDX's Lucene-style search (`SpanAttributes.gen_ai.usage.input_tokens:>1000`) | n/a | no | any attribute |
@@ -276,6 +282,7 @@ Three things the plugin does here:
 | Backend | Limit | Treatment |
 |---|---|---|
 | Tempo | truncates attribute values at **2048 bytes** by default; cut `gen_ai.input.messages` under `content_capture: full` | `tempo/tempo.yaml` sets `distributor.max_attribute_bytes: 131072` |
+| Gigapipe | every attribute value a **string** on read (`/api/traces/{id}`); log attributes become Loki **labels** (dots → underscores), the scope name is dropped; 64 MiB request cap | the adapter coerces values back; logger filter and loggers list unsupported |
 | Aspire Dashboard | 128 attributes per item (`DASHBOARD__TELEMETRYLIMITS__MAXATTRIBUTECOUNT`), no value-length cap by default; 100 000 traces and logs, 50 000 metric points per dimension, oldest evicted | documented |
 | VictoriaTraces / Logs | every Jaeger tag typed `string` (`"23571"`, `"false"`), the OTLP status an `error` tag; log field values strings; 1000 fields per line, 64 MiB per trace request, `-search.maxTraces` 1000; VictoriaMetrics 40 labels per series, 4096-char values | the adapter coerces tag values back and reads the status from `error` |
 | ClickStack | `SpanAttributes`, `ResourceAttributes`, `LogAttributes` and metric `Attributes` are `Map(String, String)`: every value a **string** | the dashboard adapter coerces numbers and booleans back, except on id-like keys |
@@ -291,7 +298,7 @@ Three things the plugin does here:
 
 ### H. Reading it back: query API, auth, version splits
 
-The dashboard tab and the `observability` skill read thirteen types back
+The dashboard tab and the `observability` skill read fourteen types back
 through an adapter. Each one speaks a different API and, in four cases, two
 versions of it.
 
@@ -301,6 +308,7 @@ versions of it.
 | Langfuse | v3: `/api/public/traces`, `/api/public/traces/{id}`, `/api/public/observations`; v4: `/api/public/v2/observations` plus `/api/public/v2/metrics` | same Basic pair | **v3 vs v4**: v4 `events_only` removed `/api/public/traces`, `/observations`, `/sessions` (404 naming `events_only`); probed once per URL, `query_api: v3\|v4` pins (#246); cloud retires v3 routes 2026-11-16 | v3: list is per trace; detail root = observation with no parent, else a synthetic root (#159). v4: AGENT observations with `isRootObservation` |
 | SigNoz | `POST /api/v4/query_range` (query builder) for all three signals; `GET /api/v1/traces/{id}` | **always required**, even on localhost: sent as both `SIGNOZ-API-KEY` (PAT) and `Authorization: Bearer` (session JWT; the OSS build has no PAT endpoint, so the key is a 30-minute JWT) | — | `parentSpanID = ""` |
 | Jaeger | v1: `/api/traces`; v2: **`/api/v3/...`** (OTLP-JSON, the only API v2 serves) | optional Bearer (write: none) | **v1 vs v2** (#245): probed once per URL, classic first because Jaeger 1.x also exposes an `/api/v3` gateway with snake_case params; `query_api: v1\|v3` pins. v2 answers an empty search with 404 "No traces found" | client-side: the span with no `CHILD_OF` reference; every search must name a service |
+| Gigapipe | the three Grafana APIs on one port: Tempo `/api/search` (TraceQL `q`, `start`/`end` in **seconds**; `select()` returns no attributes → cards from `/api/traces/{id}`, which is pre-1.0 OTLP JSON with `instrumentationLibrarySpans` and string values), Prometheus `/api/v1/*` (a range-vector instant query answers **empty** → counters via `query_range` at step 15), Loki `/loki/api/v1/*` (labels only, `level` label, no scope label) | none (Basic when configured) | 5.x; v5.5.3 verified | `nestedSetParent < 0` works server-side |
 | Aspire Dashboard | `GET /api/telemetry/{resources,traces,spans,logs}` and `/traces/{id}` → **OTLP JSON** with `totalCount` / `returnedCount`; filters on 13.6.1: `resource`, `limit`, `offset`, and on logs `traceId` + `search`; **no time window, no metrics route**; `?resource=<unknown>` → 404 | `x-api-key` when the API is key-protected (anonymous mode: none) | 13.6+ (the API is new) | client-side: the span with no `parentSpanId` in the fetched trace |
 | VictoriaTraces / Logs / Metrics | traces: Jaeger v1 JSON under `/select/jaeger` (`service` required, `tags` on plain keys, `operation` exact, `minDuration` with unit, `start`/`end` µs; `limit` ordering undocumented → over-fetch 500); metrics: the Prometheus API on VictoriaMetrics, range-vector instant queries included; logs: `POST /select/logsql/query` → NDJSON (`_msg`, `_time` RFC 3339 ns, `trace_id`, `span_id`, `severity_number`, `scope.name`, dotted attribute fields), `stats by (…)` for loggers; **no Loki query API** | optional Basic (same as write) | VictoriaTraces pre-1.0 | client-side: the span with no `CHILD_OF` reference |
 | ClickStack | ClickHouse HTTP (`POST /?database=…&default_format=JSON`, `output_format_json_quote_64bit_integers=0`): SQL on `otel_traces`, `otel_logs`, `otel_metrics_*`; ClickHouse answers a bad query with 400/404 and a text body, so every error is a `backend` error, never "not found" | ClickHouse Basic auth (`api` / `api` on the all-in-one; `default` is localhost-only), separate from the write-side key | — | `ParentSpanId = ''` server-side |
@@ -339,6 +347,7 @@ healthy is from the folder READMEs.
 | Langfuse | 6 | ~3 GB | 20-60 s; traces appear 10-20 s after export (async via MinIO) | none (headless init seeds user and keys) | `LANGFUSE_VERSION=4` is a separate data set: `down -v` when switching | MIT core + EE folders |
 | SigNoz | 5 | — | 30-60 s | **mandatory** admin registration (`POST /api/v1/register`, 12+ char mixed password) or the collector stays `nop` and resets connections | — | OSS |
 | Jaeger v1 / v2 | 1 | ~25 MB | seconds | none | v1 line ended at 1.76.0 (Dec 2025); v2 pinned 2.21.0 | Apache-2.0 |
+| Gigapipe | 2 | ~16 MB + ~300 MB ClickHouse | ~10 s | none | `BULK_MAX_AGE_MS=100` so a one-shot turn is queryable at once; qryn-view UI built into the image | AGPL-3.0 |
 | Aspire Dashboard | 1 | ~75 MB | ~10 s | none (anonymous mode) | the `app` user cannot write a volume mounted on a fresh path ("Access to the path is denied" crash loop) → the volume sits on `/home/app`; `PERSISTENCE_MODE=Resume` or the data vanishes on a clean shutdown; no shell for a healthcheck | MIT |
 | VictoriaTraces / Logs / Metrics | 3 | ~35 MB total | seconds (`/health` → `OK`) | none | images built from scratch (no shell): Compose cannot health-check them; a 30 s `-search.latencyOffset` hides the newest samples; VictoriaTraces pre-1.0, pinned v0.12.0 | Apache-2.0 |
 | ClickStack | 1 (four processes) | ~1.1 GB | ~30 s to healthy; OTLP receivers ~20 s after the first account | create an account (no default login) and mint the ingestion key: `mint-api-key.sh` | upstream leaves ClickHouse unpublished and its `default` user localhost-only → the folder publishes 8124 and the docs use `api` / `api`; image 2.6 GB; 3-day TTL | MIT |
@@ -427,6 +436,16 @@ Format: **quirk** → treatment (issue).
 - Every search must name a service → `service_name`, else `resource_attributes.service.name`, else `hermes-agent`.
 - The query port is the UI port, not the OTLP port → set `query_port` (or `ui_url`) when the entry's endpoint is `:4318`.
 - Host port 4318 collides with LGTM.
+
+### Gigapipe (`gigapipe`, formerly qryn)
+- One port for OTLP ingest and the Tempo, Prometheus and Loki APIs → the `lgtm` adapter subclass defaults every sibling URL to the entry's origin; 3100 remapped to 3110 (LGTM's Loki).
+- `/api/search` with a TraceQL `q` returns one row per trace but `select()` yields no attributes (and without `q`, one row per span) → the card is built from `/api/traces/{id}`: the root, or the first matching span on a widened search.
+- `/api/traces/{id}` is pre-1.0 OTLP JSON: `resourceSpans` → `instrumentationLibrarySpans`, every attribute a `stringValue`, no `kind`, the resource reduced to `collector=gigapipe` with the service on `serviceName` → reshaped into `batches` / `scopeSpans`, values coerced, one batch per service.
+- A range-vector instant query (`name[1h]`) answers an empty matrix; `query_range` works and PromQL is served from the 15 s rollup → counters via `query_range` at step 15 with the five-minute look-behind and `counter_increases` (#1027 sidestepped by bucketing here); gauges unchanged.
+- **Delta metric points are rejected** per point → cumulative default, no preset.
+- Loki streams carry every attribute as a label (`hermes_session_id`, `trace_id`, `span_id`), a `level` label and no scope name → LogQL stages on those labels, `level=~` for the severity floor, logger filter and loggers list unsupported; the nanosecond cursor as `end` dropped the rest of that second → the bound is rounded up to the next second and `strictly_older()` cuts.
+- Trace ids upper-case from a tag search, lower-case from TraceQL → lower-cased and padded.
+- Verified 2026-10-11 (v5.5.3): 7 spans, 28 log lines, 27 metric names from one turn; ~16 MB + ~300 MB resident. Dashboard-verify PASS 46 / SKIP 5 (UI link, loggers).
 
 ### Aspire Dashboard (`aspire`)
 - Standard `/v1/*` on the OTLP/HTTP port, UI and read API on another → `endpoint` is the OTLP port, `query_port` the UI port; anonymous mode needs no key, `x-otlp-api-key` from `api_key` otherwise.

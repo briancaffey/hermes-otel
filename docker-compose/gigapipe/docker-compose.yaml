@@ -1,0 +1,80 @@
+# Gigapipe (formerly qryn) — a polyglot store on ClickHouse that takes OTLP
+# for traces, metrics and logs on one port and serves the Tempo, Prometheus
+# and Loki query APIs from the same port.
+#
+# Upstream: github.com/metrico/gigapipe (AGPL-3.0; metrico/qryn redirects
+# there). The repo has no top-level compose file; this one follows its
+# test/integration/docker-compose.yml and the gigapipe-oss-demo stack
+# (gigapipe + ClickHouse), without the demo's Grafana and collector.
+#
+# Usage:
+#   docker compose -f docker-compose/gigapipe/docker-compose.yaml up -d
+#   # UI:  http://localhost:3110   (the built-in qryn-view, no login)
+#   docker compose -f docker-compose/gigapipe/docker-compose.yaml down
+#   docker compose -f docker-compose/gigapipe/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side remapped; override with the env var):
+#   3110  everything (3100 in the container): OTLP /v1/traces /v1/metrics /v1/logs,
+#         Tempo /api/*, Prometheus /api/v1/*, Loki /loki/api/v1/*, UI     GIGAPIPE_PORT
+#         Remapped from 3100 because the LGTM stack's Loki owns 3100 in this directory.
+#   ClickHouse stays inside the container network (8123/9000 collide with the
+#   Uptrace stack; gigapipe is the only client).
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: gigapipe
+#       endpoint: http://localhost:3110
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  clickhouse:
+    image: clickhouse/clickhouse-server:${GIGAPIPE_CLICKHOUSE_VERSION:-24.9.1-alpine}
+    container_name: hermes-otel-gigapipe-clickhouse
+    restart: unless-stopped
+    environment:
+      CLICKHOUSE_USER: gigapipe
+      CLICKHOUSE_PASSWORD: ${GIGAPIPE_CLICKHOUSE_PASSWORD:-gigapipe-local}
+      CLICKHOUSE_DB: qryn
+      CLICKHOUSE_DEFAULT_ACCESS_MANAGEMENT: 1
+    volumes:
+      - gigapipe_clickhouse:/var/lib/clickhouse
+    ulimits:
+      nofile:
+        soft: 262144
+        hard: 262144
+    healthcheck:
+      test: ["CMD-SHELL", "clickhouse-client --user=gigapipe --password=$$CLICKHOUSE_PASSWORD --query='SELECT 1' || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+      start_period: 15s
+
+  gigapipe:
+    image: ghcr.io/metrico/gigapipe:${GIGAPIPE_VERSION:-latest}
+    container_name: hermes-otel-gigapipe
+    restart: unless-stopped
+    depends_on:
+      clickhouse:
+        condition: service_healthy
+    environment:
+      CLICKHOUSE_SERVER: clickhouse
+      CLICKHOUSE_PORT: 9000
+      CLICKHOUSE_DB: qryn
+      CLICKHOUSE_AUTH: gigapipe:${GIGAPIPE_CLICKHOUSE_PASSWORD:-gigapipe-local}
+      # Flush writes quickly so a one-shot turn is queryable right away
+      # (upstream default 100 ms; the integration compose uses the same).
+      BULK_MAX_AGE_MS: "100"
+    ports:
+      - "${GIGAPIPE_PORT:-3110}:3100"
+    healthcheck:
+      test: ["CMD-SHELL", "wget -qO- http://localhost:3100/ready || exit 1"]
+      interval: 5s
+      timeout: 3s
+      retries: 30
+      start_period: 15s
+
+volumes:
+  gigapipe_clickhouse:

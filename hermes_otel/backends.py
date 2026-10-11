@@ -67,6 +67,7 @@ _LOGS_CAPABLE = {
     "clickstack",
     "victoria",
     "aspire",
+    "gigapipe",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -102,6 +103,7 @@ _DISPLAY_NAMES = {
     "clickstack": "ClickStack",
     "victoria": "Victoria",
     "aspire": "Aspire Dashboard",
+    "gigapipe": "Gigapipe",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -135,6 +137,7 @@ _ENV_PRIORITY = [
     "greptime",
     "victoria",
     "aspire",
+    "gigapipe",
     "jaeger",
     "zipkin",
     "tempo",
@@ -707,6 +710,47 @@ def _resolve_aspire(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("aspire", bc.metrics),
         supports_logs=_logs_for("aspire", bc.logs),
+    )
+
+
+def _resolve_gigapipe(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve a Gigapipe (formerly qryn) backend: OTLP/HTTP, all three signals,
+    one port.
+
+    Gigapipe takes ``/v1/traces``, ``/v1/metrics`` and ``/v1/logs`` on the
+    same port that serves its Tempo, Prometheus and Loki query APIs (3100
+    upstream, 3110 in the bundled stack). ``endpoint`` is required (no
+    default host); a bare base URL gets the ``/v1/traces`` suffix and the
+    other two are derived from it. Traces and logs are protobuf only, which is
+    what the plugin sends.
+
+    Auth: none unless the server runs with ``GIGAPIPE_LOGIN`` /
+    ``GIGAPIPE_PASSWORD``; then Basic from ``user`` + ``password`` (fallbacks
+    ``OTEL_GIGAPIPE_USER`` / ``OTEL_GIGAPIPE_PASSWORD``), omitted otherwise.
+
+    Signals: all on. Gigapipe stores cumulative points and **rejects delta
+    points** one by one (reported in ``partial_success``), so the SDK's
+    cumulative default is the right one; no preset.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_GIGAPIPE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("gigapipe requires endpoint (or set OTEL_GIGAPIPE_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+    headers: Dict[str, str] = {}
+    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_GIGAPIPE_USER"])
+    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_GIGAPIPE_PASSWORD"])
+    if user and pw:
+        headers["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="gigapipe",
+        endpoint=ep,
+        display_name=_display(bc, "gigapipe"),
+        headers=headers or None,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("gigapipe", bc.metrics),
+        supports_logs=_logs_for("gigapipe", bc.logs),
     )
 
 
@@ -1431,6 +1475,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "clickstack": _resolve_clickstack,
     "victoria": _resolve_victoria,
     "aspire": _resolve_aspire,
+    "gigapipe": _resolve_gigapipe,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

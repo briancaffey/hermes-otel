@@ -1007,16 +1007,20 @@ class Verifier:
             "L3", ok, why or f"{pages} pages of ≤3 cover all {len(allrows)} lines, strictly older"
         )
         # L4 loggers
-        code, resp = self.api(
-            self.tpath("/loggers"),
-            lookback_hours=max(1, math.ceil((time.time() - self.start_s) / 3600)),
-        )
-        names = [x.get("logger") or x.get("name") for x in (resp or {}).get("loggers") or []]
-        self.r.add(
-            "L4",
-            code == 200 and logger in names,
-            f"{len(names)} loggers; includes {logger}: {logger in names}",
-        )
+        want = self.expect.get(self.entry.get("type"), {}) if not self.live else {}
+        if want.get("loggers") is False:
+            self.r.add("L4", None, "the backend keeps no logger (scope) field; loggers: false")
+        else:
+            code, resp = self.api(
+                self.tpath("/loggers"),
+                lookback_hours=max(1, math.ceil((time.time() - self.start_s) / 3600)),
+            )
+            names = [x.get("logger") or x.get("name") for x in (resp or {}).get("loggers") or []]
+            self.r.add(
+                "L4",
+                code == 200 and logger in names,
+                f"{len(names)} loggers; includes {logger}: {logger in names}",
+            )
         # L5 events only
         code, resp = self.api(self.tpath("/logs/search"), events_only="true", limit=200, **win)
         ev = (resp or {}).get("logs") or []

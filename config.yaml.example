@@ -316,6 +316,8 @@
 #                  signal whose store is not named is off.
 #   aspire       — .NET Aspire Dashboard (standalone). Traces + metrics + logs
 #                  on the standard paths; optional `api_key` → x-otlp-api-key.
+#   gigapipe     — Gigapipe (formerly qryn): OTLP in and the Tempo, Prometheus
+#                  and Loki APIs out of one port. Traces + metrics + logs.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -427,6 +429,9 @@
 #     # user: api
 #     # password: api
 #     # ui_url: http://localhost:3050
+#
+#   - type: gigapipe
+#     endpoint: http://localhost:3110         # one port: ingest, query APIs and UI
 #
 #   - type: aspire
 #     endpoint: http://localhost:4418         # OTLP/HTTP (18890 in the container)

@@ -8,6 +8,7 @@
 #                    Every backend filters the root span (roots-only search);
 #                    only the live store means "any span errored".
 #   start_tolerance_ms  how far a list row's start may sit from the live root's (default 5)
+#   loggers          false when the backend keeps no logger (scope) field, so L4 is a SKIP
 #   quirks           free text copied into the report
 types:
   lgtm:
@@ -70,6 +71,13 @@ types:
     ui: true
     status_semantics: root
     quirks: /api/telemetry/* answers OTLP JSON with no time window and only resource/limit/offset (+ traceId/search on logs) filters, so the adapter fetches a bounded page and applies window, filters, roots and cursor itself; .NET severity spellings mapped from severityNumber
+  gigapipe:
+    metrics: true
+    logs: true
+    ui: false   # qryn-view has no documented deep link; ui_url offers one
+    loggers: false   # Gigapipe keeps no scope label: no logger filter, no loggers list
+    status_semantics: root
+    quirks: the LGTM adapter on one port; select() returns no attributes so cards come from the trace detail; detail JSON is pre-1.0 (instrumentationLibrarySpans, string values) and reshaped; counters via query_range on the 15 s rollup (range-vector instant queries answer empty); Loki labels only, no scope label (logger filter and loggers list unsupported), level label instead of severity
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

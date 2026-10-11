@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -209,6 +209,18 @@ See [VictoriaMetrics family](/backends/victoria).
 | `service_name` | string | Dashboard read path: the service whose Aspire resources (one per Hermes process, resolved through `/api/telemetry/resources`) the API is asked for (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
 
 See [Aspire Dashboard](/backends/aspire).
+
+#### `gigapipe`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** Gigapipe's origin, e.g. `http://localhost:3110` (bundled stack) or `http://<host>:3100`; a base URL gets `/v1/traces`, the other two signals are derived. Also via `OTEL_GIGAPIPE_ENDPOINT` |
+| `user` / `user_env`, `password` / `password_env` | string | Optional Basic auth (fallbacks `OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD`); omitted when either is missing |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; all three default **on** |
+| `query_port`, `prometheus_url`, `loki_url` | int / string | Dashboard read path: all default to the endpoint's origin (one port serves the Tempo, Prometheus and Loki APIs); `loki_url: off` disables the Logs tab |
+| `search_fetch`, `metrics_match`, `loki_selector`, `ui_url` | as for `lgtm` | Dashboard read path |
+
+See [Gigapipe](/backends/gigapipe).
 
 #### `tempo`
 

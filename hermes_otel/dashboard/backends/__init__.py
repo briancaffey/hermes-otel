@@ -326,5 +326,6 @@ for _name in (
     "clickstack",
     "victoria",
     "aspire",
+    "gigapipe",
 ):
     _safe_import(_name)

@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [Gigapipe](gigapipe/) | 2 | :3110 | ✅ | ✅ | ✅ | `gigapipe` | OTLP in, Tempo + Prometheus + Loki APIs out of one port; the LGTM adapter reads it |
 | [Aspire Dashboard](aspire/) | 1 | :18888 | ✅ | ✅ | ✅ | `aspire` | see a turn in seconds; GenAI visualizer; read API for traces + logs; ~75 MB |
 | [VictoriaMetrics family](victoria/) | 3 | :10428 / :9428 / :8428 (vmui) | ✅ | ✅ | ✅ | `victoria` | three single binaries, one entry; Jaeger + Prometheus + LogsQL reads; ~35 MB |
 | [ClickStack](clickstack/) | 1 | :3050 | ✅ | ✅ | ✅ | `clickstack` | ClickHouse's own stack (HyperDX), standard OTel tables; key from `mint-api-key.sh`; adapter reads all three |
@@ -113,6 +114,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 3040 | langtrace | UI + `/api/trace` ingest |
 | 3050 | clickstack | HyperDX UI (upstream 8080) |
 | 3100, 3200 | lgtm | Loki, Tempo |
+| 3110 | gigapipe | OTLP + Tempo/Prometheus/Loki APIs + UI (upstream 3100) |
 | 3210 | tempo | Tempo API |
 | 3301 | signoz | UI |
 | 4317, 4318 | lgtm, jaeger | OTLP gRPC / HTTP — one at a time |

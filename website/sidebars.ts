@@ -32,6 +32,7 @@ const sidebars: SidebarsConfig = {
         'backends/clickstack',
         'backends/victoria',
         'backends/aspire',
+        'backends/gigapipe',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',

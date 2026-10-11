@@ -133,7 +133,7 @@ live store of the same profile, read through `/live/*`.
   `logger=<one seen>` returns only that logger.
 - `L3` keyset paging on one turn's lines (`limit=3`): strictly older, no
   overlap, union is the whole set.
-- `L4` `/loggers` is non-empty and includes a logger seen in `L1`.
+- `L4` `/loggers` is non-empty and includes a logger seen in `L1`. SKIP when the type's `backends.yaml` entry says `loggers: false` (Gigapipe keeps no scope label).
 - `L5` `events_only=true` returns only rows with an `event_name` (or none).
 
 **B — browser (the dashboard tab, headless Chromium)**

@@ -166,6 +166,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "password": ("OTEL_VICTORIA_PASSWORD",),
     },
     "aspire": {"api_key": ("OTEL_ASPIRE_API_KEY",)},
+    "gigapipe": {
+        "user": ("OTEL_GIGAPIPE_USER",),
+        "password": ("OTEL_GIGAPIPE_PASSWORD",),
+    },
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -267,6 +271,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "victoria": "origin",
     # UI on 18888, OTLP on 18890 — origin only for a proxied hostname.
     "aspire": "proxied",
+    # The built-in qryn-view UI, the OTLP routes and the query APIs share one port.
+    "gigapipe": "origin",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -723,6 +729,13 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "backend",
         "Aspire Dashboard OTLP API key (x-otlp-api-key); only in ApiKey auth mode",
     ),
+    ("OTEL_GIGAPIPE_ENDPOINT", "backend", "Single-backend mode: Gigapipe (qryn) OTLP/HTTP base"),
+    (
+        "OTEL_GIGAPIPE_USER",
+        "backend",
+        "Basic auth user for Gigapipe (only with GIGAPIPE_LOGIN/PASSWORD)",
+    ),
+    ("OTEL_GIGAPIPE_PASSWORD", "backend", "Basic auth password for Gigapipe"),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

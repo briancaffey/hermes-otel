@@ -2,7 +2,7 @@
 slug: /
 sidebar_position: 0
 title: "hermes-otel"
-description: "OpenTelemetry plugin for Hermes Agent — automatically export LLM traces, tool calls, token metrics and logs to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Zipkin, GreptimeDB, ClickStack, the VictoriaMetrics family, the Aspire Dashboard, Grafana Tempo and LGTM, Uptrace, OpenObserve, Parseable, Honeycomb, W&B Weave, Elastic, OpenLIT, MLflow, Comet Opik, Laminar, LangWatch, Latitude, or any OTLP collector."
+description: "OpenTelemetry plugin for Hermes Agent — automatically export LLM traces, tool calls, token metrics and logs to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Zipkin, GreptimeDB, ClickStack, the VictoriaMetrics family, the Aspire Dashboard, Gigapipe, Grafana Tempo and LGTM, Uptrace, OpenObserve, Parseable, Honeycomb, W&B Weave, Elastic, OpenLIT, MLflow, Comet Opik, Laminar, LangWatch, Latitude, or any OTLP collector."
 hide_table_of_contents: true
 displayed_sidebar: docs
 ---
@@ -13,7 +13,7 @@ import Link from '@docusaurus/Link';
   <div className="container">
     <h1 className="hero__title--otel">OpenTelemetry for Hermes Agent</h1>
     <p className="hero__subtitle--otel">
-      Fan LLM traces, tool calls, API requests, and token metrics out to any OTLP-compatible observability backend — <strong>Phoenix</strong>, <strong>Langfuse</strong>, <strong>LangSmith</strong>, <strong>SigNoz</strong>, <strong>Jaeger</strong>, <strong>Zipkin</strong>, <strong>GreptimeDB</strong>, <strong>ClickStack</strong>, <strong>VictoriaTraces / Logs / Metrics</strong>, <strong>Aspire Dashboard</strong>, <strong>Grafana Tempo</strong> and <strong>LGTM</strong>, <strong>Uptrace</strong>, <strong>OpenObserve</strong>, <strong>Parseable</strong>, <strong>Honeycomb</strong>, <strong>W&amp;B Weave</strong>, <strong>Elastic</strong>, <strong>OpenLIT</strong>, <strong>MLflow</strong>, <strong>Comet Opik</strong>, <strong>Laminar</strong>, <strong>LangWatch</strong>, <strong>Latitude</strong>, or your own collector. One plugin, parallel fan-out, zero hot-path blocking.
+      Fan LLM traces, tool calls, API requests, and token metrics out to any OTLP-compatible observability backend — <strong>Phoenix</strong>, <strong>Langfuse</strong>, <strong>LangSmith</strong>, <strong>SigNoz</strong>, <strong>Jaeger</strong>, <strong>Zipkin</strong>, <strong>GreptimeDB</strong>, <strong>ClickStack</strong>, <strong>VictoriaTraces / Logs / Metrics</strong>, <strong>Aspire Dashboard</strong>, <strong>Gigapipe</strong>, <strong>Grafana Tempo</strong> and <strong>LGTM</strong>, <strong>Uptrace</strong>, <strong>OpenObserve</strong>, <strong>Parseable</strong>, <strong>Honeycomb</strong>, <strong>W&amp;B Weave</strong>, <strong>Elastic</strong>, <strong>OpenLIT</strong>, <strong>MLflow</strong>, <strong>Comet Opik</strong>, <strong>Laminar</strong>, <strong>LangWatch</strong>, <strong>Latitude</strong>, or your own collector. One plugin, parallel fan-out, zero hot-path blocking.
     </p>
     <div className="hero__ctas">
       <Link className="hero__cta hero__cta--primary" to="/getting-started/quickstart">Quickstart →</Link>
@@ -100,6 +100,10 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
   <Link className="backend-card" to="/backends/aspire">
     <div className="backend-card__name">Aspire Dashboard</div>
     <div className="backend-card__desc">One container, no account, a GenAI visualizer and a read API. MIT. Traces + metrics + logs.</div>
+  </Link>
+  <Link className="backend-card" to="/backends/gigapipe">
+    <div className="backend-card__name">Gigapipe (qryn)</div>
+    <div className="backend-card__desc">OTLP in, the Tempo, Prometheus and Loki APIs out of one port on ClickHouse. AGPL-3.0. Traces + metrics + logs.</div>
   </Link>
   <Link className="backend-card" to="/backends/tempo">
     <div className="backend-card__name">Grafana Tempo</div>
