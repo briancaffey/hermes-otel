@@ -49,6 +49,10 @@ def register(ctx):
         ("api_request_error", hooks.on_api_request_error),
         ("pre_approval_request", hooks.on_pre_approval_request),
         ("post_approval_response", hooks.on_post_approval_response),
+        # Observers on two transform hooks: they always return None, so the
+        # content is never replaced (#33).
+        ("transform_terminal_output", hooks.on_transform_terminal_output),
+        ("transform_llm_output", hooks.on_transform_llm_output),
     ]:
         try:
             ctx.register_hook(hook_name, callback)

@@ -49,6 +49,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `llm.model_name` | OpenInference | string | Model the turn started with |
 | `hermes.platform` | hermes | string | The Hermes surface the turn ran on: `cli` · `telegram` · `discord` · `cron` · … (never reported as a provider) |
 | `hermes.profile` | hermes | string | The Hermes profile that ran the turn: `default`, the profile id under `~/.hermes/profiles/`, or `custom`. Also a resource attribute and the `profile` label on every metric ([profiles](/configuration/profiles)) |
+| `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
@@ -165,6 +166,9 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `input.value`, `gen_ai.tool.call.arguments` | both | string | Tool args (JSON preview; **full** for `mcp_*` tools in `content_capture: full`) |
 | `output.value`, `gen_ai.tool.call.result` | both | string | Tool result preview |
 | `hermes.preview.input.truncated`, `hermes.preview.input.original_chars`, `hermes.preview.output.truncated`, `hermes.preview.output.original_chars` | hermes | bool, int | Set only when the args or result preview was clipped: `true` and the original length (optional) |
+| `hermes.tool.result.chars` | hermes | int | Size of the result string the model receives, every tool |
+| `hermes.terminal.output.chars`, `hermes.terminal.returncode`, `hermes.terminal.env_type` | hermes | int, int, string | Terminal tool only: the output size as the terminal tool handed it to Hermes' transform stage (after the capture window, before the head+tail limit, whitespace strip and redaction), the exit code and the environment type, observed on `transform_terminal_output` ([hooks](/reference/hooks#transform_terminal_output)) |
+| `hermes.terminal.output.truncated`, `hermes.terminal.output.dropped_chars` | hermes | bool, int | Terminal tool only: whether Hermes' output limit cut the output before the model saw it, and by how many characters (`dropped_chars` only when `true`). Read from Hermes' own record of the cut (the `output_total_chars` field of a capture-window spill, or the `[OUTPUT TRUNCATED - N chars omitted …]` notice of the head+tail limit), never from a size comparison, so whitespace stripping, ANSI removal and redaction are not mistaken for truncation |
 | `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
 | `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
 | `hermes.tool.outcome` | hermes | string | `error` · `timeout` · `blocked` · `cancelled` from Hermes' hook status or the tool's own result status; `completed` means the tool returned and nothing reported a failure |

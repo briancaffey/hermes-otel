@@ -150,7 +150,29 @@ Fires when the human answers (or the prompt times out).
 
 ### `mcp_request_headers` (pending upstream)
 
-Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "15 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+Not a hook in any Hermes release (v0.21.3 has 39 hooks and no `mcp_request_headers`), so it is **not** declared in `plugin.yaml` and is not part of the "17 hooks" count. The plugin side is implemented: `register()` subscribes only when the running Hermes lists the hook in `hermes_cli.plugins.VALID_HOOKS`, and stays unregistered when that registry cannot be inspected, so the plugin catalog's declared-vs-registered check never sees an undeclared hook. The upstream proposal ([hermes-agent#52211](https://github.com/NousResearch/hermes-agent/issues/52211)) was closed because the MCP SDK 2.x propagates trace context in-protocol; the remaining gap is parenting on Hermes' MCP loop thread. See [MCP trace propagation](/configuration/mcp-trace-propagation) for the status.
+
+## Observers on transform hooks
+
+Hermes' `transform_*` hooks let a plugin *replace* content (the first non-empty string returned wins). hermes-otel subscribes to two of them as pure observers: every handler returns `None`, so content is never changed, and only sizes and metadata are recorded. Every callback of a transform hook receives the same original value, so a replacement made by another plugin is invisible to an observer; what these make visible is Hermes' own truncation.
+
+### `transform_terminal_output`
+
+Fires inside the terminal tool with the output as the tool collected it, before Hermes applies its head+tail output limit, whitespace strip and redaction. (A very large output has already been cut to the capture window by then; Hermes records that cut in the result, and `post_tool_call` reads it.)
+
+- **Span op:** sets attributes on the open `tool.terminal` span
+- **Attributes:** `hermes.terminal.output.chars` (raw size), `hermes.terminal.returncode`, `hermes.terminal.env_type`
+- **Then, on `post_tool_call`:** `hermes.terminal.output.truncated` and `hermes.terminal.output.dropped_chars` report whether Hermes' output limit cut the output and by how much, read from Hermes' own truncation markers in the result; `hermes.tool.result.chars` records the result size for every tool
+- **Returns:** always `None`
+
+### `transform_llm_output`
+
+Fires in the turn finalizer with the final response text.
+
+- **Span op:** sets `hermes.llm.output.chars` on the turn root (`agent` / `cron`); the `llm.*` span is already closed by then
+- **Returns:** always `None`
+
+`transform_tool_result` is not subscribed: it fires after `post_tool_call` with the same result the plugin already saw there, so there is nothing new to observe and no reason to register a third behaviour-changing hook.
 
 ## Hook → span mapping
 
@@ -162,10 +184,12 @@ pre_llm_call             open  llm.{model}       (child of session)
 pre_api_request          open  api.{model}       (child of llm)
 pre_tool_call            open  tool.{name}       (child of api or llm)
 subagent_start           open  subagent.{role}   (child of api or llm)
-post_tool_call           close tool.{name}
+transform_terminal_output  attrs tool.terminal   (raw output size, return code, env type; returns None)
+post_tool_call           close tool.{name}       + result size, terminal truncation
 post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
 post_llm_call            close llm.{model}
+transform_llm_output     attr  agent/cron        (final response size; returns None)
 subagent_stop            close subagent.{role}   + status + duration + metrics
 pre_approval_request     open  approval.{pattern} (child of api/turn; → gated tool)
 post_approval_response   close approval.{pattern} + choice + wait duration + metrics

@@ -688,3 +688,51 @@ def is_usage_key(key: str) -> bool:
 def without_usage_keys(attrs: Mapping[str, Any]) -> Dict[str, Any]:
     """``attrs`` minus the token-usage attributes; everything else kept as is."""
     return {k: v for k, v in attrs.items() if not is_usage_key(k)}
+
+
+def char_count(value: Any) -> Optional[int]:
+    """Length in characters of a hook payload value; ``None`` for ``None``.
+
+    Strings count as they are; anything else counts its ``str()`` form, so a
+    structured result still yields a size instead of raising.
+    """
+    if value is None:
+        return None
+    if isinstance(value, str):
+        return len(value)
+    try:
+        return len(str(value))
+    except Exception:  # pragma: no cover - defensive
+        return None
+
+
+# Hermes' head+tail limit leaves this notice inside the kept text
+# (``tools/tool_output_truncate.truncation_notice``); the capture-window spill
+# path instead adds ``output_total_chars`` next to ``output`` in the result.
+_TRUNCATION_NOTICE = re.compile(
+    r"\[[A-Z]+ TRUNCATED - ([\d,]+) [a-z]+ omitted out of ([\d,]+) total\]"
+)
+
+
+def terminal_truncation(result: Mapping[str, Any]) -> Tuple[bool, Optional[int]]:
+    """``(truncated, dropped_chars)`` from a terminal tool's result envelope.
+
+    Reads only what Hermes itself records about its output limits: the
+    ``output_total_chars`` field the capture-window spill adds, or the
+    ``[OUTPUT TRUNCATED - N chars omitted out of M total]`` notice the
+    head+tail limit writes into the kept text. Whitespace stripping, ANSI
+    removal and redaction also shrink the output, so a bare size comparison
+    would call those truncation; this never does.
+    """
+    output = result.get("output")
+    output_str = output if isinstance(output, str) else ("" if output is None else str(output))
+    total = result.get("output_total_chars")
+    if isinstance(total, int) and not isinstance(total, bool):
+        return True, max(total - len(output_str), 0)
+    m = _TRUNCATION_NOTICE.search(output_str)
+    if m:
+        try:
+            return True, int(m.group(1).replace(",", ""))
+        except ValueError:  # pragma: no cover - the regex only admits digits
+            return True, None
+    return False, None

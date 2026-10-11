@@ -166,6 +166,9 @@ class SessionState:
         self._lock = threading.RLock()
         self._sessions: Dict[str, PerSession] = {}
         self._tool_times: Dict[str, float] = {}
+        # Raw terminal output size per tool key, recorded by the
+        # transform_terminal_output observer and read back in post_tool_call.
+        self._tool_output_chars: Dict[str, int] = {}
         # Turn counters outlive the per-turn PerSession (which on_session_end
         # pops), so continuation turns keep counting: session_id -> last turn.
         self._turn_counters: "OrderedDict[str, int]" = OrderedDict()
@@ -308,6 +311,14 @@ class SessionState:
     def has_tool_start(self, key: str) -> bool:
         with self._lock:
             return key in self._tool_times
+
+    def record_tool_output_chars(self, key: str, chars: int) -> None:
+        with self._lock:
+            self._tool_output_chars[key] = chars
+
+    def pop_tool_output_chars(self, key: str) -> Optional[int]:
+        with self._lock:
+            return self._tool_output_chars.pop(key, None)
 
     # ── Bulk reset (used by tests via singleton re-creation) ─────────────
 

@@ -41,3 +41,5 @@ provides_hooks:
   - subagent_stop
   - pre_approval_request
   - post_approval_response
+  - transform_terminal_output
+  - transform_llm_output

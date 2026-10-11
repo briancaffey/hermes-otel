@@ -10,6 +10,7 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import (
     FAILURE_OUTCOMES,
+    char_count,
     classify_block_provenance,
     detect_skill,
     extract_tool_result_status,
@@ -17,6 +18,7 @@ from ..helpers import (
     resolve_skill_dir,
     resolve_tool_identity,
     serialize_full,
+    terminal_truncation,
     truncate_string,
 )
 from ._common import (
@@ -242,6 +244,22 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         attributes.update(_tool_host_utilization_attributes(tracer, start_time, ended_at))
 
     result_json = _parse_result(result)
+
+    # Size of the result the model will see (#33). For the terminal tool the
+    # transform_terminal_output observer recorded the raw output size; whether
+    # Hermes' output limit then cut it is read from Hermes' own markers.
+    result_chars = char_count(result)
+    if result_chars is not None:
+        attributes["hermes.tool.result.chars"] = result_chars
+    raw_chars = tracer.sessions.pop_tool_output_chars(key)
+    truncated, dropped = terminal_truncation(result_json)
+    if raw_chars is not None or truncated:
+        # Only Hermes' own record of its limits counts: whitespace stripping,
+        # ANSI removal and redaction also shrink the output, so a bare
+        # raw-vs-kept comparison would report those as truncation.
+        attributes["hermes.terminal.output.truncated"] = truncated
+        if truncated and dropped:
+            attributes["hermes.terminal.output.dropped_chars"] = dropped
 
     # Determine outcome taxonomy (see _resolve_tool_outcome for the rules).
     outcome = _resolve_tool_outcome(kwargs.get("status"), result_json)

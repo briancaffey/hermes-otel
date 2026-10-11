@@ -23,6 +23,7 @@ Modules:
 * ``llm``          — ``pre/post_llm_call``, ``pre/post_api_request``, ``api_request_error``
 * ``subagent``     — ``subagent_start`` / ``subagent_stop``
 * ``propagation``  — W3C ``traceparent`` (``get_current_traceparent``, ``mcp_request_headers``)
+* ``transforms``   — observers on ``transform_terminal_output`` / ``transform_llm_output``
 """
 
 from __future__ import annotations
@@ -80,6 +81,7 @@ from .tools import (
     on_post_tool_call,
     on_pre_tool_call,
 )
+from .transforms import on_transform_llm_output, on_transform_terminal_output
 from .usage import (
     _USAGE_FIELDS,
     _genai_metric_dims,
@@ -109,4 +111,6 @@ __all__ = [
     "on_session_start",
     "on_subagent_start",
     "on_subagent_stop",
+    "on_transform_llm_output",
+    "on_transform_terminal_output",
 ]
