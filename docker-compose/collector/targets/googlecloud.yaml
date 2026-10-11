@@ -1,0 +1,19 @@
+# Google Cloud: Cloud Trace, Cloud Monitoring and Cloud Logging through the
+# googlecloud exporter (beta: traces, metrics, logs). Auth is Application
+# Default Credentials: the compose file mounts GCP_CREDENTIALS_FILE (a
+# service-account JSON) at /etc/otelcol/gcp-credentials.json and sets
+# GOOGLE_APPLICATION_CREDENTIALS to it; GOOGLE_CLOUD_PROJECT names the
+# project. Documented, not verified: this target needs a GCP project.
+exporters:
+  googlecloud:
+    project: ${env:GOOGLE_CLOUD_PROJECT}
+    log:
+      default_log_name: hermes-otel
+service:
+  pipelines:
+    traces:
+      exporters: [googlecloud]
+    metrics:
+      exporters: [googlecloud]
+    logs:
+      exporters: [googlecloud]

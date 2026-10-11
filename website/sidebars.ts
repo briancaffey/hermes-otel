@@ -41,6 +41,7 @@ const sidebars: SidebarsConfig = {
         'backends/openobserve',
         'backends/parseable',
         'backends/viewers',
+        'backends/collector',
         'backends/honeycomb',
         'backends/weave',
         'backends/elastic',

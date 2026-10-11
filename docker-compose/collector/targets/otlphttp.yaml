@@ -1,0 +1,17 @@
+# Forward everything, unchanged, to another OTLP/HTTP backend: one of the
+# stacks in this directory (OTLP_TARGET_ENDPOINT=http://host.docker.internal:<port>)
+# or a vendor. The exporter appends /v1/traces, /v1/metrics and /v1/logs to
+# the base URL. For a backend that wants a header, copy this file and add
+#   headers: {Authorization: "Bearer ${env:MY_TOKEN}"}
+# under the exporter (env substitution works in values, not in header names).
+exporters:
+  otlp_http:
+    endpoint: ${env:OTLP_TARGET_ENDPOINT}
+service:
+  pipelines:
+    traces:
+      exporters: [otlp_http]
+    metrics:
+      exporters: [otlp_http]
+    logs:
+      exporters: [otlp_http]

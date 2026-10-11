@@ -1,0 +1,31 @@
+# AWS: X-Ray for traces (awsxray, beta), CloudWatch for metrics as Embedded
+# Metric Format (awsemf, beta) and for logs (awscloudwatchlogs, alpha). All
+# three sign with SigV4 from the SDK's usual environment (AWS_REGION,
+# AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN, or a mounted
+# ~/.aws profile), which a static-header exporter in the plugin cannot do.
+# X-Ray needs 128-bit trace ids whose first 32 bits are a recent epoch
+# timestamp; the OTel SDK's random ids are accepted by the exporter, which
+# rewrites them. Documented, not verified: this target needs an AWS account.
+exporters:
+  awsxray:
+    region: ${env:AWS_REGION}
+    index_all_attributes: true
+  awsemf:
+    region: ${env:AWS_REGION}
+    log_group_name: ${env:AWS_LOG_GROUP}
+    log_stream_name: metrics
+    namespace: hermes-otel
+    resource_to_telemetry_conversion:
+      enabled: true
+  awscloudwatchlogs:
+    region: ${env:AWS_REGION}
+    log_group_name: ${env:AWS_LOG_GROUP}
+    log_stream_name: logs
+service:
+  pipelines:
+    traces:
+      exporters: [awsxray]
+    metrics:
+      exporters: [awsemf]
+    logs:
+      exporters: [awscloudwatchlogs]

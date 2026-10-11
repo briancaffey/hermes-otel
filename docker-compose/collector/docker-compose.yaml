@@ -1,0 +1,82 @@
+# A generic OpenTelemetry Collector in front of hermes-otel: for the backends
+# the plugin cannot reach with a static header (signed or exchanged auth), and
+# for "see what the plugin sends" with nothing else running.
+#
+# One container: otel/opentelemetry-collector-contrib (pinned). The plugin
+# exports OTLP/HTTP to it with the generic `type: otlp`; the Collector's
+# TARGET decides where the three signals go:
+#
+#   COLLECTOR_TARGET=debug         (default) print every span, metric and log
+#                                  record to `docker logs` — nothing else needed
+#   COLLECTOR_TARGET=otlphttp      forward to any OTLP/HTTP backend (one of the
+#                                  stacks in this directory, or a vendor)
+#   COLLECTOR_TARGET=azuremonitor  Azure Monitor / Application Insights (#228)
+#   COLLECTOR_TARGET=aws           AWS X-Ray (traces) + CloudWatch (metrics as
+#                                  EMF, logs) with SigV4 from the usual AWS env
+#   COLLECTOR_TARGET=googlecloud   Google Cloud Trace / Monitoring / Logging
+#
+# Each target is one file under targets/ merged on top of otelcol-config.yaml
+# (the Collector accepts several --config flags; later files override the
+# pipelines' exporter lists). The target's credentials come from the
+# environment: see targets/<name>.yaml and README.md.
+#
+# Usage:
+#   docker compose -f docker-compose/collector/docker-compose.yaml up -d
+#   docker logs -f hermes-otel-collector                 # the debug target prints here
+#   COLLECTOR_TARGET=otlphttp OTLP_TARGET_ENDPOINT=http://host.docker.internal:4428 \
+#     docker compose -f docker-compose/collector/docker-compose.yaml up -d
+#   docker compose -f docker-compose/collector/docker-compose.yaml down
+#
+# Ports (host side; override with the env vars):
+#   4448   OTLP/HTTP  /v1/traces /v1/metrics /v1/logs   COLLECTOR_OTLP_PORT   ← plugin exports here
+#   13133  health_check extension  GET /                 COLLECTOR_HEALTH_PORT
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: otlp
+#       name: collector
+#       endpoint: http://localhost:4448/v1/traces
+#       metrics: true
+#       logs: true
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:${COLLECTOR_VERSION:-0.162.0}
+    container_name: hermes-otel-collector
+    restart: unless-stopped
+    command:
+      - --config=/etc/otelcol/config.yaml
+      - --config=/etc/otelcol/targets/${COLLECTOR_TARGET:-debug}.yaml
+    environment:
+      # Bind address inside the container; override to bind one interface.
+      OTEL_BIND_HOST: 0.0.0.0
+      # debug target: basic | normal | detailed (detailed prints every attribute)
+      COLLECTOR_DEBUG_VERBOSITY: ${COLLECTOR_DEBUG_VERBOSITY:-normal}
+      # otlphttp target: the backend's base URL (the exporter appends /v1/<signal>);
+      # host.docker.internal reaches the stacks on this machine.
+      OTLP_TARGET_ENDPOINT: ${OTLP_TARGET_ENDPOINT:-http://host.docker.internal:4318}
+      # azuremonitor target
+      APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
+      # aws target (the SDK's own variables; a profile needs ~/.aws mounted too)
+      AWS_REGION: ${AWS_REGION:-us-east-1}
+      AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
+      AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
+      AWS_SESSION_TOKEN: ${AWS_SESSION_TOKEN:-}
+      AWS_LOG_GROUP: ${AWS_LOG_GROUP:-hermes-otel}
+      # googlecloud target (a service-account JSON mounted below)
+      GOOGLE_CLOUD_PROJECT: ${GOOGLE_CLOUD_PROJECT:-}
+      GOOGLE_APPLICATION_CREDENTIALS: /etc/otelcol/gcp-credentials.json
+    volumes:
+      - ./otelcol-config.yaml:/etc/otelcol/config.yaml:ro
+      - ./targets:/etc/otelcol/targets:ro
+      # googlecloud target: point GCP_CREDENTIALS_FILE at a service-account key.
+      - ${GCP_CREDENTIALS_FILE:-/dev/null}:/etc/otelcol/gcp-credentials.json:ro
+    ports:
+      - "${COLLECTOR_OTLP_PORT:-4448}:4318"
+      - "${COLLECTOR_HEALTH_PORT:-13133}:13133"
+    # The image is distroless (no shell, no curl); check from the host:
+    #   curl -s -o /dev/null -w '%{http_code}' http://localhost:13133/   → 200

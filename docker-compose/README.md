@@ -60,6 +60,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Langtrace](langtrace/) | 3 | :3040 | partial | ❌ | ❌ | `otlp` | evaluating #224 only (AGPL, stale, drops bool/double attrs) |
 | [Sigiro](sigiro/) | 1 | SQL :9999 | ✅ | ✅ | ✅ | `otlp` | scripted SQL checks; closed-source binary |
 | [Maple Local](maple/) | 1 | :4388 | ✅ | ✅ | ✅ | `otlp` | single binary with UI + SQL; FSL licence |
+| [OpenTelemetry Collector](collector/) | 1 | logs / :13133 | ✅ | ✅ | ✅ | `otlp` | the destination needs signed auth (Azure Monitor, AWS, Google Cloud) or you want the raw export printed; `COLLECTOR_TARGET` |
 | [otel-desktop-viewer](otel-desktop-viewer/) | 1 | :3070 | ✅ | ✅ | ✅ | `otlp` | the lightest browser UI (DuckDB, JSON-RPC); otel-tui's `docker run` line is in the same README |
 | [Latitude](latitude/) | 13 | :3000 | ✅ | ❌ | ❌ | `latitude` | you have ~15 GB of disk and a reason (#230) |
 
@@ -134,6 +135,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 4418 | aspire | OTLP/HTTP (upstream 18890) |
 | 4428 | otel-desktop-viewer | OTLP/HTTP |
 | 4438 | otel-tui | OTLP/HTTP (`docker run`, no compose file) |
+| 4448 | collector | OTLP/HTTP into the generic Collector (`COLLECTOR_TARGET`) |
 | 5001 | mlflow | UI + OTLP/HTTP |
 | 5080, 5081 | openobserve | UI + OTLP/HTTP, OTLP/gRPC |
 | 5173 | opik | UI + API |
@@ -151,6 +153,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 10428 | victoria | VictoriaTraces: OTLP, Jaeger API, vmui |
 | 9090 | lgtm | Prometheus |
 | 9411 | zipkin | UI + API v2 + OTLP/HTTP (one port) |
+| 13133 | collector | `health_check` extension |
 | 9999 | sigiro | SQL query API |
 | 14317, 14318 | uptrace | OTLP gRPC / UI + OTLP HTTP |
 | 14319 | elastic | EDOT Collector OTLP/HTTP |

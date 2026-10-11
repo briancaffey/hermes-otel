@@ -1,0 +1,22 @@
+# Azure Monitor / Application Insights (#228). The plugin cannot reach Azure
+# directly (the OTLP endpoints want a Microsoft Entra bearer token), so the
+# contrib Collector's azure_monitor exporter (beta: traces, metrics, logs)
+# sends with the Application Insights connection string instead:
+#   APPLICATIONINSIGHTS_CONNECTION_STRING="InstrumentationKey=…;IngestionEndpoint=https://…"
+# Application Insights expects DELTA temporality for metrics; the plugin emits
+# cumulative, so the metrics pipeline converts. Documented, not verified: this
+# target needs an Azure subscription.
+processors:
+  cumulative_to_delta:
+exporters:
+  azure_monitor:
+    connection_string: ${env:APPLICATIONINSIGHTS_CONNECTION_STRING}
+service:
+  pipelines:
+    traces:
+      exporters: [azure_monitor]
+    metrics:
+      processors: [memory_limiter, cumulative_to_delta, batch]
+      exporters: [azure_monitor]
+    logs:
+      exporters: [azure_monitor]

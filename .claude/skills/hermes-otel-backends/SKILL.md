@@ -32,6 +32,7 @@ map, disk/memory budget, the test loop).
 | **SigNoz** | traces + metrics + logs | http://localhost:3301 | full APM, but a heavy multi-container stack |
 | **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
 | **Agenta** | traces | http://localhost:3060 (account from `agenta/mint-api-key.sh`: hermes@example.com / HermesOtel-local-1) | `type: agenta` + `api_key_env` (ApiKey header); 11 containers ~2 GB; async ingest; adapter reads `/api/spans/query` |
+| **OpenTelemetry Collector** (`collector/`) | traces + metrics + logs | `docker logs -f hermes-otel-collector` (debug target), health :13133 | generic `type: otlp` at `:4448`; `COLLECTOR_TARGET=debug\|otlphttp\|azuremonitor\|aws\|googlecloud`; the plugin only sees the Collector's 200 |
 | **otel-desktop-viewer / otel-tui** | traces + metrics + logs | http://localhost:3070 (no login) / `docker attach hermes-otel-otel-tui` | generic `type: otlp` at `:4428` / `:4438`; the lightest viewers (~105 MB / ~30 MB resident); otel-tui is a `docker run -d -i -t` line in the viewer's README |
 | **Gigapipe (qryn)** | traces + metrics + logs | http://localhost:3110 (qryn-view, no login) | `type: gigapipe`; one port for OTLP and the Tempo/Prometheus/Loki APIs; the LGTM adapter reads it; cumulative metrics only |
 | **Aspire Dashboard** | traces + metrics + logs | http://localhost:18888 (no login) | `type: aspire`; read API `/api/telemetry/*` (OTLP JSON, no time filters) for traces + logs; metrics in the UI only; exp. histograms rejected |
@@ -173,6 +174,7 @@ docker rm -f hermes-otel-openobserve hermes-otel-lgtm                        # b
 | jaeger / tempo | no | `:4318/v1/traces` / `:4358/v1/traces` | ❌ | ❌ | traces only |
 | jaeger-v2 | no | `:4368/v1/traces` | ❌ | ❌ | read API is `/api/v3/...` only |
 | agenta | no | `:3060/api/otlp/v1/traces` (the type appends it) | ❌ 404 | ❌ 404 | `type: agenta`; protobuf only; key from `mint-api-key.sh`; spans appear a few seconds after export |
+| collector | no | `:4448/v1/traces` | ✅ | ✅ | `type: otlp`; `COLLECTOR_TARGET` picks the exporter (default prints to `docker logs`); `OTLP_TARGET_ENDPOINT=http://host.docker.internal:<port>` forwards to another stack; cloud targets documented, not verified |
 | otel-desktop-viewer | no | `:4428/v1/traces` | ✅ | ✅ | `type: otlp`; UI :3070; JSON-RPC `POST /rpc` with named params, times in ns; no `/export`, no SQL in v0.5.0 |
 | otel-tui | n/a (`docker run -d -i -t … -p 4438:4318 ymtdzzz/otel-tui`) | `:4438/v1/traces` | ✅ | ✅ | `type: otlp`; TTY only (`docker attach`); memory only; metrics rows repeat per export batch |
 | gigapipe | no | `:3110/v1/traces` | ✅ | ✅ | `type: gigapipe`; PromQL range-vector instant queries answer empty (adapter uses query_range); Loki labels only, no logger |

@@ -1,0 +1,12 @@
+# Default target: nothing beyond the base file. Every span, metric data point
+# and log record the plugin sends is printed to the container's stdout
+# (`docker logs -f hermes-otel-collector`). COLLECTOR_DEBUG_VERBOSITY=detailed
+# prints every attribute; `normal` prints one line per item.
+service:
+  pipelines:
+    traces:
+      exporters: [debug]
+    metrics:
+      exporters: [debug]
+    logs:
+      exporters: [debug]

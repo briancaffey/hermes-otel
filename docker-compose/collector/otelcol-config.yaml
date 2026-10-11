@@ -1,0 +1,45 @@
+# Base configuration: the plugin's three pipelines into the `debug` exporter.
+# A file under targets/ is merged on top of this one (second --config flag)
+# and replaces each pipeline's exporter list with its own.
+
+extensions:
+  health_check:
+    endpoint: ${env:OTEL_BIND_HOST}:13133
+
+receivers:
+  otlp:
+    protocols:
+      http:
+        # Set to 0.0.0.0 by the compose service; override to bind one interface.
+        endpoint: ${env:OTEL_BIND_HOST}:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_mib: 256
+    spike_limit_mib: 64
+  batch:
+    timeout: 1s
+
+exporters:
+  debug:
+    verbosity: ${env:COLLECTOR_DEBUG_VERBOSITY}
+
+service:
+  extensions: [health_check]
+  telemetry:
+    metrics:
+      level: none
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [debug]

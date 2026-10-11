@@ -64,6 +64,7 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | telemetry.dev | `otlp` | std on `ingest.telemetry.dev` | SaaS | generic; derived |
 | Langtrace | `otlp` | custom `/api/trace` (no `/v1/`) | ingest and UI share :3040 | generic, URL used verbatim; derivation does not apply |
 | Sigiro | `otlp` | std :4378 (gRPC :4377) | SQL API :9999, no UI | generic; derived |
+| OpenTelemetry Collector (`collector/`) | `otlp` | std :4448 (upstream 4318); health :13133 | the destination is the Collector's `COLLECTOR_TARGET` (debug, otlphttp, azuremonitor, aws, googlecloud) | generic; derived; one hop removed (the plugin only sees the Collector's 200) |
 | otel-desktop-viewer | `otlp` | std :4428 (upstream 4318) | UI + JSON-RPC :3070 (upstream 8000) | generic; derived |
 | otel-tui | `otlp` | std :4438 (upstream 4318) | no UI port: a TTY (`docker attach`) | generic; derived |
 | Maple Local | `otlp` | std :4388 | ingest and UI share :4388 | generic; derived |
@@ -103,6 +104,7 @@ is the one backend that refuses protobuf, hence its collector.
 | Langtrace | `x-api-key` via `headers` | yes | UI, or the NextAuth curl recipe in its README |
 | Sigiro, Maple | none | no | none |
 | otel-desktop-viewer | none | no | none |
+| OpenTelemetry Collector | none on the plugin side; the target's exporter signs (Entra via connection string, SigV4, OAuth) from the container's environment | no | the cloud account |
 | otel-tui | none by default; `Authorization: Bearer` when `AUTH_TOKEN` is set | no | the env var you set |
 
 Five different spellings of "here is my key" on the `Authorization` header
@@ -191,6 +193,7 @@ because the plugin's debug log only sees the HTTP status.
 | telemetry.dev | yes | yes | yes | — | generic `otlp`: all on |
 | Langtrace | partial | no | no | not served | generic `otlp`: set `metrics: false`, `logs: false` on the entry |
 | Sigiro, Maple | yes | yes | yes | — | generic `otlp`: all on |
+| OpenTelemetry Collector | yes | yes | yes | per target: `awscloudwatchlogs` is alpha; the Collector's 200 says nothing about the target | generic `otlp`: all on |
 | otel-desktop-viewer, otel-tui | yes | yes | yes | — (otel-tui: no exponential histograms, which the plugin does not emit) | generic `otlp`: all on |
 
 Three failure modes, one of them invisible: a 404/405 you can see in the
@@ -220,6 +223,7 @@ installed, so one-shot runs export all three signals (logs only since 1.24.0).
 | VictoriaMetrics | cumulative natively; delta stored as-is since v1.132 | cumulative | converted to `vmrange` histograms | **a server flag**: with `-opentelemetry.usePrometheusNaming` (the bundled stack) `hermes_token_usage_total` / `…_seconds_sum`; without it the dotted OTel names "as is"; every resource attribute promoted to a label by default |
 | ClickStack | either, stored as sent by the ClickHouse exporter | cumulative | stored (`otel_metrics_exponential_histogram`) | **dotted** OTel names kept (`hermes.token.usage`); one table per type (`otel_metrics_sum` / `_gauge` / `_histogram` with `Count` + `Sum`), `TimeUnix` in seconds, `Attributes` map with the original keys |
 | GreptimeDB | either, stored as sent (no conversion) | cumulative | **rejected** ("not supported yet") | one table per metric in Prometheus spelling (`hermes_token_usage_total`, `…_seconds_sum` / `_count` / `_bucket`), `greptime_timestamp` ms + `greptime_value`, one TAG column per label |
+| OpenTelemetry Collector | per target: Application Insights wants **delta**, so `azuremonitor` runs `cumulative_to_delta`; AWS and Google Cloud take cumulative | cumulative | — | per target |
 | Parseable, generic `otlp`, Sigiro, Maple, otel-desktop-viewer, otel-tui | whatever the collector / store does | cumulative | Sigiro has an `exp_histogram` table | — |
 | Datadog, New Relic, Logfire (generic `otlp`) | **delta required** (Datadog rejects cumulative sums; Logfire dashboards stay empty; New Relic prefers delta) | none yet (#232): set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them | — |
 | LangWatch | stored (73 metric points from one turn, 2026-10) | cumulative | — | — |
@@ -376,6 +380,7 @@ healthy is from the folder READMEs.
 | Latitude | 13 | — | ~2 min after an ~18 GB pull | magic-link sign-in via Mailpit; create project; copy key | ships its **own** Hermes plugin: running both double-traces every turn | MIT |
 | Langtrace | 3 | ~780 MB | — | login `admin@langtrace.ai` | upstream ClickHouse healthcheck on `localhost` resolves to `::1` and never passes; 4.45 GB image; last release 2025-04 | AGPL-3.0 |
 | Sigiro | 1 | 76 MB | seconds | none | closed source, `latest` only | proprietary |
+| OpenTelemetry Collector | 1 | ~40 MB | ~1 s | pick `COLLECTOR_TARGET` (default prints to `docker logs`) | distroless image (health from the host); `${env:}` works in values only, so a custom header name is a copied target | Apache-2.0 |
 | otel-desktop-viewer | 1 | ~105 MB | ~1 s | none | the image's CMD is in-memory; the folder adds `--db` on a volume. No shell or curl in the image (healthcheck from the host) | Apache-2.0 |
 | otel-tui | 1 (`docker run -d -i -t`, no compose) | ~30 MB | seconds | `docker attach` | needs a TTY and an open stdin; no ENTRYPOINT (`/otel-tui`) | Apache-2.0 |
 | Maple Local | 1 | ~340 MB | seconds (`up -d --build`) | none | built from a release tarball; needs `libchdb.so` beside the binary | FSL-1.1 (source-available) |
@@ -635,6 +640,13 @@ Format: **quirk** → treatment (issue).
 - Custom path `/api/trace`, `x-api-key` → `type: otlp` with the full URL and `headers`; URL derivation does not apply, so `metrics: false`, `logs: false`.
 - **Drops bool and double attributes**, reads only `resourceSpans[0]` of a batch → documented as "partial"; not promoted to a type (#224). AGPL-3.0, stale (last release 2025-04), 4.45 GB image.
 - Upstream ClickHouse healthcheck on `localhost` resolves to `::1` and never passes → `127.0.0.1` in the compose.
+
+### OpenTelemetry Collector (`collector/`, generic `otlp`, #368)
+- Azure Monitor, AWS and Google Cloud want signed or exchanged auth a static-header exporter cannot produce → one contrib Collector (0.162.0) in front, `type: otlp` at `:4448`, `COLLECTOR_TARGET` picks the exporter file merged as a second `--config` (debug, otlphttp, azuremonitor, aws, googlecloud); all five validate, the first two verified with real turns, the cloud ones documented until there are accounts.
+- The plugin is one hop removed → its `debug.log` only ever records the Collector's 200; exporter errors, retries and drops live in `docker logs hermes-otel-collector`.
+- Application Insights expects delta metrics → the `azuremonitor` target runs `cumulative_to_delta` on the metrics pipeline (the plugin emits cumulative).
+- `${env:X}` substitution works in values, not in header names → a target with a custom header is a copied file.
+- Verified 2026-10-11: `debug` printed Traces batches of 4 + 1 spans, a Metrics batch of 24 metrics and every log record's resource, scope and body; `otlphttp` into otel-desktop-viewer added 1 trace / 5 spans, 26 log records and 74 data points from one turn; ~40 MB resident.
 
 ### otel-desktop-viewer and otel-tui (generic `otlp`, #367)
 - Both are stock OTLP/HTTP receivers without auth → `type: otlp` with the full `/v1/traces` URL, metrics and logs derived and on; one container (viewer) or one `docker run -d -i -t` (otel-tui, which only works attached to a terminal, so no compose file).
