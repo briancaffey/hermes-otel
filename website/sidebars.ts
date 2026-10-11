@@ -31,6 +31,7 @@ const sidebars: SidebarsConfig = {
         'backends/greptime',
         'backends/clickstack',
         'backends/victoria',
+        'backends/aspire',
         'backends/tempo',
         'backends/otlp',
         'backends/lgtm',

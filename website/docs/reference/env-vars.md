@@ -29,6 +29,8 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 | `OTEL_CLICKSTACK_ENDPOINT` | URL | ClickStack Collector OTLP/HTTP base (`http://localhost:4408` for the bundled stack); with a key, enables ClickStack in env-var mode |
 | `OTEL_CLICKSTACK_API_KEY` | string | ClickStack ingestion API key (bare `authorization` header); required |
 | `HYPERDX_API_KEY` | string | ClickStack / HyperDX key fallback (the vendor SDK's variable); does not enable export on its own |
+| `OTEL_ASPIRE_ENDPOINT` | URL | Aspire Dashboard OTLP/HTTP base (`http://localhost:4418` for the bundled stack); enables Aspire in env-var mode |
+| `OTEL_ASPIRE_API_KEY` | string | Aspire OTLP API key (`x-otlp-api-key`); only with `DASHBOARD__OTLP__AUTHMODE=ApiKey`; never enables export on its own |
 | `OTEL_VICTORIA_ENDPOINT` | URL | VictoriaTraces origin (`http://localhost:10428`; OTLP at `/insert/opentelemetry/v1/traces`); enables the Victoria type in env-var mode |
 | `OTEL_VICTORIA_METRICS_ENDPOINT` | URL | VictoriaMetrics origin (`http://localhost:8428`; OTLP at `/opentelemetry/v1/metrics`); metrics are off without it |
 | `OTEL_VICTORIA_LOGS_ENDPOINT` | URL | VictoriaLogs origin (`http://localhost:9428`; OTLP at `/insert/opentelemetry/v1/logs`); logs are off without it |

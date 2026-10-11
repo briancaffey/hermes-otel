@@ -314,6 +314,8 @@
 #   victoria     — VictoriaTraces + VictoriaMetrics + VictoriaLogs: `endpoint`,
 #                  `metrics_endpoint`, `logs_endpoint` name the three stores; a
 #                  signal whose store is not named is off.
+#   aspire       — .NET Aspire Dashboard (standalone). Traces + metrics + logs
+#                  on the standard paths; optional `api_key` → x-otlp-api-key.
 #   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
 #                  the full LGTM stack (Tempo + Loki + Mimir + collector).
 #   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
@@ -425,6 +427,10 @@
 #     # user: api
 #     # password: api
 #     # ui_url: http://localhost:3050
+#
+#   - type: aspire
+#     endpoint: http://localhost:4418         # OTLP/HTTP (18890 in the container)
+#     # query_port: 18888          # dashboard read path (the UI port)
 #
 #   - type: victoria
 #     endpoint: http://localhost:10428          # VictoriaTraces (/insert/opentelemetry/v1/traces)

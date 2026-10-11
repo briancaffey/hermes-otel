@@ -66,6 +66,7 @@ _LOGS_CAPABLE = {
     "greptime",
     "clickstack",
     "victoria",
+    "aspire",
 }
 
 # Backends that take traces and logs but silently drop metrics: Laminar's
@@ -100,6 +101,7 @@ _DISPLAY_NAMES = {
     "greptime": "GreptimeDB",
     "clickstack": "ClickStack",
     "victoria": "Victoria",
+    "aspire": "Aspire Dashboard",
 }
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
@@ -132,6 +134,7 @@ _ENV_PRIORITY = [
     "clickstack",
     "greptime",
     "victoria",
+    "aspire",
     "jaeger",
     "zipkin",
     "tempo",
@@ -664,6 +667,46 @@ def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
         supports_traces=_traces_for(bc.traces),
         supports_metrics=_metrics_for("victoria", bc.metrics) and metrics_url is not None,
         supports_logs=_logs_for("victoria", bc.logs) and logs_url is not None,
+    )
+
+
+def _resolve_aspire(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve a standalone .NET Aspire Dashboard (OTLP/HTTP, all three signals).
+
+    The dashboard takes OTLP on the standard ``/v1/traces``, ``/v1/metrics``
+    and ``/v1/logs`` paths of its OTLP/HTTP port (18890 upstream, 4418 in the
+    bundled stack); the UI and the read API live on another port (18888).
+    ``endpoint`` is required (no default host); a bare base URL gets the
+    ``/v1/traces`` suffix and the other two are derived from it.
+
+    Auth: none in anonymous mode (the bundled stack). With
+    ``DASHBOARD__OTLP__AUTHMODE=ApiKey`` the dashboard wants the key in an
+    ``x-otlp-api-key`` header: ``api_key`` / ``api_key_env`` (fallback
+    ``OTEL_ASPIRE_API_KEY``) fills it; omitted entirely when none resolves.
+
+    Signals: traces, metrics and logs all on. The dashboard stores Gauge, Sum
+    and Histogram points and **rejects exponential histograms** ("is not
+    supported"), so the plugin's default explicit-bucket histograms are what
+    it wants; no temporality preset.
+    """
+    ep = (bc.endpoint or os.getenv("OTEL_ASPIRE_ENDPOINT", "")).strip()
+    if not ep:
+        raise ValueError("aspire requires endpoint (or set OTEL_ASPIRE_ENDPOINT)")
+    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
+    ep = f"{ep}/v1/traces"
+    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ASPIRE_API_KEY"])
+    headers: Dict[str, str] = {}
+    if key:
+        headers["x-otlp-api-key"] = key
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="aspire",
+        endpoint=ep,
+        display_name=_display(bc, "aspire"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("aspire", bc.metrics),
+        supports_logs=_logs_for("aspire", bc.logs),
     )
 
 
@@ -1387,6 +1430,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
     "greptime": _resolve_greptime,
     "clickstack": _resolve_clickstack,
     "victoria": _resolve_victoria,
+    "aspire": _resolve_aspire,
     "tempo": _resolve_tempo,
     "otlp": _resolve_otlp,
     "lgtm": _resolve_lgtm,

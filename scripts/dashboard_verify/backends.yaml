@@ -64,6 +64,12 @@ types:
     ui: false           # vmui's TraceID mode has no documented deep link
     status_semantics: root
     quirks: VictoriaTraces Jaeger-compatible API under /select/jaeger (v1 grammar, every tag a string, error tag true/false); metrics through the Prometheus reader on VictoriaMetrics (Prometheus naming flag); logs through LogsQL NDJSON; status_ok and free_text are none; roots client-side
+  aspire:
+    metrics: false   # the read API has no metrics route (the UI alone shows them)
+    logs: true
+    ui: true
+    status_semantics: root
+    quirks: /api/telemetry/* answers OTLP JSON with no time window and only resource/limit/offset (+ traceId/search on logs) filters, so the adapter fetches a bounded page and applies window, filters, roots and cursor itself; .NET severity spellings mapped from severityNumber
   tempo:
     metrics: optional   # true when the entry sets prometheus_url
     logs: optional      # true when the entry sets loki_url (not "off")

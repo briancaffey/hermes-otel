@@ -165,6 +165,7 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
         "user": ("OTEL_VICTORIA_USER",),
         "password": ("OTEL_VICTORIA_PASSWORD",),
     },
+    "aspire": {"api_key": ("OTEL_ASPIRE_API_KEY",)},
     "mlflow": {
         "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
         "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
@@ -264,6 +265,8 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "clickstack": "proxied",
     # VictoriaTraces serves vmui on the port it ingests on (/select/vmui).
     "victoria": "origin",
+    # UI on 18888, OTLP on 18890 — origin only for a proxied hostname.
+    "aspire": "proxied",
     "signoz": "proxied",
     "tempo": "proxied",
     "lgtm": "proxied",
@@ -714,6 +717,12 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
         "Basic auth user for the Victoria stores (only with -httpAuth.*)",
     ),
     ("OTEL_VICTORIA_PASSWORD", "backend", "Basic auth password for the Victoria stores"),
+    ("OTEL_ASPIRE_ENDPOINT", "backend", "Single-backend mode: Aspire Dashboard OTLP/HTTP base"),
+    (
+        "OTEL_ASPIRE_API_KEY",
+        "backend",
+        "Aspire Dashboard OTLP API key (x-otlp-api-key); only in ApiKey auth mode",
+    ),
     ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
     ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
     ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),

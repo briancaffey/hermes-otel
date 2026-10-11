@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
@@ -195,6 +195,20 @@ See [ClickStack](/backends/clickstack).
 | `metrics_match`, `service_name` | string | Dashboard read path: a PromQL series selector for the metric list; the service every trace search names |
 
 See [VictoriaMetrics family](/backends/victoria).
+
+#### `aspire`
+
+| Field | Type | Description |
+|---|---|---|
+| `endpoint` | string | **Required.** The Aspire Dashboard's OTLP/HTTP base, e.g. `http://localhost:4418` (bundled stack) or `http://<host>:18890`. Also via `OTEL_ASPIRE_ENDPOINT`. A base URL gets `/v1/traces`; the other two signals are derived |
+| `api_key` / `api_key_env` | string | Optional OTLP API key → `x-otlp-api-key` (fallback `OTEL_ASPIRE_API_KEY`); only with `DASHBOARD__OTLP__AUTHMODE=ApiKey`. The dashboard adapter sends the same value as `x-api-key` |
+| `metrics` / `logs` / `traces` | bool | Per-signal toggles; all three default **on** |
+| `query_port` | int | Dashboard read path: the UI port serving `/api/telemetry/*` (default `18888`) |
+| `ui_url` | string | Dashboard read path: the UI origin for the `/traces/detail/{traceId}` link (default: the query URL) |
+| `search_fetch`, `logs_fetch` | int | Dashboard read path: traces and log records fetched per query before the window and filters are applied client-side (defaults `500`, `5000`) |
+| `service_name` | string | Dashboard read path: the service whose Aspire resources (one per Hermes process, resolved through `/api/telemetry/resources`) the API is asked for (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
+
+See [Aspire Dashboard](/backends/aspire).
 
 #### `tempo`
 

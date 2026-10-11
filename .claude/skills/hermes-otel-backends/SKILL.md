@@ -31,6 +31,7 @@ map, disk/memory budget, the test loop).
 | **Phoenix** | traces only | http://localhost:6006 | LLM-span inspection, OpenInference panels |
 | **SigNoz** | traces + metrics + logs | http://localhost:3301 | full APM, but a heavy multi-container stack |
 | **Jaeger / Tempo** | traces only | :16686 / :3020 (Grafana) | trace-only quick looks; `jaeger-v2/` for the v2 API (#245) |
+| **Aspire Dashboard** | traces + metrics + logs | http://localhost:18888 (no login) | `type: aspire`; read API `/api/telemetry/*` (OTLP JSON, no time filters) for traces + logs; metrics in the UI only; exp. histograms rejected |
 | **VictoriaMetrics family** | traces + metrics + logs | vmui on :10428 /select/vmui, :9428 /select/vmui/, :8428 /vmui (no login) | `type: victoria` with `endpoint` + `metrics_endpoint` + `logs_endpoint`; Jaeger API `/select/jaeger`, Prometheus API, LogsQL `/select/logsql/query`; adapter reads all three; 30 s latency offset |
 | **ClickStack** | traces + metrics + logs | http://localhost:3050 (account from `clickstack/mint-api-key.sh`: hermes@example.com / HermesOtel-local-1) | `type: clickstack`; key = `mint-api-key.sh` output (bare `authorization` header); ClickHouse at `:8124` with `api`/`api`; adapter reads all three |
 | **GreptimeDB** | traces + metrics + logs | http://localhost:4398/dashboard (no login) | `type: greptime`; one container, SQL at `POST :4398/v1/sql?db=public` (`sql=` form field), PromQL under `/v1/prometheus`, Jaeger API under `/v1/jaeger`; adapter reads all three |
@@ -168,6 +169,7 @@ docker rm -f hermes-otel-openobserve hermes-otel-lgtm                        # b
 | signoz | no | `:4328/v1/traces` | ✅ | ✅ | OTLP remapped to 4328 to dodge 4318 |
 | jaeger / tempo | no | `:4318/v1/traces` / `:4358/v1/traces` | ❌ | ❌ | traces only |
 | jaeger-v2 | no | `:4368/v1/traces` | ❌ | ❌ | read API is `/api/v3/...` only |
+| aspire | no | `:4418/v1/traces` | ✅ | ✅ | `type: aspire`; `query_port: 18888`; volume on /home/app (app user); Resume persistence |
 | victoria | no | `:10428` traces, `:8428` metrics, `:9428` logs (the type appends the paths) | ✅ | ✅ | `type: victoria`; Prometheus naming flag set in the compose file; VictoriaLogs stream = service.name |
 | clickstack | no | `:4408/v1/traces` | ✅ | ✅ | `type: clickstack` + `api_key_env`; receivers appear only after the first account; ClickHouse `default` user is localhost-only, use `api`/`api` |
 | greptime | no | `:4398` (the type appends `/v1/otlp/v1/traces`) | ✅ | ✅ | `type: greptime`; traces need the pipeline header the type sends; metric tables in Prometheus spelling; host port 4398 because 4000 is usually taken |

@@ -38,6 +38,7 @@ is driven through the generic one with the headers shown in its folder.
 | [OpenObserve](openobserve/) | 1 | :5080 | ✅ | ✅ | ✅ | `openobserve` | all three signals, one container, no port conflicts — the safe default |
 | [Grafana LGTM](lgtm/) | 1 | :3000 | ✅ | ✅ | ✅ | `lgtm` | you want Grafana graphs (Tempo + Mimir + Loki in one image) |
 | [Jaeger v1](jaeger/) | 1 | :16686 | ✅ | ❌ | ❌ | `jaeger` | plain span tree; the dashboard adapter reads it |
+| [Aspire Dashboard](aspire/) | 1 | :18888 | ✅ | ✅ | ✅ | `aspire` | see a turn in seconds; GenAI visualizer; read API for traces + logs; ~75 MB |
 | [VictoriaMetrics family](victoria/) | 3 | :10428 / :9428 / :8428 (vmui) | ✅ | ✅ | ✅ | `victoria` | three single binaries, one entry; Jaeger + Prometheus + LogsQL reads; ~35 MB |
 | [ClickStack](clickstack/) | 1 | :3050 | ✅ | ✅ | ✅ | `clickstack` | ClickHouse's own stack (HyperDX), standard OTel tables; key from `mint-api-key.sh`; adapter reads all three |
 | [GreptimeDB](greptime/) | 1 | :4398 | ✅ | ✅ | ✅ | `greptime` | one open-source database, SQL over everything; the dashboard adapter reads all three signals |
@@ -124,6 +125,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 4388 | maple | UI + OTLP/HTTP |
 | 4398 | greptime | HTTP: OTLP (/v1/otlp), SQL, PromQL, Jaeger API, dashboard (upstream 4000) |
 | 4407, 4408 | clickstack | OTLP gRPC / HTTP (upstream 4317 / 4318) |
+| 4418 | aspire | OTLP/HTTP (upstream 18890) |
 | 5001 | mlflow | UI + OTLP/HTTP |
 | 5080, 5081 | openobserve | UI + OTLP/HTTP, OTLP/gRPC |
 | 5173 | opik | UI + API |
@@ -146,6 +148,7 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 14319 | elastic | EDOT Collector OTLP/HTTP |
 | 15602 | elastic | Kibana |
 | 16686, 16696 | jaeger, jaeger-v2 | UI |
+| 18888 | aspire | UI + read API |
 | 19201 | elastic | Elasticsearch API |
 
 Check with `lsof -nP -iTCP:<port> -sTCP:LISTEN` when a stack refuses to bind;

@@ -1,0 +1,58 @@
+# .NET Aspire Dashboard, standalone — one container that takes OTLP for traces,
+# metrics and logs and shows them in seconds. No account, no database to run.
+#
+# Upstream: github.com/microsoft/aspire (MIT), docs at aspire.dev/dashboard/standalone.
+# Image mcr.microsoft.com/dotnet/aspire-dashboard (13.6.1 on 2026-10-07).
+#
+# Usage:
+#   docker compose -f docker-compose/aspire/docker-compose.yaml up -d
+#   # UI:  http://localhost:18888   (no login: anonymous mode below)
+#   docker compose -f docker-compose/aspire/docker-compose.yaml down
+#   docker compose -f docker-compose/aspire/docker-compose.yaml down -v   # nuke data
+#
+# Ports (host side; override with the env vars):
+#   18888  dashboard UI + read API (/api/telemetry/*)          ASPIRE_UI_PORT
+#    4418  OTLP/HTTP (18890 in the container)  ← plugin exports here   ASPIRE_OTLP_HTTP_PORT
+#   OTLP/gRPC (18889) and the MCP endpoint (18891) stay inside the container.
+#
+# Point the plugin at it:
+#
+#   backends:
+#     - type: aspire
+#       endpoint: http://localhost:4418
+#       query_port: 18888                 # dashboard read path (the UI port)
+#   capture_logs: true
+#
+# Details and caveats: README.md in this folder; directory manual: docker-compose/README.md.
+
+services:
+  aspire:
+    image: mcr.microsoft.com/dotnet/aspire-dashboard:${ASPIRE_VERSION:-13.6.1}
+    container_name: hermes-otel-aspire
+    restart: unless-stopped
+    environment:
+      # No browser login token, no OTLP key, no API key: a laptop stack.
+      ASPIRE_DASHBOARD_UNSECURED_ALLOW_ANONYMOUS: "true"
+      # Keep telemetry across restarts (the default "None" deletes the SQLite
+      # database on a clean shutdown).
+      ASPIRE_DASHBOARD_PERSISTENCE_MODE: Resume
+      ASPIRE_DASHBOARD_APPLICATION_NAME: hermes-otel
+      # The image runs as the unprivileged `app` user, so the database lives
+      # under its home; the volume is mounted on the home so Docker seeds it
+      # with that user's ownership (a volume on a fresh path is root-owned and
+      # the dashboard dies with "Access to the path is denied").
+      ASPIRE_DASHBOARD_DATA_DIRECTORY: /home/app/data
+      # Upstream defaults: 100 000 logs and traces, 50 000 metric points per
+      # dimension, 128 attributes per item; raise here if a long session fills them.
+      DASHBOARD__TELEMETRYLIMITS__MAXTRACECOUNT: "100000"
+      DASHBOARD__TELEMETRYLIMITS__MAXLOGCOUNT: "100000"
+    ports:
+      - "${ASPIRE_UI_PORT:-18888}:18888"
+      - "${ASPIRE_OTLP_HTTP_PORT:-4418}:18890"
+    volumes:
+      - aspire_home:/home/app
+    # The image has no shell or curl (dotnet/aspire#3407), so Compose cannot
+    # health-check it; GET /health on the UI port answers "Healthy" from the host.
+
+volumes:
+  aspire_home:
