@@ -1,4 +1,5 @@
-# Laminar — agent observability platform (traces only over OTLP).
+# Laminar — agent observability platform (traces and logs over OTLP; metrics
+# are accepted with a 200 and dropped, so the plugin keeps them off).
 #
 # Adapted from the upstream "lite" compose file at
 #   github.com/lmnr-ai/lmnr/blob/main/docker-compose.yml

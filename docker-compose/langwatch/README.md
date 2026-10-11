@@ -56,9 +56,10 @@ docker exec hermes-otel-langwatch-clickhouse clickhouse-client --password langwa
 ## Caveats
 - **Slow first start**: about five minutes of ClickHouse migrations before the
   app answers; `docker compose ps` shows it `Up` the whole time.
-- Trace-level `prompt_tokens` double-counts (48 598 for a turn whose API calls
-  total 24 299) because the plugin's `agent` span carries the roll-up and
-  LangWatch sums every span, same as Opik.
+- The root's token roll-up is not sent to LangWatch (`root_usage: false` is
+  the preset for this type since 1.24, #327): LangWatch sums every span, same
+  as Opik, so trace-level `prompt_tokens` used to double (48 598 for a turn
+  whose API calls total 24 299).
 - Heavy: about 1.9 GB resident (app ≈ 0.75 GB, workers ≈ 0.65 GB, ClickHouse
   ≈ 0.5 GB, capped at 2 GB) and a 2.8 GB app image; upstream states 4 CPU /
   8 GB for the full stack.

@@ -79,7 +79,7 @@ sits on the UI port and requires authentication even when ingestion does not:
   - type: signoz
     endpoint: http://localhost:4328/v1/traces
     query_port: 3301                 # the SigNoz UI/API port (443 behind an HTTPS ingress)
-    api_key_env: SIGNOZ_API_KEY      # an API key from the SigNoz settings, sent as SIGNOZ-API-KEY
+    api_key_env: SIGNOZ_API_KEY      # a PAT (sent as SIGNOZ-API-KEY) or the session JWT (sent as Bearer)
 ```
 
 Metrics are read with the query builder (`/api/v4/query_range`): counters such

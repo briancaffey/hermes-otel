@@ -95,7 +95,7 @@ curl -s 'http://localhost:5173/api/v1/private/spans?project_name=hermes-agent&si
 
 ## Caveats
 
-- **Trace-level usage double-counts.** Opik sums usage over every span, and the plugin's `agent` span carries the turn's roll-up, so the trace shows twice the prompt tokens of its API calls (28 560 for a turn whose single API call used 14 280 in the verified run). Per-span numbers are right. Tracked in [#327](https://github.com/briancaffey/hermes-otel/issues/327).
+- **The root's token roll-up is not sent to Opik.** Opik sums usage over every span, and the plugin's `agent` span carries the turn's roll-up, so before 1.24 the trace showed twice the prompt tokens of its API calls (28 560 for a turn whose single API call used 14 280) and `total_estimated_cost` doubled the same way ([#327](https://github.com/briancaffey/hermes-otel/issues/327)). The `opik` type now defaults to `root_usage: false`: the exporter bound to this entry rebuilds the `agent` / `cron` span without `gen_ai.usage.*` / `llm.token_count.*` (`hermes.cost.*` and everything else stay), so Opik's trace totals equal the sum of the `api.*` spans. Every other backend in the same config still receives the roll-up. Set `root_usage: true` on the entry to send it anyway.
 - **Traces only.** `/metrics` and `/logs` under the OTLP prefix answer 404; token, tool and cost **metrics** need a second backend ([multi-backend](/backends/multi-backend)).
 - The bundled stack drops Opik's Python evaluator backend, guardrails and demo data; online evaluation rules that run Python need the upstream `python-backend`.
 - The [Hermes dashboard's OTel tab](/dashboard) has no query adapter for `opik`; use Opik's UI or its REST API.

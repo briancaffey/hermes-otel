@@ -113,10 +113,11 @@ them ignored) and the minimum duration is applied to the returned rows,
 because Tempo ignores `minDuration` next to a `q`.
 
 Prometheus renames OTLP instruments (`hermes.token.usage` → `hermes_token_usage_total`,
-histograms grow `_sum`/`_count`); counters are charted as `increase()` per
-bucket, gauges as the last sample per bucket. A one-shot `hermes -z` run leaves
-a single cumulative sample, which Prometheus counts as zero increase; long-lived
-gateways chart normally. Logs use LogQL label-filter stages on the OTLP
+histograms grow `_sum`/`_count`); counters are read as raw cumulative samples
+over a range vector and the increases are taken by the adapter, gauges as the
+last sample per bucket. PromQL's `increase()` never counts a series' first
+sample, so it would read a one-shot `hermes -z` run as zero; the raw-sample
+read counts that first sample when the series started inside the window (#296). Logs use LogQL label-filter stages on the OTLP
 attributes Loki keeps (`trace_id`, `hermes_session_id`, `scope_name`,
 `severity_number`) plus `|=` for text; the logger list is a `count_over_time`
 by `scope_name`.

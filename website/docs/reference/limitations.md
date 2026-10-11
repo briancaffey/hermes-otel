@@ -22,9 +22,9 @@ This is a deliberate check rather than a bug — Langfuse will `401` regardless,
 
 ## No gRPC
 
-Only OTLP over HTTP/JSON is used. `opentelemetry-exporter-otlp-proto-grpc` is not a dependency.
+Only OTLP over HTTP is used, with protobuf request bodies (`opentelemetry-exporter-otlp-proto-http`). `opentelemetry-exporter-otlp-proto-grpc` is not a dependency.
 
-Why: HTTP is simpler to debug (curl works), has fewer moving parts (no protobuf compilation needed), and every collector accepts it. The performance difference vs. gRPC doesn't matter at the span volumes a single Hermes process produces.
+Why: HTTP is simpler to debug (curl works), has fewer moving parts, and every collector accepts it. The performance difference vs. gRPC doesn't matter at the span volumes a single Hermes process produces.
 
 If you have a backend that requires gRPC specifically, open an issue — we can add the option with a per-backend switch.
 

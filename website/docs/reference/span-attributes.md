@@ -21,6 +21,7 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 | `service.version` | Plugin version, read from the shipped `plugin.yaml` |
 | `process.pid` | Process id |
 | `openinference.project.name` | `project_name` / `OTEL_PROJECT_NAME` (the Phoenix project); optional |
+| `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.run_id` | The kanban card, its board and the attempt a dispatcher-spawned worker is running, from `HERMES_KANBAN_TASK` / `_BOARD` / `_RUN_ID`. Only when the task is set: Hermes pins the board into every chat's environment, so the board alone never marks a worker |
 | `host.name` | Hostname, only when `host_metrics: true` |
 | `wandb.entity`, `wandb.project` | W&B Weave routing (when configured) |
 | `telemetry.sdk.*` | Set by the OTel SDK |
@@ -76,6 +77,7 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
+| `gen_ai.usage.*`, `llm.token_count.*` | int | The turn's token roll-up: the sum of its `api.*` spans, same keys as there (optional). Withheld from a backend whose entry has `root_usage: false`, the preset for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); the `api.*` spans and `hermes.cost.*` are never touched |
 | `hermes.cost.usage` | float | The turn's USD cost: the sum of its API calls' `hermes.cost.usage`, set **only when every call was priced** (optional) |
 | `hermes.cost.status` | string | `actual` (every call provider-reported) · `estimated` · `partial` (some calls priced, some not: no total) · `included` (subscription route) · `unknown` (no price for the model); absent when no call reported usage |
 | `gen_ai.response.model` | string | Model at turn end |

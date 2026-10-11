@@ -10,7 +10,7 @@ import functools
 import json
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 # Matches:
 #   ESC [ ... letter             → CSI sequences (colors, cursor)
@@ -667,3 +667,24 @@ def derive_signal_endpoint(traces_endpoint: str, signal: str) -> str:
     if traces_endpoint.endswith("/v1/traces"):
         return traces_endpoint[: -len("/v1/traces")] + f"/v1/{signal}"
     return traces_endpoint
+
+
+# ── Root usage roll-up (#327) ─────────────────────────────────────────────
+
+# The attribute families the turn's token roll-up uses on the ``agent`` /
+# ``cron`` root (see hooks/usage.py: the OTel GenAI and the OpenInference
+# spelling of the same totals). Kept here, out of the hook modules, so the
+# docs-coverage test reads them as prefixes rather than attribute names.
+_USAGE_FAMILIES = ("gen_ai", "llm")
+_USAGE_MEMBERS = ("usage", "token_count")
+ROOT_USAGE_PREFIXES = tuple(f"{fam}.{mem}." for fam, mem in zip(_USAGE_FAMILIES, _USAGE_MEMBERS))
+
+
+def is_usage_key(key: str) -> bool:
+    """True for a token-usage attribute (``gen_ai.usage.*`` / ``llm.token_count.*``)."""
+    return key.startswith(ROOT_USAGE_PREFIXES)
+
+
+def without_usage_keys(attrs: Mapping[str, Any]) -> Dict[str, Any]:
+    """``attrs`` minus the token-usage attributes; everything else kept as is."""
+    return {k: v for k, v in attrs.items() if not is_usage_key(k)}

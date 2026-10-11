@@ -105,3 +105,19 @@ This compose runs OpenObserve in "standalone disk" mode — everything
 stored in the `oo_data` named volume. Fine for local/CI; for production
 switch to the HA mode with S3 storage + etcd + Postgres. See the
 upstream docs at https://openobserve.ai/docs/ha_and_production/.
+
+## Quirks
+- The org is in the URL path and the stream in a `stream-name` header, with
+  HTTP Basic auth; a wrong path 404s silently and a bad stream name is a 400.
+  `type: openobserve` builds all of it from `user` / `password` / `stream_name`.
+- Attribute names are flattened with underscores on storage
+  (`llm.model_name` → `llm_model_name`), irreversibly; the dashboard adapter
+  carries a table to map them back (#158).
+- A query naming a column the stream has never seen is a 400, so an events
+  query before the first event is answered empty by the adapter (#268, #299),
+  and the parent-span column has had three names across builds.
+- Each OTLP metric is its own stream; `_total` is dropped and histograms are
+  split into `_sum` / `_count` / `_bucket` streams.
+- One container, no port collisions: the safe default.
+
+The cross-backend comparison is in [`../QUIRKS.md`](../QUIRKS.md).

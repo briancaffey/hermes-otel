@@ -40,9 +40,10 @@ curl -s 'http://localhost:5173/api/v1/private/spans?project_name=hermes-agent&si
 ## Caveats
 - Traces only: the OTLP resource declares `/traces` only; `/metrics` and
   `/logs` under the same prefix are 404.
-- **Trace-level usage double-counts.** Opik sums usage over every span, and the
-  plugin's `agent` span carries the turn's roll-up, so a turn whose two API
-  calls total 24 299 prompt tokens shows 48 598 at trace level (cost doubles
+- **The root's token roll-up is not sent to Opik** (`root_usage: false` is the
+  preset for this type since 1.24, #327): Opik sums usage over every span, and
+  the plugin's `agent` span carries the turn's roll-up, so a turn whose two API
+  calls total 24 299 prompt tokens used to show 48 598 at trace level (cost doubled
   the same way). Per-span numbers are right.
 - Online evaluation rules that run Python need the dropped `python-backend`.
 - About 2.1 GB resident (ClickHouse ≈ 0.9 GB, MySQL ≈ 0.5 GB, backend ≈ 0.5 GB).

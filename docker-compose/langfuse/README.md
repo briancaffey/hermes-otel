@@ -44,7 +44,8 @@ curl -s -u lf_pk_hermes_dev:lf_sk_hermes_dev 'http://localhost:3000/api/public/v
 - **v4** removes `/api/public/traces`, `/api/public/observations` and
   `/api/public/sessions` (404 "not available … in Langfuse v4 events_only
   mode"); `/api/public/v2/observations` works. The dashboard's Langfuse adapter
-  still reads the v3 routes (#246).
+  probes for this and reads v4 through `/api/public/v2/observations` plus
+  `/api/public/v2/metrics` (`query_api: v3|v4` pins it, #246).
 - Port 3000 collides with Grafana (LGTM stack) and Latitude's web UI.
 - Heavy: about 3 GB resident for the six containers (web ≈ 1.1 GB, worker
   ≈ 1.2 GB, ClickHouse ≈ 0.6 GB) and 3.6 GB of images for v4.

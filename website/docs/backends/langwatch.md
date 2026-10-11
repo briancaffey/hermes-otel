@@ -95,7 +95,7 @@ docker exec hermes-otel-langwatch-clickhouse clickhouse-client --password langwa
 
 ## Caveats
 
-- **Trace-level token totals double-count.** LangWatch sums `gen_ai.usage.*` over every span and the plugin's `agent` span carries the turn's roll-up: the verified trace shows 57 362 prompt tokens for a turn whose API calls total about half. Per-span numbers are right. Tracked in [#327](https://github.com/briancaffey/hermes-otel/issues/327).
+- **The root's token roll-up is not sent to LangWatch.** LangWatch sums `gen_ai.usage.*` over every span and the plugin's `agent` span carries the turn's roll-up, so before 1.24 the trace showed about twice the prompt tokens of its API calls (57 362 in the verified run) ([#327](https://github.com/briancaffey/hermes-otel/issues/327)). The `langwatch` type now defaults to `root_usage: false`: the exporter bound to this entry rebuilds the `agent` / `cron` span without `gen_ai.usage.*` / `llm.token_count.*` (`hermes.cost.*` and everything else stay), so the trace totals equal the sum of the `api.*` spans. Every other backend in the same config still receives the roll-up. Set `root_usage: true` on the entry to send it anyway.
 - **Slow first start.** About five minutes of ClickHouse migrations before `/api/health` answers 204; `docker compose ps` shows the app `Up` the whole time.
 - **Heavy.** About 1.9 GB resident and a 2.8 GB app image; upstream states 4 CPU / 8 GB for the full stack. The bundled stack drops the NLP and evaluator services, so evaluations and topic clustering are unavailable locally.
 - The [Hermes dashboard's OTel tab](/dashboard) has no query adapter for `langwatch`; use LangWatch's UI.

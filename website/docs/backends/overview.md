@@ -136,7 +136,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | OpenLIT | cumulative stored as-is (verified) | cumulative (default) | stored (exponential histogram type) |
 | Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
 
-Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
+Override per entry with `metrics_temporality: cumulative | delta`, or for every backend with the top-level `metrics_temporality`. Backends that total a trace by summing every span's `gen_ai.usage.*` (Opik, LangWatch) are sent the `agent` root without its token roll-up (`root_usage: false`, the preset for those two types; `true` elsewhere), so their trace totals equal the sum of the `api.*` spans while Phoenix, Langfuse and the rest keep the roll-up on the root. `metrics_histogram: exponential` switches every backend to base-2 exponential histograms, so use it only when all of them accept those.
 
 **Short-lived runs.** `hermes -z` exports metrics once, when it exits. A single cumulative point from a fresh process counts as zero on Datadog and New Relic (they treat the first point as a baseline) and goes stale after five minutes on Prometheus; the same run exported as delta counts in full on every delta-capable backend. Long-lived gateways are unaffected either way.
 
@@ -166,6 +166,10 @@ Single-backend selection is env-var-driven. First match wins:
 Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
 Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
+
+## What each backend does differently
+
+Every one of these speaks OTLP, and every one of them differs in where it listens, which header carries the key, which signals it stores, which metric temporality it wants, how it totals tokens over a trace, what it truncates, and which API gives the data back. [Backend quirks](/backends/quirks) is the per-category comparison and lists, per backend, what the plugin does about each difference. In the repo the same catalog is [`docker-compose/QUIRKS.md`](https://github.com/briancaffey/hermes-otel/blob/main/docker-compose/QUIRKS.md).
 
 ## Running one locally
 

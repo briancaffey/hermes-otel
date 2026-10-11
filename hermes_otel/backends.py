@@ -234,6 +234,9 @@ class _ResolvedBackend:
     # ``cumulative`` / ``delta`` for this backend's metric reader; ``None`` =
     # the top-level ``metrics_temporality`` or the SDK default (#233).
     metrics_temporality: Optional[str] = None
+    # Whether the ``agent`` / ``cron`` root keeps its token roll-up on the way
+    # to this backend; ``False`` strips it for this exporter only (#327).
+    root_usage: bool = True
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
@@ -1192,7 +1195,18 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
         rb = dataclasses.replace(rb, metrics_temporality=temporality)
     if bc.log_overrides:
         rb = dataclasses.replace(rb, log_overrides=dict(bc.log_overrides))
+    root_usage = bc.root_usage if bc.root_usage is not None else t not in _NO_ROOT_USAGE_PRESETS
+    if rb.root_usage != root_usage:
+        rb = dataclasses.replace(rb, root_usage=root_usage)
     return rb
+
+
+# Backend types that compute trace-level usage by summing ``gen_ai.usage.*``
+# over every span, so the roll-up the plugin puts on the ``agent`` root would
+# double the turn's tokens (and Opik's estimated cost) at trace level (#327).
+# Phoenix, Langfuse, MLflow and Laminar read the root's own numbers instead,
+# so they keep it. An explicit ``root_usage`` on the entry always wins.
+_NO_ROOT_USAGE_PRESETS = frozenset({"opik", "langwatch"})
 
 
 # Backend types whose docs ask for delta temporality (#233): SigNoz

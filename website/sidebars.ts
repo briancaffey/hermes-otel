@@ -21,6 +21,7 @@ const sidebars: SidebarsConfig = {
       collapsed: false,
       items: [
         'backends/overview',
+        'backends/quirks',
         'backends/phoenix',
         'backends/langfuse',
         'backends/langsmith',
