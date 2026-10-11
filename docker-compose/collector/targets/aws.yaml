@@ -2,7 +2,7 @@
 # Metric Format (awsemf, beta) and for logs (awscloudwatchlogs, alpha). All
 # three sign with SigV4 from the SDK's usual environment (AWS_REGION,
 # AWS_ACCESS_KEY_ID / AWS_SECRET_ACCESS_KEY / AWS_SESSION_TOKEN, or a mounted
-# ~/.aws profile), which a static-header exporter in the plugin cannot do.
+# shared credentials file), which a static-header exporter in the plugin cannot do.
 # X-Ray needs 128-bit trace ids whose first 32 bits are a recent epoch
 # timestamp; the OTel SDK's random ids are accepted by the exporter, which
 # rewrites them. Documented, not verified: this target needs an AWS account.

@@ -61,7 +61,8 @@ services:
       OTLP_TARGET_ENDPOINT: ${OTLP_TARGET_ENDPOINT:-http://host.docker.internal:4318}
       # azuremonitor target
       APPLICATIONINSIGHTS_CONNECTION_STRING: ${APPLICATIONINSIGHTS_CONNECTION_STRING:-}
-      # aws target (the SDK's own variables; a profile needs ~/.aws mounted too)
+      # aws target (the SDK's own variables; a named profile needs its shared
+      # credentials file mounted into the container as well)
       AWS_REGION: ${AWS_REGION:-us-east-1}
       AWS_ACCESS_KEY_ID: ${AWS_ACCESS_KEY_ID:-}
       AWS_SECRET_ACCESS_KEY: ${AWS_SECRET_ACCESS_KEY:-}
