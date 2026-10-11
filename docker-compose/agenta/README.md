@@ -38,7 +38,8 @@ Without a key the entry is skipped at startup (every batch would be a 401).
 
 ## Verify
 ```bash
-curl -s -X POST http://localhost:3060/api/spans/query -H "Authorization: ApiKey $OTEL_AGENTA_API_KEY" \
+AUTH="Authorization: ApiKey $OTEL_AGENTA_API_KEY"
+curl -s -X POST http://localhost:3060/api/spans/query -H "$AUTH" \
   -H 'content-type: application/json' \
   -d '{"formatting":{"focus":"span","format":"agenta"},"windowing":{"limit":20,"order":"descending"}}' | head -c 600
 ```

@@ -114,19 +114,21 @@ services:
       AGENTA_STORE_BUCKET: agenta-store
       AGENTA_STORE_SIGNING_KEY: ${AGENTA_STORE_SIGNING_KEY:-hermes-otel-store-signing-key}
       AGENTA_STORE_JWT_ISSUER: http://api:8000
-    # Upstream's entrypoint, unchanged: writes the S3 identity and IAM files
-    # from the env, then starts one weed server with the S3 gateway.
+    # Upstream's entrypoint with one change: the S3 identity and IAM files it
+    # renders from the env go under the data volume (/data/config) instead of
+    # /etc/seaweedfs, then one weed server starts with the S3 gateway.
     entrypoint:
       - sh
       - -c
       - |
-        cat > /etc/seaweedfs/s3.json <<EOF2
+        mkdir -p /data/config
+        cat > /data/config/s3.json <<EOF2
         {"identities":[{"name":"agenta","credentials":[{"accessKey":"$${AGENTA_STORE_ACCESS_KEY}","secretKey":"$${AGENTA_STORE_SECRET_KEY}"}],"actions":["Admin","Read","Write","List","Tagging"]}]}
         EOF2
-        cat > /etc/seaweedfs/iam.json <<EOF2
+        cat > /data/config/iam.json <<EOF2
         {"sts":{"tokenDuration":"1h","maxSessionLength":"12h","issuer":"seaweedfs-sts","signingKey":"$${AGENTA_STORE_SIGNING_KEY}"},"providers":[{"name":"agenta","type":"oidc","enabled":true,"config":{"issuer":"$${AGENTA_STORE_JWT_ISSUER}","clientId":"agenta-store","jwksUri":"$${AGENTA_STORE_JWT_ISSUER}/.well-known/jwks.json"}}],"policies":[{"name":"store-rw","document":{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Action":["s3:*"],"Resource":["arn:aws:s3:::$${AGENTA_STORE_BUCKET}","arn:aws:s3:::$${AGENTA_STORE_BUCKET}/*"]}]}}],"roles":[{"roleName":"agenta-store","roleArn":"arn:aws:iam::role/agenta-store","attachedPolicies":["store-rw"],"trustPolicy":{"Version":"2012-10-17","Statement":[{"Effect":"Allow","Principal":{"Federated":"agenta"},"Action":["sts:AssumeRoleWithWebIdentity"]}]}}]}
         EOF2
-        exec weed server -dir=/data -ip=seaweedfs -volume.max=64 -s3 -s3.port=8333 -s3.config=/etc/seaweedfs/s3.json -s3.iam.config=/etc/seaweedfs/iam.json
+        exec weed server -dir=/data -ip=seaweedfs -volume.max=64 -s3 -s3.port=8333 -s3.config=/data/config/s3.json -s3.iam.config=/data/config/iam.json
     volumes:
       - agenta_seaweed:/data
     healthcheck:
