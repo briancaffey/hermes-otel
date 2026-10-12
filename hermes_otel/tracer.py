@@ -649,6 +649,7 @@ class HermesOTelPlugin:
         for child in expired:
             self.spans.pop_subagent(child)
             self.spans.end_delegation(child)
+            self.sessions.pop_delegation(child)
             self.end_span(
                 f"subagent:{child}", attributes={"hermes.subagent.swept": True}, status="ok"
             )

@@ -249,6 +249,8 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
 | `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
 | `hermes.subagent.model_inherited` | hermes | bool | Set when the child's root starts, with `gen_ai.request.model` (the child's model): whether the child runs on its parent's model (`false` with `delegation.model` set) |
+| `hermes.subagent.usage.input_tokens`, `hermes.subagent.usage.output_tokens`, `hermes.subagent.usage.total_tokens`, `hermes.subagent.api_call_count` | hermes | int | On stop: tokens and API calls of the child's whole subtree (its own turns plus every delegation it made); namespaced so the child root's `gen_ai.usage.*` is not counted twice by a reader that sums agent spans |
+| `hermes.subagent.cost.usage`, `hermes.subagent.cost.status` | hermes | mixed | On stop: the subtree's USD and pricing status, by the turn root's rule (an amount only when every call was priced) |
 | `hermes.subagent.swept` | hermes | bool | `true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived |
 
 ## Metrics

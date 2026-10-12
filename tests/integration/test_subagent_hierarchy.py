@@ -725,3 +725,135 @@ class TestAnnotateDelegationModel:
         from hermes_otel.hooks.session import _annotate_delegation_model
 
         _annotate_delegation_model(self._Span(fail=True), "small", "big")
+
+
+def _child_turn(child, *, model="gpt-4", prompt=100, completion=50):
+    """A delegated child's turn with one API call of the given usage."""
+    on_session_start(session_id=child, model=model, platform="subagent")
+    on_pre_api_request(
+        task_id=f"{child}-api",
+        session_id=child,
+        platform="subagent",
+        model=model,
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=1,
+        tool_count=0,
+        approx_input_tokens=prompt,
+        request_char_count=10,
+        max_tokens=0,
+    )
+    on_post_api_request(
+        task_id=f"{child}-api",
+        session_id=child,
+        platform="subagent",
+        model=model,
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=0.1,
+        finish_reason="stop",
+        message_count=1,
+        response_model=model,
+        usage={"prompt_tokens": prompt, "completion_tokens": completion},
+        assistant_content_chars=5,
+        assistant_tool_call_count=0,
+    )
+
+
+def _end(child, model="gpt-4"):
+    on_session_end(
+        session_id=child, completed=True, interrupted=False, model=model, platform="subagent"
+    )
+
+
+class TestCostPerAgent:
+    """What each delegated child cost, on its delegation span (#390)."""
+
+    def test_two_concurrent_children_get_their_own_rollups(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn()
+        for cid, role in (("a", "small"), ("b", "big")):
+            on_subagent_start(
+                parent_session_id="parent", child_session_id=cid, child_role=role, child_goal="g"
+            )
+        _child_turn("a", model="m-small", prompt=10, completion=1)
+        _child_turn("b", model="m-big", prompt=1000, completion=100)
+        _end("b", "m-big")
+        _end("a", "m-small")
+        for cid in ("a", "b"):
+            on_subagent_stop(
+                parent_session_id="parent", child_session_id=cid, child_status="completed"
+            )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        a = dict(_span_by_name(spans, "subagent.small").attributes)
+        b = dict(_span_by_name(spans, "subagent.big").attributes)
+        assert (
+            a["hermes.subagent.usage.input_tokens"],
+            a["hermes.subagent.usage.output_tokens"],
+        ) == (10, 1)
+        assert (
+            b["hermes.subagent.usage.input_tokens"],
+            b["hermes.subagent.usage.output_tokens"],
+        ) == (1000, 100)
+        assert a["hermes.subagent.api_call_count"] == b["hermes.subagent.api_call_count"] == 1
+        # the parent root keeps only its own call (100/50 in _close_parent_turn)
+        parent_root = _span_where(spans, "agent", "session.id", "parent")
+        assert parent_root.attributes["gen_ai.usage.input_tokens"] == 100
+
+    def test_nested_orchestrator_counts_each_grandchild_once(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        _open_parent_turn()
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="orch",
+            child_role="orchestrator",
+            child_goal="g",
+        )
+        _child_turn("orch", prompt=20, completion=2)
+        on_subagent_start(
+            parent_session_id="orch", child_session_id="leaf", child_role="leaf", child_goal="g"
+        )
+        _child_turn("leaf", prompt=300, completion=30)
+        _end("leaf")
+        on_subagent_stop(
+            parent_session_id="orch", child_session_id="leaf", child_status="completed"
+        )
+        _end("orch")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="orch", child_status="completed"
+        )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        leaf = dict(_span_by_name(spans, "subagent.leaf").attributes)
+        orch = dict(_span_by_name(spans, "subagent.orchestrator").attributes)
+        assert leaf["hermes.subagent.usage.input_tokens"] == 300
+        assert orch["hermes.subagent.usage.input_tokens"] == 320  # its own 20 + the leaf's 300
+        assert orch["hermes.subagent.api_call_count"] == 2
+        assert plugin.sessions.pop_delegation("orch") is None
+        assert plugin.sessions.pop_delegation("leaf") is None
+
+    def test_cost_follows_the_root_rule(self):
+        from hermes_otel.session_state import DelegationTotals
+
+        t = DelegationTotals(cost_statuses=["estimated", "actual"], cost_usd=0.25)
+        assert t.attributes()["hermes.subagent.cost.status"] == "estimated"
+        assert t.attributes()["hermes.subagent.cost.usage"] == 0.25
+        t.cost_statuses.append("unknown")
+        assert t.attributes()["hermes.subagent.cost.status"] == "partial"
+        assert "hermes.subagent.cost.usage" not in t.attributes()
+        assert (
+            DelegationTotals(cost_statuses=["included"]).attributes()["hermes.subagent.cost.status"]
+            == "included"
+        )
+        assert (
+            DelegationTotals(cost_statuses=["unknown"]).attributes()["hermes.subagent.cost.status"]
+            == "unknown"
+        )
+        assert "hermes.subagent.cost.status" not in DelegationTotals().attributes()

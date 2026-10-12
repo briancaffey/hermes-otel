@@ -759,6 +759,42 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "subagent.*",
     ),
     Attr(
+        "hermes.subagent.usage.input_tokens",
+        "subagent",
+        "On stop: tokens of the child's whole subtree (its turns plus its own delegations); namespaced so the child root's `gen_ai.usage.*` is not counted twice",
+        "subagent.*",
+    ),
+    Attr(
+        "hermes.subagent.usage.output_tokens",
+        "subagent",
+        "On stop: tokens of the child's whole subtree (its turns plus its own delegations); namespaced so the child root's `gen_ai.usage.*` is not counted twice",
+        "subagent.*",
+    ),
+    Attr(
+        "hermes.subagent.usage.total_tokens",
+        "subagent",
+        "On stop: tokens of the child's whole subtree (its turns plus its own delegations); namespaced so the child root's `gen_ai.usage.*` is not counted twice",
+        "subagent.*",
+    ),
+    Attr(
+        "hermes.subagent.api_call_count",
+        "subagent",
+        "On stop: API calls in the child's subtree",
+        "subagent.*",
+    ),
+    Attr(
+        "hermes.subagent.cost.usage",
+        "subagent",
+        "On stop: USD of the child's subtree, only when every call was priced (else only the status)",
+        "subagent.*",
+    ),
+    Attr(
+        "hermes.subagent.cost.status",
+        "subagent",
+        "On stop: `actual` / `estimated` / `partial` / `included` / `unknown`, as on the turn root",
+        "subagent.*",
+    ),
+    Attr(
         "hermes.subagent.swept",
         "subagent",
         "`true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived",

@@ -158,6 +158,16 @@ def on_subagent_stop(
         attributes["hermes.subagent.summary"] = summary_preview
         attributes["output.value"] = summary_preview
 
+    # What the child's subtree cost: its own turns plus any delegations it
+    # made (a nested orchestrator), passed up one level so a grandchild is
+    # counted once at every level above it (#390).
+    totals = tracer.sessions.pop_delegation(child_session_id)
+    if totals is not None:
+        attributes.update(totals.attributes())
+        parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
+        if parent_ps is not None and parent_ps.is_subagent:
+            tracer.sessions.add_delegation_subtree(parent_session_id, totals)
+
     error_message = None
     if status == "error":
         error_message = truncate_string(child_summary or child_status, 500)

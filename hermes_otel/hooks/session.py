@@ -222,6 +222,10 @@ def on_session_end(
             genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
         )
 
+    if ps is not None and ps.is_subagent:
+        # A delegated child's turn counts toward its delegation span (#390).
+        tracer.sessions.add_delegation_turn(session_id, ps)
+
     if ps is not None:
         attributes.update(ps.cost_rollup())
         # Auxiliary calls (#389) are reported beside, never inside, the turn

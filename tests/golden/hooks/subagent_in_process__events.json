@@ -117,10 +117,14 @@
    "attributes": {
     "event.name": "hermes.subagent.stop",
     "hermes.log.attribution": "context",
+    "hermes.subagent.api_call_count": 1,
     "hermes.subagent.child_session_id": "child-1",
     "hermes.subagent.duration_ms": "<num>",
     "hermes.subagent.status": "completed",
-    "hermes.subagent.summary": "found the answer"
+    "hermes.subagent.summary": "found the answer",
+    "hermes.subagent.usage.input_tokens": 100,
+    "hermes.subagent.usage.output_tokens": 50,
+    "hermes.subagent.usage.total_tokens": 150
    },
    "body": "sub-agent worker completed",
    "event_name": "hermes.subagent.stop",
@@ -647,6 +651,7 @@
     "gen_ai.agent.name": "researcher",
     "gen_ai.operation.name": "invoke_agent",
     "gen_ai.request.model": "gpt-4",
+    "hermes.subagent.api_call_count": 1,
     "hermes.subagent.child_id": "sa-1",
     "hermes.subagent.child_session_id": "child-1",
     "hermes.subagent.duration_ms": "<num>",
@@ -658,6 +663,9 @@
     "hermes.subagent.role": "researcher",
     "hermes.subagent.status": "completed",
     "hermes.subagent.summary": "found the answer",
+    "hermes.subagent.usage.input_tokens": 100,
+    "hermes.subagent.usage.output_tokens": 50,
+    "hermes.subagent.usage.total_tokens": 150,
     "input.value": "research X thoroughly",
     "openinference.span.kind": "AGENT",
     "output.value": "found the answer",
