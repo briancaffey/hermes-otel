@@ -230,6 +230,20 @@ Fires once per turn when the agent edited code and is about to verify or finish.
 
 - **Effect:** the plugin's observer always returns `None`. It counts the calls into `hermes.turn.verify_nudges` on the root, and never records `changed_paths` or `final_response`.
 
+### `pre_command`, `on_human_input_*`, `on_skill_lifecycle`, `pre_transcription`
+
+These are small observers (#400). All return `None`, and none of them reads the free text Hermes passes along.
+
+- **`pre_command`:** records `hermes.command.count{command, surface}` with Hermes's canonical command name. Never the arguments.
+- **`on_human_input_request` / `on_human_input_resolved`:**
+  - A `sudo` or `clarify` wait becomes a `human_input.{kind}` span under the session's in-flight span, carrying the redacted prompt as a preview, the outcome and `hermes.human_input.wait_s`.
+  - An `approval` wait is only counted, since it already has its `approval.*` span.
+  - Every wait records `hermes.human_input.count{kind, outcome}`.
+- **`on_skill_lifecycle`:** records `hermes.skill.lifecycle.count{action, provenance}`. Never the skill name, because a profile can hold any number of skills.
+- **`pre_transcription`:** records `hermes.transcription.count{provider, model, source}`. It's a decision hook in Hermes, but the observer never returns a value and never reads `file_path` or `prompt`.
+
+`transform_api_error_classification` (fires before Hermes classifies an error, so it has no outcome to record) and `transform_tool_result` (`post_tool_call` already records the result) are deliberately not registered. `scripts/hook_audit/hook_audit.py` lists every skipped hook with its reason.
+
 ### Streaming hooks (`on_stream_*`, `on_interim_message`): not used
 
 Time to first chunk comes from `post_api_request`, which already carries Hermes's own `started_at` and `first_chunk_at` (wall clock, `first_chunk_at` only for a streamed call). `hermes.api.ttfc_ms` goes on the `api.*` span and into `hermes.api.time_to_first_chunk`. The stream hooks run on a queued worker thread (drop-oldest), and their payloads carry no timestamps, so they would only measure later and less exactly.
@@ -283,6 +297,11 @@ kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's r
 on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
+pre_command              metric hermes.command.count{command, surface}
+on_human_input_request   open  human_input.{kind}   (sudo, clarify; approval is counted only)
+on_human_input_resolved  close human_input.{kind}   (outcome, wait_s) + hermes.human_input.count
+on_skill_lifecycle       metric hermes.skill.lifecycle.count{action, provenance}
+pre_transcription        metric hermes.transcription.count (returns None)
 agent_loop_stopped       attr  agent root          (hermes.turn.stop_reason; sweep ends it interrupted, not timed_out)
 pre_verify               attr  agent root          (hermes.turn.verify_nudges; always returns None)
 on_kanban_dispatch_tick  metrics only: hermes.kanban.dispatch.count / .result (dispatcher, after the lock)

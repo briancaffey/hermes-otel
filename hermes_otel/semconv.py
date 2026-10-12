@@ -1043,6 +1043,30 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "agent / cron (turn root)",
     ),
     Attr(
+        "hermes.human_input.kind",
+        "human_input",
+        "`sudo` or `clarify` (approval waits have their own approval.* spans)",
+        "human_input.*",
+    ),
+    Attr(
+        "hermes.human_input.prompt",
+        "human_input",
+        "What the person was asked, as Hermes redacted it; a preview under content_capture",
+        "human_input.*",
+    ),
+    Attr(
+        "hermes.human_input.outcome",
+        "human_input",
+        "How the wait ended, as Hermes reports it",
+        "human_input.*",
+    ),
+    Attr(
+        "hermes.human_input.wait_s",
+        "human_input",
+        "Seconds the agent waited on the person",
+        "human_input.*",
+    ),
+    Attr(
         "hermes.turn.trigger",
         "session",
         "What started the turn: `user`, `cron`, `kanban`, `subagent`, `a2a`, `api`, `oneshot`, `curator`, `batch` or `system`",

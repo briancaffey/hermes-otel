@@ -50,6 +50,13 @@ from .llm import (
     on_pre_api_request,
     on_pre_llm_call,
 )
+from .observers import (
+    on_human_input_request,
+    on_human_input_resolved,
+    on_pre_command,
+    on_pre_transcription,
+    on_skill_lifecycle,
+)
 from .propagation import get_current_traceparent, on_mcp_request_headers
 from .session import (
     on_agent_loop_stopped,
@@ -90,6 +97,11 @@ __all__ = [
     "on_session_finalize",
     "on_agent_loop_stopped",
     "on_pre_verify",
+    "on_pre_command",
+    "on_human_input_request",
+    "on_human_input_resolved",
+    "on_skill_lifecycle",
+    "on_pre_transcription",
     "on_session_reset",
     "on_session_start",
     "on_subagent_start",

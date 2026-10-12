@@ -28,17 +28,12 @@ NOT_REGISTERED: Dict[str, str] = {
     "on_stream_delta": "per chunk; nothing the plugin needs (#396)",
     "on_stream_end": "the api span already ends on post_api_request (#396)",
     "on_interim_message": "interim text is not telemetry (#396)",
-    "transform_api_error_classification": "decision hook (its return changes failover); not yet observed (#400)",
-    "transform_tool_result": "replaces tool results; observer attributes pending (#400)",
+    "transform_api_error_classification": "decision hook that fires before Hermes classifies: no outcome to record; api_request_error carries the error",
+    "transform_tool_result": "replaces tool results; post_tool_call already records the result",
     "pre_gateway_dispatch": "policy gate (its return drops or rewrites messages); see #32",
     "post_gateway_admission": "candidate for the gateway ingest root (#32)",
     "gateway_platform_event": "platform reactions / edits; low value for tracing (#400)",
-    "pre_command": "slash-command counter pending (#400)",
-    "on_human_input_request": "human-input spans pending (#400)",
-    "on_human_input_resolved": "human-input spans pending (#400)",
-    "on_skill_lifecycle": "skill.* spans already cover skills; lifecycle event pending (#400)",
     "on_room_member_activity": "bot-to-bot surfaces need a decision (#393)",
-    "pre_transcription": "voice-turn counter pending (#400)",
 }
 
 

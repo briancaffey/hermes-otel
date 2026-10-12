@@ -55,4 +55,9 @@ provides_hooks:
   - on_kanban_dispatch_tick
   - agent_loop_stopped
   - pre_verify
+  - pre_command
+  - on_human_input_request
+  - on_human_input_resolved
+  - on_skill_lifecycle
+  - pre_transcription
   - on_kanban_task_updated
