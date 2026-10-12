@@ -249,6 +249,20 @@ fixtures exist, and a change in an answer or a request fails with a diff.
 - A refactor PR never changes an `expected/` file silently: when it must,
   the PR description lists every changed fixture and why.
 
+### The test seam (`hermes_otel.testing`)
+
+Tests never reach into the package's private names. `hermes_otel.testing`
+ships with the plugin and is the supported surface: `reset_state()` forgets
+the singleton, the parent-stack ContextVar, the live-store singleton and the
+redaction cache (the root `conftest.py` calls it around every test);
+`install_singleton(plugin)` makes the hooks use a plugin and returns the
+previous one; `build_inmemory_plugin(exporters=, metrics=, logs=)` wires a
+plugin to in-memory sinks on providers of its own. Pure helpers a test needs
+are public in their home module (`hooks.usage.normalize_usage`,
+`plugin_config.coerce_from_yaml`, ...); the underscored spellings are aliases
+kept for one release. `hooks/__init__.py` exports only the `on_*` callbacks,
+`get_tracer` and `get_current_traceparent`.
+
 ## Live before/after check (`make refactor-check`)
 
 Golden fixtures prove the Python output is unchanged; `make refactor-check`
@@ -268,20 +282,6 @@ Required for any PR in the refactor milestone (#414) that touches `hooks/`,
 `backends.py`; attach the report to the PR. `BASE=origin/main` and
 `PROFILE=<name>` override the defaults; `--base-run <side.json>` reuses an
 earlier base run.
-
-### The test seam (`hermes_otel.testing`)
-
-Tests never reach into the package's private names. `hermes_otel.testing`
-ships with the plugin and is the supported surface: `reset_state()` forgets
-the singleton, the parent-stack ContextVar, the live-store singleton and the
-redaction cache (the root `conftest.py` calls it around every test);
-`install_singleton(plugin)` makes the hooks use a plugin and returns the
-previous one; `build_inmemory_plugin(exporters=, metrics=, logs=)` wires a
-plugin to in-memory sinks on providers of its own. Pure helpers a test needs
-are public in their home module (`hooks.usage.normalize_usage`,
-`plugin_config.coerce_from_yaml`, ...); the underscored spellings are aliases
-kept for one release. `hooks/__init__.py` exports only the `on_*` callbacks,
-`get_tracer` and `get_current_traceparent`.
 
 ## Adding a new backend
 
