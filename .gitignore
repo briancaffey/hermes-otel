@@ -253,3 +253,6 @@ config.yaml.local
 .claude/worktrees/
 scripts/dashboard_verify/out/
 scripts/kanban_demo/out/
+
+# refactor-check reports (scripts/refactor_check/refactor_check.py)
+scripts/refactor_check/out/

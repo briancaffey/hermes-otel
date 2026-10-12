@@ -198,6 +198,26 @@ The contract test (`test_dashboard_adapter_contract.py`) parametrizes its
 invariants over `backends.adapters()`, so a new adapter is covered by it the
 moment it registers; its own response parsing goes in `test_dashboard_<type>.py`.
 
+## Live before/after check (`make refactor-check`)
+
+Golden fixtures prove the Python output is unchanged; `make refactor-check`
+proves a real Hermes turn still lands in a real backend. It installs the
+base ref's `hermes_otel/` into the profile's plugin directory, runs the
+turn-batch prompts, scores every source with `check_batch.py`, dumps the
+live store, then does the same with the working tree and diffs the *shape*
+of the telemetry (span names, parentage, status, attribute keys, the
+run-stable values) plus the check matrices. Model output, durations, tokens
+and cost are never compared; `scripts/refactor_check/allowlist.yaml` lists
+the keys that legitimately come and go, each with a reason. The report lands
+under `scripts/refactor_check/out/<branch>-vs-<base>-<stamp>/report.md`; the
+profile's plugin directory is restored afterwards.
+
+Required for any PR in the refactor milestone (#414) that touches `hooks/`,
+`tracer.py`, `live_store.py`, `log_handler.py`, `dashboard/backends/` or
+`backends.py`; attach the report to the PR. `BASE=origin/main` and
+`PROFILE=<name>` override the defaults; `--base-run <side.json>` reuses an
+earlier base run.
+
 ## Adding a new backend
 
 1. Add the resolver in `tracer.py` (for now; this will move to

@@ -1,0 +1,27 @@
+# Differences refactor_check.py tolerates between the base and the branch run.
+# Every entry needs a reason; a PR that adds one explains it in its description.
+#
+# ignore_attribute_keys: attribute keys left out of the key-set comparison
+#   (values are never compared unless the key is in STABLE_VALUE_KEYS).
+# ignore_metrics: instrument names left out of the metric-name comparison.
+# tolerate_prompts: prompt ids whose traces are not compared at all.
+
+ignore_attribute_keys:
+  # Set only when the model's answer happens to be clipped; depends on its length.
+  - hermes.preview.output.truncated
+  - hermes.preview.output.original_chars
+  - hermes.preview.input.truncated
+  - hermes.preview.input.original_chars
+  # Present only when the provider reports them for that particular call.
+  - gen_ai.usage.cache_read.input_tokens
+  - gen_ai.usage.cache_read_input_tokens
+  - gen_ai.usage.reasoning.output_tokens
+  - gen_ai.response.id
+  - hermes.llm.output.chars
+  # The OpenInference twins of the cache / reasoning counts above: present only
+  # on the calls the provider reports them for (seen on NVIDIA: one call of two).
+  - llm.token_count.prompt_details.cache_read
+  - llm.token_count.prompt_details.cache_write
+  - llm.token_count.completion_details.reasoning
+ignore_metrics: []
+tolerate_prompts: []
