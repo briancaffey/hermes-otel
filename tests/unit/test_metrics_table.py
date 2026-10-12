@@ -25,6 +25,7 @@ EXPECTED_KEYS = {
     "model_usage",
     "skill_inferred",
     "subagent_count",
+    "auxiliary_count",
     "subagent_duration",
     "api_error_count",
     "retry_count",

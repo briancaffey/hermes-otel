@@ -516,6 +516,9 @@ export function sumApiSpans(spans: NamedAttrs[], ...keys: string[]): number | nu
   let seen = false;
   for (const s of spans) {
     if (!(s.name || "").startsWith("api.")) continue;
+    // Auxiliary attempts (#389) are reported on the root as
+    // hermes.turn.auxiliary.*, never inside the turn's totals.
+    if ((s.attributes || {})["hermes.query_source"] === "auxiliary") continue;
     const v = attrNum(s.attributes || {}, ...keys);
     if (v != null) {
       sum += v;

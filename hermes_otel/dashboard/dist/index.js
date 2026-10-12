@@ -437,6 +437,7 @@
     let seen = false;
     for (const s of spans) {
       if (!(s.name || "").startsWith("api.")) continue;
+      if ((s.attributes || {})["hermes.query_source"] === "auxiliary") continue;
       const v = attrNum(s.attributes || {}, ...keys);
       if (v != null) {
         sum += v;

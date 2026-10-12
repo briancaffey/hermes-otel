@@ -221,6 +221,10 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
         for s in spans:
             if not str(s.get("name", "")).startswith("api."):
                 continue
+            # Auxiliary attempts (#389) are reported on the root as
+            # hermes.turn.auxiliary.*, never inside the turn's totals.
+            if (s.get("attributes") or {}).get("hermes.query_source") == "auxiliary":
+                continue
             v = _num(_first(s.get("attributes") or {}, keys))
             if v is not None:
                 total += v

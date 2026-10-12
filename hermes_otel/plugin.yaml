@@ -38,6 +38,8 @@ provides_hooks:
   - pre_api_request
   - post_api_request
   - api_request_error
+  - pre_auxiliary_call
+  - post_auxiliary_call
   - subagent_start
   - subagent_stop
   - pre_approval_request

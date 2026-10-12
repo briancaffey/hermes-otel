@@ -56,6 +56,13 @@ describe("traceTotals (#178)", () => {
     const withCost = turn.map((s) => (s.name.startsWith("api.") ? { ...s, attributes: { ...s.attributes, "hermes.cost.usage": 0.01 } } : s));
     expect(traceTotals(withCost).cost).toBeCloseTo(0.03);
   });
+  it("leaves auxiliary api.* spans out of the turn's subtotal (#389)", () => {
+    const withAux = [
+      ...turn.map((s) => (s.name === "agent" ? { ...s, attributes: {} } : s)),
+      span("api.gpt-4o-mini", "x1", "root", { "gen_ai.usage.total_tokens": 999, "hermes.query_source": "auxiliary" }),
+    ];
+    expect(traceTotals(withAux).tokens).toBe(42638);
+  });
   it("shows no total for a root whose cost status carries no amount (#252)", () => {
     const partial = turn.map((s) =>
       s.name.startsWith("api.")

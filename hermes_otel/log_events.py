@@ -32,6 +32,7 @@ SUBAGENT_START = "hermes.subagent.start"
 SUBAGENT_STOP = "hermes.subagent.stop"
 SESSION_FINALIZE = "hermes.session.finalize"
 KANBAN_TRANSITION = "hermes.kanban.transition"
+AUXILIARY_CALL = "hermes.auxiliary.call"
 INFERENCE_DETAILS = "gen_ai.client.inference.operation.details"
 
 # Event-only attributes (the spans carry *_ms; events report seconds per semconv).
@@ -202,6 +203,23 @@ EVENTS: Dict[str, Dict[str, Any]] = {
             "hermes.session.turn_count",
             "hermes.session.duration_s",
             "hermes.session.finalize_reason / hermes.session.reset_reason",
+        ),
+    },
+    "hermes.auxiliary.call": {
+        "hook": "post_auxiliary_call",
+        "severity": "INFO; ERROR when the provider attempt failed",
+        "body": "auxiliary <task> <model> (<input>/<output> tokens)",
+        "attributes": (
+            "hermes.auxiliary.task",
+            "hermes.query_source",
+            "gen_ai.request.model",
+            "gen_ai.provider.name",
+            "gen_ai.response.model",
+            "gen_ai.usage.input_tokens",
+            "gen_ai.usage.output_tokens",
+            "hermes.cost.usage",
+            "llm.response.duration_ms",
+            "error.type",
         ),
     },
     "gen_ai.client.inference.operation.details": {

@@ -85,6 +85,7 @@ def _start_session_span(
     record = tracer.spans.get_subagent(session_id)
     if record:
         attributes["hermes.session.is_subagent"] = True
+        tracer.sessions.get_or_create(session_id).is_subagent = True
         if record.get("role"):
             attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
         if record.get("parent_session_id"):
@@ -195,6 +196,9 @@ def on_session_end(
 
     if ps is not None:
         attributes.update(ps.cost_rollup())
+        # Auxiliary calls (#389) are reported beside, never inside, the turn
+        # totals: see PerSession.add_auxiliary for why.
+        attributes.update(ps.auxiliary_rollup())
 
     # Surface the last API error's type on the root so a failed turn shows why.
     if ps is not None and ps.last_error_type:

@@ -47,6 +47,9 @@ def register(ctx):
         ("subagent_start", hooks.on_subagent_start),
         ("subagent_stop", hooks.on_subagent_stop),
         ("api_request_error", hooks.on_api_request_error),
+        # Auxiliary LLM calls (#389): titling, compression, MoA, vision, ...
+        ("pre_auxiliary_call", hooks.on_pre_auxiliary_call),
+        ("post_auxiliary_call", hooks.on_post_auxiliary_call),
         ("pre_approval_request", hooks.on_pre_approval_request),
         ("post_approval_response", hooks.on_post_approval_response),
         # Observers on two transform hooks: they always return None, so the

@@ -79,6 +79,9 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
+| `hermes.turn.auxiliary.api_call_count`, `hermes.turn.auxiliary.error_count` | int | Auxiliary LLM attempts that ran under this turn (titling, compression, MoA, vision, …) and how many failed (optional) |
+| `hermes.turn.auxiliary.input_tokens`, `hermes.turn.auxiliary.output_tokens` | int | Their token sum, reported **beside** `gen_ai.usage.*`, never inside it: the `moa` provider's main-loop `api.*` span already carries what the MoA facade returns (optional) |
+| `hermes.turn.auxiliary.cost.usage`, `hermes.turn.auxiliary.cost.status` | float / string | Their USD sum, with the same `actual` · `estimated` · `partial` · `included` · `unknown` rule as `hermes.cost.status` (optional) |
 | `gen_ai.usage.*`, `llm.token_count.*` | int | The turn's token roll-up: the sum of its `api.*` spans, same keys as there (optional). Withheld from a backend whose entry has `root_usage: false`, the preset for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); the `api.*` spans and `hermes.cost.*` are never touched |
 | `hermes.cost.usage` | float | The turn's USD cost: the sum of its API calls' `hermes.cost.usage`, set **only when every call was priced** (optional) |
 | `hermes.cost.status` | string | `actual` (every call provider-reported) · `estimated` · `partial` (some calls priced, some not: no total) · `included` (subscription route) · `unknown` (no price for the model); absent when no call reported usage |
@@ -113,8 +116,11 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
 | `gen_ai.request.model`, `gen_ai.system`, `gen_ai.provider.name` | gen_ai | string | Model / provider (`gen_ai.system` is the legacy spelling Langfuse reads) |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
+| `hermes.query_source` | hermes | string | Which loop the call belongs to: `main` (the agent loop), `subagent` (a delegated child's own loop), `auxiliary` (a call Hermes made on the agent's behalf: titling, compression, MoA reference models and aggregator, vision, approval, the kanban decomposer, the `/goal` judge, …; [hooks](/reference/hooks#pre_auxiliary_call--post_auxiliary_call)) |
+| `hermes.auxiliary.task` | hermes | string | The auxiliary task, as Hermes names it (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …); `unknown` when it sent none. Auxiliary spans only |
 | `llm.api_mode` | hermes | string | `chat_completions` · `anthropic_messages` · `codex_responses` · … |
 | `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
+| `llm.request.tool_count` | hermes | int | Tools offered on an auxiliary call, when any (optional; auxiliary spans only) |
 | `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stream`, `gen_ai.request.reasoning.level`, `gen_ai.request.stop_sequences`, `gen_ai.request.choice.count` | gen_ai | mixed | Request parameters, each only when Hermes passes it (optional) |
 | `input.value`, `input.mime_type`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages, one copy per convention — `content_capture: full` (the default) |
 | `gen_ai.system_instructions` | gen_ai | string | **Full** system prompt: the leading system message, or the Responses API `instructions` — `content_capture: full` |

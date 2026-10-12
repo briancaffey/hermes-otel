@@ -118,11 +118,69 @@ class PerSession:
     # priced; see cost_rollup.
     cost_statuses: List[str] = field(default_factory=list)
     cost_usd: float = 0.0
+    # True when this session is a delegated child whose root rejoined the
+    # parent's delegation span; its API calls report ``query_source=subagent``.
+    is_subagent: bool = False
+    # Auxiliary LLM calls (#389): titling, compression, MoA references and
+    # aggregator, vision, approval, the goal judge ... run under this turn.
+    # Kept apart from ``usage`` / ``cost_usd``: the main loop's ``api.*`` span
+    # for the ``moa`` provider already carries what the MoA facade returns, so
+    # folding the auxiliary attempts into the turn totals would count them
+    # twice. They are surfaced as ``hermes.turn.auxiliary.*`` on the root.
+    aux_usage: Dict[str, int] = field(default_factory=_empty_usage)
+    aux_call_count: int = 0
+    aux_error_count: int = 0
+    aux_cost_statuses: List[str] = field(default_factory=list)
+    aux_cost_usd: float = 0.0
 
     def add_cost(self, status: str, usd: Optional[float]) -> None:
         self.cost_statuses.append(status)
         if usd is not None:
             self.cost_usd += usd
+
+    def add_auxiliary(
+        self, totals: Optional[Dict[str, int]], cost: Optional[Dict[str, Any]], *, failed: bool
+    ) -> None:
+        """Account one auxiliary provider attempt on this turn."""
+        self.aux_call_count += 1
+        if failed:
+            self.aux_error_count += 1
+        if totals:
+            for key in self.aux_usage:
+                self.aux_usage[key] += int(totals.get(key, 0) or 0)
+        if cost:
+            self.aux_cost_statuses.append(str(cost.get("status") or "unknown"))
+            usd = cost.get("usd")
+            if usd is not None:
+                self.aux_cost_usd += float(usd)
+
+    def auxiliary_rollup(self) -> Dict[str, Any]:
+        """``hermes.turn.auxiliary.*`` for the root span (empty when none ran).
+
+        Same pricing rule as :meth:`cost_rollup`: a USD total only when every
+        auxiliary call was priced, ``partial`` otherwise.
+        """
+        if not self.aux_call_count:
+            return {}
+        attrs: Dict[str, Any] = {"hermes.turn.auxiliary.api_call_count": self.aux_call_count}
+        if self.aux_error_count:
+            attrs["hermes.turn.auxiliary.error_count"] = self.aux_error_count
+        if self.aux_usage["prompt_tokens"] or self.aux_usage["completion_tokens"]:
+            attrs["hermes.turn.auxiliary.input_tokens"] = self.aux_usage["prompt_tokens"]
+            attrs["hermes.turn.auxiliary.output_tokens"] = self.aux_usage["completion_tokens"]
+        statuses = set(self.aux_cost_statuses)
+        if statuses and statuses <= {"actual", "estimated"}:
+            attrs["hermes.turn.auxiliary.cost.status"] = (
+                "actual" if statuses == {"actual"} else "estimated"
+            )
+            attrs["hermes.turn.auxiliary.cost.usage"] = self.aux_cost_usd
+        elif statuses & {"actual", "estimated"}:
+            attrs["hermes.turn.auxiliary.cost.status"] = "partial"
+        elif statuses:
+            attrs["hermes.turn.auxiliary.cost.status"] = (
+                "included" if statuses == {"included"} else "unknown"
+            )
+        return attrs
 
     def cost_rollup(self) -> Dict[str, Any]:
         """The turn's cost attributes for the root span (empty when no call was priced).

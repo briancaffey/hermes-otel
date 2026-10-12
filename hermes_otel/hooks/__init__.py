@@ -21,6 +21,7 @@ Modules:
 * ``tools``        — ``pre_tool_call`` / ``post_tool_call`` and skill spans
 * ``approval``     — ``pre_approval_request`` / ``post_approval_response``
 * ``llm``          — ``pre/post_llm_call``, ``pre/post_api_request``, ``api_request_error``
+* ``auxiliary``    — ``pre/post_auxiliary_call`` (titling, compression, MoA, vision, ...)
 * ``subagent``     — ``subagent_start`` / ``subagent_stop``
 * ``propagation``  — W3C ``traceparent`` (``get_current_traceparent``, ``mcp_request_headers``)
 * ``transforms``   — observers on ``transform_terminal_output`` / ``transform_llm_output``
@@ -59,6 +60,7 @@ from .attributes import (
     _turn_attributes,
     _weave_turn_attributes,
 )
+from .auxiliary import on_post_auxiliary_call, on_pre_auxiliary_call
 from .kanban import (
     on_kanban_task_blocked,
     on_kanban_task_claimed,
@@ -114,10 +116,12 @@ __all__ = [
     "on_mcp_request_headers",
     "on_post_api_request",
     "on_post_approval_response",
+    "on_post_auxiliary_call",
     "on_post_llm_call",
     "on_post_tool_call",
     "on_pre_api_request",
     "on_pre_approval_request",
+    "on_pre_auxiliary_call",
     "on_pre_llm_call",
     "on_pre_tool_call",
     "on_session_end",

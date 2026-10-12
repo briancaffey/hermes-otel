@@ -110,6 +110,21 @@ One per HTTP round-trip to the provider. Name is `api.{model}`.
 
 The `api.*` span is the right place to look for token counts — not the parent `llm.*` (which doesn't carry per-call counts, because a turn can have multiple `api.*` calls).
 
+### Auxiliary calls {#auxiliary}
+
+Hermes also calls models **on the agent's behalf**: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer, the `/goal` judge. Each physical attempt is an `api.{model}` span too, tagged `hermes.query_source=auxiliary` and `hermes.auxiliary.task=<task>`, nested under whatever the owning turn has in flight (so a MoA turn shows its fan-out: N `api.<reference>` spans and one `api.<aggregator>` under the turn's `llm.*`), or standing as its own root when no turn owns it (the kanban dispatcher decomposing a card). They are never pushed as parents.
+
+```text
+agent
+└── llm.{model}
+    ├── api.ref-a            hermes.query_source=auxiliary  hermes.auxiliary.task=moa_reference
+    ├── api.ref-b            hermes.query_source=auxiliary  hermes.auxiliary.task=moa_reference
+    ├── api.aggregator       hermes.query_source=auxiliary  hermes.auxiliary.task=moa_aggregator
+    └── api.moa/preset       hermes.query_source=main       (what the MoA facade returned to the loop)
+```
+
+The turn root counts them as `hermes.turn.auxiliary.*` **beside** its `gen_ai.usage.*` totals, never inside them, because the main loop's `api.*` span for the `moa` provider already carries what the facade returned. Main-loop spans carry `hermes.query_source=main`, or `subagent` inside a delegated child's session.
+
 ## `tool.*`
 
 One per tool invocation. Name is `tool.{name}` (e.g. `tool.bash`, `tool.read_file`).

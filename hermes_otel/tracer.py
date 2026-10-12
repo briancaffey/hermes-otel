@@ -406,7 +406,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{token}",
         "Tokens consumed by type",
         "int",
-        labels=_MODEL_LABELS + ("token_type",),
+        labels=_MODEL_LABELS + ("token_type", "query_source"),
     ),
     "prompt_cache_tokens": InstrumentSpec(
         "hermes.prompt_cache.tokens",
@@ -430,7 +430,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "USD",
         "USD cost per API call, as priced by Hermes (actual or estimated)",
         "float",
-        labels=_MODEL_LABELS + ("cost_status",),
+        labels=_MODEL_LABELS + ("cost_status", "query_source"),
     ),
     "tool_duration": InstrumentSpec(
         "hermes.tool.duration",
@@ -456,7 +456,15 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "{message}",
         "Messages per model and provider",
         "one",
-        labels=_MODEL_LABELS,
+        labels=_MODEL_LABELS + ("query_source",),
+    ),
+    "auxiliary_count": InstrumentSpec(
+        "hermes.auxiliary.count",
+        "counter",
+        "{request}",
+        "Auxiliary LLM provider attempts (titling, compression, MoA, vision, ...) by task",
+        "one",
+        labels=_MODEL_LABELS + ("aux_task", "status"),
     ),
     "skill_inferred": InstrumentSpec(
         "hermes.skill.inferred",

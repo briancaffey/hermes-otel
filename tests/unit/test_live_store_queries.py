@@ -109,6 +109,23 @@ class TestHelpers:
         spans[-1]["attributes"] = {}
         assert trace_totals(spans)["tokens"] == 30.0  # api spans only, llm mirror ignored
 
+    def test_trace_totals_leave_auxiliary_api_spans_out(self):
+        # An auxiliary attempt (#389) is an api.* span too, but the turn's
+        # totals are the main loop's; the root reports it as
+        # hermes.turn.auxiliary.* instead.
+        spans = [
+            _span("t", "api.m", "a1", "r", {"gen_ai.usage.total_tokens": 10}),
+            _span(
+                "t",
+                "api.cheap",
+                "x1",
+                "r",
+                {"gen_ai.usage.total_tokens": 999, "hermes.query_source": "auxiliary"},
+            ),
+            _span("t", "agent", "r", None, {}),
+        ]
+        assert trace_totals(spans)["tokens"] == 10.0
+
     def test_summarize_trace(self):
         spans = [
             _span("t", "tool.terminal", "x", "r", status="ERROR"),

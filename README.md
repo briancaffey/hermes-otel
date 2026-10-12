@@ -54,7 +54,7 @@ agent / cron                          ← the turn (root); turn summary at the e
 | `agent` / `cron` | AGENT | Session kind and id, completion / interruption status, the per-turn summary (tools, targets, commands, outcomes, skills, API call count, final status) |
 | `skill.{name}` | CHAIN | A skill that loaded successfully — name, source (`skill_view` / path read), path; open until the turn ends |
 | `llm.{model}` | LLM | Model, provider, user message (input), assistant response (output) |
-| `api.{model}` | LLM | Token counts in both conventions (incl. cache and reasoning buckets), duration, finish reason, request parameters. On failure: `ERROR` + exception + retry metadata |
+| `api.{model}` | LLM | Token counts in both conventions (incl. cache and reasoning buckets), duration, finish reason, request parameters. On failure: `ERROR` + exception + retry metadata. `hermes.query_source` says whether the call is the agent loop's own (`main`), a delegated child's (`subagent`) or one Hermes made on the agent's behalf (`auxiliary`: titling, compression, Mixture-of-Agents references and aggregator, vision, …), the last tagged with `hermes.auxiliary.task` |
 | `tool.{name}` | TOOL | Args, result, `hermes.tool.outcome` (`completed` / `error` / `timeout` / `blocked` / `cancelled`), inferred target / command, CPU/GPU utilization with host metrics |
 | `approval.{pattern}` | CHAIN | Decision wait time, choice (`once` / `session` / `always` / `deny` / `timeout` / `smart_approve` / `smart_deny`), who decided |
 | `subagent.{role}` | AGENT | Role, goal, status, duration, summary; the child run is nested so a multi-agent run is one connected trace |

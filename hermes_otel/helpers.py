@@ -736,3 +736,38 @@ def terminal_truncation(result: Mapping[str, Any]) -> Tuple[bool, Optional[int]]
         except ValueError:  # pragma: no cover - the regex only admits digits
             return True, None
     return False, None
+
+
+# ── Auxiliary LLM calls (#389) ───────────────────────────────────────────────
+
+# ``hermes.query_source`` values: which loop an ``api.*`` span belongs to.
+QUERY_SOURCE_MAIN = "main"
+QUERY_SOURCE_SUBAGENT = "subagent"
+QUERY_SOURCE_AUXILIARY = "auxiliary"
+
+
+def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
+    """Build the span-tracking key for one auxiliary provider attempt.
+
+    ``pre_auxiliary_call`` and ``post_auxiliary_call`` share one base payload
+    (``agent/auxiliary_hooks.py`` builds it once per attempt), so the
+    ``api_request_id`` Hermes assigns is the natural key. Hermes leaves it
+    empty for callers that pass no request metadata; then the task name plus
+    the attempt's ``started_at`` (identical on both hooks) still pairs them.
+    """
+    request_id = str(api_request_id or "").strip()
+    if request_id:
+        return f"aux:{request_id}"
+    task = str(aux_task or "").strip() or "unknown"
+    return f"aux:{task}:{started_at if started_at is not None else ''}"
+
+
+def auxiliary_task_name(aux_task: Any) -> str:
+    """The auxiliary task as a bounded label (``unknown`` when Hermes sent none)."""
+    text = str(aux_task or "").strip().lower()
+    return truncate_string(text, 80) if text else "unknown"
+
+
+def query_source_for(is_subagent: Any) -> str:
+    """``main`` or ``subagent`` for a main-loop API call."""
+    return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN

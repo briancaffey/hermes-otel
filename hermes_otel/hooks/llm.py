@@ -10,6 +10,7 @@ from ..debug_utils import debug_log
 from ..helpers import (
     coerce_bool,
     http_status_class,
+    query_source_for,
     serialize_full,
     to_optional_int,
     truncate_string,
@@ -226,6 +227,12 @@ def on_post_llm_call(
     debug_log("  LLM span ended: status=ok")
 
 
+def _query_source(tracer, session_id: Optional[str]) -> str:
+    """``main`` or ``subagent``: which loop this session's API calls belong to (#389)."""
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    return query_source_for(ps is not None and ps.is_subagent)
+
+
 def _request_body(kwargs: Dict[str, Any]) -> Dict[str, Any]:
     request = kwargs.get("request")
     if isinstance(request, dict) and isinstance(request.get("body"), dict):
@@ -291,6 +298,7 @@ def on_pre_api_request(
         "llm.api_mode": api_mode,
         "llm.request.message_count": message_count,
         "llm.request.approx_input_tokens": approx_input_tokens,
+        "hermes.query_source": _query_source(tracer, session_id),
     }
     attributes.update(_session_identity_attributes(session_id))
     attributes.update(_model_attributes(model, provider))
@@ -377,6 +385,7 @@ def on_post_api_request(
     attributes.update(_correlation_attributes(tracer, session_id, kwargs))
 
     model_labels = _metric_model_labels(model, provider)
+    model_labels["query_source"] = _query_source(tracer, session_id)
 
     # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
     # See _usage_attributes for the full attribute list.
