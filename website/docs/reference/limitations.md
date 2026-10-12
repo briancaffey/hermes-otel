@@ -49,6 +49,12 @@ Delegated child agents (`delegate_task`) are modeled as `subagent.*` spans, and 
 
 If a future Hermes version runs delegated children **in a separate process**, that registry won't hold the live span. The plugin then degrades gracefully: the child root attaches an OTel **span link** to the delegation span's `SpanContext` (when available) and is tagged with `hermes.subagent.parent_session_id` for correlation — but the child becomes its own trace rather than nesting in the parent. True cross-process trace-context *propagation* (injecting the parent context into the child process) is out of scope for now; open an issue if you need it.
 
+## Delegation spans outlive their turn; timeout details are not reported
+
+Hermes runs a top-level `delegate_task` in the background and fires `subagent_stop` after the parent's turn has ended, so a `subagent.*` span ends after the turn root it nests under. Trace views draw it past the root's end; that is the delegation's real duration, not a clock problem. A delegation whose stop never arrives is closed after `subagent_span_ttl_ms` (24 hours by default) with `hermes.subagent.swept=true`.
+
+When a child times out, Hermes records `timeout_phase` (before or after the first LLM call) and `last_event_age` on the delegate tool's result, but the `subagent_stop` hook does not carry them, so the span has `hermes.subagent.status=timeout` without them.
+
 ## API error capture depends on the `api_request_error` hook
 
 Failed provider API requests (rate limits, timeouts, 5xx, network errors) are

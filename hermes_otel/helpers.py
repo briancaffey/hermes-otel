@@ -393,7 +393,19 @@ def classify_block_provenance(block_message: Any) -> Optional[str]:
 # / empty values default to OK so a missing status never inflates error rates
 # (mirrors the tool-outcome policy in on_post_tool_call).
 _SUBAGENT_ERROR_STATUSES = frozenset(
-    {"error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out"}
+    # ``stalled``: Hermes's stall monitor gave up on a silent child and
+    # reports it as a crash (async_delegation._stalled_result), #392.
+    {
+        "error",
+        "errored",
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "timeout",
+        "timed_out",
+        "stalled",
+    }
 )
 
 

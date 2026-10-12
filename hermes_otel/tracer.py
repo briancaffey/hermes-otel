@@ -550,13 +550,18 @@ class HermesOTelPlugin:
         session_id: Optional[str] = None,
         parent: Any = None,
         links: Optional[list] = None,
+        sweep_with_turn: bool = True,
     ):
         """Create and track a new span.
 
         Args:
             session_id: When provided, the span key is linked to this session
                         so the orphan sweep can finalize it if the session
-                        exceeds root_span_ttl_ms.
+                        exceeds root_span_ttl_ms. ``session_id`` still picks
+                        the parent to nest under.
+            sweep_with_turn: ``False`` keeps the span out of the session's
+                        turn sweep: a delegation span outlives the turn that
+                        opened it and has its own TTL (#392).
             parent: Explicit parent span to nest under, overriding the
                     session-keyed parent stack. Used for sub-agent delegation,
                     where a child's root span must nest under the delegation
@@ -569,7 +574,7 @@ class HermesOTelPlugin:
         if not self._initialized:
             return INVALID_SPAN
 
-        if session_id:
+        if session_id and sweep_with_turn:
             self.spans.link_key(session_id, key)
 
         if not self.tracer:
@@ -634,6 +639,19 @@ class HermesOTelPlugin:
         expired = self.spans.expired_turns(self.config.root_span_ttl_ms / 1000.0)
         for sid in expired:
             self._finalize_orphan(sid)
+        self.sweep_expired_delegations()
+        return expired
+
+    def sweep_expired_delegations(self) -> list:
+        """Close delegation spans whose ``subagent_stop`` never arrived within
+        ``subagent_span_ttl_ms``; returns their child session ids."""
+        expired = self.spans.expired_delegations(self.config.subagent_span_ttl_ms / 1000.0)
+        for child in expired:
+            self.spans.pop_subagent(child)
+            self.spans.end_delegation(child)
+            self.end_span(
+                f"subagent:{child}", attributes={"hermes.subagent.swept": True}, status="ok"
+            )
         return expired
 
     def _finalize_orphan(self, session_id: str) -> None:

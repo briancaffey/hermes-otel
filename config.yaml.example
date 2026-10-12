@@ -267,6 +267,11 @@
 # so long-abandoned sessions don't stay open forever in the backend UI.
 # root_span_ttl_ms: 600000   # 10 minutes
 
+# Delegation-span TTL. A `subagent.*` span stays open across the parent's turns
+# (Hermes runs delegations in the background); if its subagent_stop never
+# arrives, it is closed after this with `hermes.subagent.swept=true`.
+# subagent_span_ttl_ms: 86400000   # 24 hours
+
 # Metrics export interval (how often the PeriodicExportingMetricReader flushes).
 # flush_interval_ms: 60000
 

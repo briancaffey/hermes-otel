@@ -241,6 +241,10 @@ One per delegated child agent (when the parent calls the `delegate_task` tool). 
 
 The delegation span opens on `subagent_start` and nests under the parent turn's in-flight `api.*`/`llm.*` span. Crucially, the delegated child's **own root span rejoins this trace**: when the child runs in the same process (the default), its `agent` root nests directly under the `subagent.*` span, so a multi-agent run is a single connected tree instead of many disconnected traces.
 
+**It outlives the turn that opened it.** Hermes runs a top-level `delegate_task` in the background: the tool returns a handle at once, the parent's turn ends, and `subagent_stop` fires later, often during a following turn. The delegation span stays open across those turn boundaries and ends on `subagent_stop` with the reported status, so in a trace view it extends past the end of the turn root it hangs from. The parent's orphan sweep does not close it. A delegation whose `subagent_stop` never arrives is closed after `subagent_span_ttl_ms` (default 24 hours) with `hermes.subagent.swept=true`, and at process exit.
+
+Nested orchestrators (`delegation.max_spawn_depth` > 1) nest the same way one level down: a grandchild's `subagent.*` span hangs from the child's in-flight span, inside the child's root. Batch delegations (`independent_completions`, `group`) get one span per child, ended in whatever order their results arrive.
+
 | Attribute | Convention | Meaning |
 |---|---|---|
 | `gen_ai.operation.name` | gen_ai | `invoke_agent` |
@@ -254,10 +258,11 @@ The delegation span opens on `subagent_start` and nests under the parent turn's 
 | `hermes.subagent.status` | hermes-specific | Reported `child_status` (set on stop) |
 | `hermes.subagent.duration_ms` | hermes-specific | Child wall-clock duration (set on stop) |
 | `hermes.subagent.summary` | hermes-specific | The child's result summary (set on stop) |
+| `hermes.subagent.swept` | hermes-specific | `true` when closed by `subagent_span_ttl_ms` instead of `subagent_stop` |
 
 The child's `agent` root carries `hermes.session.is_subagent=true` plus `hermes.subagent.parent_session_id` / `hermes.subagent.role` so you can filter child runs even when looking at a single span.
 
-**Status:** failure-like `child_status` values (`error`, `failed`, `cancelled`, `timeout`) map the span to `ERROR`; anything else (including a missing status) stays `OK`.
+**Status:** failure-like `child_status` values (`error`, `failed`, `cancelled`, `timeout`, `stalled`) map the span to `ERROR`. `interrupted` (the user stopped the parent) and `unknown` (the parent process restarted, so nothing is known) stay `OK`, as does a missing status. A `subagent_stop` that arrives with no open span (a restart) records the metrics and opens nothing.
 
 **Metrics:** `hermes.subagent.count{role, status}` and `hermes.subagent.duration{role}`.
 

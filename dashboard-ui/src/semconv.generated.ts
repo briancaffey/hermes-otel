@@ -365,6 +365,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "hermes.subagent.parent_turn_id",
   "hermes.subagent.role",
   "hermes.subagent.status",
+  "hermes.subagent.swept",
   "hermes.subagent.summary",
   "hermes.kanban.assignee",
   "hermes.kanban.board",

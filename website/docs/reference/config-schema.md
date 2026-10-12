@@ -19,6 +19,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `enabled` | bool | `true` | Master kill switch; `false` unloads every hook |
 | `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling) |
 | `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed |
+| `subagent_span_ttl_ms` | int | `86400000` | Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design) |
 | `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader) |
 | `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response) |
 | `capture_previews` | bool | `true` | Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture` |

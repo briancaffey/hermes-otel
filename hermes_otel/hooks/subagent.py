@@ -82,6 +82,9 @@ def on_subagent_start(
         kind="agent",
         attributes=attributes,
         session_id=parent_session_id,
+        # Outlives the parent's turn: background delegation fires
+        # subagent_stop turns later (#392). Its own TTL applies instead.
+        sweep_with_turn=False,
     )
 
     record: Dict[str, Any] = {
@@ -131,6 +134,7 @@ def on_subagent_stop(
         return
 
     record = tracer.spans.pop_subagent(child_session_id)
+    tracer.spans.end_delegation(child_session_id)
     role = (record.get("role") if record else None) or (
         truncate_string(child_role, 200) if child_role else ""
     )

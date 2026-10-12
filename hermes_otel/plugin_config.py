@@ -229,6 +229,12 @@ class HermesOtelConfig:
     enabled: bool = True
     sample_rate: Optional[float] = None  # None = AlwaysOn. 0..1 = ratio.
     root_span_ttl_ms: int = 600_000  # 10 min orphan sweep threshold
+    # A delegation (``subagent.*``) span outlives its parent's turn: Hermes
+    # runs top-level delegations in the background and fires subagent_stop
+    # turns later (#392). The turn sweep leaves it alone; this is its own
+    # safety net for a child whose stop never arrives. Hermes sets no child
+    # timeout by default, hence a day.
+    subagent_span_ttl_ms: int = 86_400_000
     flush_interval_ms: int = 60_000  # metrics export interval
     preview_max_chars: int = 1200  # global clip_preview truncation fallback
     capture_previews: bool = True  # global privacy kill switch
@@ -1132,6 +1138,7 @@ FIELD_DOCS = {
     "enabled": "Master kill switch; `false` unloads every hook",
     "sample_rate": "Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling)",
     "root_span_ttl_ms": "Orphan-sweep TTL: a turn root older than this with no end hook is closed",
+    "subagent_span_ttl_ms": "Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design)",
     "flush_interval_ms": "Metrics export cadence (PeriodicExportingMetricReader)",
     "preview_max_chars": "Cap on preview strings (tool args/results, user message, assistant response)",
     "capture_previews": "Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture`",
@@ -1216,6 +1223,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "force_flush_wait_ms",
             "flush_interval_ms",
             "root_span_ttl_ms",
+            "subagent_span_ttl_ms",
             "span_batch_max_queue_size",
             "span_batch_schedule_delay_ms",
             "span_batch_max_export_batch_size",

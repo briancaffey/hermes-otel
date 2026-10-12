@@ -129,6 +129,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_ENABLED` | `enabled` | bool | `true` |
 | `HERMES_OTEL_SAMPLE_RATE` | `sample_rate` | float | `null` |
 | `HERMES_OTEL_ROOT_SPAN_TTL_MS` | `root_span_ttl_ms` | int | `600000` |
+| `HERMES_OTEL_SUBAGENT_SPAN_TTL_MS` | `subagent_span_ttl_ms` | int | `86400000` |
 | `HERMES_OTEL_FLUSH_INTERVAL_MS` | `flush_interval_ms` | int | `60000` |
 | `HERMES_OTEL_PREVIEW_MAX_CHARS` | `preview_max_chars` | int | `1200` |
 | `HERMES_OTEL_CAPTURE_PREVIEWS` | `capture_previews` | bool | `true` |

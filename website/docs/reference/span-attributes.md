@@ -246,6 +246,7 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 | `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
 | `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
+| `hermes.subagent.swept` | hermes | bool | `true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived |
 
 ## Metrics
 

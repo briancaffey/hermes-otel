@@ -753,6 +753,12 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "subagent.*",
     ),
     Attr(
+        "hermes.subagent.swept",
+        "subagent",
+        "`true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived",
+        "subagent.*",
+    ),
+    Attr(
         "hermes.subagent.summary",
         "subagent",
         "On stop: reported `child_status`, wall-clock, result summary",

@@ -96,6 +96,10 @@ class SpanTracker:
         # under the delegation span (one connected trace); cross-process
         # delegation degrades to attribute-only correlation.
         self._subagent_registry: Dict[str, Dict[str, Any]] = {}
+        # Delegation start times, child_session_id -> perf_counter. Separate
+        # from the registry, which the child's own session end may drop: the
+        # delegation span itself lives until subagent_stop (#392).
+        self._delegation_started_at: Dict[str, float] = {}
         # Turn registry for the orphan sweep (#405): session_id -> perf_counter
         # start time, and session_id -> the active span keys opened under it
         # (api:/tool: keys do not embed the session id), so a timed-out turn's
@@ -265,10 +269,32 @@ class SpanTracker:
 
     # ── Sub-agent delegation ─────────────────────────────────────────────
 
-    def register_subagent(self, child_session_id: str, record: Dict[str, Any]) -> None:
+    def register_subagent(
+        self, child_session_id: str, record: Dict[str, Any], started_at: Optional[float] = None
+    ) -> None:
         """Remember the delegation span opened for ``child_session_id``."""
         with self._lock:
             self._subagent_registry[str(child_session_id)] = record
+            self._delegation_started_at[str(child_session_id)] = (
+                started_at if started_at is not None else time.perf_counter()
+            )
+
+    def end_delegation(self, child_session_id: Optional[str]) -> None:
+        """Forget a delegation's start time (its span has ended)."""
+        if not child_session_id:
+            return
+        with self._lock:
+            self._delegation_started_at.pop(str(child_session_id), None)
+
+    def expired_delegations(self, ttl_seconds: float) -> list:
+        """Child session ids whose delegation started more than ``ttl_seconds`` ago."""
+        with self._lock:
+            now = time.perf_counter()
+            return [
+                cid
+                for cid, started in self._delegation_started_at.items()
+                if now - started > ttl_seconds
+            ]
 
     def get_subagent(self, child_session_id: Optional[str]) -> Optional[Dict[str, Any]]:
         """The delegation record for a child session, or None."""
@@ -398,6 +424,7 @@ class SpanTracker:
             self._session_skill_spans.clear()
             self._approval_starts.clear()
             self._subagent_registry.clear()
+            self._delegation_started_at.clear()
         stack = _PARENT_STACK.get()
         if stack is not None:
             stack.clear()

@@ -32,6 +32,8 @@ Any root older than `root_span_ttl_ms` (default: 10 minutes) gets:
 2. `StatusCode.OK` (not `ERROR` — timeouts shouldn't pollute error dashboards)
 3. `span.end()` called, which enqueues it for export
 
+Delegation spans (`subagent.*`) are the exception: they are not part of the turn and the turn sweep leaves them open, because Hermes delivers background delegations' results turns later. They have their own TTL, `subagent_span_ttl_ms` (default 24 hours), after which a delegation whose `subagent_stop` never arrived is ended with `hermes.subagent.swept=true` and `StatusCode.OK`.
+
 Finalizing a session also drops everything the plugin buffered for it: its parent stack, open skill spans, delegation record and the per-session aggregator (token totals, previews, turn summary), so a crashed turn cannot pin memory for the life of a gateway process. The sweep never touches the parent stack of the session that happened to trigger it.
 
 The sweep runs on the hot path but is O(n) in the number of currently-open sessions, which is typically ~1.

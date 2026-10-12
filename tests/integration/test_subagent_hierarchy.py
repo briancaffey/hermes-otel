@@ -8,6 +8,7 @@ when only a SpanContext is available (cross-process), attached via a span link.
 
 import time
 
+import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
 from _helpers import span_where as _span_where
@@ -452,10 +453,10 @@ class TestSubagentFanOut:
 
 
 class TestOrphanedDelegationSwept:
-    """A delegation whose child never returns must be finalized by the orphan
-    sweep when the parent session times out (not left open forever)."""
+    """A delegation whose child never returns is closed by its own TTL
+    (``subagent_span_ttl_ms``), not by the parent's turn sweep (#392)."""
 
-    def test_unfinished_delegation_is_swept(self, inmemory_otel_setup):
+    def test_parent_turn_sweep_leaves_the_delegation_open(self, inmemory_otel_setup):
         from hermes_otel.plugin_config import HermesOtelConfig
 
         exporter, plugin = inmemory_otel_setup
@@ -469,10 +470,151 @@ class TestOrphanedDelegationSwept:
             child_role="researcher",
             child_goal="g",
         )
-        # Back-date the parent turn well past the TTL so the sweep expires it.
         plugin.register_turn("parent", started_at=time.perf_counter() - 10.0)
-        swept = plugin.sweep_expired_turns()
-        assert "parent" in swept
+        assert "parent" in plugin.sweep_expired_turns()
 
         names = [s.name for s in exporter.get_finished_spans()]
-        assert "subagent.researcher" in names
+        assert "agent" in names and "subagent.researcher" not in names
+        assert plugin.spans.has_span("subagent:c1")
+
+    def test_unfinished_delegation_is_closed_by_its_own_ttl(self, inmemory_otel_setup):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(subagent_span_ttl_ms=1_000)
+        on_session_start(session_id="parent", model="gpt-4", platform="cli")
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="c1",
+            child_role="researcher",
+            child_goal="g",
+        )
+        record = plugin.spans.get_subagent("c1")
+        plugin.spans.register_subagent("c1", record, started_at=time.perf_counter() - 10.0)
+        assert plugin.sweep_expired_delegations() == ["c1"]
+
+        span = _span_by_name(exporter.get_finished_spans(), "subagent.researcher")
+        assert span.attributes["hermes.subagent.swept"] is True
+        assert span.status.status_code != StatusCode.ERROR
+        assert plugin.spans.get_subagent("c1") is None
+        assert plugin.sweep_expired_delegations() == []
+
+
+class TestDelegationLifecycle:
+    """The delegation modes Hermes has grown since #27 (#392)."""
+
+    def test_background_delegation_stops_in_a_later_turn(self, inmemory_otel_setup):
+        """Top-level delegate_task returns at once; subagent_stop fires after the
+        parent's turn N has ended, during turn N+1. The span stays open across
+        the turn boundary and the turn N+1 sweep, then ends with its status."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(root_span_ttl_ms=1_000)
+        _open_parent_turn()
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="bg-1",
+            child_role="leaf",
+            child_goal="background work",
+        )
+        _close_parent_turn()  # turn N ends with the child still running
+        turn_n_api = _span_by_name(exporter.get_finished_spans(), "api.gpt-4")
+
+        _open_parent_turn()  # turn N+1, which then outlives the TTL
+        plugin.register_turn("parent", started_at=time.perf_counter() - 10.0)
+        plugin.sweep_expired_turns()
+        _run_child("bg-1")
+        on_subagent_stop(
+            parent_session_id="parent",
+            child_session_id="bg-1",
+            child_role="leaf",
+            child_summary="done later",
+            child_status="completed",
+            duration_ms=90_000,
+        )
+
+        delegation = _span_by_name(exporter.get_finished_spans(), "subagent.leaf")
+        assert _parent_span_id(delegation) == turn_n_api.context.span_id
+        assert delegation.context.trace_id == turn_n_api.context.trace_id
+        attrs = dict(delegation.attributes)
+        assert attrs["hermes.subagent.status"] == "completed"
+        assert attrs["hermes.subagent.duration_ms"] == 90_000.0
+        assert "hermes.subagent.swept" not in attrs
+        assert plugin.spans.get_subagent("bg-1") is None
+        assert plugin.sweep_expired_delegations() == []
+
+    def test_batch_stops_in_a_different_order_than_starts(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        _open_parent_turn()
+        for i in (1, 2, 3):
+            on_subagent_start(
+                parent_session_id="parent",
+                child_session_id=f"b-{i}",
+                child_role=f"w{i}",
+                child_goal="g",
+            )
+        for i, status in ((3, "completed"), (1, "failed"), (2, "completed")):
+            on_subagent_stop(
+                parent_session_id="parent",
+                child_session_id=f"b-{i}",
+                child_status=status,
+                duration_ms=10,
+            )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        status = {
+            s.name: s.attributes["hermes.subagent.status"]
+            for s in spans
+            if s.name.startswith("subagent.")
+        }
+        assert status == {
+            "subagent.w1": "failed",
+            "subagent.w2": "completed",
+            "subagent.w3": "completed",
+        }
+        assert _span_by_name(spans, "subagent.w1").status.status_code == StatusCode.ERROR
+        assert not plugin.spans._subagent_registry
+
+    def test_stop_after_a_restart_is_harmless(self, inmemory_otel_with_metrics):
+        """A child whose parent process restarted arrives as ``unknown`` with no
+        span or record in this process: count it, open nothing, keep nothing."""
+        exporter, reader, plugin = inmemory_otel_with_metrics
+        on_subagent_stop(
+            parent_session_id="parent",
+            child_session_id="ghost",
+            child_role="leaf",
+            child_status="unknown",
+        )
+        assert not [s for s in exporter.get_finished_spans() if s.name.startswith("subagent")]
+        assert plugin.spans.get_subagent("ghost") is None
+        assert plugin.sweep_expired_delegations() == []
+        names = {
+            m.name
+            for rm in reader.get_metrics_data().resource_metrics
+            for sm in rm.scope_metrics
+            for m in sm.metrics
+        }
+        assert any("subagent" in n for n in names)
+
+
+class TestChildStatusMapping:
+    """Every final status Hermes's delegate tool reports (#392)."""
+
+    @pytest.mark.parametrize(
+        "status, error",
+        [
+            ("completed", False),
+            ("failed", True),
+            ("error", True),
+            ("timeout", True),
+            ("stalled", True),  # the stall monitor gave up on a silent child
+            ("interrupted", False),  # a user action, like an interrupted turn
+            ("unknown", False),  # nothing known (a restart); never an error
+        ],
+    )
+    def test_status(self, status, error):
+        from hermes_otel.helpers import subagent_status_to_span_status
+
+        assert subagent_status_to_span_status(status) == ("error" if error else "ok")
