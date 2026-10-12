@@ -31,7 +31,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.skill.inferred` | Counter | `{hit}` | `skill_name`, `source` = `skill_view` · `path_match` | `pre_tool_call` |
 | `hermes.api.time_to_first_chunk` | Histogram | `s` | `model`, `provider` | `post_api_request` of a streamed call: from Hermes's `started_at` (taken before any retry) to its `first_chunk_at`; also `hermes.api.ttfc_ms` on the `api.*` span |
 | `hermes.command.count` | Counter | `{command}` | `command` (Hermes's canonical name), `surface` | `pre_command`, before a recognised slash command runs; never the arguments |
-| `hermes.human_input.count` | Counter | `{request}` | `kind` = `approval` · `sudo` · `clarify`, `outcome` | `on_human_input_resolved`; `sudo` and `clarify` waits are also `human_input.{kind}` spans |
+| `hermes.human_input.count` | Counter | `{request}` | `kind` (Hermes's: `approval`, `clarify`, a password prompt, …), `outcome` | `on_human_input_resolved`; every wait except an approval is also a `human_input.{kind}` span |
 | `hermes.skill.lifecycle.count` | Counter | `{event}` | `action`, `provenance` (never the skill name) | `on_skill_lifecycle` |
 | `hermes.transcription.count` | Counter | `{request}` | `provider`, `model`, `source` | `pre_transcription` (a decision hook; the observer returns None and never reads the file path or prompt) |
 | `hermes.kanban.task.count` | Counter | `{transition}` | `outcome` = `claimed` · `spawned` · `worker_exited` · `stale_claim` · `completed` · `blocked`, `board` | the six kanban hooks ([hooks](/reference/hooks#kanban-board-transitions)); the dispatcher's and the worker's points come from different processes |

@@ -1045,7 +1045,7 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     Attr(
         "hermes.human_input.kind",
         "human_input",
-        "`sudo` or `clarify` (approval waits have their own approval.* spans)",
+        "Hermes's kind of wait: `clarify`, a password prompt, ... (approval waits have their own approval.* spans)",
         "human_input.*",
     ),
     Attr(

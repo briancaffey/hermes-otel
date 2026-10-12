@@ -236,7 +236,7 @@ These are small observers (#400). All return `None`, and none of them reads the 
 
 - **`pre_command`:** records `hermes.command.count{command, surface}` with Hermes's canonical command name. Never the arguments.
 - **`on_human_input_request` / `on_human_input_resolved`:**
-  - A `sudo` or `clarify` wait becomes a `human_input.{kind}` span under the session's in-flight span, carrying the redacted prompt as a preview, the outcome and `hermes.human_input.wait_s`.
+  - A `clarify` wait or a password prompt becomes a `human_input.{kind}` span under the session's in-flight span, carrying the redacted prompt as a preview, the outcome and `hermes.human_input.wait_s`.
   - An `approval` wait is only counted, since it already has its `approval.*` span.
   - Every wait records `hermes.human_input.count{kind, outcome}`.
 - **`on_skill_lifecycle`:** records `hermes.skill.lifecycle.count{action, provenance}`. Never the skill name, because a profile can hold any number of skills.
@@ -298,7 +298,7 @@ on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the c
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
 pre_command              metric hermes.command.count{command, surface}
-on_human_input_request   open  human_input.{kind}   (sudo, clarify; approval is counted only)
+on_human_input_request   open  human_input.{kind}   (every kind but approval, which is counted only)
 on_human_input_resolved  close human_input.{kind}   (outcome, wait_s) + hermes.human_input.count
 on_skill_lifecycle       metric hermes.skill.lifecycle.count{action, provenance}
 pre_transcription        metric hermes.transcription.count (returns None)

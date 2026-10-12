@@ -20,7 +20,8 @@ from ._common import _fail_open, _preview_for, get_tracer
 _LABEL_MAX = 64
 # Approval waits already have their own approval.* spans (pre/post approval
 # hooks); a human_input span would duplicate them, so they are only counted.
-_SPAN_KINDS = frozenset({"sudo", "clarify"})
+# Every other kind (a clarify question, a password prompt) gets a span.
+_COUNT_ONLY_KINDS = frozenset({"approval"})
 _waits: Dict[str, float] = {}
 
 
@@ -50,10 +51,10 @@ def on_human_input_request(
     prompt: Any = None,
     **kwargs: Any,
 ) -> None:
-    """The agent is waiting on a person (sudo password, a clarify question).
+    """The agent is waiting on a person (a clarify question, a password prompt).
 
-    Opens ``human_input.{kind}`` under the session's in-flight span for
-    ``sudo`` and ``clarify``; an ``approval`` wait is only counted on resolve.
+    Opens ``human_input.{kind}`` under the session's in-flight span; an
+    ``approval`` wait is only counted on resolve.
     The prompt Hermes passes is already redacted; it is kept as a preview.
     """
     tracer = get_tracer()
@@ -61,7 +62,7 @@ def on_human_input_request(
         return None
     k = _label(kind)
     _waits[str(request_id)] = time.perf_counter()
-    if k not in _SPAN_KINDS:
+    if k in _COUNT_ONLY_KINDS:
         return None
     sid = str(session_id or "") or None
     attributes: Dict[str, Any] = {"hermes.span_kind": "human_input", "hermes.human_input.kind": k}
@@ -90,7 +91,7 @@ def on_human_input_resolved(
     k, result = _label(kind), _label(outcome, "error")
     started = _waits.pop(str(request_id), None)
     wait_s = round(time.perf_counter() - started, 3) if started is not None else None
-    if k in _SPAN_KINDS:
+    if k not in _COUNT_ONLY_KINDS:
         attrs: Dict[str, Any] = {"hermes.human_input.outcome": result}
         if wait_s is not None:
             attrs["hermes.human_input.wait_s"] = wait_s

@@ -261,7 +261,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "hermes.human_input.count",
         "counter",
         "{request}",
-        "Waits on a person (approval, sudo, clarify) by kind and how they ended",
+        "Waits on a person (approval, clarify, a password prompt) by Hermes's kind and how they ended",
         "one",
         labels=("kind", "outcome"),
     ),
