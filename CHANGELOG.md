@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.27.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.27.0...hermes-otel-v1.27.1) (2026-10-12)
+
+
+### Documentation
+
+* **backends:** Azure Monitor / Application Insights through the Collector folder's azuremonitor target ([#387](https://github.com/briancaffey/hermes-otel/issues/387)) ([e73eaa5](https://github.com/briancaffey/hermes-otel/commit/e73eaa5d4b24ab8a8dc4502ba856997a1eed2065)), closes [#228](https://github.com/briancaffey/hermes-otel/issues/228)
+
 ## [1.27.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.26.0...hermes-otel-v1.27.0) (2026-10-12)
 
 
