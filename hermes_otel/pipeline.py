@@ -326,8 +326,6 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
             value = os.getenv(env_name, "").strip()
             if value:
                 attrs[attr_name] = value
-    if config.global_tags:
-        attrs.update(config.global_tags)
     if config.resource_attributes:
         attrs.update(config.resource_attributes)
     for b in backends or []:

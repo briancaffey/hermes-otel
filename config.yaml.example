@@ -34,7 +34,7 @@
 #   region: us-east-1
 #   team: platform
 
-# global_tags is an alias for resource_attributes retained for back-compat.
+# global_tags is a deprecated alias: merged into resource_attributes at load, with a warning.
 # global_tags:
 #   team: platform
 

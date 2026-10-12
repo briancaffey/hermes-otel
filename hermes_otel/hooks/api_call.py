@@ -135,7 +135,7 @@ def full_prompt_attributes(tracer, payload: HookPayload) -> Dict[str, Any]:
     ``...[truncated N chars]``, the opposite of full capture.
     """
     cfg = tracer.config
-    if not (cfg.capture_previews and cfg.capture_full_prompts):
+    if not cfg.captures_full_prompts():
         return {}
     attributes: Dict[str, Any] = {}
     messages = payload.messages

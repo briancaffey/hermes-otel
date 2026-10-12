@@ -195,7 +195,7 @@
    "changed": false,
    "default": null,
    "derived_from": null,
-   "description": "Merged into the OTel Resource; overridden by `resource_attributes` on key conflict",
+   "description": "Deprecated: merged into `resource_attributes` at load (which wins on a key conflict)",
    "env_invalid": false,
    "env_raw": null,
    "env_var": null,

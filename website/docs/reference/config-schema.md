@@ -27,7 +27,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars` |
 | `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars` |
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
-| `global_tags` | map | *(unset)* | Merged into the OTel Resource; overridden by `resource_attributes` on key conflict |
+| `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |

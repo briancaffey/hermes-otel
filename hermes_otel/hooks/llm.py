@@ -143,7 +143,7 @@ def on_pre_llm_call(
     # input.value. Falls back to just the latest user_message otherwise —
     # that's the historical default and what small backends handle best.
     full = None
-    if tracer.config.capture_conversation_history and tracer.config.capture_previews:
+    if tracer.config.capture_conversation_history and tracer.config.captures_content():
         full = _serialize_conversation_history(
             conversation_history, tracer.config.conversation_history_max_chars
         )
@@ -405,7 +405,7 @@ def on_post_api_request(
         tracer, api_duration, genai_metric_dims(model, provider, response_model)
     )
 
-    if tracer.config.capture_previews and tracer.config.capture_full_responses:
+    if tracer.config.captures_full_responses():
         attributes.update(_full_response_attributes(payload))
 
     # The GenAI semconv inference event (#267): request attributes from the api

@@ -198,7 +198,7 @@ def on_post_auxiliary_call(
     if streaming:
         attributes["gen_ai.request.stream"] = True
 
-    if tracer.config.capture_previews and tracer.config.capture_full_responses:
+    if tracer.config.captures_full_responses():
         response = as_dict(kwargs.get("response"))
         message = as_dict(response.get("assistant_message")) if response else {}
         content = message.get("content")

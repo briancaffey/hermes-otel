@@ -256,8 +256,9 @@ class HermesOtelConfig:
     #   "off"      no prompt, tool or response content at all; metadata only.
     # ``capture_previews`` / ``capture_full_prompts`` / ``capture_full_responses``
     # are the pre-1.11 spellings; load_config keeps them consistent with
-    # ``content_capture`` (see _reconcile_content_capture) and hook code reads
-    # the booleans. ``capture_previews: false`` still means "off".
+    # ``content_capture`` (see _reconcile_content_capture) and hook code asks
+    # ``content_mode()`` / ``captures_full_prompts()`` etc. below.
+    # ``capture_previews: false`` still means "off".
     content_capture: str = "full"
     capture_full_prompts: bool = True
     capture_full_responses: bool = True
@@ -360,6 +361,40 @@ class HermesOtelConfig:
     suppress_mcp_ping_spans: bool = True
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
+
+    def __post_init__(self) -> None:
+        # ``global_tags`` is the pre-``resource_attributes`` spelling: fold it
+        # in once, here, so the resource builder reads one mapping.
+        # ``resource_attributes`` wins on a key conflict, as it always has.
+        if self.global_tags:
+            merged = {**self.global_tags, **(self.resource_attributes or {})}
+            object.__setattr__(self, "resource_attributes", merged)
+            object.__setattr__(self, "global_tags", None)
+
+    # ── What content the hooks record (``content_capture``) ──────────────
+    # The hooks ask these instead of reading the three pre-1.11 booleans.
+    # The booleans stay as input spellings: in ``full`` mode they can still
+    # keep one side as previews (``capture_full_responses: false``).
+
+    def content_mode(self) -> str:
+        """``off`` / ``preview`` / ``full``: the mode the hooks apply."""
+        if not self.capture_previews:
+            return "off"
+        if self.capture_full_prompts or self.capture_full_responses:
+            return "full"
+        return "preview"
+
+    def captures_content(self) -> bool:
+        """Whether any prompt, tool or response content is recorded (mode is not ``off``)."""
+        return self.content_mode() != "off"
+
+    def captures_full_prompts(self) -> bool:
+        """Whether api spans carry the complete prompt instead of a preview."""
+        return self.captures_content() and self.capture_full_prompts
+
+    def captures_full_responses(self) -> bool:
+        """Whether api spans carry the complete response instead of a preview."""
+        return self.captures_content() and self.capture_full_responses
 
 
 # ── Env-var parsers ────────────────────────────────────────────────────────
@@ -849,6 +884,11 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
             values[key] = coerced
 
     values.update(_load_env_overrides())
+    if values.get("global_tags"):
+        logger.warning(
+            "[hermes-otel] global_tags is deprecated; it is merged into resource_attributes "
+            "(which wins on a key conflict). Move the keys there."
+        )
     _reconcile_content_capture(values)
     reconcile_metrics_settings(values)
 
@@ -956,12 +996,8 @@ def _reconcile_content_capture(values: Dict[str, Any]) -> None:
 
 
 def content_mode(cfg: HermesOtelConfig) -> str:
-    """The mode the hooks actually apply, from the booleans they read."""
-    if not cfg.capture_previews:
-        return "off"
-    if cfg.capture_full_prompts or cfg.capture_full_responses:
-        return "full"
-    return "preview"
+    """The mode the hooks actually apply (see :meth:`HermesOtelConfig.content_mode`)."""
+    return cfg.content_mode()
 
 
 DEFAULT_EXPORT_BATCH_SIZE = 512
@@ -1000,7 +1036,7 @@ FIELD_DOCS = {
     "llm_input_preview_max_chars": "Per-category cap for LLM input previews; `null` = `preview_max_chars`",
     "llm_output_preview_max_chars": "Per-category cap for LLM output previews; `null` = `preview_max_chars`",
     "headers": "Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these",
-    "global_tags": "Merged into the OTel Resource; overridden by `resource_attributes` on key conflict",
+    "global_tags": "Deprecated: merged into `resource_attributes` at load (which wins on a key conflict)",
     "resource_attributes": "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
     "project_name": "`openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME`",
     "span_batch_max_queue_size": "Max buffered spans per backend before drops",
