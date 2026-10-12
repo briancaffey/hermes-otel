@@ -1,0 +1,198 @@
+{
+ "calls": [
+  {
+   "body": {
+    "compositeQuery": {
+     "builderQueries": {
+      "A": {
+       "aggregateAttribute": {
+        "key": "",
+        "type": "tag"
+       },
+       "aggregateOperator": "noop",
+       "dataSource": "traces",
+       "disabled": false,
+       "expression": "A",
+       "filters": {
+        "items": [
+         {
+          "key": {
+           "key": "parentSpanID",
+           "type": "tag"
+          },
+          "op": "=",
+          "value": ""
+         }
+        ],
+        "op": "AND"
+       },
+       "limit": 6,
+       "orderBy": [
+        {
+         "columnName": "timestamp",
+         "order": "desc"
+        }
+       ],
+       "queryName": "A",
+       "selectColumns": [
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "traceID",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "spanID",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "serviceName",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "durationNano",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "timestamp",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "parentSpanID",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "statusCode",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "kind",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.model_name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.provider",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.api_mode",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.input_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.output_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.total_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.response.finish_reason",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.response.tool_calls",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "tool.name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "input.value",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "output.value",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.output.content",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "hermes.session_id",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "hermes.turn.number",
+         "type": "tag"
+        }
+       ],
+       "stepInterval": 60
+      }
+     },
+     "panelType": "list",
+     "queryType": "builder"
+    },
+    "end": 1791750060000,
+    "start": 1791746400000,
+    "step": 60
+   },
+   "method": "POST",
+   "url": "http://localhost:3301/api/v4/query_range"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v1/traces/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  }
+ }
+}

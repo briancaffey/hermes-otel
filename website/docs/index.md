@@ -202,7 +202,7 @@ Each span carries the attributes both Langfuse (`gen_ai.usage.input_tokens`, `ge
 | | |
 |---|---|
 | 🚀 **[Quickstart](/getting-started/quickstart)** | Install + Phoenix in a local Docker container, first trace in under 5 minutes |
-| 📦 **[Installation](/getting-started/installation)** | Install into Hermes Agent's venv, optional `langsmith` extra |
+| 📦 **[Installation](/getting-started/installation)** | Install into Hermes Agent's venv, optional extras |
 | 🧩 **[Concepts](/getting-started/concepts)** | Hooks, spans, fan-out, how the plugin wires into Hermes |
 | 🎯 **[Pick a backend](/backends/overview)** | Comparison table, quick picks, decision flowchart |
 | ⚙️ **[Configuration](/configuration/overview)** | `config.yaml`, env vars, sampling, privacy, batch tuning |

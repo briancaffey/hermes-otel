@@ -198,6 +198,57 @@ The contract test (`test_dashboard_adapter_contract.py`) parametrizes its
 invariants over `backends.adapters()`, so a new adapter is covered by it the
 moment it registers; its own response parsing goes in `test_dashboard_<type>.py`.
 
+### Golden fixtures
+
+`tests/golden/hooks/<scenario>__<config>.json` records the complete telemetry
+(spans, metric points, events) of twelve fixed hook sequences under four
+configs (`full`, `preview`, `off`, `events`). `tests/unit/test_golden_hooks.py`
+re-runs every one and fails on any difference, with a unified diff naming the
+attribute. Ids, timestamps, durations and the process identity are normalised
+(`T1`/`S1`, `<num>`, `<service.instance.id>`); everything else is literal.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_hooks.py`.
+- Add a scenario in `tests/golden/record_hooks.py` (`SCENARIOS`), record, commit the files.
+- **A refactor PR may not change a golden file.** If a change is deliberate (a bug
+  found on the way), re-record and list every changed line in the PR description.
+
+### Resolution snapshot (#409)
+
+`tests/unit/test_golden_resolution.py` records, for every backend type and
+every adapter alias under six input paths (inline credentials, `*_env`
+credentials, env-only selection, signal overrides, temporality + root_usage
+overrides, a per-backend `logs:` block), what the exporter resolves, which log
+exporter it gets, its Settings card, its MCP query target, its `status` line
+and its dashboard adapter, into `tests/golden/resolution/<type>__<path>.json`,
+plus the whole settings report for `config.yaml.example`. Secrets are
+placeholders and masked. `UPDATE_GOLDEN=1 pytest tests/unit/test_golden_resolution.py`
+re-records; a refactor PR that changes a fixture lists every changed line. The
+same module holds the cross-registry consistency checks (exporter types vs
+adapter `handles`, `signal_support()` vs adapter capabilities, env vars read vs
+`KNOWN_ENV_VARS`), marked `xfail(strict=True)` while #402 is open.
+
+### Adapter goldens
+
+`tests/golden/adapters/<type>/` holds, per dashboard adapter, the backend
+entry it is built from (`config.json`), a scripted server (`routes.json`,
+answered at the `urlopen` boundary by `helpers.wire.FakeWire`, so the raw SQL
+and LogsQL transports are covered too) and the recorded answers
+(`expected/<scenario>.json`: what the adapter returned *and* the requests it
+made). `tests/unit/test_dashboard_goldens.py` runs one fixed scenario list
+(status, the search variants, the detail, metrics and logs where declared,
+the error taxonomy) over `backends.adapters()`; a new adapter fails until its
+fixtures exist, and a change in an answer or a request fails with a diff.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_dashboard_goldens.py`.
+- The canned bodies come from `seed_responses.py` (the shapes the adapter
+  tests recorded against real backends, re-based onto one shared turn). To
+  capture a real backend instead, run the dashboard with
+  `HERMES_OTEL_RECORD_HTTP=<dir>` and read `<dir>/exchanges.jsonl`
+  (credentials are masked; ClickHouse and VictoriaLogs post through their
+  own transports and are not captured).
+- A refactor PR never changes an `expected/` file silently: when it must,
+  the PR description lists every changed fixture and why.
+
 ## Live before/after check (`make refactor-check`)
 
 Golden fixtures prove the Python output is unchanged; `make refactor-check`

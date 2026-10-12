@@ -1,0 +1,28 @@
+{
+ "calls": [],
+ "result": {
+  "auth_required": false,
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "client",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": true,
+  "metrics": true,
+  "name": "uptrace",
+  "project_id": 1,
+  "query_lang_label": "UQL",
+  "query_url": "http://localhost:14318",
+  "raw_placeholder": "where _name like \"api.%\" | where _duration > 1s",
+  "service_name": "hermes-agent",
+  "type": "uptrace"
+ }
+}

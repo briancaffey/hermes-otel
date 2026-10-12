@@ -1,0 +1,119 @@
+{
+ "adapter": {
+  "class": "UptraceAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Uptrace",
+ "entry": {
+  "dsn_env": "HO_TEST_DSN",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "name": "uptrace-entry",
+  "type": "uptrace"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "uptrace-dsn": "<secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "uptrace",
+  "name": "uptrace-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "env_fields",
+ "preset_temporality": "delta",
+ "resolved": {
+  "display_name": "uptrace-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "uptrace-dsn": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": "delta",
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "uptrace"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "dsn",
+    "set": true,
+    "source": "env HO_TEST_DSN",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Uptrace",
+  "docs_path": "/backends/uptrace",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "type preset",
+   "value": "delta"
+  },
+  "name": "uptrace-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "uptrace",
+  "ui": {
+   "note": "derived from the endpoint: Uptrace serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "uptrace-entry",
+    "queryable": true,
+    "type": "uptrace"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "uptrace"
+}

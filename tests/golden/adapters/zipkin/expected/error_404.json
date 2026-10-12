@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:9411/api/v2/traces?serviceName=hermes-agent&endTs=1791750060000&lookback=3660000&limit=6"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:9411/api/v2/trace/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Trace ab43116e1d6d4a1a449db547c36ca808 not found in Zipkin",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend returned 404: 404 page not found",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  }
+ }
+}

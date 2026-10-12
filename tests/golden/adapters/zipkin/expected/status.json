@@ -1,0 +1,26 @@
+{
+ "calls": [],
+ "result": {
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "none",
+   "min_duration": "server",
+   "model": "server",
+   "name": "client",
+   "raw": "server",
+   "roots_only": "client",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "none",
+   "tool": "server"
+  },
+  "logs": false,
+  "metrics": false,
+  "name": "zipkin",
+  "query_lang_label": "Zipkin annotationQuery (key=value)",
+  "query_url": "http://localhost:9411",
+  "raw_placeholder": "tool.name=terminal otel.status_code=ERROR",
+  "type": "zipkin"
+ }
+}

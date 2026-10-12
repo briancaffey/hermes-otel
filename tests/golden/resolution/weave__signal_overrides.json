@@ -1,0 +1,132 @@
+{
+ "adapter": null,
+ "display_name": "W&B Weave",
+ "entry": {
+  "api_key": "<secret>",
+  "entity": "<secret>",
+  "logs": true,
+  "metrics": true,
+  "name": "weave-entry",
+  "project": "<secret>",
+  "traces": false,
+  "type": "weave"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "https://trace.wandb.ai/otel/v1/logs",
+    "headers": {
+     "wandb-api-key": "<secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "weave",
+  "name": "weave-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "weave-entry",
+  "endpoint": "https://trace.wandb.ai/otel/v1/traces",
+  "headers": {
+   "wandb-api-key": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": {
+   "wandb.entity": "<secret>",
+   "wandb.project": "<secret>"
+  },
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "weave"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   },
+   {
+    "field": "entity",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
+    "field": "project",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   }
+  ],
+  "display_type": "W&B Weave",
+  "docs_path": "/backends/weave",
+  "fields": {},
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "weave-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "weave",
+  "ui": {
+   "note": "the Weave page of the entry's entity and project",
+   "source": "derived",
+   "url": "https://wandb.ai/<secret>/<secret>/weave"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": null,
+    "logs": false,
+    "metrics": false,
+    "name": "weave-entry",
+    "queryable": false,
+    "type": "weave"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "weave"
+}

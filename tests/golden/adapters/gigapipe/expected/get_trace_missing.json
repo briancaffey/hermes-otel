@@ -1,0 +1,14 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3110/api/traces/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in Gigapipe",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

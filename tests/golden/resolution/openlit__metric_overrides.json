@@ -1,0 +1,117 @@
+{
+ "adapter": null,
+ "display_name": "OpenLIT",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "metrics_temporality": "delta",
+  "name": "openlit-entry",
+  "root_usage": false,
+  "type": "openlit"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "Bearer <secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "openlit",
+  "name": "openlit-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "metric_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "openlit-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Bearer <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": "delta",
+  "resource_attributes": null,
+  "root_usage": false,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "openlit"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "OpenLIT",
+  "docs_path": "/backends/openlit",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "entry",
+   "value": "delta"
+  },
+  "name": "openlit-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "openlit",
+  "ui": {
+   "note": "the OpenLIT UI is on a different port than OTLP ingest; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "openlit-entry",
+    "queryable": false,
+    "type": "openlit"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "openlit"
+}

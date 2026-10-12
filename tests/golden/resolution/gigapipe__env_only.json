@@ -1,0 +1,30 @@
+{
+ "env": {
+  "OTEL_GIGAPIPE_ENDPOINT": "http://localhost:4318/v1/traces",
+  "OTEL_GIGAPIPE_PASSWORD": "<secret>",
+  "OTEL_GIGAPIPE_USER": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "Gigapipe",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "gigapipe"
+ },
+ "selected": "gigapipe",
+ "type": "gigapipe"
+}

@@ -1,0 +1,14 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v1/traces/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in SigNoz",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

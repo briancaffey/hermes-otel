@@ -1,0 +1,27 @@
+{
+ "calls": [],
+ "result": {
+  "auth_required": false,
+  "filters": {
+   "free_text": "none",
+   "min_duration": "client",
+   "model": "none",
+   "name": "client",
+   "raw": "server",
+   "roots_only": "none",
+   "service": "none",
+   "session": "server",
+   "status_error": "none",
+   "status_ok": "none",
+   "tool": "none"
+  },
+  "logs": false,
+  "metrics": false,
+  "name": "langfuse",
+  "query_api": "auto",
+  "query_lang_label": "Langfuse params (k=v k=v)",
+  "query_url": "http://localhost:3000",
+  "raw_placeholder": "userId=user_123 name=chat",
+  "type": "langfuse"
+ }
+}

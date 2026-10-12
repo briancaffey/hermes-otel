@@ -1,0 +1,263 @@
+{
+ "calls": [
+  {
+   "body": {
+    "compositeQuery": {
+     "builderQueries": {
+      "A": {
+       "aggregateAttribute": {
+        "key": "",
+        "type": "tag"
+       },
+       "aggregateOperator": "noop",
+       "dataSource": "traces",
+       "disabled": false,
+       "expression": "A",
+       "filters": {
+        "items": [
+         {
+          "key": {
+           "key": "parentSpanID",
+           "type": "tag"
+          },
+          "op": "=",
+          "value": ""
+         }
+        ],
+        "op": "AND"
+       },
+       "limit": 2,
+       "orderBy": [
+        {
+         "columnName": "timestamp",
+         "order": "desc"
+        }
+       ],
+       "queryName": "A",
+       "selectColumns": [
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "traceID",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "spanID",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "serviceName",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "durationNano",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "timestamp",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "parentSpanID",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "statusCode",
+         "type": "tag"
+        },
+        {
+         "dataType": "int64",
+         "isColumn": true,
+         "key": "kind",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.model_name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.provider",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.api_mode",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.input_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.output_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "gen_ai.usage.total_tokens",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.response.finish_reason",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.response.tool_calls",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "tool.name",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "input.value",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "output.value",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "llm.output.content",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "hermes.session_id",
+         "type": "tag"
+        },
+        {
+         "dataType": "float64",
+         "key": "hermes.turn.number",
+         "type": "tag"
+        }
+       ],
+       "stepInterval": 60
+      }
+     },
+     "panelType": "list",
+     "queryType": "builder"
+    },
+    "end": 1791750000001,
+    "start": 1791746400000,
+    "step": 60
+   },
+   "method": "POST",
+   "url": "http://localhost:3301/api/v4/query_range"
+  }
+ ],
+ "result": {
+  "has_more": true,
+  "next_before_ns": 1791750000000000000,
+  "traces": [
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "spanSets": [
+     {
+      "matched": 1,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "ok"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "65a98a08103c9da7"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750000000000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   }
+  ]
+ }
+}

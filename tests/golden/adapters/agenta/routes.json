@@ -1,0 +1,845 @@
+[
+ {
+  "method": "POST",
+  "path": "/api/spans/query",
+  "body_contains": [
+   "\"field\": \"trace_id\"",
+   "\"operator\": \"in\""
+  ],
+  "json": {
+   "count": 6,
+   "spans": [
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "parent_id": null,
+     "trace_type": "invocation",
+     "span_type": "agent",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "agent",
+     "start_time": "2026-10-11T20:20:00.000000Z",
+     "end_time": "2026-10-11T20:20:04.029000Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "agent",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "hermes": {
+       "session_id": "20261011_201958_a1b2c3",
+       "turn": {
+        "number": 1
+       },
+       "session": {
+        "completed": true
+       }
+      },
+      "session": {
+       "id": "20261011_201958_a1b2c3"
+      },
+      "gen_ai": {
+       "usage": {
+        "input_tokens": 23504,
+        "output_tokens": 186,
+        "total_tokens": 23690
+       }
+      },
+      "llm": {
+       "model_name": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "input": {
+       "value": "read the file hermes_otel.yaml and say hello"
+      },
+      "output": {
+       "value": "Here is the file."
+      }
+     }
+    },
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000001",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.terminal",
+     "start_time": "2026-10-11T20:20:01.500000Z",
+     "end_time": "2026-10-11T20:20:02.620770Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "terminal"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000002",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.read_file",
+     "start_time": "2026-10-11T20:20:03.000000Z",
+     "end_time": "2026-10-11T20:20:03.003595Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "read_file"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "bbbb000000000001",
+     "parent_id": null,
+     "trace_type": "invocation",
+     "span_type": "agent",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "agent",
+     "start_time": "2026-10-11T20:10:00.000000Z",
+     "end_time": "2026-10-11T20:10:04.029000Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "agent",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "hermes": {
+       "session_id": "20261011_201958_a1b2c3",
+       "turn": {
+        "number": 1
+       },
+       "session": {
+        "completed": true
+       }
+      },
+      "session": {
+       "id": "20261011_201958_a1b2c3"
+      },
+      "gen_ai": {
+       "usage": {
+        "input_tokens": 23504,
+        "output_tokens": 186,
+        "total_tokens": 23690
+       }
+      },
+      "llm": {
+       "model_name": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "input": {
+       "value": "read the file hermes_otel.yaml and say hello"
+      },
+      "output": {
+       "value": "Here is the file."
+      }
+     }
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "aaaa000000000001",
+     "parent_id": "bbbb000000000001",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.terminal",
+     "start_time": "2026-10-11T20:10:01.500000Z",
+     "end_time": "2026-10-11T20:10:02.620770Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "terminal"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "aaaa000000000002",
+     "parent_id": "bbbb000000000001",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.read_file",
+     "start_time": "2026-10-11T20:10:03.000000Z",
+     "end_time": "2026-10-11T20:10:03.003595Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "read_file"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/spans/query",
+  "body_contains": [
+   "\"field\": \"trace_id\"",
+   "00000000000000000000000000000000"
+  ],
+  "json": {
+   "count": 0,
+   "spans": []
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/spans/query",
+  "body_contains": [
+   "\"field\": \"trace_id\"",
+   "\"operator\": \"is\""
+  ],
+  "json": {
+   "count": 3,
+   "spans": [
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "parent_id": null,
+     "trace_type": "invocation",
+     "span_type": "agent",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "agent",
+     "start_time": "2026-10-11T20:20:00.000000Z",
+     "end_time": "2026-10-11T20:20:04.029000Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "agent",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "hermes": {
+       "session_id": "20261011_201958_a1b2c3",
+       "turn": {
+        "number": 1
+       },
+       "session": {
+        "completed": true
+       }
+      },
+      "session": {
+       "id": "20261011_201958_a1b2c3"
+      },
+      "gen_ai": {
+       "usage": {
+        "input_tokens": 23504,
+        "output_tokens": 186,
+        "total_tokens": 23690
+       }
+      },
+      "llm": {
+       "model_name": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "input": {
+       "value": "read the file hermes_otel.yaml and say hello"
+      },
+      "output": {
+       "value": "Here is the file."
+      }
+     }
+    },
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000001",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.terminal",
+     "start_time": "2026-10-11T20:20:01.500000Z",
+     "end_time": "2026-10-11T20:20:02.620770Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "terminal"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000002",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.read_file",
+     "start_time": "2026-10-11T20:20:03.000000Z",
+     "end_time": "2026-10-11T20:20:03.003595Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "read_file"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/spans/query",
+  "body_contains": "\"startswith\", \"value\": \"tool.\"",
+  "json": {
+   "count": 3,
+   "spans": [
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000001",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.terminal",
+     "start_time": "2026-10-11T20:20:01.500000Z",
+     "end_time": "2026-10-11T20:20:02.620770Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "terminal"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000002",
+     "parent_id": "65a98a08103c9da7",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.read_file",
+     "start_time": "2026-10-11T20:20:03.000000Z",
+     "end_time": "2026-10-11T20:20:03.003595Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "read_file"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "aaaa000000000001",
+     "parent_id": "bbbb000000000001",
+     "trace_type": "invocation",
+     "span_type": "tool",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "tool.terminal",
+     "start_time": "2026-10-11T20:10:01.500000Z",
+     "end_time": "2026-10-11T20:10:02.620770Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "tool",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "tool": {
+       "name": "terminal"
+      },
+      "openinference": {
+       "span": {
+        "kind": "TOOL"
+       }
+      }
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/spans/query",
+  "json": {
+   "count": 2,
+   "spans": [
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "parent_id": null,
+     "trace_type": "invocation",
+     "span_type": "agent",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "agent",
+     "start_time": "2026-10-11T20:20:00.000000Z",
+     "end_time": "2026-10-11T20:20:04.029000Z",
+     "status_code": "STATUS_CODE_OK",
+     "status_message": null,
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "agent",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "hermes": {
+       "session_id": "20261011_201958_a1b2c3",
+       "turn": {
+        "number": 1
+       },
+       "session": {
+        "completed": true
+       }
+      },
+      "session": {
+       "id": "20261011_201958_a1b2c3"
+      },
+      "gen_ai": {
+       "usage": {
+        "input_tokens": 23504,
+        "output_tokens": 186,
+        "total_tokens": 23690
+       }
+      },
+      "llm": {
+       "model_name": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "input": {
+       "value": "read the file hermes_otel.yaml and say hello"
+      },
+      "output": {
+       "value": "Here is the file."
+      }
+     }
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "bbbb000000000001",
+     "parent_id": null,
+     "trace_type": "invocation",
+     "span_type": "agent",
+     "span_kind": "SPAN_KIND_INTERNAL",
+     "span_name": "agent",
+     "start_time": "2026-10-11T20:10:00.000000Z",
+     "end_time": "2026-10-11T20:10:04.029000Z",
+     "status_code": "STATUS_CODE_ERROR",
+     "status_message": "No such file",
+     "attributes": {
+      "ag": {
+       "type": {
+        "span": "agent",
+        "trace": "invocation"
+       },
+       "metrics": {
+        "tokens": {
+         "cumulative": {
+          "total": 23690
+         }
+        }
+       },
+       "data": {
+        "inputs": {
+         "prompt": "big"
+        }
+       },
+       "meta": {
+        "tool": {
+         "name": "terminal"
+        }
+       },
+       "session": {
+        "id": "20261011_201958_a1b2c3"
+       }
+      },
+      "hermes": {
+       "session_id": "20261011_201958_a1b2c3",
+       "turn": {
+        "number": 1
+       },
+       "session": {
+        "completed": true
+       }
+      },
+      "session": {
+       "id": "20261011_201958_a1b2c3"
+      },
+      "gen_ai": {
+       "usage": {
+        "input_tokens": 23504,
+        "output_tokens": 186,
+        "total_tokens": 23690
+       }
+      },
+      "llm": {
+       "model_name": "nvidia/nemotron-3-super-120b-a12b"
+      },
+      "input": {
+       "value": "read the file hermes_otel.yaml and say hello"
+      },
+      "output": {
+       "value": "Here is the file."
+      }
+     }
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,39 @@
+{
+ "env": {
+  "OTEL_PARSEABLE_API_KEY": "<secret>",
+  "OTEL_PARSEABLE_ENDPOINT": "http://localhost:4318/v1/traces"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "Parseable",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-traces",
+   "X-P-Stream": "hermes-traces"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-logs",
+   "X-P-Stream": "hermes-logs"
+  },
+  "metrics_endpoint": null,
+  "metrics_headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-metrics",
+   "X-P-Stream": "hermes-metrics"
+  },
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "parseable"
+ },
+ "selected": "parseable",
+ "type": "parseable"
+}

@@ -1,0 +1,19 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/traces/1/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Backend returned 404: {\"message\":\"trace not found\"}",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

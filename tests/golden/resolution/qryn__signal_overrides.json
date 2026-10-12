@@ -1,0 +1,99 @@
+{
+ "adapter": {
+  "class": "GigapipeAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Qryn",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "qryn-entry",
+  "password": "<secret>",
+  "traces": false,
+  "type": "qryn",
+  "user": "<secret>"
+ },
+ "error": "ValueError: unknown backend type 'qryn'",
+ "mcp": {
+  "backend_type": "qryn",
+  "name": "qryn-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Qryn",
+  "docs_path": null,
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": false,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "qryn-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "qryn",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "qryn-entry",
+    "queryable": true,
+    "type": "qryn"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "qryn"
+}

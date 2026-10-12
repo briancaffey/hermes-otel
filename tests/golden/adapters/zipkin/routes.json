@@ -1,0 +1,205 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/v2/trace/00000000000000000000000000000000",
+  "status": 404,
+  "text": ""
+ },
+ {
+  "method": "GET",
+  "path": "/api/v2/trace/ab43116e1d6d4a1a449db547c36ca808",
+  "json": [
+   {
+    "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+    "id": "aaaa000000000001",
+    "name": "tool.terminal",
+    "timestamp": 1791750001500000,
+    "duration": 1120770,
+    "localEndpoint": {
+     "serviceName": "hermes-agent"
+    },
+    "tags": {
+     "otel.status_code": "OK",
+     "otel.scope.name": "hermes-otel-plugin",
+     "tool.name": "terminal",
+     "openinference.span.kind": "TOOL"
+    },
+    "parentId": "65a98a08103c9da7",
+    "kind": "CLIENT"
+   },
+   {
+    "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+    "id": "aaaa000000000002",
+    "name": "tool.read_file",
+    "timestamp": 1791750003000000,
+    "duration": 3595,
+    "localEndpoint": {
+     "serviceName": "hermes-agent"
+    },
+    "tags": {
+     "otel.status_code": "ERROR",
+     "otel.scope.name": "hermes-otel-plugin",
+     "tool.name": "read_file",
+     "openinference.span.kind": "TOOL",
+     "error": "No such file: nope.txt"
+    },
+    "parentId": "65a98a08103c9da7"
+   },
+   {
+    "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+    "id": "65a98a08103c9da7",
+    "name": "agent",
+    "timestamp": 1791750000000000,
+    "duration": 4029000,
+    "localEndpoint": {
+     "serviceName": "hermes-agent"
+    },
+    "tags": {
+     "otel.status_code": "OK",
+     "otel.scope.name": "hermes-otel-plugin",
+     "hermes.session_id": "20261011_201958_a1b2c3",
+     "session.id": "20261011_201958_a1b2c3",
+     "gen_ai.usage.input_tokens": "23504",
+     "gen_ai.usage.output_tokens": "186",
+     "gen_ai.usage.total_tokens": "23690",
+     "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+     "hermes.turn.number": "1",
+     "hermes.session.completed": "true",
+     "input.value": "read the file hermes_otel.yaml and say hello",
+     "output.value": "Here is the file."
+    }
+   }
+  ]
+ },
+ {
+  "method": "GET",
+  "path": "/api/v2/traces",
+  "json": [
+   [
+    {
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "id": "aaaa000000000001",
+     "name": "tool.terminal",
+     "timestamp": 1791750001500000,
+     "duration": 1120770,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "OK",
+      "otel.scope.name": "hermes-otel-plugin",
+      "tool.name": "terminal",
+      "openinference.span.kind": "TOOL"
+     },
+     "parentId": "65a98a08103c9da7",
+     "kind": "CLIENT"
+    },
+    {
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "id": "aaaa000000000002",
+     "name": "tool.read_file",
+     "timestamp": 1791750003000000,
+     "duration": 3595,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "ERROR",
+      "otel.scope.name": "hermes-otel-plugin",
+      "tool.name": "read_file",
+      "openinference.span.kind": "TOOL",
+      "error": "No such file: nope.txt"
+     },
+     "parentId": "65a98a08103c9da7"
+    },
+    {
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "id": "65a98a08103c9da7",
+     "name": "agent",
+     "timestamp": 1791750000000000,
+     "duration": 4029000,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "OK",
+      "otel.scope.name": "hermes-otel-plugin",
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "session.id": "20261011_201958_a1b2c3",
+      "gen_ai.usage.input_tokens": "23504",
+      "gen_ai.usage.output_tokens": "186",
+      "gen_ai.usage.total_tokens": "23690",
+      "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes.turn.number": "1",
+      "hermes.session.completed": "true",
+      "input.value": "read the file hermes_otel.yaml and say hello",
+      "output.value": "Here is the file."
+     }
+    }
+   ],
+   [
+    {
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "id": "aaaa000000000001",
+     "name": "tool.terminal",
+     "timestamp": 1791749401500000,
+     "duration": 1120770,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "OK",
+      "otel.scope.name": "hermes-otel-plugin",
+      "tool.name": "terminal",
+      "openinference.span.kind": "TOOL"
+     },
+     "parentId": "bbbb000000000001",
+     "kind": "CLIENT"
+    },
+    {
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "id": "aaaa000000000002",
+     "name": "tool.read_file",
+     "timestamp": 1791749403000000,
+     "duration": 3595,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "ERROR",
+      "otel.scope.name": "hermes-otel-plugin",
+      "tool.name": "read_file",
+      "openinference.span.kind": "TOOL",
+      "error": "No such file: nope.txt"
+     },
+     "parentId": "bbbb000000000001"
+    },
+    {
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "id": "bbbb000000000001",
+     "name": "agent",
+     "timestamp": 1791749400000000,
+     "duration": 4029000,
+     "localEndpoint": {
+      "serviceName": "hermes-agent"
+     },
+     "tags": {
+      "otel.status_code": "ERROR",
+      "otel.scope.name": "hermes-otel-plugin",
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "session.id": "20261011_201958_a1b2c3",
+      "gen_ai.usage.input_tokens": "23504",
+      "gen_ai.usage.output_tokens": "186",
+      "gen_ai.usage.total_tokens": "23690",
+      "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes.turn.number": "1",
+      "hermes.session.completed": "true",
+      "input.value": "read the file hermes_otel.yaml and say hello",
+      "output.value": "Here is the file.",
+      "error": "No such file: nope.txt"
+     }
+    }
+   ]
+  ]
+ }
+]

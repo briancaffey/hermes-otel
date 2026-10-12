@@ -14,9 +14,8 @@ run a Hermes older than 0.21:
 /path/to/hermes-agent/venv/bin/pip install -r ~/.hermes/plugins/hermes_otel/requirements.txt
 ```
 
-Optional: `langsmith` (LangSmith backend, uuid7 run IDs). `PyYAML`, which
-reads `hermes_otel.yaml`, is a declared dependency and is installed with the
-OpenTelemetry packages.
+`PyYAML`, which reads `hermes_otel.yaml`, is a declared dependency and is
+installed with the OpenTelemetry packages.
 `host_metrics: true` uses `psutil` (ships with hermes-agent); GPU readings
 additionally need `pynvml` (NVIDIA) or `amdsmi` matching your ROCm stack.
 
@@ -48,7 +47,7 @@ Pick one and export it before starting Hermes:
 | VictoriaMetrics family | `OTEL_VICTORIA_ENDPOINT=http://localhost:10428` (+ `OTEL_VICTORIA_METRICS_ENDPOINT=http://localhost:8428`, `OTEL_VICTORIA_LOGS_ENDPOINT=http://localhost:9428` for metrics and logs) |
 | Grafana LGTM / any OTLP collector | no env-var mode: add `backends: [{type: lgtm, endpoint: http://localhost:4318/v1/traces, metrics: true}]` to `$HERMES_HOME/hermes_otel.yaml` |
 | Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` |
-| LangSmith | `LANGSMITH_TRACING=true` + `LANGSMITH_API_KEY` |
+| LangSmith | `OTEL_LANGSMITH_API_KEY` (traces only; `OTEL_LANGSMITH_PROJECT` for the project) |
 | Honeycomb | `OTEL_HONEYCOMB_API_KEY` |
 | W&B Weave | `OTEL_WEAVE_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` |
 | Elastic | `OTEL_ELASTIC_ENDPOINT` (+ `OTEL_ELASTIC_API_KEY` for Elastic Cloud mOTLP; omit for a local EDOT Collector) |

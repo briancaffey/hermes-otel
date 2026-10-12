@@ -1,0 +1,203 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3110/api/search?limit=500&start=1791746400&end=1791750060&q=%7B+nestedSetParent+%3C+0+%26%26+status+%3D+error+%7D+%7C+select%28.llm.model_name%2C+.llm.provider%2C+.llm.api_mode%2C+.gen_ai.usage.input_tokens%2C+.gen_ai.usage.output_tokens%2C+.gen_ai.usage.total_tokens%2C+.llm.response.finish_reason%2C+.llm.response.tool_calls%2C+.tool.name%2C+.input.value%2C+.output.value%2C+.llm.output.content%2C+.hermes.session_id%2C+.hermes.turn.number%2C+status%2C+name%29&spss=1"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3110/api/traces/ab43116e1d6d4a1a449db547c36ca808"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3110/api/traces/5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSet": {
+     "matched": 1,
+     "spans": [
+      {
+       "attributes": [],
+       "durationNanos": "4029000000",
+       "spanID": "65a98a08103c9da7",
+       "startTimeUnixNano": "1791750000000000000"
+      }
+     ]
+    },
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "65a98a08103c9da7"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750000000000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSet": {
+     "matched": 1,
+     "spans": [
+      {
+       "attributes": [],
+       "durationNanos": "4029000000",
+       "spanID": "bbbb000000000001",
+       "startTimeUnixNano": "1791749400000000000"
+      }
+     ]
+    },
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "error"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "bbbb000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749400000000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

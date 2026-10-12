@@ -21,6 +21,7 @@ class TestPhoenixIsTracesOnly:
         assert _TRACES_ONLY == {
             "phoenix",
             "langfuse",
+            "langsmith",
             "jaeger",
             "zipkin",
             "tempo",

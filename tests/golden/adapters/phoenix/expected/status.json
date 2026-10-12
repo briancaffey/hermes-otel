@@ -1,0 +1,28 @@
+{
+ "calls": [],
+ "result": {
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "client",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "none",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": false,
+  "metrics": false,
+  "name": "phoenix",
+  "project_fallback": false,
+  "project_name": null,
+  "project_resolved": null,
+  "query_lang_label": "Phoenix filter",
+  "query_url": "http://localhost:6006",
+  "raw_placeholder": "llm.model_name == 'gpt-4'",
+  "type": "phoenix"
+ }
+}

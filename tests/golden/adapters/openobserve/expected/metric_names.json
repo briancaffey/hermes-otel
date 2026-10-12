@@ -1,0 +1,26 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:5080/api/default/streams?type=metrics"
+  }
+ ],
+ "result": [
+  {
+   "count": 9,
+   "count_scope": "stream",
+   "name": "hermes_token_usage"
+  },
+  {
+   "count": 4,
+   "count_scope": "stream",
+   "name": "hermes_tool_duration_milliseconds_sum"
+  },
+  {
+   "count": 120,
+   "count_scope": "stream",
+   "name": "system_cpu_utilization"
+  }
+ ]
+}

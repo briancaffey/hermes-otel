@@ -99,7 +99,7 @@ describe("env grouping", () => {
     { name: "HERMES_OTEL_CAPTURE_LOGS", group: "override", description: "", set: true, value: "true", maps_to: "capture_logs" },
     { name: "HERMES_HOME", group: "plugin", description: "", set: true, value: "/h", maps_to: null },
     { name: "OTEL_X", group: "other", description: "", set: true, value: "1", maps_to: null },
-    { name: "LANGSMITH_API_KEY", group: "langsmith", description: "", set: false, value: null, maps_to: null },
+    { name: "LANGSMITH_API_KEY", group: "backend", description: "", set: false, value: null, maps_to: null },
   ];
   it("hides unset entries by default and keeps the fixed order", () => {
     const g = groupEnv(env, false);
@@ -109,7 +109,7 @@ describe("env grouping", () => {
   });
   it("shows unset entries on request", () => {
     const g = groupEnv(env, true);
-    expect(g.map((x) => x.group)).toEqual(["override", "plugin", "langsmith", "other"]);
+    expect(g.map((x) => x.group)).toEqual(["override", "plugin", "backend", "other"]);
     expect(g[0].entries).toHaveLength(2);
   });
   it("counts", () => {

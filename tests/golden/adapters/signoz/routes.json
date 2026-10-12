@@ -1,0 +1,448 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/v1/traces/00000000000000000000000000000000",
+  "status": 404,
+  "text": "{\"error\":\"trace not found\"}"
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/traces/ab43116e1d6d4a1a449db547c36ca808",
+  "json": [
+   {
+    "columns": [
+     "__time",
+     "SpanId",
+     "TraceId",
+     "ServiceName",
+     "Name",
+     "Kind",
+     "DurationNano",
+     "TagsKeys",
+     "TagsValues",
+     "References",
+     "HasError",
+     "StatusMessage",
+     "StatusCodeString",
+     "SpanKind"
+    ],
+    "events": [
+     [
+      1791750000000,
+      "65a98a08103c9da7",
+      "ab43116e1d6d4a1a449db547c36ca808",
+      "hermes-agent",
+      "agent",
+      1,
+      4029000000,
+      [
+       "hermes.session_id",
+       "session.id",
+       "gen_ai.usage.input_tokens",
+       "gen_ai.usage.output_tokens",
+       "gen_ai.usage.total_tokens",
+       "llm.model_name",
+       "hermes.turn.number",
+       "hermes.session.completed",
+       "input.value",
+       "output.value"
+      ],
+      [
+       "20261011_201958_a1b2c3",
+       "20261011_201958_a1b2c3",
+       "23504",
+       "186",
+       "23690",
+       "nvidia/nemotron-3-super-120b-a12b",
+       "1",
+       "True",
+       "read the file hermes_otel.yaml and say hello",
+       "Here is the file."
+      ],
+      [],
+      false,
+      "",
+      "Ok",
+      "Internal"
+     ],
+     [
+      1791750001500,
+      "aaaa000000000001",
+      "ab43116e1d6d4a1a449db547c36ca808",
+      "hermes-agent",
+      "tool.terminal",
+      1,
+      1120770000,
+      [
+       "tool.name",
+       "openinference.span.kind"
+      ],
+      [
+       "terminal",
+       "TOOL"
+      ],
+      [
+       "{TraceId=ab43116e1d6d4a1a449db547c36ca808, SpanId=65a98a08103c9da7, RefType=CHILD_OF}"
+      ],
+      false,
+      "",
+      "Ok",
+      "Internal"
+     ],
+     [
+      1791750003000,
+      "aaaa000000000002",
+      "ab43116e1d6d4a1a449db547c36ca808",
+      "hermes-agent",
+      "tool.read_file",
+      1,
+      3595000,
+      [
+       "tool.name",
+       "openinference.span.kind"
+      ],
+      [
+       "read_file",
+       "TOOL"
+      ],
+      [
+       "{TraceId=ab43116e1d6d4a1a449db547c36ca808, SpanId=65a98a08103c9da7, RefType=CHILD_OF}"
+      ],
+      true,
+      "No such file",
+      "Error",
+      "Internal"
+     ]
+    ]
+   }
+  ]
+ },
+ {
+  "method": "GET",
+  "path_prefix": "/api/v3/autocomplete/aggregate_attributes",
+  "json": {
+   "status": "success",
+   "data": {
+    "attributeKeys": [
+     {
+      "key": "hermes.token.usage",
+      "dataType": "float64",
+      "type": "Sum",
+      "isColumn": true
+     },
+     {
+      "key": "hermes.message.count",
+      "dataType": "float64",
+      "type": "Sum",
+      "isColumn": true
+     },
+     {
+      "key": "hermes.tool.duration.bucket",
+      "dataType": "float64",
+      "type": "Histogram"
+     },
+     {
+      "key": "hermes.tool.duration.sum",
+      "dataType": "float64",
+      "type": "Sum"
+     },
+     {
+      "key": "hermes.tool.duration.count",
+      "dataType": "float64",
+      "type": "Sum"
+     },
+     {
+      "key": "system.cpu.utilization",
+      "dataType": "float64",
+      "type": "Gauge"
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/v4/query_range",
+  "body_contains": "\"dataSource\": \"metrics\"",
+  "json": {
+   "status": "success",
+   "data": {
+    "resultType": "",
+    "result": [
+     {
+      "queryName": "A",
+      "series": [
+       {
+        "labels": {
+         "model": "nvidia/nemotron-3-nano-omni"
+        },
+        "labelsArray": [
+         {
+          "model": "nvidia/nemotron-3-nano-omni"
+         }
+        ],
+        "values": [
+         {
+          "timestamp": 1791746400000,
+          "value": "53739"
+         }
+        ]
+       },
+       {
+        "labels": {
+         "model": "nvidia/nemotron-3-super-120b-a12b"
+        },
+        "labelsArray": [
+         {
+          "model": "nvidia/nemotron-3-super-120b-a12b"
+         }
+        ],
+        "values": [
+         {
+          "timestamp": 1791746400000,
+          "value": "79423"
+         },
+         {
+          "timestamp": 1791749700000,
+          "value": "100"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/v4/query_range",
+  "body_contains": [
+   "\"dataSource\": \"logs\"",
+   "\"panelType\": \"list\""
+  ],
+  "json": {
+   "status": "success",
+   "data": {
+    "result": [
+     {
+      "queryName": "A",
+      "list": [
+       {
+        "timestamp": "2026-10-11T20:20:04.100Z",
+        "data": {
+         "attributes_bool": {},
+         "attributes_number": {
+          "code.line.number": 173
+         },
+         "attributes_string": {
+          "code.function.name": "finalize",
+          "hermes.session_id": "20261011_201958_a1b2c3"
+         },
+         "body": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+         "id": "0lvp5V2AsfACTj1VXzRqsSwZLbk",
+         "resources_string": {
+          "service.name": "hermes-agent"
+         },
+         "scope_name": "hermes_otel",
+         "scope_string": {},
+         "severity_number": 9,
+         "severity_text": "INFO",
+         "span_id": "65a98a08103c9da7",
+         "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+         "trace_flags": 0
+        }
+       },
+       {
+        "timestamp": "2026-10-11T20:20:02.000Z",
+        "data": {
+         "attributes_bool": {},
+         "attributes_number": {
+          "code.line.number": 173
+         },
+         "attributes_string": {
+          "code.function.name": "finalize"
+         },
+         "body": "careful: the output was truncated",
+         "id": "0lvp5V2AsfACTj1VXzRqsSwZLbk",
+         "resources_string": {
+          "service.name": "hermes-agent"
+         },
+         "scope_name": "cli",
+         "scope_string": {},
+         "severity_number": 13,
+         "severity_text": "WARN",
+         "span_id": "65a98a08103c9da7",
+         "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+         "trace_flags": 0
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/v4/query_range",
+  "body_contains": "\"dataSource\": \"logs\"",
+  "json": {
+   "status": "success",
+   "data": {
+    "result": [
+     {
+      "queryName": "A",
+      "series": [
+       {
+        "labels": {
+         "scope_name": "gateway.run"
+        },
+        "values": [
+         {
+          "timestamp": 0,
+          "value": "38"
+         }
+        ]
+       },
+       {
+        "labels": {
+         "scope_name": "hermes_otel"
+        },
+        "values": [
+         {
+          "timestamp": 0,
+          "value": "73"
+         }
+        ]
+       },
+       {
+        "labels": {},
+        "values": [
+         {
+          "timestamp": 0,
+          "value": "5"
+         }
+        ]
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/v4/query_range",
+  "body_contains": "\"value\": \"^tool\\\\.\"",
+  "json": {
+   "status": "success",
+   "data": {
+    "result": [
+     {
+      "queryName": "A",
+      "list": [
+       {
+        "data": {
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "aaaa000000000001",
+         "name": "tool.terminal",
+         "serviceName": "hermes-agent",
+         "durationNano": 1120770000,
+         "timestamp": "2026-10-11T20:20:00Z",
+         "hasError": false,
+         "tool.name": "terminal",
+         "openinference.span.kind": "TOOL"
+        }
+       },
+       {
+        "data": {
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "aaaa000000000002",
+         "name": "tool.read_file",
+         "serviceName": "hermes-agent",
+         "durationNano": 1120770000,
+         "timestamp": "2026-10-11T20:20:00Z",
+         "hasError": true,
+         "tool.name": "read_file",
+         "openinference.span.kind": "TOOL"
+        }
+       },
+       {
+        "data": {
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "aaaa000000000001",
+         "name": "tool.terminal",
+         "serviceName": "hermes-agent",
+         "durationNano": 1120770000,
+         "timestamp": "2026-10-11T20:10:00Z",
+         "hasError": false,
+         "tool.name": "terminal",
+         "openinference.span.kind": "TOOL"
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/v4/query_range",
+  "json": {
+   "status": "success",
+   "data": {
+    "result": [
+     {
+      "queryName": "A",
+      "list": [
+       {
+        "data": {
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "65a98a08103c9da7",
+         "name": "agent",
+         "serviceName": "hermes-agent",
+         "durationNano": 4029000000,
+         "timestamp": "2026-10-11T20:20:00Z",
+         "hasError": false,
+         "hermes.session_id": "20261011_201958_a1b2c3",
+         "session.id": "20261011_201958_a1b2c3",
+         "gen_ai.usage.input_tokens": 23504,
+         "gen_ai.usage.output_tokens": 186,
+         "gen_ai.usage.total_tokens": 23690,
+         "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+         "hermes.turn.number": 1,
+         "hermes.session.completed": true,
+         "input.value": "read the file hermes_otel.yaml and say hello",
+         "output.value": "Here is the file."
+        }
+       },
+       {
+        "data": {
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "bbbb000000000001",
+         "name": "agent",
+         "serviceName": "hermes-agent",
+         "durationNano": 4029000000,
+         "timestamp": "2026-10-11T20:10:00Z",
+         "hasError": true,
+         "hermes.session_id": "20261011_201958_a1b2c3",
+         "session.id": "20261011_201958_a1b2c3",
+         "gen_ai.usage.input_tokens": 23504,
+         "gen_ai.usage.output_tokens": 186,
+         "gen_ai.usage.total_tokens": 23690,
+         "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+         "hermes.turn.number": 1,
+         "hermes.session.completed": true,
+         "input.value": "read the file hermes_otel.yaml and say hello",
+         "output.value": "Here is the file."
+        }
+       }
+      ]
+     }
+    ]
+   }
+  }
+ }
+]

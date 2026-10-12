@@ -71,7 +71,6 @@ class TestArtifactContents:
             "live_store.py",
             "log_handler.py",
             "debug_utils.py",
-            "langsmith_backend.py",
             # Registered as the `hermes_otel:observability` skill by register().
             "skills/observability/SKILL.md",
             # The skill's terminal query tool (#215) and the module it launches.

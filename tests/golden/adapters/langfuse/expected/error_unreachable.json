@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?limit=1"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?limit=1"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

@@ -1,0 +1,26 @@
+{
+ "calls": [],
+ "result": {
+  "auth_required": false,
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": true,
+  "metrics": true,
+  "name": "signoz",
+  "query_lang_label": "SigNoz filter (key=value)",
+  "query_url": "http://localhost:3301",
+  "raw_placeholder": "serviceName=hermes-agent",
+  "type": "signoz"
+ }
+}

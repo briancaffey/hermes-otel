@@ -1,0 +1,19 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3100/loki/api/v1/query?query=sum+by+%28scope_name%29+%28count_over_time%28%7Bservice_name%3D~%22.%2B%22%7D+%5B3660s%5D%29%29&time=1791750060"
+  }
+ ],
+ "result": [
+  {
+   "count": 6,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 2,
+   "logger": "cli"
+  }
+ ]
+}

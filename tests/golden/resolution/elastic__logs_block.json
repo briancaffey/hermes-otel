@@ -1,0 +1,131 @@
+{
+ "adapter": null,
+ "display_name": "Elastic",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "name": "elastic-entry",
+  "type": "elastic"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "ApiKey <secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "elastic",
+  "name": "elastic-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "logs_block",
+ "preset_temporality": "delta",
+ "resolved": {
+  "display_name": "elastic-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "ApiKey <secret>"
+  },
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": "delta",
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "elastic"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Elastic",
+  "docs_path": "/backends/elastic",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "metrics_temporality": {
+   "source": "type preset",
+   "value": "delta"
+  },
+  "name": "elastic-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "elastic",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "elastic-entry",
+    "queryable": false,
+    "type": "elastic"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "elastic"
+}

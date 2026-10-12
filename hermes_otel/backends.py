@@ -38,6 +38,7 @@ from .plugin_config import BackendConfig, normalize_temporality
 _TRACES_ONLY = {
     "phoenix",
     "langfuse",
+    "langsmith",
     "jaeger",
     "zipkin",
     "tempo",
@@ -80,6 +81,7 @@ _NO_METRICS = {"laminar"}
 # Display names used in logs. Preferred over ``type.capitalize()`` because
 # some backends use camelCase ("SigNoz") that simple title-case gets wrong.
 _DISPLAY_NAMES = {
+    "langsmith": "LangSmith",
     "phoenix": "Phoenix",
     "langfuse": "Langfuse",
     "signoz": "SigNoz",
@@ -121,6 +123,7 @@ _WEAVE_DEFAULT_ENDPOINT = "https://trace.wandb.ai/otel/v1/traces"
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
 _ENV_PRIORITY = [
+    "langsmith",
     "langfuse",
     "signoz",
     "uptrace",
@@ -155,6 +158,8 @@ _ENV_PRIORITY = [
 # variable as the explicit opt-in; the generic fallbacks still fill in the rest,
 # and an explicit ``backends:`` entry in config.yaml is unaffected.
 _ENV_OPT_IN = {
+    # LangSmith has a cloud default host, so a plugin-namespaced key is enough.
+    "langsmith": ("OTEL_LANGSMITH_API_KEY", "OTEL_LANGSMITH_ENDPOINT"),
     "langfuse": (
         "OTEL_LANGFUSE_PUBLIC_API_KEY",
         "OTEL_LANGFUSE_SECRET_API_KEY",
@@ -187,6 +192,7 @@ _ENV_OPT_IN = {
 # must be satisfied for the set to count as "credentials present". Used only
 # to tell the user why env-var mode did not export (#259).
 _VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
+    "langsmith": (("LANGSMITH_API_KEY",),),
     "langfuse": (("LANGFUSE_PUBLIC_KEY",), ("LANGFUSE_SECRET_KEY",)),
     "weave": (
         ("WANDB_API_KEY",),
@@ -1039,6 +1045,75 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
+# LangSmith's OTLP ingest base per region; the plugin appends ``/otel/v1/traces``.
+_LANGSMITH_ENDPOINTS = {
+    "us": "https://api.smith.langchain.com",
+    "eu": "https://eu.api.smith.langchain.com",
+}
+
+
+def _langsmith_traces_url(ep: str) -> str:
+    """``.../otel/v1/traces`` from an API base, an ``/otel`` base or a full URL.
+
+    ``LANGSMITH_ENDPOINT`` is the SDK's API base (``https://api.smith.langchain.com``);
+    the OTLP routes live under ``/otel`` on the same host."""
+    base = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.strip().rstrip("/")).rstrip("/")
+    if not base.endswith("/otel"):
+        base = f"{base}/otel"
+    return f"{base}/v1/traces"
+
+
+def _resolve_langsmith(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve LangSmith (SaaS, OTLP/HTTP — traces only).
+
+    LangSmith accepts OTLP traces at ``<api base>/otel/v1/traces`` with the
+    API key in ``x-api-key`` and the target project in ``Langsmith-Project``.
+    Until 1.26 the plugin drove LangSmith's run-tree HTTP API instead, selected
+    by ``LANGSMITH_TRACING=true`` and outside the ``backends:`` fan-out; that
+    path is gone (#415) and ``LANGSMITH_TRACING`` selects nothing. The vendor
+    variables (``LANGSMITH_API_KEY``, ``LANGSMITH_PROJECT``,
+    ``LANGSMITH_ENDPOINT``) still fill in values once the entry or the
+    ``OTEL_LANGSMITH_*`` opt-in names the backend (#255).
+    """
+    key = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_LANGSMITH_API_KEY", "LANGSMITH_API_KEY"]
+    )
+    if not key:
+        raise ValueError(
+            "langsmith requires api_key (or set OTEL_LANGSMITH_API_KEY / LANGSMITH_API_KEY)"
+        )
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_LANGSMITH_ENDPOINT", "")
+        or os.getenv("LANGSMITH_ENDPOINT", "")
+    ).strip()
+    if not ep:
+        region = (bc.region or "us").strip().lower()
+        base = _LANGSMITH_ENDPOINTS.get(region)
+        if base is None:
+            raise ValueError(
+                f"langsmith region must be one of {sorted(_LANGSMITH_ENDPOINTS)}, got {bc.region!r}"
+            )
+        ep = base
+    ep = _langsmith_traces_url(ep)
+    headers: Dict[str, str] = {"x-api-key": key}
+    project = _resolve_secret(
+        bc.project, bc.project_env, ["OTEL_LANGSMITH_PROJECT", "LANGSMITH_PROJECT"]
+    )
+    if project:
+        headers["Langsmith-Project"] = project
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="langsmith",
+        endpoint=ep,
+        display_name=_display(bc, "langsmith"),
+        headers=headers,
+        supports_traces=_traces_for(bc.traces),
+        supports_metrics=_metrics_for("langsmith", bc.metrics),
+        supports_logs=_logs_for("langsmith", bc.logs),
+    )
+
+
 # Valid data-stream name component (Elastic's own rule for
 # ``data_stream.dataset`` / ``data_stream.namespace``): lowercase letters,
 # digits, '_' and '.', at most 100 characters. '-' is NOT allowed — a full
@@ -1519,6 +1594,7 @@ def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
 
 
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
+    "langsmith": _resolve_langsmith,
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
     "signoz": _resolve_signoz,

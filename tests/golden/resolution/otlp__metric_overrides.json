@@ -1,0 +1,106 @@
+{
+ "adapter": null,
+ "display_name": "OTLP",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "metrics_temporality": "delta",
+  "name": "otlp-entry",
+  "root_usage": false,
+  "type": "otlp"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "otlp",
+  "name": "otlp-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "metric_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "otlp-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": null,
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": "delta",
+  "resource_attributes": null,
+  "root_usage": false,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "otlp"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "OTLP",
+  "docs_path": "/backends/otlp",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "entry",
+   "value": "delta"
+  },
+  "name": "otlp-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "otlp",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "otlp-entry",
+    "queryable": false,
+    "type": "otlp"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "otlp"
+}

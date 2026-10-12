@@ -1,0 +1,207 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "{ __type(name: \"Project\") { fields { name args { name } } } }",
+    "variables": {}
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "\n        query SearchSpans(\n          $projectId: ID!,\n          $first: Int!,\n          $timeRange: TimeRange!,\n          $filterCondition: String,\n          \n          $sort: SpanSort\n        ) {\n          node(id: $projectId) {\n            ... on Project {\n              name\n              spans(\n                first: $first,\n                \n                timeRange: $timeRange,\n                filterCondition: $filterCondition,\n                sort: $sort\n              ) {\n                edges { node {\n                  spanId name latencyMs statusCode startTime endTime\n                  parentId spanKind attributes\n                  context { traceId spanId }\n                  input { value mimeType }\n                  output { value mimeType }\n                  tokenCountTotal tokenCountPrompt tokenCountCompletion\n                  numChildSpans\n                  trace { numSpans }\n                } }\n              }\n            }\n          }\n        }\n        ",
+    "variables": {
+     "filterCondition": "parent_id is None and status_code == 'ERROR'",
+     "first": 6,
+     "projectId": "UHJvamVjdDoy",
+     "sort": {
+      "col": "startTime",
+      "dir": "desc"
+     },
+     "timeRange": {
+      "end": "2026-10-11T20:21:00+00:00",
+      "start": "2026-10-11T19:20:00+00:00"
+     }
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-minimal",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "ok"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "65a98a08103c9da7"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750000000000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-minimal",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "error"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "bbbb000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749400000000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

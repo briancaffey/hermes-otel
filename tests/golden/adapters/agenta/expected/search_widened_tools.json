@@ -1,0 +1,128 @@
+{
+ "calls": [
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "span_name",
+       "operator": "startswith",
+       "value": "tool."
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 24,
+     "newest": "2026-10-11T20:21:00.000000Z",
+     "oldest": "2026-10-11T19:20:00.000000Z",
+     "order": "descending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  },
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "trace_id",
+       "operator": "in",
+       "value": [
+        "ab43116e1d6d4a1a449db547c36ca808",
+        "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+       ]
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 2000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750001500000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749401500000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

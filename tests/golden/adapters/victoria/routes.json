@@ -1,0 +1,873 @@
+[
+ {
+  "method": "GET",
+  "path": "/select/jaeger/api/traces/00000000000000000000000000000000",
+  "json": {
+   "data": [],
+   "errors": null
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/select/jaeger/api/traces/ab43116e1d6d4a1a449db547c36ca808",
+  "json": {
+   "data": [
+    {
+     "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+     "spans": [
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "aaaa000000000001",
+       "operationName": "tool.terminal",
+       "startTime": 1791750001500000,
+       "duration": 1120770,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "65a98a08103c9da7"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "terminal"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "aaaa000000000002",
+       "operationName": "tool.read_file",
+       "startTime": 1791750003000000,
+       "duration": 3595,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "65a98a08103c9da7"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "read_file"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "65a98a08103c9da7",
+       "operationName": "agent",
+       "startTime": 1791750000000000,
+       "duration": 4029000,
+       "references": [],
+       "tags": [
+        {
+         "key": "hermes.session_id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "session.id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "gen_ai.usage.input_tokens",
+         "type": "string",
+         "value": "23504"
+        },
+        {
+         "key": "gen_ai.usage.output_tokens",
+         "type": "string",
+         "value": "186"
+        },
+        {
+         "key": "gen_ai.usage.total_tokens",
+         "type": "string",
+         "value": "23690"
+        },
+        {
+         "key": "llm.model_name",
+         "type": "string",
+         "value": "nvidia/nemotron-3-super-120b-a12b"
+        },
+        {
+         "key": "hermes.turn.number",
+         "type": "string",
+         "value": "1"
+        },
+        {
+         "key": "hermes.session.completed",
+         "type": "string",
+         "value": "true"
+        },
+        {
+         "key": "input.value",
+         "type": "string",
+         "value": "read the file hermes_otel.yaml and say hello"
+        },
+        {
+         "key": "output.value",
+         "type": "string",
+         "value": "Here is the file."
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      }
+     ],
+     "processes": {
+      "p1": {
+       "serviceName": "hermes-agent",
+       "tags": [
+        {
+         "key": "hermes.profile",
+         "type": "string",
+         "value": "default"
+        }
+       ]
+      }
+     },
+     "warnings": null
+    }
+   ],
+   "errors": null
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/select/jaeger/api/traces/5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+  "json": {
+   "data": [
+    {
+     "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "spans": [
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "aaaa000000000001",
+       "operationName": "tool.terminal",
+       "startTime": 1791749401500000,
+       "duration": 1120770,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "bbbb000000000001"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "terminal"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "aaaa000000000002",
+       "operationName": "tool.read_file",
+       "startTime": 1791749403000000,
+       "duration": 3595,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "bbbb000000000001"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "read_file"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "bbbb000000000001",
+       "operationName": "agent",
+       "startTime": 1791749400000000,
+       "duration": 4029000,
+       "references": [],
+       "tags": [
+        {
+         "key": "hermes.session_id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "session.id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "gen_ai.usage.input_tokens",
+         "type": "string",
+         "value": "23504"
+        },
+        {
+         "key": "gen_ai.usage.output_tokens",
+         "type": "string",
+         "value": "186"
+        },
+        {
+         "key": "gen_ai.usage.total_tokens",
+         "type": "string",
+         "value": "23690"
+        },
+        {
+         "key": "llm.model_name",
+         "type": "string",
+         "value": "nvidia/nemotron-3-super-120b-a12b"
+        },
+        {
+         "key": "hermes.turn.number",
+         "type": "string",
+         "value": "1"
+        },
+        {
+         "key": "hermes.session.completed",
+         "type": "string",
+         "value": "true"
+        },
+        {
+         "key": "input.value",
+         "type": "string",
+         "value": "read the file hermes_otel.yaml and say hello"
+        },
+        {
+         "key": "output.value",
+         "type": "string",
+         "value": "Here is the file."
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      }
+     ],
+     "processes": {
+      "p1": {
+       "serviceName": "hermes-agent",
+       "tags": [
+        {
+         "key": "hermes.profile",
+         "type": "string",
+         "value": "default"
+        }
+       ]
+      }
+     },
+     "warnings": null
+    }
+   ],
+   "errors": null
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/select/jaeger/api/traces",
+  "json": {
+   "data": [
+    {
+     "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "spans": [
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "aaaa000000000001",
+       "operationName": "tool.terminal",
+       "startTime": 1791749401500000,
+       "duration": 1120770,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "bbbb000000000001"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "terminal"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "aaaa000000000002",
+       "operationName": "tool.read_file",
+       "startTime": 1791749403000000,
+       "duration": 3595,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+         "spanID": "bbbb000000000001"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "read_file"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+       "spanID": "bbbb000000000001",
+       "operationName": "agent",
+       "startTime": 1791749400000000,
+       "duration": 4029000,
+       "references": [],
+       "tags": [
+        {
+         "key": "hermes.session_id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "session.id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "gen_ai.usage.input_tokens",
+         "type": "string",
+         "value": "23504"
+        },
+        {
+         "key": "gen_ai.usage.output_tokens",
+         "type": "string",
+         "value": "186"
+        },
+        {
+         "key": "gen_ai.usage.total_tokens",
+         "type": "string",
+         "value": "23690"
+        },
+        {
+         "key": "llm.model_name",
+         "type": "string",
+         "value": "nvidia/nemotron-3-super-120b-a12b"
+        },
+        {
+         "key": "hermes.turn.number",
+         "type": "string",
+         "value": "1"
+        },
+        {
+         "key": "hermes.session.completed",
+         "type": "string",
+         "value": "true"
+        },
+        {
+         "key": "input.value",
+         "type": "string",
+         "value": "read the file hermes_otel.yaml and say hello"
+        },
+        {
+         "key": "output.value",
+         "type": "string",
+         "value": "Here is the file."
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      }
+     ],
+     "processes": {
+      "p1": {
+       "serviceName": "hermes-agent",
+       "tags": [
+        {
+         "key": "hermes.profile",
+         "type": "string",
+         "value": "default"
+        }
+       ]
+      }
+     },
+     "warnings": null
+    },
+    {
+     "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+     "spans": [
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "aaaa000000000001",
+       "operationName": "tool.terminal",
+       "startTime": 1791750001500000,
+       "duration": 1120770,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "65a98a08103c9da7"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "terminal"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "aaaa000000000002",
+       "operationName": "tool.read_file",
+       "startTime": 1791750003000000,
+       "duration": 3595,
+       "references": [
+        {
+         "refType": "CHILD_OF",
+         "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+         "spanID": "65a98a08103c9da7"
+        }
+       ],
+       "tags": [
+        {
+         "key": "tool.name",
+         "type": "string",
+         "value": "read_file"
+        },
+        {
+         "key": "openinference.span.kind",
+         "type": "string",
+         "value": "TOOL"
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "otel.status_code",
+         "type": "string",
+         "value": "ERROR"
+        },
+        {
+         "key": "otel.status_description",
+         "type": "string",
+         "value": "No such file"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "true"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      },
+      {
+       "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+       "spanID": "65a98a08103c9da7",
+       "operationName": "agent",
+       "startTime": 1791750000000000,
+       "duration": 4029000,
+       "references": [],
+       "tags": [
+        {
+         "key": "hermes.session_id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "session.id",
+         "type": "string",
+         "value": "20261011_201958_a1b2c3"
+        },
+        {
+         "key": "gen_ai.usage.input_tokens",
+         "type": "string",
+         "value": "23504"
+        },
+        {
+         "key": "gen_ai.usage.output_tokens",
+         "type": "string",
+         "value": "186"
+        },
+        {
+         "key": "gen_ai.usage.total_tokens",
+         "type": "string",
+         "value": "23690"
+        },
+        {
+         "key": "llm.model_name",
+         "type": "string",
+         "value": "nvidia/nemotron-3-super-120b-a12b"
+        },
+        {
+         "key": "hermes.turn.number",
+         "type": "string",
+         "value": "1"
+        },
+        {
+         "key": "hermes.session.completed",
+         "type": "string",
+         "value": "true"
+        },
+        {
+         "key": "input.value",
+         "type": "string",
+         "value": "read the file hermes_otel.yaml and say hello"
+        },
+        {
+         "key": "output.value",
+         "type": "string",
+         "value": "Here is the file."
+        },
+        {
+         "key": "span.kind",
+         "type": "string",
+         "value": "internal"
+        },
+        {
+         "key": "error",
+         "type": "string",
+         "value": "false"
+        }
+       ],
+       "logs": [],
+       "processID": "p1"
+      }
+     ],
+     "processes": {
+      "p1": {
+       "serviceName": "hermes-agent",
+       "tags": [
+        {
+         "key": "hermes.profile",
+         "type": "string",
+         "value": "default"
+        }
+       ]
+      }
+     },
+     "warnings": null
+    }
+   ],
+   "errors": null,
+   "limit": 0,
+   "offset": 0,
+   "total": 2
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/label/__name__/values",
+  "json": {
+   "status": "success",
+   "data": [
+    "hermes_token_usage_total",
+    "hermes_message_count_total",
+    "hermes_tool_duration_milliseconds_bucket",
+    "hermes_tool_duration_milliseconds_sum",
+    "hermes_tool_duration_milliseconds_count",
+    "system_cpu_utilization",
+    "up"
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/query",
+  "json": {
+   "status": "success",
+   "data": {
+    "resultType": "matrix",
+    "result": [
+     {
+      "metric": {
+       "__name__": "hermes_token_usage_total",
+       "model": "nvidia/nemotron-3-nano-omni",
+       "service_instance_id": "gw"
+      },
+      "values": [
+       [
+        1791746340,
+        "100"
+       ],
+       [
+        1791746430,
+        "100"
+       ],
+       [
+        1791746490,
+        "105"
+       ]
+      ]
+     },
+     {
+      "metric": {
+       "__name__": "hermes_token_usage_total",
+       "model": "nvidia/nemotron-3-super-120b-a12b",
+       "service_instance_id": "one-shot"
+      },
+      "values": [
+       [
+        1791749700,
+        "23690"
+       ],
+       [
+        1791749760,
+        "23690"
+       ]
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/v1/query_range",
+  "json": {
+   "status": "success",
+   "data": {
+    "resultType": "matrix",
+    "result": [
+     {
+      "metric": {
+       "__name__": "system_cpu_utilization",
+       "cpu_mode": "user"
+      },
+      "values": [
+       [
+        1791747000,
+        "0.5"
+       ],
+       [
+        1791749400,
+        "0.25"
+       ],
+       [
+        1791750000,
+        "0.3"
+       ]
+      ]
+     }
+    ]
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/select/logsql/query",
+  "body_contains": "stats by",
+  "text": "{\"scope.name\": \"hermes_otel\", \"n\": \"6\"}\n{\"scope.name\": \"cli\", \"n\": \"2\"}\n{\"scope.name\": \"\", \"n\": \"9\"}\n"
+ },
+ {
+  "method": "POST",
+  "path": "/select/logsql/query",
+  "text": "{\"_msg\": \"[hermes-otel] session 20261011_201958_a1b2c3 finalized\", \"_stream\": \"{service.name=\\\"hermes-agent\\\"}\", \"_stream_id\": \"0000000000000000f1c3d08708ccc0e6c532624dc5cdc71c\", \"_time\": \"2026-10-11T20:20:04.100000000Z\", \"code.line.number\": \"173\", \"hermes.session_id\": \"20261011_201958_a1b2c3\", \"scope.name\": \"hermes_otel\", \"service.name\": \"hermes-agent\", \"severity_number\": \"9\", \"severity_text\": \"INFO\", \"span_id\": \"65a98a08103c9da7\", \"trace_id\": \"ab43116e1d6d4a1a449db547c36ca808\"}\n{\"_msg\": \"careful: the output was truncated\", \"_stream\": \"{service.name=\\\"hermes-agent\\\"}\", \"_stream_id\": \"0000000000000000f1c3d08708ccc0e6c532624dc5cdc71c\", \"_time\": \"2026-10-11T20:20:02.000000000Z\", \"event.name\": \"hermes.turn.end\", \"scope.name\": \"cli\", \"service.name\": \"hermes-agent\", \"severity_number\": \"13\", \"severity_text\": \"WARN\", \"span_id\": \"\", \"trace_id\": \"\"}\n"
+ }
+]

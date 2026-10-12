@@ -1,0 +1,10 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/projects"
+  }
+ ],
+ "result": "http://localhost:3000/project/cmgk1test0000proj/traces/ab43116e1d6d4a1a449db547c36ca808"
+}

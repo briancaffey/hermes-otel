@@ -1,0 +1,14 @@
+{
+ "counter": "hermes.token.usage",
+ "entry": {
+  "api_key": "signoz-test-key",
+  "endpoint": "http://localhost:3301",
+  "type": "signoz"
+ },
+ "gauge": "system.cpu.utilization",
+ "group_by": "model",
+ "model": "nvidia/nemotron-3-super-120b-a12b",
+ "session_id": "20261011_201958_a1b2c3",
+ "t0": 1791750000,
+ "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+}

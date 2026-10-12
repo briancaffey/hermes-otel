@@ -1,0 +1,21 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "_time:[2026-10-11T19:20:00.000000000Z, 2026-10-11T20:21:00.000000000Z) | stats by (scope.name) count() n | sort by (n desc) | limit 200"
+   },
+   "method": "POST",
+   "url": "http://localhost:9428/select/logsql/query"
+  }
+ ],
+ "result": [
+  {
+   "count": 6,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 2,
+   "logger": "cli"
+  }
+ ]
+}

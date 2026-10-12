@@ -1,0 +1,14 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3200/api/traces/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Backend returned 404: trace not found",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

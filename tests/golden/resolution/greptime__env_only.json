@@ -1,0 +1,35 @@
+{
+ "env": {
+  "OTEL_GREPTIME_ENDPOINT": "http://localhost:4318/v1/traces",
+  "OTEL_GREPTIME_PASSWORD": "<secret>",
+  "OTEL_GREPTIME_USER": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "GreptimeDB",
+  "endpoint": "http://localhost:4318/v1/otlp/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>",
+   "X-Greptime-Pipeline-Name": "greptime_trace_v1"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "metrics_endpoint": null,
+  "metrics_headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "greptime"
+ },
+ "selected": "greptime",
+ "type": "greptime"
+}

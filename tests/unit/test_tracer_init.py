@@ -121,40 +121,47 @@ class TestInitLangfuse:
 
 
 class TestInitLangSmith:
-    def test_init_with_langsmith(self, monkeypatch):
+    """LangSmith is an OTLP preset since #415; ``LANGSMITH_TRACING`` selects nothing."""
+
+    def test_env_opt_in_selects_langsmith_over_otlp(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "true")
-        monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_test_key")
+        monkeypatch.setenv("OTEL_LANGSMITH_API_KEY", "lsv2_test_key")
+        monkeypatch.setenv("LANGSMITH_PROJECT", "hermes")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls:
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
             assert plugin.init() is True
-            mock_ls.assert_called_once()
+        _assert_env_backend(
+            mock_pipeline,
+            "https://api.smith.langchain.com/otel/v1/traces",
+            {"x-api-key": "lsv2_test_key", "Langsmith-Project": "hermes"},
+            "LangSmith",
+        )
+        rb = _env_backend(mock_pipeline)
+        assert rb.type == "langsmith" and rb.supports_metrics is False
 
     def test_langsmith_takes_priority_over_langfuse(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "true")
-        monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
+        monkeypatch.setenv("OTEL_LANGSMITH_API_KEY", "lsv2_key")
         monkeypatch.setenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "pk-lf")
         monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk-lf")
 
         plugin = HermesOTelPlugin()
-        with (
-            patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls,
-            patch.object(plugin, "_init_otlp_pipeline") as mock_otlp,
-        ):
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
             assert plugin.init() is True
-            mock_ls.assert_called_once()
-            mock_otlp.assert_not_called()
+        assert _env_backend(mock_pipeline).type == "langsmith"
 
-    def test_langsmith_disabled_when_tracing_not_true(self, monkeypatch):
+    def test_vendor_variables_alone_select_nothing(self, monkeypatch, caplog):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "false")
+        monkeypatch.setenv("LANGSMITH_TRACING", "true")
         monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
 
-        # dashboard_live off so the assertion isolates the LangSmith gate.
+        # dashboard_live off so the assertion isolates the opt-in rule.
         plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
-        assert plugin.init() is False
+        with caplog.at_level("INFO", logger="hermes_otel"):
+            assert plugin.init() is False
+        text = " ".join(r.getMessage() for r in caplog.records)
+        assert "LANGSMITH_API_KEY is set" in text and "OTEL_LANGSMITH_API_KEY" in text
 
 
 class TestInitSigNoz:

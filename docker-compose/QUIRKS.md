@@ -36,7 +36,7 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 |---|---|---|---|---|
 | Phoenix | `phoenix` | std, traces only | ingest and UI share :6006; no redirect from the root, the URL must end in `/v1/traces` | endpoint used as given |
 | Langfuse | `langfuse` | vendor prefix `/api/public/otel/v1/traces` | ingest and UI share :3000 | completes root URL, `/api/public/otel`, or full URL; a root URL used to be posted as-is and died with 405 |
-| LangSmith | (env only) | not OTLP: `POST /runs`, `PATCH /runs/{id}` | cloud only | separate code path (`langsmith_backend.py`), not a `backends:` entry |
+| LangSmith | `langsmith` | OTLP/HTTP `/otel/v1/traces` on `api.smith.langchain.com` (`region: eu` → `eu.api.smith.langchain.com`) | cloud only | `api_key` → `x-api-key`; `project` → `Langsmith-Project`; traces only |
 | SigNoz | `signoz` | std | collector :4328 here (upstream 4318); UI/API :3301 | derived |
 | Jaeger v1 / v2 | `jaeger` | std | v1 ingest :4318, UI :16686; v2 ingest :4368, UI :16696 | endpoint used as given |
 | Agenta | `agenta` | vendor prefix `/api/otlp/v1/traces`, traces only, **protobuf only** (JSON → 400), 10 MB cap | one front door (nginx :3060 here, Traefik :80 upstream) for UI, API and ingest | completes origin / `/api` / `/api/otlp` to the full URL; cloud host from `region` when unset |
@@ -79,7 +79,7 @@ is the one backend that refuses protobuf, hence its collector.
 |---|---|---|---|
 | Phoenix | none locally; Arize cloud takes `api_key: <key>` as an extra header | no | none |
 | Langfuse | `Authorization: Basic base64(public:secret)` plus `x-langfuse-ingestion-version: 4` | yes, both keys | pre-seeded by headless init (`lf_pk_hermes_dev` / `lf_sk_hermes_dev`) |
-| LangSmith | `x-api-key` | yes | cloud account |
+| LangSmith | `x-api-key` (+ `Langsmith-Project`) | yes | cloud account |
 | SigNoz | `signoz-ingestion-key` (cloud); nothing self-hosted | cloud only | cloud UI |
 | Agenta | `Authorization: ApiKey <project key>` (Bearer accepted too) | yes; a missing key skips the entry | `agenta/mint-api-key.sh` (SuperTokens sign-up, header session, `POST /api/keys`) or the project settings |
 | Gigapipe | none by default; `Authorization: Basic` from `user` + `password` for `GIGAPIPE_LOGIN` / `GIGAPIPE_PASSWORD` deployments; `X-Scope-OrgID` is not read | no | none |
@@ -166,7 +166,7 @@ because the plugin's debug log only sees the HTTP status.
 |---|---|---|---|---|---|
 | Phoenix | yes | no | no | 405 on `/v1/metrics` and `/v1/logs` (#160) | `_TRACES_ONLY`: no metrics or logs exporter is created |
 | Langfuse | yes | no | no | no such routes | `_TRACES_ONLY` |
-| LangSmith | yes | no | no | not OTLP | n/a |
+| LangSmith | yes | no | no | the OTLP ingest serves traces only | metrics and logs off |
 | SigNoz | yes | yes | yes | before first-run setup the collector runs a `nop` pipeline and resets the connection | all on |
 | Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | `_TRACES_ONLY` |
 | Agenta | yes | no | no | only `/api/otlp/v1/traces` is mounted (404 elsewhere); ingest is asynchronous via a Redis stream, 200 = accepted | `_TRACES_ONLY` |
@@ -246,7 +246,7 @@ running gateways are unaffected either way.
 |---|---|---|---|---|
 | Phoenix | OpenInference (`llm.token_count.*`, `input.value`, `openinference.span.kind`) | reads the root's own roll-up | yes, from token counts | `session.id` |
 | Langfuse | `gen_ai.*` (including legacy `gen_ai.system`) | reads the root; zero-fills `usage` on non-GENERATION observations | yes | `session.id` (automatic grouping) |
-| LangSmith | mapped by the plugin to Run API fields plus `usage_metadata` | per run | — | session id → thread |
+| LangSmith | GenAI (`gen_ai.*`) through its OTLP ingest | not verified since the OTLP switch (#415) | — | not verified |
 | SigNoz | `gen_ai.*` in its LLM views; otherwise raw tags | n/a (span table) | via a derived metric | any attribute |
 | Agenta | OpenInference, OpenLLMetry **and** OTel GenAI adapters server-side: `ag.type.span` (`agent` / `chat` / `tool`), `ag.metrics.tokens` | **cumulative down the tree**: the root's total equalled the sum of the `api.*` spans (no double count; `root_usage` kept) | yes, for priced models (`ag.metrics.costs`) | `ag.session.id` ← `session.id` |
 | Gigapipe | none; raw tags, TraceQL | n/a | no | any attribute (TraceQL) |
@@ -428,9 +428,9 @@ Format: **quirk** → treatment (issue).
 - Ingest is asynchronous through MinIO → traces appear 10-20 s after a SUCCESS.
 - v3 and v4 do not share data → `down -v` when switching `LANGFUSE_VERSION`. Port 3000 collides with Grafana (LGTM) and Latitude.
 
-### LangSmith (env only)
-- Not OTLP: `POST /runs` / `PATCH /runs/{id}` with `x-api-key` → its own backend module with one daemon worker over a bounded queue (#91); not a valid `backends:` entry, and `LANGSMITH_TRACING=true` short-circuits the whole `backends:` list, so it is fan-out **or** LangSmith.
-- Run ids are uuid7 when the `langsmith` package is installed, else uuid4.
+### LangSmith (`langsmith`)
+- OTLP since 1.26 (#415): `POST /otel/v1/traces` on `api.smith.langchain.com` with `x-api-key` and an optional `Langsmith-Project` header; traces only. A regular `backends:` entry, so it fans out with the rest.
+- The run-tree client (`langsmith_backend.py`, selected by `LANGSMITH_TRACING=true`) is gone; `LANGSMITH_API_KEY` / `LANGSMITH_PROJECT` / `LANGSMITH_ENDPOINT` are fallback values once `OTEL_LANGSMITH_*` or the entry names the backend.
 
 ### SigNoz (`signoz`)
 - Fresh volume: OpAMP pushes a `nop` pipeline to the collector until an admin exists, so every healthcheck is green and every OTLP POST gets a connection reset (#239) → the README's headless `POST /api/v1/register` recipe; check `GET /api/v1/version` → `setupCompleted`.

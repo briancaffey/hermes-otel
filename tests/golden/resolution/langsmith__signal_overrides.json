@@ -1,0 +1,80 @@
+{
+ "adapter": null,
+ "display_name": "LangSmith",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "langsmith-entry",
+  "traces": false,
+  "type": "langsmith"
+ },
+ "error": "ValueError: langsmith requires api_key (or set OTEL_LANGSMITH_API_KEY / LANGSMITH_API_KEY)",
+ "mcp": {
+  "backend_type": "langsmith",
+  "name": "langsmith-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "settings_card": {
+  "credentials": [],
+  "display_type": "LangSmith",
+  "docs_path": "/backends/langsmith",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "langsmith-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "langsmith",
+  "ui": {
+   "note": "the LangSmith UI for region us",
+   "source": "derived",
+   "url": "https://smith.langchain.com"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "langsmith-entry",
+    "queryable": false,
+    "type": "langsmith"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "langsmith"
+}
