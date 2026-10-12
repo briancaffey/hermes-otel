@@ -154,3 +154,15 @@ class TestHermesRedactor:
         assert r.redact_text("a") == "h:a"
         monkeypatch.delitem(sys.modules, "agent.redact")
         assert r.redact_text("b") == "h:b"  # still the cached callable
+
+
+def test_settings_report_uses_the_one_redaction_engine():
+    """The report's name-based masking is defined once, in redaction.py (#405)."""
+    from hermes_otel import redaction, settings_report
+
+    assert settings_report.MASK == redaction.REPORT_MASK
+    for name in ("is_secret_name", "is_header_secret_name", "is_secret_value", "mask_env_value"):
+        assert getattr(settings_report, name) is getattr(redaction, name)
+    assert redaction.mask_header_pairs("Authorization=Bearer abc,x-team=blue") == (
+        f"Authorization={redaction.REPORT_MASK},x-team=blue"
+    )

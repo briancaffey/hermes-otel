@@ -34,8 +34,13 @@ from .plugin_config import (
     field_kinds,
     hermes_home,
 )
-
-MASK = "••••••"
+from .redaction import REPORT_MASK as MASK
+from .redaction import (
+    is_header_secret_name,
+    is_secret_name,
+    is_secret_value,
+    mask_env_value,
+)
 
 # Config keys that are not HermesOtelConfig fields but are read by another
 # part of the plugin from the same file; listed so they are explained rather
@@ -44,67 +49,11 @@ KNOWN_EXTRA_KEYS: Dict[str, str] = {
     "query_backend": "Dashboard: the backend (by `name` or `type`) the tab queries by default",
 }
 
-_SECRET_NAME = re.compile(
-    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie)", re.I
-)
-# HTTP header names that carry a credential: the generic words above plus the
-# vendor spellings (``x-honeycomb-team``, ``x-api-key``, ``api-key``) and any
-# ``x-…-auth``; a header is almost always an auth header in this file.
-_HEADER_SECRET_NAME = re.compile(
-    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie|auth|signature"
-    r"|^x-[a-z0-9]+-team$)",
-    re.I,
-)
-# Env vars whose value is a ``k=v,k2=v2`` header list (OTel SDK spelling).
-_HEADER_LIST_NAME = re.compile(r"_HEADERS$", re.I)
-
-
-def is_secret_name(name: str) -> bool:
-    """Whether a key, field or env var name looks like it holds a credential."""
-    return bool(_SECRET_NAME.search(name or ""))
-
-
-def is_header_secret_name(name: str) -> bool:
-    """Whether an HTTP *header* name carries a credential (wider than :func:`is_secret_name`)."""
-    return bool(_HEADER_SECRET_NAME.search(name or ""))
-
-
-def is_secret_value(value: Any) -> bool:
-    """Bearer/Basic auth strings are secrets whatever their key is called."""
-    return isinstance(value, str) and value.strip().lower().startswith(("bearer ", "basic "))
-
 
 def _mask(value: Any) -> Any:
     if value is None or value == "":
         return value
     return MASK
-
-
-def mask_header_pairs(raw: str) -> str:
-    """Mask the secret values of a ``k=v,k2=v2`` header list, pair by pair.
-
-    ``OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer abc,x-team=blue`` →
-    ``Authorization=••••••,x-team=blue``. A pair whose header name is not an
-    auth name but whose value is a bearer/basic string is masked too; a pair
-    without ``=`` is left as written.
-    """
-    out = []
-    for pair in raw.split(","):
-        k, sep, v = pair.partition("=")
-        if sep and v.strip() and (is_header_secret_name(k.strip()) or is_secret_value(v)):
-            out.append(f"{k}={MASK}")
-        else:
-            out.append(pair)
-    return ",".join(out)
-
-
-def mask_env_value(name: str, raw: str) -> str:
-    """The value of one environment variable as the report may show it."""
-    if _HEADER_LIST_NAME.search(name or ""):
-        return mask_header_pairs(raw)
-    if is_secret_name(name) or is_secret_value(raw):
-        return MASK
-    return raw
 
 
 def _display_map(

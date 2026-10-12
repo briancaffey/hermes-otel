@@ -15,6 +15,12 @@ thorough.
 
 Masking mirrors Hermes: a short token is replaced entirely, a long one keeps
 its first six and last four characters so a leak can still be identified.
+
+The second half of the module is the name-based engine the settings report
+uses: a value is a secret because of the key, header or env var that holds it
+(``is_secret_name``, ``is_header_secret_name``, ``mask_header_pairs``), and is
+shown as :data:`REPORT_MASK` whole. Both engines live here so there is one
+place that decides what counts as a credential.
 """
 
 from __future__ import annotations
@@ -25,6 +31,8 @@ import threading
 from typing import Any, Callable, MutableMapping, Optional
 
 _MASK = "***"
+# What the settings report shows in place of a secret value (whole, never partial).
+REPORT_MASK = "••••••"
 _SHORT = 18  # tokens shorter than this are masked whole, like Hermes
 
 _hermes_lock = threading.Lock()
@@ -146,3 +154,62 @@ def redaction_source() -> str:
     if _resolve_hermes_redactor() is not None:
         return "hermes"
     return "builtin" if _fallback_enabled() else "off"
+
+
+# ── Name-based masking (the settings report) ──────────────────────────────
+
+_SECRET_NAME = re.compile(
+    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie)", re.I
+)
+# HTTP header names that carry a credential: the generic words above plus the
+# vendor spellings (``x-honeycomb-team``, ``x-api-key``, ``api-key``) and any
+# ``x-…-auth``; a header is almost always an auth header in this file.
+_HEADER_SECRET_NAME = re.compile(
+    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie|auth|signature"
+    r"|^x-[a-z0-9]+-team$)",
+    re.I,
+)
+# Env vars whose value is a ``k=v,k2=v2`` header list (OTel SDK spelling).
+_HEADER_LIST_NAME = re.compile(r"_HEADERS$", re.I)
+
+
+def is_secret_name(name: str) -> bool:
+    """Whether a key, field or env var name looks like it holds a credential."""
+    return bool(_SECRET_NAME.search(name or ""))
+
+
+def is_header_secret_name(name: str) -> bool:
+    """Whether an HTTP *header* name carries a credential (wider than :func:`is_secret_name`)."""
+    return bool(_HEADER_SECRET_NAME.search(name or ""))
+
+
+def is_secret_value(value: Any) -> bool:
+    """Bearer/Basic auth strings are secrets whatever their key is called."""
+    return isinstance(value, str) and value.strip().lower().startswith(("bearer ", "basic "))
+
+
+def mask_header_pairs(raw: str) -> str:
+    """Mask the secret values of a ``k=v,k2=v2`` header list, pair by pair.
+
+    ``OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer abc,x-team=blue`` →
+    ``Authorization=••••••,x-team=blue``. A pair whose header name is not an
+    auth name but whose value is a bearer/basic string is masked too; a pair
+    without ``=`` is left as written.
+    """
+    out = []
+    for pair in raw.split(","):
+        k, sep, v = pair.partition("=")
+        if sep and v.strip() and (is_header_secret_name(k.strip()) or is_secret_value(v)):
+            out.append(f"{k}={REPORT_MASK}")
+        else:
+            out.append(pair)
+    return ",".join(out)
+
+
+def mask_env_value(name: str, raw: str) -> str:
+    """The value of one environment variable as the report may show it."""
+    if _HEADER_LIST_NAME.search(name or ""):
+        return mask_header_pairs(raw)
+    if is_secret_name(name) or is_secret_value(raw):
+        return REPORT_MASK
+    return raw
