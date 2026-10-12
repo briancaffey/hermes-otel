@@ -64,6 +64,9 @@ def register(ctx):
         ("on_kanban_worker_spawned", hooks.on_kanban_worker_spawned),
         ("on_kanban_worker_exited", hooks.on_kanban_worker_exited),
         ("on_kanban_worker_stale_claim", hooks.on_kanban_worker_stale_claim),
+        # Board health (#397): counts only.
+        ("on_kanban_dispatch_tick", hooks.on_kanban_dispatch_tick),
+        ("on_kanban_task_updated", hooks.on_kanban_task_updated),
     ]:
         try:
             ctx.register_hook(hook_name, callback)

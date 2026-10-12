@@ -30,6 +30,9 @@ EXPECTED_KEYS = {
     "api_error_count",
     "retry_count",
     "kanban_task_count",
+    "kanban_dispatch_count",
+    "kanban_dispatch_result",
+    "kanban_task_updated",
     "approval_count",
     "approval_duration",
     # seconds-based successors (#233)

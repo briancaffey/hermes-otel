@@ -52,3 +52,5 @@ provides_hooks:
   - on_kanban_worker_spawned
   - on_kanban_worker_exited
   - on_kanban_worker_stale_claim
+  - on_kanban_dispatch_tick
+  - on_kanban_task_updated

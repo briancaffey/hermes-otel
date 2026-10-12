@@ -10,6 +10,7 @@ with the card.
 from __future__ import annotations
 
 import pytest
+from _helpers import get_metric
 from _helpers import metric_points as _metric_points
 from _helpers import one as _one
 from _helpers import parent_span_id as _parent_span_id
@@ -304,3 +305,66 @@ class TestTracePerRun:
             session_id="u1", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
         assert _parent_span_id(_one(exporter.get_finished_spans(), "agent")) is None
+
+
+class TestBoardHealth:
+    """``on_kanban_dispatch_tick`` / ``on_kanban_task_updated`` as counters (#397)."""
+
+    class _Result:
+        spawned = [("t1", "a", "/ws/1"), ("t2", "b", "/ws/2")]
+        reclaimed = 1
+        promoted = 0
+        crashed = ["t3"]
+        skipped_locked = False
+        memory_pressure = "rss above cap"
+        auto_blocked = []
+
+    def _points(self, reader, name):
+        if reader.get_metrics_data() is None:  # nothing recorded at all
+            return {}
+        return {
+            tuple(sorted(dict(p.attributes).items())): p.value
+            for p in _metric_points(get_metric(reader, name))
+        }
+
+    def test_a_tick_counts_its_outcome_and_each_non_zero_kind(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_kanban_dispatch_tick
+
+        exporter, reader, _ = inmemory_otel_with_metrics
+        on_kanban_dispatch_tick(
+            board="b1", profile_name="p", dry_run=False, outcome="ok", result=self._Result()
+        )
+        ticks = self._points(reader, "hermes.kanban.dispatch.count")
+        assert any(("outcome", "ok") in k and ("board", "b1") in k for k in ticks)
+        kinds = {
+            dict(k)["kind"]: v
+            for k, v in self._points(reader, "hermes.kanban.dispatch.result").items()
+        }
+        assert kinds == {"spawned": 2, "reclaimed": 1, "crashed": 1, "memory_pressure": 1}
+        assert not exporter.get_finished_spans()  # counts only, no span
+
+    def test_a_dry_run_is_not_counted(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_kanban_dispatch_tick
+
+        _, reader, _ = inmemory_otel_with_metrics
+        on_kanban_dispatch_tick(board="b1", dry_run=True, outcome="ok", result=self._Result())
+        assert not self._points(reader, "hermes.kanban.dispatch.count")
+
+    def test_an_idle_tick_with_no_result(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_kanban_dispatch_tick
+
+        _, reader, _ = inmemory_otel_with_metrics
+        on_kanban_dispatch_tick(board=None, outcome="idle", result=None)
+        ticks = self._points(reader, "hermes.kanban.dispatch.count")
+        assert any(("outcome", "idle") in k and ("board", "default") in k for k in ticks)
+        assert not self._points(reader, "hermes.kanban.dispatch.result")
+
+    def test_task_updated_counts_field_names(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_kanban_task_updated
+
+        _, reader, _ = inmemory_otel_with_metrics
+        on_kanban_task_updated(
+            task_id="t1", board="b1", changed_fields=["priority", "assignee", ""]
+        )
+        fields = {dict(k)["field"] for k in self._points(reader, "hermes.kanban.task.updated")}
+        assert fields == {"priority", "assignee"}

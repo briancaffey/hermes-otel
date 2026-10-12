@@ -34,9 +34,11 @@ from ._common import get_tracer
 from .approval import on_post_approval_response, on_pre_approval_request
 from .auxiliary import on_post_auxiliary_call, on_pre_auxiliary_call
 from .kanban import (
+    on_kanban_dispatch_tick,
     on_kanban_task_blocked,
     on_kanban_task_claimed,
     on_kanban_task_completed,
+    on_kanban_task_updated,
     on_kanban_worker_exited,
     on_kanban_worker_spawned,
     on_kanban_worker_stale_claim,
@@ -64,6 +66,8 @@ __all__ = [
     "on_kanban_worker_exited",
     "on_kanban_worker_spawned",
     "on_kanban_worker_stale_claim",
+    "on_kanban_dispatch_tick",
+    "on_kanban_task_updated",
     "on_mcp_request_headers",
     "on_post_api_request",
     "on_post_approval_response",

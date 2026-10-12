@@ -218,6 +218,13 @@ Fires in the **dispatcher** when a claim's TTL expired with no heartbeat.
 - **Span op:** `kanban.stale_claim`, a root of its own, status `OK`
 - **Attributes:** the card identity plus `hermes.kanban.worker_pid`, `hermes.kanban.heartbeat_stale`, `hermes.kanban.retry_status`
 
+### `on_kanban_dispatch_tick` / `on_kanban_task_updated`
+
+Board health (#397), metrics only.
+
+- **`on_kanban_dispatch_tick`:** fires once per dispatcher pass, after the dispatch lock is released. It records `hermes.kanban.dispatch.count{outcome, board}`, plus `hermes.kanban.dispatch.result{kind, board}` for each non-zero `DispatchResult` field (spawned, reclaimed, crashed, auto_blocked, …). The task ids, assignees and workspace paths in the result are never exported, only how many there were. Dry runs are not counted. There is no span: an idle board ticks every minute, and what a busy pass did is already on the run's `kanban.*` spans.
+- **`on_kanban_task_updated`:** a task-row edit outside claim / complete / block. It records `hermes.kanban.task.updated{field, board}` once per changed field *name*. Hermes never passes the values.
+
 ### `kanban_task_completed`
 
 Fires in the **worker** from inside the `kanban_complete` tool (or in a CLI process when a human runs `hermes kanban complete`).
@@ -260,6 +267,8 @@ kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's r
 on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
+on_kanban_dispatch_tick  metrics only: hermes.kanban.dispatch.count / .result (dispatcher, after the lock)
+on_kanban_task_updated   metrics only: hermes.kanban.task.updated{field}
 kanban_task_completed    open+close kanban.complete     (worker; in the turn's trace + root stamped)
 kanban_task_blocked      open+close kanban.block        (worker; OK + outcome=blocked)
 subagent_stop            close subagent.{role}   + status + duration + metrics

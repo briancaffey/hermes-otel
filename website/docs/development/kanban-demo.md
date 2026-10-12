@@ -26,6 +26,7 @@ uv run --extra dev python scripts/kanban_demo/run_demo.py --profile minimal \
 |---|---|
 | every card ends terminal | the board itself worked |
 | `kanban.claim` root per card, `kanban.spawn` under it with a pid | the dispatcher-side hooks fire in the `dispatch` process and never nest under a session |
+| `hermes.kanban.dispatch.count` / `.result` record the passes and the 4 spawns | the board-health counters from `on_kanban_dispatch_tick` (#397) |
 | the worker's turn is in the claim's trace (complete, block) | the dispatcher handed the run's context to the worker through `TRACEPARENT` (#388) |
 | `kanban.complete` has a session and a parent; the worker's root is stamped `completed` | the worker-side hook landed inside the worker's own trace, findable by span-only readers |
 | `kanban.block` is status OK with the reason | a blocked card is a hand-off, not an error |

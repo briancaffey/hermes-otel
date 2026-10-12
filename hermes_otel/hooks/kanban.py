@@ -445,3 +445,97 @@ def on_kanban_task_blocked(
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "blocked")
     _finish(tracer, "kanban.block", attrs, "blocked", "hermes.kanban.reason", reason)
+
+
+# --- board health (#397) -----------------------------------------------------
+
+# The DispatchResult fields a pass reports, as metric kinds. A field is an int,
+# a list (its length is the count) or a flag; task ids, assignees and
+# workspace paths inside the lists are never exported, only how many.
+_DISPATCH_KINDS = (
+    "spawned",
+    "reclaimed",
+    "promoted",
+    "reconciled_orphans",
+    "reaped_terminal_workers",
+    "crashed",
+    "stale",
+    "timed_out",
+    "auto_blocked",
+    "rate_limited",
+    "auto_assigned_default",
+    "respawn_guarded",
+    "skipped_per_profile_capped",
+    "skipped_unassigned",
+    "skipped_nonspawnable",
+    "skipped_locked",
+    "memory_pressure",
+)
+
+
+def _dispatch_count(value: Any) -> int:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1 if value else 0  # memory_pressure: a reason string when set
+
+
+@_fail_open
+def on_kanban_dispatch_tick(
+    board: Any = None,
+    profile_name: Any = None,
+    dry_run: Any = False,
+    outcome: Any = None,
+    result: Any = None,
+    **kwargs: Any,
+):
+    """One dispatcher pass, after the dispatch lock is released: counts only.
+
+    No span: an idle board ticks every minute, and what a busy pass did is
+    already the run's ``kanban.claim`` / ``spawn`` / ``worker_exit`` spans.
+    """
+    debug_log(f"on_kanban_dispatch_tick fired: board={board} outcome={outcome}")
+    tracer = get_tracer()
+    if not tracer.is_enabled or dry_run:
+        return
+    label = truncate_string(str(board), _ID_MAX) if board else "default"
+    tracer.record_metric(
+        "kanban_dispatch_count",
+        1,
+        {
+            "outcome": truncate_string(str(outcome), _SHORT_MAX) if outcome else "unknown",
+            "board": label,
+        },
+    )
+    if result is None:
+        return
+    for kind in _DISPATCH_KINDS:
+        n = _dispatch_count(getattr(result, kind, None))
+        if n:
+            tracer.record_metric("kanban_dispatch_result", n, {"kind": kind, "board": label})
+
+
+@_fail_open
+def on_kanban_task_updated(
+    task_id: Any = None,
+    board: Any = None,
+    changed_fields: Any = None,
+    **kwargs: Any,
+):
+    """A task row was edited outside claim / complete / block: one point per
+    changed field name. Hermes passes names only, never values."""
+    debug_log(f"on_kanban_task_updated fired: task={task_id} fields={changed_fields}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+    label = truncate_string(str(board), _ID_MAX) if board else "default"
+    for name in changed_fields or ():
+        if name:
+            tracer.record_metric(
+                "kanban_task_updated",
+                1,
+                {"field": truncate_string(str(name), _SHORT_MAX), "board": label},
+            )
