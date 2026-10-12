@@ -16,6 +16,19 @@ banner:
 	  --screenshot="$(abspath docs/catalog-banner.png)" "file://$(abspath docs/catalog-banner.html)" >/dev/null 2>&1
 	@python3 -c 'import struct,sys; d=open("docs/catalog-banner.png","rb").read(24); w,h=struct.unpack(">II", d[16:24]); print("docs/catalog-banner.png:", w, "x", h, "px,", len(open("docs/catalog-banner.png","rb").read())//1024, "KB"); sys.exit(0 if w==2*h else 1)'
 
+# ── Live before/after check for refactor PRs (#410) ───────────────────
+# Runs the turn-batch prompts through a real Hermes twice, once with BASE's
+# package installed in the profile's plugin dir and once with the working
+# tree's, scores every telemetry source with check_batch.py, and diffs the
+# shape of what landed in the live store. Needs the profile (default
+# `minimal`) with the plugin installed, a model it can call and the backend
+# in its hermes_otel.yaml answering. ~5 min for four prompts × two sides.
+BASE ?= main
+PROFILE ?= minimal
+.PHONY: refactor-check
+refactor-check:
+	uv run --extra dev python scripts/refactor_check/refactor_check.py --base $(BASE) --profile $(PROFILE)
+
 # ── The CI gate, locally ───────────────────────────────────────────────
 # Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
 # black), plugin scan, tests with the 85% coverage gate and the per-module
