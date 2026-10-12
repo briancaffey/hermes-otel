@@ -1,0 +1,18 @@
+# Scene 4 (#440): no model at all, just the query tool at a shell prompt, for cut-aways.
+# Record it right after span-tree (tools/take_all.sh does): `trace last` is then that scene's
+# second turn, and `--since 10m` lists only that scene's turns.
+name: cli
+title: "hermes-otel: otel.py at the shell"
+cols: 150
+rows: 34
+cps: 15
+seed: 41
+run_quiet_s: 1.2
+steps:
+  - pause: 1.0
+  - run: "otel traces --name agent --since 10m"
+  - pause: 2.5
+  - key: C-l
+  - pause: 0.6
+  - run: "otel trace last"
+  - pause: 3.5

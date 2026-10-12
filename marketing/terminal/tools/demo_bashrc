@@ -1,0 +1,11 @@
+# Clean shell for the recordings: no user dotfiles, a short prompt in the marketing palette
+# (marketing/DESIGN.md: blue #58a6ff path, green #3fb950 caret), and two short commands.
+export BASH_SILENCE_DEPRECATION_WARNING=1
+export HISTFILE=/dev/null
+PS1='\[\e[38;2;88;166;255m\]${DEMO_PS1_DIR}\[\e[0m\] \[\e[38;2;63;185;80m\]❯\[\e[0m\] '
+PS2='  '
+# `hermes` is the demo profile; `otel` is the observability skill's query tool reading it.
+hermes() { command hermes -p "${DEMO_PROFILE:-promo}" "$@"; }
+otel() { HERMES_HOME="$HOME/.hermes/profiles/${DEMO_PROFILE:-promo}" "$PYTHON" "$OTEL_PY" "$@"; }
+cd "$DEMO_WORKDIR" 2>/dev/null
+clear

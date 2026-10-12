@@ -1,0 +1,8 @@
+# Sources and the edited casts are committed; everything below is regenerated.
+# tools/fetch_assets.sh: asciinema-player bundle + JetBrains Mono
+.cache/
+# tools/record.py output before editing (carries captured keystrokes); the edited .cast stays
+casts/*.raw.cast
+renders/
+workdir/
+.DS_Store

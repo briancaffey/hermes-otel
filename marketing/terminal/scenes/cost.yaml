@@ -1,0 +1,13 @@
+# Scene 2 (#440): what did it cost, and what was slow? -> otel.py stats through the skill.
+name: cost
+title: "hermes-otel: where did the tokens go?"
+start_at: ready
+cps: 17
+seed: 23
+steps:
+  - type: "hermes"
+  - key: Enter
+  - wait_for: "promo ❯"
+  - pause: 1.2
+  - say: "How many tokens have my turns used today, per model, and which tool call was the slowest? Use the hermes_otel:observability skill."
+  - pause: 4

@@ -1,0 +1,13 @@
+# Scene 3 (#440): the opentelemetry-mcp server reads the same traces back out of Jaeger.
+name: mcp
+title: "hermes-otel: traces over MCP"
+start_at: ready
+cps: 17
+seed: 31
+steps:
+  - type: "hermes"
+  - key: Enter
+  - wait_for: "promo ❯"
+  - pause: 1.2
+  - say: "Ask Jaeger through the otel MCP tools: how many tokens per model have my agents used? Let the tools pick the time window."
+  - pause: 4

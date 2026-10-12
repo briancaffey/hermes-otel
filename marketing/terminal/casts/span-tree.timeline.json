@@ -1,0 +1,63 @@
+[
+ {
+  "t": 0.0,
+  "event": "start",
+  "start_at": "start"
+ },
+ {
+  "t": 2.353758083889261,
+  "event": "type_start",
+  "text": "hermes"
+ },
+ {
+  "t": 3.1012808750383556,
+  "event": "type_end"
+ },
+ {
+  "t": 3.517622624989599,
+  "event": "key",
+  "key": "Enter"
+ },
+ {
+  "t": 16.36433858401142,
+  "event": "ready"
+ },
+ {
+  "t": 17.88380604190752,
+  "event": "type_start",
+  "text": "How many Python files are in hermes_otel/, and which one is the biggest?"
+ },
+ {
+  "t": 25.56182441697456,
+  "event": "type_end"
+ },
+ {
+  "t": 26.04120416706428,
+  "event": "submit"
+ },
+ {
+  "t": 48.89855229202658,
+  "event": "turn_end"
+ },
+ {
+  "t": 51.40239774994552,
+  "event": "type_start",
+  "text": "Use the hermes_otel:observability skill to show me that last turn as a span tree."
+ },
+ {
+  "t": 60.44395066704601,
+  "event": "type_end"
+ },
+ {
+  "t": 60.90940762497485,
+  "event": "submit"
+ },
+ {
+  "t": 89.00303087499924,
+  "event": "turn_end"
+ },
+ {
+  "t": 93.01352754188702,
+  "event": "end"
+ }
+]

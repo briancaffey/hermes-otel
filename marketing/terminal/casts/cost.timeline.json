@@ -1,0 +1,46 @@
+[
+ {
+  "t": 0.0,
+  "event": "start",
+  "start_at": "ready"
+ },
+ {
+  "t": 1.0944364999886602,
+  "event": "type_start",
+  "text": "hermes"
+ },
+ {
+  "t": 2.0593527499586344,
+  "event": "type_end"
+ },
+ {
+  "t": 2.0706811249256134,
+  "event": "key",
+  "key": "Enter"
+ },
+ {
+  "t": 10.348615375114605,
+  "event": "ready"
+ },
+ {
+  "t": 11.557645624969155,
+  "event": "type_start",
+  "text": "How many tokens have my turns used today, per model, and which tool call was the slowest? Use the hermes_otel:observability skill."
+ },
+ {
+  "t": 24.092130499891937,
+  "event": "type_end"
+ },
+ {
+  "t": 24.58156520803459,
+  "event": "submit"
+ },
+ {
+  "t": 72.62967233289964,
+  "event": "turn_end"
+ },
+ {
+  "t": 76.64050841704011,
+  "event": "end"
+ }
+]

@@ -1,0 +1,19 @@
+# Scene 1 (#440): a small real task, then "show me the trace" -> the observability skill
+# draws the turn as a span tree in the terminal.
+name: span-tree
+title: "hermes-otel: what did my agent just do?"
+cols: 120
+rows: 30
+cps: 17
+seed: 11
+steps:
+  - pause: 1.2
+  - type: "hermes"
+  - pause: 0.4
+  - key: Enter
+  - wait_for: "promo ❯"
+  - pause: 1.5
+  - say: "How many Python files are in hermes_otel/, and which one is the biggest?"
+  - pause: 2.5
+  - say: "Use the hermes_otel:observability skill to show me that last turn as a span tree."
+  - pause: 4
