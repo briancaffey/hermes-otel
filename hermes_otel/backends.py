@@ -27,7 +27,7 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
 from .backend_specs import ENV_PRIORITY, SPECS, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
@@ -175,25 +175,46 @@ def _traces_for(override: Optional[bool]) -> bool:
     return True if override is None else override
 
 
+@dataclass(frozen=True)
+class SecretChoice:
+    """Which source supplied a credential: ``inline`` (the entry), ``env``
+    (the entry's ``<field>_env``), ``fallback`` (a vendor env var) or ``None``
+    (nothing set); ``env_name`` is the variable read for the last two."""
+
+    value: Optional[str] = None
+    origin: Optional[str] = None
+    env_name: Optional[str] = None
+
+
+def choose_secret(
+    inline: Optional[str],
+    env_name: Optional[str],
+    fallback_envs: Sequence[str],
+) -> SecretChoice:
+    """The first available secret: inline > named env > fallback envs. The
+    one precedence rule the resolvers and the Settings tab share."""
+    if inline:
+        v = inline.strip()
+        if v:
+            return SecretChoice(v, "inline")
+    if env_name:
+        v = os.getenv(env_name, "").strip()
+        if v:
+            return SecretChoice(v, "env", env_name)
+    for name in fallback_envs:
+        v = os.getenv(name, "").strip()
+        if v:
+            return SecretChoice(v, "fallback", name)
+    return SecretChoice()
+
+
 def _resolve_secret(
     inline: Optional[str],
     env_name: Optional[str],
     fallback_envs: List[str],
 ) -> Optional[str]:
     """Pick the first available secret value. Inline > named env > fallback envs."""
-    if inline:
-        v = inline.strip()
-        if v:
-            return v
-    if env_name:
-        v = os.getenv(env_name, "").strip()
-        if v:
-            return v
-    for name in fallback_envs:
-        v = os.getenv(name, "").strip()
-        if v:
-            return v
-    return None
+    return choose_secret(inline, env_name, fallback_envs).value
 
 
 def _display(bc: BackendConfig, t: str) -> str:
@@ -1442,6 +1463,63 @@ def preset_temporality(backend_type: str) -> Optional[str]:
     return spec.temporality if spec is not None else None
 
 
+def signals_for(bc: BackendConfig) -> Dict[str, bool]:
+    """Which signals this entry exports: the entry's ``traces`` / ``metrics`` /
+    ``logs`` when set, else the type's support. A type whose resolver decides
+    (Victoria: a signal is on only when its store is named) is asked; if that
+    entry cannot resolve, the plain rule answers."""
+    spec = spec_for(bc.type)
+    t = spec.type if spec is not None else (bc.type or "").strip().lower()
+    if spec is not None and spec.signals_from_resolver:
+        try:
+            rb = _RESOLVERS[t](bc)
+            return {
+                "traces": rb.supports_traces,
+                "metrics": rb.supports_metrics,
+                "logs": rb.supports_logs,
+            }
+        except ValueError:
+            pass
+    return {
+        "traces": _traces_for(bc.traces),
+        "metrics": _metrics_for(t, bc.metrics),
+        "logs": _logs_for(t, bc.logs),
+    }
+
+
+_SDK_TEMPORALITY_ENV = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
+
+
+def _entry_temporality(bc: BackendConfig, *, warn: bool = True) -> Tuple[Optional[str], str]:
+    """The entry's own ``metrics_temporality`` (validated), else the type's preset."""
+    t = (bc.type or "").strip().lower()
+    entry = normalize_temporality(
+        bc.metrics_temporality, where=f"backends[{bc.name or t}].metrics_temporality", warn=warn
+    )
+    if entry:
+        return entry, "entry"
+    preset = preset_temporality(t)
+    if preset:
+        return preset, "type preset"
+    return None, ""
+
+
+def temporality_for(bc: BackendConfig, top_level: Optional[str]) -> Tuple[str, str]:
+    """``(temporality, which rule set it)`` for this backend's metric reader:
+    the entry, the type preset, the top-level ``metrics_temporality``, the
+    SDK's own env var, or the SDK default (``cumulative``)."""
+    value, source = _entry_temporality(bc, warn=False)
+    if value:
+        return value, source
+    if top_level:
+        return str(top_level).strip().lower(), "top-level metrics_temporality"
+    # With no preference passed, the OTLP exporter reads the SDK's own env var.
+    env_pref = os.getenv(_SDK_TEMPORALITY_ENV, "").strip().lower()
+    if env_pref:
+        return env_pref, _SDK_TEMPORALITY_ENV
+    return "cumulative", "SDK default"
+
+
 def resolve(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve a declared ``BackendConfig`` into a ready-to-wire backend.
 
@@ -1458,18 +1536,14 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
     resolver = _RESOLVERS[t]
     rb = resolver(bc)
     if not spec.signals_from_resolver:
+        signals = signals_for(bc)
         rb = dataclasses.replace(
             rb,
-            supports_traces=_traces_for(bc.traces),
-            supports_metrics=_metrics_for(t, bc.metrics),
-            supports_logs=_logs_for(t, bc.logs),
+            supports_traces=signals["traces"],
+            supports_metrics=signals["metrics"],
+            supports_logs=signals["logs"],
         )
-    temporality = (
-        normalize_temporality(
-            bc.metrics_temporality, where=f"backends[{bc.name or t}].metrics_temporality"
-        )
-        or spec.temporality
-    )
+    temporality, _ = _entry_temporality(bc)
     if temporality and rb.metrics_temporality != temporality:
         rb = dataclasses.replace(rb, metrics_temporality=temporality)
     if bc.log_overrides:

@@ -107,33 +107,23 @@ _PLAIN_BACKEND_FIELDS = (
 def _credential_report(
     bc: BackendConfig, field: str, raw: Dict[str, Any], reveal: bool, fallbacks: Tuple[str, ...]
 ) -> Dict[str, Any]:
-    """How one credential field of a backend is supplied, without its value."""
-    inline = getattr(bc, field, None)
-    raw_inline = raw.get(field)
+    """How one credential field of a backend is supplied, without its value
+    (the resolvers' own precedence, ``backends.choose_secret``)."""
     env_name = getattr(bc, f"{field}_env", None)
-    out: Dict[str, Any] = {"field": field, "set": False, "source": None}
-    secret = is_secret_name(field)
-    if inline:
-        out["set"] = True
+    choice = _backends.choose_secret(getattr(bc, field, None), env_name, fallbacks)
+    out: Dict[str, Any] = {"field": field, "set": choice.origin is not None, "source": None}
+    if choice.origin == "inline":
+        raw_inline = raw.get(field)
         if isinstance(raw_inline, str) and "${" in raw_inline:
             out["source"] = f"file, expanded from {raw_inline.strip()}"
         else:
             out["source"] = "file (inline)"
-        out["value"] = inline if (reveal or not secret) else MASK
-        return out
-    if env_name:
-        present = bool(os.getenv(env_name, "").strip())
-        out["set"] = present
-        out["source"] = f"env {env_name}" + ("" if present else " (not set)")
-        if present:
-            out["value"] = os.getenv(env_name) if (reveal or not secret) else MASK
-        return out
-    for name in fallbacks:
-        if os.getenv(name, "").strip():
-            out["set"] = True
-            out["source"] = f"env {name}"
-            out["value"] = os.getenv(name) if (reveal or not secret) else MASK
-            return out
+    elif choice.origin is not None:
+        out["source"] = f"env {choice.env_name}"
+    elif env_name:
+        out["source"] = f"env {env_name} (not set)"
+    if choice.value is not None:
+        out["value"] = choice.value if (reveal or not is_secret_name(field)) else MASK
     return out
 
 
@@ -268,39 +258,24 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _signal_report(bc: BackendConfig) -> Dict[str, Dict[str, Any]]:
-    """Per signal: whether the type accepts it, what the entry says, and the
-    resulting export state. Mirrors ``backends._traces_for`` and friends."""
+    """Per signal: whether the type accepts it, what the entry says, and what
+    the exporter does with it (``backends.signals_for``)."""
     support = _backends.signal_support(bc.type or "")
+    exported = _backends.signals_for(bc)
     out: Dict[str, Dict[str, Any]] = {}
     for signal, override in (("traces", bc.traces), ("metrics", bc.metrics), ("logs", bc.logs)):
-        supported = support[signal]
-        exported = supported if override is None else bool(override)
         out[signal] = {
-            "supported": supported,
+            "supported": support[signal],
             "configured": "auto" if override is None else ("on" if override else "off"),
-            "exported": exported,
+            "exported": exported[signal],
         }
     return out
 
 
-_SDK_TEMPORALITY_ENV = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
-
-
 def _temporality_report(bc: BackendConfig, top_level: Optional[str]) -> Dict[str, Any]:
     """The temporality this backend's metric reader gets, and which rule set it."""
-    entry = (bc.metrics_temporality or "").strip().lower()
-    if entry:
-        return {"value": entry, "source": "entry"}
-    preset = _backends.preset_temporality(bc.type or "")
-    if preset:
-        return {"value": preset, "source": "type preset"}
-    if top_level:
-        return {"value": str(top_level).strip().lower(), "source": "top-level metrics_temporality"}
-    # With no preference passed, the OTLP exporter reads the SDK's own env var.
-    env_pref = os.getenv(_SDK_TEMPORALITY_ENV, "").strip().lower()
-    if env_pref:
-        return {"value": env_pref, "source": _SDK_TEMPORALITY_ENV}
-    return {"value": "cumulative", "source": "SDK default"}
+    value, source = _backends.temporality_for(bc, top_level)
+    return {"value": value, "source": source}
 
 
 def _backend_summary(
@@ -379,20 +354,19 @@ def _display_value(
 
 
 def config_path_source(path: Optional[Path]) -> str:
-    """Which rule of :func:`resolve_config_path` picked ``path``.
+    """Which rule of :func:`plugin_config.resolve_config_path_with_reason`
+    would have picked ``path`` (``explicit`` for any other path).
 
     Judged against the home in force for this report (a profile's own under
-    a multiplexed gateway or a ``?profile=`` dashboard request, #286), not
-    only the module constants, which are computed once from the process home.
+    a multiplexed gateway or a ``?profile=`` dashboard request, #286).
     """
     if path is None:
         return "none"
     if os.environ.get(pc.CONFIG_PATH_ENV, "").strip():
         return "env"
-    home = hermes_home()
-    if path in (pc.DURABLE_CONFIG_PATH, home / "hermes_otel.yaml"):
+    if path == pc.durable_config_path():
         return "durable"
-    if path in (pc.DEFAULT_CONFIG_PATH, home / "plugins" / "hermes_otel" / "config.yaml"):
+    if path == pc.legacy_config_path():
         return "legacy"
     return "explicit"
 
@@ -403,16 +377,7 @@ def _deprecated_keys(data: Any) -> List[Dict[str, Any]]:
     They keep working; the Settings tab marks them so a user can migrate."""
     if not isinstance(data, dict):
         return []
-    flat = set()
-
-    def walk(node: Any) -> None:
-        for v in node.values():
-            if isinstance(v, dict):
-                walk(v)
-            else:
-                flat.add(v)
-
-    walk(pc._LOGS_BLOCK)
+    flat = set(pc.LOG_FIELDS)
     return [
         {"key": k, "note": "flat spelling; the logs: block is the preferred form"}
         for k in data
@@ -434,113 +399,54 @@ def field_reports(
 ) -> Tuple[List[Dict[str, Any]], HermesOtelConfig]:
     """One entry per HermesOtelConfig field with value, default and source.
 
-    Mirrors ``load_config``: a file value that fails coercion is ignored (and
+    Formatting over :func:`plugin_config.resolve_fields`, the loader's own
+    precedence rules: a file value that fails coercion is ignored (and
     flagged), an env value that fails parsing is ignored (and flagged), and
     the env var wins over the file when both are valid.
     """
     kinds = field_kinds()
     defaults = HermesOtelConfig()
     group_of = {k: g for g, keys in FIELD_GROUPS for k in keys}
-    values: Dict[str, Any] = {}
-    reports: List[Dict[str, Any]] = []
     raw_backends = yaml_data.get("backends")
+    effective, sources = pc.resolve_fields(yaml_data, warn=False)
+    top_temporality = effective.metrics_temporality
 
+    reports: List[Dict[str, Any]] = []
     for f in dataclasses.fields(HermesOtelConfig):
         key, kind = f.name, kinds[f.name]
+        src = sources[key]
         default = getattr(defaults, key)
-        entry: Dict[str, Any] = {
-            "key": key,
-            "group": group_of.get(key, "Other"),
-            "kind": kind,
-            "description": FIELD_DOCS.get(key, ""),
-            "env_var": pc._ENV_PREFIX + key.upper() if kind in pc._SCALAR_KINDS else None,
-            "source": "default",
-            "default": _display_value(kind, key, default, reveal, None),
-            "file_value": None,
-            "file_invalid": False,
-            "env_raw": None,
-            "env_invalid": False,
-        }
-        value = default
-
-        if key in yaml_data and yaml_data[key] is not None:
-            coerced = pc.coerce_from_yaml(key, yaml_data[key])
-            if coerced is None:
-                entry["file_invalid"] = True
-                entry["file_value"] = str(yaml_data[key])
-            else:
-                value = coerced
-                entry["source"] = "file"
-                entry["file_value"] = _display_value(kind, key, coerced, reveal, raw_backends)
-
-        if entry["env_var"]:
-            raw_env = os.getenv(entry["env_var"], "").strip()
-            if raw_env:
-                parsed = pc._parse_scalar(kind, key, raw_env)
-                secret = is_secret_name(key)
-                entry["env_raw"] = raw_env if (reveal or not secret) else MASK
-                if parsed is None:
-                    entry["env_invalid"] = True
-                else:
-                    value = parsed
-                    entry["source"] = "env"
-
-        values[key] = value
-        entry["derived_from"] = None
-        reports.append(entry)
-
-    # The loader also normalises the metrics settings (``reconcile_metrics_settings``):
-    # an unknown histogram or temporality is dropped with a warning, never applied.
-    # Flag it here the way an uncoercible value is flagged (#413).
-    for key, valid in (
-        ("metrics_histogram", pc.VALID_HISTOGRAMS),
-        ("metrics_temporality", pc.VALID_TEMPORALITIES),
-    ):
-        entry = next(r for r in reports if r["key"] == key)
-        if entry["source"] == "default" or values.get(key) is None:
-            continue
-        text = str(values[key]).strip().lower()
-        if text in valid:
-            values[key] = text
-            continue
-        entry["env_invalid" if entry["source"] == "env" else "file_invalid"] = True
-        entry["source"] = "default"
-        values[key] = getattr(defaults, key)
-
-    # content_capture and the legacy booleans are kept consistent by the
-    # loader; mirror that so the tab shows what the hooks apply, and say
-    # which key decided it.
-    explicit = {r["key"]: values[r["key"]] for r in reports if r["source"] != "default"}
-    reconciled = dict(explicit)
-    pc._reconcile_content_capture(reconciled)
-    by_key = {r["key"]: r for r in reports}
-    if "content_capture" in explicit:
-        # content_capture wins: every legacy flag is derived from it, even one
-        # that is also written in the file or the environment.
-        driver = ["content_capture"]
-        derived_keys = list(pc._LEGACY_CONTENT_KEYS)
-    else:
-        driver = [k for k in pc._LEGACY_CONTENT_KEYS if k in explicit]
-        derived_keys = [
-            k for k in ("content_capture",) + pc._LEGACY_CONTENT_KEYS if k not in explicit
-        ]
-    for key in ("content_capture",) + pc._LEGACY_CONTENT_KEYS:
-        if key in reconciled:
-            values[key] = reconciled[key]
-    if driver:
-        for key in derived_keys:
-            if key in reconciled:
-                by_key[key]["source"] = by_key[driver[0]]["source"]
-                by_key[key]["derived_from"] = driver
-
-    for entry in reports:
-        key, kind = entry["key"], entry["kind"]
-        entry["value"] = _display_value(
-            kind, key, values[key], reveal, raw_backends, values.get("metrics_temporality")
+        value = getattr(effective, key)
+        secret = is_secret_name(key)
+        if src.file_invalid:
+            file_value: Any = str(src.file_raw)
+        elif src.file_value is not None:
+            file_value = _display_value(kind, key, src.file_value, reveal, raw_backends)
+        else:
+            file_value = None
+        reports.append(
+            {
+                "key": key,
+                "group": group_of.get(key, "Other"),
+                "kind": kind,
+                "description": FIELD_DOCS.get(key, ""),
+                "env_var": src.env_var,
+                "source": src.source,
+                "default": _display_value(kind, key, default, reveal, None),
+                "file_value": file_value,
+                "file_invalid": src.file_invalid,
+                "env_raw": (
+                    None
+                    if src.env_raw is None
+                    else (src.env_raw if (reveal or not secret) else MASK)
+                ),
+                "env_invalid": src.env_invalid,
+                "derived_from": list(src.derived_from) if src.derived_from else None,
+                "value": _display_value(kind, key, value, reveal, raw_backends, top_temporality),
+                "changed": value != default,
+            }
         )
-        entry["changed"] = values[key] != getattr(defaults, key)
-
-    return reports, dataclasses.replace(defaults, **values)
+    return reports, effective
 
 
 # ── Environment inventory ─────────────────────────────────────────────────
@@ -623,8 +529,8 @@ def env_inventory(reveal: bool = False) -> List[Dict[str, Any]]:
         )
 
     for key, kind in field_kinds().items():
-        if kind in pc._SCALAR_KINDS:
-            add(pc._ENV_PREFIX + key.upper(), "override", FIELD_DOCS.get(key, ""), maps_to=key)
+        if kind in pc.SCALAR_KINDS:
+            add(pc.ENV_PREFIX + key.upper(), "override", FIELD_DOCS.get(key, ""), maps_to=key)
     for name, group, description in KNOWN_ENV_VARS:
         add(name, group, description)
     for name in sorted(os.environ):
@@ -797,9 +703,9 @@ def _backend_as_yaml(b: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     """Everything the Settings tab shows, as one JSON-serialisable dict."""
-    path = pc.resolve_config_path()
+    path, path_source = pc.resolve_config_path_with_reason()
     exists = bool(path and path.exists())
-    raw_yaml = pc._load_yaml(path) if path is not None else {}
+    raw_yaml = pc.load_yaml(path) if path is not None else {}
     yaml_data = pc.normalize_yaml_data(raw_yaml, notice=False) if path is not None else {}
     reports, effective = field_reports(yaml_data, reveal=reveal)
 
@@ -817,7 +723,7 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     parse_ok = not exists or bool(yaml_data) or (raw_text or "").strip() == ""
 
     unknown = [
-        {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc._ALLOWED_KEYS
+        {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc.ALLOWED_KEYS
     ]
     # The flat spellings of the ``logs:`` block are read from the file as
     # written (normalisation folds the block onto them).
@@ -836,14 +742,14 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
         "reveal": reveal,
         "config": {
             "path": str(path) if path else None,
-            "path_source": config_path_source(path),
+            "path_source": path_source,
             "exists": exists,
             "parse_ok": parse_ok,
             "mtime": mtime,
             "raw": raw_text,
             "raw_error": raw_error,
-            "durable_path": str(pc.DURABLE_CONFIG_PATH),
-            "legacy_path": str(pc.DEFAULT_CONFIG_PATH),
+            "durable_path": str(pc.durable_config_path()),
+            "legacy_path": str(pc.legacy_config_path()),
             "unknown_keys": unknown,
             "deprecated_keys": deprecated,
         },

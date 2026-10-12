@@ -223,7 +223,7 @@ def scratch_home(tmp_path, monkeypatch):
     monkeypatch.delenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", raising=False)
     clear_backend_env(monkeypatch)
     for key in pc.field_kinds():
-        monkeypatch.delenv(pc._ENV_PREFIX + key.upper(), raising=False)
+        monkeypatch.delenv(pc.ENV_PREFIX + key.upper(), raising=False)
     monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", home / "hermes_otel.yaml")
     monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", home / "plugins" / "hermes_otel" / "config.yaml")
     dash.clear_caches()

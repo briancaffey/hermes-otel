@@ -185,6 +185,12 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_HOME` | Hermes' home (default `~/.hermes`); the plugin resolves `hermes_otel.yaml`, the live store and the debug log under it. Inside a multiplexed gateway each profile's plugin uses that profile's home instead, via Hermes's own resolver ([profiles](/configuration/profiles)) |
 | `HERMES_OTEL_LIVE_DB` | Path of the live dashboard's SQLite store (default `$HERMES_HOME/hermes_otel_live.db`) |
 
+## OpenTelemetry SDK
+
+| Var | Effect |
+|---|---|
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Metric temporality (`cumulative` / `delta`) for a backend when neither its entry, its type preset nor the top-level `metrics_temporality` sets one; read by the OTLP exporter itself and shown on the Settings tab |
+
 ## Debug
 
 | Var | Value | Effect |
