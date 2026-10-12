@@ -1,0 +1,121 @@
+{
+ "adapter": null,
+ "display_name": "LangWatch",
+ "entry": {
+  "api_key_env": "HO_TEST_API_KEY",
+  "name": "langwatch-entry",
+  "project_env": "HO_TEST_PROJECT",
+  "type": "langwatch"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "https://app.langwatch.ai/api/otel/v1/logs",
+    "headers": {
+     "Authorization": "Bearer <secret>",
+     "X-Project-Id": "<secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "langwatch",
+  "name": "langwatch-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "env_fields",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "langwatch-entry",
+  "endpoint": "https://app.langwatch.ai/api/otel/v1/traces",
+  "headers": {
+   "Authorization": "Bearer <secret>",
+   "X-Project-Id": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": false,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "langwatch"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "env HO_TEST_API_KEY",
+    "value": "••••••"
+   },
+   {
+    "field": "project",
+    "set": true,
+    "source": "env HO_TEST_PROJECT",
+    "value": "<secret>"
+   }
+  ],
+  "display_type": "LangWatch",
+  "docs_path": "/backends/langwatch",
+  "fields": {},
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "langwatch-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "langwatch",
+  "ui": {
+   "note": "no endpoint to derive a UI link from; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": null,
+    "logs": false,
+    "metrics": false,
+    "name": "langwatch-entry",
+    "queryable": false,
+    "type": "langwatch"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "langwatch"
+}

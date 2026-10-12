@@ -1,0 +1,28 @@
+{
+ "env": {
+  "OTEL_LAMINAR_API_KEY": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "Laminar",
+  "endpoint": "https://api.lmnr.ai/v1/traces",
+  "headers": {
+   "Authorization": "Bearer <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "laminar"
+ },
+ "selected": "laminar",
+ "type": "laminar"
+}

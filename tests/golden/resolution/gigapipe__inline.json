@@ -1,0 +1,126 @@
+{
+ "adapter": {
+  "class": "GigapipeAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Gigapipe",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "name": "gigapipe-entry",
+  "password": "<secret>",
+  "type": "gigapipe",
+  "user": "<secret>"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "Basic <secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "gigapipe",
+  "name": "gigapipe-entry",
+  "reason": "serves the Tempo API on its OTLP port, not verified with the server"
+ },
+ "path": "inline",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "gigapipe-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "gigapipe"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Gigapipe",
+  "docs_path": "/backends/gigapipe",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "gigapipe-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "gigapipe",
+  "ui": {
+   "note": "derived from the endpoint: Gigapipe serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "gigapipe-entry",
+    "queryable": true,
+    "type": "gigapipe"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "gigapipe"
+}

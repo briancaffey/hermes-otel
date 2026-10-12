@@ -1,0 +1,89 @@
+{
+ "adapter": {
+  "class": "ClickstackAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Hyperdx",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "name": "hyperdx-entry",
+  "type": "hyperdx"
+ },
+ "error": "ValueError: unknown backend type 'hyperdx'",
+ "mcp": {
+  "backend_type": "hyperdx",
+  "name": "hyperdx-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "inline",
+ "preset_temporality": null,
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Hyperdx",
+  "docs_path": null,
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": false,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "hyperdx-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "hyperdx",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "hyperdx-entry",
+    "queryable": true,
+    "type": "hyperdx"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "hyperdx"
+}

@@ -1,0 +1,33 @@
+{
+ "env": {
+  "OTEL_WEAVE_API_KEY": "<secret>",
+  "WANDB_ENTITY": "<secret>",
+  "WANDB_PROJECT": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "W&B Weave",
+  "endpoint": "https://trace.wandb.ai/otel/v1/traces",
+  "headers": {
+   "wandb-api-key": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": {
+   "wandb.entity": "<secret>",
+   "wandb.project": "<secret>"
+  },
+  "root_usage": true,
+  "supports_logs": false,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "weave"
+ },
+ "selected": "weave",
+ "type": "weave"
+}

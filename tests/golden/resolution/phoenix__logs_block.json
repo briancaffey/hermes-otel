@@ -1,0 +1,124 @@
+{
+ "adapter": {
+  "class": "PhoenixAdapter",
+  "supports_logs": false,
+  "supports_metrics": false
+ },
+ "display_name": "Phoenix",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "name": "phoenix-entry",
+  "type": "phoenix"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "phoenix",
+  "name": "phoenix-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "logs_block",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "phoenix-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": null,
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "phoenix"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "Phoenix",
+  "docs_path": "/backends/phoenix",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "phoenix-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "phoenix",
+  "ui": {
+   "note": "derived from the endpoint: Phoenix serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "phoenix-entry",
+    "queryable": true,
+    "type": "phoenix"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "phoenix"
+}

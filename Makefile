@@ -18,10 +18,17 @@ banner:
 
 # ── The CI gate, locally ───────────────────────────────────────────────
 # Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
-# black), plugin scan, tests with the 85% coverage gate, dashboard bundle
-# up to date + tsc/eslint/prettier + vitest, docs site build, wheel build. `make ci-fast` skips
-# the two npm builds when you did not touch dashboard-ui/ or website/.
-.PHONY: ci ci-fast ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
+# black), plugin scan, tests with the 85% coverage gate and the per-module
+# floors (coverage-floors.json), dashboard bundle up to date +
+# tsc/eslint/prettier + vitest, docs site build, wheel build. `make ci-fast`
+# skips the two npm builds when you did not touch dashboard-ui/ or website/.
+#
+# Not run by `make ci` (slow or environment-bound): the Python 3.9 / 3.11
+# matrix (this runs the current venv's interpreter only), `make ci-floor`
+# (the suite against the OpenTelemetry 1.35 floor, a fresh venv), and the
+# catalog-admission workflow (installs hermes-agent main; push to main,
+# weekly, or dispatch).
+.PHONY: ci ci-fast ci-lint ci-scan ci-test ci-floor ci-dashboard ci-docs ci-wheel
 ci: ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
 	@echo "✓ ci: every check that GitHub Actions runs passed locally"
 
@@ -37,7 +44,19 @@ ci-scan:
 	uv run --extra dev python scripts/scan_plugin_artifact.py
 
 ci-test:
-	uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85 -q
+	uv run --extra dev pytest --cov=hermes_otel --cov-branch --cov-report=term --cov-report=json --cov-fail-under=85 -q
+	uv run python scripts/coverage_floor.py
+
+# The declared OpenTelemetry floor, in a fresh venv (what the test-otel-floor
+# job runs). Slow (~2 min); run it when touching the OTel SDK surface.
+OTEL_FLOOR ?= 1.35.0
+ci-floor:
+	uv venv --quiet --python 3.11 .venv-floor
+	uv pip install --quiet --python .venv-floor/bin/python -e ".[dev]" \
+	  "opentelemetry-api==$(OTEL_FLOOR)" "opentelemetry-sdk==$(OTEL_FLOOR)" \
+	  "opentelemetry-exporter-otlp-proto-http==$(OTEL_FLOOR)"
+	.venv-floor/bin/python -c 'import sys, opentelemetry.sdk.version as v; assert v.__version__ == sys.argv[1], v.__version__; print("opentelemetry-sdk", v.__version__)' "$(OTEL_FLOOR)"
+	.venv-floor/bin/python -m pytest --tb=short -q
 
 # CI compares the committed bundle with a fresh build. Locally the bundle
 # may be rebuilt but not yet committed, so compare the working tree's bundle

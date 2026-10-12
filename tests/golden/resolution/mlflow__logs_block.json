@@ -1,0 +1,134 @@
+{
+ "adapter": null,
+ "display_name": "MLflow",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "experiment_id": "<secret>",
+  "logs": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "name": "mlflow-entry",
+  "type": "mlflow"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "Bearer <secret>",
+     "x-global": "g",
+     "x-mlflow-experiment-id": "<secret>"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "mlflow",
+  "name": "mlflow-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "logs_block",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "mlflow-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Bearer <secret>",
+   "x-mlflow-experiment-id": "<secret>"
+  },
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "mlflow"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "MLflow",
+  "docs_path": "/backends/mlflow",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": {
+   "exclude_loggers": [
+    "noisy"
+   ],
+   "level": "ERROR"
+  },
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "mlflow-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "mlflow",
+  "ui": {
+   "note": "derived from the endpoint: MLflow serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "mlflow-entry",
+    "queryable": false,
+    "type": "mlflow"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "mlflow"
+}

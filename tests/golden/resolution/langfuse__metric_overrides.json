@@ -1,0 +1,118 @@
+{
+ "adapter": {
+  "class": "LangfuseAdapter",
+  "supports_logs": false,
+  "supports_metrics": false
+ },
+ "display_name": "Langfuse",
+ "entry": {
+  "metrics_temporality": "delta",
+  "name": "langfuse-entry",
+  "public_key": "<secret>",
+  "root_usage": false,
+  "secret_key": "<secret>",
+  "type": "langfuse"
+ },
+ "log_targets": {
+  "count": 0,
+  "exporters": []
+ },
+ "mcp": {
+  "backend_type": "langfuse",
+  "name": "langfuse-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "metric_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "langfuse-entry",
+  "endpoint": "https://cloud.langfuse.com/api/public/otel/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>",
+   "x-langfuse-ingestion-version": "4"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": "delta",
+  "resource_attributes": null,
+  "root_usage": false,
+  "supports_logs": false,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "langfuse"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "public_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   },
+   {
+    "field": "secret_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Langfuse",
+  "docs_path": "/backends/langfuse",
+  "fields": {},
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "entry",
+   "value": "delta"
+  },
+  "name": "langfuse-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "langfuse",
+  "ui": {
+   "note": "derived from the endpoint: Langfuse serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "https://cloud.langfuse.com"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": null,
+    "logs": false,
+    "metrics": false,
+    "name": "langfuse-entry",
+    "queryable": true,
+    "type": "langfuse"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "langfuse"
+}

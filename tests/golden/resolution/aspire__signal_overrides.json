@@ -1,0 +1,122 @@
+{
+ "adapter": {
+  "class": "AspireAdapter",
+  "supports_logs": true,
+  "supports_metrics": false
+ },
+ "display_name": "Aspire Dashboard",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "aspire-entry",
+  "traces": false,
+  "type": "aspire"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "x-global": "g",
+     "x-otlp-api-key": "<secret>"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "aspire",
+  "name": "aspire-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "aspire-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "x-otlp-api-key": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "aspire"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Aspire Dashboard",
+  "docs_path": "/backends/aspire",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "aspire-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "aspire",
+  "ui": {
+   "note": "the Aspire Dashboard UI is on a different port than OTLP ingest; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": false,
+    "name": "aspire-entry",
+    "queryable": true,
+    "type": "aspire"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "aspire"
+}

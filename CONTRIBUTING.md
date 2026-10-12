@@ -149,10 +149,17 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 
 Before opening a PR:
 
-- [ ] `make ci` passes locally. It runs exactly what GitHub Actions runs, job
-      for job (lockfile check, ruff, black, plugin scan, tests with the 85%
-      coverage gate, dashboard bundle up to date + vitest, docs build, wheel
-      build), so a green `make ci` is a green pipeline. `make ci-fast` skips the
+- [ ] `make ci` passes locally. It runs what GitHub Actions runs, job for
+      job (lockfile check, ruff, black, plugin scan, tests with the 85%
+      coverage gate and the per-module floors in `coverage-floors.json`,
+      dashboard bundle up to date + vitest, docs build, wheel build), so a
+      green `make ci` is a green pipeline, with three exceptions it names in
+      its header: the Python version matrix, `make ci-floor` (the suite on
+      the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
+      A module may not drop more than one point under its floor; after a
+      change that deliberately adds or removes coverage, re-record with
+      `python scripts/coverage_floor.py --update` and commit the file.
+      The pull request template carries this list. `make ci-fast` skips the
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
@@ -190,6 +197,35 @@ of every adapter module, and a monkeypatch on one copy does not reach the other.
 The contract test (`test_dashboard_adapter_contract.py`) parametrizes its
 invariants over `backends.adapters()`, so a new adapter is covered by it the
 moment it registers; its own response parsing goes in `test_dashboard_<type>.py`.
+
+### Golden fixtures
+
+`tests/golden/hooks/<scenario>__<config>.json` records the complete telemetry
+(spans, metric points, events) of twelve fixed hook sequences under four
+configs (`full`, `preview`, `off`, `events`). `tests/unit/test_golden_hooks.py`
+re-runs every one and fails on any difference, with a unified diff naming the
+attribute. Ids, timestamps, durations and the process identity are normalised
+(`T1`/`S1`, `<num>`, `<service.instance.id>`); everything else is literal.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_hooks.py`.
+- Add a scenario in `tests/golden/record_hooks.py` (`SCENARIOS`), record, commit the files.
+- **A refactor PR may not change a golden file.** If a change is deliberate (a bug
+  found on the way), re-record and list every changed line in the PR description.
+
+### Resolution snapshot (#409)
+
+`tests/unit/test_golden_resolution.py` records, for every backend type and
+every adapter alias under six input paths (inline credentials, `*_env`
+credentials, env-only selection, signal overrides, temporality + root_usage
+overrides, a per-backend `logs:` block), what the exporter resolves, which log
+exporter it gets, its Settings card, its MCP query target, its `status` line
+and its dashboard adapter, into `tests/golden/resolution/<type>__<path>.json`,
+plus the whole settings report for `config.yaml.example`. Secrets are
+placeholders and masked. `UPDATE_GOLDEN=1 pytest tests/unit/test_golden_resolution.py`
+re-records; a refactor PR that changes a fixture lists every changed line. The
+same module holds the cross-registry consistency checks (exporter types vs
+adapter `handles`, `signal_support()` vs adapter capabilities, env vars read vs
+`KNOWN_ENV_VARS`), marked `xfail(strict=True)` while #402 is open.
 
 ## Adding a new backend
 

@@ -1,0 +1,98 @@
+{
+ "adapter": {
+  "class": "VictoriaAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Victoriatraces",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs_endpoint": "http://localhost:9428",
+  "metrics_endpoint": "http://localhost:8428",
+  "name": "victoriatraces-entry",
+  "password_env": "HO_TEST_PASSWORD",
+  "type": "victoriatraces",
+  "user_env": "HO_TEST_USER"
+ },
+ "error": "ValueError: unknown backend type 'victoriatraces'",
+ "mcp": {
+  "backend_type": "victoriatraces",
+  "name": "victoriatraces-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "env_fields",
+ "preset_temporality": null,
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "env HO_TEST_USER",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "env HO_TEST_PASSWORD",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Victoriatraces",
+  "docs_path": null,
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": false,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "victoriatraces-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "victoriatraces",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "victoriatraces-entry",
+    "queryable": true,
+    "type": "victoriatraces"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "victoriatraces"
+}

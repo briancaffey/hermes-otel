@@ -1,0 +1,134 @@
+{
+ "adapter": {
+  "class": "GreptimeAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "GreptimeDB",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "greptime-entry",
+  "password": "<secret>",
+  "traces": false,
+  "type": "greptime",
+  "user": "<secret>"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/otlp/v1/logs",
+    "headers": {
+     "Authorization": "Basic <secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "greptime",
+  "name": "greptime-entry",
+  "reason": "serves the Jaeger API under /v1/jaeger, not verified with the server"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "greptime-entry",
+  "endpoint": "http://localhost:4318/v1/otlp/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>",
+   "X-Greptime-Pipeline-Name": "greptime_trace_v1"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "metrics_endpoint": null,
+  "metrics_headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "greptime"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "GreptimeDB",
+  "docs_path": "/backends/greptime",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "greptime-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "greptime",
+  "ui": {
+   "note": "derived from the endpoint: GreptimeDB serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "greptime-entry",
+    "queryable": true,
+    "type": "greptime"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "greptime"
+}

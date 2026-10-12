@@ -1,0 +1,111 @@
+{
+ "adapter": {
+  "class": "ZipkinAdapter",
+  "supports_logs": false,
+  "supports_metrics": false
+ },
+ "display_name": "Zipkin",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "zipkin-entry",
+  "traces": false,
+  "type": "zipkin"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "zipkin",
+  "name": "zipkin-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "zipkin-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": null,
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "zipkin"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "Zipkin",
+  "docs_path": "/backends/zipkin",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "zipkin-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": false
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "zipkin",
+  "ui": {
+   "note": "derived from the endpoint: Zipkin serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "zipkin-entry",
+    "queryable": true,
+    "type": "zipkin"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "zipkin"
+}

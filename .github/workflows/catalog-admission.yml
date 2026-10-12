@@ -1,0 +1,67 @@
+name: Catalog admission
+
+# The Hermes plugin catalog gates admission, and every later sha bump, on
+# `hermes plugins validate --install-deps` at the pinned commit, a structural
+# check of the entry and a grep for self-updating code
+# (NousResearch/hermes-agent .github/workflows/plugin-catalog-ci.yml). This
+# runs the same gates against hermes-agent *main*, so a red admission check
+# never shows up first in the upstream PR (#133).
+#
+# Not on pull requests (#412): upstream main is unpinned, so a break there
+# used to red every PR here with no local reproduction. Push to main, a
+# weekly schedule and manual dispatch catch the same regressions.
+
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: "41 6 * * 1" # Mondays, 06:41 UTC
+  workflow_dispatch:
+
+jobs:
+  catalog-admission:
+    name: Catalog admission checks
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      HERMES_HOME: ${{ github.workspace }}/.hermes-home
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          # hermes-agent's PM toolchain locks CPython 3.14 (pm/lock.json) and,
+          # since 2026-09-23, its core pins carry `python_version >= '3.14'`
+          # markers: on an older interpreter `pip install -e .` installs the
+          # CLI without ruamel, rich, etc. and `hermes` fails at import.
+          python-version: "3.14"
+      - name: Install Hermes Agent from main (what the upstream catalog CI installs)
+        # Upstream runs `pip install -e .` on its own checkout, i.e. hermes-agent
+        # main, so the gate is main's validator (`--install-deps` is newer than
+        # the latest tag). The sha is logged for the record.
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          echo "hermes-agent main @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
+          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" pyyaml
+          mkdir -p "$HERMES_HOME"
+          hermes --version
+      - name: hermes plugins validate --install-deps (the catalog gate)
+        run: hermes plugins validate --install-deps ./hermes_otel
+      - name: hermes plugins doctor --ci
+        run: hermes plugins doctor ./hermes_otel --ci
+      - name: Render the catalog entry and run the upstream structural validator
+        run: |
+          set -euo pipefail
+          python scripts/render_catalog_entry.py --sha "$GITHUB_SHA" -o "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
+          cat "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
+          python "$RUNNER_TEMP/hermes-agent/scripts/validate_plugin_catalog.py" "$RUNNER_TEMP/plugin-catalog/hermes_otel.yaml"
+      - name: No self-updating code in the install artifact (catalog rule 3)
+        run: |
+          set -euo pipefail
+          hits=$(grep -rlE 'releases/latest|raw\.githubusercontent\.com' \
+              --include='*.js' --include='*.mjs' --include='*.cjs' --include='*.ts' hermes_otel \
+            | xargs -r grep -lE 'writeTextFile|renamePath|writeFile\(' || true)
+          if [ -n "$hits" ]; then
+            echo "self-updating code in the install artifact: $hits"; exit 1
+          fi
+          echo "no self-updater patterns"

@@ -1,0 +1,450 @@
+{
+ "logs": [],
+ "metrics": [
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 100,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 50,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.client.operation.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 100,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 50,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai"
+   },
+   "name": "hermes.message.count",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden"
+   },
+   "name": "hermes.message.count",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "subagent"
+   },
+   "name": "hermes.model.usage",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden"
+   },
+   "name": "hermes.session.count",
+   "unit": "{session}",
+   "value": 2
+  },
+  {
+   "attributes": {
+    "child_status": "failed",
+    "profile": "golden",
+    "role": "builder",
+    "status": "error"
+   },
+   "name": "hermes.subagent.count",
+   "unit": "{run}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "profile": "golden",
+    "role": "builder"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.subagent.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "profile": "golden",
+    "role": "builder"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.subagent.run.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "subagent",
+    "token_type": "input"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 100
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "subagent",
+    "token_type": "output"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 50
+  }
+ ],
+ "spans": [
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "parent",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "parent",
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.number": 1,
+    "llm.model_name": "gpt-4",
+    "openinference.span.kind": "AGENT",
+    "session.id": "parent",
+    "session_id": "parent",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "parent",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S1",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "parent",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.turn.number": 1,
+    "llm.model_name": "gpt-4",
+    "openinference.span.kind": "LLM",
+    "session.id": "parent",
+    "session_id": "parent",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "llm.gpt-4",
+   "parent": "S1",
+   "span": "S2",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.agent.name": "builder",
+    "gen_ai.operation.name": "invoke_agent",
+    "hermes.subagent.child_session_id": "child-x",
+    "hermes.subagent.duration_ms": "<num>",
+    "hermes.subagent.parent_session_id": "parent",
+    "hermes.subagent.role": "builder",
+    "hermes.subagent.status": "failed",
+    "openinference.span.kind": "AGENT",
+    "session.id": "parent",
+    "session_id": "parent",
+    "traceloop.span.kind": "agent"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "subagent.builder",
+   "parent": "S2",
+   "span": "S3",
+   "status": {
+    "code": "ERROR",
+    "description": "exploded"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "child-x",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 100,
+    "gen_ai.usage.output_tokens": 50,
+    "gen_ai.usage.total_tokens": 150,
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.is_subagent": true,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "child-x",
+    "hermes.subagent.parent_session_id": "parent",
+    "hermes.subagent.role": "builder",
+    "hermes.turn.api_call_count": 1,
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.number": 1,
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.token_count.completion": 50,
+    "llm.token_count.prompt": 100,
+    "llm.token_count.total": 150,
+    "openinference.span.kind": "AGENT",
+    "session.id": "child-x",
+    "session_id": "child-x",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "child-x",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [
+    {
+     "attributes": {},
+     "span": "S3",
+     "trace": "T1"
+    }
+   ],
+   "name": "agent",
+   "parent": "S2",
+   "span": "S4",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "child-x",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "hermes.turn.number": 1,
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "openinference.span.kind": "LLM",
+    "session.id": "child-x",
+    "session_id": "child-x",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "llm.gpt-4",
+   "parent": "S4",
+   "span": "S5",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "child-x",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.finish_reasons": [
+     "stop"
+    ],
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 100,
+    "gen_ai.usage.output_tokens": 50,
+    "gen_ai.usage.total_tokens": 150,
+    "hermes.query_source": "subagent",
+    "hermes.turn.number": 1,
+    "llm.api_mode": "chat",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.request.approx_input_tokens": 10,
+    "llm.request.message_count": 1,
+    "llm.response.duration_ms": "<num>",
+    "llm.response.finish_reason": "stop",
+    "llm.response.output_chars": 5,
+    "llm.token_count.completion": 50,
+    "llm.token_count.prompt": 100,
+    "llm.token_count.total": 150,
+    "openinference.span.kind": "LLM",
+    "session.id": "child-x",
+    "session_id": "child-x",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "api.gpt-4",
+   "parent": "S5",
+   "span": "S6",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  }
+ ]
+}

@@ -1,0 +1,102 @@
+{
+ "adapter": {
+  "class": "TempoAdapter",
+  "supports_logs": false,
+  "supports_metrics": false
+ },
+ "display_name": "Tempo",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "name": "tempo-entry",
+  "type": "tempo"
+ },
+ "log_targets": {
+  "count": 0,
+  "exporters": []
+ },
+ "mcp": {
+  "backend_type": "tempo",
+  "backend_url": "http://localhost:3200",
+  "name": "tempo-entry",
+  "server_backend_type": "tempo"
+ },
+ "path": "inline",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "tempo-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": null,
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": false,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "tempo"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "Tempo",
+  "docs_path": "/backends/tempo",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "tempo-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": false,
+    "supported": false
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "tempo",
+  "ui": {
+   "note": "the Tempo UI is on a different port than OTLP ingest; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": false,
+  "metrics": false,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "tempo-entry",
+    "queryable": true,
+    "type": "tempo"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "tempo"
+}

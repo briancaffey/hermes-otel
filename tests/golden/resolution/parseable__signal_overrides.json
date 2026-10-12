@@ -1,0 +1,130 @@
+{
+ "adapter": null,
+ "display_name": "Parseable",
+ "entry": {
+  "api_key": "<secret>",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs": true,
+  "metrics": true,
+  "name": "parseable-entry",
+  "traces": false,
+  "type": "parseable"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "X-API-Key": "<secret>",
+     "X-P-Log-Source": "otel-logs",
+     "X-P-Stream": "hermes-logs",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "parseable",
+  "name": "parseable-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "parseable-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-traces",
+   "X-P-Stream": "hermes-traces"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-logs",
+   "X-P-Stream": "hermes-logs"
+  },
+  "metrics_endpoint": null,
+  "metrics_headers": {
+   "X-API-Key": "<secret>",
+   "X-P-Log-Source": "otel-metrics",
+   "X-P-Stream": "hermes-metrics"
+  },
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "parseable"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Parseable",
+  "docs_path": "/backends/parseable",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "parseable-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "parseable",
+  "ui": {
+   "note": "derived from the endpoint: Parseable serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": false,
+    "metrics": false,
+    "name": "parseable-entry",
+    "queryable": false,
+    "type": "parseable"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "parseable"
+}
