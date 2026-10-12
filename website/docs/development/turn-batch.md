@@ -64,7 +64,7 @@ The runner restores `config.yaml` byte for byte after each turn, which also undo
 
 ## How the turns run
 
-Each prompt is one `hermes -p <profile> chat -Q --yolo -q "<prompt>"` process with stdin closed, a per-turn timeout, and a short pause before the next one. `--yolo` answers approval prompts, so nothing waits on a human, and a turn that times out is recorded and skipped over. The batch never uses `hermes -z`: a one-shot run disables Python logging before the plugin's handler can see a record, so it would export spans and metrics but no logs (see [OTel logs](/configuration/logs#one-shot-runs-export-no-logs)).
+Each prompt is one `hermes -p <profile> chat -Q --yolo -q "<prompt>"` process with stdin closed, a per-turn timeout, and a short pause before the next one. `--yolo` answers approval prompts, so nothing waits on a human, and a turn that times out is recorded and skipped over. The batch uses `chat -q` rather than `hermes -z` because a one-shot run swallows Hermes's stderr, which the batch keeps; both export spans, metrics and logs since 1.24.0 (see [OTel logs](/configuration/logs#one-shot-runs)).
 
 Use a profile whose `hermes_otel.yaml` fans out to the backends under test with `capture_logs: true`, and whose `.env` holds their credentials; a small model keeps the batch cheap (the default library costs about 20k tokens per turn on a 30B model).
 
