@@ -1,0 +1,24 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/resources"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/logs?limit=5000&resource=hermes-agent-ab54&resource=hermes-agent-f26a"
+  }
+ ],
+ "result": [
+  {
+   "count": 1,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 1,
+   "logger": "cli"
+  }
+ ]
+}

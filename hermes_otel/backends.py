@@ -11,11 +11,12 @@ The module is intentionally stateless — no per-call cache, no mutation
 of the plugin, no OTel SDK imports. Tracer wiring happens in
 ``tracer.py``; this module decides *what* to wire.
 
-Adding a backend: write a ``_resolve_<name>(bc)`` function below, add
-it to ``_RESOLVERS``, and add a display-name entry to ``_DISPLAY_NAMES``.
-If you want the env path (single-backend detection when no
-``config.yaml`` is present) to pick it up automatically, also add the
-type to ``_ENV_PRIORITY``.
+Adding a backend: one :class:`~hermes_otel.backend_specs.BackendSpec` in
+``backend_specs.py`` (display name, signals, env opt-in, credentials, ...),
+then a ``_resolve_<name>(bc)`` function below registered in ``_RESOLVERS``.
+Every per-type table this module used to keep (signals, display names, env
+priority, opt-in, vendor credentials, temporality and root-usage presets) is
+a view over the manifest (#402).
 """
 
 from __future__ import annotations
@@ -26,87 +27,20 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 
+from .backend_specs import ENV_PRIORITY, SPECS, spec_for
+from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
 from .plugin_config import BackendConfig, normalize_temporality
 
-# Backend types whose collectors do not accept OTLP metrics. Pure traces.
-# Phoenix answers 405 on /v1/metrics and /v1/logs (arizephoenix/phoenix:latest
-# and the 2026-09 k3s deployment, probed with empty OTLP POSTs); it ingests
-# traces only (#160). A collector in front of it can still take metrics:
-# set ``metrics: true`` on the entry explicitly.
-_TRACES_ONLY = {
-    "phoenix",
-    "langfuse",
-    "jaeger",
-    "zipkin",
-    "tempo",
-    "weave",
-    "mlflow",
-    "opik",
-    "latitude",
-    "agenta",
-}
-
-# Backend types whose collectors accept OTLP logs. Everything else defaults
-# to "logs off" — Phoenix/Langfuse/Jaeger/Tempo don't implement /v1/logs, and
-# we'd rather drop logs on the floor than spray 4xx errors at them. Users
-# can override per-backend via the ``logs:`` field in config.yaml.
-_LOGS_CAPABLE = {
-    "signoz",
-    "otlp",
-    "lgtm",
-    "uptrace",
-    "openobserve",
-    "parseable",
-    "honeycomb",
-    "elastic",
-    "openlit",
-    "laminar",
-    "langwatch",
-    "greptime",
-    "clickstack",
-    "victoria",
-    "aspire",
-    "gigapipe",
-}
-
-# Backends that take traces and logs but silently drop metrics: Laminar's
-# /v1/metrics answers 200 and stores nothing (a placeholder handler), so a
-# user would never learn why their dashboards stay empty. Metrics default off
-# here; ``metrics: true`` on the entry still overrides (a collector in front).
-_NO_METRICS = {"laminar"}
-
-# Display names used in logs. Preferred over ``type.capitalize()`` because
-# some backends use camelCase ("SigNoz") that simple title-case gets wrong.
-_DISPLAY_NAMES = {
-    "phoenix": "Phoenix",
-    "langfuse": "Langfuse",
-    "signoz": "SigNoz",
-    "jaeger": "Jaeger",
-    "zipkin": "Zipkin",
-    "tempo": "Tempo",
-    "otlp": "OTLP",
-    "lgtm": "LGTM",
-    "uptrace": "Uptrace",
-    "openobserve": "OpenObserve",
-    "parseable": "Parseable",
-    "honeycomb": "Honeycomb",
-    "weave": "W&B Weave",
-    "elastic": "Elastic",
-    "openlit": "OpenLIT",
-    "mlflow": "MLflow",
-    "opik": "Comet Opik",
-    "laminar": "Laminar",
-    "langwatch": "LangWatch",
-    "latitude": "Latitude",
-    "greptime": "GreptimeDB",
-    "clickstack": "ClickStack",
-    "victoria": "Victoria",
-    "aspire": "Aspire Dashboard",
-    "gigapipe": "Gigapipe",
-    "agenta": "Agenta",
-}
+# Every per-type fact lives in the manifest (#402); these are the views the
+# rest of this module (and the tests) read.
+_TRACES_ONLY = frozenset(s.type for s in SPECS if s.traces_only)
+_LOGS_CAPABLE = frozenset(s.type for s in SPECS if s.logs)
+# Backends that take traces and logs but silently drop metrics (Laminar's
+# /v1/metrics answers 200 and stores nothing); metrics default off for them.
+_NO_METRICS = frozenset(s.type for s in SPECS if not s.metrics and s.logs)
+_DISPLAY_NAMES: Dict[str, str] = {s.type: s.display_name for s in SPECS}
 
 # Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
 # suffix is appended by the resolver; ``tracer.py`` / ``log_handler.py`` derive
@@ -120,90 +54,26 @@ _WEAVE_DEFAULT_ENDPOINT = "https://trace.wandb.ai/otel/v1/traces"
 
 # Priority for env-var-driven single-backend detection. First backend whose
 # required env vars are fully set wins.
-_ENV_PRIORITY = [
-    "langfuse",
-    "signoz",
-    "uptrace",
-    "openobserve",
-    "parseable",
-    "weave",
-    "honeycomb",
-    "elastic",
-    "openlit",
-    "mlflow",
-    "opik",
-    "laminar",
-    "langwatch",
-    "latitude",
-    "agenta",
-    "clickstack",
-    "greptime",
-    "victoria",
-    "aspire",
-    "gigapipe",
-    "jaeger",
-    "zipkin",
-    "tempo",
-    "phoenix",
-]
+_ENV_PRIORITY: List[str] = list(ENV_PRIORITY)
 
 # Env-var mode must not switch on export to a vendor just because that vendor's
-# SDK-standard credentials (``HONEYCOMB_API_KEY``, ``WANDB_API_KEY``,
-# ``LANGFUSE_PUBLIC_KEY``/``LANGFUSE_SECRET_KEY``) are in the environment: those
-# are often set for other tools, and Hermes loads its dotenv file into the
-# process. For these types the env path needs at least one plugin-namespaced
-# variable as the explicit opt-in; the generic fallbacks still fill in the rest,
-# and an explicit ``backends:`` entry in config.yaml is unaffected.
-_ENV_OPT_IN = {
-    "langfuse": (
-        "OTEL_LANGFUSE_PUBLIC_API_KEY",
-        "OTEL_LANGFUSE_SECRET_API_KEY",
-        "OTEL_LANGFUSE_ENDPOINT",
-    ),
-    "weave": ("OTEL_WEAVE_API_KEY", "OTEL_WEAVE_ENDPOINT", "OTEL_WEAVE_BASE_URL"),
-    "honeycomb": ("OTEL_HONEYCOMB_API_KEY", "OTEL_HONEYCOMB_ENDPOINT"),
-    # Endpoint only: Elastic has no default host, so a key on its own could
-    # never resolve and would only fail silently inside resolve_from_env().
-    "elastic": ("OTEL_ELASTIC_ENDPOINT",),
-    # Endpoint only, same reasoning: no default host.
-    "openlit": ("OTEL_OPENLIT_ENDPOINT",),
-    "mlflow": ("OTEL_MLFLOW_ENDPOINT",),
-    # Opik has a cloud default host, so a plugin-namespaced key is enough.
-    "opik": ("OTEL_OPIK_API_KEY", "OTEL_OPIK_ENDPOINT"),
-    # Laminar has a cloud default host, so a plugin-namespaced key is enough.
-    "laminar": ("OTEL_LAMINAR_API_KEY", "OTEL_LAMINAR_ENDPOINT"),
-    # LangWatch has a cloud default host, so a plugin-namespaced key is enough.
-    "langwatch": ("OTEL_LANGWATCH_API_KEY", "OTEL_LANGWATCH_ENDPOINT"),
-    # Latitude has a cloud default host, so a plugin-namespaced key is enough.
-    "latitude": ("OTEL_LATITUDE_API_KEY", "OTEL_LATITUDE_ENDPOINT"),
-    # Endpoint only: ClickStack has no default host, so a key alone never resolves.
-    "clickstack": ("OTEL_CLICKSTACK_ENDPOINT",),
-    # Agenta has a cloud default host, so a plugin-namespaced key is enough.
-    "agenta": ("OTEL_AGENTA_API_KEY", "OTEL_AGENTA_ENDPOINT"),
+# SDK-standard credentials are in the environment (#255): these types need at
+# least one plugin-namespaced variable as the explicit opt-in.
+_ENV_OPT_IN: Dict[str, Tuple[str, ...]] = {s.type: s.env_opt_in for s in SPECS if s.env_opt_in}
+
+# The vendor-variable sets that used to select each type on their own; each
+# inner tuple is one alternative spelling. Used only to tell the user why
+# env-var mode did not export (#259).
+_VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
+    s.type: s.vendor_credentials for s in SPECS if s.vendor_credentials
 }
 
-# The vendor-variable sets that used to select each type on their own (before
-# the opt-in rule). Each inner tuple is one alternative spelling; every group
-# must be satisfied for the set to count as "credentials present". Used only
-# to tell the user why env-var mode did not export (#259).
-_VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
-    "langfuse": (("LANGFUSE_PUBLIC_KEY",), ("LANGFUSE_SECRET_KEY",)),
-    "weave": (
-        ("WANDB_API_KEY",),
-        ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
-        ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"),
-    ),
-    "honeycomb": (("HONEYCOMB_API_KEY",),),
-    "elastic": (("ELASTIC_API_KEY",),),
-    "openlit": (("OPENLIT_API_KEY",),),
-    "mlflow": (("MLFLOW_TRACKING_TOKEN",),),
-    "opik": (("OPIK_API_KEY",),),
-    "laminar": (("LMNR_PROJECT_API_KEY",),),
-    "langwatch": (("LANGWATCH_API_KEY",),),
-    "latitude": (("LATITUDE_API_KEY",), ("LATITUDE_PROJECT",)),
-    "clickstack": (("HYPERDX_API_KEY",),),
-    "agenta": (("AGENTA_API_KEY",),),
-}
+
+def traces_url(endpoint: str) -> str:
+    """``<base>/v1/traces`` from an OTLP base, a per-signal URL or a slash-terminated
+    spelling: the one normalisation every plain OTLP resolver applies."""
+    base = re.sub(r"/v1/(traces|metrics|logs)$", "", endpoint.strip().rstrip("/")).rstrip("/")
+    return f"{base}/v1/traces"
 
 
 def _set(name: str) -> bool:
@@ -286,13 +156,15 @@ class _ResolvedBackend:
 def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
-    return backend_type not in _TRACES_ONLY and backend_type not in _NO_METRICS
+    spec = spec_for(backend_type)
+    return spec.metrics if spec is not None else True
 
 
 def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
     if override is not None:
         return override
-    return backend_type in _LOGS_CAPABLE
+    spec = spec_for(backend_type)
+    return spec.logs if spec is not None else False
 
 
 def _traces_for(override: Optional[bool]) -> bool:
@@ -303,25 +175,46 @@ def _traces_for(override: Optional[bool]) -> bool:
     return True if override is None else override
 
 
+@dataclass(frozen=True)
+class SecretChoice:
+    """Which source supplied a credential: ``inline`` (the entry), ``env``
+    (the entry's ``<field>_env``), ``fallback`` (a vendor env var) or ``None``
+    (nothing set); ``env_name`` is the variable read for the last two."""
+
+    value: Optional[str] = None
+    origin: Optional[str] = None
+    env_name: Optional[str] = None
+
+
+def choose_secret(
+    inline: Optional[str],
+    env_name: Optional[str],
+    fallback_envs: Sequence[str],
+) -> SecretChoice:
+    """The first available secret: inline > named env > fallback envs. The
+    one precedence rule the resolvers and the Settings tab share."""
+    if inline:
+        v = inline.strip()
+        if v:
+            return SecretChoice(v, "inline")
+    if env_name:
+        v = os.getenv(env_name, "").strip()
+        if v:
+            return SecretChoice(v, "env", env_name)
+    for name in fallback_envs:
+        v = os.getenv(name, "").strip()
+        if v:
+            return SecretChoice(v, "fallback", name)
+    return SecretChoice()
+
+
 def _resolve_secret(
     inline: Optional[str],
     env_name: Optional[str],
     fallback_envs: List[str],
 ) -> Optional[str]:
     """Pick the first available secret value. Inline > named env > fallback envs."""
-    if inline:
-        v = inline.strip()
-        if v:
-            return v
-    if env_name:
-        v = os.getenv(env_name, "").strip()
-        if v:
-            return v
-    for name in fallback_envs:
-        v = os.getenv(name, "").strip()
-        if v:
-            return v
-    return None
+    return choose_secret(inline, env_name, fallback_envs).value
 
 
 def _display(bc: BackendConfig, t: str) -> str:
@@ -341,16 +234,13 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "phoenix"),
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("phoenix", bc.metrics),
-        supports_logs=_logs_for("phoenix", bc.logs),
     )
 
 
 _LANGFUSE_OTEL_PATH = "/api/public/otel"
 
 
-def _langfuse_traces_url(endpoint: str) -> str:
+def langfuse_traces_url(endpoint: str) -> str:
     """Normalise a Langfuse ``endpoint`` to the full OTLP traces URL.
 
     The OTLP/HTTP span exporter posts to exactly the URL it is given, so a
@@ -396,7 +286,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
         root = base if base else "https://cloud.langfuse.com"
         ep = f"{root}/api/public/otel/v1/traces"
-    ep = _langfuse_traces_url(ep)
+    ep = langfuse_traces_url(ep)
     auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth}",
@@ -408,9 +298,6 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "langfuse"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("langfuse", bc.metrics),
-        supports_logs=_logs_for("langfuse", bc.logs),
     )
 
 
@@ -432,9 +319,6 @@ def _resolve_signoz(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "signoz"),
         headers=headers or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("signoz", bc.metrics),
-        supports_logs=_logs_for("signoz", bc.logs),
     )
 
 
@@ -448,9 +332,6 @@ def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "jaeger"),
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("jaeger", bc.metrics),
-        supports_logs=_logs_for("jaeger", bc.logs),
     )
 
 
@@ -473,17 +354,13 @@ def _resolve_zipkin(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_ZIPKIN_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("zipkin requires endpoint (or set OTEL_ZIPKIN_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
     extra = dict(bc.headers or {})
     return _ResolvedBackend(
         type="zipkin",
         endpoint=ep,
         display_name=_display(bc, "zipkin"),
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("zipkin", bc.metrics),
-        supports_logs=_logs_for("zipkin", bc.logs),
     )
 
 
@@ -547,9 +424,6 @@ def _resolve_greptime(bc: BackendConfig) -> _ResolvedBackend:
         headers=trace_headers,
         metrics_headers=dict(common),
         logs_headers=dict(common),
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("greptime", bc.metrics),
-        supports_logs=_logs_for("greptime", bc.logs),
     )
 
 
@@ -578,8 +452,7 @@ def _resolve_clickstack(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_CLICKSTACK_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("clickstack requires endpoint (or set OTEL_CLICKSTACK_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     key = _resolve_secret(
         bc.api_key, bc.api_key_env, ["OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY"]
@@ -597,9 +470,6 @@ def _resolve_clickstack(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "clickstack"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("clickstack", bc.metrics),
-        supports_logs=_logs_for("clickstack", bc.logs),
     )
 
 
@@ -701,8 +571,7 @@ def _resolve_aspire(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_ASPIRE_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("aspire requires endpoint (or set OTEL_ASPIRE_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
     key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ASPIRE_API_KEY"])
     headers: Dict[str, str] = {}
     if key:
@@ -713,9 +582,6 @@ def _resolve_aspire(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "aspire"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("aspire", bc.metrics),
-        supports_logs=_logs_for("aspire", bc.logs),
     )
 
 
@@ -741,8 +607,7 @@ def _resolve_gigapipe(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_GIGAPIPE_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("gigapipe requires endpoint (or set OTEL_GIGAPIPE_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
     headers: Dict[str, str] = {}
     user = _resolve_secret(bc.user, bc.user_env, ["OTEL_GIGAPIPE_USER"])
     pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_GIGAPIPE_PASSWORD"])
@@ -754,9 +619,6 @@ def _resolve_gigapipe(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "gigapipe"),
         headers=headers or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("gigapipe", bc.metrics),
-        supports_logs=_logs_for("gigapipe", bc.logs),
     )
 
 
@@ -801,9 +663,6 @@ def _resolve_agenta(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "agenta"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("agenta", bc.metrics),
-        supports_logs=_logs_for("agenta", bc.logs),
     )
 
 
@@ -817,9 +676,6 @@ def _resolve_tempo(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "tempo"),
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("tempo", bc.metrics),
-        supports_logs=_logs_for("tempo", bc.logs),
     )
 
 
@@ -835,9 +691,6 @@ def _resolve_otlp(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=bc.name or "OTLP",
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("otlp", bc.metrics),
-        supports_logs=_logs_for("otlp", bc.logs),
     )
 
 
@@ -861,9 +714,6 @@ def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "lgtm"),
         headers=extra or None,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("lgtm", bc.metrics),
-        supports_logs=_logs_for("lgtm", bc.logs),
     )
 
 
@@ -892,9 +742,6 @@ def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "uptrace"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("uptrace", bc.metrics),
-        supports_logs=_logs_for("uptrace", bc.logs),
     )
 
 
@@ -934,9 +781,6 @@ def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "openobserve"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("openobserve", bc.metrics),
-        supports_logs=_logs_for("openobserve", bc.logs),
     )
 
 
@@ -977,9 +821,6 @@ def _resolve_parseable(bc: BackendConfig) -> _ResolvedBackend:
         headers=trace_headers,
         metrics_headers=metric_headers,
         logs_headers=log_headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("parseable", bc.metrics),
-        supports_logs=_logs_for("parseable", bc.logs),
     )
 
 
@@ -1033,9 +874,72 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "honeycomb"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("honeycomb", bc.metrics),
-        supports_logs=_logs_for("honeycomb", bc.logs),
+    )
+
+
+# LangSmith's OTLP ingest base per region; the plugin appends ``/otel/v1/traces``.
+_LANGSMITH_ENDPOINTS = {
+    "us": "https://api.smith.langchain.com",
+    "eu": "https://eu.api.smith.langchain.com",
+}
+
+
+def _langsmith_traces_url(ep: str) -> str:
+    """``.../otel/v1/traces`` from an API base, an ``/otel`` base or a full URL.
+
+    ``LANGSMITH_ENDPOINT`` is the SDK's API base (``https://api.smith.langchain.com``);
+    the OTLP routes live under ``/otel`` on the same host."""
+    base = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.strip().rstrip("/")).rstrip("/")
+    if not base.endswith("/otel"):
+        base = f"{base}/otel"
+    return f"{base}/v1/traces"
+
+
+def _resolve_langsmith(bc: BackendConfig) -> _ResolvedBackend:
+    """Resolve LangSmith (SaaS, OTLP/HTTP — traces only).
+
+    LangSmith accepts OTLP traces at ``<api base>/otel/v1/traces`` with the
+    API key in ``x-api-key`` and the target project in ``Langsmith-Project``.
+    Until 1.26 the plugin drove LangSmith's run-tree HTTP API instead, selected
+    by ``LANGSMITH_TRACING=true`` and outside the ``backends:`` fan-out; that
+    path is gone (#415) and ``LANGSMITH_TRACING`` selects nothing. The vendor
+    variables (``LANGSMITH_API_KEY``, ``LANGSMITH_PROJECT``,
+    ``LANGSMITH_ENDPOINT``) still fill in values once the entry or the
+    ``OTEL_LANGSMITH_*`` opt-in names the backend (#255).
+    """
+    key = _resolve_secret(
+        bc.api_key, bc.api_key_env, ["OTEL_LANGSMITH_API_KEY", "LANGSMITH_API_KEY"]
+    )
+    if not key:
+        raise ValueError(
+            "langsmith requires api_key (or set OTEL_LANGSMITH_API_KEY / LANGSMITH_API_KEY)"
+        )
+    ep = (
+        bc.endpoint
+        or os.getenv("OTEL_LANGSMITH_ENDPOINT", "")
+        or os.getenv("LANGSMITH_ENDPOINT", "")
+    ).strip()
+    if not ep:
+        region = (bc.region or "us").strip().lower()
+        base = _LANGSMITH_ENDPOINTS.get(region)
+        if base is None:
+            raise ValueError(
+                f"langsmith region must be one of {sorted(_LANGSMITH_ENDPOINTS)}, got {bc.region!r}"
+            )
+        ep = base
+    ep = _langsmith_traces_url(ep)
+    headers: Dict[str, str] = {"x-api-key": key}
+    project = _resolve_secret(
+        bc.project, bc.project_env, ["OTEL_LANGSMITH_PROJECT", "LANGSMITH_PROJECT"]
+    )
+    if project:
+        headers["Langsmith-Project"] = project
+    headers.update(bc.headers or {})
+    return _ResolvedBackend(
+        type="langsmith",
+        endpoint=ep,
+        display_name=_display(bc, "langsmith"),
+        headers=headers,
     )
 
 
@@ -1081,8 +985,7 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     # Normalise to the traces URL the pipeline keys off: a bare base gets the
     # suffix, and a per-signal URL for another signal is rewritten so that the
     # derived /v1/metrics and /v1/logs variants stay correct.
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY"])
     headers: Dict[str, str] = {}
@@ -1107,9 +1010,6 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "elastic"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("elastic", bc.metrics),
-        supports_logs=_logs_for("elastic", bc.logs),
         resource_attributes=resource_attrs or None,
     )
 
@@ -1135,8 +1035,7 @@ def _resolve_openlit(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_OPENLIT_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("openlit requires endpoint (or set OTEL_OPENLIT_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY"])
     headers: Dict[str, str] = {}
@@ -1149,9 +1048,6 @@ def _resolve_openlit(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "openlit"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("openlit", bc.metrics),
-        supports_logs=_logs_for("openlit", bc.logs),
     )
 
 
@@ -1175,8 +1071,7 @@ def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
     ep = (bc.endpoint or os.getenv("OTEL_MLFLOW_ENDPOINT", "")).strip()
     if not ep:
         raise ValueError("mlflow requires endpoint (or set OTEL_MLFLOW_ENDPOINT)")
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     experiment = _resolve_secret(
         bc.experiment_id,
@@ -1199,9 +1094,6 @@ def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "mlflow"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("mlflow", bc.metrics),
-        supports_logs=_logs_for("mlflow", bc.logs),
     )
 
 
@@ -1270,9 +1162,6 @@ def _resolve_opik(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "opik"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("opik", bc.metrics),
-        supports_logs=_logs_for("opik", bc.logs),
     )
 
 
@@ -1309,8 +1198,7 @@ def _resolve_laminar(bc: BackendConfig) -> _ResolvedBackend:
         or os.getenv("LMNR_BASE_URL", "")
         or _LAMINAR_CLOUD
     ).strip()
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
     headers.update(bc.headers or {})
@@ -1319,9 +1207,6 @@ def _resolve_laminar(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "laminar"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("laminar", bc.metrics),
-        supports_logs=_logs_for("laminar", bc.logs),
     )
 
 
@@ -1385,9 +1270,6 @@ def _resolve_langwatch(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "langwatch"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("langwatch", bc.metrics),
-        supports_logs=_logs_for("langwatch", bc.logs),
     )
 
 
@@ -1429,8 +1311,7 @@ def _resolve_latitude(bc: BackendConfig) -> _ResolvedBackend:
         or os.getenv("LATITUDE_INGEST_URL", "")
         or _LATITUDE_CLOUD
     ).strip()
-    ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep.rstrip("/")).rstrip("/")
-    ep = f"{ep}/v1/traces"
+    ep = traces_url(ep)
 
     headers: Dict[str, str] = {
         "Authorization": f"Bearer {key}",
@@ -1442,9 +1323,6 @@ def _resolve_latitude(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "latitude"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("latitude", bc.metrics),
-        supports_logs=_logs_for("latitude", bc.logs),
     )
 
 
@@ -1511,14 +1389,12 @@ def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
         endpoint=ep,
         display_name=_display(bc, "weave"),
         headers=headers,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("weave", bc.metrics),
-        supports_logs=_logs_for("weave", bc.logs),
         resource_attributes=resource_attrs or None,
     )
 
 
 _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
+    "langsmith": _resolve_langsmith,
     "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
     "signoz": _resolve_signoz,
@@ -1551,75 +1427,138 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
 # ── Public API ─────────────────────────────────────────────────────────────
 
 
-KNOWN_TYPES = frozenset(_RESOLVERS)
+#: Canonical types and the dashboard-only aliases (``hyperdx`` → ``clickstack``).
+KNOWN_TYPES = SPEC_KNOWN_TYPES
+assert KNOWN_TYPES >= frozenset(_RESOLVERS), sorted(frozenset(_RESOLVERS) - KNOWN_TYPES)
 
 
 def display_name(backend_type: str) -> str:
-    """The human name of a backend type (``signoz`` → ``SigNoz``)."""
+    """The human name of a backend type (``signoz`` → ``SigNoz``); an alias names
+    its canonical type (``hyperdx`` → ``ClickStack``)."""
+    spec = spec_for(backend_type)
+    if spec is not None:
+        return spec.display_name
     t = (backend_type or "").strip().lower()
-    return _DISPLAY_NAMES.get(t, t.capitalize() or "OTLP")
+    return t.capitalize() or "OTLP"
 
 
 def signal_support(backend_type: str) -> Dict[str, bool]:
     """Which OTLP signals a backend type accepts when the entry sets no override.
 
     Mirrors :func:`_traces_for`, :func:`_metrics_for` and :func:`_logs_for`:
-    every type takes traces; the ``_TRACES_ONLY`` types refuse metrics; only the
-    ``_LOGS_CAPABLE`` types take logs. An explicit ``traces`` / ``metrics`` /
+    every type takes traces; the ``_TRACES_ONLY`` and ``_NO_METRICS`` types
+    refuse metrics; only the ``_LOGS_CAPABLE`` types take logs. An explicit ``traces`` / ``metrics`` /
     ``logs`` on the entry still wins over this table, which is what the
     Settings tab uses to tell "off because unsupported" from "off by choice".
     """
-    t = (backend_type or "").strip().lower()
-    return {"traces": True, "metrics": t not in _TRACES_ONLY, "logs": t in _LOGS_CAPABLE}
+    spec = spec_for(backend_type)
+    if spec is None:
+        return {"traces": True, "metrics": True, "logs": False}
+    return {"traces": True, "metrics": spec.metrics, "logs": spec.logs}
 
 
 def preset_temporality(backend_type: str) -> Optional[str]:
-    """The metric temporality a type's docs ask for, if any (``_TEMPORALITY_PRESETS``)."""
-    return _TEMPORALITY_PRESETS.get((backend_type or "").strip().lower())
+    """The metric temporality a type's docs ask for, if any (the spec's preset)."""
+    spec = spec_for(backend_type)
+    return spec.temporality if spec is not None else None
+
+
+def signals_for(bc: BackendConfig) -> Dict[str, bool]:
+    """Which signals this entry exports: the entry's ``traces`` / ``metrics`` /
+    ``logs`` when set, else the type's support. A type whose resolver decides
+    (Victoria: a signal is on only when its store is named) is asked; if that
+    entry cannot resolve, the plain rule answers."""
+    spec = spec_for(bc.type)
+    t = spec.type if spec is not None else (bc.type or "").strip().lower()
+    if spec is not None and spec.signals_from_resolver:
+        try:
+            rb = _RESOLVERS[t](bc)
+            return {
+                "traces": rb.supports_traces,
+                "metrics": rb.supports_metrics,
+                "logs": rb.supports_logs,
+            }
+        except ValueError:
+            pass
+    return {
+        "traces": _traces_for(bc.traces),
+        "metrics": _metrics_for(t, bc.metrics),
+        "logs": _logs_for(t, bc.logs),
+    }
+
+
+_SDK_TEMPORALITY_ENV = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
+
+
+def _entry_temporality(bc: BackendConfig, *, warn: bool = True) -> Tuple[Optional[str], str]:
+    """The entry's own ``metrics_temporality`` (validated), else the type's preset."""
+    t = (bc.type or "").strip().lower()
+    entry = normalize_temporality(
+        bc.metrics_temporality, where=f"backends[{bc.name or t}].metrics_temporality", warn=warn
+    )
+    if entry:
+        return entry, "entry"
+    preset = preset_temporality(t)
+    if preset:
+        return preset, "type preset"
+    return None, ""
+
+
+def temporality_for(bc: BackendConfig, top_level: Optional[str]) -> Tuple[str, str]:
+    """``(temporality, which rule set it)`` for this backend's metric reader:
+    the entry, the type preset, the top-level ``metrics_temporality``, the
+    SDK's own env var, or the SDK default (``cumulative``)."""
+    value, source = _entry_temporality(bc, warn=False)
+    if value:
+        return value, source
+    if top_level:
+        return str(top_level).strip().lower(), "top-level metrics_temporality"
+    # With no preference passed, the OTLP exporter reads the SDK's own env var.
+    env_pref = os.getenv(_SDK_TEMPORALITY_ENV, "").strip().lower()
+    if env_pref:
+        return env_pref, _SDK_TEMPORALITY_ENV
+    return "cumulative", "SDK default"
 
 
 def resolve(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve a declared ``BackendConfig`` into a ready-to-wire backend.
 
-    Raises :class:`ValueError` if required fields are missing or the
-    backend type is unknown.
+    The resolver builds the endpoint and headers; the signals, temporality
+    and root-usage presets come from the type's :class:`BackendSpec` (an
+    explicit field on the entry wins). An alias (``hyperdx``) resolves as its
+    canonical type. Raises :class:`ValueError` if required fields are missing
+    or the backend type is unknown.
     """
-    t = (bc.type or "").strip().lower()
-    resolver = _RESOLVERS.get(t)
-    if resolver is None:
+    spec = spec_for(bc.type)
+    if spec is None:
         raise ValueError(f"unknown backend type {bc.type!r}")
+    t = spec.type
+    resolver = _RESOLVERS[t]
     rb = resolver(bc)
-    temporality = normalize_temporality(
-        bc.metrics_temporality, where=f"backends[{bc.name or t}].metrics_temporality"
-    ) or _TEMPORALITY_PRESETS.get(t)
+    if not spec.signals_from_resolver:
+        signals = signals_for(bc)
+        rb = dataclasses.replace(
+            rb,
+            supports_traces=signals["traces"],
+            supports_metrics=signals["metrics"],
+            supports_logs=signals["logs"],
+        )
+    temporality, _ = _entry_temporality(bc)
     if temporality and rb.metrics_temporality != temporality:
         rb = dataclasses.replace(rb, metrics_temporality=temporality)
     if bc.log_overrides:
         rb = dataclasses.replace(rb, log_overrides=dict(bc.log_overrides))
-    root_usage = bc.root_usage if bc.root_usage is not None else t not in _NO_ROOT_USAGE_PRESETS
+    root_usage = bc.root_usage if bc.root_usage is not None else spec.root_usage
     if rb.root_usage != root_usage:
         rb = dataclasses.replace(rb, root_usage=root_usage)
     return rb
 
 
-# Backend types that compute trace-level usage by summing ``gen_ai.usage.*``
-# over every span, so the roll-up the plugin puts on the ``agent`` root would
-# double the turn's tokens (and Opik's estimated cost) at trace level (#327).
-# Phoenix, Langfuse, MLflow and Laminar read the root's own numbers instead,
-# so they keep it. An explicit ``root_usage`` on the entry always wins.
-_NO_ROOT_USAGE_PRESETS = frozenset({"opik", "langwatch"})
-
-
-# Backend types whose docs ask for delta temporality (#233): SigNoz
-# "recommends delta for Counter, Async Counter, and Histogram"; Uptrace
-# "Prefer delta metrics temporality". Prometheus-family backends (LGTM,
-# OpenObserve) and Honeycomb take the SDK default. An explicit
-# ``metrics_temporality`` on the entry always wins over the preset.
-_TEMPORALITY_PRESETS: Dict[str, str] = {
-    "signoz": "delta",
-    "uptrace": "delta",
-    "elastic": "delta",
-}
+# Views over the manifest, kept under their old names for the tests and the
+# settings report: the backends that sum usage over every span (#327) and the
+# ones whose docs ask for delta temporality (#233).
+_NO_ROOT_USAGE_PRESETS = frozenset(s.type for s in SPECS if not s.root_usage)
+_TEMPORALITY_PRESETS: Dict[str, str] = {s.type: s.temporality for s in SPECS if s.temporality}
 
 
 def resolve_from_env() -> Optional[_ResolvedBackend]:

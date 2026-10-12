@@ -8,6 +8,7 @@ Look up the active adapter via :func:`resolve_adapter`.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -31,10 +32,20 @@ def adapters() -> List[Type[BackendAdapter]]:
 
 
 def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
+    """The adapter for a type or one of its manifest aliases (``hyperdx``)."""
+    wanted = {backend_type, _canonical(backend_type)}
     for cls in _ADAPTERS:
-        if backend_type in cls.handles:
+        if wanted & set(cls.handles):
             return cls
     return None
+
+
+def _canonical(backend_type: str) -> str:
+    try:
+        from hermes_otel.backend_specs import canonical_type
+    except Exception:  # pragma: no cover — loaded by file path without the package
+        return (backend_type or "").strip().lower()
+    return canonical_type(backend_type)
 
 
 # ── Config loader ──────────────────────────────────────────────────────
@@ -79,17 +90,30 @@ def _candidate_config_paths() -> List[Path]:
         paths.append(Path(override).expanduser())
     home = _hermes_home()
     paths.append(home / "hermes_otel.yaml")
-    here = Path(__file__).resolve().parent  # dashboard/backends/
-    plugin_root = here.parent.parent  # plugin root (…/hermes_otel/)
-    paths.append(plugin_root / "config.yaml")
+    # The legacy copy inside the plugin directory, as the tracer resolves it.
+    # (A checkout elsewhere used to add its own ``config.yaml`` here, a file
+    # the tracer never reads, #413.)
     paths.append(home / "plugins" / "hermes_otel" / "config.yaml")
     seen: set = set()
     return [p for p in paths if not (p in seen or seen.add(p))]
 
 
+_WARNED_TWO_FILES: set = set()
+
+
 def resolve_config_path() -> Optional[Path]:
-    for p in _candidate_config_paths():
+    candidates = _candidate_config_paths()
+    for p in candidates:
         if p.exists():
+            # Same message the tracer logs when both the durable and the legacy
+            # file exist, once per pair so the dashboard's polling cannot spam it.
+            others = [o for o in candidates[candidates.index(p) + 1 :] if o.exists()]
+            if others and (str(p), str(others[0])) not in _WARNED_TWO_FILES:
+                _WARNED_TWO_FILES.add((str(p), str(others[0])))
+                logging.getLogger("hermes_otel").warning(
+                    f"[hermes-otel] dashboard using {p}; ignoring {others[0]}. "
+                    "Delete the latter to silence this."
+                )
             return p
     return None
 
@@ -305,15 +329,23 @@ def resolve_adapter(
 def _safe_import(name: str) -> None:
     try:
         __import__(f"{__name__}.{name}", fromlist=[name])
-    except Exception as e:  # pragma: no cover — defensive
-        import logging
-
+    except Exception:  # pragma: no cover — defensive
         logging.getLogger(__name__).warning(
-            "hermes_otel: failed to load backend adapter %s: %s", name, e
+            "hermes_otel: failed to load backend adapter %s", name, exc_info=True
         )
 
 
-for _name in (
+def _adapter_modules() -> List[str]:
+    """The adapter modules the manifest names, in manifest order; the hand list
+    is the fallback when this package is loaded by file path."""
+    try:
+        from hermes_otel.backend_specs import SPECS
+    except Exception:  # pragma: no cover
+        return list(_FALLBACK_MODULES)
+    return list(dict.fromkeys(s.adapter_module for s in SPECS if s.adapter_module))
+
+
+_FALLBACK_MODULES = (
     "tempo",
     "phoenix",
     "signoz",
@@ -328,5 +360,7 @@ for _name in (
     "aspire",
     "gigapipe",
     "agenta",
-):
+)
+
+for _name in _adapter_modules():
     _safe_import(_name)

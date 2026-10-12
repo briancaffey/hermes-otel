@@ -1,0 +1,115 @@
+{
+ "adapter": null,
+ "display_name": "Honeycomb",
+ "entry": {
+  "api_key": "<secret>",
+  "logs": true,
+  "metrics": true,
+  "name": "honeycomb-entry",
+  "traces": false,
+  "type": "honeycomb"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "https://api.honeycomb.io/v1/logs",
+    "headers": {
+     "x-global": "g",
+     "x-honeycomb-team": "<secret>"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "honeycomb",
+  "name": "honeycomb-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "signal_overrides",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "honeycomb-entry",
+  "endpoint": "https://api.honeycomb.io/v1/traces",
+  "headers": {
+   "x-honeycomb-team": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": false,
+  "type": "honeycomb"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "api_key",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Honeycomb",
+  "docs_path": "/backends/honeycomb",
+  "fields": {},
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "honeycomb-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "on",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "off",
+    "exported": false,
+    "supported": true
+   }
+  },
+  "type": "honeycomb",
+  "ui": {
+   "note": "the Honeycomb UI for region us",
+   "source": "derived",
+   "url": "https://ui.honeycomb.io"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": null,
+    "logs": false,
+    "metrics": false,
+    "name": "honeycomb-entry",
+    "queryable": false,
+    "type": "honeycomb"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "honeycomb"
+}

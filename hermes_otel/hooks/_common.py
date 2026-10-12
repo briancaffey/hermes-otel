@@ -53,7 +53,7 @@ def _fail_open(fn):
     return wrapper
 
 
-def _as_dict(value: Any) -> Dict[str, Any]:
+def as_dict(value: Any) -> Dict[str, Any]:
     """Coerce a hook payload field to a dict, never raising.
 
     Hermes documents ``usage`` / ``error`` as dicts, but SDK objects
@@ -130,7 +130,7 @@ def _emit_event(
 def _preview(value: Any, max_chars: int) -> Optional[str]:
     """Apply the configured preview policy: capture toggle + clip_preview."""
     tracer = get_tracer()
-    if not tracer.config.capture_previews:
+    if not tracer.config.captures_content():
         return None
     return clip_preview(value, max_chars)
 
@@ -139,10 +139,10 @@ def _preview_for(tracer, kind: Optional[str], value: Any) -> Optional[str]:
     """Clip ``value`` with the limit configured for ``kind`` (see ``_PREVIEW_LIMITS``).
 
     ``kind=None`` uses the global ``preview_max_chars``. Honors
-    ``capture_previews`` (None when off) so callers omit the attribute.
+    ``content_capture`` (None when off) so callers omit the attribute.
     """
     cfg = tracer.config
-    if not cfg.capture_previews:
+    if not cfg.captures_content():
         return None
     limit = None
     if kind is not None:

@@ -21,6 +21,8 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence
 from urllib.parse import urlparse
 
+from .backend_specs import BY_TYPE
+
 #: The one place the pinned server version lives (docs and the generated
 #: commands quote it). The caveats on the docs page are specific to it.
 MCP_PACKAGE = "opentelemetry-mcp"
@@ -34,7 +36,7 @@ CONNECT_TIMEOUT_S = 60
 # Query ports of the stacks the server was verified against (2026-10-11, the
 # repo's docker-compose folders): Jaeger's UI port and Tempo's HTTP port. The
 # ``grafana/otel-lgtm`` image serves Tempo on the same 3200.
-_DEFAULT_QUERY_PORT = {"jaeger": 16686, "tempo": 3200, "lgtm": 3200}
+_DEFAULT_QUERY_PORT = {t: BY_TYPE[t].default_query_port for t in ("jaeger", "tempo", "lgtm")}
 _SERVER_BACKEND_TYPE = {"jaeger": "jaeger", "tempo": "tempo", "lgtm": "tempo"}
 
 # Types whose read API is Jaeger- or Tempo-compatible but were not run against

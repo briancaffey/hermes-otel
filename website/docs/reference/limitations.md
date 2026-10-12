@@ -49,6 +49,19 @@ Delegated child agents (`delegate_task`) are modeled as `subagent.*` spans, and 
 
 If a future Hermes version runs delegated children **in a separate process**, that registry won't hold the live span. The plugin then degrades gracefully: the child root attaches an OTel **span link** to the delegation span's `SpanContext` (when available) and is tagged with `hermes.subagent.parent_session_id` for correlation — but the child becomes its own trace rather than nesting in the parent. True cross-process trace-context *propagation* (injecting the parent context into the child process) is out of scope for now; open an issue if you need it.
 
+## Delegation spans outlive their turn; timeout details are not reported
+
+Hermes runs a top-level `delegate_task` in the background and fires `subagent_stop` after the parent's turn has ended, so a `subagent.*` span ends after the turn root it nests under. Trace views draw it past the root's end; that is the delegation's real duration, not a clock problem. A delegation whose stop never arrives is closed after `subagent_span_ttl_ms` (24 hours by default) with `hermes.subagent.swept=true`.
+
+When a child times out, Hermes records `timeout_phase` (before or after the first LLM call) and `last_event_age` on the delegate tool's result, but the `subagent_stop` hook does not carry them, so the span has `hermes.subagent.status=timeout` without them.
+
+## A kanban run's trace has two caveats
+
+One run of a card is one trace (the worker joins the dispatcher's `kanban.claim` through `TRACEPARENT`), with two edges:
+
+- **The environment window.** The plugin sets `TRACEPARENT` in the dispatcher's process environment between `kanban_task_claimed` and `on_kanban_worker_spawned` (inside Hermes's dispatch lock, a few milliseconds). A dispatcher inside a gateway shares that environment with its chats, so a terminal command that a concurrent turn spawns in that window inherits the variable; an OpenTelemetry-instrumented program it runs would join the kanban run's trace.
+- **Late arrivals.** A worker run can outlast a backend's trace-assembly window (Tempo, Jaeger), and a one-shot `hermes kanban dispatch` pass forgets the claim when it exits, so `kanban.worker_exit` from a later pass is a trace of its own (correlated by `hermes.kanban.task_id` / `run_id`). A worker killed with `kill -9` never exports its root, so its spans sit in the run's trace under a parent that never arrives.
+
 ## API error capture depends on the `api_request_error` hook
 
 Failed provider API requests (rate limits, timeouts, 5xx, network errors) are
@@ -71,14 +84,6 @@ Note the deliberate asymmetry: only API-level failures map to `ERROR`. Tool
 Why: tail-based sampling requires buffering spans until the trace is complete, which roughly doubles memory use and adds a full trace of latency to every export.
 
 The standard answer is to run an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) in the middle with a `tail_sampling` processor. The Collector can fan-out to all your backends and apply tail-based policy centrally.
-
-## LangSmith not in fan-out
-
-Setting `LANGSMITH_TRACING=true` short-circuits the `backends:` list entirely. You can have LangSmith **or** a multi-backend fan-out, not both.
-
-Why: LangSmith uses its own HTTP Run API rather than OTLP; its transport doesn't fit into the OTel `BatchSpanProcessor` shape.
-
-Workaround if you need both: run the OTel Collector and have it route traces to LangSmith's OTLP-compatible beta ingest, if/when LangSmith ships one.
 
 ## Weave is trace-ingest only
 

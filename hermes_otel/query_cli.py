@@ -34,6 +34,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
 
+from . import semconv as _sc
 from .live_store import (
     LiveStore,
     _default_db_path,
@@ -45,25 +46,19 @@ from .live_store import (
 _PKG_DIR = Path(__file__).resolve().parent
 
 # ── attribute keys, both conventions ─────────────────────────────────────
-_SESSION_KEYS = ("hermes.session_id", "session.id", "session_id")
-_MODEL_KEYS = ("gen_ai.request.model", "llm.model_name", "gen_ai.response.model")
-_PROVIDER_KEYS = ("gen_ai.provider.name", "llm.provider", "gen_ai.system")
-_IN_TOK_KEYS = ("gen_ai.usage.input_tokens", "llm.token_count.prompt")
-_OUT_TOK_KEYS = ("gen_ai.usage.output_tokens", "llm.token_count.completion")
-_TOTAL_TOK_KEYS = ("gen_ai.usage.total_tokens", "llm.token_count.total")
-_REASON_TOK_KEYS = (
-    "gen_ai.usage.reasoning.output_tokens",
-    "llm.token_count.completion_details.reasoning",
-)
-_CACHE_READ_KEYS = (
-    "gen_ai.usage.cache_read.input_tokens",
-    "gen_ai.usage.cache_read_input_tokens",
-    "llm.token_count.prompt_details.cache_read",
-)
-_FINISH_KEYS = ("gen_ai.response.finish_reasons", "llm.response.finish_reason")
-_INPUT_KEYS = ("input.value", "gen_ai.input.messages", "gen_ai.tool.call.arguments")
-_OUTPUT_KEYS = ("output.value", "gen_ai.output.messages", "gen_ai.tool.call.result")
-_COST_KEY = "hermes.cost.usage"
+# The vocabulary lives in ``semconv`` (#404); these names stay for the readers below.
+_SESSION_KEYS = _sc.SESSION_KEYS
+_MODEL_KEYS = _sc.MODEL_KEYS
+_PROVIDER_KEYS = _sc.PROVIDER_KEYS
+_IN_TOK_KEYS = _sc.INPUT_TOKEN_KEYS
+_OUT_TOK_KEYS = _sc.OUTPUT_TOKEN_KEYS
+_TOTAL_TOK_KEYS = _sc.TOTAL_TOKEN_KEYS
+_REASON_TOK_KEYS = _sc.REASONING_TOKEN_KEYS
+_CACHE_READ_KEYS = _sc.CACHE_READ_TOKEN_KEYS
+_FINISH_KEYS = _sc.FINISH_REASON_KEYS
+_INPUT_KEYS = _sc.INPUT_CONTENT_KEYS
+_OUTPUT_KEYS = _sc.OUTPUT_CONTENT_KEYS
+_COST_KEY = _sc.COST_KEY
 
 _READ_ONLY_SQL = re.compile(r"^\s*(select|with|explain|pragma)\b", re.IGNORECASE)
 _SINCE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*([smhdw])$")

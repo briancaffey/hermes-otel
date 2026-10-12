@@ -110,6 +110,21 @@ One per HTTP round-trip to the provider. Name is `api.{model}`.
 
 The `api.*` span is the right place to look for token counts — not the parent `llm.*` (which doesn't carry per-call counts, because a turn can have multiple `api.*` calls).
 
+### Auxiliary calls {#auxiliary}
+
+Hermes also calls models **on the agent's behalf**: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer, the `/goal` judge. Each physical attempt is an `api.{model}` span too, tagged `hermes.query_source=auxiliary` and `hermes.auxiliary.task=<task>`, nested under whatever the owning turn has in flight (so a MoA turn shows its fan-out: N `api.<reference>` spans and one `api.<aggregator>` under the turn's `llm.*`), or standing as its own root when no turn owns it (the kanban dispatcher decomposing a card). They are never pushed as parents.
+
+```text
+agent
+└── llm.{model}
+    ├── api.ref-a            hermes.query_source=auxiliary  hermes.auxiliary.task=moa_reference
+    ├── api.ref-b            hermes.query_source=auxiliary  hermes.auxiliary.task=moa_reference
+    ├── api.aggregator       hermes.query_source=auxiliary  hermes.auxiliary.task=moa_aggregator
+    └── api.moa/preset       hermes.query_source=main       (what the MoA facade returned to the loop)
+```
+
+The turn root counts them as `hermes.turn.auxiliary.*` **beside** its `gen_ai.usage.*` totals, never inside them, because the main loop's `api.*` span for the `moa` provider already carries what the facade returned. Main-loop spans carry `hermes.query_source=main`, or `subagent` inside a delegated child's session.
+
 ## `tool.*`
 
 One per tool invocation. Name is `tool.{name}` (e.g. `tool.bash`, `tool.read_file`).
@@ -193,28 +208,39 @@ the plugin never vetoes or alters an approval.
 Hermes' kanban board runs work in two processes: a **dispatcher** (inside the
 gateway, or `hermes kanban dispatch`) claims a card and spawns a **worker**,
 a fresh `hermes -p <assignee> chat` process that finishes the card with
-`kanban_complete` or `kanban_block`. No span can be opened in one process and
-closed in the other, so every board transition is its own short span:
+`kanban_complete` or `kanban_block`. Every board transition is a short span,
+and **one run of a card is one trace** across the two processes (#388):
 
 ```text
-dispatcher process                       worker process (one trace per card attempt)
-  kanban.claim        ← own trace          agent  (Resource + root: hermes.kanban.task_id / board / run_id)
-  kanban.spawn        ← own trace            llm.<model>
-  kanban.worker_exit  ← own trace, ERROR       api.<model>
-                         on crash / kill       tool.kanban_show
-  kanban.stale_claim  ← own trace              api.<model>
-                                               tool.kanban_complete
-                                               kanban.complete   ← outcome, summary
+kanban.claim                       dispatcher process: the root of the run's trace
+├── kanban.spawn                   dispatcher: the worker's pid
+├── agent                          worker process (Resource + root: hermes.kanban.task_id / board / run_id)
+│   └── llm.<model>
+│       ├── api.<model>
+│       ├── tool.kanban_show
+│       ├── tool.kanban_complete
+│       └── kanban.complete        outcome, summary
+└── kanban.worker_exit             dispatcher, ERROR on crash / kill (or kanban.stale_claim)
 ```
 
-The dispatcher's spans are deliberately roots: the gateway serves every
-session, so nesting a claim under whatever turn happens to be in flight would
-mis-parent it. The worker's `kanban.complete` / `kanban.block` lands in the
-worker's own trace next to the tool that fired it, and the worker's `agent`
-root is stamped with the card identity and outcome so a span-only reader can
-find the card's turn. `hermes.kanban.task_id` and `hermes.kanban.run_id` on
-every span (and on the worker's Resource) are the join across the two
-processes; one card attempted three times has three run ids. Metrics:
+**How the worker joins.** `kanban_task_claimed` fires in the dispatcher right
+before it builds the worker's environment from the process environment, so the plugin
+sets a W3C `TRACEPARENT` there (pointing at the `kanban.claim` span) and
+removes it in `on_kanban_worker_spawned`. A worker (a process with
+`HERMES_KANBAN_TASK`) whose environment carries a valid `TRACEPARENT`
+parents its turn root under the claim. A `TRACEPARENT` anywhere else is left
+alone, and the plugin never removes one it did not set.
+
+The claim itself is a root: the gateway serves every session, so nesting it
+under whatever turn happens to be in flight would mis-parent it. The later
+dispatcher transitions (`kanban.spawn`, `kanban.worker_exit`,
+`kanban.stale_claim`) join the run's trace while the same dispatcher process
+remembers the claim; a one-shot `hermes kanban dispatch` pass that exited in
+between starts a trace of its own for them. `hermes.kanban.task_id` and
+`hermes.kanban.run_id` stay on every span (and on the worker's Resource) as
+the join for those; one card attempted three times is three runs and three
+traces. In the dashboard a worker's turn now shows as a `kanban.claim` card
+holding the whole run, its totals summed from the run's `api.*` spans. Metrics:
 `hermes.kanban.task.count{outcome, board}`. Attributes:
 [span attributes](/reference/span-attributes#kanban).
 
@@ -225,6 +251,14 @@ One per delegated child agent (when the parent calls the `delegate_task` tool). 
 **Span kind:** `AGENT` (OpenInference).
 
 The delegation span opens on `subagent_start` and nests under the parent turn's in-flight `api.*`/`llm.*` span. Crucially, the delegated child's **own root span rejoins this trace**: when the child runs in the same process (the default), its `agent` root nests directly under the `subagent.*` span, so a multi-agent run is a single connected tree instead of many disconnected traces.
+
+**It outlives the turn that opened it.** Hermes runs a top-level `delegate_task` in the background: the tool returns a handle at once, the parent's turn ends, and `subagent_stop` fires later, often during a following turn. The delegation span stays open across those turn boundaries and ends on `subagent_stop` with the reported status, so in a trace view it extends past the end of the turn root it hangs from. The parent's orphan sweep does not close it. A delegation whose `subagent_stop` never arrives is closed after `subagent_span_ttl_ms` (default 24 hours) with `hermes.subagent.swept=true`, and at process exit.
+
+**What the child cost.** On `subagent_stop` the delegation span gets the child's whole subtree: `hermes.subagent.usage.*`, `hermes.subagent.api_call_count` and `hermes.subagent.cost.*`, summed over the child's own turns and, for an orchestrator, every delegation it made in turn (each grandchild is counted once at every level above it). The parent's root keeps only the parent's own calls, so "what did the whole run cost" is the parent root plus its top-level `subagent.*` spans, never the parent root plus every span. `hermes.token.usage` / `hermes.cost.usage` carry `query_source=subagent` for a child's calls.
+
+**Which model the child ran on.** `subagent_start` does not carry the child's model, but the child's own root does; when it rejoins, the delegation span gets `gen_ai.request.model` (the child's model) and `hermes.subagent.model_inherited`: `true` when the child runs on its parent's model, `false` when `delegation.model` pins it to another. Every turn root also carries `hermes.agent.model_override` when Hermes's config is readable: whether the turn's model differs from the profile's `model.default`, which is how a mixed-model fleet (a cheap worker model under a frontier orchestrator, kanban `--model`, a cron job's own model) shows up at the agent level. Group by `gen_ai.request.model` on `subagent.*` or on the roots to split spend per model.
+
+Nested orchestrators (`delegation.max_spawn_depth` > 1) nest the same way one level down: a grandchild's `subagent.*` span hangs from the child's in-flight span, inside the child's root. Batch delegations (`independent_completions`, `group`) get one span per child, ended in whatever order their results arrive.
 
 | Attribute | Convention | Meaning |
 |---|---|---|
@@ -239,10 +273,11 @@ The delegation span opens on `subagent_start` and nests under the parent turn's 
 | `hermes.subagent.status` | hermes-specific | Reported `child_status` (set on stop) |
 | `hermes.subagent.duration_ms` | hermes-specific | Child wall-clock duration (set on stop) |
 | `hermes.subagent.summary` | hermes-specific | The child's result summary (set on stop) |
+| `hermes.subagent.swept` | hermes-specific | `true` when closed by `subagent_span_ttl_ms` instead of `subagent_stop` |
 
 The child's `agent` root carries `hermes.session.is_subagent=true` plus `hermes.subagent.parent_session_id` / `hermes.subagent.role` so you can filter child runs even when looking at a single span.
 
-**Status:** failure-like `child_status` values (`error`, `failed`, `cancelled`, `timeout`) map the span to `ERROR`; anything else (including a missing status) stays `OK`.
+**Status:** failure-like `child_status` values (`error`, `failed`, `cancelled`, `timeout`, `stalled`) map the span to `ERROR`. `interrupted` (the user stopped the parent) and `unknown` (the parent process restarted, so nothing is known) stay `OK`, as does a missing status. A `subagent_stop` that arrives with no open span (a restart) records the metrics and opens nothing.
 
 **Metrics:** `hermes.subagent.count{role, status}` and `hermes.subagent.duration{role}`.
 

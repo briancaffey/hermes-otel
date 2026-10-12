@@ -3,14 +3,13 @@ and the live store's events-only / event-name filters."""
 
 from __future__ import annotations
 
-from pathlib import Path
 from unittest.mock import patch
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
-from hermes_otel.dashboard import backends, plugin_api
+from hermes_otel.dashboard import live_api, plugin_api
 from hermes_otel.dashboard.backends import _loki, base
 from hermes_otel.dashboard.backends.base import LogFilter, finish_log_row
 from hermes_otel.live_store import LiveStore
@@ -138,7 +137,7 @@ class TestRoutes:
             }
         )
         store.flush()
-        monkeypatch.setattr(plugin_api, "_get_live_store", lambda: store)
+        monkeypatch.setattr(live_api, "_get_live_store", lambda: store)
         app = FastAPI()
         app.include_router(plugin_api.router)
         with TestClient(app) as c:

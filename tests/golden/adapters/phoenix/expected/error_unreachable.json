@@ -1,0 +1,34 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

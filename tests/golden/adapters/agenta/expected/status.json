@@ -1,0 +1,26 @@
+{
+ "calls": [],
+ "result": {
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "server",
+   "min_duration": "client",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "none",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": false,
+  "metrics": false,
+  "name": "agenta",
+  "query_lang_label": "Agenta attribute filter (key=value)",
+  "query_url": "http://localhost:3060/api",
+  "raw_placeholder": "tool.name=terminal ag.type.span=tool",
+  "type": "agenta"
+ }
+}

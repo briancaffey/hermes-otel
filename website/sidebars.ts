@@ -17,6 +17,12 @@ const sidebars: SidebarsConfig = {
     'skill',
     {
       type: 'category',
+      label: 'Guides',
+      collapsed: false,
+      items: ['guides/observing-a-fleet'],
+    },
+    {
+      type: 'category',
       label: 'Backends',
       collapsed: false,
       items: [

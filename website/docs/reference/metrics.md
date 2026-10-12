@@ -22,14 +22,22 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.session.turns` | Histogram | `{turn}` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: turns the finished session had |
 | `hermes.session.duration` | Histogram | `s` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: seconds from the session's first turn to its end |
 | `hermes.message.count` | Counter | `{message}` | `model`, `provider` (the provider the turn's API calls reported; absent before any did) | `post_llm_call` (one per completed assistant message) |
-| `hermes.model.usage` | Counter | `{message}` | `model`, `provider` | `post_api_request` (one per API call) |
-| `hermes.token.usage` | Counter | `{token}` | `model`, `provider`, `token_type` = `input` · `output` · `cacheRead` · `cacheCreation` · `reasoning` | `post_api_request` |
+| `hermes.model.usage` | Counter | `{message}` | `model`, `provider`, `query_source` | `post_api_request` / `post_auxiliary_call` (one per API call) |
+| `hermes.token.usage` | Counter | `{token}` | `model`, `provider`, `token_type` = `input` · `output` · `cacheRead` · `cacheCreation` · `reasoning`, `query_source` = `main` · `subagent` · `auxiliary` | `post_api_request` / `post_auxiliary_call` |
 | `hermes.prompt_cache.tokens` | Counter | `{token}` | `model`, `provider`, `api_mode`, `cache_result` = `hit` · `miss` | `post_api_request` (only when the provider reported cache accounting) |
 | `hermes.prompt_cache.observations` | Counter | `{request}` | `model`, `provider`, `api_mode`, `cache_result` | `post_api_request` |
-| `hermes.cost.usage` | Counter | `USD` | `model`, `provider`, `cost_status` = `actual` · `estimated` | `post_api_request`: Hermes's own price for the call (`agent.usage_pricing.estimate_usage_cost`). Calls with an unknown price or on a subscription-included route record nothing, so a missing price never reads as `$0` |
+| `hermes.cost.usage` | Counter | `USD` | `model`, `provider`, `cost_status` = `actual` · `estimated`, `query_source` | `post_api_request` / `post_auxiliary_call`: Hermes's own price for the call (`agent.usage_pricing.estimate_usage_cost`). Calls with an unknown price or on a subscription-included route record nothing, so a missing price never reads as `$0` |
 | `hermes.tool.duration` | Histogram | `ms` **(deprecated)** | `tool_name`, `gen_ai.tool.name` | `post_tool_call`; superseded by `gen_ai.execute_tool.duration` (seconds), removed in 2.0 |
 | `hermes.skill.inferred` | Counter | `{hit}` | `skill_name`, `source` = `skill_view` · `path_match` | `pre_tool_call` |
+| `hermes.api.time_to_first_chunk` | Histogram | `s` | `model`, `provider` | `post_api_request` of a streamed call: from Hermes's `started_at` (taken before any retry) to its `first_chunk_at`; also `hermes.api.ttfc_ms` on the `api.*` span |
+| `hermes.command.count` | Counter | `{command}` | `command` (Hermes's canonical name), `surface` | `pre_command`, before a recognised slash command runs; never the arguments |
+| `hermes.human_input.count` | Counter | `{request}` | `kind` (Hermes's: `approval`, `clarify`, a password prompt, …), `outcome` | `on_human_input_resolved`; every wait except an approval is also a `human_input.{kind}` span |
+| `hermes.skill.lifecycle.count` | Counter | `{event}` | `action`, `provenance` (never the skill name) | `on_skill_lifecycle` |
+| `hermes.transcription.count` | Counter | `{request}` | `provider`, `model`, `source` | `pre_transcription` (a decision hook; the observer returns None and never reads the file path or prompt) |
 | `hermes.kanban.task.count` | Counter | `{transition}` | `outcome` = `claimed` · `spawned` · `worker_exited` · `stale_claim` · `completed` · `blocked`, `board` | the six kanban hooks ([hooks](/reference/hooks#kanban-board-transitions)); the dispatcher's and the worker's points come from different processes |
+| `hermes.kanban.dispatch.count` | Counter | `{tick}` | `outcome` = `ok` · `idle` · `skipped_locked`, `board` | `on_kanban_dispatch_tick`, once per dispatcher pass after the dispatch lock is released; dry runs are not counted |
+| `hermes.kanban.dispatch.result` | Counter | `{task}` | `kind` = `spawned` · `reclaimed` · `promoted` · `reconciled_orphans` · `reaped_terminal_workers` · `crashed` · `stale` · `timed_out` · `auto_blocked` · `rate_limited` · `auto_assigned_default` · `respawn_guarded` · `skipped_per_profile_capped` · `skipped_unassigned` · `skipped_nonspawnable` · `skipped_locked` · `memory_pressure`, `board` | the same hook: how many tasks each non-zero `DispatchResult` field covered. Counts only: the task ids, assignees and workspace paths in the result are never exported |
+| `hermes.kanban.task.updated` | Counter | `{field}` | `field` (the changed field's name, never its value), `board` | `on_kanban_task_updated`, a task-row edit outside claim / complete / block |
 | `hermes.approval.count` | Counter | `{prompt}` | `choice` | `post_approval_response` |
 | `hermes.approval.duration` | Histogram | `ms` **(deprecated)** | `choice` | `post_approval_response`; superseded by `hermes.approval.wait.duration` (seconds), removed in 2.0 |
 | `hermes.approval.wait.duration` | Histogram | `s` | `choice` | `post_approval_response` (human / guardian decision wait) |
@@ -38,6 +46,9 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 | `hermes.subagent.count` | Counter | `{run}` | `role` (`unknown` when Hermes reported none), `status` = `ok` · `error`, `child_status` (Hermes' reported status, lower-cased; absent when not reported) | `subagent_stop` |
 | `hermes.subagent.duration` | Histogram | `ms` **(deprecated)** | `role` | `subagent_stop`; superseded by `hermes.subagent.run.duration` (seconds), removed in 2.0 |
 | `hermes.subagent.run.duration` | Histogram | `s` | `role` | `subagent_stop` |
+| `hermes.auxiliary.count` | Counter | `{request}` | `aux_task` (`title_generation` · `compression` · `moa_reference` · `moa_aggregator` · `vision` · `approval` · `kanban_decomposer` · `triage_specifier` · `goal_judge` · … as Hermes names them; `unknown` when it sent none), `status` = `ok` · `error`, `model`, `provider` | `post_auxiliary_call`, once per physical provider attempt of an auxiliary LLM call ([hooks](/reference/hooks#pre_auxiliary_call--post_auxiliary_call)) |
+
+`query_source` semantics: `main` is the agent loop's own API calls, `subagent` the same inside a delegated child's session, `auxiliary` the calls Hermes makes on the agent's behalf (titling, compression, MoA references and aggregator, vision, …). Sum all three for the process's whole spend; a Mixture-of-Agents turn reports the facade's usage under `main` **and** each reference/aggregator attempt under `auxiliary`, so do not add those two for one MoA turn.
 
 `token_type` semantics: `input` is the **whole** prompt (uncached + cache reads + cache writes, Hermes' `prompt_tokens`); `cacheRead` / `cacheCreation` are subsets of it; `reasoning` is a subset of `output`. So the prompt-cache hit rate from this counter alone is `rate(cacheRead) / rate(input)`.
 

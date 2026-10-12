@@ -127,7 +127,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 |---|---|---|---|
 | Phoenix | ✅ | ❌ (rejects `/v1/metrics`; the plugin defaults `metrics: false`) | ❌ |
 | Langfuse | ✅ | ❌ | ❌ |
-| LangSmith | ✅ (via HTTP Run API, not OTLP) | ❌ | ❌ |
+| LangSmith | ✅ | ❌ | ❌ |
 | SigNoz | ✅ | ✅ | ✅ |
 | Jaeger | ✅ | ❌ | ❌ |
 | Zipkin | ✅ | ❌ (`/v1/metrics` is 404) | ❌ (`/v1/logs` answers 202 but stores a record only as a span annotation; off by default) |
@@ -187,7 +187,7 @@ Override per entry with `metrics_temporality: cumulative | delta`, or for every 
 
 Single-backend selection is env-var-driven. First match wins:
 
-1. `LANGSMITH_TRACING=true` → LangSmith
+1. `OTEL_LANGSMITH_API_KEY` (or `OTEL_LANGSMITH_ENDPOINT`) set → LangSmith
 2. Langfuse credentials + at least one `OTEL_LANGFUSE_*` variable (`OTEL_LANGFUSE_PUBLIC_API_KEY`, `OTEL_LANGFUSE_SECRET_API_KEY` or `OTEL_LANGFUSE_ENDPOINT`) → Langfuse
 3. `OTEL_SIGNOZ_ENDPOINT` set → SigNoz
 4. `OTEL_UPTRACE_ENDPOINT` + DSN set → Uptrace

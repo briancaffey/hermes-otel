@@ -1,0 +1,598 @@
+{
+ "logs": [
+  {
+   "attributes": {
+    "event.name": "hermes.session.finalize",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "hermes.platform": "cli",
+    "hermes.session.duration_s": "<num>",
+    "hermes.session.finalize_reason": "cli_exit",
+    "hermes.session.turn_count": 1,
+    "hermes.session_id": "20261012_090000_golden"
+   },
+   "body": "session 20261012_090000_golden finalized (cli_exit): 1 turn(s) over <s>",
+   "event_name": "hermes.session.finalize",
+   "severity": "INFO",
+   "span": null,
+   "trace": null
+  },
+  {
+   "attributes": {
+    "event.name": "hermes.turn.end",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.turn.api_call_count": 1,
+    "hermes.turn.duration_s": "<num>",
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.number": 1,
+    "hermes.turn.tool_commands": "ls",
+    "hermes.turn.tool_count": 2,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "read_file,terminal"
+   },
+   "body": "turn 1 completed",
+   "event_name": "hermes.turn.end",
+   "severity": "INFO",
+   "span": "S1",
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "event.name": "hermes.turn.start",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.turn.number": 1,
+    "llm.model_name": "gpt-4"
+   },
+   "body": "turn 1 started",
+   "event_name": "hermes.turn.start",
+   "severity": "INFO",
+   "span": "S1",
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "event.name": "gen_ai.client.inference.operation.details",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.finish_reasons": [
+     "stop"
+    ],
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session_id": "20261012_090000_golden"
+   },
+   "body": "chat gpt-4 (10/5 tokens)",
+   "event_name": "gen_ai.client.inference.operation.details",
+   "severity": "INFO",
+   "span": "S3",
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "event.name": "hermes.tool.call",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.tool.call.id": "t0",
+    "gen_ai.tool.call.result": "ok",
+    "gen_ai.tool.name": "terminal",
+    "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.tool.duration_s": "<num>",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 2
+   },
+   "body": "tool terminal completed",
+   "event_name": "hermes.tool.call",
+   "severity": "INFO",
+   "span": "S4",
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "event.name": "hermes.tool.call",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.tool.call.id": "t1",
+    "gen_ai.tool.call.result": "ok",
+    "gen_ai.tool.name": "read_file",
+    "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.tool.duration_s": "<num>",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 2
+   },
+   "body": "tool read_file completed",
+   "event_name": "hermes.tool.call",
+   "severity": "INFO",
+   "span": "S5",
+   "trace": "T1"
+  }
+ ],
+ "metrics": [
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 10,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 5,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.client.operation.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 10,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 5,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "read_file",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "terminal",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai"
+   },
+   "name": "hermes.message.count",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main"
+   },
+   "name": "hermes.model.usage",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden"
+   },
+   "name": "hermes.session.count",
+   "unit": "{session}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden",
+    "reason": "cli_exit"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.session.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden",
+    "reason": "cli_exit"
+   },
+   "bucket_counts": [
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "hermes.session.turns",
+   "sum": 1,
+   "unit": "{turn}"
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main",
+    "token_type": "input"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 10
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main",
+    "token_type": "output"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 5
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "read_file",
+    "profile": "golden",
+    "tool_name": "read_file"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "terminal",
+    "profile": "golden",
+    "tool_name": "terminal"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  }
+ ],
+ "spans": [
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.turn.api_call_count": 1,
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.number": 1,
+    "hermes.turn.tool_commands": "ls",
+    "hermes.turn.tool_count": 2,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "read_file,terminal",
+    "hermes.turn.trigger": "user",
+    "input.value": "hello",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.token_count.completion": 5,
+    "llm.token_count.prompt": 10,
+    "llm.token_count.total": 15,
+    "openinference.span.kind": "AGENT",
+    "output.value": "hi",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "20261012_090000_golden",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S1",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.input.messages": "[{\"role\": \"user\", \"content\": \"hello\"}]",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"content\": \"hi\"}]",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "hermes.turn.number": 1,
+    "input.value": "hello",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "openinference.span.kind": "LLM",
+    "output.value": "hi",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "llm.gpt-4",
+   "parent": "S1",
+   "span": "S2",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.finish_reasons": [
+     "stop"
+    ],
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.query_source": "main",
+    "hermes.turn.number": 1,
+    "llm.api_mode": "chat",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.request.approx_input_tokens": 10,
+    "llm.request.message_count": 1,
+    "llm.response.duration_ms": "<num>",
+    "llm.response.finish_reason": "stop",
+    "llm.response.output_chars": 2,
+    "llm.response.tool_calls": 2,
+    "llm.token_count.completion": 5,
+    "llm.token_count.prompt": 10,
+    "llm.token_count.total": 15,
+    "openinference.span.kind": "LLM",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "api.gpt-4",
+   "parent": "S2",
+   "span": "S3",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{\"command\": \"ls\"}",
+    "gen_ai.tool.call.id": "t0",
+    "gen_ai.tool.call.result": "ok",
+    "gen_ai.tool.name": "terminal",
+    "hermes.tool.command": "ls",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 2,
+    "hermes.turn.number": 1,
+    "input.value": "{\"command\": \"ls\"}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "ok",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "tool.name": "terminal",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.terminal",
+   "parent": "S3",
+   "span": "S4",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{\"command\": \"ls\"}",
+    "gen_ai.tool.call.id": "t1",
+    "gen_ai.tool.call.result": "ok",
+    "gen_ai.tool.name": "read_file",
+    "hermes.tool.command": "ls",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 2,
+    "hermes.turn.number": 1,
+    "input.value": "{\"command\": \"ls\"}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "ok",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "tool.name": "read_file",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.read_file",
+   "parent": "S3",
+   "span": "S5",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  }
+ ]
+}

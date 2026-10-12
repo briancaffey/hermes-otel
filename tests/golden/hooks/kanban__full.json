@@ -1,0 +1,413 @@
+{
+ "logs": [],
+ "metrics": [
+  {
+   "attributes": {
+    "gen_ai.tool.name": "kanban_block",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "kanban_complete",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "blocked",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "claimed",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "completed",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "spawned",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "stale_claim",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "board": "default",
+    "outcome": "worker_exited",
+    "profile": "golden"
+   },
+   "name": "hermes.kanban.task.count",
+   "unit": "{transition}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden"
+   },
+   "name": "hermes.session.count",
+   "unit": "{session}",
+   "value": 2
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "kanban_block",
+    "profile": "golden",
+    "tool_name": "kanban_block"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "kanban_complete",
+    "profile": "golden",
+    "tool_name": "kanban_complete"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  }
+ ],
+ "spans": [
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "claimed",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.claim",
+   "parent": null,
+   "span": "S1",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "spawned",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.kanban.worker_pid": 4242,
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.spawn",
+   "parent": "S1",
+   "span": "S2",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "worker_exited",
+    "hermes.kanban.exit_code": -15,
+    "hermes.kanban.exit_kind": "signaled",
+    "hermes.kanban.outcome": "timed_out",
+    "hermes.kanban.retry_status": "retry",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.kanban.worker_pid": 4242,
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.worker_exit",
+   "parent": "S1",
+   "span": "S3",
+   "status": {
+    "code": "ERROR"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "stale_claim",
+    "hermes.kanban.heartbeat_stale": true,
+    "hermes.kanban.retry_status": "retry",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.kanban.worker_pid": 4242,
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.stale_claim",
+   "parent": null,
+   "span": "S4",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T2"
+  },
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "worker-a",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.outcome": "completed",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "worker-a",
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.tool_count": 1,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "kanban_complete",
+    "hermes.turn.trigger": "user",
+    "llm.model_name": "gpt-4",
+    "openinference.span.kind": "AGENT",
+    "session.id": "worker-a",
+    "session_id": "worker-a",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "worker-a",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S5",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T3"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "worker-a",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{}",
+    "gen_ai.tool.call.id": "tc1",
+    "gen_ai.tool.call.result": "{\"ok\": true}",
+    "gen_ai.tool.name": "kanban_complete",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 12,
+    "input.value": "{}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "{\"ok\": true}",
+    "session.id": "worker-a",
+    "session_id": "worker-a",
+    "tool.name": "kanban_complete",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.kanban_complete",
+   "parent": "S5",
+   "span": "S6",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T3"
+  },
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "completed",
+    "hermes.kanban.outcome": "completed",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.summary": "schema designed",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "session.id": "worker-a",
+    "session_id": "worker-a",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.complete",
+   "parent": "S5",
+   "span": "S7",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T3"
+  },
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "worker-b",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.outcome": "blocked",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "worker-b",
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.tool_count": 1,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "kanban_block",
+    "hermes.turn.trigger": "user",
+    "llm.model_name": "gpt-4",
+    "openinference.span.kind": "AGENT",
+    "session.id": "worker-b",
+    "session_id": "worker-b",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "worker-b",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S8",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T4"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "worker-b",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{}",
+    "gen_ai.tool.call.id": "tc1",
+    "gen_ai.tool.call.result": "{\"ok\": true}",
+    "gen_ai.tool.name": "kanban_block",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 12,
+    "input.value": "{}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "{\"ok\": true}",
+    "session.id": "worker-b",
+    "session_id": "worker-b",
+    "tool.name": "kanban_block",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.kanban_block",
+   "parent": "S8",
+   "span": "S9",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T4"
+  },
+  {
+   "attributes": {
+    "hermes.kanban.assignee": "minimal",
+    "hermes.kanban.board": "default",
+    "hermes.kanban.event": "blocked",
+    "hermes.kanban.outcome": "blocked",
+    "hermes.kanban.reason": "needs a human",
+    "hermes.kanban.run_id": "4",
+    "hermes.kanban.task_id": "t_abc123",
+    "hermes.span_kind": "kanban",
+    "openinference.span.kind": "GENERAL",
+    "session.id": "worker-b",
+    "session_id": "worker-b",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "kanban.block",
+   "parent": "S8",
+   "span": "S10",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T4"
+  }
+ ]
+}

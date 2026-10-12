@@ -1,0 +1,27 @@
+{
+ "calls": [],
+ "result": {
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "none",
+   "min_duration": "server",
+   "model": "server",
+   "name": "client",
+   "raw": "server",
+   "roots_only": "client",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "none",
+   "tool": "server"
+  },
+  "logs": false,
+  "metrics": false,
+  "name": "jaeger",
+  "query_api": "auto",
+  "query_lang_label": "Jaeger tags (key=value)",
+  "query_url": "http://localhost:16686",
+  "raw_placeholder": "http.status_code=500 error=true",
+  "type": "jaeger"
+ }
+}

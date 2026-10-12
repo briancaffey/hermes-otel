@@ -1,0 +1,31 @@
+{
+ "env": {
+  "OTEL_MLFLOW_API_KEY": "<secret>",
+  "OTEL_MLFLOW_ENDPOINT": "http://localhost:4318/v1/traces",
+  "OTEL_MLFLOW_EXPERIMENT_ID": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "MLflow",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Bearer <secret>",
+   "x-mlflow-experiment-id": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": false,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "mlflow"
+ },
+ "selected": "mlflow",
+ "type": "mlflow"
+}

@@ -16,16 +16,36 @@ banner:
 	  --screenshot="$(abspath docs/catalog-banner.png)" "file://$(abspath docs/catalog-banner.html)" >/dev/null 2>&1
 	@python3 -c 'import struct,sys; d=open("docs/catalog-banner.png","rb").read(24); w,h=struct.unpack(">II", d[16:24]); print("docs/catalog-banner.png:", w, "x", h, "px,", len(open("docs/catalog-banner.png","rb").read())//1024, "KB"); sys.exit(0 if w==2*h else 1)'
 
+# ── Live before/after check for refactor PRs (#410) ───────────────────
+# Runs the turn-batch prompts through a real Hermes twice, once with BASE's
+# package installed in the profile's plugin dir and once with the working
+# tree's, scores every telemetry source with check_batch.py, and diffs the
+# shape of what landed in the live store. Needs the profile (default
+# `minimal`) with the plugin installed, a model it can call and the backend
+# in its hermes_otel.yaml answering. ~5 min for four prompts × two sides.
+BASE ?= main
+PROFILE ?= minimal
+.PHONY: refactor-check
+refactor-check:
+	uv run --extra dev python scripts/refactor_check/refactor_check.py --base $(BASE) --profile $(PROFILE)
+
 # ── The CI gate, locally ───────────────────────────────────────────────
 # Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
-# black), plugin scan, tests with the 85% coverage gate, dashboard bundle
-# up to date + tsc/eslint/prettier + vitest, docs site build, wheel build. `make ci-fast` skips
-# the two npm builds when you did not touch dashboard-ui/ or website/.
-.PHONY: ci ci-fast ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
-ci: ci-lint ci-scan ci-test ci-dashboard ci-docs ci-wheel
+# black), plugin scan, tests with the 85% coverage gate and the per-module
+# floors (coverage-floors.json), dashboard bundle up to date +
+# tsc/eslint/prettier + vitest, docs site build, wheel build. `make ci-fast`
+# skips the two npm builds when you did not touch dashboard-ui/ or website/.
+#
+# Not run by `make ci` (slow or environment-bound): the Python 3.9 / 3.11
+# matrix (this runs the current venv's interpreter only), `make ci-floor`
+# (the suite against the OpenTelemetry 1.35 floor, a fresh venv), and the
+# catalog-admission workflow (installs hermes-agent main; push to main,
+# weekly, or dispatch).
+.PHONY: ci ci-fast ci-lint ci-scan ci-semconv ci-test ci-floor ci-dashboard ci-docs ci-wheel
+ci: ci-lint ci-scan ci-semconv ci-test ci-dashboard ci-docs ci-wheel
 	@echo "✓ ci: every check that GitHub Actions runs passed locally"
 
-ci-fast: ci-lint ci-scan ci-test
+ci-fast: ci-lint ci-scan ci-semconv ci-test
 	@echo "✓ ci-fast: lint, scan and tests passed (dashboard/docs/wheel skipped)"
 
 ci-lint:
@@ -36,8 +56,26 @@ ci-lint:
 ci-scan:
 	uv run --extra dev python scripts/scan_plugin_artifact.py
 
+# The telemetry vocabulary (hermes_otel/semconv.py) generates
+# dashboard-ui/src/semconv.generated.ts and is checked against the span
+# attribute reference page; a stale file or a drifted page fails here (#404).
+ci-semconv:
+	uv run python scripts/gen_semconv.py --check
+
 ci-test:
-	uv run --extra dev pytest --cov=hermes_otel --cov-report=term --cov-fail-under=85 -q
+	uv run --extra dev pytest --cov=hermes_otel --cov-branch --cov-report=term --cov-report=json --cov-fail-under=85 -q
+	uv run python scripts/coverage_floor.py
+
+# The declared OpenTelemetry floor, in a fresh venv (what the test-otel-floor
+# job runs). Slow (~2 min); run it when touching the OTel SDK surface.
+OTEL_FLOOR ?= 1.35.0
+ci-floor:
+	uv venv --quiet --python 3.11 .venv-floor
+	uv pip install --quiet --python .venv-floor/bin/python -e ".[dev]" \
+	  "opentelemetry-api==$(OTEL_FLOOR)" "opentelemetry-sdk==$(OTEL_FLOOR)" \
+	  "opentelemetry-exporter-otlp-proto-http==$(OTEL_FLOOR)"
+	.venv-floor/bin/python -c 'import sys, opentelemetry.sdk.version as v; assert v.__version__ == sys.argv[1], v.__version__; print("opentelemetry-sdk", v.__version__)' "$(OTEL_FLOOR)"
+	.venv-floor/bin/python -m pytest --tb=short -q
 
 # CI compares the committed bundle with a fresh build. Locally the bundle
 # may be rebuilt but not yet committed, so compare the working tree's bundle

@@ -26,34 +26,41 @@ attributes appear in the detail view.
 
 from __future__ import annotations
 
-import base64
 import json
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from . import register
+from . import default_service_name, register
 from .base import (
     BackendAdapter,
     BackendError,
     ConfigError,
     StructuredFilter,
+    basic_auth,
     http_get_json,
+    not_found,
     otlp_attrs_from_dict,
     otlp_status,
     parse_kv_tokens,
+    query_origin,
+    register_cache,
+    require_credential,
     resolve_env_or_literal,
-    rewrite_host_for_docker,
-    strictly_older_traces,
-    trace_page,
 )
+from .paging import strictly_older_traces, trace_end_bound, trace_page
+from .shapes import card_row, otlp_batches, otlp_span
+from .timeconv import iso_to_ns
 
 _DEFAULT_LANGFUSE_PORT = 3000
 # How far the client-side duration filter walks through the list.
 _MAX_PAGES = 5
 # The public API refuses ``limit`` above 100.
 _MAX_PAGE_SIZE = 100
-# Root-span attributes the card shows, read from the list item's metadata.
+# Root-span attributes the card shows, read from the list item's
+# ``metadata.attributes``: the card keys Langfuse's metadata carries (see
+# ``shapes.CARD_ATTRIBUTE_KEYS``) plus the semconv model keys, in the order
+# the card reads them.
 _CARD_ATTRIBUTE_KEYS = (
     "llm.model_name",
     "gen_ai.request.model",
@@ -77,7 +84,7 @@ _OBSERVATION_TYPES = {"tool": "TOOL", "api": "GENERATION", "llm": "GENERATION", 
 # ``sessionId``; no input/output/usage/metadata) and the v2 metrics API, which
 # answers token totals, cost, observation count and the model per trace. The
 # API is probed once per query URL; ``query_api: v3|v4`` on the entry pins it.
-_API_CACHE: Dict[str, str] = {}
+_API_CACHE: Dict[str, str] = register_cache({})
 _V2_OBSERVATIONS = "/api/public/v2/observations"
 _V2_METRICS = "/api/public/v2/metrics"
 _V4_FILTER_SUPPORT = {
@@ -106,22 +113,6 @@ def _span_name(obs: Dict[str, Any]) -> str:
     return name
 
 
-def _iso_to_ns(iso: Optional[str]) -> Optional[int]:
-    if not iso:
-        return None
-    try:
-        s = iso.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        return int(dt.timestamp() * 1_000_000_000)
-    except Exception:
-        return None
-
-
-# Langfuse ObservationType → OTel span kind int. Everything maps to
-# INTERNAL (1) — Langfuse's types are semantic rather than transport.
-_OTLP_INTERNAL = 1
-
-
 def _as_text(value: Any) -> str:
     return value if isinstance(value, str) else json.dumps(value)
 
@@ -138,7 +129,7 @@ def _as_text(value: Any) -> str:
 # is derived from the same ``gen_ai.usage.*`` attributes for a GENERATION and
 # zero-filled for every other type, and a zero on the root stopped the header
 # from summing the ``api.*`` spans (#346).
-def _obs_to_card_attrs(
+def obs_to_card_attrs(
     obs: Dict[str, Any], span_attrs: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {k: v for k, v in (span_attrs or {}).items() if v is not None}
@@ -211,22 +202,24 @@ class LangfuseAdapter(BackendAdapter):
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
-        # Langfuse self-hosted typically lives on :3000 (Next.js).
+        # Langfuse self-hosted typically lives on :3000 (Next.js); the base URL
+        # is the UI's, so its own port wins.
         endpoint = cfg.get("endpoint") or cfg.get("base_url") or ""
-        parsed = _urlparse.urlparse(endpoint)
-        host = parsed.hostname or "localhost"
-        scheme = parsed.scheme or "http"
-        port = parsed.port or cfg.get("query_port") or _DEFAULT_LANGFUSE_PORT
-        self.query_url = f"{scheme}://{rewrite_host_for_docker(host)}:{port}"
+        self.query_url = query_origin(
+            {**cfg, "endpoint": endpoint}, _DEFAULT_LANGFUSE_PORT, endpoint_port="first"
+        )
         self.public_key = resolve_env_or_literal(cfg, "public_key", "public_key_env")
         self.secret_key = resolve_env_or_literal(cfg, "secret_key", "secret_key_env")
+        # Langfuse keeps no resource attributes: the service a trace is shown
+        # under is the one the plugin exports (the entry's ``service_name``,
+        # else the plugin's ``service.name``, else ``hermes-agent``).
+        self.default_service = default_service_name(cfg)
         self._project_id_cache: Optional[str] = None
         api = str(cfg.get("query_api") or "auto").strip().lower()
         self.query_api = api if api in ("v3", "v4") else "auto"
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
-        base["query_url"] = self.query_url
         base["query_api"] = (
             self.query_api if self.query_api != "auto" else _API_CACHE.get(self.query_url, "auto")
         )
@@ -240,20 +233,14 @@ class LangfuseAdapter(BackendAdapter):
         return base
 
     def _headers(self) -> Dict[str, str]:
-        if not (self.public_key and self.secret_key):
-            raise ConfigError(
-                "Langfuse requires public_key + secret_key. Set them "
-                "(or *_env variants) on the langfuse backend entry."
-            )
-        token = base64.b64encode(f"{self.public_key}:{self.secret_key}".encode("utf-8")).decode(
-            "ascii"
+        require_credential(
+            self.public_key and self.secret_key,
+            "Langfuse requires public_key + secret_key. Set them "
+            "(or *_env variants) on the langfuse backend entry.",
         )
-        return {"Authorization": f"Basic {token}"}
+        return basic_auth(self.public_key, self.secret_key)
 
     # ── Filter translation ───────────────────────────────────────────
-
-    def _raw_params(self, raw: Optional[str]) -> Dict[str, str]:
-        return parse_kv_tokens(raw)
 
     def _api(self) -> str:
         """``v3`` (the trace endpoints answer) or ``v4`` (``events_only``: the
@@ -279,8 +266,14 @@ class LangfuseAdapter(BackendAdapter):
 
     def filter_support_for(self, f: Optional[StructuredFilter] = None) -> Dict[str, str]:
         """The v2 observations list honours more of the search bar than the
-        v3 trace list (session, roots, an error level) and less of the rest."""
-        return dict(_V4_FILTER_SUPPORT) if self._api() == "v4" else {}
+        v3 trace list (session, roots, an error level) and less of the rest.
+
+        Answers from what is already known (an explicit ``query_api`` or the
+        probe a previous search cached) and never probes itself, so ``/status``
+        stays a pure read: an unreachable Langfuse used to cost every status
+        poll a 10 s timeout (#413)."""
+        api = self.query_api if self.query_api != "auto" else _API_CACHE.get(self.query_url)
+        return dict(_V4_FILTER_SUPPORT) if api == "v4" else {}
 
     def _v4_list(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         url = f"{self.query_url}{_V2_OBSERVATIONS}?" + _urlparse.urlencode(params, doseq=True)
@@ -376,9 +369,7 @@ class LangfuseAdapter(BackendAdapter):
         widened = bool(not f.roots_only and prefix)
         obs_type = _OBSERVATION_TYPES.get(prefix.rstrip(".")) if widened else "AGENT"
         want = int(limit) + 1
-        end_s_eff = int(end_s)
-        if f.before_ns:
-            end_s_eff = min(end_s_eff, int(f.before_ns) // 1_000_000_000 + 1)
+        end_s_eff = trace_end_bound(f, end_s, "s", round_up=True)
         session = f.attr_equals.get("hermes.session_id") or f.attr_equals.get("sessionId")
         rows: List[Dict[str, Any]] = []
         card_attrs: Dict[str, Dict[str, Any]] = {}
@@ -398,7 +389,7 @@ class LangfuseAdapter(BackendAdapter):
                 params["sessionId"] = session
             if f.status == "error":
                 params["level"] = "ERROR"
-            raw = self._raw_params(f.raw)
+            raw = parse_kv_tokens(f.raw)
             raw.pop("page", None)
             raw.pop("limit", None)
             params.update(raw)
@@ -452,7 +443,7 @@ class LangfuseAdapter(BackendAdapter):
             if len(items) < _MAX_PAGE_SIZE:
                 break
         if not observations:
-            raise BackendError(404, f"Trace {trace_id} not found in Langfuse", "not_found")
+            raise not_found(trace_id, "Langfuse")
         spans_otlp: List[Dict[str, Any]] = []
         for obs in observations:
             attrs: Dict[str, Any] = {"name": _span_name(obs)}
@@ -465,24 +456,7 @@ class LangfuseAdapter(BackendAdapter):
                     attrs[f"langfuse.{key}"] = obs[key]
             if obs.get("sessionId"):
                 attrs["hermes.session_id"] = obs["sessionId"]
-            start_ns = _iso_to_ns(obs.get("startTime"))
-            end_ns = _iso_to_ns(obs.get("endTime"))
-            spans_otlp.append(
-                {
-                    "traceId": trace_id,
-                    "spanId": obs.get("id"),
-                    "parentSpanId": obs.get("parentObservationId") or None,
-                    "name": _span_name(obs),
-                    "kind": _OTLP_INTERNAL,
-                    "startTimeUnixNano": str(start_ns) if start_ns else "0",
-                    "endTimeUnixNano": str(end_ns) if end_ns else "0",
-                    "attributes": otlp_attrs_from_dict(attrs),
-                    "status": otlp_status(
-                        "error" if obs.get("level") == "ERROR" else "ok",
-                        obs.get("statusMessage") or "",
-                    ),
-                }
-            )
+            spans_otlp.append(self._observation_span(trace_id, obs, attrs))
         span_ids = {sp["spanId"] for sp in spans_otlp}
         roots = [
             sp
@@ -511,39 +485,52 @@ class LangfuseAdapter(BackendAdapter):
             synthetic_id = f"synthetic-{trace_id[:16]}"
             spans_otlp.insert(
                 0,
-                {
-                    "traceId": trace_id,
-                    "spanId": synthetic_id,
-                    "parentSpanId": None,
-                    "name": "trace",
-                    "kind": _OTLP_INTERNAL,
-                    "startTimeUnixNano": str(min(starts)) if starts else "0",
-                    "endTimeUnixNano": str(max(ends)) if ends else "0",
-                    "attributes": otlp_attrs_from_dict(
-                        {
-                            "langfuse.trace_id": trace_id,
-                            "synthetic": True,
-                            "synthetic.reason": (
-                                "Langfuse holds no single root observation for this trace"
-                            ),
-                        }
-                    ),
-                    "status": otlp_status("ok"),
-                },
+                otlp_span(
+                    trace_id,
+                    synthetic_id,
+                    None,
+                    "trace",
+                    start_ns=min(starts) if starts else 0,
+                    end_ns=max(ends) if ends else 0,
+                    attrs={
+                        "langfuse.trace_id": trace_id,
+                        "synthetic": True,
+                        "synthetic.reason": (
+                            "Langfuse holds no single root observation for this trace"
+                        ),
+                    },
+                    status=otlp_status("ok"),
+                ),
             )
             for sp in spans_otlp[1:]:
                 if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids:
                     sp["parentSpanId"] = synthetic_id
         return {
-            "batches": [
-                {
-                    "resource": {"attributes": otlp_attrs_from_dict({"service.name": "langfuse"})},
-                    "scopeSpans": [{"spans": spans_otlp}],
-                }
-            ],
+            "batches": otlp_batches({self.default_service: spans_otlp}),
             "span_count": len(observations),
             "truncated": False,
         }
+
+    def _observation_span(
+        self, trace_id: str, obs: Dict[str, Any], attrs: Dict[str, Any]
+    ) -> Dict[str, Any]:
+        """One observation as a span of the detail tree. Langfuse drops the
+        exporter's ``tool.`` prefix from a TOOL observation's name; the tree
+        uses the name the exporter gave the span, as every other backend does.
+        Langfuse's types are semantic, not transport kinds: every span is
+        INTERNAL (the default)."""
+        return otlp_span(
+            trace_id,
+            obs.get("id"),
+            obs.get("parentObservationId"),
+            _span_name(obs),
+            start_ns=iso_to_ns(obs.get("startTime")) or 0,
+            end_ns=iso_to_ns(obs.get("endTime")) or 0,
+            attrs=attrs,
+            status=otlp_status(
+                "error" if obs.get("level") == "ERROR" else "ok", obs.get("statusMessage") or ""
+            ),
+        )
 
     def _list_params(
         self, f: StructuredFilter, start_s: int, end_s: int, limit: int, page: int = 1
@@ -573,7 +560,7 @@ class LangfuseAdapter(BackendAdapter):
         # The raw k=v pairs are the native escape hatch, but the page and the
         # page size stay the route's: ``page=`` would otherwise silently
         # replace the cursor.
-        raw = self._raw_params(f.raw)
+        raw = parse_kv_tokens(f.raw)
         raw.pop("page", None)
         raw.pop("limit", None)
         params.update(raw)
@@ -636,9 +623,7 @@ class LangfuseAdapter(BackendAdapter):
         want = int(limit) + 1
         rows: List[Dict[str, Any]] = []
         seen: set = set()
-        end_s_eff = int(end_s)
-        if f.before_ns:
-            end_s_eff = min(end_s_eff, int(f.before_ns) // 1_000_000_000 + 1)
+        end_s_eff = trace_end_bound(f, end_s, "s", round_up=True)
         for page in range(1, _MAX_PAGES + 1):
             params: Dict[str, Any] = {
                 "page": page,
@@ -672,7 +657,7 @@ class LangfuseAdapter(BackendAdapter):
     def _observation_row(
         self, o: Dict[str, Any], trace_id: str, card_name: str, f: StructuredFilter
     ) -> Optional[Dict[str, Any]]:
-        start_ns = _iso_to_ns(o.get("startTime"))
+        start_ns = iso_to_ns(o.get("startTime"))
         latency = o.get("latency")
         duration_ms = (
             int(latency * 1000)
@@ -696,25 +681,17 @@ class LangfuseAdapter(BackendAdapter):
                 attrs[key] = v if isinstance(v, str) else json.dumps(v)
         if str(o.get("level") or "").upper() == "ERROR":
             attrs["status"] = "error"
-        return {
-            "traceID": trace_id,
-            "rootServiceName": "langfuse",
-            "rootTraceName": card_name,
-            "startTimeUnixNano": str(start_ns) if start_ns else "0",
-            "durationMs": duration_ms,
-            "spanSets": [
-                {
-                    "spans": [
-                        {
-                            "spanID": o.get("id"),
-                            "name": card_name,
-                            "attributes": otlp_attrs_from_dict(attrs),
-                        }
-                    ],
-                    "matched": 1,
-                }
-            ],
-        }
+        return card_row(
+            trace_id,
+            span_id=o.get("id"),
+            name=card_name,
+            attrs=attrs,
+            start_ns=start_ns or 0,
+            duration_ms=duration_ms,
+            service=self.default_service,
+            # One observation per row: the trace's count is not known here
+            # (the v4 list joins it from the metrics API afterwards).
+        )
 
     def _trace_row(self, t: Dict[str, Any], f: StructuredFilter) -> Optional[Dict[str, Any]]:
         trace_id = t.get("id")
@@ -723,7 +700,7 @@ class LangfuseAdapter(BackendAdapter):
         name = t.get("name") or ""
         if f.name_prefix and not name.startswith(f.name_prefix):
             return None
-        start_ns = _iso_to_ns(t.get("timestamp"))
+        start_ns = iso_to_ns(t.get("timestamp"))
         # The public API documents ``latency`` in seconds.
         latency = t.get("latency")
         duration_ms = 0
@@ -762,28 +739,18 @@ class LangfuseAdapter(BackendAdapter):
         if t.get("tags"):
             attrs["langfuse.tags"] = t["tags"]
 
-        return {
-            "traceID": trace_id,
-            **({"spanCount": span_count} if span_count is not None else {}),
-            "rootServiceName": "langfuse",
-            "rootTraceName": name,
-            "startTimeUnixNano": str(start_ns) if start_ns else "0",
-            "durationMs": duration_ms,
-            "spanSets": [
-                {
-                    "spans": [
-                        {
-                            # The list carries no observation ids; the trace id
-                            # stands in (see the docs' shape notes).
-                            "spanID": trace_id,
-                            "name": name,
-                            "attributes": otlp_attrs_from_dict(attrs),
-                        }
-                    ],
-                    "matched": 1,
-                }
-            ],
-        }
+        return card_row(
+            trace_id,
+            # The list carries no observation ids; the trace id stands in
+            # (see the docs' shape notes).
+            span_id=trace_id,
+            name=name,
+            attrs=attrs,
+            start_ns=start_ns or 0,
+            duration_ms=duration_ms,
+            service=self.default_service,
+            span_count=span_count,
+        )
 
     def _project_id(self) -> Optional[str]:
         if self._project_id_cache:
@@ -813,13 +780,13 @@ class LangfuseAdapter(BackendAdapter):
         url = f"{self.query_url}/api/public/traces/{trace_id}"
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         if not isinstance(data, dict) or not data.get("id"):
-            raise BackendError(404, f"Trace {trace_id} not found in Langfuse", "not_found")
+            raise not_found(trace_id, "Langfuse")
 
         observations = [o for o in (data.get("observations") or []) if isinstance(o, dict)]
         spans_otlp: List[Dict[str, Any]] = []
         for obs in observations:
             span_attrs = _span_attributes_of(obs)
-            attrs = _obs_to_card_attrs(obs, span_attrs)
+            attrs = obs_to_card_attrs(obs, span_attrs)
             # Carry through any free-form metadata so it's still visible
             # in the attribute table; the span's own attributes were lifted
             # above and are not repeated as one ``metadata.attributes`` blob.
@@ -829,28 +796,7 @@ class LangfuseAdapter(BackendAdapter):
                     if k == "attributes" and span_attrs:
                         continue
                     attrs[f"metadata.{k}"] = v
-
-            start_ns = _iso_to_ns(obs.get("startTime"))
-            end_ns = _iso_to_ns(obs.get("endTime"))
-            spans_otlp.append(
-                {
-                    "traceId": trace_id,
-                    "spanId": obs.get("id"),
-                    "parentSpanId": obs.get("parentObservationId") or None,
-                    # Langfuse drops the exporter's ``tool.`` prefix from a
-                    # TOOL observation's name; the span tree uses the name
-                    # the exporter gave the span, as every other backend does.
-                    "name": _span_name(obs),
-                    "kind": _OTLP_INTERNAL,
-                    "startTimeUnixNano": str(start_ns) if start_ns else "0",
-                    "endTimeUnixNano": str(end_ns) if end_ns else "0",
-                    "attributes": otlp_attrs_from_dict(attrs),
-                    "status": otlp_status(
-                        "error" if obs.get("level") == "ERROR" else "ok",
-                        obs.get("statusMessage") or "",
-                    ),
-                }
-            )
+            spans_otlp.append(self._observation_span(trace_id, obs, attrs))
 
         trace_attrs: Dict[str, Any] = {"langfuse.trace_id": trace_id}
         for k in ("userId", "sessionId", "release", "version"):
@@ -883,8 +829,8 @@ class LangfuseAdapter(BackendAdapter):
             # synthetic so the UI can label it and nobody mistakes it for a
             # span the agent emitted (#159); the plugin marks its own lazily
             # created roots the same way (``hermes.session.synthesized``).
-            trace_start = _iso_to_ns(data.get("timestamp"))
-            trace_end = max((_iso_to_ns(o.get("endTime")) or 0 for o in observations), default=0)
+            trace_start = iso_to_ns(data.get("timestamp"))
+            trace_end = max((iso_to_ns(o.get("endTime")) or 0 for o in observations), default=0)
             root_attrs: Dict[str, Any] = {
                 **trace_attrs,
                 "synthetic": True,
@@ -896,19 +842,16 @@ class LangfuseAdapter(BackendAdapter):
             synthetic_id = f"synthetic-{trace_id[:16]}" if trace_id else "synthetic-root"
             spans_otlp.insert(
                 0,
-                {
-                    "traceId": trace_id,
-                    "spanId": synthetic_id,
-                    "parentSpanId": None,
-                    "name": data.get("name") or "trace",
-                    "kind": _OTLP_INTERNAL,
-                    "startTimeUnixNano": str(trace_start) if trace_start else "0",
-                    "endTimeUnixNano": (
-                        str(trace_end) if trace_end else (str(trace_start) if trace_start else "0")
-                    ),
-                    "attributes": otlp_attrs_from_dict(root_attrs),
-                    "status": otlp_status("ok"),
-                },
+                otlp_span(
+                    trace_id,
+                    synthetic_id,
+                    None,
+                    data.get("name") or "trace",
+                    start_ns=trace_start or 0,
+                    end_ns=trace_end or trace_start or 0,
+                    attrs=root_attrs,
+                    status=otlp_status("ok"),
+                ),
             )
             # Back-link orphan observations to the synthetic root so the
             # tree doesn't fall apart.
@@ -917,14 +860,8 @@ class LangfuseAdapter(BackendAdapter):
                 if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_id_set:
                     sp["parentSpanId"] = synthetic_id
 
-        resource_attrs = otlp_attrs_from_dict({"service.name": "langfuse"})
         return {
-            "batches": [
-                {
-                    "resource": {"attributes": resource_attrs},
-                    "scopeSpans": [{"spans": spans_otlp}],
-                }
-            ],
+            "batches": otlp_batches({self.default_service: spans_otlp}),
             "span_count": len(observations),
             "truncated": False,
         }

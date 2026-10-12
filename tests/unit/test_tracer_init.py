@@ -1,9 +1,8 @@
 """Tests for HermesOTelPlugin.init() environment detection logic."""
 
 import base64
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
@@ -51,7 +50,7 @@ class TestInitPhoenix:
         # the plugin enabled (the dashboard's Live mode). Patch the global
         # provider set so we don't mutate process-wide OTel state.
         plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=True))
-        with patch("hermes_otel.tracer.trace.set_tracer_provider"):
+        with patch("hermes_otel.pipeline.trace.set_tracer_provider"):
             try:
                 assert plugin.init() is True
                 assert plugin.is_enabled is True
@@ -122,40 +121,47 @@ class TestInitLangfuse:
 
 
 class TestInitLangSmith:
-    def test_init_with_langsmith(self, monkeypatch):
+    """LangSmith is an OTLP preset since #415; ``LANGSMITH_TRACING`` selects nothing."""
+
+    def test_env_opt_in_selects_langsmith_over_otlp(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "true")
-        monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_test_key")
+        monkeypatch.setenv("OTEL_LANGSMITH_API_KEY", "lsv2_test_key")
+        monkeypatch.setenv("LANGSMITH_PROJECT", "hermes")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls:
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
             assert plugin.init() is True
-            mock_ls.assert_called_once()
+        _assert_env_backend(
+            mock_pipeline,
+            "https://api.smith.langchain.com/otel/v1/traces",
+            {"x-api-key": "lsv2_test_key", "Langsmith-Project": "hermes"},
+            "LangSmith",
+        )
+        rb = _env_backend(mock_pipeline)
+        assert rb.type == "langsmith" and rb.supports_metrics is False
 
     def test_langsmith_takes_priority_over_langfuse(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "true")
-        monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
+        monkeypatch.setenv("OTEL_LANGSMITH_API_KEY", "lsv2_key")
         monkeypatch.setenv("OTEL_LANGFUSE_PUBLIC_API_KEY", "pk-lf")
         monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk-lf")
 
         plugin = HermesOTelPlugin()
-        with (
-            patch.object(plugin, "_init_langsmith", return_value=True) as mock_ls,
-            patch.object(plugin, "_init_otlp_pipeline") as mock_otlp,
-        ):
+        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
             assert plugin.init() is True
-            mock_ls.assert_called_once()
-            mock_otlp.assert_not_called()
+        assert _env_backend(mock_pipeline).type == "langsmith"
 
-    def test_langsmith_disabled_when_tracing_not_true(self, monkeypatch):
+    def test_vendor_variables_alone_select_nothing(self, monkeypatch, caplog):
         _clear_backend_env(monkeypatch)
-        monkeypatch.setenv("LANGSMITH_TRACING", "false")
+        monkeypatch.setenv("LANGSMITH_TRACING", "true")
         monkeypatch.setenv("LANGSMITH_API_KEY", "lsv2_key")
 
-        # dashboard_live off so the assertion isolates the LangSmith gate.
+        # dashboard_live off so the assertion isolates the opt-in rule.
         plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
-        assert plugin.init() is False
+        with caplog.at_level("INFO", logger="hermes_otel"):
+            assert plugin.init() is False
+        text = " ".join(r.getMessage() for r in caplog.records)
+        assert "LANGSMITH_API_KEY is set" in text and "OTEL_LANGSMITH_API_KEY" in text
 
 
 class TestInitSigNoz:
@@ -233,7 +239,7 @@ class TestInitJaeger:
         plugin = HermesOTelPlugin()
         # Let the real _init_otlp run so _init_metrics is called with backend_name="Jaeger".
         real_tp = TracerProvider
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=lambda **k: real_tp(**k)):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=lambda **k: real_tp(**k)):
             plugin.init()
         # No meter provider should have been created for a traces-only backend.
         assert plugin._meter is None
@@ -279,7 +285,7 @@ class TestInitTempo:
 
         plugin = HermesOTelPlugin()
         real_tp = TracerProvider
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=lambda **k: real_tp(**k)):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=lambda **k: real_tp(**k)):
             plugin.init()
         assert plugin._meter is None
         assert plugin._meter_provider is None
@@ -327,8 +333,8 @@ class TestInitWeave:
             return real_tp(**kwargs)
 
         with (
-            patch("hermes_otel.tracer.TracerProvider", side_effect=_spy),
-            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy),
+            patch("hermes_otel.pipeline.trace.set_tracer_provider"),
         ):
             assert plugin.init() is True
 
@@ -349,7 +355,9 @@ class TestInitWeave:
             backends=(rb_config,),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        resource = plugin._build_resource([plugin._resolve_backend_config(rb_config)])
+        from hermes_otel import backends as _backends
+
+        resource = plugin._build_resource([_backends.resolve(rb_config)])
         attrs = dict(resource.attributes)
         assert attrs["wandb.entity"] == "team"
         assert attrs["wandb.project"] == "proj"
@@ -422,7 +430,7 @@ class TestResourceAttributes:
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
 
         attrs = dict(captured["resource"].attributes)
@@ -452,7 +460,7 @@ class TestResourceAttributes:
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         assert dict(captured["resource"].attributes)["env"] == "prod"
 
@@ -473,7 +481,7 @@ class TestResourceAttributes:
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         assert dict(captured["resource"].attributes)["service.name"] == "custom-svc"
 
@@ -494,7 +502,7 @@ class TestResourceAttributes:
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         assert dict(captured["resource"].attributes)["openinference.project.name"] == "env-project"
 
@@ -516,7 +524,7 @@ class TestResourceAttributes:
             captured["resource"] = kwargs["resource"]
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         assert dict(captured["resource"].attributes)["openinference.project.name"] == "cfg-wins"
 
@@ -538,7 +546,7 @@ class TestSampling:
             captured["kwargs"] = kwargs
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         assert "sampler" not in captured["kwargs"]
 
@@ -547,7 +555,7 @@ class TestSampling:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+        from opentelemetry.sdk.trace.sampling import ParentBased
 
         from hermes_otel.plugin_config import HermesOtelConfig
 
@@ -559,7 +567,7 @@ class TestSampling:
             captured["kwargs"] = kwargs
             return real_tp(**kwargs)
 
-        with patch("hermes_otel.tracer.TracerProvider", side_effect=_spy):
+        with patch("hermes_otel.pipeline.TracerProvider", side_effect=_spy):
             plugin.init()
         sampler = captured["kwargs"].get("sampler")
         assert isinstance(sampler, ParentBased)

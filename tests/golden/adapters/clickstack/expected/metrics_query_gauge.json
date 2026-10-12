@@ -1,0 +1,53 @@
+{
+ "calls": [
+  {
+   "body": "SELECT toUnixTimestamp(TimeUnix) AS ts, Value AS v, Attributes, ResourceAttributes['service.instance.id'] AS inst FROM `default`.`otel_metrics_sum` WHERE MetricName = 'system.cpu.utilization' AND TimeUnix >= toDateTime(1791746100) AND TimeUnix < toDateTime(1791750060) ORDER BY TimeUnix",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  },
+  {
+   "body": "SELECT toUnixTimestamp(TimeUnix) AS ts, Value AS v, Attributes, ResourceAttributes['service.instance.id'] AS inst FROM `default`.`otel_metrics_gauge` WHERE MetricName = 'system.cpu.utilization' AND TimeUnix >= toDateTime(1791746400) AND TimeUnix < toDateTime(1791750060) ORDER BY TimeUnix",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  }
+ ],
+ "result": {
+  "agg": "max",
+  "agg_requested": "max",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "name": "system.cpu.utilization",
+  "points": 2,
+  "series": {
+   "_": [
+    null,
+    null,
+    0.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.25,
+    null,
+    null
+   ]
+  }
+ }
+}

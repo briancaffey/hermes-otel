@@ -7,13 +7,20 @@ environment (so #357 already stamps the worker's Resource with
 ``hermes.kanban.task_id`` / ``board`` / ``run_id``). The worker finishes the
 card with ``kanban_complete`` or ``kanban_block``.
 
-The hooks fire in two processes, and no span is ever shared across them:
+The hooks fire in two processes, joined into one trace per run (#388):
 
 * **Dispatcher side** (``kanban_task_claimed``, ``on_kanban_worker_spawned``,
-  ``on_kanban_worker_exited``, ``on_kanban_worker_stale_claim``): each
-  transition is a span of its own, the root of its own trace. The dispatcher
-  serves every session, so nesting under whatever happens to be in flight
-  would mis-parent it.
+  ``on_kanban_worker_exited``, ``on_kanban_worker_stale_claim``): the
+  ``kanban.claim`` span is the root of the run's trace (the dispatcher serves
+  every session, so nesting under whatever happens to be in flight would
+  mis-parent it). The later transitions of the same run nest under it while
+  this dispatcher process remembers the claim; a dispatcher that exited in
+  between (``hermes kanban dispatch`` is one-shot) starts their own trace.
+* **The hand-off**: ``kanban_task_claimed`` fires synchronously in the
+  dispatcher right before the worker's environment is snapshotted from
+  ``os.environ``, so the plugin sets ``TRACEPARENT`` there (the claim span)
+  and removes it in ``on_kanban_worker_spawned``. The worker's turn root
+  parents itself under it (see :func:`kanban_remote_parent`).
 * **Worker side** (``kanban_task_completed``, ``kanban_task_blocked``): the
   transition fires from inside the ``kanban_complete`` / ``kanban_block``
   tool, so the span lands in the worker's own trace next to that tool span
@@ -22,8 +29,8 @@ The hooks fire in two processes, and no span is ever shared across them:
   Run by a human (``hermes kanban complete``), there is no turn, and the span
   is a root like the dispatcher's.
 
-Correlation across the two is by ``hermes.kanban.task_id`` and
-``hermes.kanban.run_id`` on every span (and on the worker's Resource).
+``hermes.kanban.task_id`` and ``hermes.kanban.run_id`` stay on every span
+(and on the worker's Resource) for runs whose trace could not be joined.
 Every handler is an observer: Hermes ignores the return value, and every
 fire site is best-effort, so nothing here can break a board transition.
 """
@@ -31,11 +38,14 @@ fire site is best-effort, so nothing here can break a board transition.
 from __future__ import annotations
 
 import itertools
+import os
+import threading
+from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import truncate_string
+from ..helpers import format_traceparent, parse_traceparent, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
 from .attributes import _session_identity_attributes
 
@@ -49,7 +59,86 @@ _seq = itertools.count(1)
 _FAILED_EXIT_KINDS = frozenset({"nonzero_exit", "signaled"})
 
 
-def _identity(task_id: Any, board: Any, assignee: Any, run_id: Any, event: str) -> Dict[str, Any]:
+# The trace context of each run's claim span, by (task_id, run_id), so the
+# dispatcher's later transitions of that run join its trace. Bounded: a
+# long-lived gateway dispatcher claims cards for days.
+_RUN_CONTEXTS: "OrderedDict[Tuple[str, str], Any]" = OrderedDict()
+_RUN_CONTEXTS_MAX = 512
+_RUN_LOCK = threading.Lock()
+# The TRACEPARENT value this process put in os.environ for the next worker,
+# so cleanup never removes one the user (or another tool) set.
+_injected_traceparent: Optional[str] = None
+
+
+def _run_key(task_id: Any, run_id: Any) -> Tuple[str, str]:
+    return (str(task_id or ""), str(run_id if run_id is not None else ""))
+
+
+def _remember_run(task_id: Any, run_id: Any, context: Any) -> None:
+    with _RUN_LOCK:
+        _RUN_CONTEXTS[_run_key(task_id, run_id)] = context
+        _RUN_CONTEXTS.move_to_end(_run_key(task_id, run_id))
+        while len(_RUN_CONTEXTS) > _RUN_CONTEXTS_MAX:
+            _RUN_CONTEXTS.popitem(last=False)
+
+
+def _run_parent(task_id: Any, run_id: Any, *, forget: bool = False):
+    """The claim span of this run as a parent, else a new trace."""
+    with _RUN_LOCK:
+        key = _run_key(task_id, run_id)
+        ctx = _RUN_CONTEXTS.pop(key, None) if forget else _RUN_CONTEXTS.get(key)
+    if ctx is None:
+        return _own_root()
+    try:
+        from opentelemetry.trace import NonRecordingSpan
+
+        return NonRecordingSpan(ctx)
+    except Exception:  # pragma: no cover - OTel is a hard dependency
+        return _own_root()
+
+
+def _inject_traceparent(span: Any) -> None:
+    """Point the next worker's environment at ``span`` (the run's claim)."""
+    global _injected_traceparent
+    ctx = span.get_span_context() if hasattr(span, "get_span_context") else None
+    if ctx is None or not getattr(ctx, "is_valid", False):
+        return
+    value = format_traceparent(ctx.trace_id, ctx.span_id, int(ctx.trace_flags))
+    os.environ["TRACEPARENT"] = value
+    _injected_traceparent = value
+
+
+def _clear_traceparent() -> None:
+    """Remove the TRACEPARENT this plugin set, and nothing else."""
+    global _injected_traceparent
+    if _injected_traceparent and os.environ.get("TRACEPARENT") == _injected_traceparent:
+        os.environ.pop("TRACEPARENT", None)
+    _injected_traceparent = None
+
+
+def kanban_remote_parent() -> Any:
+    """In a kanban worker, the dispatcher's claim span as a remote parent for
+    the turn root; None anywhere else (a ``TRACEPARENT`` outside a worker is
+    someone else's and is ignored)."""
+    if not os.environ.get("HERMES_KANBAN_TASK", "").strip():
+        return None
+    parsed = parse_traceparent(os.environ.get("TRACEPARENT"))
+    if parsed is None:
+        return None
+    trace_id, span_id, flags = parsed
+    try:
+        from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
+
+        return NonRecordingSpan(
+            SpanContext(trace_id, span_id, is_remote=True, trace_flags=TraceFlags(flags))
+        )
+    except Exception:  # pragma: no cover - OTel is a hard dependency
+        return None
+
+
+def kanban_identity(
+    task_id: Any, board: Any, assignee: Any, run_id: Any, event: str
+) -> Dict[str, Any]:
     attrs: Dict[str, Any] = {"hermes.span_kind": "kanban", "hermes.kanban.event": event}
     if task_id:
         attrs["hermes.kanban.task_id"] = truncate_string(str(task_id), _ID_MAX)
@@ -86,7 +175,7 @@ def _worker_turn(tracer) -> Tuple[Optional[str], Any, Any]:
     return session_id, tracer.spans.get_current_parent(session_id) or root, root
 
 
-def _set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
+def set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
     if span is None or not hasattr(span, "set_attribute"):
         return
     for key, value in attributes.items():
@@ -108,7 +197,7 @@ def _transition(
     status: str,
     outcome: str,
     severity: str = "INFO",
-) -> None:
+) -> Any:
     """Open and immediately close one transition span, with its event and counter."""
     key = f"kanban:{name}:{attributes.get('hermes.kanban.task_id', '')}:{next(_seq)}"
     span = tracer.start_span(
@@ -132,6 +221,7 @@ def _transition(
     board = attributes.get("hermes.kanban.board") or "unknown"
     tracer.record_metric("kanban_task_count", 1, {"outcome": outcome, "board": board})
     debug_log(f"  kanban span: {name} outcome={outcome} status={status}")
+    return span
 
 
 # --- dispatcher side ---------------------------------------------------------
@@ -151,8 +241,11 @@ def on_kanban_task_claimed(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "claimed")
-    _transition(
+    attrs = kanban_identity(task_id, board, assignee, run_id, "claimed")
+    # A claim that never reached spawn (a workspace error) must not hand its
+    # context to the next run's worker.
+    _clear_traceparent()
+    span = _transition(
         tracer,
         "kanban.claim",
         attrs,
@@ -161,6 +254,9 @@ def on_kanban_task_claimed(
         status="ok",
         outcome="claimed",
     )
+    if span is not None and hasattr(span, "get_span_context"):
+        _remember_run(task_id, run_id, span.get_span_context())
+        _inject_traceparent(span)
 
 
 @_fail_open
@@ -181,15 +277,16 @@ def on_kanban_worker_spawned(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "spawned")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "spawned")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
+    _clear_traceparent()  # the worker's environment is already built
     _transition(
         tracer,
         "kanban.spawn",
         attrs,
         session_id=None,
-        parent=_own_root(),
+        parent=_run_parent(task_id, run_id),
         status="ok",
         outcome="spawned",
     )
@@ -213,7 +310,7 @@ def on_kanban_worker_exited(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "worker_exited")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "worker_exited")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
     kind = truncate_string(str(exit_kind), _SHORT_MAX) if exit_kind else "unknown"
@@ -230,7 +327,7 @@ def on_kanban_worker_exited(
         "kanban.worker_exit",
         attrs,
         session_id=None,
-        parent=_own_root(),
+        parent=_run_parent(task_id, run_id, forget=True),
         status="error" if failed else "ok",
         outcome="worker_exited",
         severity="ERROR" if failed else "INFO",
@@ -253,7 +350,7 @@ def on_kanban_worker_stale_claim(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "stale_claim")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "stale_claim")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
     if isinstance(heartbeat_stale, bool):
@@ -265,7 +362,7 @@ def on_kanban_worker_stale_claim(
         "kanban.stale_claim",
         attrs,
         session_id=None,
-        parent=_own_root(),
+        parent=_run_parent(task_id, run_id, forget=True),
         status="ok",
         outcome="stale_claim",
         severity="WARN",
@@ -289,7 +386,7 @@ def _finish(tracer, name: str, attrs: Dict[str, Any], outcome: str, text_key: st
         # The worker's turn root learns which card it worked and how it ended,
         # so span-only readers (the bundled dashboard's live store, a backend
         # that cannot filter on Resource attributes) can find it too.
-        _set_attributes(
+        set_attributes(
             root,
             {
                 "hermes.kanban.task_id": attrs.get("hermes.kanban.task_id"),
@@ -324,7 +421,7 @@ def on_kanban_task_completed(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "completed")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "completed")
     _finish(tracer, "kanban.complete", attrs, "completed", "hermes.kanban.summary", summary)
 
 
@@ -346,5 +443,99 @@ def on_kanban_task_blocked(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "blocked")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "blocked")
     _finish(tracer, "kanban.block", attrs, "blocked", "hermes.kanban.reason", reason)
+
+
+# --- board health (#397) -----------------------------------------------------
+
+# The DispatchResult fields a pass reports, as metric kinds. A field is an int,
+# a list (its length is the count) or a flag; task ids, assignees and
+# workspace paths inside the lists are never exported, only how many.
+_DISPATCH_KINDS = (
+    "spawned",
+    "reclaimed",
+    "promoted",
+    "reconciled_orphans",
+    "reaped_terminal_workers",
+    "crashed",
+    "stale",
+    "timed_out",
+    "auto_blocked",
+    "rate_limited",
+    "auto_assigned_default",
+    "respawn_guarded",
+    "skipped_per_profile_capped",
+    "skipped_unassigned",
+    "skipped_nonspawnable",
+    "skipped_locked",
+    "memory_pressure",
+)
+
+
+def _dispatch_count(value: Any) -> int:
+    if isinstance(value, bool):
+        return 1 if value else 0
+    if isinstance(value, int):
+        return max(0, value)
+    if isinstance(value, (list, tuple, set)):
+        return len(value)
+    return 1 if value else 0  # memory_pressure: a reason string when set
+
+
+@_fail_open
+def on_kanban_dispatch_tick(
+    board: Any = None,
+    profile_name: Any = None,
+    dry_run: Any = False,
+    outcome: Any = None,
+    result: Any = None,
+    **kwargs: Any,
+):
+    """One dispatcher pass, after the dispatch lock is released: counts only.
+
+    No span: an idle board ticks every minute, and what a busy pass did is
+    already the run's ``kanban.claim`` / ``spawn`` / ``worker_exit`` spans.
+    """
+    debug_log(f"on_kanban_dispatch_tick fired: board={board} outcome={outcome}")
+    tracer = get_tracer()
+    if not tracer.is_enabled or dry_run:
+        return
+    label = truncate_string(str(board), _ID_MAX) if board else "default"
+    tracer.record_metric(
+        "kanban_dispatch_count",
+        1,
+        {
+            "outcome": truncate_string(str(outcome), _SHORT_MAX) if outcome else "unknown",
+            "board": label,
+        },
+    )
+    if result is None:
+        return
+    for kind in _DISPATCH_KINDS:
+        n = _dispatch_count(getattr(result, kind, None))
+        if n:
+            tracer.record_metric("kanban_dispatch_result", n, {"kind": kind, "board": label})
+
+
+@_fail_open
+def on_kanban_task_updated(
+    task_id: Any = None,
+    board: Any = None,
+    changed_fields: Any = None,
+    **kwargs: Any,
+):
+    """A task row was edited outside claim / complete / block: one point per
+    changed field name. Hermes passes names only, never values."""
+    debug_log(f"on_kanban_task_updated fired: task={task_id} fields={changed_fields}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+    label = truncate_string(str(board), _ID_MAX) if board else "default"
+    for name in changed_fields or ():
+        if name:
+            tracer.record_metric(
+                "kanban_task_updated",
+                1,
+                {"field": truncate_string(str(name), _SHORT_MAX), "board": label},
+            )

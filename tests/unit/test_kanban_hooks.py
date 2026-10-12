@@ -14,7 +14,7 @@ from hermes_otel.hooks import (
     on_kanban_worker_spawned,
     on_kanban_worker_stale_claim,
 )
-from hermes_otel.hooks.kanban import _identity
+from hermes_otel.hooks.kanban import kanban_identity
 
 ALL = (
     on_kanban_task_claimed,
@@ -24,22 +24,6 @@ ALL = (
     on_kanban_worker_exited,
     on_kanban_worker_stale_claim,
 )
-
-
-@pytest.fixture()
-def mock_tracer():
-    from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.session_state import SessionState
-
-    tracer = MagicMock()
-    tracer.is_enabled = True
-    tracer.spans = MagicMock()
-    tracer.spans.single_active_session = lambda: None
-    tracer.spans.get_current_parent = lambda sid=None: None
-    tracer.sessions = SessionState()
-    tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
-        yield tracer
 
 
 class TestObserverContract:
@@ -84,15 +68,15 @@ class TestObserverContract:
 
 class TestIdentity:
     def test_clips_and_stringifies(self):
-        attrs = _identity("t" * 500, "board", None, 7, "claimed")
+        attrs = kanban_identity("t" * 500, "board", None, 7, "claimed")
         assert len(attrs["hermes.kanban.task_id"]) <= 203
         assert attrs["hermes.kanban.run_id"] == "7"
         assert "hermes.kanban.assignee" not in attrs
         assert attrs["hermes.kanban.event"] == "claimed"
 
     def test_zero_run_id_is_kept_and_blank_dropped(self):
-        assert _identity("t", None, None, 0, "x")["hermes.kanban.run_id"] == "0"
-        assert "hermes.kanban.run_id" not in _identity("t", None, None, "", "x")
+        assert kanban_identity("t", None, None, 0, "x")["hermes.kanban.run_id"] == "0"
+        assert "hermes.kanban.run_id" not in kanban_identity("t", None, None, "", "x")
 
 
 class TestWorkerSideParenting:

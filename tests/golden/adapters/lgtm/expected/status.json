@@ -1,0 +1,27 @@
+{
+ "calls": [],
+ "result": {
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": true,
+  "loki_url": "http://localhost:3100",
+  "metrics": true,
+  "name": "lgtm",
+  "prometheus_url": "http://localhost:9090",
+  "query_lang_label": "TraceQL",
+  "query_url": "http://localhost:3200",
+  "raw_placeholder": "{ .llm.provider = \"openai\" }",
+  "type": "lgtm"
+ }
+}

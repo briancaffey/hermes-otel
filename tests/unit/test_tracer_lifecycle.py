@@ -15,6 +15,7 @@ import time
 import pytest
 
 from hermes_otel import hooks
+from hermes_otel.hooks.attributes import correlation_attributes
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.session_state import SessionState
 from hermes_otel.span_tracker import SpanTracker
@@ -116,7 +117,7 @@ class TestShutdownAndReinit:
 class TestPerSessionLeak:
     def test_correlation_helper_is_read_only(self, inmemory_otel_setup):
         _, plugin = inmemory_otel_setup
-        attrs = hooks._correlation_attributes(plugin, "ghost", {})
+        attrs = correlation_attributes(plugin, "ghost", {})
         assert attrs == {}  # no host id, no invented one (#154)
         assert not plugin.sessions.has("ghost")
 

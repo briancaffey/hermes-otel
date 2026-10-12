@@ -34,7 +34,7 @@
 #   region: us-east-1
 #   team: platform
 
-# global_tags is an alias for resource_attributes retained for back-compat.
+# global_tags is a deprecated alias: merged into resource_attributes at load, with a warning.
 # global_tags:
 #   team: platform
 
@@ -267,6 +267,11 @@
 # so long-abandoned sessions don't stay open forever in the backend UI.
 # root_span_ttl_ms: 600000   # 10 minutes
 
+# Delegation-span TTL. A `subagent.*` span stays open across the parent's turns
+# (Hermes runs delegations in the background); if its subagent_stop never
+# arrives, it is closed after this with `hermes.subagent.swept=true`.
+# subagent_span_ttl_ms: 86400000   # 24 hours
+
 # Metrics export interval (how often the PeriodicExportingMetricReader flushes).
 # flush_interval_ms: 60000
 
@@ -298,75 +303,65 @@
 # own BatchSpanProcessor (independent worker thread + queue), so a slow or
 # unreachable collector never blocks the agent or starves the others.
 #
-# Supported `type` values:
-#   phoenix      — Arize Phoenix (local or cloud). Traces only (405 on /v1/metrics).
-#   langfuse     — Langfuse. Traces only (no OTLP metrics support upstream).
-#   signoz       — SigNoz (self-hosted or cloud). Traces + metrics + logs.
-#   jaeger       — Jaeger. Traces only.
-#   zipkin       — Zipkin through the zipkin-otel image (stock Zipkin has no
-#                  OTLP endpoint). Traces only; endpoint is the :9411 origin.
-#   greptime     — GreptimeDB (standalone or cluster). Traces + metrics + logs
-#                  under /v1/otlp; the plugin sends the trace pipeline header
-#                  on traces only. Optional `db`, `user` + `password`.
-#   clickstack   — ClickStack / HyperDX (ClickHouse's OSS stack). Traces +
-#                  metrics + logs on the standard paths; needs the team's
-#                  ingestion `api_key` (bare authorization header).
-#   victoria     — VictoriaTraces + VictoriaMetrics + VictoriaLogs: `endpoint`,
-#                  `metrics_endpoint`, `logs_endpoint` name the three stores; a
-#                  signal whose store is not named is off.
-#   aspire       — .NET Aspire Dashboard (standalone). Traces + metrics + logs
-#                  on the standard paths; optional `api_key` → x-otlp-api-key.
-#   gigapipe     — Gigapipe (formerly qryn): OTLP in and the Tempo, Prometheus
-#                  and Loki APIs out of one port. Traces + metrics + logs.
-#   agenta       — Agenta (self-hosted or Agenta Cloud). Traces only. Needs a
-#                  project `api_key` / `api_key_env` (Authorization: ApiKey);
-#                  `endpoint` for self-host, cloud (`region`) is the default.
-#   tempo        — Standalone Grafana Tempo. Traces only. Use `lgtm` for
-#                  the full LGTM stack (Tempo + Loki + Mimir + collector).
-#   otlp         — Any other OTLP/HTTP collector. Traces + metrics + logs.
-#   lgtm         — Grafana LGTM (Tempo + Loki + Mimir + collector, one image).
-#                  Behaves like `otlp` — all three signals — but a dedicated
-#                  type makes intent clear and sets display name to "LGTM".
-#   uptrace      — Uptrace (OSS, ClickHouse + Postgres). Traces + metrics + logs.
-#                  Needs a per-project `dsn:` which the plugin sends as the
-#                  `uptrace-dsn` request header.
-#   openobserve  — OpenObserve (OSS, single container). Traces + metrics + logs.
-#                  Uses HTTP Basic auth — set `user:` + `password:` (or the
-#                  `*_env` variants) and the plugin builds the header for you.
-#   parseable    — Parseable agent observability. Traces + metrics + logs.
-#                  Uses an API key and routes each signal to its own dataset.
-#   honeycomb    — Honeycomb (SaaS). Traces + metrics + logs. Set `api_key`
-#                  (or `api_key_env`) and `region:` (us|eu); the plugin fills in
-#                  the endpoint and `x-honeycomb-team` header. See HONEYCOMB.md.
-#   elastic      — Elastic (Elastic Cloud mOTLP or self-hosted EDOT Collector).
-#                  Traces + metrics + logs. Set `endpoint` (required); `api_key`
-#                  (or `api_key_env`) is sent as `Authorization: ApiKey <key>`
-#                  and omitted when unset (local collector). Delta metrics
-#                  temporality by default (ES has no cumulative histograms).
-#   openlit      — OpenLIT (self-hosted, OTel-native LLM observability).
-#                  Traces + metrics + logs. Set `endpoint` (required, the
-#                  OTLP/HTTP base or the UI origin); optional `api_key` /
-#                  `api_key_env` sent as `Authorization: Bearer <key>`.
-#   mlflow       — MLflow tracking server (3.6+, self-hosted). Traces only. Set
-#                  `endpoint` (required) and `experiment_id` (default "0");
-#                  the plugin sends the mandatory x-mlflow-experiment-id header.
-#   opik         — Comet Opik (self-hosted or Comet cloud). Traces only. Set
-#                  `endpoint` for self-host (cloud is the default host); cloud
-#                  needs `api_key_env` + `workspace`; `project` picks the project.
-#   laminar      — Laminar (self-hosted app-server or Laminar cloud). Traces +
-#                  logs; metrics off (accepted and dropped upstream). Needs a
-#                  project `api_key` / `api_key_env` (Bearer); `endpoint` for
-#                  self-host, cloud is the default host.
-#   langwatch    — LangWatch (self-hosted or cloud). Traces + metrics + logs under
-#                  /api/otel. Needs a project `api_key` / `api_key_env` (Bearer);
-#                  `endpoint` for self-host, cloud is the default host.
-#   latitude     — Latitude (self-hosted ingest or Latitude cloud). Traces only.
-#                  Needs `api_key` / `api_key_env` (Bearer) and `project` (the slug
-#                  for X-Latitude-Project); `endpoint` for self-host.
-#   weave        — W&B Weave (SaaS / Dedicated Cloud / Self-Managed). Traces
-#                  only by default. Set `api_key_env`, `entity`, and `project`;
-#                  the plugin fills in the endpoint, `wandb-api-key` header, and
-#                  `wandb.entity` / `wandb.project` resource attributes.
+# [//]: # (generated:backend-types:start)
+
+# Supported `type` values (generated from hermes_otel/backend_specs.py):
+#   phoenix      Phoenix — traces; env-var mode: OTEL_PHOENIX_ENDPOINT
+#                docs: website/docs/backends/phoenix.md
+#   langfuse     Langfuse — traces; env-var mode needs OTEL_LANGFUSE_PUBLIC_API_KEY or OTEL_LANGFUSE_SECRET_API_KEY
+#                docs: website/docs/backends/langfuse.md
+#   signoz       SigNoz — traces + metrics + logs; env-var mode: OTEL_SIGNOZ_ENDPOINT
+#                docs: website/docs/backends/signoz.md
+#   jaeger       Jaeger — traces; env-var mode: OTEL_JAEGER_ENDPOINT
+#                docs: website/docs/backends/jaeger.md
+#   zipkin       Zipkin — traces; env-var mode: OTEL_ZIPKIN_ENDPOINT
+#                docs: website/docs/backends/zipkin.md
+#   greptime     GreptimeDB — traces + metrics + logs; env-var mode: OTEL_GREPTIME_ENDPOINT
+#                docs: website/docs/backends/greptime.md
+#   clickstack   ClickStack — traces + metrics + logs; alias `hyperdx`; env-var mode needs OTEL_CLICKSTACK_ENDPOINT
+#                docs: website/docs/backends/clickstack.md
+#   victoria     Victoria — traces + metrics + logs; alias `victoriatraces`; env-var mode: OTEL_VICTORIA_ENDPOINT
+#                docs: website/docs/backends/victoria.md
+#   aspire       Aspire Dashboard — traces + metrics + logs; env-var mode: OTEL_ASPIRE_ENDPOINT
+#                docs: website/docs/backends/aspire.md
+#   gigapipe     Gigapipe — traces + metrics + logs; alias `qryn`; env-var mode: OTEL_GIGAPIPE_ENDPOINT
+#                docs: website/docs/backends/gigapipe.md
+#   agenta       Agenta — traces; env-var mode needs OTEL_AGENTA_API_KEY or OTEL_AGENTA_ENDPOINT
+#                docs: website/docs/backends/agenta.md
+#   tempo        Tempo — traces; env-var mode: OTEL_TEMPO_ENDPOINT
+#                docs: website/docs/backends/tempo.md
+#   uptrace      Uptrace — traces + metrics + logs; env-var mode: OTEL_UPTRACE_ENDPOINT
+#                docs: website/docs/backends/uptrace.md
+#   openobserve  OpenObserve — traces + metrics + logs; alias `openobserver`; env-var mode: OTEL_OPENOBSERVE_ENDPOINT
+#                docs: website/docs/backends/openobserve.md
+#   parseable    Parseable — traces + metrics + logs; env-var mode: OTEL_PARSEABLE_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/parseable.md
+#   honeycomb    Honeycomb — traces + metrics + logs; env-var mode needs OTEL_HONEYCOMB_API_KEY or OTEL_HONEYCOMB_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/honeycomb.md
+#   elastic      Elastic — traces + metrics + logs; env-var mode needs OTEL_ELASTIC_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/elastic.md
+#   openlit      OpenLIT — traces + metrics + logs; env-var mode needs OTEL_OPENLIT_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/openlit.md
+#   mlflow       MLflow — traces; env-var mode needs OTEL_MLFLOW_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/mlflow.md
+#   opik         Comet Opik — traces; env-var mode needs OTEL_OPIK_API_KEY or OTEL_OPIK_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/opik.md
+#   laminar      Laminar — traces + logs; env-var mode needs OTEL_LAMINAR_API_KEY or OTEL_LAMINAR_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/laminar.md
+#   langwatch    LangWatch — traces + metrics + logs; env-var mode needs OTEL_LANGWATCH_API_KEY or OTEL_LANGWATCH_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/langwatch.md
+#   latitude     Latitude — traces; env-var mode needs OTEL_LATITUDE_API_KEY or OTEL_LATITUDE_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/latitude.md
+#   weave        W&B Weave — traces; env-var mode needs OTEL_WEAVE_API_KEY or OTEL_WEAVE_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/weave.md
+#   langsmith    LangSmith — traces; env-var mode needs OTEL_LANGSMITH_API_KEY or OTEL_LANGSMITH_ENDPOINT; export only (no dashboard adapter)
+#                docs: website/docs/backends/langsmith.md
+#   lgtm         LGTM — traces + metrics + logs; backends: entry only
+#                docs: website/docs/backends/lgtm.md
+#   otlp         OTLP — traces + metrics + logs; backends: entry only; export only (no dashboard adapter)
+#                docs: website/docs/backends/otlp.md
+
+# [//]: # (generated:backend-types:end)
 #
 # `traces: false`, `metrics: false`, or `logs: false` per entry opt a backend
 # out of that signal. This is useful when an entry is dashboard/query-only
@@ -384,13 +379,10 @@
 # Grafana for `lgtm`, Jaeger's :16686, SigNoz's :8080).
 #
 # When `backends:` is absent or empty, the plugin falls back to single-backend
-# env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
+# env-var detection (OTEL_LANGSMITH_API_KEY, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
 # OTEL_PARSEABLE_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT,
 # OTEL_PHOENIX_ENDPOINT — first match wins). Setting `backends:` takes full
 # control away from env detection.
-#
-# LangSmith remains env-var-only because it doesn't speak OTLP; setting
-# LANGSMITH_TRACING=true will short-circuit the `backends:` list entirely.
 #
 # Example: fan out to all five local collectors (assumes they're running via
 # docker-compose/all.sh). Uncomment to use.
@@ -671,12 +663,18 @@
 #     # base_url: https://acme.wandb.io       # plugin appends /traces/otel/v1/traces
 #     # endpoint: https://trace.wandb.ai/otel/v1/traces  # optional full override
 
-# ── LangSmith (env-var only, alternative to the above) ────────────────────────
+# ── LangSmith quickstart ──────────────────────────────────────────────────────
 #
-# LangSmith uses its own HTTP Run API, not OTLP. To enable, set:
-#   LANGSMITH_TRACING=true
-#   LANGSMITH_API_KEY=lsv2_...
-#   LANGSMITH_PROJECT=hermes-langsmith-otel               # optional
-#   LANGSMITH_ENDPOINT=https://api.smith.langchain.com    # optional override
-# No config.yaml entry is needed — env is enough, and it short-circuits the
-# `backends:` list above.
+# LangSmith (SaaS, OTLP/HTTP) — traces only. A regular entry since 1.26
+# (#415): it fans out with the rest. The plugin posts to the ingest at
+# api.smith.langchain.com/otel/v1/traces with x-api-key and, when a project
+# is set, the Langsmith-Project header. In env-var mode
+# OTEL_LANGSMITH_API_KEY selects it; LANGSMITH_API_KEY / LANGSMITH_PROJECT /
+# LANGSMITH_ENDPOINT are fallback values only. LANGSMITH_TRACING selects nothing.
+#
+# backends:
+#   - type: langsmith
+#     api_key_env: LANGSMITH_API_KEY          # or inline api_key: (discouraged)
+#     project: hermes-agent                   # optional: or project_env: LANGSMITH_PROJECT
+#     # region: eu                            # optional: the EU host
+#     # endpoint: https://api.smith.langchain.com   # optional: /otel/v1/traces is appended

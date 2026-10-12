@@ -3,7 +3,7 @@
 import logging
 
 from hermes_otel import plugin_config
-from hermes_otel.plugin_config import _coerce_backends, _coerce_from_yaml, expand_env_refs
+from hermes_otel.plugin_config import coerce_backends, coerce_from_yaml, expand_env_refs
 
 
 class TestExpandEnvRefs:
@@ -33,7 +33,7 @@ class TestBackendsInterpolation:
         monkeypatch.setenv("HONEYCOMB_API_KEY", "hc-123")
         monkeypatch.setenv("PHOENIX_API_KEY", "px-456")
         monkeypatch.setenv("COLLECTOR_HOST", "collector.internal")
-        otlp, phoenix = _coerce_backends(
+        otlp, phoenix = coerce_backends(
             [
                 {
                     "type": "otlp",
@@ -54,10 +54,10 @@ class TestBackendsInterpolation:
     def test_env_suffix_fields_are_names_not_values(self, monkeypatch):
         # ``api_key_env: MY_VAR`` names a variable; it is not itself interpolated.
         monkeypatch.setenv("MY_VAR", "secret")
-        (b,) = _coerce_backends([{"type": "phoenix", "endpoint": "e", "api_key_env": "MY_VAR"}])
+        (b,) = coerce_backends([{"type": "phoenix", "endpoint": "e", "api_key_env": "MY_VAR"}])
         assert b.api_key_env == "MY_VAR"
 
     def test_global_headers(self, monkeypatch):
         monkeypatch.setenv("SHARED_SECRET", "s3cr3t")
-        out = _coerce_from_yaml("headers", {"X-Company-Auth": "${SHARED_SECRET}"})
+        out = coerce_from_yaml("headers", {"X-Company-Auth": "${SHARED_SECRET}"})
         assert out == {"X-Company-Auth": "s3cr3t"}

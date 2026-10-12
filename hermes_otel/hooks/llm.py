@@ -10,23 +10,33 @@ from ..debug_utils import debug_log
 from ..helpers import (
     coerce_bool,
     http_status_class,
+    query_source_for,
     serialize_full,
     to_optional_int,
     truncate_string,
 )
 from ._common import (
-    _as_dict,
     _emit_event,
     _fail_open,
     _mark_truncated,
     _preview_for,
     _preview_marked,
+    as_dict,
     get_tracer,
 )
+from .api_call import (
+    HookPayload,
+    add_exception_event,
+    apply_usage,
+    ensure_span,
+    record_first_chunk,
+    record_operation_duration,
+    request_attributes,
+    response_attributes,
+    token_suffix,
+)
 from .attributes import (
-    _correlation_attributes,
     _gen_ai_attributes,
-    _gen_ai_request_param_attributes,
     _message_json,
     _metric_model_labels,
     _model_attributes,
@@ -34,21 +44,12 @@ from .attributes import (
     _response_model_attributes,
     _sender_attributes,
     _serialize_conversation_history,
-    _session_context_attributes,
     _session_identity_attributes,
     _turn_attributes,
+    correlation_attributes,
 )
 from .session import _start_session_span
-from .usage import (
-    _USAGE_FIELDS,
-    _estimate_cost,
-    _genai_metric_dims,
-    _normalize_usage,
-    _record_genai_token_usage,
-    _record_prompt_cache_metrics,
-    _record_usage_metrics,
-    _usage_attributes,
-)
+from .usage import _USAGE_FIELDS, genai_metric_dims
 
 
 def _llm_input_attributes(tracer, user_message: Any) -> Dict[str, Any]:
@@ -126,7 +127,7 @@ def on_pre_llm_call(
     attributes.update(_session_identity_attributes(session_id))
     attributes.update(_model_attributes(model, known.provider if known else None))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_turn_attributes(tracer, session_id))
 
     if tracer.config.capture_sender_id:
@@ -143,7 +144,7 @@ def on_pre_llm_call(
     # input.value. Falls back to just the latest user_message otherwise —
     # that's the historical default and what small backends handle best.
     full = None
-    if tracer.config.capture_conversation_history and tracer.config.capture_previews:
+    if tracer.config.capture_conversation_history and tracer.config.captures_content():
         full = _serialize_conversation_history(
             conversation_history, tracer.config.conversation_history_max_chars
         )
@@ -210,7 +211,7 @@ def on_post_llm_call(
     # Both conventions for the provider (llm.provider + the gen_ai pair).
     attributes.update(_model_attributes(None, provider))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:
         attributes["output.value"] = preview
         messages = _message_json("assistant", preview)
@@ -226,32 +227,10 @@ def on_post_llm_call(
     debug_log("  LLM span ended: status=ok")
 
 
-def _request_body(kwargs: Dict[str, Any]) -> Dict[str, Any]:
-    request = kwargs.get("request")
-    if isinstance(request, dict) and isinstance(request.get("body"), dict):
-        return request["body"]
-    return {}
-
-
-def _system_prompt(kwargs: Dict[str, Any], messages: Any, body: Dict[str, Any]) -> Optional[str]:
-    """The system prompt: an explicit kwarg, else the leading system message,
-    else the Responses API ``instructions`` field."""
-    explicit = kwargs.get("system_prompt")
-    if explicit:
-        return str(explicit)
-    if isinstance(messages, list):
-        for m in messages:
-            if isinstance(m, dict) and m.get("role") in ("system", "developer"):
-                content = m.get("content")
-                if isinstance(content, list):
-                    content = " ".join(
-                        str(part.get("text", "")) if isinstance(part, dict) else str(part)
-                        for part in content
-                    )
-                return str(content) if content else None
-            break
-    instructions = body.get("instructions") or body.get("system")
-    return str(instructions) if instructions else None
+def _query_source(tracer, session_id: Optional[str]) -> str:
+    """``main`` or ``subagent``: which loop this session's API calls belong to (#389)."""
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    return query_source_for(ps is not None and ps.is_subagent)
 
 
 @_fail_open
@@ -286,42 +265,18 @@ def on_pre_api_request(
     if session_id:
         tracer.sessions.get_or_create(session_id).turn_summary.api_call_count += 1
 
-    # OpenInference attributes — Phoenix Info panel
-    attributes: Dict[str, Any] = {
-        "llm.api_mode": api_mode,
-        "llm.request.message_count": message_count,
-        "llm.request.approx_input_tokens": approx_input_tokens,
-    }
-    attributes.update(_session_identity_attributes(session_id))
-    attributes.update(_model_attributes(model, provider))
-    attributes.update(_gen_ai_attributes(session_id, "chat"))
-    attributes.update(_gen_ai_request_param_attributes(kwargs))
-    attributes.update(_session_context_attributes(tracer, session_id, kwargs))
-    if max_tokens:
-        attributes["llm.request.max_tokens"] = max_tokens
-        attributes["gen_ai.request.max_tokens"] = max_tokens
-
-    if tracer.config.capture_previews and tracer.config.capture_full_prompts:
-        # Prefer the raw ``request_messages`` list: it is the exact list sent
-        # to the provider and Hermes does not sanitise it. ``request["body"]``
-        # is the sanitised view, where every string is capped at 8,000 chars
-        # (1,000 once the payload exceeds HERMES_PLUGIN_PAYLOAD_MAX_CHARS) and
-        # ends in ``...[truncated N chars]`` — the opposite of full capture.
-        messages = kwargs.get("request_messages") or kwargs.get("messages")
-        body = _request_body(kwargs)
-        if not messages:
-            messages = body.get("messages")
-        serialized = serialize_full(messages)
-        if serialized is not None:
-            # One copy per convention (#74): gen_ai.input.messages for the
-            # OTel GenAI readers, input.value for OpenInference (Phoenix).
-            attributes["gen_ai.input.messages"] = serialized
-            attributes["input.value"] = serialized
-            attributes["input.mime_type"] = "application/json"
-            attributes["hermes.content.input_chars"] = len(serialized)
-        system_prompt = _system_prompt(kwargs, messages, body)
-        if system_prompt:
-            attributes["gen_ai.system_instructions"] = system_prompt
+    attributes = request_attributes(
+        tracer,
+        HookPayload(kwargs),
+        session_id=session_id,
+        model=model,
+        provider=provider,
+        message_count=message_count,
+        approx_input_tokens=approx_input_tokens,
+        max_tokens=max_tokens,
+    )
+    attributes["llm.api_mode"] = api_mode
+    attributes["hermes.query_source"] = _query_source(tracer, session_id)
 
     span = tracer.start_span(
         name=f"api.{model}",
@@ -334,6 +289,39 @@ def on_pre_api_request(
     # Push as parent — tool spans during this API call will nest under it
     tracer.spans.push_parent(span, session_id=session_id)
     debug_log(f"  API span started: key={key}")
+
+
+def _full_response_attributes(payload: HookPayload) -> Dict[str, Any]:
+    """The complete response in both conventions, once each (#74): one
+    assistant message carrying the text and the tool calls it made."""
+    response_content = payload.get("response_content")
+    response_tool_calls = payload.get("response_tool_calls")
+    assistant_message = payload.get("assistant_message")
+    if assistant_message is not None:
+        if not response_content:
+            response_content = getattr(assistant_message, "content", None)
+        if not response_tool_calls:
+            response_tool_calls = getattr(assistant_message, "tool_calls", None)
+    message: Dict[str, Any] = {"role": "assistant"}
+    if response_content:
+        message["content"] = str(response_content)
+    tool_calls_serialized = serialize_full(response_tool_calls)
+    if tool_calls_serialized is not None:
+        try:
+            message["tool_calls"] = json.loads(tool_calls_serialized)
+        except Exception:
+            message["tool_calls"] = tool_calls_serialized
+    attributes: Dict[str, Any] = {}
+    if len(message) > 1:
+        attributes["gen_ai.output.messages"] = json.dumps([message], ensure_ascii=False)
+        if response_content:
+            attributes["output.value"] = str(response_content)
+            attributes["output.mime_type"] = "text/plain"
+        else:
+            attributes["output.value"] = tool_calls_serialized
+            attributes["output.mime_type"] = "application/json"
+        attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
+    return attributes
 
 
 @_fail_open
@@ -364,122 +352,63 @@ def on_post_api_request(
 
     key = f"api:{task_id}"
     debug_log(f"  ending span: key={key}, usage={usage}")
+    payload = HookPayload(kwargs)
 
-    # Build final attributes
     attributes: Dict[str, Any] = {}
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_provider_attributes(provider))
     # Only a reported response model; the request model is not a response (#155).
     attributes.update(_response_model_attributes(response_model))
-    response_id = kwargs.get("response_id") or kwargs.get("id")
-    if response_id:
-        attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    if payload.response_id:
+        attributes["gen_ai.response.id"] = truncate_string(payload.response_id, 200)
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     model_labels = _metric_model_labels(model, provider)
+    model_labels["query_source"] = _query_source(tracer, session_id)
 
-    # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
-    # See _usage_attributes for the full attribute list.
-    usage = _as_dict(usage)
-    if usage:
-        totals = _normalize_usage(usage)
-        attributes.update(_usage_attributes(totals))
-
-        # Roll up usage to the top-level session/cron span.
-        if session_id:
-            ps = tracer.sessions.get_or_create(session_id)
-            for field in _USAGE_FIELDS:
-                ps.usage[field] += totals[field]
-            ps.usage_updated = True
-            # Remember the real LLM provider and the reported response model —
-            # on_session_end only sees the platform and the request model.
-            if provider:
-                ps.provider = provider
-            if response_model:
-                ps.response_model = truncate_string(response_model, 200)
-
-        # Record metrics
-        _record_usage_metrics(tracer, totals, model_labels)
-        _record_prompt_cache_metrics(
-            tracer,
-            totals,
-            usage.get("available_fields"),
-            {**model_labels, "api_mode": api_mode},
-        )
-
-        # OTel GenAI spec token-usage histogram (dual-write; low cardinality).
-        _record_genai_token_usage(
-            tracer,
-            "gen_ai.client.token.usage",
-            totals,
-            _genai_metric_dims(model, provider, response_model),
-        )
-
-        # Cost: Hermes's own estimate for this call (#252). An unknown price
-        # or a subscription-included route carries a status but no amount, so
-        # a missing price never reads as $0.
-        cost = _estimate_cost(model, provider, base_url, usage)
+    # Token usage (dual convention), the usage/cache/GenAI metrics and the
+    # cost estimate; then the turn's roll-up on the session.
+    usage = as_dict(usage)
+    totals, cost = apply_usage(
+        tracer,
+        usage,
+        attributes,
+        model=model,
+        provider=provider,
+        base_url=base_url,
+        response_model=response_model,
+        model_labels=model_labels,
+        cache_labels={**model_labels, "api_mode": api_mode},
+    )
+    if totals is not None and session_id:
+        ps = tracer.sessions.get_or_create(session_id)
+        for field in _USAGE_FIELDS:
+            ps.usage[field] += totals[field]
+        ps.usage_updated = True
+        # Remember the real LLM provider and the reported response model —
+        # on_session_end only sees the platform and the request model.
+        if provider:
+            ps.provider = provider
+        if response_model:
+            ps.response_model = truncate_string(response_model, 200)
         if cost is not None:
-            attributes["hermes.cost.status"] = cost["status"]
-            if cost["source"]:
-                attributes["hermes.cost.source"] = cost["source"]
-            if cost["usd"] is not None:
-                attributes["hermes.cost.usage"] = cost["usd"]
-                tracer.record_metric(
-                    "cost_usage", cost["usd"], {**model_labels, "cost_status": cost["status"]}
-                )
-            if session_id:
-                tracer.sessions.get_or_create(session_id).add_cost(cost["status"], cost["usd"])
+            ps.add_cost(cost["status"], cost["usd"])
 
-        tracer.record_metric("model_usage", 1, model_labels)
-
-    # Performance metrics
-    if api_duration:
-        attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
-        # OTel GenAI spec operation-duration histogram — in SECONDS (the spec
-        # unit), unlike the ms hermes.* histograms.
-        tracer.record_metric(
-            "gen_ai.client.operation.duration",
-            api_duration,
-            _genai_metric_dims(model, provider, response_model),
+    attributes.update(
+        response_attributes(
+            api_duration=api_duration,
+            finish_reason=finish_reason,
+            assistant_content_chars=assistant_content_chars,
+            assistant_tool_call_count=assistant_tool_call_count,
         )
-    if finish_reason:
-        attributes["llm.response.finish_reason"] = finish_reason
-        attributes["gen_ai.response.finish_reasons"] = [finish_reason]
-    if assistant_content_chars:
-        attributes["llm.response.output_chars"] = assistant_content_chars
-    if assistant_tool_call_count:
-        attributes["llm.response.tool_calls"] = assistant_tool_call_count
+    )
+    record_operation_duration(
+        tracer, api_duration, genai_metric_dims(model, provider, response_model)
+    )
+    record_first_chunk(tracer, attributes, payload, _metric_model_labels(model, provider))
 
-    if tracer.config.capture_previews and tracer.config.capture_full_responses:
-        response_content = kwargs.get("response_content")
-        response_tool_calls = kwargs.get("response_tool_calls")
-        assistant_message = kwargs.get("assistant_message")
-        if assistant_message is not None:
-            if not response_content:
-                response_content = getattr(assistant_message, "content", None)
-            if not response_tool_calls:
-                response_tool_calls = getattr(assistant_message, "tool_calls", None)
-        # One assistant message carrying the text and the tool calls it made,
-        # in both conventions, once each (#74).
-        message: Dict[str, Any] = {"role": "assistant"}
-        if response_content:
-            message["content"] = str(response_content)
-        tool_calls_serialized = serialize_full(response_tool_calls)
-        if tool_calls_serialized is not None:
-            try:
-                message["tool_calls"] = json.loads(tool_calls_serialized)
-            except Exception:
-                message["tool_calls"] = tool_calls_serialized
-        if len(message) > 1:
-            attributes["gen_ai.output.messages"] = json.dumps([message], ensure_ascii=False)
-            if response_content:
-                attributes["output.value"] = str(response_content)
-                attributes["output.mime_type"] = "text/plain"
-            else:
-                attributes["output.value"] = tool_calls_serialized
-                attributes["output.mime_type"] = "application/json"
-            attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
+    if tracer.config.captures_full_responses():
+        attributes.update(_full_response_attributes(payload))
 
     # The GenAI semconv inference event (#267): request attributes from the api
     # span's start, response attributes from this hook, content gated by
@@ -492,15 +421,11 @@ def on_post_api_request(
             for k, v in {**start_attrs, **attributes}.items()
             if k.startswith(EV.INFERENCE_PREFIXES) or k in EV.INFERENCE_KEYS
         }
-        in_tok = event_attrs.get("gen_ai.usage.input_tokens")
-        out_tok = event_attrs.get("gen_ai.usage.output_tokens")
-        tokens = (
-            f" ({in_tok}/{out_tok} tokens)" if in_tok is not None or out_tok is not None else ""
-        )
         _emit_event(
             tracer,
             EV.INFERENCE_DETAILS,
-            f"{event_attrs.get('gen_ai.operation.name') or 'chat'} {model}{tokens}",
+            f"{event_attrs.get('gen_ai.operation.name') or 'chat'} {model}"
+            + token_suffix(event_attrs),
             event_attrs,
             session_id=session_id,
             span=api_span,
@@ -549,7 +474,7 @@ def on_api_request_error(
 
     if isinstance(error, BaseException):
         error = {"type": type(error).__name__, "message": str(error)}
-    error = _as_dict(error)
+    error = as_dict(error)
     error_type = truncate_string(error.get("type"), 200) if error.get("type") else ""
     error_message = truncate_string(error.get("message") or reason, 500)
     status_class = http_status_class(status_code)
@@ -575,7 +500,7 @@ def on_api_request_error(
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_provider_attributes(provider or platform))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     # Remember why this turn failed so on_session_end can surface it on the root.
     if session_id and error_type:
@@ -599,39 +524,22 @@ def on_api_request_error(
         content=False,
     )
 
+    # The in-flight api span, or a short-lived one when the error came before
+    # pre_api_request (or the span was already swept) so the failure stays visible.
     key = f"api:{task_id}" if task_id else None
-    span = tracer.spans.get_span(key) if key else None
-    created_fallback = False
-
-    if span is None:
-        # No in-flight api span (error before pre_api_request, or already swept).
-        # Create a short-lived span so the failure is still visible. Fail-open.
-        fallback_key = key or f"api.error:{kwargs.get('api_request_id') or session_id or 'unknown'}"
-        identity: Dict[str, Any] = {}
-        identity.update(_session_identity_attributes(session_id))
-        identity.update(_model_attributes(model, provider))
-        span = tracer.start_span(
-            name=f"api.{model}" if model else "api.error",
-            key=fallback_key,
-            kind="llm",
-            attributes=identity,
-            session_id=session_id,
-        )
-        key = fallback_key
-        created_fallback = True
+    fallback_key = key or f"api.error:{kwargs.get('api_request_id') or session_id or 'unknown'}"
+    span, created_fallback = ensure_span(
+        tracer,
+        fallback_key,
+        name=f"api.{model}" if model else "api.error",
+        session_id=session_id,
+        model=model,
+        provider=provider,
+    )
+    key = fallback_key
 
     # Record an OTel exception event (semconv: an event named "exception").
-    if span is not None and hasattr(span, "add_event"):
-        event_attrs: Dict[str, Any] = {
-            "exception.type": error_type or "error",
-            "exception.escaped": True,
-        }
-        if error_message:
-            event_attrs["exception.message"] = error_message
-        try:
-            span.add_event("exception", event_attrs)
-        except Exception:  # pragma: no cover — never let telemetry raise
-            pass
+    add_exception_event(span, error_type or "error", error_message)
 
     # The in-flight api span was pushed as the parent in on_pre_api_request;
     # balance the stack (the fallback span was never pushed).
@@ -659,11 +567,9 @@ def on_api_request_error(
     if is_retryable:
         tracer.record_metric("retry_count", 1, dict(model_labels))
 
-    # OTel GenAI spec operation-duration on the failure path, tagged with
-    # error.type so success/error durations are queryable from one histogram.
-    if api_duration:
-        duration_dims = _genai_metric_dims(model, provider)
-        duration_dims["error.type"] = error_type or "unknown"
-        tracer.record_metric("gen_ai.client.operation.duration", api_duration, duration_dims)
+    # The GenAI operation-duration histogram on the failure path.
+    record_operation_duration(
+        tracer, api_duration, genai_metric_dims(model, provider), error_type=error_type or "unknown"
+    )
 
     debug_log(f"  API error span ended: key={key}, error.type={error_type}, class={status_class}")

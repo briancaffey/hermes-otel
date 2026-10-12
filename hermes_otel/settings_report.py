@@ -24,6 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
 from . import plugin_config as pc
+from .backend_specs import SPECS, spec_for
 from .plugin_config import (
     FIELD_DOCS,
     FIELD_GROUPS,
@@ -33,8 +34,13 @@ from .plugin_config import (
     field_kinds,
     hermes_home,
 )
-
-MASK = "••••••"
+from .redaction import REPORT_MASK as MASK
+from .redaction import (
+    is_header_secret_name,
+    is_secret_name,
+    is_secret_value,
+    mask_env_value,
+)
 
 # Config keys that are not HermesOtelConfig fields but are read by another
 # part of the plugin from the same file; listed so they are explained rather
@@ -43,67 +49,11 @@ KNOWN_EXTRA_KEYS: Dict[str, str] = {
     "query_backend": "Dashboard: the backend (by `name` or `type`) the tab queries by default",
 }
 
-_SECRET_NAME = re.compile(
-    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie)", re.I
-)
-# HTTP header names that carry a credential: the generic words above plus the
-# vendor spellings (``x-honeycomb-team``, ``x-api-key``, ``api-key``) and any
-# ``x-…-auth``; a header is almost always an auth header in this file.
-_HEADER_SECRET_NAME = re.compile(
-    r"(key|secret|token|password|passwd|dsn|authorization|credential|cookie|auth|signature"
-    r"|^x-[a-z0-9]+-team$)",
-    re.I,
-)
-# Env vars whose value is a ``k=v,k2=v2`` header list (OTel SDK spelling).
-_HEADER_LIST_NAME = re.compile(r"_HEADERS$", re.I)
-
-
-def is_secret_name(name: str) -> bool:
-    """Whether a key, field or env var name looks like it holds a credential."""
-    return bool(_SECRET_NAME.search(name or ""))
-
-
-def is_header_secret_name(name: str) -> bool:
-    """Whether an HTTP *header* name carries a credential (wider than :func:`is_secret_name`)."""
-    return bool(_HEADER_SECRET_NAME.search(name or ""))
-
-
-def is_secret_value(value: Any) -> bool:
-    """Bearer/Basic auth strings are secrets whatever their key is called."""
-    return isinstance(value, str) and value.strip().lower().startswith(("bearer ", "basic "))
-
 
 def _mask(value: Any) -> Any:
     if value is None or value == "":
         return value
     return MASK
-
-
-def mask_header_pairs(raw: str) -> str:
-    """Mask the secret values of a ``k=v,k2=v2`` header list, pair by pair.
-
-    ``OTEL_EXPORTER_OTLP_HEADERS=Authorization=Bearer abc,x-team=blue`` →
-    ``Authorization=••••••,x-team=blue``. A pair whose header name is not an
-    auth name but whose value is a bearer/basic string is masked too; a pair
-    without ``=`` is left as written.
-    """
-    out = []
-    for pair in raw.split(","):
-        k, sep, v = pair.partition("=")
-        if sep and v.strip() and (is_header_secret_name(k.strip()) or is_secret_value(v)):
-            out.append(f"{k}={MASK}")
-        else:
-            out.append(pair)
-    return ",".join(out)
-
-
-def mask_env_value(name: str, raw: str) -> str:
-    """The value of one environment variable as the report may show it."""
-    if _HEADER_LIST_NAME.search(name or ""):
-        return mask_header_pairs(raw)
-    if is_secret_name(name) or is_secret_value(raw):
-        return MASK
-    return raw
 
 
 def _display_map(
@@ -128,58 +78,7 @@ def _display_map(
 # (backends.py). Types absent here (phoenix, jaeger, tempo, lgtm, otlp) take
 # credentials only through ``headers``.
 _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
-    "langfuse": {
-        "public_key": ("OTEL_LANGFUSE_PUBLIC_API_KEY", "LANGFUSE_PUBLIC_KEY"),
-        "secret_key": ("OTEL_LANGFUSE_SECRET_API_KEY", "LANGFUSE_SECRET_KEY"),
-    },
-    "signoz": {"ingestion_key": ("OTEL_SIGNOZ_INGESTION_KEY",)},
-    "uptrace": {"dsn": ("OTEL_UPTRACE_DSN", "UPTRACE_DSN")},
-    "openobserve": {
-        "user": ("OTEL_OPENOBSERVE_USER", "OPENOBSERVE_USER"),
-        "password": ("OTEL_OPENOBSERVE_PASSWORD", "OPENOBSERVE_PASSWORD"),
-    },
-    "parseable": {"api_key": ("OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY")},
-    "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
-    "elastic": {"api_key": ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")},
-    "openlit": {"api_key": ("OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY")},
-    "opik": {
-        "api_key": ("OTEL_OPIK_API_KEY", "OPIK_API_KEY"),
-        "workspace": ("OPIK_WORKSPACE",),
-        "project": ("OPIK_PROJECT_NAME",),
-    },
-    "laminar": {"api_key": ("OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY")},
-    "langwatch": {
-        "api_key": ("OTEL_LANGWATCH_API_KEY", "LANGWATCH_API_KEY"),
-        "project": ("LANGWATCH_PROJECT_ID",),
-    },
-    "latitude": {
-        "api_key": ("OTEL_LATITUDE_API_KEY", "LATITUDE_API_KEY"),
-        "project": ("LATITUDE_PROJECT",),
-    },
-    "greptime": {
-        "user": ("OTEL_GREPTIME_USER",),
-        "password": ("OTEL_GREPTIME_PASSWORD",),
-    },
-    "clickstack": {"api_key": ("OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY")},
-    "victoria": {
-        "user": ("OTEL_VICTORIA_USER",),
-        "password": ("OTEL_VICTORIA_PASSWORD",),
-    },
-    "aspire": {"api_key": ("OTEL_ASPIRE_API_KEY",)},
-    "gigapipe": {
-        "user": ("OTEL_GIGAPIPE_USER",),
-        "password": ("OTEL_GIGAPIPE_PASSWORD",),
-    },
-    "agenta": {"api_key": ("OTEL_AGENTA_API_KEY", "AGENTA_API_KEY")},
-    "mlflow": {
-        "api_key": ("OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"),
-        "experiment_id": ("OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"),
-    },
-    "weave": {
-        "api_key": ("OTEL_WEAVE_API_KEY", "WANDB_API_KEY"),
-        "entity": ("WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"),
-        "project": ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"),
-    },
+    s.type: {c.field: c.env for c in s.credentials} for s in SPECS if s.credentials
 }
 _ALL_CREDENTIAL_FIELDS = (
     "public_key",
@@ -208,40 +107,43 @@ _PLAIN_BACKEND_FIELDS = (
 def _credential_report(
     bc: BackendConfig, field: str, raw: Dict[str, Any], reveal: bool, fallbacks: Tuple[str, ...]
 ) -> Dict[str, Any]:
-    """How one credential field of a backend is supplied, without its value."""
-    inline = getattr(bc, field, None)
-    raw_inline = raw.get(field)
+    """How one credential field of a backend is supplied, without its value
+    (the resolvers' own precedence, ``backends.choose_secret``)."""
     env_name = getattr(bc, f"{field}_env", None)
-    out: Dict[str, Any] = {"field": field, "set": False, "source": None}
-    secret = is_secret_name(field)
-    if inline:
-        out["set"] = True
+    choice = _backends.choose_secret(getattr(bc, field, None), env_name, fallbacks)
+    out: Dict[str, Any] = {"field": field, "set": choice.origin is not None, "source": None}
+    if choice.origin == "inline":
+        raw_inline = raw.get(field)
         if isinstance(raw_inline, str) and "${" in raw_inline:
             out["source"] = f"file, expanded from {raw_inline.strip()}"
         else:
             out["source"] = "file (inline)"
-        out["value"] = inline if (reveal or not secret) else MASK
-        return out
-    if env_name:
-        present = bool(os.getenv(env_name, "").strip())
-        out["set"] = present
-        out["source"] = f"env {env_name}" + ("" if present else " (not set)")
-        if present:
-            out["value"] = os.getenv(env_name) if (reveal or not secret) else MASK
-        return out
-    for name in fallbacks:
-        if os.getenv(name, "").strip():
-            out["set"] = True
-            out["source"] = f"env {name}"
-            out["value"] = os.getenv(name) if (reveal or not secret) else MASK
-            return out
+    elif choice.origin is not None:
+        out["source"] = f"env {choice.env_name}"
+    elif env_name:
+        out["source"] = f"env {env_name} (not set)"
+    if choice.value is not None:
+        out["value"] = choice.value if (reveal or not is_secret_name(field)) else MASK
     return out
 
 
 # Keys the dashboard's query adapters read from a backend entry that are not
 # ``BackendConfig`` fields (the loader drops them; the adapters read the raw
 # yaml). Shown on the Settings card so a ``query_port`` is not invisible.
-_QUERY_FIELDS = ("query_port", "project_name", "service_name", "project_id", "org", "logs_stream")
+# The dashboard-only keys an entry may carry (what each adapter reads, from the
+# manifest), shown on the card so a query-side setting is never invisible.
+_QUERY_FIELDS: Tuple[str, ...] = tuple(
+    dict.fromkeys(
+        ("query_port", "project_name", "service_name", "project_id", "org", "logs_stream")
+        + tuple(
+            k
+            for s in SPECS
+            for k in s.query_keys
+            # a key that is also an exporter field (project, ui_url) is shown as such
+            if k not in {f.name for f in dataclasses.fields(BackendConfig)}
+        )
+    )
+)
 
 # Where each type's web UI lives relative to its OTLP endpoint, for the card's
 # link when the entry sets no ``ui_url``:
@@ -255,49 +157,10 @@ _QUERY_FIELDS = ("query_port", "project_name", "service_name", "project_id", "or
 #            types whose query API and UI share a port (Jaeger, SigNoz)
 #   fixed    a SaaS UI at a known address (Honeycomb, W&B Weave)
 #   None     nothing to derive (a generic OTLP collector has no UI)
-_UI_RULES: Dict[str, Optional[str]] = {
-    "phoenix": "origin",
-    "langfuse": "origin",
-    "openobserve": "origin",
-    "uptrace": "origin",
-    "parseable": "origin",
-    "jaeger": "proxied",
-    # UI at /zipkin on the OTLP port (the root redirects there).
-    "zipkin": "origin",
-    # Dashboard at /dashboard on the one HTTP port that also ingests OTLP.
-    "greptime": "origin",
-    # UI on :8080, OTLP on the Collector's :4318 — origin only for a proxied hostname.
-    "clickstack": "proxied",
-    # VictoriaTraces serves vmui on the port it ingests on (/select/vmui).
-    "victoria": "origin",
-    # UI on 18888, OTLP on 18890 — origin only for a proxied hostname.
-    "aspire": "proxied",
-    # The built-in qryn-view UI, the OTLP routes and the query APIs share one port.
-    "gigapipe": "origin",
-    # UI and /api (ingest included) behind one front door; cloud: the same origin.
-    "agenta": "origin",
-    "signoz": "proxied",
-    "tempo": "proxied",
-    "lgtm": "proxied",
-    "honeycomb": "fixed",
-    "weave": "fixed",
-    "otlp": None,
-    "elastic": None,
-    # UI on :3000, OTLP on :4318 — the origin only when a proxied hostname is used.
-    "openlit": "proxied",
-    # UI, REST API and OTLP ingest share one port.
-    "mlflow": "origin",
-    # Self-host: UI and API on one port; cloud: the comet.com origin.
-    "opik": "origin",
-    # UI on :5667, ingest on the app-server :8100/:8000 — origin only for a proxied host.
-    "laminar": "proxied",
-    # UI and OTLP on one port (5560 / app.langwatch.ai).
-    "langwatch": "origin",
-    # Ingest on :3002, UI on :3000 — origin only for a proxied hostname.
-    "latitude": "proxied",
-}
+_UI_RULES: Dict[str, Optional[str]] = {s.type: s.ui_rule for s in SPECS}
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
+_LANGSMITH_UI = {"us": "https://smith.langchain.com", "eu": "https://eu.smith.langchain.com"}
 _WEAVE_UI = "https://wandb.ai"
 _LANGFUSE_CLOUD = "https://cloud.langfuse.com"
 
@@ -362,6 +225,13 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
             "note": f"the {human} UI is on a different port than OTLP ingest; {hint}",
         }
     if rule == "fixed":
+        if t == "langsmith":
+            region = (bc.region or "us").strip().lower()
+            return {
+                "url": _LANGSMITH_UI.get(region, _LANGSMITH_UI["us"]),
+                "source": "derived",
+                "note": f"the LangSmith UI for region {region}",
+            }
         if t == "honeycomb":
             region = (bc.region or "us").strip().lower()
             url = _HONEYCOMB_UI.get(region, _HONEYCOMB_UI["us"])
@@ -388,40 +258,33 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _signal_report(bc: BackendConfig) -> Dict[str, Dict[str, Any]]:
-    """Per signal: whether the type accepts it, what the entry says, and the
-    resulting export state. Mirrors ``backends._traces_for`` and friends."""
+    """Per signal: whether the type accepts it, what the entry says, and what
+    the exporter does with it (``backends.signals_for``)."""
     support = _backends.signal_support(bc.type or "")
+    exported = _backends.signals_for(bc)
     out: Dict[str, Dict[str, Any]] = {}
     for signal, override in (("traces", bc.traces), ("metrics", bc.metrics), ("logs", bc.logs)):
-        supported = support[signal]
-        exported = supported if override is None else bool(override)
         out[signal] = {
-            "supported": supported,
+            "supported": support[signal],
             "configured": "auto" if override is None else ("on" if override else "off"),
-            "exported": exported,
+            "exported": exported[signal],
         }
     return out
 
 
 def _temporality_report(bc: BackendConfig, top_level: Optional[str]) -> Dict[str, Any]:
     """The temporality this backend's metric reader gets, and which rule set it."""
-    entry = (bc.metrics_temporality or "").strip().lower()
-    if entry:
-        return {"value": entry, "source": "entry"}
-    preset = _backends.preset_temporality(bc.type or "")
-    if preset:
-        return {"value": preset, "source": "type preset"}
-    if top_level:
-        return {"value": str(top_level).strip().lower(), "source": "top-level metrics_temporality"}
-    return {"value": "cumulative", "source": "SDK default"}
+    value, source = _backends.temporality_for(bc, top_level)
+    return {"value": value, "source": source}
 
 
 def _backend_summary(
     bc: BackendConfig, raw: Dict[str, Any], reveal: bool, top_temporality: Optional[str] = None
 ) -> Dict[str, Any]:
     t = (bc.type or "").strip().lower()
+    spec = spec_for(t)
     fields = {f: getattr(bc, f) for f in _PLAIN_BACKEND_FIELDS if getattr(bc, f) is not None}
-    type_fallbacks = _TYPE_CREDENTIALS.get(t, {})
+    type_fallbacks = _TYPE_CREDENTIALS.get(spec.type if spec is not None else t, {})
     credentials = []
     for f in _ALL_CREDENTIAL_FIELDS:
         fallbacks = type_fallbacks.get(f, ())
@@ -432,8 +295,8 @@ def _backend_summary(
         "type": bc.type,
         "name": bc.name or bc.type,
         "display_type": _backends.display_name(t),
-        "known_type": t in _backends.KNOWN_TYPES,
-        "docs_path": f"/backends/{t}" if t in _backends.KNOWN_TYPES else None,
+        "known_type": spec is not None,
+        "docs_path": spec.docs_path if spec is not None else None,
         "ui": _ui_link(bc, raw),
         "signals": _signal_report(bc),
         "metrics_temporality": _temporality_report(bc, top_temporality),
@@ -490,21 +353,20 @@ def _display_value(
     return value
 
 
-def _config_path_source(path: Optional[Path]) -> str:
-    """Which rule of :func:`resolve_config_path` picked ``path``.
+def config_path_source(path: Optional[Path]) -> str:
+    """Which rule of :func:`plugin_config.resolve_config_path_with_reason`
+    would have picked ``path`` (``explicit`` for any other path).
 
     Judged against the home in force for this report (a profile's own under
-    a multiplexed gateway or a ``?profile=`` dashboard request, #286), not
-    only the module constants, which are computed once from the process home.
+    a multiplexed gateway or a ``?profile=`` dashboard request, #286).
     """
     if path is None:
         return "none"
     if os.environ.get(pc.CONFIG_PATH_ENV, "").strip():
         return "env"
-    home = hermes_home()
-    if path in (pc.DURABLE_CONFIG_PATH, home / "hermes_otel.yaml"):
+    if path == pc.durable_config_path():
         return "durable"
-    if path in (pc.DEFAULT_CONFIG_PATH, home / "plugins" / "hermes_otel" / "config.yaml"):
+    if path == pc.legacy_config_path():
         return "legacy"
     return "explicit"
 
@@ -515,16 +377,7 @@ def _deprecated_keys(data: Any) -> List[Dict[str, Any]]:
     They keep working; the Settings tab marks them so a user can migrate."""
     if not isinstance(data, dict):
         return []
-    flat = set()
-
-    def walk(node: Any) -> None:
-        for v in node.values():
-            if isinstance(v, dict):
-                walk(v)
-            else:
-                flat.add(v)
-
-    walk(pc._LOGS_BLOCK)
+    flat = set(pc.LOG_FIELDS)
     return [
         {"key": k, "note": "flat spelling; the logs: block is the preferred form"}
         for k in data
@@ -546,100 +399,59 @@ def field_reports(
 ) -> Tuple[List[Dict[str, Any]], HermesOtelConfig]:
     """One entry per HermesOtelConfig field with value, default and source.
 
-    Mirrors ``load_config``: a file value that fails coercion is ignored (and
+    Formatting over :func:`plugin_config.resolve_fields`, the loader's own
+    precedence rules: a file value that fails coercion is ignored (and
     flagged), an env value that fails parsing is ignored (and flagged), and
     the env var wins over the file when both are valid.
     """
     kinds = field_kinds()
     defaults = HermesOtelConfig()
     group_of = {k: g for g, keys in FIELD_GROUPS for k in keys}
-    values: Dict[str, Any] = {}
-    reports: List[Dict[str, Any]] = []
     raw_backends = yaml_data.get("backends")
+    effective, sources = pc.resolve_fields(yaml_data, warn=False)
+    top_temporality = effective.metrics_temporality
 
+    reports: List[Dict[str, Any]] = []
     for f in dataclasses.fields(HermesOtelConfig):
         key, kind = f.name, kinds[f.name]
+        src = sources[key]
         default = getattr(defaults, key)
-        entry: Dict[str, Any] = {
-            "key": key,
-            "group": group_of.get(key, "Other"),
-            "kind": kind,
-            "description": FIELD_DOCS.get(key, ""),
-            "env_var": pc._ENV_PREFIX + key.upper() if kind in pc._SCALAR_KINDS else None,
-            "source": "default",
-            "default": _display_value(kind, key, default, reveal, None),
-            "file_value": None,
-            "file_invalid": False,
-            "env_raw": None,
-            "env_invalid": False,
-        }
-        value = default
-
-        if key in yaml_data and yaml_data[key] is not None:
-            coerced = pc._coerce_from_yaml(key, yaml_data[key])
-            if coerced is None:
-                entry["file_invalid"] = True
-                entry["file_value"] = str(yaml_data[key])
-            else:
-                value = coerced
-                entry["source"] = "file"
-                entry["file_value"] = _display_value(kind, key, coerced, reveal, raw_backends)
-
-        if entry["env_var"]:
-            raw_env = os.getenv(entry["env_var"], "").strip()
-            if raw_env:
-                parsed = pc._parse_scalar(kind, key, raw_env)
-                secret = is_secret_name(key)
-                entry["env_raw"] = raw_env if (reveal or not secret) else MASK
-                if parsed is None:
-                    entry["env_invalid"] = True
-                else:
-                    value = parsed
-                    entry["source"] = "env"
-
-        values[key] = value
-        entry["derived_from"] = None
-        reports.append(entry)
-
-    # content_capture and the legacy booleans are kept consistent by the
-    # loader; mirror that so the tab shows what the hooks apply, and say
-    # which key decided it.
-    explicit = {r["key"]: values[r["key"]] for r in reports if r["source"] != "default"}
-    reconciled = dict(explicit)
-    pc._reconcile_content_capture(reconciled)
-    by_key = {r["key"]: r for r in reports}
-    if "content_capture" in explicit:
-        # content_capture wins: every legacy flag is derived from it, even one
-        # that is also written in the file or the environment.
-        driver = ["content_capture"]
-        derived_keys = list(pc._LEGACY_CONTENT_KEYS)
-    else:
-        driver = [k for k in pc._LEGACY_CONTENT_KEYS if k in explicit]
-        derived_keys = [
-            k for k in ("content_capture",) + pc._LEGACY_CONTENT_KEYS if k not in explicit
-        ]
-    for key in ("content_capture",) + pc._LEGACY_CONTENT_KEYS:
-        if key in reconciled:
-            values[key] = reconciled[key]
-    if driver:
-        for key in derived_keys:
-            if key in reconciled:
-                by_key[key]["source"] = by_key[driver[0]]["source"]
-                by_key[key]["derived_from"] = driver
-
-    for entry in reports:
-        key, kind = entry["key"], entry["kind"]
-        entry["value"] = _display_value(
-            kind, key, values[key], reveal, raw_backends, values.get("metrics_temporality")
+        value = getattr(effective, key)
+        secret = is_secret_name(key)
+        if src.file_invalid:
+            file_value: Any = str(src.file_raw)
+        elif src.file_value is not None:
+            file_value = _display_value(kind, key, src.file_value, reveal, raw_backends)
+        else:
+            file_value = None
+        reports.append(
+            {
+                "key": key,
+                "group": group_of.get(key, "Other"),
+                "kind": kind,
+                "description": FIELD_DOCS.get(key, ""),
+                "env_var": src.env_var,
+                "source": src.source,
+                "default": _display_value(kind, key, default, reveal, None),
+                "file_value": file_value,
+                "file_invalid": src.file_invalid,
+                "env_raw": (
+                    None
+                    if src.env_raw is None
+                    else (src.env_raw if (reveal or not secret) else MASK)
+                ),
+                "env_invalid": src.env_invalid,
+                "derived_from": list(src.derived_from) if src.derived_from else None,
+                "value": _display_value(kind, key, value, reveal, raw_backends, top_temporality),
+                "changed": value != default,
+            }
         )
-        entry["changed"] = values[key] != getattr(defaults, key)
-
-    return reports, dataclasses.replace(defaults, **values)
+    return reports, effective
 
 
 # ── Environment inventory ─────────────────────────────────────────────────
 
-# (name, group, description). Groups: plugin, hermes, backend, langsmith, otel.
+# (name, group, description). Groups: plugin, hermes, backend, otel.
 KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     (
         "HERMES_HOME",
@@ -663,210 +475,16 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ),
     ("OTEL_PROJECT_NAME", "plugin", "Phoenix project name when `project_name` is not set"),
     (
+        "HERMES_OTEL_QUERY_HOST",
+        "plugin",
+        "Dashboard: host that replaces every adapter's query host (a Docker-side name, #413)",
+    ),
+    (
         "HERMES_PLUGIN_PAYLOAD_MAX_CHARS",
         "hermes",
         'Hermes-side cap on the sanitised hook payload (`request["body"]`), default 50000; the plugin reads the raw `request_messages` so full capture is unaffected',
     ),
-    ("OTEL_PHOENIX_ENDPOINT", "backend", "Single-backend mode: Phoenix OTLP traces URL"),
-    ("OTEL_LANGFUSE_ENDPOINT", "backend", "Single-backend mode: Langfuse OTLP traces URL"),
-    ("LANGFUSE_BASE_URL", "backend", "Langfuse base URL (alternative to the endpoint)"),
-    ("LANGFUSE_PUBLIC_KEY", "backend", "Langfuse public key fallback"),
-    ("LANGFUSE_SECRET_KEY", "backend", "Langfuse secret key fallback"),
-    ("OTEL_LANGFUSE_PUBLIC_API_KEY", "backend", "Langfuse public key (preferred name)"),
-    ("OTEL_LANGFUSE_SECRET_API_KEY", "backend", "Langfuse secret key (preferred name)"),
-    ("OTEL_SIGNOZ_ENDPOINT", "backend", "Single-backend mode: SigNoz OTLP URL"),
-    ("OTEL_SIGNOZ_INGESTION_KEY", "backend", "SigNoz Cloud ingestion key"),
-    ("OTEL_JAEGER_ENDPOINT", "backend", "Single-backend mode: Jaeger OTLP URL"),
-    ("OTEL_ZIPKIN_ENDPOINT", "backend", "Single-backend mode: Zipkin OTLP URL (zipkin-otel image)"),
-    (
-        "OTEL_GREPTIME_ENDPOINT",
-        "backend",
-        "Single-backend mode: GreptimeDB HTTP origin (OTLP under /v1/otlp)",
-    ),
-    (
-        "OTEL_GREPTIME_DB",
-        "backend",
-        "GreptimeDB database for all three signals (X-Greptime-DB-Name; default public)",
-    ),
-    ("OTEL_GREPTIME_USER", "backend", "GreptimeDB user for Basic auth (only with a user provider)"),
-    ("OTEL_GREPTIME_PASSWORD", "backend", "GreptimeDB password for Basic auth"),
-    (
-        "OTEL_CLICKSTACK_ENDPOINT",
-        "backend",
-        "Single-backend mode: ClickStack Collector OTLP/HTTP base",
-    ),
-    (
-        "OTEL_CLICKSTACK_API_KEY",
-        "backend",
-        "ClickStack ingestion API key (bare authorization header; preferred name)",
-    ),
-    (
-        "HYPERDX_API_KEY",
-        "backend",
-        "ClickStack / HyperDX ingestion API key fallback (the vendor SDK variable)",
-    ),
-    (
-        "OTEL_VICTORIA_ENDPOINT",
-        "backend",
-        "Single-backend mode: VictoriaTraces origin (OTLP at /insert/opentelemetry/v1/traces)",
-    ),
-    (
-        "OTEL_VICTORIA_METRICS_ENDPOINT",
-        "backend",
-        "VictoriaMetrics origin (OTLP at /opentelemetry/v1/metrics); metrics off without it",
-    ),
-    (
-        "OTEL_VICTORIA_LOGS_ENDPOINT",
-        "backend",
-        "VictoriaLogs origin (OTLP at /insert/opentelemetry/v1/logs); logs off without it",
-    ),
-    (
-        "OTEL_VICTORIA_USER",
-        "backend",
-        "Basic auth user for the Victoria stores (only with -httpAuth.*)",
-    ),
-    ("OTEL_VICTORIA_PASSWORD", "backend", "Basic auth password for the Victoria stores"),
-    ("OTEL_ASPIRE_ENDPOINT", "backend", "Single-backend mode: Aspire Dashboard OTLP/HTTP base"),
-    (
-        "OTEL_ASPIRE_API_KEY",
-        "backend",
-        "Aspire Dashboard OTLP API key (x-otlp-api-key); only in ApiKey auth mode",
-    ),
-    ("OTEL_GIGAPIPE_ENDPOINT", "backend", "Single-backend mode: Gigapipe (qryn) OTLP/HTTP base"),
-    (
-        "OTEL_GIGAPIPE_USER",
-        "backend",
-        "Basic auth user for Gigapipe (only with GIGAPIPE_LOGIN/PASSWORD)",
-    ),
-    ("OTEL_GIGAPIPE_PASSWORD", "backend", "Basic auth password for Gigapipe"),
-    ("OTEL_AGENTA_ENDPOINT", "backend", "Agenta origin for a self-hosted stack (cloud by default)"),
-    (
-        "OTEL_AGENTA_API_KEY",
-        "backend",
-        "Agenta project API key (Authorization: ApiKey; preferred name)",
-    ),
-    ("AGENTA_API_KEY", "backend", "Agenta project API key fallback (the SDK variable)"),
-    ("OTEL_TEMPO_ENDPOINT", "backend", "Single-backend mode: Tempo / LGTM OTLP URL"),
-    ("OTEL_UPTRACE_ENDPOINT", "backend", "Single-backend mode: Uptrace OTLP URL"),
-    ("OTEL_UPTRACE_DSN", "backend", "Uptrace DSN (preferred name)"),
-    ("UPTRACE_DSN", "backend", "Uptrace DSN fallback"),
-    ("OTEL_OPENOBSERVE_ENDPOINT", "backend", "Single-backend mode: OpenObserve OTLP URL"),
-    ("OTEL_OPENOBSERVE_STREAM", "backend", "OpenObserve stream name (default `default`)"),
-    ("OTEL_OPENOBSERVE_USER", "backend", "OpenObserve user (preferred name)"),
-    ("OTEL_OPENOBSERVE_PASSWORD", "backend", "OpenObserve password (preferred name)"),
-    ("OPENOBSERVE_USER", "backend", "OpenObserve user fallback"),
-    ("OPENOBSERVE_PASSWORD", "backend", "OpenObserve password fallback"),
-    ("OTEL_PARSEABLE_ENDPOINT", "backend", "Single-backend mode: Parseable OTLP URL"),
-    ("OTEL_PARSEABLE_API_KEY", "backend", "Parseable API key (preferred name)"),
-    ("PARSEABLE_API_KEY", "backend", "Parseable API key fallback"),
-    (
-        "PARSEABLE_TRACES_DATASET",
-        "backend",
-        "Parseable dataset for traces (default `hermes-traces`)",
-    ),
-    (
-        "PARSEABLE_METRICS_DATASET",
-        "backend",
-        "Parseable dataset for metrics (default `hermes-metrics`)",
-    ),
-    ("PARSEABLE_LOGS_DATASET", "backend", "Parseable dataset for logs (default `hermes-logs`)"),
-    ("OTEL_HONEYCOMB_ENDPOINT", "backend", "Single-backend mode: Honeycomb OTLP URL"),
-    ("OTEL_HONEYCOMB_API_KEY", "backend", "Honeycomb API key (preferred name)"),
-    ("HONEYCOMB_API_KEY", "backend", "Honeycomb API key fallback"),
-    (
-        "OTEL_ELASTIC_ENDPOINT",
-        "backend",
-        "Single-backend mode: Elastic OTLP URL (mOTLP or EDOT Collector)",
-    ),
-    ("OTEL_ELASTIC_API_KEY", "backend", "Elastic API key (preferred name; needs the endpoint too)"),
-    ("ELASTIC_API_KEY", "backend", "Elastic API key fallback"),
-    ("OTEL_OPENLIT_ENDPOINT", "backend", "Single-backend mode: OpenLIT OTLP/HTTP URL"),
-    ("OTEL_OPENLIT_API_KEY", "backend", "OpenLIT API key (preferred name; needs the endpoint too)"),
-    ("OPENLIT_API_KEY", "backend", "OpenLIT API key fallback"),
-    ("OTEL_MLFLOW_ENDPOINT", "backend", "Single-backend mode: MLflow tracking server URL"),
-    (
-        "OTEL_MLFLOW_EXPERIMENT_ID",
-        "backend",
-        "MLflow experiment id for the x-mlflow-experiment-id header (preferred name)",
-    ),
-    ("MLFLOW_EXPERIMENT_ID", "backend", "MLflow experiment id fallback"),
-    (
-        "OTEL_MLFLOW_API_KEY",
-        "backend",
-        "MLflow tracking token (preferred name; needs the endpoint too)",
-    ),
-    ("MLFLOW_TRACKING_TOKEN", "backend", "MLflow tracking token fallback"),
-    ("OTEL_OPIK_ENDPOINT", "backend", "Single-backend mode: Opik base URL (default: Comet cloud)"),
-    ("OTEL_OPIK_API_KEY", "backend", "Opik API key (preferred name; enables Opik in env-var mode)"),
-    ("OPIK_API_KEY", "backend", "Opik API key fallback"),
-    ("OPIK_URL_OVERRIDE", "backend", "Opik SDK base URL fallback (…/api form accepted)"),
-    ("OPIK_WORKSPACE", "backend", "Opik workspace for the Comet-Workspace header (cloud)"),
-    ("OPIK_PROJECT_NAME", "backend", "Opik project for the projectName header"),
-    (
-        "OTEL_LAMINAR_ENDPOINT",
-        "backend",
-        "Single-backend mode: Laminar app-server URL (default: Laminar cloud)",
-    ),
-    (
-        "OTEL_LAMINAR_API_KEY",
-        "backend",
-        "Laminar project API key (preferred name; enables Laminar in env-var mode)",
-    ),
-    ("LMNR_PROJECT_API_KEY", "backend", "Laminar project API key fallback"),
-    ("LMNR_BASE_URL", "backend", "Laminar SDK base URL fallback"),
-    (
-        "OTEL_LANGWATCH_ENDPOINT",
-        "backend",
-        "Single-backend mode: LangWatch base URL (default: LangWatch cloud)",
-    ),
-    (
-        "OTEL_LANGWATCH_API_KEY",
-        "backend",
-        "LangWatch project API key (preferred name; enables LangWatch in env-var mode)",
-    ),
-    ("LANGWATCH_API_KEY", "backend", "LangWatch API key fallback"),
-    ("LANGWATCH_ENDPOINT", "backend", "LangWatch SDK base URL fallback"),
-    (
-        "LANGWATCH_PROJECT_ID",
-        "backend",
-        "LangWatch project id for the X-Project-Id header (service keys)",
-    ),
-    (
-        "OTEL_LATITUDE_ENDPOINT",
-        "backend",
-        "Single-backend mode: Latitude ingest URL (default: Latitude cloud)",
-    ),
-    (
-        "OTEL_LATITUDE_API_KEY",
-        "backend",
-        "Latitude API key (preferred name; enables Latitude in env-var mode)",
-    ),
-    ("LATITUDE_API_KEY", "backend", "Latitude API key fallback"),
-    (
-        "LATITUDE_PROJECT",
-        "backend",
-        "Latitude project slug for the mandatory X-Latitude-Project header",
-    ),
-    ("LATITUDE_INGEST_URL", "backend", "Latitude ingest URL fallback"),
-    ("OTEL_WEAVE_ENDPOINT", "backend", "Single-backend mode: W&B Weave OTLP URL"),
-    ("WANDB_OTLP_ENDPOINT", "backend", "Weave OTLP URL fallback"),
-    ("OTEL_WEAVE_BASE_URL", "backend", "Weave base URL"),
-    ("WANDB_BASE_URL", "backend", "Weave base URL fallback"),
-    ("OTEL_WEAVE_API_KEY", "backend", "Weave API key (preferred name)"),
-    ("WANDB_API_KEY", "backend", "Weave API key fallback"),
-    ("WANDB_ENTITY", "backend", "Weave entity"),
-    ("WANDB_PROJECT", "backend", "Weave project"),
-    ("DEFAULT_WANDB_ENTITY", "backend", "Weave entity fallback"),
-    ("DEFAULT_WANDB_PROJECT", "backend", "Weave project fallback"),
-    ("LANGSMITH_TRACING", "langsmith", "`true` enables the LangSmith backend (with an API key)"),
-    ("LANGSMITH_API_KEY", "langsmith", "LangSmith API key"),
-    (
-        "LANGSMITH_ENDPOINT",
-        "langsmith",
-        "LangSmith API URL (default `https://api.smith.langchain.com`)",
-    ),
-    ("LANGSMITH_PROJECT", "langsmith", "LangSmith project (default `hermes-langsmith-otel`)"),
-    ("LANGSMITH_WORKSPACE_ID", "langsmith", "LangSmith workspace id"),
+    *((name, "backend", description) for s in SPECS for name, description in s.env_vars),
     (
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "otel",
@@ -911,8 +529,8 @@ def env_inventory(reveal: bool = False) -> List[Dict[str, Any]]:
         )
 
     for key, kind in field_kinds().items():
-        if kind in pc._SCALAR_KINDS:
-            add(pc._ENV_PREFIX + key.upper(), "override", FIELD_DOCS.get(key, ""), maps_to=key)
+        if kind in pc.SCALAR_KINDS:
+            add(pc.ENV_PREFIX + key.upper(), "override", FIELD_DOCS.get(key, ""), maps_to=key)
     for name, group, description in KNOWN_ENV_VARS:
         add(name, group, description)
     for name in sorted(os.environ):
@@ -1085,9 +703,9 @@ def _backend_as_yaml(b: Dict[str, Any]) -> Dict[str, Any]:
 
 def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     """Everything the Settings tab shows, as one JSON-serialisable dict."""
-    path = pc.resolve_config_path()
+    path, path_source = pc.resolve_config_path_with_reason()
     exists = bool(path and path.exists())
-    raw_yaml = pc._load_yaml(path) if path is not None else {}
+    raw_yaml = pc.load_yaml(path) if path is not None else {}
     yaml_data = pc.normalize_yaml_data(raw_yaml, notice=False) if path is not None else {}
     reports, effective = field_reports(yaml_data, reveal=reveal)
 
@@ -1105,7 +723,7 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
     parse_ok = not exists or bool(yaml_data) or (raw_text or "").strip() == ""
 
     unknown = [
-        {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc._ALLOWED_KEYS
+        {"key": k, "note": KNOWN_EXTRA_KEYS.get(k)} for k in yaml_data if k not in pc.ALLOWED_KEYS
     ]
     # The flat spellings of the ``logs:`` block are read from the file as
     # written (normalisation folds the block onto them).
@@ -1124,14 +742,14 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
         "reveal": reveal,
         "config": {
             "path": str(path) if path else None,
-            "path_source": _config_path_source(path),
+            "path_source": path_source,
             "exists": exists,
             "parse_ok": parse_ok,
             "mtime": mtime,
             "raw": raw_text,
             "raw_error": raw_error,
-            "durable_path": str(pc.DURABLE_CONFIG_PATH),
-            "legacy_path": str(pc.DEFAULT_CONFIG_PATH),
+            "durable_path": str(pc.durable_config_path()),
+            "legacy_path": str(pc.legacy_config_path()),
             "unknown_keys": unknown,
             "deprecated_keys": deprecated,
         },

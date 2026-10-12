@@ -1,0 +1,123 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "{ __type(name: \"Project\") { fields { name args { name } } } }",
+    "variables": {}
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "\n        query SearchSpans(\n          $projectId: ID!,\n          $first: Int!,\n          $timeRange: TimeRange!,\n          $filterCondition: String,\n          \n          $sort: SpanSort\n        ) {\n          node(id: $projectId) {\n            ... on Project {\n              name\n              spans(\n                first: $first,\n                \n                timeRange: $timeRange,\n                filterCondition: $filterCondition,\n                sort: $sort\n              ) {\n                edges { node {\n                  spanId name latencyMs statusCode startTime endTime\n                  parentId spanKind attributes\n                  context { traceId spanId }\n                  input { value mimeType }\n                  output { value mimeType }\n                  tokenCountTotal tokenCountPrompt tokenCountCompletion\n                  numChildSpans\n                  trace { numSpans }\n                } }\n              }\n            }\n          }\n        }\n        ",
+    "variables": {
+     "filterCondition": "'tool.' in name",
+     "first": 21,
+     "projectId": "UHJvamVjdDoy",
+     "sort": {
+      "col": "startTime",
+      "dir": "desc"
+     },
+     "timeRange": {
+      "end": "2026-10-11T20:21:00+00:00",
+      "start": "2026-10-11T19:20:00+00:00"
+     }
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-minimal",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "ok"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750001500000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-minimal",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "status",
+          "value": {
+           "stringValue": "ok"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749401500000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

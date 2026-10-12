@@ -71,6 +71,16 @@ Fires when a provider API request **fails** (rate limit, timeout, 5xx, network e
 
 Only API-level failures become `ERROR`. Tool timeout/blocked outcomes deliberately stay `OK` (see [Limitations](/reference/limitations)) so they don't inflate error rates.
 
+### `pre_auxiliary_call` / `post_auxiliary_call`
+
+Fire once per physical provider attempt of every **auxiliary** LLM call Hermes makes on the agent's behalf: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer and triage specifier, the `/goal` judge, … (`agent/auxiliary_hooks.py` upstream). They carry the `pre_api_request` / `post_api_request` payload shape plus `aux_task` and the identity of the main turn they run under (`session_id` is empty for turn-less callers such as the kanban dispatcher). Registered conditionally (newer Hermes). Deliberately distinct events upstream: the main-loop `*_api_request` hooks never see this traffic, so without these two hooks every auxiliary call is invisible and the turn's spend is under-reported.
+
+- **Span op:** `api.{model}` (span kind `LLM`), nested under whatever the owning turn has in flight (`llm.*`, `api.*` or the root); its own root when there is no turn. Never pushed as a parent: nothing runs inside an auxiliary attempt (the MoA aggregator's tool calls belong to the main loop's `api.*`).
+- **Attributes:** `hermes.query_source=auxiliary`, `hermes.auxiliary.task` (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …), then the same model, provider, request, token, cost and duration attributes as a main-loop `api.*` span; `error.type` + an `exception` span event and status `ERROR` when the attempt failed; `gen_ai.request.stream=true` and no usage for a streamed attempt (Hermes hands the stream back unconsumed).
+- **Turn roll-up:** counted on the owning turn's root as `hermes.turn.auxiliary.*` (call count, error count, tokens, cost), **beside** the turn totals, never inside them: the main loop's `api.*` span for the `moa` provider already carries what the MoA facade returns, so folding the attempts in would count them twice. The dashboard's trace totals skip auxiliary spans for the same reason.
+- **Metrics:** `hermes.auxiliary.count{aux_task, status, model, provider}`; the usual `hermes.token.usage`, `hermes.cost.usage`, `hermes.model.usage` with `query_source=auxiliary` (main-loop calls carry `main` or `subagent`); `gen_ai.client.token.usage` and `gen_ai.client.operation.duration`.
+- **Event:** `hermes.auxiliary.call` (`ERROR` on failure), see [log events](/reference/log-events).
+
 ## Newer (session + sub-agent hooks)
 
 Registered inside a `try:/except:` because older Hermes versions don't expose them. If any is missing, the plugin logs a debug message and degrades gracefully (older Hermes simply registers fewer hooks).
@@ -182,7 +192,7 @@ Hermes' kanban is a durable task board: a dispatcher (inside the gateway, or `he
 
 Fires in the **dispatcher** process right before the worker is spawned, inside the board's dispatch lock.
 
-- **Span op:** `kanban.claim`, opened and closed at once, the root of its own trace (the dispatcher serves every session, so it never nests under whatever turn is in flight)
+- **Span op:** `kanban.claim`, opened and closed at once, the root of the run's trace (the dispatcher serves every session, so it never nests under whatever turn is in flight). The plugin sets `TRACEPARENT` to this span in the dispatcher's environment so the worker's turn joins the trace, and removes it on `on_kanban_worker_spawned` (#388)
 - **Attributes:** `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.assignee`, `hermes.kanban.run_id`, `hermes.kanban.event=claimed`
 - **Metrics:** `hermes.kanban.task.count{outcome=claimed, board}`
 
@@ -207,6 +217,43 @@ Fires in the **dispatcher** when a claim's TTL expired with no heartbeat.
 
 - **Span op:** `kanban.stale_claim`, a root of its own, status `OK`
 - **Attributes:** the card identity plus `hermes.kanban.worker_pid`, `hermes.kanban.heartbeat_stale`, `hermes.kanban.retry_status`
+
+### `agent_loop_stopped`
+
+Fires in the **gateway** when it stops a running turn (`/stop`, or the running-agent fast path of `/new`). Kwargs: `session_key`, `platform`, `reason`, `invalidation_reason`.
+
+- **Effect:** the turn is found by its gateway session key, which the plugin records from `HERMES_SESSION_KEY` when the root opens. The root is marked `hermes.turn.stop_reason`. The turn is **not** ended here, because Hermes usually still ends it with `on_session_end(interrupted=True)`, which carries the turn's usage. If no end arrives, the orphan sweep finalizes the marked root as `hermes.turn.final_status=interrupted` instead of `timed_out`.
+
+### `pre_verify`
+
+Fires once per turn when the agent edited code and is about to verify or finish. It's a decision hook: a dict return keeps Hermes's turn going.
+
+- **Effect:** the plugin's observer always returns `None`. It counts the calls into `hermes.turn.verify_nudges` on the root, and never records `changed_paths` or `final_response`.
+
+### `pre_command`, `on_human_input_*`, `on_skill_lifecycle`, `pre_transcription`
+
+These are small observers (#400). All return `None`, and none of them reads the free text Hermes passes along.
+
+- **`pre_command`:** records `hermes.command.count{command, surface}` with Hermes's canonical command name. Never the arguments.
+- **`on_human_input_request` / `on_human_input_resolved`:**
+  - A `clarify` wait or a password prompt becomes a `human_input.{kind}` span under the session's in-flight span, carrying the redacted prompt as a preview, the outcome and `hermes.human_input.wait_s`.
+  - An `approval` wait is only counted, since it already has its `approval.*` span.
+  - Every wait records `hermes.human_input.count{kind, outcome}`.
+- **`on_skill_lifecycle`:** records `hermes.skill.lifecycle.count{action, provenance}`. Never the skill name, because a profile can hold any number of skills.
+- **`pre_transcription`:** records `hermes.transcription.count{provider, model, source}`. It's a decision hook in Hermes, but the observer never returns a value and never reads `file_path` or `prompt`.
+
+`transform_api_error_classification` (fires before Hermes classifies an error, so it has no outcome to record) and `transform_tool_result` (`post_tool_call` already records the result) are deliberately not registered. `scripts/hook_audit/hook_audit.py` lists every skipped hook with its reason.
+
+### Streaming hooks (`on_stream_*`, `on_interim_message`): not used
+
+Time to first chunk comes from `post_api_request`, which already carries Hermes's own `started_at` and `first_chunk_at` (wall clock, `first_chunk_at` only for a streamed call). `hermes.api.ttfc_ms` goes on the `api.*` span and into `hermes.api.time_to_first_chunk`. The stream hooks run on a queued worker thread (drop-oldest), and their payloads carry no timestamps, so they would only measure later and less exactly.
+
+### `on_kanban_dispatch_tick` / `on_kanban_task_updated`
+
+Board health (#397), metrics only.
+
+- **`on_kanban_dispatch_tick`:** fires once per dispatcher pass, after the dispatch lock is released. It records `hermes.kanban.dispatch.count{outcome, board}`, plus `hermes.kanban.dispatch.result{kind, board}` for each non-zero `DispatchResult` field (spawned, reclaimed, crashed, auto_blocked, …). The task ids, assignees and workspace paths in the result are never exported, only how many there were. Dry runs are not counted. There is no span: an idle board ticks every minute, and what a busy pass did is already on the run's `kanban.*` spans.
+- **`on_kanban_task_updated`:** a task-row edit outside claim / complete / block. It records `hermes.kanban.task.updated{field, board}` once per changed field *name*. Hermes never passes the values.
 
 ### `kanban_task_completed`
 
@@ -242,12 +289,23 @@ transform_terminal_output  attrs tool.terminal   (raw output size, return code, 
 post_tool_call           close tool.{name}       + result size, terminal truncation
 post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
+pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's llm/api/root, or own root; not a parent)
+post_auxiliary_call      close api.{model}       (auxiliary: usage, cost, ERROR on failure; turn roll-up hermes.turn.auxiliary.*)
 post_llm_call            close llm.{model}
 transform_llm_output     attr  agent/cron        (final response size; returns None)
-kanban_task_claimed      open+close kanban.claim        (dispatcher; own trace)
-on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; own trace)
+kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's root; sets TRACEPARENT for the worker)
+on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
+pre_command              metric hermes.command.count{command, surface}
+on_human_input_request   open  human_input.{kind}   (every kind but approval, which is counted only)
+on_human_input_resolved  close human_input.{kind}   (outcome, wait_s) + hermes.human_input.count
+on_skill_lifecycle       metric hermes.skill.lifecycle.count{action, provenance}
+pre_transcription        metric hermes.transcription.count (returns None)
+agent_loop_stopped       attr  agent root          (hermes.turn.stop_reason; sweep ends it interrupted, not timed_out)
+pre_verify               attr  agent root          (hermes.turn.verify_nudges; always returns None)
+on_kanban_dispatch_tick  metrics only: hermes.kanban.dispatch.count / .result (dispatcher, after the lock)
+on_kanban_task_updated   metrics only: hermes.kanban.task.updated{field}
 kanban_task_completed    open+close kanban.complete     (worker; in the turn's trace + root stamped)
 kanban_task_blocked      open+close kanban.block        (worker; OK + outcome=blocked)
 subagent_stop            close subagent.{role}   + status + duration + metrics

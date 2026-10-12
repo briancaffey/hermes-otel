@@ -1,0 +1,288 @@
+{
+ "logs": [],
+ "metrics": [
+  {
+   "attributes": {
+    "gen_ai.tool.name": "bash",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "choice": "deny",
+    "profile": "golden"
+   },
+   "name": "hermes.approval.count",
+   "unit": "{prompt}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "choice": "once",
+    "profile": "golden"
+   },
+   "name": "hermes.approval.count",
+   "unit": "{prompt}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "choice": "timeout",
+    "profile": "golden"
+   },
+   "name": "hermes.approval.count",
+   "unit": "{prompt}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "choice": "deny",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "choice": "once",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "choice": "timeout",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "choice": "deny",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.wait.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "choice": "once",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.wait.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "choice": "timeout",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.approval.wait.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "platform": "telegram",
+    "profile": "golden"
+   },
+   "name": "hermes.session.count",
+   "unit": "{session}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "bash",
+    "profile": "golden",
+    "tool_name": "bash"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  }
+ ],
+ "spans": [
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.request.model": "gpt-4",
+    "hermes.platform": "telegram",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.tool_commands": "rm -r ./build-cache",
+    "hermes.turn.tool_count": 1,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "bash",
+    "hermes.turn.trigger": "user",
+    "llm.model_name": "gpt-4",
+    "openinference.span.kind": "AGENT",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "20261012_090000_golden",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S1",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{\"command\": \"rm -r ./build-cache\"}",
+    "gen_ai.tool.call.id": "tc1",
+    "gen_ai.tool.call.result": "ok",
+    "gen_ai.tool.name": "bash",
+    "hermes.tool.command": "rm -r ./build-cache",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 2,
+    "input.value": "{\"command\": \"rm -r ./build-cache\"}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "ok",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "tool.name": "bash",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.bash",
+   "parent": "S1",
+   "span": "S2",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "approval",
+    "gen_ai.tool.call.id": "tc1",
+    "hermes.approval.choice": "once",
+    "hermes.approval.command": "rm -r ./build-cache",
+    "hermes.approval.description": "Delete a directory tree",
+    "hermes.approval.duration_ms": "<num>",
+    "hermes.approval.granted": true,
+    "hermes.approval.pattern_key": "rm_rf",
+    "hermes.approval.pattern_keys": "rm_rf,danger",
+    "hermes.approval.surface": "gateway",
+    "hermes.approval.timed_out": false,
+    "hermes.span_kind": "approval",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "approval.rm_rf",
+   "parent": "S1",
+   "span": "S3",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "approval",
+    "gen_ai.tool.call.id": "tc2",
+    "hermes.approval.choice": "deny",
+    "hermes.approval.command": "./install.sh --dry-run",
+    "hermes.approval.description": "Delete a directory tree",
+    "hermes.approval.duration_ms": "<num>",
+    "hermes.approval.granted": false,
+    "hermes.approval.pattern_key": "run_script",
+    "hermes.approval.pattern_keys": "run_script,danger",
+    "hermes.approval.surface": "gateway",
+    "hermes.approval.timed_out": false,
+    "hermes.span_kind": "approval",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "approval.run_script",
+   "parent": "S1",
+   "span": "S4",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "approval",
+    "gen_ai.tool.call.id": "tc3",
+    "hermes.approval.choice": "timeout",
+    "hermes.approval.command": "git push --force origin main",
+    "hermes.approval.description": "Delete a directory tree",
+    "hermes.approval.duration_ms": "<num>",
+    "hermes.approval.granted": false,
+    "hermes.approval.pattern_key": "force_push",
+    "hermes.approval.pattern_keys": "force_push,danger",
+    "hermes.approval.surface": "gateway",
+    "hermes.approval.timed_out": true,
+    "hermes.span_kind": "approval",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "approval.force_push",
+   "parent": "S1",
+   "span": "S5",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  }
+ ]
+}

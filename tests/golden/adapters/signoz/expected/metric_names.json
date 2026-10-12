@@ -1,0 +1,46 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hermes"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=gen_ai"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=process"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=system"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hw"
+  }
+ ],
+ "result": [
+  {
+   "name": "hermes.message.count"
+  },
+  {
+   "name": "hermes.token.usage"
+  },
+  {
+   "name": "hermes.tool.duration.count"
+  },
+  {
+   "name": "hermes.tool.duration.sum"
+  },
+  {
+   "name": "system.cpu.utilization"
+  }
+ ]
+}

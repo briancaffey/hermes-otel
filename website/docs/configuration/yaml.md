@@ -18,14 +18,16 @@ Location: `$HERMES_HOME/hermes_otel.yaml` (recommended), or `$HERMES_OTEL_CONFIG
 project_name: hermes-agent
 
 # Free-form key/value pairs merged into the OTel Resource on every span.
-# Good for deployment tags. Can be overridden per-key by `resource_attributes:`.
-global_tags:
-  team: platform
-
-# Takes precedence over `global_tags` on key conflict.
+# Good for deployment tags.
 resource_attributes:
+  team: platform
   env: prod
   region: us-east-1
+
+# Deprecated spelling of resource_attributes: still accepted, merged into
+# resource_attributes at load (which wins on a key conflict), with a warning.
+# global_tags:
+#   team: platform
 
 # Extra HTTP headers added to every OTLP request across ALL backends.
 # Per-backend `headers:` are merged on top (per-backend wins on conflict).
@@ -203,10 +205,8 @@ enabled: true
 sample_rate: 0.25
 project_name: hermes-prod
 
-global_tags:
-  team: platform
-
 resource_attributes:
+  team: platform
   env: prod
   region: us-east-1
 
@@ -240,3 +240,5 @@ backends:
     secret_key_env: LANGFUSE_SECRET_KEY
     base_url: https://cloud.langfuse.com
 ```
+
+Credentials resolve the same way for the exporter and the dashboard's query adapters: an inline value (`secret_key: ...`) wins over the env var a `*_env` key names, which wins over the type's vendor fallbacks (`LANGFUSE_SECRET_KEY` and friends). An entry that sets both therefore exports and queries with one key. Prefer the `*_env` spelling so secrets stay out of the file.

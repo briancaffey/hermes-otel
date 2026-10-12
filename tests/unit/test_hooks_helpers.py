@@ -1,7 +1,5 @@
 """Tests for pure helper functions in helpers.py and the hooks package."""
 
-import pytest
-
 from hermes_otel.helpers import (
     classify_approval_choice,
     classify_block_provenance,
@@ -11,7 +9,7 @@ from hermes_otel.helpers import (
     to_int,
     truncate_string,
 )
-from hermes_otel.hooks import _genai_metric_dims, _normalize_usage, _usage_attributes
+from hermes_otel.hooks.usage import genai_metric_dims, normalize_usage, usage_attributes
 
 
 class TestSessionIdFromTurnId:
@@ -258,48 +256,44 @@ class TestDetectSessionKind:
 
 class TestNormalizeUsageReasoning:
     def test_reasoning_tokens_parsed(self):
-        totals = _normalize_usage(
-            {"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 15}
-        )
+        totals = normalize_usage({"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 15})
         assert totals["reasoning_tokens"] == 15
 
     def test_reasoning_absent_defaults_zero(self):
-        totals = _normalize_usage({"input_tokens": 100, "output_tokens": 50})
+        totals = normalize_usage({"input_tokens": 100, "output_tokens": 50})
         assert totals["reasoning_tokens"] == 0
 
     def test_reasoning_not_added_to_total(self):
         # Reasoning is a subset of output, so it must never inflate the total.
-        totals = _normalize_usage(
-            {"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 30}
-        )
+        totals = normalize_usage({"input_tokens": 100, "output_tokens": 50, "reasoning_tokens": 30})
         assert totals["total_tokens"] == 150  # 100 + 50, reasoning excluded
 
 
 class TestGenAIMetricDims:
     def test_default_operation_is_chat(self):
-        dims = _genai_metric_dims("gpt-4", "openai")
+        dims = genai_metric_dims("gpt-4", "openai")
         assert dims["gen_ai.operation.name"] == "chat"
         assert dims["gen_ai.provider.name"] == "openai"
         assert dims["gen_ai.request.model"] == "gpt-4"
 
     def test_response_model_and_operation_override(self):
-        dims = _genai_metric_dims("gpt-4", "openai", "gpt-4o", operation="invoke_agent")
+        dims = genai_metric_dims("gpt-4", "openai", "gpt-4o", operation="invoke_agent")
         assert dims["gen_ai.operation.name"] == "invoke_agent"
         assert dims["gen_ai.response.model"] == "gpt-4o"
 
     def test_no_high_cardinality_keys(self):
-        dims = _genai_metric_dims("gpt-4", "openai", "gpt-4")
+        dims = genai_metric_dims("gpt-4", "openai", "gpt-4")
         assert "session_id" not in dims
         assert "task_id" not in dims
 
     def test_empty_provider_and_model_omitted(self):
-        dims = _genai_metric_dims("", "")
+        dims = genai_metric_dims("", "")
         assert dims == {"gen_ai.operation.name": "chat"}
 
 
 class TestUsageAttributesReasoning:
     def test_reasoning_dual_convention_attributes(self):
-        attrs = _usage_attributes(
+        attrs = usage_attributes(
             {
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
@@ -314,7 +308,7 @@ class TestUsageAttributesReasoning:
         assert attrs["gen_ai.usage.reasoning.output_tokens"] == 15
 
     def test_zero_reasoning_omitted(self):
-        attrs = _usage_attributes(
+        attrs = usage_attributes(
             {
                 "prompt_tokens": 100,
                 "completion_tokens": 50,
@@ -328,8 +322,8 @@ class TestUsageAttributesReasoning:
         assert "gen_ai.usage.reasoning.output_tokens" not in attrs
 
     def test_missing_reasoning_key_tolerated(self):
-        # _usage_attributes uses .get for reasoning so older totals dicts work.
-        attrs = _usage_attributes(
+        # usage_attributes uses .get for reasoning so older totals dicts work.
+        attrs = usage_attributes(
             {
                 "prompt_tokens": 100,
                 "completion_tokens": 50,

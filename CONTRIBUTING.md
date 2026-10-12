@@ -149,10 +149,17 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 
 Before opening a PR:
 
-- [ ] `make ci` passes locally. It runs exactly what GitHub Actions runs, job
-      for job (lockfile check, ruff, black, plugin scan, tests with the 85%
-      coverage gate, dashboard bundle up to date + vitest, docs build, wheel
-      build), so a green `make ci` is a green pipeline. `make ci-fast` skips the
+- [ ] `make ci` passes locally. It runs what GitHub Actions runs, job for
+      job (lockfile check, ruff, black, plugin scan, tests with the 85%
+      coverage gate and the per-module floors in `coverage-floors.json`,
+      dashboard bundle up to date + vitest, docs build, wheel build), so a
+      green `make ci` is a green pipeline, with three exceptions it names in
+      its header: the Python version matrix, `make ci-floor` (the suite on
+      the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
+      A module may not drop more than one point under its floor; after a
+      change that deliberately adds or removes coverage, re-record with
+      `python scripts/coverage_floor.py --update` and commit the file.
+      The pull request template carries this list. `make ci-fast` skips the
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
@@ -170,22 +177,180 @@ Release PRs are opened by release-please. Its version bump also updates
 release branch passes the lockfile check on its first run; a superseded run
 on any branch is cancelled rather than left red.
 
+## Test scaffolding
+
+`tests/helpers/` holds what more than one test file needs (#406); nothing in
+it is a test. Import builders where used; the fixtures are registered by the
+tier `conftest.py` files.
+
+| Module | What it gives |
+|---|---|
+| `helpers/dashboard.py` | `isolated_backends` (autouse for every `test_dashboard_*` / `test_openobserve_*` module: no developer config, caches and probe results cleared), `FakeHttp` / `fake_http(monkeypatch, routes)` (a route table replacing the adapters' HTTP functions, calls recorded), `adapter(type, **cfg)`, the contract app's `client` fixture, `down`, `row`, `http_error` |
+| `helpers/live.py` | `span(...)` / `metric(...)` / `log(...)` rows in the live store's shape, the `store` fixture, the shared `NOW` |
+| `helpers/turns.py` | `run_turn(session_id, ...)`, `api_call(...)`, `tool_call(...)` and the payload builders: one fake Hermes turn, every documented field, overridable |
+| `helpers/tracer.py` | `mock_tracer` / `disabled_tracer` for single-hook unit tests |
+| `tests/_helpers.py` | span/metric lookups and `clear_backend_env` (older, kept) |
+
+Import the dashboard package as `hermes_otel.dashboard.backends`, never by
+putting `hermes_otel/dashboard` on `sys.path`: the latter creates a second copy
+of every adapter module, and a monkeypatch on one copy does not reach the other.
+The contract test (`test_dashboard_adapter_contract.py`) parametrizes its
+invariants over `backends.adapters()`, so a new adapter is covered by it the
+moment it registers; its own response parsing goes in `test_dashboard_<type>.py`.
+
+### Golden fixtures
+
+`tests/golden/hooks/<scenario>__<config>.json` records the complete telemetry
+(spans, metric points, events) of twelve fixed hook sequences under four
+configs (`full`, `preview`, `off`, `events`). `tests/unit/test_golden_hooks.py`
+re-runs every one and fails on any difference, with a unified diff naming the
+attribute. Ids, timestamps, durations and the process identity are normalised
+(`T1`/`S1`, `<num>`, `<service.instance.id>`); everything else is literal.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_hooks.py`.
+- Add a scenario in `tests/golden/record_hooks.py` (`SCENARIOS`), record, commit the files.
+- **A refactor PR may not change a golden file.** If a change is deliberate (a bug
+  found on the way), re-record and list every changed line in the PR description.
+
+### Resolution snapshot (#409)
+
+`tests/unit/test_golden_resolution.py` records, for every backend type and
+every adapter alias under six input paths (inline credentials, `*_env`
+credentials, env-only selection, signal overrides, temporality + root_usage
+overrides, a per-backend `logs:` block), what the exporter resolves, which log
+exporter it gets, its Settings card, its MCP query target, its `status` line
+and its dashboard adapter, into `tests/golden/resolution/<type>__<path>.json`,
+plus the whole settings report for `config.yaml.example`. Secrets are
+placeholders and masked. `UPDATE_GOLDEN=1 pytest tests/unit/test_golden_resolution.py`
+re-records; a refactor PR that changes a fixture lists every changed line. The
+same module holds the cross-registry consistency checks (exporter types vs
+adapter `handles`, `signal_support()` vs adapter capabilities, env vars read vs
+`KNOWN_ENV_VARS`), marked `xfail(strict=True)` while #402 is open.
+
+### Adapter goldens
+
+`tests/golden/adapters/<type>/` holds, per dashboard adapter, the backend
+entry it is built from (`config.json`), a scripted server (`routes.json`,
+answered at the `urlopen` boundary by `helpers.wire.FakeWire`, so the raw SQL
+and LogsQL transports are covered too) and the recorded answers
+(`expected/<scenario>.json`: what the adapter returned *and* the requests it
+made). `tests/unit/test_dashboard_goldens.py` runs one fixed scenario list
+(status, the search variants, the detail, metrics and logs where declared,
+the error taxonomy) over `backends.adapters()`; a new adapter fails until its
+fixtures exist, and a change in an answer or a request fails with a diff.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_dashboard_goldens.py`.
+- The canned bodies come from `seed_responses.py` (the shapes the adapter
+  tests recorded against real backends, re-based onto one shared turn). To
+  capture a real backend instead, run the dashboard with
+  `HERMES_OTEL_RECORD_HTTP=<dir>` and read `<dir>/exchanges.jsonl`
+  (credentials are masked; ClickHouse and VictoriaLogs post through their
+  own transports and are not captured).
+- A refactor PR never changes an `expected/` file silently: when it must,
+  the PR description lists every changed fixture and why.
+
+### The test seam (`hermes_otel.testing`)
+
+Tests never reach into the package's private names. `hermes_otel.testing`
+ships with the plugin and is the supported surface: `reset_state()` forgets
+the singleton, the parent-stack ContextVar, the live-store singleton and the
+redaction cache (the root `conftest.py` calls it around every test);
+`install_singleton(plugin)` makes the hooks use a plugin and returns the
+previous one; `build_inmemory_plugin(exporters=, metrics=, logs=)` wires a
+plugin to in-memory sinks on providers of its own. Pure helpers a test needs
+are public in their home module (`hooks.usage.normalize_usage`,
+`plugin_config.coerce_from_yaml`, ...); the underscored spellings are aliases
+kept for one release. `hooks/__init__.py` exports only the `on_*` callbacks,
+`get_tracer` and `get_current_traceparent`.
+
+### The telemetry vocabulary (`hermes_otel/semconv.py`)
+
+Every attribute name the plugin emits, the fallback chains readers use
+(`SESSION_KEYS`, `MODEL_KEYS`, `TOTAL_TOKEN_KEYS`, ...), the span-kind table
+and the event names live in `hermes_otel/semconv.py` (#404). The live store,
+the query CLI, the OpenObserve column table and `dashboard-ui/src/lib.ts`
+read it; `scripts/gen_semconv.py` writes `dashboard-ui/src/semconv.generated.ts`
+and `--check` (run by `make ci-semconv` and CI) fails when that file is stale
+or when `website/docs/reference/span-attributes.md` lists more or fewer
+attributes than the registry. To add an attribute: emit it in a hook, add its
+`Attr` to the registry, document it on the reference page, run the generator,
+rebuild the dashboard bundle. `tests/unit/test_semconv.py` fails on a hook
+literal the registry does not know.
+
+## Live before/after check (`make refactor-check`)
+
+Golden fixtures prove the Python output is unchanged; `make refactor-check`
+proves a real Hermes turn still lands in a real backend. It installs the
+base ref's `hermes_otel/` into the profile's plugin directory, runs the
+turn-batch prompts, scores every source with `check_batch.py`, dumps the
+live store, then does the same with the working tree and diffs the *shape*
+of the telemetry (span names, parentage, status, attribute keys, the
+run-stable values) plus the check matrices. Model output, durations, tokens
+and cost are never compared; `scripts/refactor_check/allowlist.yaml` lists
+the keys that legitimately come and go, each with a reason. The report lands
+under `scripts/refactor_check/out/<branch>-vs-<base>-<stamp>/report.md`; the
+profile's plugin directory is restored afterwards.
+
+Required for any PR in the refactor milestone (#414) that touches `hooks/`,
+`tracer.py`, `live_store.py`, `log_handler.py`, `dashboard/backends/` or
+`backends.py`; attach the report to the PR. `BASE=origin/main` and
+`PROFILE=<name>` override the defaults; `--base-run <side.json>` reuses an
+earlier base run.
+
 ## Adding a new backend
 
-1. Add the resolver in `tracer.py` (for now; this will move to
-   `backends.py` in a later phase).
-2. Add `docker-compose/<backend>/docker-compose.yaml` and `README.md` (see
-   `docker-compose/README.md` for the folder convention) if the backend runs
-   locally.
-3. Add a `docs/backends/<name>.md` (will exist after Phase 1) or a
-   section in `README.md` with: required env vars, docker-compose
-   snippet, link to the project's docs.
-4. Add an entry under `backends:` in `config.yaml.example`.
-5. Add a unit test covering the resolver (env-var precedence, header
-   construction). Integration tests via `InMemorySpanExporter` are
-   encouraged; E2E tests are optional unless the backend has
-   backend-specific attributes.
-6. Update the "Supported backends" table in `README.md`.
+A backend has two halves: the **exporter** side (where the plugin sends
+OTLP) and, optionally, the **dashboard** side (an adapter that reads
+traces, metrics and logs back for the Hermes dashboard tab). Most of the
+per-type facts are declared once and derived everywhere else.
+
+**Exporter side**
+
+1. Add one `BackendSpec` to `SPECS` in `hermes_otel/backend_specs.py`:
+   display name, the OTLP signals it accepts, temporality and root-usage
+   presets, how env-var mode selects it, its credential fields and the env
+   vars each falls back to. The exporter, the Settings tab, the MCP config
+   and the dashboard registry all read their tables from here.
+2. Add `_resolve_<type>(bc)` in `hermes_otel/backends.py` and register it in
+   `_RESOLVERS`. It turns a `BackendConfig` into endpoints and headers. Use
+   `_resolve_secret` for credentials, so precedence matches every other type.
+3. Run `uv run --extra dev python scripts/gen_config_docs.py --write` to
+   regenerate the type list and the env-var reference.
+4. Tests: `tests/unit/test_backends_<type>.py` for env-var precedence and
+   header construction. Re-record the resolution snapshot with
+   `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_resolution.py`
+   and check the diff is only your new type. `tests/unit/test_backend_specs.py`
+   fails if the spec, the resolver and the registry disagree.
+
+**Dashboard side (optional)**
+
+5. Add `hermes_otel/dashboard/backends/<type>.py`: subclass `BackendAdapter`
+   from `base.py`, decorate it with `@register` (from the package
+   `__init__`), and name the module in the spec's `adapter_module`.
+   Build on the shared pieces instead of re-deriving them:
+   - `shapes`: card rows, OTLP spans and batches.
+   - `base`: the search template (`root_of`, `span_matches`),
+     `query_origin`, `basic_auth`/`bearer`/`require_credential`, the HTTP
+     core and `register_cache` for any probe cache.
+   - `paging`: trace and log pages, cursor bounds.
+   - `metrics_math`, `severity` and `timeconv`.
+   Declare `filter_support` honestly: `server`, `client` or `none` per key.
+6. Tests: `tests/unit/test_dashboard_<type>.py`, plus adapter goldens.
+   Add `tests/golden/adapters/<type>/config.json` and `routes.json`, then
+   `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_dashboard_goldens.py`
+   (see [Adapter goldens](#adapter-goldens)). The parametrized contract test
+   picks the adapter up automatically.
+7. Verify it live with `scripts/dashboard_verify` against the local stack.
+
+**Around it**
+
+8. If the backend runs locally, add `docker-compose/<type>/docker-compose.yaml`
+   and a `README.md` (see `docker-compose/README.md` for the folder
+   convention), and note anything surprising in `docker-compose/QUIRKS.md`.
+9. Add `website/docs/backends/<type>.md` (required env vars, a compose
+   snippet, a link to the project's docs) and list it in `website/sidebars.ts`.
+10. Add a commented entry under `backends:` in `config.yaml.example`, and a
+    link in the "Backends" list of `README.md`.
 
 ## Reporting bugs
 

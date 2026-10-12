@@ -59,6 +59,107 @@
   }
   var sdkOk = Boolean(SDK && SDK.React && PLUGINS && PLUGINS.register);
 
+  // src/semconv.generated.ts
+  var CARD_SESSION_KEYS = [
+    "hermes.session_id",
+    "langfuse.sessionId",
+    "session.id",
+    "session_id"
+  ];
+  var MODEL_KEYS = [
+    "gen_ai.request.model",
+    "llm.model_name",
+    "gen_ai.response.model"
+  ];
+  var TOTAL_TOKEN_KEYS = [
+    "gen_ai.usage.total_tokens",
+    "llm.token_count.total"
+  ];
+  var COST_KEYS = [
+    "hermes.cost.usage"
+  ];
+  var TURN_TOTAL_KEYS = [
+    "gen_ai.usage.total_tokens",
+    "gen_ai.usage.input_tokens",
+    "gen_ai.usage.output_tokens",
+    "llm.token_count.total",
+    "llm.token_count.prompt",
+    "llm.token_count.completion",
+    "hermes.cost.usage"
+  ];
+  var KIND_OVERRIDE_ATTR = "hermes.span_kind";
+  var KIND_OVERRIDES = [
+    "skill",
+    "approval"
+  ];
+  var KIND_RULES = [
+    {
+      "kind": "agent",
+      "prefixes": [
+        "agent."
+      ],
+      "exact": [
+        "agent"
+      ]
+    },
+    {
+      "kind": "cron",
+      "prefixes": [
+        "cron"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "session",
+      "prefixes": [
+        "session"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "skill",
+      "prefixes": [
+        "skill."
+      ],
+      "exact": []
+    },
+    {
+      "kind": "approval",
+      "prefixes": [
+        "approval"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "subagent",
+      "prefixes": [
+        "subagent"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "llm",
+      "prefixes": [
+        "llm."
+      ],
+      "exact": []
+    },
+    {
+      "kind": "api",
+      "prefixes": [
+        "api."
+      ],
+      "exact": []
+    },
+    {
+      "kind": "tool",
+      "prefixes": [
+        "tool."
+      ],
+      "exact": []
+    }
+  ];
+
   // src/lib.ts
   function decodeAttrValue(v) {
     if (v == null) return null;
@@ -155,18 +256,12 @@
   }
   function kindOf(name, attrs) {
     const a = attrs || {};
-    if (a["hermes.span_kind"] === "skill") return "skill";
-    if (a["hermes.span_kind"] === "approval") return "approval";
+    const override = a[KIND_OVERRIDE_ATTR];
+    if (typeof override === "string" && KIND_OVERRIDES.includes(override)) return override;
     const n = (name || "").toLowerCase();
-    if (n === "agent" || n.startsWith("agent.")) return "agent";
-    if (n === "cron" || n.startsWith("cron")) return "cron";
-    if (n.startsWith("session")) return "session";
-    if (n.startsWith("skill.")) return "skill";
-    if (n.startsWith("approval")) return "approval";
-    if (n.startsWith("subagent")) return "subagent";
-    if (n.startsWith("llm.")) return "llm";
-    if (n.startsWith("api.")) return "api";
-    if (n.startsWith("tool.")) return "tool";
+    for (const rule of KIND_RULES) {
+      if (rule.exact.includes(n) || rule.prefixes.some((p) => n.startsWith(p))) return rule.kind;
+    }
     return "other";
   }
   var KIND_COLOR = {
@@ -203,22 +298,14 @@
     const root = spans.find((s) => priority(s) === 3);
     if (root && spans.length > 1) {
       for (const a of root.attributes || []) {
-        if (!a.key || !TURN_TOTAL_KEYS.has(a.key)) continue;
+        if (!a.key || !TURN_TOTAL_KEYS2.has(a.key)) continue;
         const d = decodeAttrValue(a.value);
         if (d !== null && d !== void 0 && d !== "") out[a.key] = d;
       }
     }
     return out;
   }
-  var TURN_TOTAL_KEYS = /* @__PURE__ */ new Set([
-    "gen_ai.usage.total_tokens",
-    "gen_ai.usage.input_tokens",
-    "gen_ai.usage.output_tokens",
-    "llm.token_count.total",
-    "llm.token_count.prompt",
-    "llm.token_count.completion",
-    "hermes.cost.usage"
-  ]);
+  var TURN_TOTAL_KEYS2 = new Set(TURN_TOTAL_KEYS);
   function traceSpanCount(trace) {
     if (typeof trace.spanCount === "number" && trace.spanCount > 0) return trace.spanCount;
     if (typeof trace.span_count === "number" && trace.span_count > 0) return trace.span_count;
@@ -325,6 +412,13 @@
     if (code === 1 || code === "STATUS_CODE_OK" || status === "OK") return "ok";
     return null;
   }
+  function firstAttr(a, keys) {
+    for (const k of keys) {
+      const v = a[k];
+      if (v !== null && v !== void 0 && v !== "") return v;
+    }
+    return null;
+  }
   function attrNum(a, ...keys) {
     for (const k of keys) {
       const v = a[k];
@@ -380,9 +474,9 @@
       endNs: startNs + durationMs * 1e6,
       durationMs,
       spanCount: traceSpanCount(t),
-      model: attrs["gen_ai.request.model"] || attrs["llm.model_name"] || attrs["gen_ai.response.model"] || null,
-      tokens: attrNum(attrs, "gen_ai.usage.total_tokens", "llm.token_count.total"),
-      cost: attrNum(attrs, "hermes.cost.usage"),
+      model: firstAttr(attrs, MODEL_KEYS),
+      tokens: attrNum(attrs, ...TOTAL_TOKEN_KEYS),
+      cost: attrNum(attrs, ...COST_KEYS),
       error: attrs["status"] === "error" || !!attrs["error.type"],
       session: sessionOfCard(t),
       partial: false,
@@ -394,7 +488,8 @@
   }
   function sessionOfCard(trace) {
     const a = traceAttrs(trace);
-    return a["hermes.session_id"] || a["langfuse.sessionId"] || a["session.id"] || a["session_id"] || null;
+    const sid = firstAttr(a, CARD_SESSION_KEYS);
+    return sid == null ? null : String(sid);
   }
   function groupBySession(traces) {
     const by = {};
@@ -437,6 +532,7 @@
     let seen = false;
     for (const s of spans) {
       if (!(s.name || "").startsWith("api.")) continue;
+      if ((s.attributes || {})["hermes.query_source"] === "auxiliary") continue;
       const v = attrNum(s.attributes || {}, ...keys);
       if (v != null) {
         sum += v;
@@ -3900,11 +3996,10 @@
     plugin: "Plugin",
     hermes: "Hermes",
     backend: "Backends: single-backend mode and credential fallbacks",
-    langsmith: "LangSmith",
     otel: "OpenTelemetry SDK",
     other: "Other OTEL_* / HERMES_OTEL_* variables set here"
   };
-  var ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "langsmith", "otel", "other"];
+  var ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "otel", "other"];
   function groupEnv(env, showUnset, query = "") {
     const seen = /* @__PURE__ */ new Set();
     const q = query.trim().toLowerCase();

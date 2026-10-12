@@ -21,14 +21,6 @@ T0 = 1_791_752_700
 TRACE = "65c73f64f88cc17e1ee86943ad7cfcda"
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> gp.GigapipeAdapter:
     return gp.GigapipeAdapter({"type": "gigapipe", "endpoint": "http://localhost:3110", **extra})
 
@@ -388,3 +380,37 @@ class TestLogs:
         _capture(monkeypatch, {})
         assert _adapter().logs_search(LogFilter(logger="cli"), T0, T0 + 1, 5) == []
         assert _adapter().loggers(T0, T0 + 1) == []
+
+
+class TestConcurrentDetails:
+    """A build that ignores ``select()`` lists cards without attributes; each
+    card's detail is fetched, concurrently, and a failed one is left as listed (#413)."""
+
+    @staticmethod
+    def _ids(n):
+        return [f"{i:032x}" for i in range(1, n + 1)]
+
+    def test_every_card_gets_its_detail(self, monkeypatch):
+        rows = [dict(SEARCH_ROW, traceID=t) for t in self._ids(3)]
+        calls = _capture(monkeypatch, {"/api/search": {"traces": rows}, "/api/traces/": DETAIL})
+        page = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)
+        fetched = sorted(c.rsplit("/", 1)[1] for c in calls if "/api/traces/" in c)
+        assert fetched == self._ids(3)
+        assert sorted(r["traceID"] for r in page["traces"]) == self._ids(3)
+        assert all(r["spanCount"] == 3 and r["rootTraceName"] == "agent" for r in page["traces"])
+
+    def test_a_failing_detail_leaves_that_card_as_listed(self, monkeypatch):
+        rows = [dict(SEARCH_ROW, traceID=t) for t in self._ids(2)]
+        bad = self._ids(2)[1]
+        _capture(
+            monkeypatch,
+            {
+                "/api/search": {"traces": rows},
+                f"/api/traces/{bad}": BackendError(404, "", "not_found"),
+                "/api/traces/": DETAIL,
+            },
+        )
+        page = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)
+        by_id = {r["traceID"]: r for r in page["traces"]}
+        assert by_id[self._ids(2)[0]]["spanCount"] == 3
+        assert by_id[bad]["spanSets"][0]["spans"][0]["attributes"] == []

@@ -1,0 +1,81 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:9411/api/v2/traces?serviceName=hermes-agent&endTs=1791750060000&lookback=3660000&limit=6"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750001500000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749401500000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

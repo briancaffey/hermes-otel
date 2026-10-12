@@ -18,14 +18,6 @@ TRACE = "43ee4400ec42281d784993ce6d26cb27"
 T0 = 1_791_754_699  # 2026-10-11T21:38:19Z
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> ag.AgentaAdapter:
     return ag.AgentaAdapter(
         {"type": "agenta", "endpoint": "http://localhost:3060", "api_key": "ak", **extra}
@@ -149,8 +141,10 @@ class TestSetup:
 
 class TestHelpers:
     def test_flatten_and_iso(self):
-        assert ag.flatten(
-            {"gen_ai": {"usage": {"total_tokens": 1}}, "session_id": "s", "e": {}}
+        from hermes_otel.dashboard.backends.shapes import flatten_dotted
+
+        assert flatten_dotted(
+            {"gen_ai": {"usage": {"total_tokens": 1}}, "session_id": "s", "e": {}}, keep_empty=True
         ) == {
             "gen_ai.usage.total_tokens": 1,
             "session_id": "s",

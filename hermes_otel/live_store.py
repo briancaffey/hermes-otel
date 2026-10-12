@@ -37,6 +37,8 @@ import time
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
+from . import semconv as _sc
+
 LIVE_DB_FILENAME = "hermes_otel_live.db"
 SCHEMA_VERSION = 3  # v3 (#266): log rows carry OTel severity spelling, span_id, attributes
 # Rows a failed commit may hold back for the next attempt (#291); beyond this
@@ -48,23 +50,12 @@ MAX_PENDING_ROWS = 5000
 HOST_SAMPLE_MAX_ROWS = 200
 _HOST_METRIC_SQL = "(name LIKE 'process.cpu.%' OR name LIKE 'system.cpu.%' OR name LIKE 'hw.%')"
 
-_SESSION_KEYS = ("hermes.session_id", "session.id", "session_id")
-_MODEL_KEYS = ("gen_ai.request.model", "llm.model_name", "gen_ai.response.model")
-_TOKEN_KEYS = ("gen_ai.usage.total_tokens", "llm.token_count.total")
-_COST_KEYS = ("hermes.cost.usage",)
-# Span-name prefixes of every kind ``span_kind`` recognises; ``other`` is
-# "none of these".
-_KIND_PREFIXES: Dict[str, Tuple[str, ...]] = {
-    "agent": ("agent",),
-    "cron": ("cron",),
-    "session": ("session",),
-    "subagent": ("subagent",),
-    "approval": ("approval",),
-    "skill": ("skill.",),
-    "llm": ("llm.",),
-    "api": ("api.",),
-    "tool": ("tool.",),
-}
+# The vocabulary lives in ``semconv`` (#404); these names stay for the readers.
+_SESSION_KEYS = _sc.SESSION_KEYS
+_MODEL_KEYS = _sc.MODEL_KEYS
+_TOKEN_KEYS = _sc.TOTAL_TOKEN_KEYS
+_COST_KEYS = _sc.COST_KEYS
+_KIND_PREFIXES: Dict[str, Tuple[str, ...]] = _sc.KIND_PREFIXES
 
 
 def _like(text: str) -> str:
@@ -144,32 +135,8 @@ def _session_of(attrs: Dict[str, Any]) -> Optional[str]:
 
 
 def span_kind(name: str, attrs: Optional[Dict[str, Any]] = None) -> str:
-    """Same classification as ``kindOf`` in ``dashboard-ui/src/lib.ts``."""
-    a = attrs or {}
-    if a.get("hermes.span_kind") == "skill":
-        return "skill"
-    if a.get("hermes.span_kind") == "approval":
-        return "approval"
-    n = (name or "").lower()
-    if n == "agent" or n.startswith("agent."):
-        return "agent"
-    if n.startswith("cron"):
-        return "cron"
-    if n.startswith("session"):
-        return "session"
-    if n.startswith("skill."):
-        return "skill"
-    if n.startswith("approval"):
-        return "approval"
-    if n.startswith("subagent"):
-        return "subagent"
-    if n.startswith("llm."):
-        return "llm"
-    if n.startswith("api."):
-        return "api"
-    if n.startswith("tool."):
-        return "tool"
-    return "other"
+    """The registry's classification (``semconv.span_kind``; ``kindOf`` in ``lib.ts``)."""
+    return _sc.span_kind(name, attrs)
 
 
 def root_of(spans: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], bool]:
@@ -220,6 +187,10 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
         total, seen = 0.0, False
         for s in spans:
             if not str(s.get("name", "")).startswith("api."):
+                continue
+            # Auxiliary attempts (#389) are reported on the root as
+            # hermes.turn.auxiliary.*, never inside the turn's totals.
+            if (s.get("attributes") or {}).get("hermes.query_source") == "auxiliary":
                 continue
             v = _num(_first(s.get("attributes") or {}, keys))
             if v is not None:
@@ -295,7 +266,7 @@ _LEVELS = {
 }
 
 
-def _level_no(level: Any) -> int:
+def level_no(level: Any) -> int:
     return _LEVELS.get(str(level or "info").lower(), 20)
 
 
@@ -312,7 +283,7 @@ class LiveStore:
         self.max_rows = max(10, int(max_rows))
         self.retention_ns = int(max(0.0, float(retention_hours)) * 3600 * 1e9)
         self._local = threading.local()
-        self._conns: list = []  # every connection ever opened, for close()
+        self._conns: list = []  # (owner thread, connection) still open, for close()
         self._conns_lock = threading.Lock()
         self._writes = 0
         # Writes are buffered and committed in one transaction by a daemon
@@ -347,7 +318,7 @@ class LiveStore:
         self.flush()
         with self._conns_lock:
             conns, self._conns = self._conns, []
-        for c in conns:
+        for _owner, c in conns:
             try:
                 c.close()
             except Exception:  # pragma: no cover: never raise on shutdown
@@ -363,8 +334,25 @@ class LiveStore:
             c.execute("PRAGMA busy_timeout=3000")
             c.execute("PRAGMA synchronous=NORMAL")
             self._local.conn = c
+            me = threading.current_thread()
             with self._conns_lock:
-                self._conns.append(c)
+                # A thread-local connection outlives its thread (sqlite3
+                # connections can't be weakref'd, and _conns keeps them
+                # alive). Close the ones whose owner thread has exited, or a
+                # gateway serving reads/writes from transient worker threads
+                # leaks 2 fds (db + wal) per thread until it crosses
+                # FD_SETSIZE and select() callers in the process break.
+                live = []
+                for owner, conn in self._conns:
+                    if owner.is_alive() or owner is me:
+                        live.append((owner, conn))
+                    else:
+                        try:
+                            conn.close()
+                        except Exception:  # pragma: no cover
+                            pass
+                live.append((me, c))
+                self._conns = live
         return c
 
     # Indexed columns added since v2, in the order they were introduced; an
@@ -612,7 +600,7 @@ class LiveStore:
             span_id=record.get("span_id"),
             session_id=record.get("session_id"),
             name=record.get("event_name") or record.get("logger"),
-            level=_level_no(record.get("level")),
+            level=level_no(record.get("level")),
             logger=record.get("logger"),
         )
 
@@ -762,14 +750,14 @@ class LiveStore:
         ``hermes.span_kind`` attribute); ``other`` is none of the known kinds."""
         # COALESCE: a missing attribute is NULL, and NOT (NULL OR …) would be
         # NULL rather than true, hiding every row from ``kind=other``.
-        attr = "COALESCE(" + _json_attr("hermes.span_kind") + ", '')"
+        attr = "COALESCE(" + _json_attr(_sc.KIND_OVERRIDE_ATTR) + ", '')"
 
         def one(k: str) -> str:
             clauses = []
             for prefix in _KIND_PREFIXES[k]:
                 clauses.append("name LIKE ? ESCAPE '\\'")
                 args.append(f"{_like(prefix)}%")
-            if k in ("skill", "approval"):
+            if k in _sc.KIND_OVERRIDES:
                 clauses.append(f"{attr} = ?")
                 args.append(k)
             return "(" + " OR ".join(clauses) + ")"

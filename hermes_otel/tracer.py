@@ -3,28 +3,35 @@
 Provides a singleton tracer manager that fans out spans/metrics to one or more
 collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, LGTM, Uptrace,
 OpenObserve, Parseable, or any other OTLP-compatible collector via the ``otlp`` type).
-LangSmith remains a separate, env-var-only single-backend path because it uses
-its own HTTP API rather than OTLP.
-
 When multiple backends are configured the SDK's TracerProvider holds one
 ``BatchSpanProcessor`` per backend — each processor owns its own background
 worker thread, so no single slow collector can block the agent's hot path or
 delay export to the others. A shared ``MeterProvider`` similarly fans metrics
 out via one ``PeriodicExportingMetricReader`` per backend that supports them.
+
+This module owns :class:`HermesOTelPlugin` (init / shutdown, span start / end,
+``record_metric``, ``emit_event``, the session facade) and the singleton. The
+pieces it used to carry live next door since #405 and are re-exported here:
+
+- :mod:`.pipeline` — the Resource, the span processors and metric readers,
+  the exporter wrappers, the logs pipeline;
+- :mod:`.instruments` — the metric instrument table, Views and temporality;
+- :mod:`.host_bridge` — the host-metrics sampler wiring;
+- :mod:`.flush` — the shutdown flush and the background turn-end flush.
 """
 
 from __future__ import annotations
 
 import atexit
-import os
 import threading
 import time
-import uuid
-from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
+from . import flush as _flush
+from . import host_bridge as _host
+from . import pipeline as _pipeline
 from .backends import _TRACES_ONLY, _ResolvedBackend
 from .debug_utils import (
     close_debug_log,
@@ -33,697 +40,38 @@ from .debug_utils import (
     logger,
     remove_sdk_log_forwarding,
 )
-from .helpers import derive_signal_endpoint, is_usage_key, package_version, without_usage_keys
 from .hermes_home import resolve_hermes_home, resolve_profile_name
-from .plugin_config import (
-    BackendConfig,
-    HermesOtelConfig,
-    content_mode,
-    effective_export_batch_size,
-    load_config,
+from .instruments import (  # noqa: F401 — re-exported
+    _CAPPED_LABELS,
+    _INSTRUMENTS,
+    HOST_METRIC_NAMES,
+    InstrumentSpec,
+    metric_otlp_name,
+    metric_preferred_aggregation,
+    metric_temporality_map,
+    metric_views,
 )
+from .log_handler import _LiveLogNoiseFilter  # noqa: F401 — re-exported for tests
+from .pipeline import (  # noqa: F401 — re-exported
+    _OTEL_AVAILABLE,
+    _SERVICE_INSTANCE_ID,
+    _LiveSpanProcessor,
+    _LoggingSpanExporter,
+    _MCPPingFilterProcessor,
+    _RootUsageStrippingExporter,
+    is_mcp_keepalive_ping,
+    strip_root_usage,
+)
+from .plugin_config import HermesOtelConfig, load_config
 from .session_state import SessionState
-
-# Re-exported for tests (conftest resets _PARENT_STACK between runs).
-# Canonical definition lives in span_tracker so the module is self-contained.
-from .span_tracker import _PARENT_STACK, SpanTracker  # noqa: F401 (re-export)
+from .span_tracker import SpanTracker
 
 try:
-    from opentelemetry import metrics, trace
-    from opentelemetry.exporter.otlp.proto.http.metric_exporter import OTLPMetricExporter
-    from opentelemetry.exporter.otlp.proto.http.trace_exporter import OTLPSpanExporter
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
-    from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
-
-    _OTEL_AVAILABLE = True
-except ImportError as e:
-    _OTEL_AVAILABLE = False
+except ImportError:  # pragma: no cover — plugin is unusable without OTel
     # If OTel itself is missing we short-circuit via is_enabled=False before
     # ever returning this; the None is just to keep module-level references valid.
     INVALID_SPAN = None  # type: ignore[assignment]
-    logger.warning(
-        f"[hermes-otel] OpenTelemetry import error: {e}. Run: pip install "
-        "opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http"
-    )
-
-
-def _set_global_once(api_module: Any, kind: str, provider: Any) -> bool:
-    """Install ``provider`` as the OTel global iff no real provider is set yet.
-
-    ``opentelemetry.trace.set_tracer_provider`` / ``metrics.set_meter_provider``
-    accept exactly one call per process (a ``Once``); a second call logs an
-    SDK warning and keeps the first provider. Returns True when installed.
-    """
-    try:
-        getter = getattr(api_module, f"get_{kind}_provider")
-        setter = getattr(api_module, f"set_{kind}_provider")
-        current = getter()
-        # Unset globals are proxy objects (``ProxyTracerProvider`` in trace,
-        # ``_ProxyMeterProvider`` in metrics); anything else is a real provider.
-        if not type(current).__name__.lstrip("_").startswith("Proxy"):
-            debug_log(f"global {kind} provider already set; keeping ours private")
-            return False
-        setter(provider)
-        return True
-    except Exception as e:  # pragma: no cover — never block init on this
-        debug_log(f"could not set global {kind} provider: {e}")
-        return False
-
-
-def _attr_value(v: Any) -> Any:
-    """Make a span attribute value JSON-friendly for the live store."""
-    if isinstance(v, (list, tuple)):
-        return [str(x) for x in v]
-    return v
-
-
-def _serialize_span(span: Any) -> Dict[str, Any]:
-    """Compact dict for the live dashboard — the trace tree + attributes."""
-    ctx = span.get_span_context()
-    parent = getattr(span, "parent", None)
-    start = span.start_time or 0
-    end = span.end_time or 0
-    try:
-        status = span.status.status_code.name  # OK / ERROR / UNSET
-    except Exception:
-        status = "UNSET"
-    return {
-        "trace_id": format(ctx.trace_id, "032x"),
-        "span_id": format(ctx.span_id, "016x"),
-        "parent_span_id": format(parent.span_id, "016x") if parent is not None else None,
-        "name": span.name,
-        "start_time_unix_nano": start,
-        "end_time_unix_nano": end,
-        "duration_ms": round((end - start) / 1e6, 3) if (end and start) else None,
-        "status": status,
-        "attributes": {k: _attr_value(v) for k, v in (span.attributes or {}).items()},
-    }
-
-
-def _is_usage_rollup_span(span: Any) -> bool:
-    attrs = getattr(span, "attributes", None) or {}
-    return attrs.get("openinference.span.kind") == "AGENT" and any(is_usage_key(k) for k in attrs)
-
-
-def strip_root_usage(spans: Any) -> Any:
-    """``spans`` with every AGENT-kind span rebuilt without its usage attributes.
-
-    Spans that carry no roll-up are passed through as the same objects; the
-    sequence keeps its order. Pure, so the per-backend wrapper and its tests
-    share it.
-    """
-    if not _OTEL_AVAILABLE or not any(_is_usage_rollup_span(sp) for sp in spans):
-        return spans
-    out = []
-    for sp in spans:
-        if not _is_usage_rollup_span(sp):
-            out.append(sp)
-            continue
-        kept = without_usage_keys(sp.attributes or {})
-        out.append(
-            ReadableSpan(
-                name=sp.name,
-                context=sp.get_span_context(),
-                parent=sp.parent,
-                resource=sp.resource,
-                attributes=kept,
-                events=sp.events,
-                links=sp.links,
-                kind=sp.kind,
-                status=sp.status,
-                start_time=sp.start_time,
-                end_time=sp.end_time,
-                instrumentation_scope=sp.instrumentation_scope,
-            )
-        )
-    return out
-
-
-if _OTEL_AVAILABLE:
-
-    class _RootUsageStrippingExporter(SpanExporter):
-        """Delegating exporter that drops the token roll-up from agent-kind spans.
-
-        The plugin puts the turn's usage total on the ``agent`` / ``cron``
-        root as well as on each ``api.*`` span. Backends that compute
-        trace-level usage by summing every span (Opik, LangWatch) then show
-        twice the real tokens, and Opik doubles its estimated cost the same
-        way. Bound to one backend's exporter, this wrapper rebuilds each
-        AGENT-kind span without ``gen_ai.usage.*`` / ``llm.token_count.*``
-        (``hermes.cost.*`` and everything else stay) so only that backend's
-        copy changes; every other exporter and the live store still get the
-        roll-up (#327).
-        """
-
-        def __init__(self, inner: Any) -> None:
-            self._inner = inner
-
-        def export(self, spans: Any) -> Any:
-            return self._inner.export(strip_root_usage(spans))
-
-        def shutdown(self) -> None:
-            self._inner.shutdown()
-
-        def force_flush(self, timeout_millis: int = 30000) -> bool:
-            flush = getattr(self._inner, "force_flush", None)
-            return flush(timeout_millis) if flush else True
-
-    class _LoggingSpanExporter(SpanExporter):
-        """Delegating exporter that records every batch's outcome in the debug log.
-
-        ``BatchSpanProcessor`` swallows the exporter's result; the SDK only logs
-        failures to its own logger. One line per batch (``export Phoenix: 12
-        span(s) -> SUCCESS``) makes "did my spans leave the process, and did
-        the backend take them?" answerable from ``debug.log`` alone (#167).
-        """
-
-        def __init__(self, inner: Any, backend_name: str) -> None:
-            self._inner = inner
-            self._name = backend_name
-
-        def export(self, spans: Any) -> Any:
-            count = len(spans) if hasattr(spans, "__len__") else "?"
-            try:
-                result = self._inner.export(spans)
-            except Exception as e:  # pragma: no cover — exporter raised instead of returning
-                debug_log(
-                    f"export {self._name}: {count} span(s) -> FAILURE ({type(e).__name__}: {e})"
-                )
-                return SpanExportResult.FAILURE
-            debug_log(f"export {self._name}: {count} span(s) -> {getattr(result, 'name', result)}")
-            return result
-
-        def shutdown(self) -> None:
-            self._inner.shutdown()
-
-        def force_flush(self, timeout_millis: int = 30000) -> bool:
-            flush = getattr(self._inner, "force_flush", None)
-            return flush(timeout_millis) if flush else True
-
-    class _LiveSpanProcessor(SpanProcessor):
-        """SpanProcessor that mirrors finished spans into the in-process LiveStore."""
-
-        def __init__(self, store: Any) -> None:
-            self._store = store
-
-        def on_start(self, span: Any, parent_context: Any = None) -> None:  # noqa: D401
-            pass
-
-        def on_end(self, span: Any) -> None:
-            try:
-                self._store.add_span(_serialize_span(span))
-                if getattr(span, "parent", None) is None:
-                    # A root span ending is the end of a turn. Commit now rather
-                    # than on the writer thread's next tick: a one-shot process
-                    # (`hermes -z`) exits without running atexit, and the turn's
-                    # last spans would otherwise never reach the file (#215).
-                    self._store.flush()
-            except Exception:  # pragma: no cover — never break the SDK export path
-                pass
-
-        def shutdown(self) -> None:
-            try:
-                self._store.flush()
-            except Exception:  # pragma: no cover
-                pass
-
-        def force_flush(self, timeout_millis: int = 30000) -> bool:
-            try:
-                self._store.flush()
-            except Exception:  # pragma: no cover
-                pass
-            return True
-
-    class _MCPPingFilterProcessor(SpanProcessor):
-        """Delegating SpanProcessor that drops successful MCP keepalive ``ping`` spans.
-
-        MCP Python SDK 2.x (Hermes v0.21.0+) instruments every outbound JSON-RPC
-        request with a CLIENT span on the *global* TracerProvider — the one this
-        plugin installs. Hermes sends ``ping`` on every idle keepalive interval,
-        per MCP connection, so each one surfaces as a standalone single-span
-        ``MCP send ping`` trace that carries no agent activity (#62). Skipping
-        them at ``on_end`` keeps them out of the OTLP exporters *and* the live
-        dashboard store alike. Pings that failed (``StatusCode.ERROR``) are
-        passed through — that is the one case where the span is diagnostic.
-        """
-
-        def __init__(self, inner: SpanProcessor) -> None:
-            self._inner = inner
-
-        def on_start(self, span: Any, parent_context: Any = None) -> None:
-            self._inner.on_start(span, parent_context=parent_context)
-
-        def on_end(self, span: Any) -> None:
-            if _is_mcp_keepalive_ping(span):
-                return
-            self._inner.on_end(span)
-
-        def shutdown(self) -> None:
-            self._inner.shutdown()
-
-        def force_flush(self, timeout_millis: int = 30000) -> bool:
-            return self._inner.force_flush(timeout_millis)
-
-else:  # pragma: no cover — plugin is unusable without OTel
-    _LiveSpanProcessor = None  # type: ignore[assignment, misc]
-    _MCPPingFilterProcessor = None  # type: ignore[assignment, misc]
-
-
-# ── Metric instruments ──────────────────────────────────────────────────
-# One table drives both instrument creation and ``record_metric`` (#95): the
-# hook-side key, the OTLP name every backend and the live store see, the
-# instrument kind, the unit, the description, how the value is applied, and
-# whether the instrument is part of the OTel GenAI conventions (gated by
-# ``emit_genai_metrics``). ``value`` modes: ``one`` adds 1 per call, ``int``
-# adds ``int(value)``, ``float`` adds ``value``, ``record`` records a
-# histogram point (as an int when the unit is ``{token}``).
-
-
-@dataclass(frozen=True)
-class InstrumentSpec:
-    name: str
-    kind: str  # counter | histogram
-    unit: str
-    description: str
-    value: str  # one | int | float | record
-    genai: bool = False
-    # Explicit histogram bucket boundaries (#233). The SDK default is a
-    # millisecond-scale list, wrong for every seconds and token histogram.
-    boundaries: Optional[Tuple[float, ...]] = None
-    # The labels this instrument may carry; anything else is dropped by a
-    # View so a stray attribute can never fan a series out. ``profile`` is
-    # always allowed (added by record_metric).
-    labels: Tuple[str, ...] = ()
-    # Superseded by a seconds instrument; documented as deprecated.
-    deprecated: bool = False
-
-
-# Bucket boundaries. The seconds/token lists are the ones the OTel GenAI
-# conventions specify; the human-timescale list is the spec's
-# ``gen_ai.invoke_workflow.duration`` list reused for sessions and approvals;
-# the millisecond lists keep the deprecated ``ms`` histograms readable until
-# they are removed (2.0).
-_B_OP_SECONDS = (
-    0.01,
-    0.02,
-    0.04,
-    0.08,
-    0.16,
-    0.32,
-    0.64,
-    1.28,
-    2.56,
-    5.12,
-    10.24,
-    20.48,
-    40.96,
-    81.92,
-)
-_B_TOKENS = (
-    1,
-    4,
-    16,
-    64,
-    256,
-    1024,
-    4096,
-    16384,
-    65536,
-    262144,
-    1048576,
-    4194304,
-    16777216,
-    67108864,
-)
-_B_HUMAN_SECONDS = (1, 5, 10, 30, 60, 120, 300, 600, 1800, 3600, 7200)
-_B_SMALL_COUNTS = (1, 2, 4, 8, 16, 32, 64, 128)
-_B_TOOL_MS = (1, 2, 5, 10, 25, 50, 100, 250, 500, 1000, 2500, 5000, 10000, 30000, 60000)
-_B_WAIT_MS = (100, 500, 1000, 5000, 10000, 30000, 60000, 300000, 600000)
-_B_RUN_MS = (1000, 5000, 10000, 30000, 60000, 120000, 300000, 600000, 1800000)
-_MODEL_LABELS = ("model", "provider")
-_GENAI_LABELS = (
-    "gen_ai.operation.name",
-    "gen_ai.provider.name",
-    "gen_ai.request.model",
-    "gen_ai.response.model",
-)
-
-
-_INSTRUMENTS: Dict[str, InstrumentSpec] = {
-    "session_count": InstrumentSpec(
-        "hermes.session.count",
-        "counter",
-        "{session}",
-        "Sessions created",
-        "one",
-        labels=("platform",),
-    ),
-    "session_turns": InstrumentSpec(
-        "hermes.session.turns",
-        "histogram",
-        "{turn}",
-        "Turns per session, recorded when the session is finalized",
-        "record",
-        boundaries=_B_SMALL_COUNTS,
-        labels=("platform", "reason"),
-    ),
-    "session_duration": InstrumentSpec(
-        "hermes.session.duration",
-        "histogram",
-        "s",
-        "Session length from first turn to finalize",
-        "record",
-        boundaries=_B_HUMAN_SECONDS,
-        labels=("platform", "reason"),
-    ),
-    "token_usage": InstrumentSpec(
-        "hermes.token.usage",
-        "counter",
-        "{token}",
-        "Tokens consumed by type",
-        "int",
-        labels=_MODEL_LABELS + ("token_type",),
-    ),
-    "prompt_cache_tokens": InstrumentSpec(
-        "hermes.prompt_cache.tokens",
-        "counter",
-        "{token}",
-        "Prompt tokens by cache result",
-        "int",
-        labels=_MODEL_LABELS + ("api_mode", "cache_result"),
-    ),
-    "prompt_cache_observations": InstrumentSpec(
-        "hermes.prompt_cache.observations",
-        "counter",
-        "{request}",
-        "Requests with provider-reported prompt-cache usage",
-        "one",
-        labels=_MODEL_LABELS + ("api_mode", "cache_result"),
-    ),
-    "cost_usage": InstrumentSpec(
-        "hermes.cost.usage",
-        "counter",
-        "USD",
-        "USD cost per API call, as priced by Hermes (actual or estimated)",
-        "float",
-        labels=_MODEL_LABELS + ("cost_status",),
-    ),
-    "tool_duration": InstrumentSpec(
-        "hermes.tool.duration",
-        "histogram",
-        "ms",
-        "Tool execution time",
-        "record",
-        boundaries=_B_TOOL_MS,
-        labels=("tool_name", "gen_ai.tool.name"),
-        deprecated=True,
-    ),
-    "message_count": InstrumentSpec(
-        "hermes.message.count",
-        "counter",
-        "{message}",
-        "Completed assistant messages",
-        "one",
-        labels=_MODEL_LABELS,
-    ),
-    "model_usage": InstrumentSpec(
-        "hermes.model.usage",
-        "counter",
-        "{message}",
-        "Messages per model and provider",
-        "one",
-        labels=_MODEL_LABELS,
-    ),
-    "skill_inferred": InstrumentSpec(
-        "hermes.skill.inferred",
-        "counter",
-        "{hit}",
-        "Skill-name inference hits on tool spans",
-        "one",
-        labels=("skill_name", "source"),
-    ),
-    "subagent_count": InstrumentSpec(
-        "hermes.subagent.count",
-        "counter",
-        "{run}",
-        "Delegated sub-agent runs by role and status",
-        "one",
-        labels=("role", "status", "child_status"),
-    ),
-    "subagent_duration": InstrumentSpec(
-        "hermes.subagent.duration",
-        "histogram",
-        "ms",
-        "Delegated sub-agent wall-clock duration",
-        "record",
-        boundaries=_B_RUN_MS,
-        labels=("role",),
-        deprecated=True,
-    ),
-    "api_error_count": InstrumentSpec(
-        "hermes.api.error.count",
-        "counter",
-        "{request}",
-        "Failed provider API requests by error type / status class",
-        "one",
-        labels=("error_type", "status_class", "retryable") + _MODEL_LABELS,
-    ),
-    "retry_count": InstrumentSpec(
-        "hermes.retry.count",
-        "counter",
-        "{attempt}",
-        "Provider API retry attempts",
-        "int",
-        labels=_MODEL_LABELS,
-    ),
-    "kanban_task_count": InstrumentSpec(
-        "hermes.kanban.task.count",
-        "counter",
-        "{transition}",
-        "Kanban board transitions (claimed, spawned, completed, blocked, worker_exited, stale_claim) by board",
-        "one",
-        labels=("outcome", "board"),
-    ),
-    "approval_count": InstrumentSpec(
-        "hermes.approval.count",
-        "counter",
-        "{prompt}",
-        "Human-in-the-loop approval prompts by choice / pattern",
-        "one",
-        labels=("choice",),
-    ),
-    "approval_duration": InstrumentSpec(
-        "hermes.approval.duration",
-        "histogram",
-        "ms",
-        "Human-decision wait time on approval prompts",
-        "record",
-        boundaries=_B_WAIT_MS,
-        labels=("choice",),
-        deprecated=True,
-    ),
-    # Seconds-based successors of the ``ms`` histograms above (#233). The
-    # ``ms`` ones stay for one minor release, marked deprecated, then go in 2.0.
-    "tool_duration_s": InstrumentSpec(
-        "gen_ai.execute_tool.duration",
-        "histogram",
-        "s",
-        "Duration of a single tool execution (OTel GenAI convention)",
-        "record",
-        genai=True,
-        boundaries=_B_OP_SECONDS,
-        labels=("gen_ai.tool.name", "error.type"),
-    ),
-    "approval_wait_s": InstrumentSpec(
-        "hermes.approval.wait.duration",
-        "histogram",
-        "s",
-        "Human / guardian decision wait time on approval prompts",
-        "record",
-        boundaries=_B_HUMAN_SECONDS,
-        labels=("choice",),
-    ),
-    "subagent_run_s": InstrumentSpec(
-        "hermes.subagent.run.duration",
-        "histogram",
-        "s",
-        "Delegated sub-agent wall-clock duration",
-        "record",
-        boundaries=_B_HUMAN_SECONDS,
-        labels=("role",),
-    ),
-    # OTel GenAI semantic-convention instruments, emitted alongside the
-    # hermes.* ones so generic GenAI dashboards work without per-user config.
-    # Units follow the spec: {token} for tokens, s for durations.
-    "gen_ai.client.token.usage": InstrumentSpec(
-        "gen_ai.client.token.usage",
-        "histogram",
-        "{token}",
-        "Number of tokens used per client (LLM) operation, by type",
-        "record",
-        genai=True,
-        boundaries=_B_TOKENS,
-        labels=("gen_ai.token.type",) + _GENAI_LABELS,
-    ),
-    "gen_ai.client.operation.duration": InstrumentSpec(
-        "gen_ai.client.operation.duration",
-        "histogram",
-        "s",
-        "Duration of client (LLM) operations",
-        "record",
-        genai=True,
-        boundaries=_B_OP_SECONDS,
-        labels=_GENAI_LABELS + ("error.type",),
-    ),
-    "gen_ai.agent.token.usage": InstrumentSpec(
-        "gen_ai.agent.token.usage",
-        "histogram",
-        "{token}",
-        "Tokens used per agent invocation (session/turn rollup), by type",
-        "record",
-        genai=True,
-        boundaries=_B_TOKENS,
-        labels=("gen_ai.token.type",) + _GENAI_LABELS,
-    ),
-}
-
-
-def metric_views(histogram: str = "explicit") -> List[Any]:
-    """One ``View`` per instrument: the label allow-list and, for histograms
-    with ``histogram="explicit"``, the bucket boundaries (#233).
-
-    With ``exponential`` the boundaries are left to the readers' preferred
-    aggregation (a View's aggregation would override every reader's).
-    """
-    if not _OTEL_AVAILABLE:
-        return []
-    from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
-
-    views: List[Any] = []
-    for spec in _INSTRUMENTS.values():
-        kwargs: Dict[str, Any] = {
-            "instrument_name": spec.name,
-            "attribute_keys": set(spec.labels) | {"profile"},
-        }
-        if spec.kind == "histogram" and spec.boundaries and histogram != "exponential":
-            kwargs["aggregation"] = ExplicitBucketHistogramAggregation(
-                boundaries=list(spec.boundaries)
-            )
-        views.append(View(**kwargs))
-    return views
-
-
-def metric_temporality_map(temporality: Optional[str]) -> Optional[Dict[Any, Any]]:
-    """``preferred_temporality`` for an ``OTLPMetricExporter`` (#233).
-
-    ``delta`` follows the OTLP exporter spec's ``delta`` preference: delta for
-    counters, histograms and observable counters, cumulative for up-down
-    counters and gauges. ``cumulative`` is cumulative for everything. ``None``
-    leaves the SDK default (``OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE``
-    or cumulative).
-    """
-    if not temporality or not _OTEL_AVAILABLE:
-        return None
-    from opentelemetry.sdk.metrics import (
-        Counter,
-        Histogram,
-        ObservableCounter,
-        ObservableGauge,
-        ObservableUpDownCounter,
-        UpDownCounter,
-    )
-    from opentelemetry.sdk.metrics.export import AggregationTemporality
-
-    delta = AggregationTemporality.DELTA
-    cumulative = AggregationTemporality.CUMULATIVE
-    if temporality == "delta":
-        return {
-            Counter: delta,
-            Histogram: delta,
-            ObservableCounter: delta,
-            UpDownCounter: cumulative,
-            ObservableUpDownCounter: cumulative,
-            ObservableGauge: cumulative,
-        }
-    return {
-        Counter: cumulative,
-        Histogram: cumulative,
-        ObservableCounter: cumulative,
-        UpDownCounter: cumulative,
-        ObservableUpDownCounter: cumulative,
-        ObservableGauge: cumulative,
-    }
-
-
-def metric_preferred_aggregation(histogram: str) -> Optional[Dict[Any, Any]]:
-    """``preferred_aggregation`` for an exporter: exponential histograms on request."""
-    if histogram != "exponential" or not _OTEL_AVAILABLE:
-        return None
-    from opentelemetry.sdk.metrics import Histogram
-    from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation
-
-    return {Histogram: ExponentialBucketHistogramAggregation()}
-
-
-# Labels whose value space is open (any model slug, tool or skill name, free
-# text reason). record_metric folds values past ``metrics_label_limit`` into
-# ``other`` because the Python SDK has no cardinality limit of its own.
-_CAPPED_LABELS = frozenset(
-    {
-        "model",
-        "gen_ai.request.model",
-        "gen_ai.response.model",
-        "tool_name",
-        "gen_ai.tool.name",
-        "skill_name",
-        "reason",
-        "role",
-        "child_status",
-        "error_type",
-    }
-)
-
-
-def metric_otlp_name(key: str) -> str:
-    """The OTLP instrument name for a hook-side metric key (the key itself when unknown)."""
-    spec = _INSTRUMENTS.get(key)
-    return spec.name if spec else key
-
-
-def _is_mcp_keepalive_ping(span: Any) -> bool:
-    """True for a finished MCP ``ping`` request span that did not fail.
-
-    Matches on the SDK's ``mcp.method.name`` attribute, with the span name as
-    a fallback, so it is robust to either changing on its own.
-    """
-    attrs = getattr(span, "attributes", None) or {}
-    if attrs.get("mcp.method.name") != "ping" and getattr(span, "name", None) != "MCP send ping":
-        return False
-    code = getattr(getattr(span, "status", None), "status_code", None)
-    return getattr(code, "name", None) != "ERROR"
-
-
-# The live Logs tab is fed by ``log_handler.LiveLogProcessor`` on the same
-# ``LoggerProvider`` as the OTLP exporters (#265). The noise filter is
-# re-exported for callers that imported it from here.
-from .log_handler import _LiveLogNoiseFilter  # noqa: E402,F401
-
-# One id per process, generated at import: two Hermes processes exporting to
-# the same backend get distinct Resources and therefore distinct series.
-_SERVICE_INSTANCE_ID = str(uuid.uuid4())
-
-# Env vars the Hermes kanban dispatcher sets on a worker -> resource attribute.
-# Only these three: the dispatcher also exports the DB and workspace paths and
-# the claim lock, which are a private layout and a token, not identity.
-_KANBAN_ENV_ATTRS = (
-    ("HERMES_KANBAN_TASK", "hermes.kanban.task_id"),
-    ("HERMES_KANBAN_BOARD", "hermes.kanban.board"),
-    ("HERMES_KANBAN_RUN_ID", "hermes.kanban.run_id"),
-)
 
 
 class HermesOTelPlugin:
@@ -760,6 +108,9 @@ class HermesOTelPlugin:
 
     def __init__(self, config: Optional[HermesOtelConfig] = None):
         self.tracer = None
+        # Span registry: active spans, the per-session parent stacks, the
+        # skill / approval / sub-agent records and the turn registry the
+        # orphan sweep reads.
         self.spans = SpanTracker()
         # Per-session aggregators for hook callbacks (token totals, I/O,
         # turn summary, tool start times). Owned here so tests that
@@ -769,22 +120,16 @@ class HermesOTelPlugin:
         # True when the in-process live store (zero-config dashboard) is wired.
         self._live_active = False
         # Our own provider objects (independent of the OTel globals, which can
-        # only be set once per process — see _init_otlp_pipeline).
+        # only be set once per process — see pipeline.init_otlp_pipeline).
         self._tracer_provider: Optional[Any] = None
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
-        # per backend. The singular ``_span_processor`` / ``_metric_reader``
-        # attributes are kept as aliases pointing at the first entry so legacy
-        # tests and external callers that introspect them keep working.
+        # per backend.
         self._span_processors: List[Any] = []
         self._metric_readers: List[Any] = []
         self._log_processors: List[Any] = []
-        self._span_processor = None
-        self._metric_reader = None
         # LoggerProvider created when capture_logs is on and at least one
         # log-capable backend is wired up. None otherwise.
         self._logger_provider: Optional[Any] = None
-        # LangSmith backend (None when using OTLP). Set when LANGSMITH_TRACING=true.
-        self._langsmith = None
         # Metrics
         self._meter = None
         self._meter_provider = None
@@ -804,11 +149,6 @@ class HermesOTelPlugin:
         self._label_values: Dict[str, set] = {}
         self._label_cap_logged: set = set()
         self.profile_name: str = resolve_profile_name()
-        # Turn registry for orphan sweep (session_id -> perf_counter start time)
-        self._turn_started_at: Dict[str, float] = {}
-        # Map session_id -> set of active span keys, so the orphan sweep
-        # can finalize sub-spans (api:/tool:) whose keys don't embed session_id.
-        self._session_keys: Dict[str, set] = {}
         # Guards against double-registering the atexit flush handler when
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
@@ -838,11 +178,6 @@ class HermesOTelPlugin:
             self._start_host_metrics()
         return ok
 
-    @property
-    def _subagent_registry(self) -> Dict[str, Dict[str, Any]]:
-        """Alias of the tracker's delegation registry (kept for introspection)."""
-        return self.spans._subagent_registry
-
     def _reset_pipeline_state(self) -> None:
         """Forget every pipeline object from a previous init (not the config)."""
         self.tracer = None
@@ -850,10 +185,7 @@ class HermesOTelPlugin:
         self._span_processors = []
         self._metric_readers = []
         self._log_processors = []
-        self._span_processor = None
-        self._metric_reader = None
         self._logger_provider = None
-        self._langsmith = None
         self._meter = None
         self._meter_provider = None
         self._live_active = False
@@ -903,11 +235,6 @@ class HermesOTelPlugin:
                     obj.shutdown()
                 except Exception:
                     pass
-        if self._langsmith is not None:
-            try:
-                self._langsmith.shutdown()
-            except Exception:
-                pass
         if self._logger_provider is not None:
             try:
                 from . import log_handler
@@ -916,9 +243,8 @@ class HermesOTelPlugin:
             except Exception:
                 pass
         self.spans.end_all()
+        self.spans.clear_turns()
         self.sessions.clear()
-        self._turn_started_at.clear()
-        self._session_keys.clear()
         self._reset_pipeline_state()
         self._initialized = False
         remove_sdk_log_forwarding()
@@ -928,12 +254,10 @@ class HermesOTelPlugin:
         """Initialize one or more backends.
 
         Resolution order:
-          1. ``LANGSMITH_TRACING=true`` → LangSmith (HTTP API, single backend).
-          2. ``config.backends`` non-empty → fan out to every entry via
+          1. ``config.backends`` non-empty → fan out to every entry via
              ``_init_otlp_pipeline``.
-          3. Explicit ``endpoint`` arg → single Phoenix backend (via
-             ``_init_otlp`` for back-compat).
-          4. Legacy env-var detection (single backend, first match wins, in
+          2. Explicit ``endpoint`` arg → single Phoenix backend.
+          3. Legacy env-var detection (single backend, first match wins, in
              the order of ``backends._ENV_PRIORITY``).
 
         Returns True if at least one backend was initialized.
@@ -946,16 +270,12 @@ class HermesOTelPlugin:
             logger.info("[hermes-otel] Disabled via config (enabled=false)")
             return False
 
-        # 1. LangSmith short-circuit (legacy compat).
-        if self._wants_langsmith():
-            return self._init_langsmith()
-
-        # 2. Multi-backend fan-out from yaml config.
+        # 1. Multi-backend fan-out from yaml config.
         if self.config.backends:
             backends: List[_ResolvedBackend] = []
             for bc in self.config.backends:
                 try:
-                    rb = self._resolve_backend_config(bc)
+                    rb = _backends.resolve(bc)
                 except Exception as e:
                     logger.warning(f"[hermes-otel] ✗ backend {bc.type!r} skipped: {e}")
                     continue
@@ -966,20 +286,20 @@ class HermesOTelPlugin:
                 return False
             return self._init_otlp_pipeline(backends)
 
-        # 3. Explicit endpoint arg → single Phoenix backend.
+        # 2. Explicit endpoint arg → single Phoenix backend.
         if endpoint:
-            return self._init_otlp(endpoint, backend_name="Phoenix")
+            backend = _ResolvedBackend(
+                type="phoenix",
+                endpoint=endpoint,
+                display_name="Phoenix",
+                supports_metrics="phoenix" not in _TRACES_ONLY,
+            )
+            return self._init_otlp_pipeline([backend])
 
-        # 4. Legacy env-var detection (single backend).
+        # 3. Legacy env-var detection (single backend).
         return self._init_otlp_from_env()
 
     # ── Backend resolution ───────────────────────────────────────────────
-
-    @staticmethod
-    def _wants_langsmith() -> bool:
-        return os.getenv("LANGSMITH_TRACING", "").strip().lower() == "true" and bool(
-            os.getenv("LANGSMITH_API_KEY", "").strip()
-        )
 
     def _init_otlp_from_env(self) -> bool:
         """First-match-wins single-backend init from environment variables.
@@ -1004,389 +324,52 @@ class HermesOTelPlugin:
                     "live-only mode (in-process dashboard store)."
                 )
                 return self._init_otlp_pipeline([])
+            types = ", ".join(_backends._ENV_PRIORITY)
             logger.warning(
-                "[hermes-otel] ✗ No backend configured "
-                "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
-                "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
-                "Langfuse credentials, or LANGSMITH_TRACING; or define "
-                "'backends:' in config.yaml)"
+                "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
+                f"type's credentials for one of: {types}; or define 'backends:' in "
+                "hermes_otel.yaml)"
             )
             return False
         return self._init_otlp_pipeline([rb])
 
-    def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
-        """Turn a yaml ``BackendConfig`` into a ready-to-wire backend.
+    # ── Pipeline (delegates to .pipeline) ────────────────────────────────
 
-        Thin shim around :func:`backends.resolve` — kept as a method so
-        subclasses / monkeypatch-based tests have a stable seam.
-        """
-        return _backends.resolve(bc)
-
-    # ── Backend initializers ─────────────────────────────────────────────
-
-    def _init_otlp(
-        self, endpoint: str, headers: Optional[Dict[str, str]] = None, backend_name: str = "OTLP"
-    ) -> bool:
-        """Single-backend convenience wrapper around ``_init_otlp_pipeline``.
-
-        For external callers that bypass ``init()`` (e.g. e2e harnesses) and
-        want to wire one endpoint directly. ``init()`` itself never uses it —
-        the resolved backend from env vars or ``backends:`` goes straight to
-        the pipeline so no capability is lost.
-        """
-        backend = _ResolvedBackend(
-            type=backend_name.lower(),
-            endpoint=endpoint,
-            display_name=backend_name,
-            headers=headers,
-            supports_metrics=backend_name.lower() not in _TRACES_ONLY,
-        )
-        return self._init_otlp_pipeline([backend])
-
-    def _init_langsmith(self) -> bool:
-        """Initialize LangSmith backend from environment variables."""
-        from .langsmith_backend import LangSmithBackend
-
-        try:
-            backend = LangSmithBackend.from_env()
-            if backend is None:
-                return False
-            self._langsmith = backend
-            self._initialized = True
-            logger.info(f"[hermes-otel] ✓ LangSmith at {backend.endpoint}")
-            return True
-        except Exception as e:
-            logger.error(f"[hermes-otel] ✗ LangSmith init failed: {e}")
-            return False
-
-    def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
-        # Process identity (OTel semconv). ``service.instance.id`` is what keeps
-        # two Hermes processes on one host (gateway + dashboard, two profiles)
-        # from writing the same metric series — without it their independent
-        # cumulative counters interleave into one sawtooth (#79). Users can
-        # still override any of these via resource_attributes.
-        attrs: Dict[str, Any] = {
-            "service.name": "hermes-agent",
-            "service.instance.id": _SERVICE_INSTANCE_ID,
-            "process.pid": os.getpid(),
-        }
-        pkg_version = package_version()
-        if pkg_version:
-            attrs["service.version"] = pkg_version
-        # Which Hermes profile produced this telemetry (#70). A resource
-        # attribute so backends can split traces and metrics per agent even
-        # where span attributes are not filterable; also on the root span.
-        attrs["hermes.profile"] = self.profile_name
-        # Kanban worker identity: the dispatcher exports these into a worker's
-        # environment, so everything a card's run emits can be joined back to
-        # the card and to the attempt. Keyed on the task: Hermes pins the
-        # current board into HERMES_KANBAN_BOARD at the start of EVERY chat
-        # (hermes-agent #20074), so the board alone does not mark a worker.
-        if os.getenv("HERMES_KANBAN_TASK", "").strip():
-            for env_name, attr_name in _KANBAN_ENV_ATTRS:
-                value = os.getenv(env_name, "").strip()
-                if value:
-                    attrs[attr_name] = value
-        if self.config.global_tags:
-            attrs.update(self.config.global_tags)
-        if self.config.resource_attributes:
-            attrs.update(self.config.resource_attributes)
-        for b in backends or []:
-            for key, value in (b.resource_attributes or {}).items():
-                existing = attrs.get(key)
-                if existing is not None and str(existing) != str(value):
-                    raise ValueError(
-                        f"{b.display_name} resource attribute {key!r} conflicts with "
-                        f"configured value {existing!r}"
-                    )
-                attrs[key] = value
-        for b in backends or []:
-            if b.type == "weave":
-                missing = [key for key in ("wandb.entity", "wandb.project") if not attrs.get(key)]
-                if missing:
-                    joined = ", ".join(missing)
-                    raise ValueError(
-                        f"Weave requires {joined} as resource attributes "
-                        "(set them under resource_attributes or on the weave backend entry)"
-                    )
-        project_name = self.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
-        if project_name:
-            attrs["openinference.project.name"] = project_name
-        # host.name lets the host/GPU series join the traces they were sampled
-        # alongside (and a Collector's hostmetrics series, if one runs too).
-        if self.config.host_metrics and not attrs.get("host.name"):
-            try:
-                import socket
-
-                attrs["host.name"] = socket.gethostname()
-            except Exception:  # pragma: no cover — never block init on this
-                pass
-        return Resource.create(attrs)
+    def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> Any:
+        return _pipeline.build_resource(self, backends)
 
     @staticmethod
     def _derive_metrics_endpoint(traces_endpoint: str) -> str:
-        """Phoenix/SigNoz use /v1/traces and /v1/metrics on the same host."""
-        return derive_signal_endpoint(traces_endpoint, "metrics")
+        return _pipeline.derive_metrics_endpoint(traces_endpoint)
 
     def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        """Global ``headers:`` first, the backend's own on top (per-backend wins).
-
-        A conflict must favour the backend: its headers include resolver-built
-        auth (``Authorization`` for Langfuse, ``x-honeycomb-team`` ...), which a
-        global header must never clobber. Same rule in ``log_handler``.
-        """
-        merged: Dict[str, str] = dict(self.config.headers or {})
-        if backend_headers:
-            merged.update(backend_headers)
-        return merged or None
+        return _pipeline.merge_headers(self, backend_headers)
 
     def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
-        """Wire one TracerProvider to all backends + a shared MeterProvider.
-
-        Each backend gets its own ``BatchSpanProcessor`` (independent worker
-        thread, independent queue) so a slow or unreachable collector cannot
-        delay span enqueue or starve the others. Metrics fan out the same
-        way: one ``PeriodicExportingMetricReader`` per backend that supports
-        metrics, attached to a single shared ``MeterProvider``.
-        """
-        try:
-            resource = self._build_resource(backends)
-
-            provider_kwargs: Dict[str, Any] = {"resource": resource}
-            if self.config.sample_rate is not None:
-                from opentelemetry.sdk.trace.sampling import (
-                    ParentBased,
-                    TraceIdRatioBased,
-                )
-
-                provider_kwargs["sampler"] = ParentBased(TraceIdRatioBased(self.config.sample_rate))
-            provider = TracerProvider(**provider_kwargs)
-
-            def _attach(processor: Any) -> None:
-                # Every processor sits behind the same MCP keepalive filter so
-                # the OTLP backends and the live dashboard agree on what a
-                # trace list looks like. See _MCPPingFilterProcessor.
-                if self.config.suppress_mcp_ping_spans:
-                    processor = _MCPPingFilterProcessor(processor)
-                provider.add_span_processor(processor)
-
-            # In-process live store for the zero-config dashboard. Added FIRST so
-            # the dashboard renders the agent's activity even with no OTLP
-            # backend configured — install the plugin, open the tab, see traces.
-            self._live_active = False
-            if self.config.dashboard_live and _LiveSpanProcessor is not None:
-                from .live_store import get_live_store
-
-                store = get_live_store(
-                    create=True,
-                    max_rows=self.config.dashboard_live_max_spans,
-                    retention_hours=self.config.dashboard_live_retention_hours,
-                )
-                if store is not None:
-                    _attach(_LiveSpanProcessor(store))
-                    self._live_active = True
-                    # The live Logs tab is wired in _init_logs_pipeline (same provider
-                    # as the OTLP exporters, #265).
-
-            metric_readers: List[Any] = []
-
-            for b in backends:
-                hdrs = self._merge_headers(b.headers)
-                if b.supports_traces:
-                    try:
-                        inner: Any = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
-                        if not b.root_usage:
-                            # This backend sums usage over every span (#327).
-                            inner = _RootUsageStrippingExporter(inner)
-                            debug_log(f"root usage stripped for {b.display_name}")
-                        exporter = _LoggingSpanExporter(inner, b.display_name)
-                        processor = BatchSpanProcessor(
-                            exporter,
-                            max_queue_size=self.config.span_batch_max_queue_size,
-                            schedule_delay_millis=self.config.span_batch_schedule_delay_ms,
-                            max_export_batch_size=effective_export_batch_size(self.config),
-                            export_timeout_millis=self.config.span_batch_export_timeout_ms,
-                        )
-                        _attach(processor)
-                        self._span_processors.append(processor)
-                    except Exception as e:
-                        logger.error(f"[hermes-otel] ✗ {b.display_name} traces init failed: {e}")
-                        continue
-
-                if b.supports_metrics:
-                    # A backend with its own metrics store names the URL (#366);
-                    # the rest serve /v1/metrics next to /v1/traces.
-                    metrics_endpoint = b.metrics_endpoint or self._derive_metrics_endpoint(
-                        b.endpoint
-                    )
-                    try:
-                        # ``metrics_headers`` set (even empty) means "these, not the
-                        # trace headers": GreptimeDB's trace pipeline header must not
-                        # reach the other signals (#363).
-                        metric_hdrs = self._merge_headers(
-                            b.metrics_headers if b.metrics_headers is not None else b.headers
-                        )
-                        temporality = b.metrics_temporality or self.config.metrics_temporality
-                        m_exporter = OTLPMetricExporter(
-                            endpoint=metrics_endpoint,
-                            headers=metric_hdrs,
-                            preferred_temporality=metric_temporality_map(temporality),
-                            preferred_aggregation=metric_preferred_aggregation(
-                                self.config.metrics_histogram
-                            ),
-                        )
-                        if temporality:
-                            debug_log(f"metrics temporality for {b.display_name}: {temporality}")
-                        reader = PeriodicExportingMetricReader(
-                            m_exporter,
-                            export_interval_millis=self.config.flush_interval_ms,
-                        )
-                        metric_readers.append(reader)
-                        self._metric_readers.append(reader)
-                    except Exception as e:
-                        logger.error(f"[hermes-otel] ✗ {b.display_name} metrics init failed: {e}")
-
-                logger.info(
-                    f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}"
-                    + (" (query only)" if not b.supports_traces else "")
-                    + (
-                        " (traces + logs)"
-                        if b.supports_traces and not b.supports_metrics and b.supports_logs
-                        else ""
-                    )
-                    + (
-                        " (traces only)"
-                        if b.supports_traces and not b.supports_metrics and not b.supports_logs
-                        else ""
-                    )
-                )
-
-            # Proceed when *either* an OTLP backend or the live store is active.
-            # (Live-only = the zero-config dashboard with no external collector.)
-            if not self._span_processors and not self._live_active:
-                return False
-
-            # Back-compat singular aliases — first entry wins.
-            if self._span_processors:
-                self._span_processor = self._span_processors[0]
-            if self._metric_readers:
-                self._metric_reader = self._metric_readers[0]
-
-            # The OTel globals can be set once per process: on a re-init the
-            # SDK keeps the old (now shut down) provider and logs "Overriding of
-            # current TracerProvider is not allowed". So the tracer / meter we
-            # use always come from OUR provider objects; the globals are set
-            # only while still unset, for third-party code that instruments
-            # through them.
-            self._tracer_provider = provider
-            _set_global_once(trace, "tracer", provider)
-            self.tracer = provider.get_tracer("hermes-otel-plugin")
-
-            if metric_readers:
-                self._meter_provider = MeterProvider(
-                    resource=resource,
-                    metric_readers=metric_readers,
-                    views=metric_views(self.config.metrics_histogram),
-                )
-                _set_global_once(metrics, "meter", self._meter_provider)
-                self._meter = self._meter_provider.get_meter("hermes-otel-plugin")
-                self._create_metric_instruments()
-                debug_log(f"Metrics initialized for {len(metric_readers)} backend(s)")
-
-            self._init_logs_pipeline(resource, backends)
-
-            self._initialized = True
-            self._register_atexit_flush()
-
-            mode = content_mode(self.config)
-            if mode == "off":
-                logger.warning(
-                    "[hermes-otel] ⚠ content_capture=off — prompts, tool I/O and responses are not recorded"
-                )
-            elif mode == "full":
-                logger.info(
-                    "[hermes-otel] ✓ content_capture=full — complete prompts and responses on every "
-                    "api.* span (set content_capture: preview or off to reduce)"
-                )
-            if len(self._span_processors) > 1:
-                logger.info(
-                    f"[hermes-otel] ✓ Multi-backend fan-out active "
-                    f"({len(self._span_processors)} collectors, "
-                    f"{len(self._metric_readers)} with metrics)"
-                )
-            if self._live_active:
-                logger.info(
-                    "[hermes-otel] ✓ Live dashboard store active"
-                    + ("" if self._span_processors else " (no OTLP backend — live-only)")
-                )
-            return True
-        except Exception as e:
-            logger.error(f"[hermes-otel] ✗ pipeline init failed: {e}")
-            return False
+        return _pipeline.init_otlp_pipeline(self, backends)
 
     def _create_metric_instruments(self) -> None:
-        """Create every instrument in ``_INSTRUMENTS`` on ``self._meter``.
+        _pipeline.create_metric_instruments(self)
 
-        One that fails to create is left out rather than aborting the rest;
-        ``record_metric`` skips keys without an instrument.
-        """
-        if self._meter is None:
-            return
-        for key, spec in _INSTRUMENTS.items():
-            try:
-                factory = (
-                    self._meter.create_histogram
-                    if spec.kind == "histogram"
-                    else self._meter.create_counter
-                )
-                self._instruments[key] = factory(
-                    spec.name, unit=spec.unit, description=spec.description
-                )
-            except Exception as e:  # pragma: no cover — defensive
-                logger.warning(f"[hermes-otel] could not create metric {spec.name}: {e}")
-        self._create_host_metric_instruments()
+    def _init_logs_pipeline(self, resource: Any, backends: List[_ResolvedBackend]) -> None:
+        _pipeline.init_logs_pipeline(self, resource, backends)
 
-    # ── Host metrics (CPU / GPU) ─────────────────────────────────────────
+    # ── Host metrics (delegates to .host_bridge) ─────────────────────────
 
     def _ensure_host_sampler(self) -> Optional[Any]:
-        """Create (but do not start) the sampler when ``config.host_metrics`` is on."""
-        if not self.config.host_metrics:
-            return None
-        if self._host_metrics is None:
-            from .host_metrics import HostMetricsSampler
-
-            self._host_metrics = HostMetricsSampler(
-                interval_ms=self.config.host_metrics_interval_ms,
-                gpu_vendor=self.config.host_metrics_gpu,
-                on_sample=self._mirror_host_sample,
-            )
-        return self._host_metrics
+        return _host.ensure_host_sampler(self)
 
     def _start_host_metrics(self) -> None:
-        sampler = self._ensure_host_sampler()
-        if sampler is None:
-            return
-        if not sampler.available:
-            logger.warning(
-                "[hermes-otel] ⚠ host_metrics=true but psutil is not importable; "
-                "host metrics disabled"
-            )
-            return
-        if sampler.start():
-            gpu = sampler.gpu_vendor_detected or "none"
-            logger.info(
-                f"[hermes-otel] ✓ Host metrics sampler on "
-                f"(every {self.config.host_metrics_interval_ms} ms, gpu={gpu})"
-            )
+        _host.start_host_metrics(self)
 
     def stop_host_metrics(self) -> None:
-        """Stop the sampler thread and release any GPU SDK (idempotent)."""
-        sampler = self._host_metrics
-        if sampler is not None:
-            try:
-                sampler.stop()
-            except Exception:  # pragma: no cover — shutdown must never raise
-                pass
+        _host.stop_host_metrics(self)
+
+    def _mirror_host_sample(self, sample: Any) -> None:
+        _host.mirror_host_sample(self, sample)
+
+    def _create_host_metric_instruments(self) -> None:
+        _host.create_host_metric_instruments(self)
 
     @property
     def host_metrics(self) -> Optional[Any]:
@@ -1394,200 +377,7 @@ class HermesOTelPlugin:
         sampler = self._host_metrics
         return sampler if sampler is not None and sampler.running else None
 
-    def _mirror_host_sample(self, sample: Any) -> None:
-        """Push each reading into the live store so the built-in dashboard sees it."""
-        if not self._live_active:
-            return
-        try:
-            from .live_store import get_live_store
-
-            store = get_live_store()
-            if store is None:
-                return
-            ts = sample.wall_ns
-            store.add_metric("process.cpu.utilization", sample.process_cpu_total, {}, ts)
-            store.add_metric("system.cpu.utilization", sample.system_cpu_total, {}, ts)
-            gpu = sample.gpu_utilization
-            if gpu is not None:
-                store.add_metric("hw.gpu.utilization", gpu, {}, ts)
-        except Exception:  # pragma: no cover — never break the sampler
-            pass
-
-    def _create_host_metric_instruments(self) -> None:
-        """Register the host/GPU observable instruments (semantic-convention names).
-
-        Each callback reads the sampler's latest reading; the SDK invokes them
-        on every collection, so the export cadence is ``flush_interval_ms``
-        while the sampler keeps its own finer cadence for the per-tool window
-        attributes.
-        """
-        sampler = self._ensure_host_sampler()
-        if sampler is None or self._meter is None:
-            return
-        try:
-            from opentelemetry.metrics import Observation
-        except ImportError:  # pragma: no cover
-            return
-
-        def _cpu(getter):
-            def callback(_options):
-                latest = sampler.latest()
-                if latest is None:
-                    return []
-                modes = getter(latest)
-                return [Observation(v, {"cpu.mode": mode}) for mode, v in modes.items()]
-
-            return callback
-
-        def _gpu(field, extra=None):
-            def callback(_options):
-                latest = sampler.latest()
-                if latest is None:
-                    return []
-                vendor = sampler.gpu_vendor_detected or "unknown"
-                out = []
-                for g in latest.gpus:
-                    value = getattr(g, field)
-                    if value is None:
-                        continue
-                    attrs = {"hw.id": f"gpu{g.index}", "hw.vendor": vendor}
-                    if extra:
-                        attrs.update(extra)
-                    out.append(Observation(value, attrs))
-                return out
-
-            return callback
-
-        self._meter.create_observable_gauge(
-            "process.cpu.utilization",
-            callbacks=[_cpu(lambda s: s.process_cpu)],
-            unit="1",
-            description="CPU utilization of the Hermes process tree, by mode (1 = all cores busy)",
-        )
-        self._meter.create_observable_gauge(
-            "system.cpu.utilization",
-            callbacks=[_cpu(lambda s: s.system_cpu)],
-            unit="1",
-            description="Whole-host CPU utilization, by mode",
-        )
-        self._meter.create_observable_gauge(
-            "hw.gpu.utilization",
-            callbacks=[_gpu("utilization")],
-            unit="1",
-            description="GPU busy ratio per device",
-        )
-        self._meter.create_observable_up_down_counter(
-            "hw.gpu.memory.usage",
-            callbacks=[_gpu("memory_bytes")],
-            unit="By",
-            description="GPU memory in use per device",
-        )
-        self._meter.create_observable_gauge(
-            "hw.power",
-            callbacks=[_gpu("power_w", {"hw.type": "gpu"})],
-            unit="W",
-            description="GPU power draw per device",
-        )
-
-    def _init_logs_pipeline(self, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
-        """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
-
-        One provider carries the enrichment processor, the live store sink
-        (when ``dashboard_live`` is on) and one exporter per log-capable
-        backend (#265). Skipped silently when ``capture_logs=false`` or the
-        SDK logs module is unavailable; with no log-capable backend the live
-        store alone still gets the records. Failures in individual backend
-        exporters are logged but do not block pipeline init.
-        """
-        capture = bool(self.config.capture_logs)
-        events = bool(self.config.log_events)
-        if not (capture or events):
-            return
-
-        from . import log_handler
-
-        if not log_handler._LOGS_AVAILABLE:
-            logger.warning(
-                "[hermes-otel] ⚠ logs.capture / logs.events are on but opentelemetry.sdk._logs "
-                "is unavailable; upgrade opentelemetry-sdk to enable logs"
-            )
-            return
-
-        from .plugin_config import content_mode as _content_mode
-
-        rules = log_handler.rules_from_config(self.config)
-        batch = {
-            "schedule_delay_ms": self.config.log_batch_schedule_delay_ms,
-            "max_queue_size": self.config.log_batch_max_queue_size,
-            "max_export_batch_size": self.config.log_batch_max_export_batch_size,
-            "export_timeout_ms": self.config.log_batch_export_timeout_ms,
-        }
-        processors = log_handler.build_log_processors(
-            backends,
-            self.config.headers,
-            batch=batch,
-            rules=rules,
-            content_mode=_content_mode(self.config),
-            preview_chars=self.config.preview_max_chars,
-        )
-        live_store = None
-        if self._live_active:
-            try:
-                from .live_store import get_live_store
-
-                live_store = get_live_store(create=False)
-            except Exception:  # pragma: no cover
-                live_store = None
-        if not processors:
-            backend_types = ", ".join(b.type for b in backends) or "none"
-            what = "logs.capture" if capture else "logs.events"
-            if live_store is None:
-                logger.warning(
-                    f"[hermes-otel] ⚠ {what} is on but no configured backend "
-                    f"accepts OTLP logs ({backend_types}); add a signoz/otlp backend "
-                    f"or set logs: true on an existing entry"
-                )
-                return
-            logger.info(
-                f"[hermes-otel] Logs → live store only (no configured backend accepts "
-                f"OTLP logs: {backend_types})"
-            )
-
-        level = log_handler.resolve_level(self.config.log_level)
-        # The live tail has its own floor (``logs.live_min_level``, INFO by
-        # default) so Hermes's DEBUG firehose cannot evict useful lines from
-        # the bounded buffer; OTLP keeps ``log_level``.
-        live_level = max(level, log_handler.resolve_level(self.config.log_live_min_level))
-        self._logger_provider = log_handler.install_handler(
-            resource=resource,
-            processors=processors,
-            level=level,
-            attach_logger=self.config.log_attach_logger,
-            context_resolver=self.active_span_for_logs,
-            tracker=self.spans,
-            live_store=live_store,
-            live_min_level=live_level,
-            rules=rules,
-            max_attribute_length=self.config.log_max_attribute_length,
-            attach_handler=capture,
-        )
-        if self._logger_provider is None:
-            return
-
-        self._log_processors = [p for p, _b in processors]
-        if processors:
-            sinks = (
-                f"{len(processors)} backend(s){', live store' if live_store is not None else ''}"
-            )
-            if capture:
-                target = self.config.log_attach_logger or "root"
-                logger.info(
-                    f"[hermes-otel] ✓ Logs → {sinks} "
-                    f"(attached to {target}, level={self.config.log_level.upper()}"
-                    f"{', events on' if events else ''})"
-                )
-            else:
-                logger.info(f"[hermes-otel] ✓ Log events → {sinks} (stdlib logs not captured)")
+    # ── Events ───────────────────────────────────────────────────────────
 
     def emit_event(
         self,
@@ -1610,8 +400,6 @@ class HermesOTelPlugin:
         if not self.config.log_events or self._logger_provider is None:
             return False
         try:
-            from opentelemetry.trace import set_span_in_context
-
             from . import log_events as _ev
 
             attrs = _ev.strip_none(attributes)
@@ -1658,9 +446,8 @@ class HermesOTelPlugin:
             return cached or None
         try:
             import re as _re
-            from pathlib import Path as _Path
 
-            text = (_Path(__file__).resolve().parent / "plugin.yaml").read_text(encoding="utf-8")
+            text = (Path(__file__).resolve().parent / "plugin.yaml").read_text(encoding="utf-8")
             m = _re.search(r"^version:\s*[\"']?([^\"'\n]+)", text, _re.M)
             self._plugin_version_cache = m.group(1).strip() if m else ""
         except Exception:
@@ -1684,6 +471,8 @@ class HermesOTelPlugin:
         session_id, root = found
         span = self.spans.get_current_parent(str(session_id)) or root
         return str(session_id), span
+
+    # ── Metrics ──────────────────────────────────────────────────────────
 
     def _bound_labels(self, attributes: Dict[str, Any]) -> Dict[str, Any]:
         """Fold an open-ended label's values past ``metrics_label_limit`` into ``other``."""
@@ -1726,13 +515,11 @@ class HermesOTelPlugin:
         attributes = self._bound_labels(attributes)
         if self._live_active:
             try:
-                import time as _time
-
                 from .live_store import get_live_store
 
                 store = get_live_store()
                 if store is not None:
-                    store.add_metric(otlp_name, value, attributes or {}, _time.time_ns())
+                    store.add_metric(otlp_name, value, attributes or {}, time.time_ns())
             except Exception:  # pragma: no cover — never break the hot path
                 pass
 
@@ -1752,6 +539,8 @@ class HermesOTelPlugin:
         except Exception:  # pragma: no cover — never break the hot path
             pass
 
+    # ── Spans ────────────────────────────────────────────────────────────
+
     def start_span(
         self,
         name: str,
@@ -1761,13 +550,18 @@ class HermesOTelPlugin:
         session_id: Optional[str] = None,
         parent: Any = None,
         links: Optional[list] = None,
+        sweep_with_turn: bool = True,
     ):
         """Create and track a new span.
 
         Args:
             session_id: When provided, the span key is linked to this session
                         so the orphan sweep can finalize it if the session
-                        exceeds root_span_ttl_ms.
+                        exceeds root_span_ttl_ms. ``session_id`` still picks
+                        the parent to nest under.
+            sweep_with_turn: ``False`` keeps the span out of the session's
+                        turn sweep: a delegation span outlives the turn that
+                        opened it and has its own TTL (#392).
             parent: Explicit parent span to nest under, overriding the
                     session-keyed parent stack. Used for sub-agent delegation,
                     where a child's root span must nest under the delegation
@@ -1780,25 +574,9 @@ class HermesOTelPlugin:
         if not self._initialized:
             return INVALID_SPAN
 
-        if session_id:
-            self._session_keys.setdefault(session_id, set()).add(key)
+        if session_id and sweep_with_turn:
+            self.spans.link_key(session_id, key)
 
-        # LangSmith mode — HTTP only
-        if self._langsmith:
-            parent_run = parent if parent is not None else self.spans.get_current_parent(session_id)
-            run_obj = self._langsmith.start_span(
-                name,
-                key,
-                kind,
-                attributes,
-                parent_run=parent_run,
-            )
-            if run_obj is None:
-                return INVALID_SPAN
-            self.spans.start_span(key, run_obj)
-            return run_obj
-
-        # OTLP mode (Phoenix/Langfuse/etc.)
         if not self.tracer:
             return INVALID_SPAN
 
@@ -1833,28 +611,12 @@ class HermesOTelPlugin:
     ):
         """End a tracked span by its key."""
         try:
-            # LangSmith mode — HTTP
-            if self._langsmith:
-                run = self.spans.get_span(key)
-                if run:
-                    self._langsmith.end_span(
-                        run, attributes=attributes, status=status, error_message=error_message
-                    )
-                    # Bypass SpanTracker.end_span (it calls .end(), but LangSmith
-                    # runs are dicts the client closes over HTTP).
-                    self.spans.discard(key)
-            else:
-                # OTLP mode — just enqueue. BatchSpanProcessor handles
-                # export asynchronously. on_session_end / atexit flush
-                # when data actually needs to be visible.
-                self.spans.end_span(
-                    key, attributes=attributes, status=status, error_message=error_message
-                )
-            # Remove this key from any session's active-key set.
-            for sid, keys in list(self._session_keys.items()):
-                keys.discard(key)
-                if not keys:
-                    self._session_keys.pop(sid, None)
+            # Just enqueue: the BatchSpanProcessor exports asynchronously;
+            # on_session_end / atexit flush when data needs to be visible.
+            self.spans.end_span(
+                key, attributes=attributes, status=status, error_message=error_message
+            )
+            self.spans.unlink_key(key)
             debug_log(f"end_span: key={key}")
         except Exception as e:
             debug_log(f"Error ending span (key={key}): {e}")
@@ -1862,39 +624,35 @@ class HermesOTelPlugin:
     # ── Turn registry (orphan sweep) ─────────────────────────────────────
 
     def register_turn(self, session_id: str, started_at: Optional[float] = None) -> None:
-        """Record the start time of a session for TTL tracking.
-
-        ``started_at`` is a ``time.perf_counter()``-style monotonic value
-        (seconds, arbitrary epoch). Defaults to ``now``; tests pass a
-        back-dated value to simulate timeouts without monkeypatching
-        ``time``.
-        """
-        if not session_id:
-            return
-        self._turn_started_at[session_id] = (
-            started_at if started_at is not None else time.perf_counter()
-        )
+        """Record the start time of a session for TTL tracking (see ``SpanTracker``)."""
+        self.spans.register_turn(session_id, started_at)
 
     def unregister_turn(self, session_id: str) -> None:
         """Remove a session from the turn registry (normal end)."""
-        self._turn_started_at.pop(session_id, None)
+        self.spans.unregister_turn(session_id)
 
     def sweep_expired_turns(self) -> list:
         """Finalize any sessions whose start time exceeds root_span_ttl_ms.
 
         Returns the list of finalized session_ids (useful for tests).
         """
-        if not self._turn_started_at:
-            return []
-        threshold_seconds = self.config.root_span_ttl_ms / 1000.0
-        now = time.perf_counter()
-        expired = [
-            sid
-            for sid, started_at in self._turn_started_at.items()
-            if now - started_at > threshold_seconds
-        ]
+        expired = self.spans.expired_turns(self.config.root_span_ttl_ms / 1000.0)
         for sid in expired:
             self._finalize_orphan(sid)
+        self.sweep_expired_delegations()
+        return expired
+
+    def sweep_expired_delegations(self) -> list:
+        """Close delegation spans whose ``subagent_stop`` never arrived within
+        ``subagent_span_ttl_ms``; returns their child session ids."""
+        expired = self.spans.expired_delegations(self.config.subagent_span_ttl_ms / 1000.0)
+        for child in expired:
+            self.spans.pop_subagent(child)
+            self.spans.end_delegation(child)
+            self.sessions.pop_delegation(child)
+            self.end_span(
+                f"subagent:{child}", attributes={"hermes.subagent.swept": True}, status="ok"
+            )
         return expired
 
     def _finalize_orphan(self, session_id: str) -> None:
@@ -1903,20 +661,21 @@ class HermesOTelPlugin:
         Marks the session span (if present) with `hermes.turn.final_status=timed_out`
         and status OK (per PRD: timeouts must not inflate error rates).
         """
-        self._turn_started_at.pop(session_id, None)
-
         # End non-session active spans first (api.*, tool.*, llm.*) so the
         # session span ends last and contains them in the hierarchy.
         session_key = f"session:{session_id}"
-        keys = self._session_keys.pop(session_id, set())
-        non_session_keys = [k for k in keys if k != session_key]
-        for key in non_session_keys:
+        keys = self.spans.pop_session_keys(session_id)
+        for key in [k for k in keys if k != session_key]:
             self.end_span(key, status="ok")
 
         if self.spans.has_span(session_key):
+            # A turn the gateway stopped (agent_loop_stopped) whose end never
+            # arrived is interrupted, not timed out (#396).
+            ps = self.sessions.peek(session_id)
+            stopped = ps is not None and bool(ps.stop_reason)
             self.end_span(
                 session_key,
-                attributes={"hermes.turn.final_status": "timed_out"},
+                attributes={"hermes.turn.final_status": "interrupted" if stopped else "timed_out"},
                 status="ok",
             )
         # Drop the expired session's parent stack, skill spans, delegation
@@ -1926,122 +685,21 @@ class HermesOTelPlugin:
         self.spans.drop_session(session_id)
         self.sessions.pop(session_id)
 
-    def _force_flush(self, timeout_millis: int = 2000, providers: bool = True):
-        """Force export of buffered spans (and, with ``providers``, metrics and logs).
+    # ── Flushing (delegates to .flush) ───────────────────────────────────
 
-        Synchronous. Called on process shutdown via atexit so a graceful exit
-        loses nothing; the turn-end flush goes through :meth:`flush_async`
-        instead. Per-span flushing is deliberately NOT done — it would defeat
-        the whole purpose of the BatchSpanProcessor queue.
-        """
-        processors = self._span_processors or (
-            [self._span_processor] if self._span_processor else []
-        )
-        for processor in processors:
-            try:
-                processor.force_flush(timeout_millis=timeout_millis)
-            except Exception:
-                pass
-        if providers:
-            self._force_flush_providers(timeout_millis)
+    def _force_flush(self, timeout_millis: int = 2000, providers: bool = True) -> None:
+        _flush.force_flush(self, timeout_millis, providers)
 
     def _force_flush_providers(self, timeout_millis: int = 2000) -> None:
-        """Flush the metric and log providers (their readers export synchronously).
-
-        One thread per metric reader: ``MeterProvider.force_flush`` walks the
-        readers in order and each export blocks for up to the exporter's
-        deadline (10 s) when its backend is down, so with several backends
-        configured and one of them unreachable a one-shot ``hermes -z`` exits
-        before the reachable backends get their only export. Verified on
-        2026-10-06 with an 11-backend config, four of them down: traces and
-        logs landed on the local stacks, no metric point ever did.
-        """
-        readers = list(self._metric_readers)
-        if self._meter_provider and len(readers) > 1:
-            threads = []
-            for reader in readers:
-
-                def flush_one(r=reader) -> None:
-                    try:
-                        r.force_flush(timeout_millis=timeout_millis)
-                    except Exception:
-                        pass
-
-                t = threading.Thread(
-                    target=flush_one, name="hermes-otel-flush-metrics", daemon=True
-                )
-                t.start()
-                threads.append(t)
-            deadline = time.monotonic() + max(0.05, timeout_millis / 1000.0)
-            for t in threads:
-                t.join(timeout=max(0.0, deadline - time.monotonic()))
-        elif self._meter_provider:
-            try:
-                self._meter_provider.force_flush(timeout_millis=timeout_millis)
-            except Exception:
-                pass
-        if self._logger_provider:
-            try:
-                self._logger_provider.force_flush(timeout_millis=timeout_millis)
-            except Exception:
-                pass
+        _flush.force_flush_providers(self, timeout_millis)
 
     def flush_async(self, timeout_millis: int = 500) -> bool:
-        """Flush every span processor from a background thread (#91).
-
-        The turn-end flush used to run on the hook thread, inside the agent
-        loop, with a 2 s timeout per backend: one unreachable collector stalled
-        every turn end by up to 2 s × (backends + 2). Now one worker thread
-        flushes the span processors, then the metric and log providers, with a
-        short timeout (the providers were left to their periodic readers until
-        #233, which left one-shot runs with no metrics at all). Flushes coalesce: a
-        request while one is queued is a no-op. Returns whether one was queued.
-        """
-        if self._flush_pending.is_set():
-            return False
-        self._flush_pending.set()
-
-        def run() -> None:
-            debug_log("background flush: start")
-            # Spans AND the metric / log providers (#233): a one-shot
-            # ``hermes -z`` exits without atexit and never reaches the 60 s
-            # metric tick, so the turn-end flush is the only export a
-            # short-lived run gets. The providers flush on their own thread,
-            # concurrently with the span processors, so the whole flush takes
-            # about one export round-trip rather than the sum of them and fits
-            # inside the hook's bounded ``force_flush_wait_ms``.
-            providers_thread = threading.Thread(
-                target=self._force_flush_providers,
-                args=(timeout_millis,),
-                name="hermes-otel-flush-providers",
-                daemon=True,
-            )
-            try:
-                providers_thread.start()
-                self._force_flush(timeout_millis=timeout_millis, providers=False)
-                providers_thread.join(timeout=max(0.05, timeout_millis / 1000.0 * 2))
-            finally:
-                self._flush_pending.clear()
-                debug_log("background flush: done")
-
-        try:
-            executor = self._flush_executor
-            if executor is None:
-                from concurrent.futures import ThreadPoolExecutor
-
-                executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="hermes-otel-flush")
-                self._flush_executor = executor
-            executor.submit(run)
-            return True
-        except Exception:
-            self._flush_pending.clear()
-            return False
+        """Queue a background flush of spans, metrics and logs (#91); see :mod:`.flush`."""
+        return _flush.flush_async(self, timeout_millis)
 
     def flush_wait(self, timeout_s: float = 5.0) -> None:
         """Wait for a queued background flush to finish (tests, shutdown)."""
-        deadline = time.perf_counter() + timeout_s
-        while self._flush_pending.is_set() and time.perf_counter() < deadline:
-            time.sleep(0.005)
+        _flush.flush_wait(self, timeout_s)
 
     def _register_atexit_flush(self) -> None:
         """Register a single atexit hook that flushes and shuts the pipeline down.

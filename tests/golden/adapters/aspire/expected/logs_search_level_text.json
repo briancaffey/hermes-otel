@@ -1,0 +1,28 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/resources"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/logs?limit=5000&resource=hermes-agent-ab54&resource=hermes-agent-f26a&search=careful"
+  }
+ ],
+ "result": [
+  {
+   "attributes": {},
+   "body": "careful: the output was truncated",
+   "event_name": "hermes.turn.end",
+   "level": "WARN",
+   "logger": "cli",
+   "session_id": null,
+   "severity_number": 13,
+   "span_id": null,
+   "time_unix_nano": 1791750002000000000,
+   "trace_id": null
+  }
+ ]
+}

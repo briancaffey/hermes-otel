@@ -8,9 +8,6 @@ both (a) the on-the-wire query shape the adapter sends, and
 
 from __future__ import annotations
 
-import sys
-import types
-from pathlib import Path
 from typing import Any, Dict, List
 from unittest.mock import patch
 from urllib.parse import unquote_plus
@@ -21,51 +18,16 @@ import pytest
 # Hermes plugin loader imports ``plugin_api.py`` by file path), so point
 # sys.path at the ``dashboard/`` folder exactly as the loader does at
 # runtime.
-_HERE = Path(__file__).resolve().parent.parent.parent  # repo root
-_DASHBOARD = _HERE / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-
-
-# ``fastapi`` is a dashboard-side runtime dependency, not a plugin
-# dev dep. Stub just enough of it so the adapters import cleanly in
-# isolation. HTTPException is the only symbol they touch.
-if "fastapi" not in sys.modules:
-    _fastapi_stub = types.ModuleType("fastapi")
-
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    _fastapi_stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _fastapi_stub
-
-
-from backends.base import StructuredFilter  # noqa: E402
-
-
-@pytest.fixture(autouse=True)
-def _no_developer_config():
-    """Adapters read the top-level ``project_name`` from the developer's real
-    hermes_otel.yaml otherwise; with #159 a configured project the fake
-    project list lacks is a 404, so every test here must start from no config."""
-    with patch("backends.top_level_config", return_value={}):
-        yield
-
+from hermes_otel.dashboard.backends.base import StructuredFilter
 
 # ── Phoenix ────────────────────────────────────────────────────────────
 
 
 @pytest.fixture()
 def phoenix_adapter():
-    from backends.phoenix import PhoenixAdapter
+    from hermes_otel.dashboard.backends.phoenix import PhoenixAdapter
 
-    # Never read the developer's real hermes_otel.yaml: a configured
-    # project_name that the fake project list lacks is now a 404 (#159).
-    with patch("backends.top_level_config", return_value={}):
-        return PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
+    return PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
 
 
 def _phoenix_project_list_response() -> Dict[str, Any]:
@@ -130,7 +92,7 @@ class TestPhoenixRootsOnly:
                 return _phoenix_project_list_response()
             return _phoenix_spans_response([_phoenix_span("agent")])
 
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             phoenix_adapter.search(StructuredFilter(roots_only=True), 0, 1_000_000, 10)
 
         # Find the spans query (second call).
@@ -148,7 +110,7 @@ class TestPhoenixRootsOnly:
                 return _phoenix_project_list_response()
             return _phoenix_spans_response([_phoenix_span("agent")])
 
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             phoenix_adapter.search(StructuredFilter(roots_only=False), 0, 1_000_000, 10)
 
         spans_call = [c for c in calls if "SearchSpans" in c.get("query", "")][0]
@@ -175,7 +137,7 @@ class TestPhoenixRootsOnly:
                 return _phoenix_project_list_response()
             return _phoenix_spans_response(spans)
 
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             result = phoenix_adapter.search(StructuredFilter(roots_only=True), 0, 1_000_000, 10)
 
         trace_names = [t["rootTraceName"] for t in result["traces"]]
@@ -198,7 +160,7 @@ class TestPhoenixRootsOnly:
                 return _phoenix_project_list_response()
             return _phoenix_spans_response(spans)
 
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             result = phoenix_adapter.search(StructuredFilter(roots_only=False), 0, 1_000_000, 10)
 
         trace_names = [t["rootTraceName"] for t in result["traces"]]
@@ -230,7 +192,7 @@ def _tempo_trace(trace_id: str, root_name: str, matched_names: List[str]) -> Dic
 
 class TestTempoRootsOnly:
     def _build_adapter(self):
-        from backends.tempo import TempoAdapter
+        from hermes_otel.dashboard.backends.tempo import TempoAdapter
 
         return TempoAdapter({"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"})
 
@@ -249,7 +211,7 @@ class TestTempoRootsOnly:
             captured["url"] = url
             return {"traces": traces, "metrics": {}}
 
-        with patch("backends.tempo.http_get_json", side_effect=fake):
+        with patch("hermes_otel.dashboard.backends.tempo.http_get_json", side_effect=fake):
             result = adapter.search(StructuredFilter(roots_only=True), 0, 1, 50)
 
         assert "nestedSetParent < 0" in unquote_plus(captured["url"])
@@ -264,7 +226,7 @@ class TestTempoRootsOnly:
             captured["url"] = url
             return {"traces": [], "metrics": {}}
 
-        with patch("backends.tempo.http_get_json", side_effect=fake):
+        with patch("hermes_otel.dashboard.backends.tempo.http_get_json", side_effect=fake):
             adapter.search(StructuredFilter(roots_only=False), 0, 1, 50)
         assert "nestedSetParent" not in unquote_plus(captured["url"])
 
@@ -275,7 +237,7 @@ class TestTempoRootsOnly:
             _tempo_trace("t-child-api", "cron", ["api.gpt-4"]),
         ]
         with patch(
-            "backends.tempo.http_get_json",
+            "hermes_otel.dashboard.backends.tempo.http_get_json",
             return_value={"traces": traces, "metrics": {}},
         ):
             result = adapter.search(StructuredFilter(roots_only=False), 0, 1, 50)
@@ -293,7 +255,7 @@ class TestTempoRootsOnly:
             captured["url"] = url
             return {"traces": [], "metrics": {}}
 
-        with patch("backends.tempo.http_get_json", side_effect=_fake_get):
+        with patch("hermes_otel.dashboard.backends.tempo.http_get_json", side_effect=_fake_get):
             adapter.search(StructuredFilter(roots_only=True), 0, 1, 50)
 
         from urllib.parse import unquote_plus
@@ -306,7 +268,7 @@ class TestTempoRootsOnly:
 
 class TestOpenObserveRootsOnly:
     def _adapter(self):
-        from backends.openobserve import OpenObserveAdapter
+        from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
 
         return OpenObserveAdapter(
             {
@@ -325,7 +287,9 @@ class TestOpenObserveRootsOnly:
             captured.append(body)
             return {"hits": []}
 
-        with patch("backends.openobserve.http_post_json", side_effect=_fake_post):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_post_json", side_effect=_fake_post
+        ):
             adapter.search(StructuredFilter(roots_only=True), 0, 1, 50)
 
         # First attempt should include parent-id filter.
@@ -340,7 +304,9 @@ class TestOpenObserveRootsOnly:
             captured.append(body)
             return {"hits": []}
 
-        with patch("backends.openobserve.http_post_json", side_effect=_fake_post):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_post_json", side_effect=_fake_post
+        ):
             adapter.search(StructuredFilter(roots_only=False), 0, 1, 50)
 
         # Only one attempt, and it should NOT reference parent id.
@@ -355,7 +321,7 @@ class TestOpenObserveRootsOnly:
 
 class TestSigNozRootsOnly:
     def _adapter(self):
-        from backends.signoz import SigNozAdapter
+        from hermes_otel.dashboard.backends.signoz import SigNozAdapter
 
         return SigNozAdapter(
             {
@@ -387,7 +353,7 @@ class TestSigNozRootsOnly:
 
 class TestUptraceRootsOnly:
     def _adapter(self):
-        from backends.uptrace import UptraceAdapter
+        from hermes_otel.dashboard.backends.uptrace import UptraceAdapter
 
         return UptraceAdapter(
             {
@@ -405,7 +371,7 @@ class TestUptraceRootsOnly:
             assert "parent" not in adapter._build_uql(StructuredFilter(roots_only=roots_only))
 
     def test_roots_only_drops_child_rows_client_side(self, monkeypatch):
-        from backends import uptrace as up
+        from hermes_otel.dashboard.backends import uptrace as up
 
         adapter = self._adapter()
         adapter.token = "t"
@@ -451,7 +417,7 @@ class TestUptraceRootsOnly:
 
 class TestJaegerRootsOnly:
     def _adapter(self):
-        from backends.jaeger import JaegerAdapter
+        from hermes_otel.dashboard.backends.jaeger import JaegerAdapter
 
         return JaegerAdapter({"type": "jaeger", "endpoint": "http://localhost:16686"})
 
@@ -487,7 +453,7 @@ class TestJaegerRootsOnly:
                 self._jaeger_trace("t-fake-root", root_has_parent=True),
             ]
         }
-        with patch("backends.jaeger.http_get_json", return_value=data):
+        with patch("hermes_otel.dashboard.backends.jaeger.http_get_json", return_value=data):
             result = adapter.search(StructuredFilter(roots_only=True), 0, 1, 50)
 
         assert [t["traceID"] for t in result["traces"]] == ["t-real-root"]
@@ -500,7 +466,7 @@ class TestJaegerRootsOnly:
                 self._jaeger_trace("t-fake-root", root_has_parent=True),
             ]
         }
-        with patch("backends.jaeger.http_get_json", return_value=data):
+        with patch("hermes_otel.dashboard.backends.jaeger.http_get_json", return_value=data):
             result = adapter.search(StructuredFilter(roots_only=False), 0, 1, 50)
 
         assert sorted(t["traceID"] for t in result["traces"]) == [
@@ -528,7 +494,7 @@ class TestOrderingNewestFirst:
     starts with the most recent trace."""
 
     def test_tempo_sorts_oldest_input_newest_output(self):
-        from backends.tempo import TempoAdapter
+        from hermes_otel.dashboard.backends.tempo import TempoAdapter
 
         adapter = TempoAdapter({"type": "lgtm", "endpoint": "http://localhost:4318/v1/traces"})
         # Backend returned in ascending order — adapter should flip.
@@ -550,12 +516,14 @@ class TestOrderingNewestFirst:
                 "spanSets": [{"spans": [{"name": "agent"}], "matched": 1}],
             },
         ]
-        with patch("backends.tempo.http_get_json", return_value={"traces": traces}):
+        with patch(
+            "hermes_otel.dashboard.backends.tempo.http_get_json", return_value={"traces": traces}
+        ):
             result = adapter.search(StructuredFilter(), 0, 1, 10)
         assert [t["traceID"] for t in result["traces"]] == ["t-new", "t-old"]
 
     def test_phoenix_sends_sort_desc_on_start_time(self):
-        from backends.phoenix import PhoenixAdapter
+        from hermes_otel.dashboard.backends.phoenix import PhoenixAdapter
 
         adapter = PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
         captured: List[Dict[str, Any]] = []
@@ -566,7 +534,7 @@ class TestOrderingNewestFirst:
                 return _phoenix_project_list_response()
             return _phoenix_spans_response([])
 
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             adapter.search(StructuredFilter(), 0, 1, 10)
 
         spans_call = [c for c in captured if "SearchSpans" in c.get("query", "")][0]
@@ -574,7 +542,7 @@ class TestOrderingNewestFirst:
         assert sort == {"col": "startTime", "dir": "desc"}
 
     def test_signoz_query_orders_by_timestamp_desc(self):
-        from backends.signoz import SigNozAdapter
+        from hermes_otel.dashboard.backends.signoz import SigNozAdapter
 
         adapter = SigNozAdapter(
             {"type": "signoz", "endpoint": "http://localhost:3301", "api_key": "k"}
@@ -584,7 +552,7 @@ class TestOrderingNewestFirst:
         assert order == [{"columnName": "timestamp", "order": "desc"}]
 
     def test_uptrace_asks_for_time_desc_and_sorts_newest_first(self, monkeypatch):
-        from backends import uptrace as up
+        from hermes_otel.dashboard.backends import uptrace as up
 
         adapter = up.UptraceAdapter({"type": "uptrace", "dsn": "http://secret@localhost:14318"})
         adapter.token = "t"
@@ -621,7 +589,7 @@ class TestOrderingNewestFirst:
         assert [t["traceID"] for t in traces] == ["new", "old"]
 
     def test_openobserve_sql_has_order_by_desc(self):
-        from backends.openobserve import OpenObserveAdapter
+        from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
 
         adapter = OpenObserveAdapter(
             {
@@ -637,13 +605,15 @@ class TestOrderingNewestFirst:
             captured.append(body)
             return {"hits": []}
 
-        with patch("backends.openobserve.http_post_json", side_effect=_fake_post):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_post_json", side_effect=_fake_post
+        ):
             adapter.search(StructuredFilter(), 0, 1, 10)
 
         assert any("ORDER BY _timestamp DESC" in c["query"]["sql"] for c in captured)
 
     def test_jaeger_sorts_client_side_desc(self):
-        from backends.jaeger import JaegerAdapter
+        from hermes_otel.dashboard.backends.jaeger import JaegerAdapter
 
         adapter = JaegerAdapter({"type": "jaeger", "endpoint": "http://localhost:16686"})
         # Response in ascending order; adapter should flip to descending.
@@ -683,7 +653,7 @@ class TestOrderingNewestFirst:
                 },
             ]
         }
-        with patch("backends.jaeger.http_get_json", return_value=data):
+        with patch("hermes_otel.dashboard.backends.jaeger.http_get_json", return_value=data):
             result = adapter.search(StructuredFilter(), 0, 1, 10)
         assert [t["traceID"] for t in result["traces"]] == ["t-new", "t-old"]
 
@@ -699,7 +669,7 @@ class TestFreeTextSearch:
     def test_tempo_regex_on_input_and_output_and_no_root_filter(self):
         from urllib.parse import unquote_plus
 
-        from backends.tempo import TempoAdapter
+        from hermes_otel.dashboard.backends.tempo import TempoAdapter
 
         adapter = TempoAdapter({"type": "tempo", "endpoint": "http://localhost:4318/v1/traces"})
         captured = {}
@@ -708,7 +678,7 @@ class TestFreeTextSearch:
             captured["url"] = url
             return {"traces": [_tempo_trace("t-child-api", "agent", ["api.gpt-4"])], "metrics": {}}
 
-        with patch("backends.tempo.http_get_json", side_effect=_fake_get):
+        with patch("hermes_otel.dashboard.backends.tempo.http_get_json", side_effect=_fake_get):
             result = adapter.search(
                 StructuredFilter(free_text="B1-shell.echo", roots_only=True), 0, 1, 50
             )
@@ -719,7 +689,7 @@ class TestFreeTextSearch:
         assert [t["traceID"] for t in result["traces"]] == ["t-child-api"]
 
     def test_openobserve_ors_over_the_columns_the_stream_has(self):
-        from backends.openobserve import OpenObserveAdapter
+        from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
 
         adapter = OpenObserveAdapter(
             {
@@ -736,16 +706,19 @@ class TestFreeTextSearch:
                 {"name": "duration"},
             ]
         }
-        with patch("backends.openobserve.http_get_json", return_value=schema):
+        with patch("hermes_otel.dashboard.backends.openobserve.http_get_json", return_value=schema):
             where = adapter._build_where(StructuredFilter(free_text="B1-x"))
         assert "(gen_ai_input_messages LIKE '%B1-x%' OR tool_name LIKE '%B1-x%')" in where
         assert "llm_input" not in where
         # Cached: a second build does not fetch the schema again.
-        with patch("backends.openobserve.http_get_json", side_effect=AssertionError("refetched")):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_get_json",
+            side_effect=AssertionError("refetched"),
+        ):
             assert "tool_name LIKE" in adapter._build_where(StructuredFilter(free_text="B1-x"))
 
     def test_openobserve_falls_back_to_the_genai_columns_without_a_schema(self):
-        from backends.openobserve import OpenObserveAdapter
+        from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
 
         adapter = OpenObserveAdapter(
             {
@@ -755,14 +728,17 @@ class TestFreeTextSearch:
                 "password": "p",
             }
         )
-        with patch("backends.openobserve.http_get_json", side_effect=RuntimeError("down")):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_get_json",
+            side_effect=RuntimeError("down"),
+        ):
             where = adapter._build_where(StructuredFilter(free_text="B1-x"))
         assert where.startswith(
             "(gen_ai_input_messages LIKE '%B1-x%' OR gen_ai_output_messages LIKE '%B1-x%')"
         )
 
     def test_signoz_contains_on_input_value(self):
-        from backends.signoz import SigNozAdapter
+        from hermes_otel.dashboard.backends.signoz import SigNozAdapter
 
         adapter = SigNozAdapter({"type": "signoz", "endpoint": "http://localhost:4318/v1/traces"})
         items = adapter._build_filters(StructuredFilter(free_text="B1-x", roots_only=False))[
@@ -775,7 +751,7 @@ class TestFreeTextSearch:
         } in items
 
     def test_uptrace_contains_on_the_flattened_attribute(self):
-        from backends.uptrace import UptraceAdapter
+        from hermes_otel.dashboard.backends.uptrace import UptraceAdapter
 
         adapter = UptraceAdapter(
             {
@@ -793,7 +769,7 @@ class TestSigNozRowShape:
     """SigNoz's current trace detail: one row per span, columns named apart."""
 
     def test_rows_become_a_tree_with_parents_status_and_tags(self):
-        from backends.signoz import _signoz_trace_to_otlp
+        from hermes_otel.dashboard.backends.signoz import signoz_trace_to_otlp
 
         cols = [
             "__time",
@@ -849,7 +825,7 @@ class TestSigNozRowShape:
                 "Internal",
             ],
         ]
-        otlp = _signoz_trace_to_otlp([{"columns": cols, "events": rows, "isSubTree": False}])
+        otlp = signoz_trace_to_otlp([{"columns": cols, "events": rows, "isSubTree": False}])
         spans = otlp["batches"][0]["scopeSpans"][0]["spans"]
         by_name = {sp["name"]: sp for sp in spans}
         assert by_name["agent"]["parentSpanId"] is None
@@ -865,7 +841,7 @@ class TestSigNozRowShape:
         assert by_name["agent"]["status"]["code"] == 1
 
     def test_unknown_shapes_stay_empty(self):
-        from backends.signoz import _signoz_trace_to_otlp
+        from hermes_otel.dashboard.backends.signoz import signoz_trace_to_otlp
 
-        assert _signoz_trace_to_otlp("nope") == {"batches": []}
-        assert _signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}
+        assert signoz_trace_to_otlp("nope") == {"batches": []}
+        assert signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}

@@ -15,8 +15,12 @@ Adapters return data in two normalized shapes:
   [{spans: [...]}]}]}`` — the shape the frontend's ``buildSpanTree``
   already consumes.
 
-HTTP + OTLP helpers live here to keep adapters short. No side effects
-at import time.
+This module holds the adapter ABC, the structured and log filters, the
+error taxonomy and the HTTP core. The rest is split by concern (#403):
+``shapes`` (card rows, OTLP spans and batches), ``paging`` (trace and log
+pages, cursor bounds), ``metrics_math`` (name mapping, counter increases,
+bucketing), ``severity`` (level tables) and ``timeconv`` (timestamps to ns).
+No side effects at import time.
 """
 
 from __future__ import annotations
@@ -26,9 +30,15 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib import error as _urlerror
+from urllib import parse as _urlparse
 from urllib import request as _urlrequest
+
+# The OTLP attribute / status builders live in ``shapes`` (#403) and are
+# re-exported here because every adapter imports them from ``base``.
+from .severity import severity_number_for  # noqa: F401  (finish_log_row; re-exported)
+from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status  # noqa: F401
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
     from fastapi import HTTPException
@@ -60,11 +70,34 @@ ERROR_KINDS = ("not_found", "auth", "config", "request", "backend")
 
 
 class BackendError(HTTPException):
-    """An adapter could not get an answer; ``kind`` says why."""
+    """An adapter could not get an answer; ``kind`` says why. ``http_status``
+    is the status the backend itself answered with (``None`` when the failure
+    was not an HTTP answer), so a caller can tell a refused request from an
+    outage without parsing the message (see :func:`rejected_request`)."""
 
-    def __init__(self, status_code: int, detail: str, kind: str = "backend") -> None:
+    def __init__(
+        self,
+        status_code: int,
+        detail: str,
+        kind: str = "backend",
+        http_status: Optional[int] = None,
+    ) -> None:
         super().__init__(status_code=status_code, detail=detail)
         self.kind = kind if kind in ERROR_KINDS else "backend"
+        self.http_status = http_status
+
+
+def rejected_request(exc: BaseException) -> bool:
+    """True when the backend answered a 4xx that was neither auth nor
+    not-found: the request's shape was refused (an older Tempo rejecting a
+    ``select()`` pipeline, OpenObserve refusing an unknown column, SigNoz
+    refusing a GET), so a differently shaped retry may succeed. An outage, a
+    timeout or a 5xx never is: a second request would only hit a dead backend
+    twice (#296)."""
+    status = getattr(exc, "http_status", None)
+    if getattr(exc, "kind", None) != "backend" or not isinstance(status, int):
+        return False
+    return 400 <= status < 500
 
 
 class ConfigError(BackendError):
@@ -111,20 +144,95 @@ def rewrite_host_for_docker(host: str) -> str:
 
 
 def resolve_env_or_literal(cfg: Dict[str, Any], literal_key: str, env_key: str) -> Optional[str]:
-    """Return ``cfg[env_key]``-resolved env value, else ``cfg[literal_key]``.
+    """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]`` names.
 
-    Adapters prefer the ``*_env`` variants so secrets stay out of yaml;
-    inline fields remain supported for convenience.
+    The same precedence as the exporter's ``backends._resolve_secret`` (inline
+    > named env), so an entry that sets both queries with the key it exports
+    with (#413). ``*_env`` keeps secrets out of yaml; inline stays for
+    convenience.
     """
+    lit = cfg.get(literal_key)
+    if isinstance(lit, str) and lit.strip():
+        return lit.strip()
     env_name = cfg.get(env_key)
     if isinstance(env_name, str) and env_name.strip():
         v = os.environ.get(env_name.strip(), "").strip()
         if v:
             return v
-    lit = cfg.get(literal_key)
-    if isinstance(lit, str) and lit.strip():
-        return lit.strip()
     return None
+
+
+def query_origin(
+    cfg: Dict[str, Any], default_port: Optional[int], *, endpoint_port: str = "ignore"
+) -> str:
+    """``scheme://host[:port]`` of the backend's read API, from the entry.
+
+    The host (loopback rewritten for a container) and the scheme come from the
+    OTLP ``endpoint``; the port is ``query_port`` on the entry, else:
+
+    * ``endpoint_port="ignore"`` — the type's default (the read API has a port
+      of its own: Phoenix 6006, SigNoz 3301, the Aspire UI 18888, ...);
+    * ``endpoint_port="fallback"`` — the endpoint's own port, then the default
+      (stores whose read API shares the OTLP port: GreptimeDB's 4000,
+      VictoriaTraces' 10428, Gigapipe's 3100, a Jaeger behind one gateway);
+    * ``endpoint_port="first"`` — the endpoint's port even over ``query_port``
+      (Langfuse, whose base URL is the UI).
+
+    With no default and no port anywhere the origin carries none (Agenta's
+    cloud hosts).
+    """
+    parsed = _urlparse.urlparse(str(cfg.get("endpoint") or ""))
+    host = rewrite_host_for_docker(parsed.hostname or "localhost")
+    scheme = parsed.scheme or "http"
+    if endpoint_port == "first":
+        port = parsed.port or cfg.get("query_port") or default_port
+    elif endpoint_port == "fallback":
+        port = cfg.get("query_port") or parsed.port or default_port
+    else:
+        port = cfg.get("query_port") or default_port
+    return f"{scheme}://{host}:{port}" if port else f"{scheme}://{host}"
+
+
+def basic_auth(user: Optional[str], password: Optional[str]) -> Dict[str, str]:
+    """``Authorization: Basic`` for ``user:password`` (an empty password is fine)."""
+    import base64
+
+    token = base64.b64encode(f"{user}:{password or ''}".encode("utf-8")).decode("ascii")
+    return {"Authorization": f"Basic {token}"}
+
+
+def bearer(token: Optional[str]) -> Dict[str, str]:
+    """``Authorization: Bearer`` when there is a token, else no header."""
+    return {"Authorization": f"Bearer {token}"} if token else {}
+
+
+def require_credential(value: Optional[str], detail: str) -> str:
+    """``value``, or the ``config`` error ``detail`` (what is missing and how
+    to set it) when the entry has none: nothing is sent to the backend."""
+    if not value:
+        raise ConfigError(detail)
+    return value
+
+
+# ── Probe caches (#403) ────────────────────────────────────────────────
+#
+# An adapter that learns something about a server once per process (which
+# API version it speaks, which GraphQL arguments it takes, a table's columns)
+# keeps it in a module-level dict and registers it here, so every cache is
+# cleared together (``clear_probe_caches``) and none leaks across tests or a
+# config reload.
+
+_PROBE_CACHES: List[Dict[Any, Any]] = []
+
+
+def register_cache(cache: Dict[Any, Any]) -> Dict[Any, Any]:
+    _PROBE_CACHES.append(cache)
+    return cache
+
+
+def clear_probe_caches() -> None:
+    for cache in _PROBE_CACHES:
+        cache.clear()
 
 
 # ── Structured filter the UI sends to every adapter ────────────────────
@@ -138,6 +246,12 @@ class StructuredFilter:
     """
 
     service: Optional[str] = None
+    # The search bar's span-name field. Despite the name it is an EXACT match
+    # on most backends (Jaeger ``operation=``, Zipkin ``spanName=``, Phoenix
+    # ``name ==``, ClickHouse ``SpanName =``, Langfuse ``name=`` ...) and a
+    # regex only where the backend's query language has one (TraceQL, SigNoz).
+    # Renaming the field is a UI change; until then this is the contract, and
+    # ``span_matches`` re-checks it as an exact match.
     name_regex: Optional[str] = None
     # The kind filter (#292): a span-name prefix such as ``tool.`` or ``agent``.
     # Every backend can express a prefix (a regex anchor, ``like 'x%'``, a
@@ -233,33 +347,6 @@ def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str],
     return applied, ignored
 
 
-def strictly_older_traces(
-    traces: List[Dict[str, Any]], f: StructuredFilter
-) -> List[Dict[str, Any]]:
-    """Drop trace rows that started at or after the cursor (backends bound time
-    at their own precision; this keeps the page exact)."""
-    if not f.before_ns:
-        return traces
-    cut = int(f.before_ns)
-    return [t for t in traces if int(t.get("startTimeUnixNano") or 0) < cut]
-
-
-def trace_page(traces: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
-    """The envelope a trace search returns: newest-first rows, the start of the
-    oldest row as the next cursor, and whether asking is worthwhile. ``traces``
-    should carry at least one row beyond ``limit`` so ``has_more`` is exact."""
-    rows = sorted(traces, key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
-    n = int(limit)
-    page, rest = rows[:n], rows[n:]
-    starts = [int(t.get("startTimeUnixNano") or 0) for t in page if t.get("startTimeUnixNano")]
-    has_more = bool(rest)
-    return {
-        "traces": page,
-        "next_before_ns": min(starts) if has_more and starts else None,
-        "has_more": has_more,
-    }
-
-
 def parse_kv_tokens(raw: Optional[str]) -> Dict[str, str]:
     """``key=value key2=value2`` → a dict (the native-query grammar of the
     adapters whose backend takes query parameters or tags: Jaeger, Langfuse)."""
@@ -272,6 +359,76 @@ def parse_kv_tokens(raw: Optional[str]) -> Dict[str, str]:
             if k.strip() and v.strip():
                 out[k.strip()] = v.strip().strip("\"'")
     return out
+
+
+# ── The search template (#403): what every adapter's search() does ─────
+#
+# Find each trace's root and re-check the structured predicates on a span the
+# backend could only match loosely. The window/cursor bounds and the
+# over-fetch arithmetic are in ``paging``. Each piece used to be copied into
+# ten adapters, each with its own spelling.
+
+
+def root_of(
+    spans: Sequence[Dict[str, Any]],
+    span_id: Callable[[Dict[str, Any]], Any],
+    parent_id: Callable[[Dict[str, Any]], Any],
+) -> Optional[Dict[str, Any]]:
+    """The trace's root among ``spans``: the first whose parent is absent or
+    not among them (an orphan whose parent was cut counts; a caller that must
+    tell a true root from an orphan checks ``parent_id`` again)."""
+    if not spans:
+        return None
+    ids = {span_id(sp) for sp in spans}
+    for sp in spans:
+        parent = parent_id(sp)
+        if not parent or parent not in ids:
+            return sp
+    return spans[0]
+
+
+def span_matches(
+    f: StructuredFilter,
+    *,
+    name: str,
+    attrs: Dict[str, Any],
+    duration_ns: Optional[int] = None,
+    error: Optional[bool] = None,
+    text: Optional[str] = None,
+    equals: Optional[Dict[str, Any]] = None,
+) -> bool:
+    """Re-check the structured predicates on one span, for a backend whose
+    query matched any span of the trace (Jaeger's ``tags=``, Zipkin's
+    ``annotationQuery``) or none at all (Aspire). ``equals`` replaces
+    ``f.attr_equals`` when the adapter folded its raw tags into the same
+    dict; ``error`` is the span's status (``None`` skips the status check);
+    ``text`` is what the free-text search reads (``None`` skips it). Names
+    are exact (see ``StructuredFilter.name_regex``); attribute values compare
+    case-insensitively as strings."""
+    if f.name_prefix and not name.startswith(f.name_prefix):
+        return False
+    if f.name_regex and name != f.name_regex:
+        return False
+    for k, v in (f.attr_equals if equals is None else equals).items():
+        have = attrs.get(k)
+        if have is None or str(have).lower() != str(v).lower():
+            return False
+    if f.min_duration_ms and duration_ns is not None:
+        if duration_ns < int(f.min_duration_ms) * 1_000_000:
+            return False
+    if error is not None:
+        if f.status == "error" and not error:
+            return False
+        if f.status == "ok" and error:
+            return False
+    if f.free_text and text is not None and f.free_text.lower() not in text.lower():
+        return False
+    return True
+
+
+def not_found(trace_id: str, backend: str, detail: Optional[str] = None) -> BackendError:
+    """The ``not_found`` error every ``get_trace`` raises for an unknown id."""
+    return BackendError(404, detail or f"Trace {trace_id} not found in {backend}", "not_found")
 
 
 _METRIC_NAME_RE = re.compile(r"^[A-Za-z_:][A-Za-z0-9_:.]*$")
@@ -291,62 +448,6 @@ def validate_label_name(label: Optional[str]) -> Optional[str]:
     if not _LABEL_NAME_RE.match(label):
         raise BackendError(400, f"Invalid group_by attribute {label!r}", "request")
     return label
-
-
-# Units the OTLP-to-Prometheus translation appends to a name; ``{token}``
-# style units are dropped by it, so no ``_tokens`` here.
-_PROM_UNIT_SUFFIXES = (
-    "_milliseconds",
-    "_seconds",
-    "_bytes",
-    "_ratio",
-    "_percent",
-    "_watts",
-)
-
-
-def otlp_metric_name(native: str) -> str:
-    """The plugin's dotted instrument name behind a backend's native spelling,
-    so the UI can match its curated panels on every source (#284).
-
-    ``hermes_token_usage_total`` → ``hermes.token.usage``;
-    ``hermes_tool_duration_milliseconds_sum`` → ``hermes.tool.duration``;
-    a dotted name passes through. Best effort: the Prometheus translation
-    appends ``_total`` to counters and the unit to everything with one.
-    """
-    n = str(native or "")
-    if "." in n:
-        base = n
-        for suffix in (".sum", ".count", ".bucket", ".min", ".max"):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-        return base
-    base = n
-    for suffix in ("_total", "_sum", "_count", "_bucket"):
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    for suffix in _PROM_UNIT_SUFFIXES:
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    # Name segments that carry an underscore of their own (``gen_ai``,
-    # ``prompt_cache``) are kept whole; every other underscore was a dot.
-    toks = base.split("_")
-    out: List[str] = []
-    i = 0
-    while i < len(toks):
-        pair = f"{toks[i]}_{toks[i + 1]}" if i + 1 < len(toks) else None
-        if pair in _UNDERSCORE_SEGMENTS:
-            out.append(pair)
-            i += 2
-        else:
-            out.append(toks[i])
-            i += 1
-    return ".".join(out)
-
-
-_UNDERSCORE_SEGMENTS = ("gen_ai", "prompt_cache")
 
 
 # ── Adapter base ───────────────────────────────────────────────────────
@@ -377,8 +478,12 @@ class BackendAdapter:
 
     # Reported in /status so the frontend can label the raw input and
     # show the active backend URL. Subclasses typically add ``query_url``.
+    # The read API's origin (see :func:`query_origin`); every adapter sets it
+    # in ``__init__`` and ``status()`` reports it.
+    query_url: str = ""
+
     def status(self) -> Dict[str, Any]:
-        return {
+        out = {
             "type": self.cfg.get("type"),
             "name": self.cfg.get("name") or self.cfg.get("type"),
             "query_lang_label": self.query_lang_label,
@@ -387,6 +492,9 @@ class BackendAdapter:
             "logs": self.supports_logs,
             "filters": filter_support_of(self),
         }
+        if self.query_url:
+            out["query_url"] = self.query_url
+        return out
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         """``{traces: [...], has_more, next_before_ns}`` (see :func:`trace_page`):
@@ -469,28 +577,6 @@ LOG_ROW_KEYS = (
     "attributes",
 )
 
-_SEVERITY_NUMBERS = {
-    "TRACE": 1,
-    "DEBUG": 5,
-    "INFO": 9,
-    "WARN": 13,
-    "WARNING": 13,
-    "ERROR": 17,
-    "CRITICAL": 21,
-    "FATAL": 21,
-}
-
-
-def severity_number_for(level: Any) -> Optional[int]:
-    """OTel severity number for a level spelling (Python or OTel); None when unknown."""
-    if level is None:
-        return None
-    text = str(level).strip().upper()
-    if text.isdigit():
-        n = int(text)
-        return n if n <= 24 else {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}.get(n)
-    return _SEVERITY_NUMBERS.get(text)
-
 
 def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Normalise one adapter row: OTel level spelling, severity number, the
@@ -514,135 +600,6 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     return row
 
 
-def log_end_ns(end_s: int, f: "LogFilter") -> int:
-    """The exclusive upper bound of a logs query in ns: the window end, tightened
-    by the paging cursor when there is one."""
-    end_ns = int(end_s) * 1_000_000_000
-    return min(end_ns, int(f.before_ns)) if f.before_ns else end_ns
-
-
-def strictly_older(records: List[Dict[str, Any]], f: "LogFilter") -> List[Dict[str, Any]]:
-    """Drop rows at or after the cursor. Backends bound time at their own
-    precision (ms, µs); this keeps the page exact at the nanosecond so a
-    cursor never repeats the row it was taken from."""
-    if not f.before_ns:
-        return records
-    cut = int(f.before_ns)
-    return [r for r in records if int(r.get("time_unix_nano") or 0) < cut]
-
-
-# Adapters fetch this many rows beyond the page so log_page() can see whether
-# the last row's timestamp continues past the page boundary.
-LOG_PAGE_SLACK = 50
-
-
-def log_page(records: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
-    """The envelope every logs route returns: the rows plus where the next
-    page starts and whether asking is worthwhile.
-
-    The cursor is a timestamp, and timestamps are not unique (a burst can log
-    several lines in one nanosecond). A page therefore keeps every row that
-    shares its last row's timestamp, so the next page — "strictly older than
-    that timestamp" — neither repeats nor loses a tied row. ``records`` must be
-    newest-first and should carry ``LOG_PAGE_SLACK`` rows beyond ``limit``.
-    """
-    rows = list(records)
-    n = int(limit)
-    if len(rows) > n:
-        boundary = int(rows[n - 1].get("time_unix_nano") or 0)
-        while n < len(rows) and int(rows[n].get("time_unix_nano") or 0) == boundary:
-            n += 1
-    page, rest = rows[:n], rows[n:]
-    times = [int(r.get("time_unix_nano") or 0) for r in page if r.get("time_unix_nano")]
-    has_more = bool(rest)
-    return {
-        "logs": page,
-        "next_before_ns": min(times) if has_more and times else None,
-        "has_more": has_more,
-    }
-
-
-def bucketize(
-    points: Iterable[Tuple[int, float, str]],
-    start_ns: int,
-    end_ns: int,
-    bucket_s: int,
-    agg: str = "sum",
-) -> Dict[str, Any]:
-    """Fold ``(ts_ns, value, label)`` points into the live store's bucket shape.
-
-    Shared by the backend adapters so every source renders identically.
-    """
-    bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
-    start_ns = int(start_ns) - int(start_ns) % bucket_ns
-    n = max(1, int((int(end_ns) - start_ns) // bucket_ns) + 1)
-    series: Dict[str, List[List[float]]] = {}
-    count = 0
-    for ts, value, label in points:
-        count += 1
-        idx = int((int(ts) - start_ns) // bucket_ns)
-        if idx < 0 or idx >= n:
-            continue
-        series.setdefault(label or "_", [[] for _ in range(n)])[idx].append(float(value))
-
-    def reduce(vals: List[float]) -> Optional[float]:
-        if not vals:
-            return None
-        if agg == "count":
-            return float(len(vals))
-        if agg == "avg":
-            return sum(vals) / len(vals)
-        if agg == "max":
-            return max(vals)
-        if agg == "last":
-            return vals[-1]
-        return sum(vals)
-
-    return {
-        "agg": agg,
-        "bucketS": int(bucket_s),
-        "buckets": [start_ns + i * bucket_ns for i in range(n)],
-        "series": {label: [reduce(v) for v in vals] for label, vals in series.items()},
-        "points": count,
-    }
-
-
-def counter_increases(
-    samples: Iterable[Tuple[int, float, str]],
-    *,
-    started_in_window: Optional[Iterable[str]] = None,
-    window_start_ns: Optional[int] = None,
-) -> List[Tuple[int, float, str]]:
-    """Turn cumulative counter samples into per-sample increases.
-
-    OTLP counters arrive cumulative (the exporter's temporality); a bucketed
-    "tokens per 15 s" chart needs the increase between consecutive samples of
-    the same series. A drop (process restart) counts the new value in full.
-
-    A series' first sample is an increase too when the series started inside
-    the window: every ``hermes -z`` run is a new process whose counters start
-    at zero, so its one or two cumulative samples carry the whole turn.
-    Callers say which series those are, either by name (``started_in_window``,
-    for stores that record the counter's start time) or by giving
-    ``window_start_ns`` and passing samples from before the window as well: a
-    series whose first sample lies at or after the window start is new, one
-    with an earlier sample is not (and its earlier value is the baseline).
-    Without either, the first sample is a baseline only (the old behaviour).
-    """
-    new = set(started_in_window or ())
-    last: Dict[str, float] = {}
-    out: List[Tuple[int, float, str]] = []
-    for ts, value, label in sorted(samples, key=lambda p: (p[2], p[0])):
-        prev = last.get(label)
-        if prev is None:
-            if label in new or (window_start_ns is not None and int(ts) >= int(window_start_ns)):
-                out.append((ts, value, label))
-        else:
-            out.append((ts, value if value < prev else value - prev, label))
-        last[label] = value
-    return out
-
-
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──
 
 
@@ -659,11 +616,74 @@ def _error_body(text: str) -> str:
     return body[:_ERROR_BODY_CHARS] + ("…" if len(body) > _ERROR_BODY_CHARS else "")
 
 
-def _execute(req: _urlrequest.Request, timeout: float) -> Any:
+_RECORD_ENV = "HERMES_OTEL_RECORD_HTTP"
+_SECRET_QUERY_KEYS = ("token", "key", "secret", "password", "api_key", "apikey")
+
+
+def _record_exchange(req: Any, status: Optional[int], body: Optional[bytes]) -> None:
+    """Dev-only: with ``HERMES_OTEL_RECORD_HTTP=<dir>`` every request this
+    function sends is appended to ``<dir>/exchanges.jsonl`` with its answer,
+    the raw material for an adapter golden (#408). Credentials never land in
+    the file: ``Authorization`` / ``*-key`` headers and secret-looking query
+    parameters are masked. Off unless the variable is set; never raises."""
+    target = os.environ.get(_RECORD_ENV, "").strip()
+    if not target:
+        return
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        parsed = _urlparse.urlsplit(req.full_url)
+        query = [
+            (k, "***" if any(s in k.lower() for s in _SECRET_QUERY_KEYS) else v)
+            for k, v in _urlparse.parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+        url = _urlparse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, _urlparse.urlencode(query, safe="*"), "")
+        )
+        headers = {
+            k: ("***" if k.lower() in ("authorization",) or k.lower().endswith("-key") else v)
+            for k, v in req.header_items()
+        }
+        data = req.data if isinstance(req.data, bytes) else None
+        text = body.decode("utf-8", errors="replace") if body is not None else None
+        try:
+            answer: Any = _json.loads(text) if text else text
+        except ValueError:
+            answer = text
+        entry = {
+            "method": req.get_method(),
+            "url": url,
+            "headers": headers,
+            "request": data.decode("utf-8", errors="replace") if data else None,
+            "status": status,
+            "response": answer,
+        }
+        d = _Path(target).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / "exchanges.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
+def _execute(
+    req: _urlrequest.Request,
+    timeout: float,
+    *,
+    raw: bool = False,
+    label: str = "Backend",
+    auth_codes: Tuple[int, ...] = (401, 403),
+    not_found_is_backend: bool = False,
+) -> Any:
     """Send one request; every failure is a :class:`BackendError` with a kind.
 
-    404 → ``not_found``, 401/403 → ``auth``, any other HTTP error, a network
-    error, a timeout or a non-JSON body → ``backend``.
+    404 → ``not_found`` (or ``backend`` with ``not_found_is_backend``, for a
+    query-language store whose 404 is a bad query, never a missing trace), the
+    ``auth_codes`` → ``auth``, any other HTTP error, a network error, a timeout
+    or a non-JSON body → ``backend``; an HTTP answer's status is on the error
+    as ``http_status``. ``raw`` returns the body as bytes instead of parsed
+    JSON (VictoriaLogs' NDJSON); ``label`` names the backend in the messages.
     """
     try:
         with _urlrequest.urlopen(req, timeout=timeout) as resp:
@@ -673,24 +693,28 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
             detail = e.read().decode("utf-8", errors="replace")
         except Exception:
             detail = str(e)
+        _record_exchange(req, e.code, detail.encode("utf-8"))
         excerpt = _error_body(detail)
-        if e.code == 404:
-            raise BackendError(404, f"Backend returned 404: {excerpt}", "not_found")
-        if e.code in (401, 403):
+        if e.code == 404 and not not_found_is_backend:
+            raise BackendError(404, f"{label} returned 404: {excerpt}", "not_found", e.code)
+        if e.code in auth_codes:
             raise BackendError(
-                503, f"Backend rejected the credentials ({e.code}): {excerpt}", "auth"
+                503, f"{label} rejected the credentials ({e.code}): {excerpt}", "auth", e.code
             )
-        raise BackendError(502, f"Backend returned {e.code}: {excerpt}")
+        raise BackendError(502, f"{label} returned {e.code}: {excerpt}", "backend", e.code)
     except _urlerror.URLError as e:
-        raise BackendError(502, f"Backend unreachable: {e.reason}")
+        raise BackendError(502, f"{label} unreachable: {e.reason}")
     except Exception as e:
-        raise BackendError(502, f"Backend query failed: {e}")
+        raise BackendError(502, f"{label} query failed: {e}")
+    _record_exchange(req, 200, body)
+    if raw:
+        return body
     if not body:
         return None
     try:
         return json.loads(body.decode("utf-8"))
     except Exception as e:
-        raise BackendError(502, f"Backend returned non-JSON: {e}")
+        raise BackendError(502, f"{label} returned non-JSON: {e}")
 
 
 def http_get_json(url: str, headers: Optional[Dict[str, str]] = None, timeout: float = 10.0) -> Any:
@@ -716,107 +740,3 @@ def http_post_json(
         req_headers.update(headers)
     req = _urlrequest.Request(url, data=data, headers=req_headers, method="POST")
     return _execute(req, timeout)
-
-
-# ── OTLP shape helpers ────────────────────────────────────────────────
-#
-# Building OTLP JSON attributes by hand is tedious and every non-Tempo
-# adapter needs it. These helpers are intentionally permissive — they
-# accept any Python value and stringify-as-JSON for unknown types so an
-# unexpected dict attribute doesn't crash the response.
-
-
-def otlp_attr(key: str, value: Any) -> Dict[str, Any]:
-    """Wrap ``(key, value)`` into an OTLP attribute entry."""
-    if value is None:
-        return {"key": key, "value": {}}
-    if isinstance(value, bool):
-        return {"key": key, "value": {"boolValue": value}}
-    if isinstance(value, int):
-        return {"key": key, "value": {"intValue": str(value)}}
-    if isinstance(value, float):
-        return {"key": key, "value": {"doubleValue": value}}
-    if isinstance(value, str):
-        return {"key": key, "value": {"stringValue": value}}
-    # dict / list / anything else: stringify as JSON so the UI can still
-    # render it. Preserves structure in a predictable form.
-    try:
-        return {"key": key, "value": {"stringValue": json.dumps(value, default=str)}}
-    except Exception:
-        return {"key": key, "value": {"stringValue": str(value)}}
-
-
-def otlp_attrs_from_dict(d: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Render a flat dict as a list of OTLP attribute entries."""
-    return [otlp_attr(k, v) for k, v in d.items() if v is not None]
-
-
-def otlp_status(code: Union[str, int, None], message: str = "") -> Dict[str, Any]:
-    """Normalize various status flavours into an OTLP ``Status`` message."""
-    if code is None:
-        return {}
-    if isinstance(code, int):
-        return {"code": code, "message": message or ""}
-    norm = str(code).lower()
-    if norm in ("error", "status_code_error", "err", "2"):
-        return {"code": 2, "message": message or "error"}
-    if norm in ("ok", "status_code_ok", "success", "1"):
-        return {"code": 1, "message": message or ""}
-    return {"code": 0, "message": message or ""}
-
-
-def ns_from_any(value: Any) -> Optional[int]:
-    """Best-effort parse of a time value into unix-nanoseconds.
-
-    Accepts int/str nanoseconds, ISO-8601 strings, and float seconds.
-    Returns None if nothing works so adapters can skip the field.
-    """
-    if value is None:
-        return None
-    # Raw int or numeric string — treat as ns (Tempo/Jaeger) or ms (some
-    # backends) based on magnitude.
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return _scale_to_ns(value)
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return None
-        # Numeric string?
-        try:
-            return _scale_to_ns(float(s))
-        except ValueError:
-            pass
-        # ISO-8601.
-        try:
-            from datetime import datetime
-
-            s_iso = s.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(s_iso)
-            return int(dt.timestamp() * 1_000_000_000)
-        except Exception:
-            return None
-    return None
-
-
-def ns_from_magnitude(n: float) -> int:
-    """Public spelling of :func:`_scale_to_ns` for adapters whose timestamps
-    come as ms or ns depending on the version (SigNoz)."""
-    return _scale_to_ns(n)
-
-
-def _scale_to_ns(n: float) -> int:
-    """Infer time unit from magnitude. Handy when backends differ."""
-    # Anything larger than ~1e18 is already ns.
-    # 1e15–1e18 → microseconds (Jaeger)
-    # 1e12–1e15 → milliseconds
-    # below that → seconds
-    abs_n = abs(n)
-    if abs_n >= 1e18:
-        return int(n)
-    if abs_n >= 1e15:
-        return int(n * 1_000)
-    if abs_n >= 1e12:
-        return int(n * 1_000_000)
-    return int(n * 1_000_000_000)

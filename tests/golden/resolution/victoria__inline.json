@@ -1,0 +1,134 @@
+{
+ "adapter": {
+  "class": "VictoriaAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Victoria",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "logs_endpoint": "http://localhost:9428",
+  "metrics_endpoint": "http://localhost:8428",
+  "name": "victoria-entry",
+  "password": "<secret>",
+  "type": "victoria",
+  "user": "<secret>"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:9428/insert/opentelemetry/v1/logs",
+    "headers": {
+     "Authorization": "Basic <secret>",
+     "VL-Stream-Fields": "service.name",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "victoria",
+  "name": "victoria-entry",
+  "reason": "serves the Jaeger API under /select/jaeger, not verified with the server"
+ },
+ "path": "inline",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "victoria-entry",
+  "endpoint": "http://localhost:4318/insert/opentelemetry/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": "http://localhost:9428/insert/opentelemetry/v1/logs",
+  "logs_headers": {
+   "Authorization": "Basic <secret>",
+   "VL-Stream-Fields": "service.name"
+  },
+  "metrics_endpoint": "http://localhost:8428/opentelemetry/v1/metrics",
+  "metrics_headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "victoria"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "file (inline)",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Victoria",
+  "docs_path": "/backends/victoria",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "victoria-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "victoria",
+  "ui": {
+   "note": "derived from the endpoint: Victoria serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "victoria-entry",
+    "queryable": true,
+    "type": "victoria"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "victoria"
+}

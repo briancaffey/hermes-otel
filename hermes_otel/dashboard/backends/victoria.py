@@ -29,31 +29,30 @@ writes to) name the read side too; ``prometheus_url`` / ``logs_url`` override.
 
 from __future__ import annotations
 
-import base64
 import datetime as _dt
 import json
 import re
 from typing import Any, Dict, List, Optional
-from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import register
-from ._loki import otel_severity_for
 from ._prometheus import metric_names as _prom_metric_names
 from ._prometheus import metrics_query as _prom_metrics_query
 from .base import (
-    LOG_PAGE_SLACK,
     BackendError,
     ConfigError,
     LogFilter,
+    _execute,
+    basic_auth,
+    bearer,
     finish_log_row,
-    log_end_ns,
     resolve_env_or_literal,
     rewrite_host_for_docker,
-    strictly_older,
 )
 from .jaeger import JaegerAdapter
+from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
+from .severity import otel_severity_for
 from .zipkin import coerce_tag
 
 _DEFAULT_TRACES_PORT = 10428
@@ -147,11 +146,8 @@ class VictoriaAdapter(JaegerAdapter):
 
     def _headers(self) -> Dict[str, str]:
         if self.user and self.password:
-            token = base64.b64encode(f"{self.user}:{self.password}".encode()).decode()
-            return {"Authorization": f"Basic {token}"}
-        if self.api_key:
-            return {"Authorization": f"Bearer {self.api_key}"}
-        return {}
+            return basic_auth(self.user, self.password)
+        return bearer(self.api_key)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # vmui's Trace Explorer has a TraceID mode; the route is not documented
@@ -218,22 +214,10 @@ class VictoriaAdapter(JaegerAdapter):
         req = _urlrequest.Request(
             f"{self._logs()}/select/logsql/query", data=body, headers=headers, method="POST"
         )
-        try:
-            with _urlrequest.urlopen(req, timeout=timeout) as resp:
-                text = resp.read().decode("utf-8", errors="replace")
-        except _urlerror.HTTPError as e:
-            try:
-                detail = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(e)
-            excerpt = " ".join(detail.split())[:300]
-            if e.code in (401, 403):
-                raise BackendError(503, f"VictoriaLogs rejected the credentials: {excerpt}", "auth")
-            raise BackendError(502, f"VictoriaLogs returned {e.code}: {excerpt}")
-        except _urlerror.URLError as e:
-            raise BackendError(502, f"VictoriaLogs unreachable: {e.reason}")
-        except Exception as e:
-            raise BackendError(502, f"VictoriaLogs query failed: {e}")
+        # A LogsQL 404 is a bad query, never a missing trace; the body is NDJSON.
+        text = _execute(
+            req, timeout, raw=True, label="VictoriaLogs", not_found_is_backend=True
+        ).decode("utf-8", errors="replace")
         rows: List[Dict[str, Any]] = []
         for line in text.splitlines():
             line = line.strip()

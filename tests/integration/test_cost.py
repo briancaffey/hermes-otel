@@ -14,10 +14,9 @@ from decimal import Decimal
 from typing import Any, Optional
 
 import pytest
+from helpers.turns import api_call
 
 from hermes_otel.hooks import (
-    on_post_api_request,
-    on_pre_api_request,
     on_session_end,
     on_session_start,
 )
@@ -96,28 +95,18 @@ _USAGE = {
 
 
 def _api_call(task_id="t1", session_id="s1", usage=None):
-    common = dict(
-        task_id=task_id,
-        session_id=session_id,
-        platform="cli",
+    api_call(
+        session_id,
+        task_id,
         model="openai/gpt-4o-mini",
         provider="openrouter",
         base_url="https://openrouter.ai/api/v1",
         api_mode="chat_completions",
-        api_call_count=1,
-        message_count=1,
-    )
-    on_pre_api_request(
-        **common, tool_count=0, approx_input_tokens=10, request_char_count=10, max_tokens=None
-    )
-    on_post_api_request(
-        **common,
-        api_duration=0.1,
-        finish_reason="stop",
-        response_model="openai/gpt-4o-mini",
-        usage=dict(_USAGE if usage is None else usage),
-        assistant_content_chars=5,
-        assistant_tool_call_count=0,
+        request={"request_char_count": 10, "max_tokens": None},
+        response={
+            "response_model": "openai/gpt-4o-mini",
+            "usage": dict(_USAGE if usage is None else usage),
+        },
     )
 
 

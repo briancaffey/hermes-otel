@@ -2,6 +2,18 @@
 // Trace (backend) data is OTLP/Tempo-shaped; live data is the compact dict the
 // in-process store emits. Both flow through the same rendering.
 
+import {
+  CARD_SESSION_KEYS,
+  COST_KEYS,
+  COST_STATUS_KEY,
+  KIND_OVERRIDES,
+  KIND_OVERRIDE_ATTR,
+  KIND_RULES,
+  MODEL_KEYS,
+  TOTAL_TOKEN_KEYS,
+  TURN_TOTAL_KEYS as TURN_TOTAL_KEY_LIST,
+} from "./semconv.generated";
+
 // ── OTLP attribute decoding (backend traces) ─────────────────────────────
 export function decodeAttrValue(v: any): any {
   if (v == null) return null;
@@ -107,20 +119,16 @@ export function clip(s: any, max: number): string | null {
 // ── span-kind classification (drives icon + accent) ──────────────────────
 export type Kind = "agent" | "llm" | "api" | "tool" | "skill" | "approval" | "subagent" | "session" | "cron" | "other";
 
+// The table is generated from hermes_otel/semconv.py (#404); the vitest in
+// test/semconv.test.ts replays Python's answers through this function.
 export function kindOf(name: string, attrs?: Record<string, any>): Kind {
   const a = attrs || {};
-  if (a["hermes.span_kind"] === "skill") return "skill";
-  if (a["hermes.span_kind"] === "approval") return "approval";
+  const override = a[KIND_OVERRIDE_ATTR];
+  if (typeof override === "string" && KIND_OVERRIDES.includes(override)) return override as Kind;
   const n = (name || "").toLowerCase();
-  if (n === "agent" || n.startsWith("agent.")) return "agent";
-  if (n === "cron" || n.startsWith("cron")) return "cron";
-  if (n.startsWith("session")) return "session";
-  if (n.startsWith("skill.")) return "skill";
-  if (n.startsWith("approval")) return "approval";
-  if (n.startsWith("subagent")) return "subagent";
-  if (n.startsWith("llm.")) return "llm";
-  if (n.startsWith("api.")) return "api";
-  if (n.startsWith("tool.")) return "tool";
+  for (const rule of KIND_RULES) {
+    if (rule.exact.includes(n) || rule.prefixes.some((p) => n.startsWith(p))) return rule.kind as Kind;
+  }
   return "other";
 }
 
@@ -174,15 +182,7 @@ export function traceAttrs(trace: any): Record<string, any> {
   }
   return out;
 }
-const TURN_TOTAL_KEYS = new Set([
-  "gen_ai.usage.total_tokens",
-  "gen_ai.usage.input_tokens",
-  "gen_ai.usage.output_tokens",
-  "llm.token_count.total",
-  "llm.token_count.prompt",
-  "llm.token_count.completion",
-  "hermes.cost.usage",
-]);
+const TURN_TOTAL_KEYS = new Set<string>(TURN_TOTAL_KEY_LIST);
 // Whole-trace span count. Adapters that know it send ``spanCount``; Tempo
 // sends per-service stats. ``spanSets[0].spans`` is the MATCHED spans (one
 // per trace in roots-only mode), never the trace size, so it is not a
@@ -322,6 +322,15 @@ export type LiveSpan = {
   attributes: Record<string, any>;
   seq: number;
 };
+// First non-empty value of the keys, in order (``semconv.first`` in Python).
+export function firstAttr(a: Record<string, any>, keys: readonly string[]): any {
+  for (const k of keys) {
+    const v = a[k];
+    if (v !== null && v !== undefined && v !== "") return v;
+  }
+  return null;
+}
+
 export function attrNum(a: Record<string, any>, ...keys: string[]): number | null {
   for (const k of keys) {
     const v = a[k];
@@ -431,9 +440,9 @@ export function rowFromBackend(t: any): TraceRow {
     endNs: startNs + durationMs * 1e6,
     durationMs,
     spanCount: traceSpanCount(t),
-    model: attrs["gen_ai.request.model"] || attrs["llm.model_name"] || attrs["gen_ai.response.model"] || null,
-    tokens: attrNum(attrs, "gen_ai.usage.total_tokens", "llm.token_count.total"),
-    cost: attrNum(attrs, "hermes.cost.usage"),
+    model: firstAttr(attrs, MODEL_KEYS),
+    tokens: attrNum(attrs, ...TOTAL_TOKEN_KEYS),
+    cost: attrNum(attrs, ...COST_KEYS),
     error: attrs["status"] === "error" || !!attrs["error.type"],
     session: sessionOfCard(t),
     partial: false,
@@ -463,7 +472,8 @@ export type SessionRow = {
 // Session id of a BACKEND card (adapters put it on the card attributes).
 export function sessionOfCard(trace: any): string | null {
   const a = traceAttrs(trace);
-  return a["hermes.session_id"] || a["langfuse.sessionId"] || a["session.id"] || a["session_id"] || null;
+  const sid = firstAttr(a, CARD_SESSION_KEYS);
+  return sid == null ? null : String(sid);
 }
 
 // Group backend search results client-side. Tokens/cost come from each card's
@@ -516,6 +526,9 @@ export function sumApiSpans(spans: NamedAttrs[], ...keys: string[]): number | nu
   let seen = false;
   for (const s of spans) {
     if (!(s.name || "").startsWith("api.")) continue;
+    // Auxiliary attempts (#389) are reported on the root as
+    // hermes.turn.auxiliary.*, never inside the turn's totals.
+    if ((s.attributes || {})["hermes.query_source"] === "auxiliary") continue;
     const v = attrNum(s.attributes || {}, ...keys);
     if (v != null) {
       sum += v;
@@ -536,8 +549,8 @@ export function traceTotals(spans: LiveSpan[]): { tokens: number | null; cost: n
   };
   // A root that reports a cost status without an amount (unknown, included or
   // partial pricing) means "no total": never fall back to a subtotal (#252).
-  const noCostTotal = root != null && root.attributes["hermes.cost.status"] != null && liveCost(root) == null;
-  return { tokens: pick(["gen_ai.usage.total_tokens", "llm.token_count.total"], liveTokens), cost: noCostTotal ? null : pick(["hermes.cost.usage"], liveCost) };
+  const noCostTotal = root != null && root.attributes[COST_STATUS_KEY] != null && liveCost(root) == null;
+  return { tokens: pick([...TOTAL_TOKEN_KEYS], liveTokens), cost: noCostTotal ? null : pick([...COST_KEYS], liveCost) };
 }
 
 export function groupLiveTraces(spans: LiveSpan[]): LiveTrace[] {

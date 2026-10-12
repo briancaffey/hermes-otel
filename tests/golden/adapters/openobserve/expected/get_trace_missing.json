@@ -1,0 +1,21 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": {
+     "end_time": 1791753660000000,
+     "size": 500,
+     "sql": "SELECT * FROM default WHERE trace_id = '00000000000000000000000000000000' ORDER BY start_time ASC LIMIT 500",
+     "start_time": 1783974060000000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:5080/api/default/_search?type=traces"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in OpenObserve stream 'default' (last 90 days)",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

@@ -1,0 +1,86 @@
+{
+ "calls": [
+  {
+   "body": "SELECT TraceId, SpanId, SpanName, ServiceName, StatusCode, Duration, SpanAttributes, toUnixTimestamp64Nano(Timestamp) AS ts_ns FROM `default`.`otel_traces` WHERE Timestamp >= fromUnixTimestamp64Nano(1791746400000000000) AND Timestamp < fromUnixTimestamp64Nano(1791750060000000000) AND ServiceName = 'hermes-agent' AND startsWith(SpanName, 'tool.') ORDER BY Timestamp DESC LIMIT 24",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  },
+  {
+   "body": "SELECT TraceId, count() AS n FROM `default`.`otel_traces` WHERE TraceId IN ('ab43116e1d6d4a1a449db547c36ca808', '5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1') GROUP BY TraceId",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750001500000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 1120,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "tool.terminal",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749401500000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

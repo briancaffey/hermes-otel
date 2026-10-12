@@ -1,0 +1,55 @@
+{
+ "calls": [
+  {
+   "body": {
+    "compositeQuery": {
+     "builderQueries": {
+      "A": {
+       "aggregateAttribute": {
+        "key": "",
+        "type": "tag"
+       },
+       "aggregateOperator": "count",
+       "dataSource": "logs",
+       "disabled": false,
+       "expression": "A",
+       "filters": {
+        "items": [],
+        "op": "AND"
+       },
+       "groupBy": [
+        {
+         "dataType": "string",
+         "isColumn": true,
+         "key": "scope_name",
+         "type": ""
+        }
+       ],
+       "limit": 200,
+       "queryName": "A",
+       "reduceTo": "sum",
+       "stepInterval": 60
+      }
+     },
+     "panelType": "table",
+     "queryType": "builder"
+    },
+    "end": 1791750060000,
+    "start": 1791746400000,
+    "step": 60
+   },
+   "method": "POST",
+   "url": "http://localhost:3301/api/v4/query_range"
+  }
+ ],
+ "result": [
+  {
+   "count": 73,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 38,
+   "logger": "gateway.run"
+  }
+ ]
+}

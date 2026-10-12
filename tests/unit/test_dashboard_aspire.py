@@ -19,14 +19,6 @@ T0 = 1_791_751_500
 TRACE = "ab43116e1d6d4a1a449db547c36ca808"
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> asp.AspireAdapter:
     return asp.AspireAdapter(
         {"type": "aspire", "endpoint": "http://localhost:4418", "query_port": 18888, **extra}
@@ -209,9 +201,14 @@ class TestHelpers:
         assert asp.level_for(None, None) == "INFO"
 
     def test_otlp_value_and_attrs(self):
-        assert asp.otlp_value({"intValue": "7"}) == 7
-        assert asp.otlp_value({"boolValue": True}) is True
-        assert asp.attrs_dict([_attr("a", 1), _attr("b", "x"), {"nope": 1}]) == {"a": 1, "b": "x"}
+        from hermes_otel.dashboard.backends.shapes import otlp_attrs_to_dict, otlp_unwrap
+
+        assert otlp_unwrap({"intValue": "7"}) == 7
+        assert otlp_unwrap({"boolValue": True}) is True
+        assert otlp_attrs_to_dict([_attr("a", 1), _attr("b", "x"), {"nope": 1}]) == {
+            "a": 1,
+            "b": "x",
+        }
 
 
 class TestSearch:
@@ -387,3 +384,15 @@ class TestLogs:
             {"logger": "cli", "count": 2},
             {"logger": "x", "count": 1},
         ]
+
+
+class TestStatusOffTheSpan:
+    def test_error_status_is_read_off_the_span_even_without_attributes(self, monkeypatch):
+        # ``_status_code(attrs and card)`` handed the (empty) attribute dict to
+        # the status reader whenever a span carried no attributes, so such a
+        # failed root could never be marked error (#413).
+        bare = _span("bbbb000000000001", "agent", T0 * NS, 1_000_000, status=2)
+        _capture(monkeypatch, {"/api/telemetry/traces": _traces_doc(bare)})
+        row = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)["traces"][0]
+        attrs = {x["key"]: x["value"] for x in row["spanSets"][0]["spans"][0]["attributes"]}
+        assert attrs["status"] == {"stringValue": "error"}

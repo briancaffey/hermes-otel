@@ -27,7 +27,6 @@ SQL goes to ``POST /v1/sql?db=<db>`` as a form body; Basic auth from ``user``
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
@@ -35,24 +34,24 @@ from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import register
-from ._loki import otel_severity_for
 from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from ._prometheus import metric_names as _prom_metric_names
 from .base import (
-    LOG_PAGE_SLACK,
     BackendError,
     LogFilter,
     _execute,
-    bucketize,
-    counter_increases,
+    basic_auth,
+    bearer,
     finish_log_row,
-    log_end_ns,
+    register_cache,
     resolve_env_or_literal,
-    strictly_older,
     validate_label_name,
     validate_metric_name,
 )
 from .jaeger import JaegerAdapter
+from .metrics_math import bucketize, counter_increases
+from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
+from .severity import otel_severity_for
 
 _DEFAULT_GREPTIME_PORT = 4000
 # ``/api/traces?limit=N`` keeps N arbitrary traces, not the newest (verified on
@@ -67,7 +66,7 @@ _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_.:]*$")
 
 # Table columns per metric, fetched once per adapter instance (the dashboard
 # polls; the schema only grows when a new label appears).
-_COLUMNS_CACHE: Dict[Tuple[str, str], List[str]] = {}
+_COLUMNS_CACHE: Dict[Tuple[str, str], List[str]] = register_cache({})
 
 
 def sql_str(value: Any) -> str:
@@ -130,11 +129,8 @@ class GreptimeAdapter(JaegerAdapter):
 
     def _headers(self) -> Dict[str, str]:
         if self.user and self.password:
-            token = base64.b64encode(f"{self.user}:{self.password}".encode()).decode()
-            return {"Authorization": f"Basic {token}"}
-        if self.api_key:
-            return {"Authorization": f"Bearer {self.api_key}"}
-        return {}
+            return basic_auth(self.user, self.password)
+        return bearer(self.api_key)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # The embedded dashboard has a Traces view but no documented deep link

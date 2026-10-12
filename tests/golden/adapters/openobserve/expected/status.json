@@ -1,0 +1,28 @@
+{
+ "calls": [],
+ "result": {
+  "auth_required": false,
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": true,
+  "metrics": true,
+  "name": "openobserve",
+  "org": "default",
+  "query_lang_label": "SQL WHERE",
+  "query_url": "http://localhost:5080",
+  "raw_placeholder": "llm_model_name = 'gpt-4'",
+  "stream": "default",
+  "type": "openobserve"
+ }
+}

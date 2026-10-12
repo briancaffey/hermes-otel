@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import sqlite3
-import time
 
-import pytest
+from helpers.live import NOW  # noqa: E402
+from helpers.live import span as _span  # noqa: E402
 
 from hermes_otel.live_store import (
     SCHEMA_VERSION,
@@ -14,38 +14,6 @@ from hermes_otel.live_store import (
     summarize_trace,
     trace_totals,
 )
-
-NOW = time.time_ns()
-
-
-def _span(
-    trace,
-    name,
-    sid,
-    parent,
-    attrs=None,
-    start=NOW - 2_000_000_000,
-    end=NOW - 1_000_000_000,
-    status="OK",
-):
-    return {
-        "trace_id": trace,
-        "span_id": sid,
-        "parent_span_id": parent,
-        "name": name,
-        "start_time_unix_nano": start,
-        "end_time_unix_nano": end,
-        "duration_ms": (end - start) / 1e6,
-        "status": status,
-        "attributes": attrs or {},
-    }
-
-
-@pytest.fixture()
-def store(tmp_path):
-    s = LiveStore(db_path=str(tmp_path / "live.db"))
-    yield s
-    s.close()
 
 
 class TestSchema:
@@ -108,6 +76,23 @@ class TestHelpers:
         assert trace_totals(spans) == {"tokens": 30.0, "cost": None}
         spans[-1]["attributes"] = {}
         assert trace_totals(spans)["tokens"] == 30.0  # api spans only, llm mirror ignored
+
+    def test_trace_totals_leave_auxiliary_api_spans_out(self):
+        # An auxiliary attempt (#389) is an api.* span too, but the turn's
+        # totals are the main loop's; the root reports it as
+        # hermes.turn.auxiliary.* instead.
+        spans = [
+            _span("t", "api.m", "a1", "r", {"gen_ai.usage.total_tokens": 10}),
+            _span(
+                "t",
+                "api.cheap",
+                "x1",
+                "r",
+                {"gen_ai.usage.total_tokens": 999, "hermes.query_source": "auxiliary"},
+            ),
+            _span("t", "agent", "r", None, {}),
+        ]
+        assert trace_totals(spans)["tokens"] == 10.0
 
     def test_summarize_trace(self):
         spans = [

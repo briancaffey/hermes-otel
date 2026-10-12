@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/resources"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/traces/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend unreachable: [Errno 61] Connection refused",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

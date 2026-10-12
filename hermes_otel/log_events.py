@@ -18,21 +18,23 @@ from __future__ import annotations
 
 from typing import Any, Dict, Iterable, Mapping, Optional, Tuple
 
+from . import semconv as _sc
 from .helpers import clip_preview
 
 SCOPE_NAME = "hermes_otel"
 
-# Event names (the hooks import these so the names live in one place).
-TURN_START = "hermes.turn.start"
-TURN_END = "hermes.turn.end"
-TOOL_CALL = "hermes.tool.call"
-APPROVAL_DECISION = "hermes.approval.decision"
-API_ERROR = "hermes.api.error"
-SUBAGENT_START = "hermes.subagent.start"
-SUBAGENT_STOP = "hermes.subagent.stop"
-SESSION_FINALIZE = "hermes.session.finalize"
-KANBAN_TRANSITION = "hermes.kanban.transition"
-INFERENCE_DETAILS = "gen_ai.client.inference.operation.details"
+# Event names (the hooks import these; the registry in ``semconv`` owns them, #404).
+TURN_START = _sc.EVENT_TURN_START
+TURN_END = _sc.EVENT_TURN_END
+TOOL_CALL = _sc.EVENT_TOOL_CALL
+APPROVAL_DECISION = _sc.EVENT_APPROVAL_DECISION
+API_ERROR = _sc.EVENT_API_ERROR
+SUBAGENT_START = _sc.EVENT_SUBAGENT_START
+SUBAGENT_STOP = _sc.EVENT_SUBAGENT_STOP
+SESSION_FINALIZE = _sc.EVENT_SESSION_FINALIZE
+KANBAN_TRANSITION = _sc.EVENT_KANBAN_TRANSITION
+AUXILIARY_CALL = _sc.EVENT_AUXILIARY_CALL
+INFERENCE_DETAILS = _sc.EVENT_INFERENCE_DETAILS
 
 # Event-only attributes (the spans carry *_ms; events report seconds per semconv).
 ATTR_TOOL_DURATION_S = "hermes.tool.duration_s"
@@ -202,6 +204,23 @@ EVENTS: Dict[str, Dict[str, Any]] = {
             "hermes.session.turn_count",
             "hermes.session.duration_s",
             "hermes.session.finalize_reason / hermes.session.reset_reason",
+        ),
+    },
+    "hermes.auxiliary.call": {
+        "hook": "post_auxiliary_call",
+        "severity": "INFO; ERROR when the provider attempt failed",
+        "body": "auxiliary <task> <model> (<input>/<output> tokens)",
+        "attributes": (
+            "hermes.auxiliary.task",
+            "hermes.query_source",
+            "gen_ai.request.model",
+            "gen_ai.provider.name",
+            "gen_ai.response.model",
+            "gen_ai.usage.input_tokens",
+            "gen_ai.usage.output_tokens",
+            "hermes.cost.usage",
+            "llm.response.duration_ms",
+            "error.type",
         ),
     },
     "gen_ai.client.inference.operation.details": {

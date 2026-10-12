@@ -26,20 +26,17 @@ class TestReExports:
             assert callable(getattr(hooks, attr)), attr
             assert attr in hooks.__all__
 
-    def test_public_helpers_and_test_seams_still_resolve(self):
-        for name in (
-            "get_current_traceparent",
-            "on_mcp_request_headers",
-            "get_tracer",
-            "_FAIL_OPEN_WARNED",
-            "_correlation_attributes",
-            "_resolve_tool_outcome",
-            "_start_session_span",
-        ):
+    def test_only_the_public_surface_is_exported(self):
+        """Callbacks, ``get_tracer`` and ``get_current_traceparent``; helpers live
+        in their family module and are imported from there (#411)."""
+        for name in ("get_current_traceparent", "on_mcp_request_headers", "get_tracer"):
             assert hasattr(hooks, name), name
+        assert all(not n.startswith("_") for n in hooks.__all__)
+        for private in ("_FAIL_OPEN_WARNED", "_resolve_tool_outcome", "_start_session_span"):
+            assert not hasattr(hooks, private), private
 
-    def test_fail_open_registry_is_one_object(self):
-        assert hooks._FAIL_OPEN_WARNED is _common._FAIL_OPEN_WARNED
+    def test_fail_open_registry_lives_in_common(self):
+        assert isinstance(_common._FAIL_OPEN_WARNED, set)
 
 
 class TestNoDriftGuards:

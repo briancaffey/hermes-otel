@@ -2,7 +2,7 @@
 
 Tests inject backdated start times via the public
 ``plugin.register_turn(session_id, started_at=...)`` seam rather than
-writing to ``plugin._turn_started_at`` directly — so the tests stay
+writing to the tracker's turn registry directly — so the tests stay
 robust to internal-state refactors.
 """
 

@@ -40,9 +40,9 @@ from .tools import _tool_call_id
 _ENV_TYPE_MAX = 64
 
 
-def _set_attributes(span: Any, attributes: dict) -> None:
+def set_attributes(span: Any, attributes: dict) -> None:
     """Set attributes on a live span; a no-op for span objects without the
-    OTel API (LangSmith runs) and never raises."""
+    OTel API (``INVALID_SPAN`` stand-ins) and never raises."""
     if span is None or not hasattr(span, "set_attribute"):
         return
     for key, value in attributes.items():
@@ -85,7 +85,7 @@ def on_transform_terminal_output(
         attributes["hermes.terminal.env_type"] = truncate_string(str(env_type), _ENV_TYPE_MAX)
 
     span = tracer.spans.get_span(key)
-    _set_attributes(span, attributes)
+    set_attributes(span, attributes)
     if raw_chars is not None:
         # on_post_tool_call reads this back to measure the output limit.
         tracer.sessions.record_tool_output_chars(key, raw_chars)
@@ -116,5 +116,5 @@ def on_transform_llm_output(
     root = tracer.spans.get_session_root(sid) if sid else None
     if root is None:
         root = tracer.spans.get_current_parent(sid or None)
-    _set_attributes(root, {"hermes.llm.output.chars": chars})
+    set_attributes(root, {"hermes.llm.output.chars": chars})
     return None

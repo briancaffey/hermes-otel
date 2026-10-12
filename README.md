@@ -54,10 +54,12 @@ agent / cron                          ← the turn (root); turn summary at the e
 | `agent` / `cron` | AGENT | Session kind and id, completion / interruption status, the per-turn summary (tools, targets, commands, outcomes, skills, API call count, final status) |
 | `skill.{name}` | CHAIN | A skill that loaded successfully — name, source (`skill_view` / path read), path; open until the turn ends |
 | `llm.{model}` | LLM | Model, provider, user message (input), assistant response (output) |
-| `api.{model}` | LLM | Token counts in both conventions (incl. cache and reasoning buckets), duration, finish reason, request parameters. On failure: `ERROR` + exception + retry metadata |
+| `api.{model}` | LLM | Token counts in both conventions (incl. cache and reasoning buckets), duration, finish reason, request parameters. On failure: `ERROR` + exception + retry metadata. `hermes.query_source` says whether the call is the agent loop's own (`main`), a delegated child's (`subagent`) or one Hermes made on the agent's behalf (`auxiliary`: titling, compression, Mixture-of-Agents references and aggregator, vision, …), the last tagged with `hermes.auxiliary.task` |
 | `tool.{name}` | TOOL | Args, result, `hermes.tool.outcome` (`completed` / `error` / `timeout` / `blocked` / `cancelled`), inferred target / command, CPU/GPU utilization with host metrics |
 | `approval.{pattern}` | CHAIN | Decision wait time, choice (`once` / `session` / `always` / `deny` / `timeout` / `smart_approve` / `smart_deny`), who decided |
-| `subagent.{role}` | AGENT | Role, goal, status, duration, summary; the child run is nested so a multi-agent run is one connected trace |
+| `subagent.{role}` | AGENT | Role, goal, status, duration, summary, the child's model and what its whole subtree cost; the child run is nested so a multi-agent run is one connected trace |
+
+Running several agents (delegated children, kanban workers on other profiles and models, a swarm, Mixture-of-Agents, cron)? [Observing a fleet](https://briancaffey.github.io/hermes-otel/guides/observing-a-fleet) shows what each looks like in a backend and how to ask what each one cost. A kanban card's run is one trace from the dispatcher's claim through the worker's turn.
 
 Attributes are emitted in **both** conventions — OpenInference (`llm.*`, `input.value`) for Phoenix and OTel GenAI (`gen_ai.*`) for Langfuse, Weave and generic dashboards — so no backend needs custom mapping. Full lists: [span attributes](https://briancaffey.github.io/hermes-otel/reference/span-attributes) · [metrics](https://briancaffey.github.io/hermes-otel/reference/metrics) · [hooks](https://briancaffey.github.io/hermes-otel/reference/hooks).
 

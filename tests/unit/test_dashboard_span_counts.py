@@ -2,38 +2,25 @@
 
 from __future__ import annotations
 
-import sys
-import types
 from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import patch
 
-_DASHBOARD = Path(__file__).resolve().parent.parent.parent / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-try:  # the real FastAPI when the dev extra has it; a stub otherwise
-    import fastapi  # noqa: F401
-except ImportError:
-    _stub = types.ModuleType("fastapi")
+from hermes_otel.dashboard.backends.base import StructuredFilter
+from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter
+from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
+from hermes_otel.dashboard.backends.phoenix import PhoenixAdapter
 
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
 
-    _stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _stub
+def _dashboard_dir() -> Path:
+    from hermes_otel.dashboard import backends as _b
 
-from backends.base import StructuredFilter  # noqa: E402
-from backends.langfuse import LangfuseAdapter  # noqa: E402
-from backends.openobserve import OpenObserveAdapter  # noqa: E402
-from backends.phoenix import PhoenixAdapter  # noqa: E402
+    return Path(_b.__file__).resolve().parent.parent
 
 
 class TestPhoenix:
     def test_span_count_is_the_trace_total_not_matched_spans(self):
-        with patch("backends.top_level_config", return_value={}):
+        with patch("hermes_otel.dashboard.backends.top_level_config", return_value={}):
             a = PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
         a._project_id_cache = "P1"
         node = {
@@ -83,7 +70,9 @@ class TestOpenObserve:
                 ]
             }
 
-        with patch("backends.openobserve.http_post_json", side_effect=fake_post):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_post_json", side_effect=fake_post
+        ):
             out = a.search(StructuredFilter(), 0, 10, 50)
         by_id = {t["traceID"]: t for t in out["traces"]}
         assert by_id["t1"]["spanCount"] == 7 and by_id["t2"]["spanCount"] == 3
@@ -97,7 +86,9 @@ class TestOpenObserve:
                 raise RuntimeError("boom")
             return {"hits": [{"trace_id": "t1", "span_id": "a", "operation_name": "agent"}]}
 
-        with patch("backends.openobserve.http_post_json", side_effect=fake_post):
+        with patch(
+            "hermes_otel.dashboard.backends.openobserve.http_post_json", side_effect=fake_post
+        ):
             out = a.search(StructuredFilter(), 0, 10, 50)
         assert "spanCount" not in out["traces"][0]
 
@@ -122,7 +113,9 @@ class TestLangfuse:
             "totalCost": 0.0123,
             "observations": ["o1", "o2", "o3"],
         }
-        with patch("backends.langfuse.http_get_json", return_value={"data": [item]}):
+        with patch(
+            "hermes_otel.dashboard.backends.langfuse.http_get_json", return_value={"data": [item]}
+        ):
             out = self._adapter().search(StructuredFilter(), 0, 10, 50)
         (t,) = out["traces"]
         assert t["spanCount"] == 3
@@ -138,7 +131,9 @@ class TestLangfuse:
             "timestamp": "2026-09-20T08:00:00.000Z",
             "totalCost": 0,
         }
-        with patch("backends.langfuse.http_get_json", return_value={"data": [item]}):
+        with patch(
+            "hermes_otel.dashboard.backends.langfuse.http_get_json", return_value={"data": [item]}
+        ):
             out = self._adapter().search(StructuredFilter(), 0, 10, 50)
         attrs = {a["key"] for a in out["traces"][0]["spanSets"][0]["spans"][0]["attributes"]}
         assert "hermes.cost.usage" not in attrs
@@ -147,7 +142,7 @@ class TestLangfuse:
 
 def test_lookback_cap_allows_a_year():
     # plugin_api needs the real FastAPI (APIRouter, Query); read the source.
-    src = (_DASHBOARD / "plugin_api.py").read_text(encoding="utf-8")
+    src = (_dashboard_dir() / "plugin_api.py").read_text(encoding="utf-8")
     assert "lookback_hours: float = Query(1.0, gt=0, le=8760)" in src
 
 
@@ -165,11 +160,14 @@ def test_langfuse_maps_the_generic_session_key():
 
 
 def test_backend_cards_carry_the_session_id():
-    from backends import openobserve, phoenix, tempo
+    from hermes_otel.dashboard.backends import openobserve, phoenix, tempo
+    from hermes_otel.dashboard.backends.shapes import CARD_ATTRIBUTE_KEYS
 
-    assert "hermes.session_id" in phoenix._CARD_ATTR_KEYS
+    # One table for every adapter (#403); Tempo spells it as a select list.
+    assert "hermes.session_id" in CARD_ATTRIBUTE_KEYS
     assert ".hermes.session_id" in tempo._CARD_SELECT_ATTRS
-    assert "hermes.session_id" in openobserve._CARD_ATTR_KEYS
+    assert openobserve._CARD_ATTR_OO_COLS == tuple(k.replace(".", "_") for k in CARD_ATTRIBUTE_KEYS)
+    assert phoenix.CARD_ATTRIBUTE_SET == frozenset(CARD_ATTRIBUTE_KEYS)
     row = {"operation_name": "agent", "hermes_session_id": "s-1", "hermes_turn_number": "2"}
     attrs = openobserve._row_to_card_attrs(row)
     assert attrs["hermes.session_id"] == "s-1" and attrs["hermes.turn.number"] == 2
@@ -177,7 +175,7 @@ def test_backend_cards_carry_the_session_id():
 
 class TestTraceUrls:
     def test_phoenix_links_to_the_project_trace_page(self):
-        with patch("backends.top_level_config", return_value={}):
+        with patch("hermes_otel.dashboard.backends.top_level_config", return_value={}):
             a = PhoenixAdapter({"type": "phoenix", "endpoint": "http://localhost:6006"})
         a._project_id_cache = "UHJvamVjdDoy"
         assert a.trace_url("abc") == "http://localhost:6006/projects/UHJvamVjdDoy/traces/abc"
@@ -191,9 +189,15 @@ class TestTraceUrls:
                 "secret_key": "sk",
             }
         )
-        with patch("backends.langfuse.http_get_json", return_value={"data": [{"id": "proj-1"}]}):
+        with patch(
+            "hermes_otel.dashboard.backends.langfuse.http_get_json",
+            return_value={"data": [{"id": "proj-1"}]},
+        ):
             assert a.trace_url("abc") == "http://localhost:3000/project/proj-1/traces/abc"
-        with patch("backends.langfuse.http_get_json", side_effect=RuntimeError("down")):
+        with patch(
+            "hermes_otel.dashboard.backends.langfuse.http_get_json",
+            side_effect=RuntimeError("down"),
+        ):
             b = LangfuseAdapter(
                 {
                     "type": "langfuse",

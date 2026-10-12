@@ -28,7 +28,7 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 HERE = Path(__file__).resolve().parent
 
@@ -55,6 +55,57 @@ def render(text: str, token: str, marker: str, workdir: Path) -> str:
         .replace("{token}", token)
         .replace("{workdir}", str(workdir))
     )
+
+
+def _profile_config(profile: str) -> Path:
+    base = (
+        Path(os.environ.get("HERMES_HOME", "")).expanduser()
+        if os.environ.get("HERMES_HOME")
+        else Path.home() / ".hermes"
+    )
+    home = base if profile in ("", "default") else base / "profiles" / profile
+    return home / "config.yaml"
+
+
+def _merge(base: Dict[str, Any], over: Dict[str, Any]) -> Dict[str, Any]:
+    out = dict(base)
+    for k, v in over.items():
+        out[k] = _merge(out[k], v) if isinstance(v, dict) and isinstance(out.get(k), dict) else v
+    return out
+
+
+def overlay_config(profile: str, prompt: Dict[str, Any]) -> Optional[str]:
+    """Apply a prompt's ``config:`` overlay and ``enable_toolsets:`` to the
+    profile's config.yaml for one turn; returns the original text to restore
+    (None when the prompt asks for nothing). The overlay is deep-merged; an
+    enabled toolset is added to ``toolsets`` and removed from
+    ``agent.disabled_toolsets``."""
+    overlay = prompt.get("config") or {}
+    enable = list(prompt.get("enable_toolsets") or [])
+    if not overlay and not enable:
+        return None
+    import yaml  # type: ignore
+
+    path = _profile_config(profile)
+    original = path.read_text(encoding="utf-8")
+    cfg = yaml.safe_load(original) or {}
+    cfg = _merge(cfg, overlay)
+    if enable:
+        toolsets = list(cfg.get("toolsets") or [])
+        cfg["toolsets"] = toolsets + [t for t in enable if t not in toolsets]
+        agent = cfg.setdefault("agent", {})
+        agent["disabled_toolsets"] = [
+            t for t in (agent.get("disabled_toolsets") or []) if t not in enable
+        ]
+    path.write_text(yaml.safe_dump(cfg, sort_keys=False), encoding="utf-8")
+    return original
+
+
+def restore_config(profile: str, original: Optional[str]) -> None:
+    """Put the profile's config.yaml back exactly as it was (a turn's agent
+    can edit its own config; the restore covers that too)."""
+    if original is not None:
+        _profile_config(profile).write_text(original, encoding="utf-8")
 
 
 def run_one(
@@ -175,7 +226,12 @@ def main(argv: List[str] | None = None) -> int:
             print(f"\n[{i}/{len(prompts)}] {pid}\n{text}")
             continue
         print(f"[{i}/{len(prompts)}] {pid} … ", end="", flush=True)
-        run = run_one(profile, text, args.timeout, out_dir, pid, args.hermes_args)
+        original = overlay_config(profile, p)
+        try:
+            extra = [str(a) for a in (p.get("hermes_args") or [])] + list(args.hermes_args)
+            run = run_one(profile, text, args.timeout, out_dir, pid, extra)
+        finally:
+            restore_config(profile, original)
         entry.update(run)
         manifest["runs"].append(entry)
         manifest_path.write_text(json.dumps(manifest, indent=2), encoding="utf-8")

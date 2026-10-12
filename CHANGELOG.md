@@ -1,5 +1,43 @@
 # Changelog
 
+## [1.27.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.26.0...hermes-otel-v1.27.0) (2026-10-12)
+
+
+### Features
+
+* **kanban:** one trace per task run: the dispatcher hands its claim span to the worker through TRACEPARENT ([#388](https://github.com/briancaffey/hermes-otel/issues/388)) ([#446](https://github.com/briancaffey/hermes-otel/issues/446)) ([308b0eb](https://github.com/briancaffey/hermes-otel/commit/308b0eb7cd45a63b5ced5f8fc3663b6fdc935962))
+* **metrics:** kanban board health from on_kanban_dispatch_tick and on_kanban_task_updated ([#397](https://github.com/briancaffey/hermes-otel/issues/397)) ([#450](https://github.com/briancaffey/hermes-otel/issues/450)) ([2599068](https://github.com/briancaffey/hermes-otel/commit/2599068abbc3b3947947795f3d1eac0c9f650aa3))
+* **metrics:** observers for slash commands, human-input waits, skill lifecycle and transcriptions ([#400](https://github.com/briancaffey/hermes-otel/issues/400)) ([#456](https://github.com/briancaffey/hermes-otel/issues/456)) ([6a069e1](https://github.com/briancaffey/hermes-otel/commit/6a069e1ae26773bc796c5209a788058f2fc68e91))
+* **spans:** cost and tokens per agent: subtree rollups on subagent.* spans, nested orchestrators counted once ([#390](https://github.com/briancaffey/hermes-otel/issues/390)) ([#448](https://github.com/briancaffey/hermes-otel/issues/448)) ([778b371](https://github.com/briancaffey/hermes-otel/commit/778b37167c1698e734d9225a7ef0d0379d80da1c))
+* **spans:** hermes.turn.trigger on every turn root: user, cron, kanban, subagent, a2a, api, oneshot, curator, batch, system ([#394](https://github.com/briancaffey/hermes-otel/issues/394)) ([#445](https://github.com/briancaffey/hermes-otel/issues/445)) ([750170a](https://github.com/briancaffey/hermes-otel/commit/750170a6dd0568aa5a0b93c142802c6318480a81))
+* **spans:** per-agent models on the agent-level spans: the child's model on subagent.*, model_inherited, and hermes.agent.model_override on every root ([#391](https://github.com/briancaffey/hermes-otel/issues/391)) ([#443](https://github.com/briancaffey/hermes-otel/issues/443)) ([e465c2a](https://github.com/briancaffey/hermes-otel/commit/e465c2ae06b265fd727355ea5d40a4affb690653))
+* **spans:** time to first chunk on api spans, stopped turns end interrupted, verify nudges counted ([#396](https://github.com/briancaffey/hermes-otel/issues/396)) ([#451](https://github.com/briancaffey/hermes-otel/issues/451)) ([9f95cb1](https://github.com/briancaffey/hermes-otel/commit/9f95cb1ba88c717971ab4b75247d806a03ad896e))
+
+
+### Bug Fixes
+
+* **live_store:** close connections of exited threads so the gateway stops leaking 2 fds per worker thread ([#457](https://github.com/briancaffey/hermes-otel/issues/457)) ([1efb52e](https://github.com/briancaffey/hermes-otel/commit/1efb52e80afe1ea9983d33309e89cf4869a0d575))
+* **spans:** delegation spans outlive the parent's turn and have their own TTL; stalled children are errors ([#392](https://github.com/briancaffey/hermes-otel/issues/392)) ([#435](https://github.com/briancaffey/hermes-otel/issues/435)) ([10f7d60](https://github.com/briancaffey/hermes-otel/commit/10f7d60ad5549a52d6345dc8d19b3a7647433963))
+
+
+### Documentation
+
+* observing a fleet: the guide, and a three-profile fleet demo read back from Jaeger ([#398](https://github.com/briancaffey/hermes-otel/issues/398)) ([#454](https://github.com/briancaffey/hermes-otel/issues/454)) ([1186be2](https://github.com/briancaffey/hermes-otel/commit/1186be200cc576d1dbd5c0f91301e5a63414ed96))
+
+## [1.26.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.25.0...hermes-otel-v1.26.0) (2026-10-12)
+
+
+### Features
+
+* **backends:** retire the LangSmith run-tree client; type: langsmith is an OTLP preset that fans out like every other backend ([#421](https://github.com/briancaffey/hermes-otel/issues/421)) ([349b679](https://github.com/briancaffey/hermes-otel/commit/349b6793b139c0a01023a8001d92e889910eaf37))
+* **spans:** auxiliary LLM calls as api.* spans with query_source (pre/post_auxiliary_call) ([#401](https://github.com/briancaffey/hermes-otel/issues/401)) ([68539b9](https://github.com/briancaffey/hermes-otel/commit/68539b960db76a4f125eca73a5c7cbfda428c61b)), closes [#389](https://github.com/briancaffey/hermes-otel/issues/389)
+
+
+### Bug Fixes
+
+* **spans:** traceloop.span.kind carries Traceloop's lowercase kinds (agent, tool, task, unknown) ([#385](https://github.com/briancaffey/hermes-otel/issues/385)) ([0d6789f](https://github.com/briancaffey/hermes-otel/commit/0d6789f603efb0f69d6c67c29bbb4bdfc63da47c)), closes [#382](https://github.com/briancaffey/hermes-otel/issues/382)
+* the bugs the refactor audit found: Laminar signal_support, aspire status, Phoenix empty pages, secret precedence, Langfuse status probe, dashboard config path, settings report ([#413](https://github.com/briancaffey/hermes-otel/issues/413)) ([#416](https://github.com/briancaffey/hermes-otel/issues/416)) ([d6d76e0](https://github.com/briancaffey/hermes-otel/commit/d6d76e0d3dab7f44d4f0785c7d0b9a3a4ab4b2f3))
+
 ## [1.25.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.24.0...hermes-otel-v1.25.0) (2026-10-12)
 
 

@@ -30,16 +30,15 @@ from .base import (
     BackendAdapter,
     BackendError,
     ConfigError,
-    HTTPException,
     LogFilter,
     StructuredFilter,
     http_get_json,
-    rewrite_host_for_docker,
-    strictly_older_traces,
-    trace_page,
+    not_found,
+    query_origin,
+    rejected_request,
 )
-
-__all__ = ["TempoAdapter", "HTTPException"]
+from .paging import strictly_older_traces, trace_end_bound, trace_page
+from .shapes import CARD_ATTRIBUTE_KEYS, span_count_of
 
 _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")
 
@@ -53,24 +52,9 @@ _DEFAULT_PROMETHEUS_PORT = 9090
 _DEFAULT_LOKI_PORT = 3100
 _DEFAULT_SEARCH_FETCH = 500
 
-_CARD_SELECT_ATTRS = (
-    ".llm.model_name",
-    ".llm.provider",
-    ".llm.api_mode",
-    ".gen_ai.usage.input_tokens",
-    ".gen_ai.usage.output_tokens",
-    ".gen_ai.usage.total_tokens",
-    ".llm.response.finish_reason",
-    ".llm.response.tool_calls",
-    ".tool.name",
-    ".input.value",
-    ".output.value",
-    ".llm.output.content",
-    ".hermes.session_id",
-    ".hermes.turn.number",
-    "status",
-    "name",
-)
+# The ``| select()`` list: the card attributes as span attributes, plus the
+# intrinsics the card reads.
+_CARD_SELECT_ATTRS = tuple(f".{k}" for k in CARD_ATTRIBUTE_KEYS) + ("status", "name")
 
 
 def _dedupe_spans(data: Any) -> Any:
@@ -164,13 +148,9 @@ class TempoAdapter(BackendAdapter):
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
-        endpoint = cfg.get("endpoint") or ""
-        parsed = _urlparse.urlparse(endpoint)
-        host = parsed.hostname or "localhost"
-        scheme = parsed.scheme or "http"
-        port = cfg.get("query_port") or _DEFAULT_TEMPO_QUERY_PORT
-        host = rewrite_host_for_docker(host)
-        self.query_url = f"{scheme}://{host}:{port}"
+        self.query_url = query_origin(cfg, _DEFAULT_TEMPO_QUERY_PORT)
+        origin = _urlparse.urlparse(self.query_url)
+        scheme, host = origin.scheme, origin.hostname or "localhost"
         # Metrics and logs: on for ``lgtm`` (the stack ships Prometheus + Loki
         # next to Tempo) and for any entry that points at them explicitly.
         is_stack = cfg.get("type") == "lgtm"
@@ -194,7 +174,6 @@ class TempoAdapter(BackendAdapter):
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
-        base["query_url"] = self.query_url
         if self.prometheus_url:
             base["prometheus_url"] = self.prometheus_url
         if self.loki_url:
@@ -310,12 +289,9 @@ class TempoAdapter(BackendAdapter):
         return base + " | select(" + ", ".join(_CARD_SELECT_ATTRS) + ")"
 
     def _search_params(self, f: StructuredFilter, start_s: int, end_s: int, limit: int, q: str):
-        end = int(end_s)
-        if f.before_ns:
-            # Tempo bounds the search in whole seconds; the cursor rounds up
-            # so the row it was taken from is still inside the window and
-            # strictly_older_traces() drops it exactly.
-            end = min(end, int(f.before_ns) // 1_000_000_000 + 1)
+        # Tempo bounds the search in whole seconds; the cursor rounds up so
+        # the row it was taken from is still inside the window.
+        end = trace_end_bound(f, end_s, "s", round_up=True)
         params: Dict[str, Any] = {
             # Tempo stops at ``limit`` matches in whatever order its blocks
             # answer, not the newest ones (verified on Tempo 3.0.3: ``limit=3``
@@ -346,9 +322,8 @@ class TempoAdapter(BackendAdapter):
         except BackendError as exc:
             # Older Tempo builds reject the ``| select()`` pipeline with a 4xx;
             # retry the same predicates without it. Anything else (unreachable,
-            # auth, 5xx) is reported as is: a second request would only hit a
-            # dead backend twice and could not improve the answer (#296).
-            if exc.kind != "backend" or "Backend returned 4" not in str(exc.detail):
+            # auth, 5xx) is reported as is (#296).
+            if not rejected_request(exc):
                 raise
             params = self._search_params(
                 f, start_s, end_s, limit, self._build_traceql(f, with_select=False)
@@ -446,14 +421,10 @@ class TempoAdapter(BackendAdapter):
         url = f"{self.query_url}/api/traces/{trace_id}"
         data = _dedupe_spans(http_get_json(url, timeout=20.0))
         if not isinstance(data, dict):
-            raise BackendError(404, f"Trace {trace_id} not found in Tempo", "not_found")
-        n = sum(
-            len(scope.get("spans") or [])
-            for batch in data.get("batches") or []
-            for scope in batch.get("scopeSpans") or []
-        )
+            raise not_found(trace_id, "Tempo")
+        n = span_count_of(data.get("batches") or [])
         if n == 0:
-            raise BackendError(404, f"Trace {trace_id} not found in Tempo", "not_found")
+            raise not_found(trace_id, "Tempo")
         data["span_count"] = n
         data.setdefault("truncated", False)
         return data

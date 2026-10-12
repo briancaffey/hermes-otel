@@ -18,14 +18,6 @@ T0 = 1_791_749_100
 TRACE = "763b95305b39f4483336878c5ea06668"
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> cs.ClickstackAdapter:
     return cs.ClickstackAdapter(
         {

@@ -2,12 +2,10 @@
 
 import logging
 import sys
-from pathlib import Path
 
 import pytest
 
 from hermes_otel.plugin_config import (
-    BackendConfig,
     HermesOtelConfig,
     content_mode,
     effective_export_batch_size,
@@ -233,8 +231,13 @@ class TestYaml:
         assert cfg.preview_max_chars == 400
         assert cfg.capture_previews is False
         assert cfg.project_name == "yaml-project"
-        assert cfg.resource_attributes == {"deployment": "prod", "region": "us-east-1"}
-        assert cfg.global_tags == {"team": "platform"}
+        # global_tags is folded into resource_attributes at load (#405).
+        assert cfg.resource_attributes == {
+            "team": "platform",
+            "deployment": "prod",
+            "region": "us-east-1",
+        }
+        assert cfg.global_tags is None
         assert cfg.headers == {"X-Auth": "secret-value"}
 
     def test_env_overrides_yaml(self, tmp_path, monkeypatch):
@@ -634,3 +637,50 @@ class TestHostMetricsConfig:
         path.write_text("host_metrics_gpu: intel\n")
         cfg = load_config(path=path)
         assert cfg.host_metrics_gpu == "auto"
+
+
+class TestContentIntent:
+    """The hooks ask the config what to record instead of reading the legacy booleans (#405)."""
+
+    @pytest.mark.parametrize(
+        "kwargs, mode, prompts, responses",
+        [
+            ({}, "full", True, True),
+            ({"capture_previews": False}, "off", False, False),
+            (
+                {"capture_full_prompts": False, "capture_full_responses": False},
+                "preview",
+                False,
+                False,
+            ),
+            # Full mode can still keep one side as previews.
+            ({"capture_full_responses": False}, "full", True, False),
+            # Off wins over a full flag left on.
+            ({"capture_previews": False, "capture_full_prompts": True}, "off", False, False),
+        ],
+    )
+    def test_intent_methods(self, kwargs, mode, prompts, responses):
+        cfg = HermesOtelConfig(**kwargs)
+        assert cfg.content_mode() == content_mode(cfg) == mode
+        assert cfg.captures_content() is (mode != "off")
+        assert cfg.captures_full_prompts() is prompts
+        assert cfg.captures_full_responses() is responses
+
+
+class TestGlobalTagsFold:
+    def test_folded_into_resource_attributes(self):
+        cfg = HermesOtelConfig(
+            global_tags={"team": "a", "env": "x"}, resource_attributes={"env": "y"}
+        )
+        assert cfg.global_tags is None
+        assert cfg.resource_attributes == {"team": "a", "env": "y"}
+
+    def test_load_warns(self, tmp_path, caplog):
+        if not _has_yaml():
+            pytest.skip("pyyaml not installed")
+        path = tmp_path / "config.yaml"
+        path.write_text("global_tags:\n  team: platform\n")
+        with caplog.at_level("WARNING"):
+            cfg = load_config(path=path)
+        assert cfg.resource_attributes == {"team": "platform"}
+        assert "global_tags is deprecated" in caplog.text

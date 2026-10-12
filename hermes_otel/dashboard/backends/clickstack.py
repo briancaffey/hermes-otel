@@ -28,36 +28,41 @@ image's ``default`` user only answers from inside the container; its ``api`` /
 
 from __future__ import annotations
 
-import base64
 import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
-from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import default_service_name, register
-from ._loki import otel_severity_for
 from .base import (
-    LOG_PAGE_SLACK,
     BackendAdapter,
     BackendError,
     LogFilter,
     StructuredFilter,
-    bucketize,
-    counter_increases,
+    _execute,
+    basic_auth,
     finish_log_row,
-    log_end_ns,
-    otlp_attrs_from_dict,
+    not_found,
     otlp_status,
+    query_origin,
     resolve_env_or_literal,
-    rewrite_host_for_docker,
-    strictly_older,
-    strictly_older_traces,
-    trace_page,
     validate_label_name,
     validate_metric_name,
 )
+from .metrics_math import bucketize, counter_increases
+from .paging import (
+    LOG_PAGE_SLACK,
+    log_end_ns,
+    mark_full_fetch,
+    strictly_older,
+    strictly_older_traces,
+    trace_end_bound,
+    trace_page,
+    widened_fetch,
+)
+from .severity import otel_severity_for
+from .shapes import card_attrs, card_row, otlp_batch, otlp_event, otlp_span, to_int
 from .zipkin import coerce_tag
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
@@ -71,25 +76,6 @@ LOOKBEHIND_S = 300
 _ROWS_PER_TRACE = 4
 
 _OTLP_KIND = {"Server": 2, "Client": 3, "Producer": 4, "Consumer": 5, "Internal": 1}
-
-_CARD_KEYS = frozenset(
-    {
-        "llm.model_name",
-        "llm.provider",
-        "llm.api_mode",
-        "gen_ai.usage.input_tokens",
-        "gen_ai.usage.output_tokens",
-        "gen_ai.usage.total_tokens",
-        "llm.response.finish_reason",
-        "llm.response.tool_calls",
-        "tool.name",
-        "input.value",
-        "output.value",
-        "llm.output.content",
-        "hermes.session_id",
-        "hermes.turn.number",
-    }
-)
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -116,16 +102,6 @@ def _coerce_map(attrs: Any) -> Dict[str, Any]:
     if not isinstance(attrs, dict):
         return {}
     return {str(k): coerce_tag(str(k), v) for k, v in attrs.items()}
-
-
-def _int(value: Any) -> int:
-    try:
-        return int(value or 0)
-    except (TypeError, ValueError):
-        try:
-            return int(float(value))
-        except (TypeError, ValueError):
-            return 0
 
 
 def _status_from(code: Any, message: Any) -> Dict[str, Any]:
@@ -160,12 +136,7 @@ class ClickstackAdapter(BackendAdapter):
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
-        endpoint = cfg.get("endpoint") or ""
-        parsed = _urlparse.urlparse(endpoint)
-        host = rewrite_host_for_docker(parsed.hostname or "localhost")
-        scheme = parsed.scheme or "http"
-        port = cfg.get("query_port") or _DEFAULT_CLICKHOUSE_PORT
-        self.query_url = f"{scheme}://{host}:{port}"
+        self.query_url = query_origin(cfg, _DEFAULT_CLICKHOUSE_PORT)
         self.database = str(cfg.get("database") or _DEFAULT_DATABASE)
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
@@ -180,7 +151,6 @@ class ClickstackAdapter(BackendAdapter):
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
-        base["query_url"] = self.query_url
         base["database"] = self.database
         base["default_service"] = self.default_service
         return base
@@ -190,13 +160,14 @@ class ClickstackAdapter(BackendAdapter):
     def _headers(self) -> Dict[str, str]:
         hdr = {"Content-Type": "text/plain; charset=utf-8"}
         if self.user is not None:
-            token = base64.b64encode(f"{self.user}:{self.password or ''}".encode()).decode()
-            hdr["Authorization"] = f"Basic {token}"
+            hdr.update(basic_auth(self.user, self.password))
         return hdr
 
     def _sql(self, sql: str, timeout: float = 30.0) -> List[Dict[str, Any]]:
         """Rows of one statement as dicts (``FORMAT JSON``); 64-bit integers
-        unquoted so counts and durations arrive as numbers."""
+        unquoted so counts and durations arrive as numbers. ClickHouse answers
+        a bad query with 400/404 and a text body, neither of which is "no such
+        trace", and a bad password with 516 as well as 401/403."""
         params = {
             "database": self.database,
             "default_format": "JSON",
@@ -206,30 +177,13 @@ class ClickstackAdapter(BackendAdapter):
         req = _urlrequest.Request(
             url, data=sql.encode("utf-8"), headers=self._headers(), method="POST"
         )
-        try:
-            with _urlrequest.urlopen(req, timeout=timeout) as resp:
-                body = resp.read()
-        except _urlerror.HTTPError as e:
-            try:
-                detail = e.read().decode("utf-8", errors="replace")
-            except Exception:
-                detail = str(e)
-            excerpt = " ".join(detail.split())[:300]
-            if e.code in (401, 403, 516):
-                raise BackendError(503, f"ClickHouse rejected the credentials: {excerpt}", "auth")
-            # ClickHouse answers a bad query with 400/404 and a text body;
-            # neither is "no such trace", so every error is a backend error.
-            raise BackendError(502, f"ClickHouse error: {excerpt}")
-        except _urlerror.URLError as e:
-            raise BackendError(502, f"ClickHouse unreachable: {e.reason}")
-        except Exception as e:
-            raise BackendError(502, f"ClickHouse query failed: {e}")
-        if not body.strip():
-            return []
-        try:
-            data = json.loads(body.decode("utf-8"))
-        except Exception as e:
-            raise BackendError(502, f"ClickHouse returned non-JSON: {e}")
+        data = _execute(
+            req,
+            timeout,
+            label="ClickHouse",
+            auth_codes=(401, 403, 516),
+            not_found_is_backend=True,
+        )
         rows = data.get("data") if isinstance(data, dict) else None
         return [r for r in (rows or []) if isinstance(r, dict)]
 
@@ -239,12 +193,9 @@ class ClickstackAdapter(BackendAdapter):
     # ── traces ────────────────────────────────────────────────────────
 
     def _span_predicates(self, f: StructuredFilter, start_s: int, end_s: int) -> List[str]:
-        end_ns = int(end_s) * 1_000_000_000
-        if f.before_ns:
-            end_ns = min(end_ns, int(f.before_ns))
         preds = [
             f"Timestamp >= fromUnixTimestamp64Nano({int(start_s) * 1_000_000_000})",
-            f"Timestamp < fromUnixTimestamp64Nano({end_ns})",
+            f"Timestamp < fromUnixTimestamp64Nano({trace_end_bound(f, end_s, 'ns')})",
             f"ServiceName = {sql_str(f.service or self.default_service)}",
         ]
         if f.roots_only:
@@ -272,7 +223,7 @@ class ClickstackAdapter(BackendAdapter):
         return preds
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        fetch = int(limit) + 1 if f.roots_only else (int(limit) + 1) * _ROWS_PER_TRACE
+        fetch = widened_fetch(limit, f.roots_only, _ROWS_PER_TRACE, inclusive=True)
         sql = (
             "SELECT TraceId, SpanId, SpanName, ServiceName, StatusCode, Duration, SpanAttributes, "
             "toUnixTimestamp64Nano(Timestamp) AS ts_ns "
@@ -289,7 +240,7 @@ class ClickstackAdapter(BackendAdapter):
             # Several spans of one trace may come back on a widened search; the
             # card is the earliest matching span, as the other adapters show it.
             prev = cards.get(tid)
-            if prev is None or _int(row.get("ts_ns")) < _int(prev.get("ts_ns")):
+            if prev is None or to_int(row.get("ts_ns")) < to_int(prev.get("ts_ns")):
                 cards[tid] = row
         trace_ids = list(cards)
         counts: Dict[str, int] = {}
@@ -299,42 +250,25 @@ class ClickstackAdapter(BackendAdapter):
                 f"SELECT TraceId, count() AS n FROM {self._table(self.traces_table)} "
                 f"WHERE TraceId IN ({in_list}) GROUP BY TraceId"
             ):
-                counts[str(r.get("TraceId"))] = _int(r.get("n"))
+                counts[str(r.get("TraceId"))] = to_int(r.get("n"))
         traces: List[Dict[str, Any]] = []
         for tid, row in cards.items():
-            attrs = _coerce_map(row.get("SpanAttributes"))
-            keep = {k: v for k, v in attrs.items() if k in _CARD_KEYS}
-            keep["name"] = row.get("SpanName") or ""
-            if str(row.get("StatusCode") or "").lower() == "error":
-                keep["status"] = "error"
-            start_ns = _int(row.get("ts_ns"))
-            dur_ns = _int(row.get("Duration"))
+            name = row.get("SpanName") or ""
+            error = str(row.get("StatusCode") or "").lower() == "error"
             traces.append(
-                {
-                    "traceID": tid,
-                    "spanCount": counts.get(tid, 1),
-                    "rootServiceName": row.get("ServiceName") or "",
-                    "rootTraceName": row.get("SpanName") or "",
-                    "startTimeUnixNano": str(start_ns) if start_ns else "0",
-                    "durationMs": dur_ns // 1_000_000,
-                    "spanSets": [
-                        {
-                            "spans": [
-                                {
-                                    "spanID": row.get("SpanId"),
-                                    "name": row.get("SpanName") or "",
-                                    "attributes": otlp_attrs_from_dict(keep),
-                                }
-                            ],
-                            "matched": counts.get(tid, 1),
-                        }
-                    ],
-                }
+                card_row(
+                    tid,
+                    span_id=row.get("SpanId"),
+                    name=name,
+                    attrs=card_attrs(_coerce_map(row.get("SpanAttributes")), name, error),
+                    start_ns=to_int(row.get("ts_ns")),
+                    duration_ms=to_int(row.get("Duration")) // 1_000_000,
+                    service=row.get("ServiceName") or "",
+                    span_count=counts.get(tid, 1),
+                )
             )
         page = trace_page(strictly_older_traces(traces, f), limit)
-        if not f.roots_only and len(rows) >= fetch:
-            page["has_more"] = True
-        return page
+        return mark_full_fetch(page, len(rows), fetch, widened=not f.roots_only)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # HyperDX's search page takes a trace id in its query; only offered
@@ -355,7 +289,9 @@ class ClickstackAdapter(BackendAdapter):
         )
         rows = self._sql(sql)
         if not rows:
-            raise BackendError(404, f"Trace {trace_id} not found in ClickStack", "not_found")
+            raise not_found(trace_id, "ClickStack")
+        # One batch per distinct resource (the whole attribute map, not just
+        # the service): two processes of one service stay apart.
         by_resource: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
         for row in rows:
             res_attrs = _coerce_map(row.get("ResourceAttributes"))
@@ -363,43 +299,30 @@ class ClickstackAdapter(BackendAdapter):
             if service and "service.name" not in res_attrs:
                 res_attrs["service.name"] = service
             key = json.dumps(res_attrs, sort_keys=True, default=str)
-            start_ns = _int(row.get("ts_ns"))
-            dur_ns = _int(row.get("Duration"))
-            span = {
-                "traceId": row.get("TraceId") or trace_id,
-                "spanId": row.get("SpanId"),
-                "parentSpanId": row.get("ParentSpanId") or None,
-                "name": row.get("SpanName") or "",
-                "kind": _OTLP_KIND.get(str(row.get("SpanKind") or ""), 1),
-                "startTimeUnixNano": str(start_ns) if start_ns else "0",
-                "endTimeUnixNano": str(start_ns + dur_ns) if start_ns else "0",
-                "attributes": otlp_attrs_from_dict(_coerce_map(row.get("SpanAttributes"))),
-                "status": _status_from(row.get("StatusCode"), row.get("StatusMessage")),
-            }
-            names = row.get("event_names") or []
+            start_ns = to_int(row.get("ts_ns"))
             times = row.get("event_ts") or []
             attrs_list = row.get("event_attrs") or []
-            events = []
-            for i, name in enumerate(names):
-                events.append(
-                    {
-                        "name": str(name),
-                        "timeUnixNano": str(_int(times[i]) if i < len(times) else 0),
-                        "attributes": otlp_attrs_from_dict(
-                            _coerce_map(attrs_list[i]) if i < len(attrs_list) else {}
-                        ),
-                    }
-                )
-            if events:
-                span["events"] = events
+            span = otlp_span(
+                row.get("TraceId") or trace_id,
+                row.get("SpanId"),
+                row.get("ParentSpanId"),
+                row.get("SpanName"),
+                start_ns=start_ns,
+                end_ns=start_ns + to_int(row.get("Duration")) if start_ns else 0,
+                attrs=_coerce_map(row.get("SpanAttributes")),
+                status=_status_from(row.get("StatusCode"), row.get("StatusMessage")),
+                kind=_OTLP_KIND.get(str(row.get("SpanKind") or ""), 1),
+                events=[
+                    otlp_event(
+                        str(name),
+                        to_int(times[i]) if i < len(times) else 0,
+                        _coerce_map(attrs_list[i]) if i < len(attrs_list) else {},
+                    )
+                    for i, name in enumerate(row.get("event_names") or [])
+                ],
+            )
             by_resource.setdefault(key, (res_attrs, []))[1].append(span)
-        batches = [
-            {
-                "resource": {"attributes": otlp_attrs_from_dict(attrs)},
-                "scopeSpans": [{"spans": spans}],
-            }
-            for attrs, spans in by_resource.values()
-        ]
+        batches = [otlp_batch(attrs, spans) for attrs, spans in by_resource.values()]
         return {"batches": batches, "span_count": len(rows), "truncated": False}
 
     # ── metrics (#194 shapes) ─────────────────────────────────────────
@@ -556,10 +479,10 @@ class ClickstackAdapter(BackendAdapter):
             attrs = _coerce_map(row.get("LogAttributes"))
             record = {
                 "level": str(row.get("SeverityText") or "INFO").upper(),
-                "severity_number": _int(row.get("SeverityNumber")) or None,
+                "severity_number": to_int(row.get("SeverityNumber")) or None,
                 "logger": row.get("ScopeName") or "",
                 "body": row.get("Body") or "",
-                "time_unix_nano": _int(row.get("ts_ns")),
+                "time_unix_nano": to_int(row.get("ts_ns")),
                 "trace_id": row.get("TraceId") or None,
                 "span_id": row.get("SpanId") or None,
                 "session_id": attrs.pop("hermes.session_id", None),
@@ -576,7 +499,7 @@ class ClickstackAdapter(BackendAdapter):
             "GROUP BY ScopeName ORDER BY n DESC LIMIT 200"
         )
         return [
-            {"logger": str(r.get("ScopeName")), "count": _int(r.get("n"))}
+            {"logger": str(r.get("ScopeName")), "count": to_int(r.get("n"))}
             for r in self._sql(sql)
             if r.get("ScopeName")
         ]

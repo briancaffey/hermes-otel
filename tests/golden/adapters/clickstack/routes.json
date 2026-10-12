@@ -1,0 +1,440 @@
+[
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "GROUP BY TraceId",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "n": 3
+    },
+    {
+     "TraceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "n": 3
+    }
+   ],
+   "rows": 2
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "WHERE TraceId = '00000000000000000000000000000000'",
+  "json": {
+   "meta": [],
+   "data": [],
+   "rows": 0
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "WHERE TraceId = 'ab43116e1d6d4a1a449db547c36ca808'",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "65a98a08103c9da7",
+     "ParentSpanId": "",
+     "SpanName": "agent",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Ok",
+     "StatusMessage": "",
+     "Duration": 4029000000,
+     "SpanAttributes": {
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "session.id": "20261011_201958_a1b2c3",
+      "gen_ai.usage.input_tokens": "23504",
+      "gen_ai.usage.output_tokens": "186",
+      "gen_ai.usage.total_tokens": "23690",
+      "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes.turn.number": "1",
+      "hermes.session.completed": "true",
+      "input.value": "read the file hermes_otel.yaml and say hello",
+      "output.value": "Here is the file."
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750000000000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    },
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "aaaa000000000001",
+     "ParentSpanId": "65a98a08103c9da7",
+     "SpanName": "tool.terminal",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Ok",
+     "StatusMessage": "",
+     "Duration": 1120770000,
+     "SpanAttributes": {
+      "tool.name": "terminal",
+      "openinference.span.kind": "TOOL"
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750001500000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    },
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "aaaa000000000002",
+     "ParentSpanId": "65a98a08103c9da7",
+     "SpanName": "tool.read_file",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Error",
+     "StatusMessage": "No such file",
+     "Duration": 3595000,
+     "SpanAttributes": {
+      "tool.name": "read_file",
+      "openinference.span.kind": "TOOL"
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750003000000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    }
+   ],
+   "rows": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "UNION ALL",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "kind": "sum",
+     "MetricName": "hermes.token.usage"
+    },
+    {
+     "kind": "gauge",
+     "MetricName": "system.cpu.utilization"
+    },
+    {
+     "kind": "histogram",
+     "MetricName": "hermes.tool.duration"
+    }
+   ],
+   "rows": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": [
+   "otel_metrics_sum",
+   "system.cpu"
+  ],
+  "json": {
+   "meta": [],
+   "data": [],
+   "rows": 0
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "otel_metrics_sum",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "ts": 1791746280,
+     "v": 100,
+     "Attributes": {
+      "model": "nvidia/nemotron-3-nano-omni"
+     },
+     "inst": "gw"
+    },
+    {
+     "ts": 1791746430,
+     "v": 100,
+     "Attributes": {
+      "model": "nvidia/nemotron-3-nano-omni"
+     },
+     "inst": "gw"
+    },
+    {
+     "ts": 1791746490,
+     "v": 105,
+     "Attributes": {
+      "model": "nvidia/nemotron-3-nano-omni"
+     },
+     "inst": "gw"
+    },
+    {
+     "ts": 1791749700,
+     "v": 23690,
+     "Attributes": {
+      "model": "nvidia/nemotron-3-super-120b-a12b"
+     },
+     "inst": "one"
+    },
+    {
+     "ts": 1791749760,
+     "v": 23690,
+     "Attributes": {
+      "model": "nvidia/nemotron-3-super-120b-a12b"
+     },
+     "inst": "one"
+    }
+   ],
+   "rows": 5
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "otel_metrics_gauge",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "ts": 1791747000,
+     "v": 0.5,
+     "Attributes": {},
+     "inst": "i"
+    },
+    {
+     "ts": 1791749400,
+     "v": 0.25,
+     "Attributes": {},
+     "inst": "i"
+    }
+   ],
+   "rows": 2
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "GROUP BY ScopeName",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "ScopeName": "hermes_otel",
+     "n": 6
+    },
+    {
+     "ScopeName": "cli",
+     "n": 2
+    },
+    {
+     "ScopeName": "",
+     "n": 9
+    }
+   ],
+   "rows": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "otel_logs",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "ts_ns": 1791750004100000000,
+     "SeverityText": "info",
+     "SeverityNumber": 9,
+     "ScopeName": "hermes_otel",
+     "Body": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "65a98a08103c9da7",
+     "LogAttributes": {
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "code.line.number": "173"
+     }
+    },
+    {
+     "ts_ns": 1791750002000000000,
+     "SeverityText": "warn",
+     "SeverityNumber": 13,
+     "ScopeName": "cli",
+     "Body": "careful: the output was truncated",
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "",
+     "LogAttributes": {
+      "event.name": "hermes.turn.end"
+     }
+    }
+   ],
+   "rows": 2
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "body_contains": "startsWith(SpanName, 'tool.')",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "aaaa000000000001",
+     "ParentSpanId": "65a98a08103c9da7",
+     "SpanName": "tool.terminal",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Ok",
+     "StatusMessage": "",
+     "Duration": 1120770000,
+     "SpanAttributes": {
+      "tool.name": "terminal",
+      "openinference.span.kind": "TOOL"
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750001500000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    },
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "aaaa000000000002",
+     "ParentSpanId": "65a98a08103c9da7",
+     "SpanName": "tool.read_file",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Error",
+     "StatusMessage": "No such file",
+     "Duration": 3595000,
+     "SpanAttributes": {
+      "tool.name": "read_file",
+      "openinference.span.kind": "TOOL"
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750003000000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    },
+    {
+     "TraceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "SpanId": "aaaa000000000001",
+     "ParentSpanId": "bbbb000000000001",
+     "SpanName": "tool.terminal",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Ok",
+     "StatusMessage": "",
+     "Duration": 1120770000,
+     "SpanAttributes": {
+      "tool.name": "terminal",
+      "openinference.span.kind": "TOOL"
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791749401500000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    }
+   ],
+   "rows": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/",
+  "json": {
+   "meta": [],
+   "data": [
+    {
+     "TraceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "SpanId": "65a98a08103c9da7",
+     "ParentSpanId": "",
+     "SpanName": "agent",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Ok",
+     "StatusMessage": "",
+     "Duration": 4029000000,
+     "SpanAttributes": {
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "session.id": "20261011_201958_a1b2c3",
+      "gen_ai.usage.input_tokens": "23504",
+      "gen_ai.usage.output_tokens": "186",
+      "gen_ai.usage.total_tokens": "23690",
+      "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes.turn.number": "1",
+      "hermes.session.completed": "true",
+      "input.value": "read the file hermes_otel.yaml and say hello",
+      "output.value": "Here is the file."
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791750000000000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    },
+    {
+     "TraceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "SpanId": "bbbb000000000001",
+     "ParentSpanId": "",
+     "SpanName": "agent",
+     "SpanKind": "Internal",
+     "ServiceName": "hermes-agent",
+     "StatusCode": "Error",
+     "StatusMessage": "No such file",
+     "Duration": 4029000000,
+     "SpanAttributes": {
+      "hermes.session_id": "20261011_201958_a1b2c3",
+      "session.id": "20261011_201958_a1b2c3",
+      "gen_ai.usage.input_tokens": "23504",
+      "gen_ai.usage.output_tokens": "186",
+      "gen_ai.usage.total_tokens": "23690",
+      "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes.turn.number": "1",
+      "hermes.session.completed": "true",
+      "input.value": "read the file hermes_otel.yaml and say hello",
+      "output.value": "Here is the file."
+     },
+     "ResourceAttributes": {
+      "service.instance.id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+      "hermes.profile": "default"
+     },
+     "ts_ns": 1791749400000000000,
+     "event_ts": [],
+     "event_names": [],
+     "event_attrs": []
+    }
+   ],
+   "rows": 2
+  }
+ }
+]

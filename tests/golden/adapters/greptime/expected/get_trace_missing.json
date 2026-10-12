@@ -1,0 +1,14 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:4398/v1/jaeger/api/traces/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in Jaeger",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

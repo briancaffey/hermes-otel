@@ -38,28 +38,40 @@ from urllib import parse as _urlparse
 
 from . import default_service_name, register
 from ._attrs import dotted as _dotted
+from ._attrs import oo_col as _underscored
 from .base import (
     BackendAdapter,
     BackendError,
-    ConfigError,
     HTTPException,
     LogFilter,
     StructuredFilter,
-    bucketize,
-    counter_increases,
+    bearer,
     finish_log_row,
     http_get_json,
-    log_end_ns,
-    otlp_attrs_from_dict,
+    not_found,
     otlp_status,
+    query_origin,
+    register_cache,
+    require_credential,
     resolve_env_or_literal,
-    rewrite_host_for_docker,
+)
+from .metrics_math import bucketize, counter_increases
+from .paging import (
+    log_end_ns,
     strictly_older,
     strictly_older_traces,
+    trace_end_bound,
     trace_page,
+    widened_fetch,
 )
-
-__all__ = ["UptraceAdapter", "HTTPException"]
+from .shapes import (
+    CARD_ATTRIBUTE_KEYS,
+    card_row,
+    group_by_service,
+    otlp_batches,
+    otlp_span,
+    span_count_of,
+)
 
 # Entries that switch the service pin on log queries off.
 _NO_PIN = ("", "off", "none", "any", "*")
@@ -97,23 +109,11 @@ _DIALECTS: Dict[str, Dict[str, Any]] = {
         "logger_params": (),
     },
 }
-_DIALECT_CACHE: Dict[str, str] = {}
+_DIALECT_CACHE: Dict[str, str] = register_cache({})
 
-# Card attributes, in the underscored form Uptrace stores them.
-_CARD_ATTRS = (
-    "llm_model_name",
-    "llm_provider",
-    "llm_api_mode",
-    "gen_ai_usage_input_tokens",
-    "gen_ai_usage_output_tokens",
-    "gen_ai_usage_total_tokens",
-    "llm_response_finish_reason",
-    "llm_response_tool_calls",
-    "tool_name",
-    "input_value",
-    "output_value",
-    "llm_output_content",
-)
+# The card attributes in the underscored form Uptrace stores them; the
+# session keys follow the status in the card (see ``_search_hit``).
+_CARD_ATTRS = tuple(_underscored(k) for k in CARD_ATTRIBUTE_KEYS if not k.startswith("hermes."))
 
 # MQL per Uptrace instrument kind and dashboard aggregate. A counter only
 # supports its per-interval sum (``$m``); the other verbs fall back to it and
@@ -238,18 +238,16 @@ class UptraceAdapter(BackendAdapter):
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
-        base = _extract_dsn(resolve_env_or_literal(cfg, "dsn", "dsn_env"))
-        endpoint = cfg.get("endpoint") or ""
-        if endpoint:
-            parsed = _urlparse.urlparse(endpoint)
-            base = (
-                f"{parsed.scheme or 'http'}://{parsed.hostname or 'localhost'}:"
-                f"{cfg.get('query_port') or _DEFAULT_UPTRACE_HTTP_PORT}"
-            )
-        if base:
-            parsed = _urlparse.urlparse(base)
-            base = f"{parsed.scheme}://{rewrite_host_for_docker(parsed.hostname or 'localhost')}:{parsed.port}"
-        self.query_url = base or ""
+        # The server: the OTLP endpoint with the query port, else the DSN's
+        # host and port (a DSN alone names the server too), else nothing (a
+        # ``config`` error when a query is attempted).
+        dsn_base = _extract_dsn(resolve_env_or_literal(cfg, "dsn", "dsn_env"))
+        if cfg.get("endpoint"):
+            self.query_url = query_origin(cfg, _DEFAULT_UPTRACE_HTTP_PORT)
+        elif dsn_base:
+            self.query_url = query_origin({"endpoint": dsn_base}, None, endpoint_port="first")
+        else:
+            self.query_url = ""
         self.token = (
             resolve_env_or_literal(cfg, "user_token", "user_token_env")
             or os.environ.get("UPTRACE_USER_TOKEN", "").strip()
@@ -271,7 +269,7 @@ class UptraceAdapter(BackendAdapter):
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
-        base["query_url"] = self.query_url
+        base["query_url"] = self.query_url  # reported even when empty: it says what is missing
         base["project_id"] = self.project_id
         base["service_name"] = self.service_name
         base["auth_required"] = self.token is None
@@ -291,13 +289,14 @@ class UptraceAdapter(BackendAdapter):
     # ── HTTP ──────────────────────────────────────────────────────────
 
     def _headers(self) -> Dict[str, str]:
-        if not self.query_url:
-            raise ConfigError(
-                "The uptrace backend entry names no server: set endpoint (or dsn / dsn_env)."
-            )
-        if not self.token:
-            raise ConfigError("Uptrace requires a user token. Set user_token or user_token_env.")
-        return {"Authorization": f"Bearer {self.token}"}
+        require_credential(
+            self.query_url,
+            "The uptrace backend entry names no server: set endpoint (or dsn / dsn_env).",
+        )
+        token = require_credential(
+            self.token, "Uptrace requires a user token. Set user_token or user_token_env."
+        )
+        return bearer(token)
 
     def _dialect(self) -> Dict[str, Any]:
         """Which spelling of the API this server speaks; probed once per process.
@@ -412,16 +411,15 @@ class UptraceAdapter(BackendAdapter):
         # trace contributes several rows (three ``tool.terminal`` spans of one
         # turn filled a two-row page and hid the other turn, #298): ask for
         # more, dedupe, and when the fetch came back full say so.
-        rows_wanted = int(limit) + 1 if server_roots else int(limit) * 4 + 1
+        rows_wanted = widened_fetch(limit, server_roots)
         params: List[Tuple[str, Any]] = [
             *self._systems(d["span_systems"]),
             ("query", self._build_uql(f, root_filter)),
             *d["sort"],
             ("limit", rows_wanted),
         ]
-        end_ms = None
-        if f.before_ns:
-            end_ms = int(f.before_ns) // 1_000_000 + 1
+        # Uptrace bounds time in ms: the cursor rounds up so its row stays inside.
+        end_ms = trace_end_bound(f, end_s, "ms", round_up=True) if f.before_ns else None
         data = self._get(self._path("spans"), start_s, end_s, params, end_ms=end_ms)
         rows = (data.get("spans") if isinstance(data, dict) else None) or []
         traces: Dict[str, Dict[str, Any]] = {}
@@ -463,9 +461,9 @@ class UptraceAdapter(BackendAdapter):
         url = self._api_url(self._path("trace", trace_id=trace_id), [])
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         out = _trace_to_otlp(data)
-        n = sum(len(scope["spans"]) for b in out["batches"] for scope in b["scopeSpans"])
+        n = span_count_of(out["batches"])
         if n == 0:
-            raise BackendError(404, f"Trace {trace_id} not found in Uptrace", "not_found")
+            raise not_found(trace_id, "Uptrace")
         out["span_count"] = n
         out["truncated"] = False
         return out
@@ -680,27 +678,16 @@ def _search_hit(sp: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
         attrs["hermes.session_id"] = raw["hermes_session_id"]
     if raw.get("hermes_turn_number") is not None:
         attrs["hermes.turn.number"] = raw["hermes_turn_number"]
-    start_ns = _ns_from_ms(sp.get("time"))
-    name = sp.get("name") or sp.get("displayName") or ""
-    return {
-        "traceID": trace_id,
-        "rootServiceName": str(raw.get("service_name") or ""),
-        "rootTraceName": name,
-        "startTimeUnixNano": str(start_ns),
-        "durationMs": int(float(sp.get("duration") or 0)),
-        "spanSets": [
-            {
-                "spans": [
-                    {
-                        "spanID": sp.get("id"),
-                        "name": name,
-                        "attributes": otlp_attrs_from_dict(attrs),
-                    }
-                ],
-                "matched": 1,
-            }
-        ],
-    }
+    return card_row(
+        trace_id,
+        span_id=sp.get("id"),
+        name=sp.get("name") or sp.get("displayName") or "",
+        attrs=attrs,
+        start_ns=_ns_from_ms(sp.get("time")),
+        duration_ms=int(float(sp.get("duration") or 0)),
+        service=raw.get("service_name") or "",
+        # Rows are spans; the trace's span count is not among them.
+    )
 
 
 def _trace_to_otlp(data: Any) -> Dict[str, Any]:
@@ -709,36 +696,31 @@ def _trace_to_otlp(data: Any) -> Dict[str, Any]:
     2.1's ``/traces/{p}/{id}`` nests a span's log records under ``logs``; the
     tree only needs the spans (the Logs sub-tab queries logs by trace id).
     """
-    spans_raw = (data.get("spans") if isinstance(data, dict) else None) or []
-    by_service: Dict[str, List[Dict[str, Any]]] = {}
-    for sp in spans_raw:
-        if not isinstance(sp, dict):
-            continue
-        raw = plain_attrs(sp.get("attrs"))
+    spans_raw = [
+        sp
+        for sp in ((data.get("spans") if isinstance(data, dict) else None) or [])
+        if isinstance(sp, dict)
+    ]
+
+    def one(sp: Dict[str, Any]) -> Dict[str, Any]:
         start_ns = _ns_from_ms(sp.get("time"))
-        duration_ns = _ns_from_ms(sp.get("duration") or 0)
-        span = {
-            "traceId": sp.get("traceId"),
-            "spanId": sp.get("id"),
-            "parentSpanId": sp.get("parentId") or None,
-            "name": sp.get("name") or sp.get("displayName") or "",
-            "kind": _KIND.get(str(sp.get("kind") or "internal"), 1),
-            "startTimeUnixNano": str(start_ns),
-            "endTimeUnixNano": str(start_ns + duration_ns if start_ns else 0),
-            "attributes": otlp_attrs_from_dict({_dotted(k): v for k, v in raw.items()}),
-            "status": otlp_status(sp.get("statusCode")),
-        }
-        by_service.setdefault(str(raw.get("service_name") or ""), []).append(span)
+        return otlp_span(
+            sp.get("traceId"),
+            sp.get("id"),
+            sp.get("parentId"),
+            sp.get("name") or sp.get("displayName"),
+            start_ns=start_ns,
+            end_ns=start_ns + _ns_from_ms(sp.get("duration") or 0) if start_ns else 0,
+            attrs=_attrs_dotted(sp.get("attrs")),
+            status=otlp_status(sp.get("statusCode")),
+            kind=_KIND.get(str(sp.get("kind") or "internal"), 1),
+        )
+
+    by_service = group_by_service(
+        spans_raw, lambda sp: plain_attrs(sp.get("attrs")).get("service_name")
+    )
     return {
-        "batches": [
-            {
-                "resource": {
-                    "attributes": otlp_attrs_from_dict({"service.name": svc} if svc else {})
-                },
-                "scopeSpans": [{"spans": spans}],
-            }
-            for svc, spans in by_service.items()
-        ]
+        "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
     }
 
 

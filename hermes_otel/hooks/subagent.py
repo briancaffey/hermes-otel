@@ -8,7 +8,7 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import subagent_span_key, subagent_status_to_span_status, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _correlation_attributes, _session_identity_attributes
+from .attributes import _session_identity_attributes, correlation_attributes
 
 
 @_fail_open
@@ -70,7 +70,7 @@ def on_subagent_start(
     if goal_preview is not None:
         attributes["hermes.subagent.goal"] = goal_preview
         attributes["input.value"] = goal_preview
-    attributes.update(_correlation_attributes(tracer, parent_session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, parent_session_id, kwargs))
 
     # Nest under the parent session's in-flight span (api/llm/session). The
     # delegation span is NOT pushed as a parent — the parent session keeps
@@ -82,12 +82,19 @@ def on_subagent_start(
         kind="agent",
         attributes=attributes,
         session_id=parent_session_id,
+        # Outlives the parent's turn: background delegation fires
+        # subagent_stop turns later (#392). Its own TTL applies instead.
+        sweep_with_turn=False,
     )
 
+    parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
     record: Dict[str, Any] = {
         "span": span,
         "role": role or None,
         "parent_session_id": parent_session_id,
+        # The parent turn's model, so the child's root can say whether it
+        # inherited it (delegation.model unset) or runs on its own (#391).
+        "parent_model": parent_ps.model if parent_ps is not None else "",
     }
     if span is not None and hasattr(span, "get_span_context"):
         try:
@@ -131,6 +138,7 @@ def on_subagent_stop(
         return
 
     record = tracer.spans.pop_subagent(child_session_id)
+    tracer.spans.end_delegation(child_session_id)
     role = (record.get("role") if record else None) or (
         truncate_string(child_role, 200) if child_role else ""
     )
@@ -149,6 +157,16 @@ def on_subagent_stop(
     if summary_preview is not None:
         attributes["hermes.subagent.summary"] = summary_preview
         attributes["output.value"] = summary_preview
+
+    # What the child's subtree cost: its own turns plus any delegations it
+    # made (a nested orchestrator), passed up one level so a grandchild is
+    # counted once at every level above it (#390).
+    totals = tracer.sessions.pop_delegation(child_session_id)
+    if totals is not None:
+        attributes.update(totals.attributes())
+        parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
+        if parent_ps is not None and parent_ps.is_subagent:
+            tracer.sessions.add_delegation_subtree(parent_session_id, totals)
 
     error_message = None
     if status == "error":

@@ -19,6 +19,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `enabled` | bool | `true` | Master kill switch; `false` unloads every hook |
 | `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling) |
 | `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed |
+| `subagent_span_ttl_ms` | int | `86400000` | Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design) |
 | `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader) |
 | `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response) |
 | `capture_previews` | bool | `true` | Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture` |
@@ -27,7 +28,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars` |
 | `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars` |
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
-| `global_tags` | map | *(unset)* | Merged into the OTel Resource; overridden by `resource_attributes` on key conflict |
+| `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |
@@ -81,7 +82,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |

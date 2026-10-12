@@ -1,0 +1,104 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hermes"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=gen_ai"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=process"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=system"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hw"
+  },
+  {
+   "body": {
+    "compositeQuery": {
+     "builderQueries": {
+      "A": {
+       "aggregateAttribute": {
+        "dataType": "float64",
+        "isColumn": true,
+        "key": "system.cpu.utilization",
+        "type": "Gauge"
+       },
+       "dataSource": "metrics",
+       "disabled": false,
+       "expression": "A",
+       "filters": {
+        "items": [],
+        "op": "AND"
+       },
+       "groupBy": [],
+       "queryName": "A",
+       "spaceAggregation": "max",
+       "stepInterval": 300,
+       "timeAggregation": "max"
+      }
+     },
+     "panelType": "graph",
+     "queryType": "builder"
+    },
+    "end": 1791750060000,
+    "start": 1791746400000,
+    "step": 300
+   },
+   "method": "POST",
+   "url": "http://localhost:3301/api/v4/query_range"
+  }
+ ],
+ "result": {
+  "agg": "max",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "cumulative": false,
+  "kind": "Gauge",
+  "name": "system.cpu.utilization",
+  "points": 3,
+  "series": {
+   "_": [
+    133162.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    100.0,
+    null
+   ]
+  }
+ }
+}

@@ -52,7 +52,7 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
     monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
     for key in pc.field_kinds():
-        monkeypatch.delenv(pc._ENV_PREFIX + key.upper(), raising=False)
+        monkeypatch.delenv(pc.ENV_PREFIX + key.upper(), raising=False)
     monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", tmp_path / "hermes_otel.yaml")
     monkeypatch.setattr(
         pc, "DEFAULT_CONFIG_PATH", tmp_path / "plugins" / "hermes_otel" / "config.yaml"
@@ -495,15 +495,21 @@ class TestProfileAwareReport:
         (profile / "hermes_otel.yaml").write_text("project_name: p\n", encoding="utf-8")
         monkeypatch.setenv("HERMES_HOME", str(profile))
         monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
-        # the module constants still point at another home (computed at import)
-        monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", tmp_path / "elsewhere" / "hermes_otel.yaml")
-        monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", tmp_path / "elsewhere" / "config.yaml")
-        monkeypatch.setattr(pc, "resolve_config_path", lambda: profile / "hermes_otel.yaml")
-        from hermes_otel.settings_report import _config_path_source
+        # Unpinned (production): both locations follow the home in force at
+        # call time, so a multiplexed gateway's second profile reads its own (#405).
+        monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", None)
+        monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", None)
+        from hermes_otel.settings_report import config_path_source
 
-        assert _config_path_source(profile / "hermes_otel.yaml") == "durable"
-        assert _config_path_source(profile / "plugins" / "hermes_otel" / "config.yaml") == "legacy"
-        assert _config_path_source(tmp_path / "somewhere.yaml") == "explicit"
+        assert pc.resolve_config_path_with_reason() == (profile / "hermes_otel.yaml", "durable")
+        assert config_path_source(profile / "hermes_otel.yaml") == "durable"
+        assert config_path_source(profile / "plugins" / "hermes_otel" / "config.yaml") == "legacy"
+        assert config_path_source(tmp_path / "somewhere.yaml") == "explicit"
+        other = tmp_path / "profiles" / "other"
+        other.mkdir()
+        monkeypatch.setenv("HERMES_HOME", str(other))
+        assert pc.durable_config_path() == other / "hermes_otel.yaml"
+        assert pc.resolve_config_path_with_reason() == (None, "none")
 
     def test_flat_log_spellings_are_listed_as_deprecated(self, home):
         (home / "hermes_otel.yaml").write_text(
@@ -519,3 +525,98 @@ class TestProfileAwareReport:
         rep = build_settings_report()
         assert rep["config"]["deprecated_keys"] == []
         assert rep["process"]["note"].startswith("Resolved by the dashboard process")
+
+
+class TestMetricsSettingsMirrorTheLoader:
+    """``load_config`` drops an unknown ``metrics_histogram`` / ``metrics_temporality``
+    (``reconcile_metrics_settings``); the report used to show the bad value as
+    applied (#413)."""
+
+    def test_unknown_histogram_from_the_file_is_flagged_and_the_default_applies(self, home):
+        (home / "hermes_otel.yaml").write_text(YAML + "metrics_histogram: sideways\n")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        entry = by_key["metrics_histogram"]
+        assert entry["file_invalid"] is True and entry["source"] == "default"
+        assert entry["value"] == "explicit"
+
+    def test_env_temporality_is_normalised_or_flagged(self, home, monkeypatch):
+        monkeypatch.setenv("HERMES_OTEL_METRICS_TEMPORALITY", "DELTA")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        assert by_key["metrics_temporality"]["value"] == "delta"
+        assert by_key["metrics_temporality"]["source"] == "env"
+        monkeypatch.setenv("HERMES_OTEL_METRICS_TEMPORALITY", "sometimes")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        entry = by_key["metrics_temporality"]
+        assert entry["env_invalid"] is True and entry["source"] == "default"
+
+    def test_sdk_env_preference_is_reported_as_the_default(self, home, monkeypatch):
+        (home / "hermes_otel.yaml").write_text(
+            "backends:\n  - type: lgtm\n    endpoint: http://l:4318/v1/traces\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta")
+        (card,) = build_settings_report()["fields"][-1]["value"]
+        assert card["metrics_temporality"] == {
+            "value": "delta",
+            "source": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+        }
+
+
+class TestLoaderProvenance:
+    """The report formats the loader's decisions instead of re-running it (#405)."""
+
+    def test_report_imports_no_private_loader_names(self):
+        import inspect
+
+        import hermes_otel.settings_report as sr
+
+        src = inspect.getsource(sr)
+        assert "pc._" not in src and "_backends._" not in src
+
+    def test_sources_record_file_env_invalid_and_derived(self, home, monkeypatch):
+        (home / "hermes_otel.yaml").write_text(
+            "project_name: demo\npreview_max_chars: lots\ncapture_previews: false\n",
+            encoding="utf-8",
+        )
+        monkeypatch.setenv("HERMES_OTEL_SAMPLE_RATE", "0.5")
+        monkeypatch.setenv("HERMES_OTEL_ROOT_SPAN_TTL_MS", "soon")
+        cfg, src = pc.load_config_with_sources(warn=False)
+        assert cfg == pc.load_config()
+        assert src["project_name"].source == "file"
+        assert src["sample_rate"].source == "env" and src["sample_rate"].env_raw == "0.5"
+        assert src["root_span_ttl_ms"].env_invalid and src["root_span_ttl_ms"].source == "default"
+        assert src["preview_max_chars"].file_invalid and src["preview_max_chars"].file_raw == "lots"
+        assert src["content_capture"].derived_from == ("capture_previews",)
+        assert src["content_capture"].source == "file" and cfg.content_capture == "off"
+
+    def test_label_limit_shows_the_value_the_loader_applies(self, home):
+        (home / "hermes_otel.yaml").write_text("metrics_label_limit: -5\n", encoding="utf-8")
+        reports, cfg = field_reports({"metrics_label_limit": -5})
+        row = next(r for r in reports if r["key"] == "metrics_label_limit")
+        assert row["value"] == 0 == cfg.metrics_label_limit == pc.load_config().metrics_label_limit
+
+    def test_credential_falls_back_like_the_resolver(self, home, monkeypatch):
+        """A named ``<field>_env`` that is empty falls through to the vendor
+        variable, in the exporter and now on the Settings card as well."""
+        (home / "hermes_otel.yaml").write_text(
+            "backends:\n  - type: langfuse\n    endpoint: http://localhost:3000\n"
+            "    public_key: pk\n    secret_key_env: MISSING_SECRET\n",
+            encoding="utf-8",
+        )
+        monkeypatch.delenv("MISSING_SECRET", raising=False)
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-vendor")
+        rep = build_settings_report()
+        card = next(r for r in rep["fields"] if r["key"] == "backends")["value"][0]
+        cred = next(c for c in card["credentials"] if c["field"] == "secret_key")
+        assert cred["set"] is True and cred["source"] == "env LANGFUSE_SECRET_KEY"
+
+    def test_victoria_signals_match_the_exporter(self, home):
+        (home / "hermes_otel.yaml").write_text(
+            "backends:\n  - type: victoria\n    endpoint: http://localhost:10428\n",
+            encoding="utf-8",
+        )
+        rep = build_settings_report()
+        card = next(r for r in rep["fields"] if r["key"] == "backends")["value"][0]
+        # no metrics_endpoint / logs_endpoint: the resolver exports traces only
+        assert card["signals"]["traces"]["exported"] is True
+        assert card["signals"]["metrics"]["exported"] is False
+        assert card["signals"]["logs"]["exported"] is False

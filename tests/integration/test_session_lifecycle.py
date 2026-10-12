@@ -1,7 +1,6 @@
 """Integration tests for a complete session lifecycle with token aggregation
 and session I/O roll-up."""
 
-import pytest
 from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (

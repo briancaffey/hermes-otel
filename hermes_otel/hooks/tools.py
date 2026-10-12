@@ -164,11 +164,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
         attributes["input.value"] = preview
         attributes["gen_ai.tool.call.arguments"] = preview
         _mark_truncated(attributes, "input", original)
-    if (
-        tracer.config.capture_previews
-        and tool_name.startswith("mcp_")
-        and tracer.config.capture_full_prompts
-    ):
+    if tool_name.startswith("mcp_") and tracer.config.captures_full_prompts():
         serialized_args = serialize_full(args)
         if serialized_args is not None:
             attributes["gen_ai.tool.call.arguments"] = serialized_args
@@ -297,11 +293,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         attributes["output.value"] = preview
         attributes["gen_ai.tool.call.result"] = preview
         _mark_truncated(attributes, "output", original)
-    if (
-        tracer.config.capture_previews
-        and tool_name.startswith("mcp_")
-        and tracer.config.capture_full_responses
-    ):
+    if tool_name.startswith("mcp_") and tracer.config.captures_full_responses():
         serialized_result = serialize_full(result_json if result_json else result)
         if serialized_result is not None:
             attributes["gen_ai.tool.call.result"] = serialized_result

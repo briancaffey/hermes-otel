@@ -140,9 +140,7 @@ Prefer env-var references over inline values. Two forms:
 
 ## LangSmith and fan-out
 
-LangSmith is the one exception — it uses its own HTTP Run API rather than OTLP, so it's **not** a valid `backends:` entry. Setting `LANGSMITH_TRACING=true` short-circuits the `backends:` list entirely, so you can have either fan-out **or** LangSmith, not both.
-
-If you need LangSmith alongside another backend, open an issue — we might add a second-class fan-out path for it if there's demand.
+LangSmith is an ordinary `type: langsmith` entry (its OTLP ingest at `/otel/v1/traces`), so it fans out beside every other backend. Before 1.26 it was a separate run-tree client that `LANGSMITH_TRACING=true` selected instead of the list; see [LangSmith](/backends/langsmith#migrating-from-langsmith_tracing) for the migration.
 
 ## Debugging fan-out
 

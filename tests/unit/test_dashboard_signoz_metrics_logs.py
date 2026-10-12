@@ -11,7 +11,7 @@ from typing import Any, Dict, List
 import pytest
 
 from hermes_otel.dashboard.backends import signoz as sz
-from hermes_otel.dashboard.backends.base import LogFilter
+from hermes_otel.dashboard.backends.base import BackendError, LogFilter
 
 CFG = {
     "type": "signoz",
@@ -145,7 +145,7 @@ class TestCapabilities:
 
     def test_no_api_key_fails_closed(self):
         a = sz.SigNozAdapter({"type": "signoz", "endpoint": "http://localhost:4318/v1/traces"})
-        with pytest.raises(sz.HTTPException):
+        with pytest.raises(BackendError):
             a.metric_names(0, 1)
 
 
@@ -375,7 +375,7 @@ class TestLogs:
         assert items == [{"key": sz._tag("event.name"), "op": "exists"}]
 
     def test_severity_floor_per_python_level(self):
-        assert [sz._otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
+        assert [sz.otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
             5,
             9,
             9,
@@ -406,3 +406,17 @@ class TestLogs:
             "trace_id": None,
             "session_id": None,
         }
+
+
+class TestCumulativeFlag:
+    def test_only_the_counter_fold_marks_a_series_cumulative(self, adapter, fake_http):
+        # ``cumulative`` tells the UI the values are per-bucket increases. That
+        # is true only when the adapter folded the counter itself (sum / count /
+        # last); ``avg`` of a Sum is SigNoz's own aggregate of the raw cumulative
+        # values. A second assignment used to overwrite the flag with
+        # ``kind == "Sum"`` (#413).
+        start, end = 1790294400 - 3600, 1790298000 + 3600
+        folded = adapter.metrics_query("hermes.token.usage", start, end, 3600, agg="sum")
+        raw = adapter.metrics_query("hermes.token.usage", start, end, 3600, agg="avg")
+        assert folded["cumulative"] is True
+        assert raw["cumulative"] is False and raw["kind"] == "Sum"

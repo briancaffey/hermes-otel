@@ -10,24 +10,40 @@ from ..debug_utils import debug_log, logger
 from ..helpers import detect_session_kind, truncate_string
 from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
-    _correlation_attributes,
     _extract_correlation_id,
     _gen_ai_attributes,
     _model_attributes,
     _per_session_sender_attributes,
     _platform_attributes,
-    _profile_attributes,
     _response_model_attributes,
     _session_identity_attributes,
     _summary_attributes,
     _weave_turn_attributes,
+    correlation_attributes,
+    model_override_attributes,
+    profile_attributes,
+    session_env,
+    turn_trigger_attributes,
 )
-from .usage import _genai_metric_dims, _record_genai_token_usage, _usage_attributes
+from .kanban import kanban_remote_parent
+from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
 
 try:
     from opentelemetry.trace import Link
 except ImportError:  # pragma: no cover — plugin is unusable without OTel
     Link = None  # type: ignore[assignment]
+
+
+def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None:
+    text = truncate_string(model, 200) if model else ""
+    if not text:
+        return
+    try:
+        span.set_attribute("gen_ai.request.model", text)
+        if parent_model:
+            span.set_attribute("hermes.subagent.model_inherited", text == str(parent_model))
+    except Exception:
+        pass
 
 
 def _start_session_span(
@@ -54,20 +70,25 @@ def _start_session_span(
     # The root span is where a session's aggregator is born; pin the
     # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
+    ps.model = str(model or "")
+    gateway_key = session_env("HERMES_SESSION_KEY").strip()
+    if gateway_key:
+        tracer.sessions.remember_session_key(gateway_key, session_id)
     if not ps.correlation_id:
         ps.correlation_id = _extract_correlation_id(extra_kwargs)
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
     attributes.update(_platform_attributes(platform))
-    attributes.update(_profile_attributes(tracer))
+    attributes.update(profile_attributes(tracer))
     # Hermes passes no provider on on_session_start; a host that does is honoured.
     # Otherwise the provider lands on the root at on_session_end, once the
     # turn's API calls have reported it (#153).
     attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
+    attributes.update(model_override_attributes(model))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
-    attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
@@ -85,6 +106,7 @@ def _start_session_span(
     record = tracer.spans.get_subagent(session_id)
     if record:
         attributes["hermes.session.is_subagent"] = True
+        tracer.sessions.get_or_create(session_id).is_subagent = True
         if record.get("role"):
             attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
         if record.get("parent_session_id"):
@@ -94,8 +116,19 @@ def _start_session_span(
         span_obj = record.get("span")
         if span_obj is not None and hasattr(span_obj, "get_span_context"):
             parent_override = span_obj
+            # subagent_start does not carry the child's model; its root does.
+            # Put it on the delegation span so the agent-level span says which
+            # model the child ran on and whether it is the parent's (#391).
+            _annotate_delegation_model(span_obj, model, record.get("parent_model"))
         elif record.get("context") is not None and Link is not None:
             links = [Link(record["context"])]
+
+    attributes.update(turn_trigger_attributes(platform, is_subagent=bool(record)))
+
+    # Kanban worker (#388): the dispatcher put its claim span in TRACEPARENT
+    # before spawning this process, so the run is one trace.
+    if parent_override is None and not links:
+        parent_override = kanban_remote_parent()
 
     # Session chaining (#29): a session that replaced another (``/new``,
     # ``/reset``, expiry) names it and links to its last root span.
@@ -165,14 +198,14 @@ def on_session_end(
     if exit_reason:
         attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
     attributes.update(_platform_attributes(platform))
-    attributes.update(_profile_attributes(tracer))
+    attributes.update(profile_attributes(tracer))
     # Provider: what this turn's API calls reported, else what the host passed.
     provider = (ps.provider if ps is not None else "") or kwargs.get("provider")
     attributes.update(_model_attributes(model, provider))
     attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, kwargs))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     if ps is not None and ps.io_captured:
         if ps.io.get("input"):
@@ -181,7 +214,7 @@ def on_session_end(
             attributes["output.value"] = ps.io["output"]
 
     if ps is not None and ps.usage_updated:
-        attributes.update(_usage_attributes(ps.usage))
+        attributes.update(usage_attributes(ps.usage))
         # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
         # Prefer the provider captured from this session's API calls over the
         # platform, so the dimension matches the gen_ai.client.* metrics.
@@ -190,11 +223,18 @@ def on_session_end(
             tracer,
             "gen_ai.agent.token.usage",
             ps.usage,
-            _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
+            genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
         )
+
+    if ps is not None and ps.is_subagent:
+        # A delegated child's turn counts toward its delegation span (#390).
+        tracer.sessions.add_delegation_turn(session_id, ps)
 
     if ps is not None:
         attributes.update(ps.cost_rollup())
+        # Auxiliary calls (#389) are reported beside, never inside, the turn
+        # totals: see PerSession.add_auxiliary for why.
+        attributes.update(ps.auxiliary_rollup())
 
     # Surface the last API error's type on the root so a failed turn shows why.
     if ps is not None and ps.last_error_type:
@@ -203,6 +243,10 @@ def on_session_end(
     attributes.update(_per_session_sender_attributes(ps))
     if ps is not None and ps.turn_number:
         attributes["hermes.turn.number"] = ps.turn_number
+    if ps is not None and ps.verify_nudges:
+        attributes["hermes.turn.verify_nudges"] = ps.verify_nudges
+    if ps is not None and ps.stop_reason:
+        attributes["hermes.turn.stop_reason"] = ps.stop_reason
 
     if failed:
         final_status = "failed"
@@ -237,7 +281,7 @@ def on_session_end(
             )
 
     root_span = tracer.spans.get_span(key)
-    started_at = tracer._turn_started_at.get(session_id) if session_id else None
+    started_at = tracer.spans.turn_started_at(session_id)
     final = attributes.get("hermes.turn.final_status") or "incomplete"
     _emit_event(
         tracer,
@@ -429,3 +473,58 @@ def on_session_reset(
         _finalize_session(tracer, old_id, platform, reason or "reset", event="reset")
     if new_id and old_id:
         tracer.sessions.set_previous(new_id, old_id)
+
+
+# ── Interruption and verification (#396) ─────────────────────────────────
+
+
+@_fail_open
+def on_agent_loop_stopped(
+    session_key: Any = None,
+    platform: Any = None,
+    reason: Any = None,
+    invalidation_reason: Any = None,
+    **kwargs: Any,
+):
+    """The gateway stopped a running turn (``/stop``, the ``/new`` fast path).
+
+    The turn is not ended here: Hermes usually still finishes it with
+    ``on_session_end(interrupted=True)``, which carries the turn's usage. The
+    root is marked instead, so it says why, and so the orphan sweep ends it
+    ``interrupted`` rather than ``timed_out`` if no end ever arrives.
+    """
+    debug_log(f"agent_loop_stopped fired: key={session_key} reason={reason}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+    session_id = tracer.sessions.session_for_key(str(session_key or "").strip())
+    if not session_id:
+        return
+    text = truncate_string(str(reason or invalidation_reason or "stopped"), 120)
+    ps = tracer.sessions.peek(session_id)
+    if ps is not None:
+        ps.stop_reason = text
+    root = tracer.spans.get_span(f"session:{session_id}")
+    if root is not None and hasattr(root, "set_attribute"):
+        try:
+            root.set_attribute("hermes.turn.stop_reason", text)
+        except Exception:
+            pass
+
+
+@_fail_open
+def on_pre_verify(session_id: Any = None, **kwargs: Any) -> None:
+    """Count verification nudges (the agent edited code and is about to finish).
+
+    ``pre_verify`` is a decision hook: a dict return keeps the turn going.
+    This observer always returns None, and never records the changed paths
+    or the final response.
+    """
+    debug_log(f"pre_verify fired: session={session_id} attempt={kwargs.get('attempt')}")
+    tracer = get_tracer()
+    if not tracer.is_enabled or not session_id:
+        return None
+    ps = tracer.sessions.peek(str(session_id))
+    if ps is not None:
+        ps.verify_nudges += 1
+    return None

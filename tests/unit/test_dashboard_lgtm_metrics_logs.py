@@ -12,7 +12,7 @@ import pytest
 
 from hermes_otel.dashboard.backends import _loki, _prometheus
 from hermes_otel.dashboard.backends import tempo as tp
-from hermes_otel.dashboard.backends.base import LogFilter
+from hermes_otel.dashboard.backends.base import BackendError, LogFilter
 
 NAMES = {
     "status": "success",
@@ -163,7 +163,7 @@ class TestWiring:
     def test_plain_tempo_has_no_metrics_or_logs_unless_pointed_at_them(self):
         a = tp.TempoAdapter({"type": "tempo", "endpoint": "http://tempo:4318/v1/traces"})
         assert (a.supports_metrics, a.supports_logs) == (False, False)
-        with pytest.raises(tp.HTTPException):
+        with pytest.raises(BackendError):
             a.metric_names(0, 1)
         b = tp.TempoAdapter(
             {

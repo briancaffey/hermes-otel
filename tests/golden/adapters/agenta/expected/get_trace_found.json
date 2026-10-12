@@ -1,0 +1,253 @@
+{
+ "calls": [
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "trace_id",
+       "operator": "is",
+       "value": "ab43116e1d6d4a1a449db547c36ca808"
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 2000,
+     "order": "ascending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  }
+ ],
+ "result": {
+  "batches": [
+   {
+    "resource": {
+     "attributes": [
+      {
+       "key": "service.name",
+       "value": {
+        "stringValue": "hermes-agent"
+       }
+      }
+     ]
+    },
+    "scopeSpans": [
+     {
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "ag.type.span",
+          "value": {
+           "stringValue": "agent"
+          }
+         },
+         {
+          "key": "ag.type.trace",
+          "value": {
+           "stringValue": "invocation"
+          }
+         },
+         {
+          "key": "ag.metrics.tokens.cumulative.total",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "ag.session.id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "intValue": "1"
+          }
+         },
+         {
+          "key": "hermes.session.completed",
+          "value": {
+           "boolValue": true
+          }
+         },
+         {
+          "key": "session.id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "intValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "intValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         }
+        ],
+        "endTimeUnixNano": "1791750004029000000",
+        "kind": 1,
+        "name": "agent",
+        "parentSpanId": null,
+        "spanId": "65a98a08103c9da7",
+        "startTimeUnixNano": "1791750000000000000",
+        "status": {
+         "code": 1,
+         "message": ""
+        },
+        "traceId": "ab43116e1d6d4a1a449db547c36ca808"
+       },
+       {
+        "attributes": [
+         {
+          "key": "ag.type.span",
+          "value": {
+           "stringValue": "tool"
+          }
+         },
+         {
+          "key": "ag.type.trace",
+          "value": {
+           "stringValue": "invocation"
+          }
+         },
+         {
+          "key": "ag.metrics.tokens.cumulative.total",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "ag.session.id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "openinference.span.kind",
+          "value": {
+           "stringValue": "TOOL"
+          }
+         }
+        ],
+        "endTimeUnixNano": "1791750002620770000",
+        "kind": 1,
+        "name": "tool.terminal",
+        "parentSpanId": "65a98a08103c9da7",
+        "spanId": "aaaa000000000001",
+        "startTimeUnixNano": "1791750001500000000",
+        "status": {
+         "code": 1,
+         "message": ""
+        },
+        "traceId": "ab43116e1d6d4a1a449db547c36ca808"
+       },
+       {
+        "attributes": [
+         {
+          "key": "ag.type.span",
+          "value": {
+           "stringValue": "tool"
+          }
+         },
+         {
+          "key": "ag.type.trace",
+          "value": {
+           "stringValue": "invocation"
+          }
+         },
+         {
+          "key": "ag.metrics.tokens.cumulative.total",
+          "value": {
+           "intValue": "23690"
+          }
+         },
+         {
+          "key": "ag.session.id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "read_file"
+          }
+         },
+         {
+          "key": "openinference.span.kind",
+          "value": {
+           "stringValue": "TOOL"
+          }
+         }
+        ],
+        "endTimeUnixNano": "1791750003003595000",
+        "kind": 1,
+        "name": "tool.read_file",
+        "parentSpanId": "65a98a08103c9da7",
+        "spanId": "aaaa000000000002",
+        "startTimeUnixNano": "1791750003000000000",
+        "status": {
+         "code": 2,
+         "message": ""
+        },
+        "traceId": "ab43116e1d6d4a1a449db547c36ca808"
+       }
+      ]
+     }
+    ]
+   }
+  ],
+  "span_count": 3,
+  "truncated": false
+ }
+}

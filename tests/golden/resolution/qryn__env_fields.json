@@ -1,0 +1,126 @@
+{
+ "adapter": {
+  "class": "GigapipeAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "Gigapipe",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "name": "qryn-entry",
+  "password_env": "HO_TEST_PASSWORD",
+  "type": "qryn",
+  "user_env": "HO_TEST_USER"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "Basic <secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "qryn",
+  "name": "qryn-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "env_fields",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "qryn-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "Authorization": "Basic <secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "gigapipe"
+ },
+ "settings_card": {
+  "credentials": [
+   {
+    "field": "user",
+    "set": true,
+    "source": "env HO_TEST_USER",
+    "value": "<secret>"
+   },
+   {
+    "field": "password",
+    "set": true,
+    "source": "env HO_TEST_PASSWORD",
+    "value": "••••••"
+   }
+  ],
+  "display_type": "Gigapipe",
+  "docs_path": "/backends/gigapipe",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "qryn-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "qryn",
+  "ui": {
+   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "qryn-entry",
+    "queryable": true,
+    "type": "qryn"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "qryn"
+}

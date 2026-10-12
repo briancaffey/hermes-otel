@@ -34,7 +34,7 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 | `openinference.span.kind` | OpenInference | `AGENT` (root, subagent) · `LLM` (`llm.*`, `api.*`) · `TOOL` (`tool.*`) · `GENERAL` (skill, approval, kanban) |
 | `traceloop.span.kind` | Traceloop | The same span kinds in Traceloop's lowercase vocabulary: `agent` (root, subagent) · `tool` (`tool.*`) · `task` (everything else; Traceloop has no LLM kind, model spans are identified by `gen_ai.*`) · `unknown`. Filter on this from openllmetry-aware tools such as `opentelemetry-mcp` (since 1.26.0; earlier releases wrote the OpenInference spelling here, #382) |
 | `hermes.turn.number` | hermes | 1-based index of the user prompt within the session (per process; `hermes -r` restarts at 1). On the root and on every `llm.*` / `api.*` / `tool.*` span of the turn |
-| `session.id` | OTel | Hermes session id, on the root and on `llm.*` / `api.*` / `tool.*` / `subagent.*` |
+| `session.id`, `session_id` | OTel / hermes | Hermes session id, on the root and on `llm.*` / `api.*` / `tool.*` / `subagent.*`; `session_id` is the plugin's oldest spelling of the same value, kept for dashboards built on it |
 | `gen_ai.conversation.id` | gen_ai | Same id, gen_ai spelling, wherever `gen_ai.operation.name` is set |
 | `correlation.id` | hermes | A correlation id the host passed on the hook (`correlation_id` / `correlation.id` / `x-correlation-id` …), reused on every span of that session. Hermes 0.21 passes none, so the attribute is absent; group by `session.id` instead |
 | `user.id`, `hermes.sender.id` | OTel / hermes | Gateway sender identity — only with `capture_sender_id: true`. `user.id` is `platform:sender` |
@@ -53,6 +53,11 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
+| `hermes.human_input.kind`, `hermes.human_input.prompt`, `hermes.human_input.outcome`, `hermes.human_input.wait_s` | hermes | mixed | On a `human_input.{kind}` span (`clarify`, a password prompt; not approvals): what the person was asked (Hermes redacts it; a preview under `content_capture`), how the wait ended and how long it took |
+| `hermes.turn.stop_reason` | hermes | string | Set when `agent_loop_stopped` fires for the turn (`/stop`, the `/new` fast path); a stopped turn whose end never arrives is swept as `interrupted`, not `timed_out` |
+| `hermes.turn.verify_nudges` | hermes | int | How many times `pre_verify` fired this turn (the agent edited code and was about to finish); never the paths or the response |
+| `hermes.turn.trigger` | hermes | string | What started the turn: `user` (CLI, TUI, desktop, a gateway platform, ACP), `cron`, `kanban` (a worker), `subagent` (a delegated child), `a2a`, `api` (the API server), `oneshot` (`hermes -z`, `chat -q`), `curator`, `batch` or `system`. `/loop`, `/heartbeat` and `/goal` re-entries and bot-to-bot DMs are not observable at turn start and classify as the turn they ride on (#444) |
+| `hermes.agent.model_override` | hermes | bool | Whether the turn runs on a model other than the profile's `model.default` (a `delegation.model` child, a kanban `--model` worker, a cron job's own model, `-m`, `/model`); absent when either is unknown |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
 | `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
@@ -79,6 +84,9 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired |
+| `hermes.turn.auxiliary.api_call_count`, `hermes.turn.auxiliary.error_count` | int | Auxiliary LLM attempts that ran under this turn (titling, compression, MoA, vision, …) and how many failed (optional) |
+| `hermes.turn.auxiliary.input_tokens`, `hermes.turn.auxiliary.output_tokens` | int | Their token sum, reported **beside** `gen_ai.usage.*`, never inside it: the `moa` provider's main-loop `api.*` span already carries what the MoA facade returns (optional) |
+| `hermes.turn.auxiliary.cost.usage`, `hermes.turn.auxiliary.cost.status` | float / string | Their USD sum, with the same `actual` · `estimated` · `partial` · `included` · `unknown` rule as `hermes.cost.status` (optional) |
 | `gen_ai.usage.*`, `llm.token_count.*` | int | The turn's token roll-up: the sum of its `api.*` spans, same keys as there (optional). Withheld from a backend whose entry has `root_usage: false`, the preset for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); the `api.*` spans and `hermes.cost.*` are never touched |
 | `hermes.cost.usage` | float | The turn's USD cost: the sum of its API calls' `hermes.cost.usage`, set **only when every call was priced** (optional) |
 | `hermes.cost.status` | string | `actual` (every call provider-reported) · `estimated` · `partial` (some calls priced, some not: no total) · `included` (subscription route) · `unknown` (no price for the model); absent when no call reported usage |
@@ -113,8 +121,11 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
 | `gen_ai.request.model`, `gen_ai.system`, `gen_ai.provider.name` | gen_ai | string | Model / provider (`gen_ai.system` is the legacy spelling Langfuse reads) |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
+| `hermes.query_source` | hermes | string | Which loop the call belongs to: `main` (the agent loop), `subagent` (a delegated child's own loop), `auxiliary` (a call Hermes made on the agent's behalf: titling, compression, MoA reference models and aggregator, vision, approval, the kanban decomposer, the `/goal` judge, …; [hooks](/reference/hooks#pre_auxiliary_call--post_auxiliary_call)) |
+| `hermes.auxiliary.task` | hermes | string | The auxiliary task, as Hermes names it (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …); `unknown` when it sent none. Auxiliary spans only |
 | `llm.api_mode` | hermes | string | `chat_completions` · `anthropic_messages` · `codex_responses` · … |
 | `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
+| `llm.request.tool_count` | hermes | int | Tools offered on an auxiliary call, when any (optional; auxiliary spans only) |
 | `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stream`, `gen_ai.request.reasoning.level`, `gen_ai.request.stop_sequences`, `gen_ai.request.choice.count` | gen_ai | mixed | Request parameters, each only when Hermes passes it (optional) |
 | `input.value`, `input.mime_type`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages, one copy per convention — `content_capture: full` (the default) |
 | `gen_ai.system_instructions` | gen_ai | string | **Full** system prompt: the leading system message, or the Responses API `instructions` — `content_capture: full` |
@@ -135,6 +146,7 @@ Set at **end** (success):
 | `gen_ai.response.finish_reasons` | gen_ai | string[] | `["stop"]`, `["tool_use"]`, … |
 | `llm.response.finish_reason` | hermes | string | Same, scalar |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
+| `hermes.api.ttfc_ms` | hermes | float | Streaming calls: milliseconds from the call's start (retries included) to the first response chunk, from Hermes's `started_at` / `first_chunk_at`; absent for a non-streamed call |
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
 | `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
 | `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |
@@ -213,7 +225,7 @@ One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<
 
 ## `kanban.*`
 
-One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process (each the root of its own trace), `kanban.complete` and `kanban.block` in the worker's own trace. Opened and closed at once.
+One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process, `kanban.complete` and `kanban.block` in the worker; one run of a card is one trace rooted at `kanban.claim` ([span hierarchy](/architecture/span-hierarchy#kanban)). Opened and closed at once.
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
@@ -240,6 +252,10 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 | `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
 | `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
+| `hermes.subagent.model_inherited` | hermes | bool | Set when the child's root starts, with `gen_ai.request.model` (the child's model): whether the child runs on its parent's model (`false` with `delegation.model` set) |
+| `hermes.subagent.usage.input_tokens`, `hermes.subagent.usage.output_tokens`, `hermes.subagent.usage.total_tokens`, `hermes.subagent.api_call_count` | hermes | int | On stop: tokens and API calls of the child's whole subtree (its own turns plus every delegation it made); namespaced so the child root's `gen_ai.usage.*` is not counted twice by a reader that sums agent spans |
+| `hermes.subagent.cost.usage`, `hermes.subagent.cost.status` | hermes | mixed | On stop: the subtree's USD and pricing status, by the turn root's rule (an amount only when every call was priced) |
+| `hermes.subagent.swept` | hermes | bool | `true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived |
 
 ## Metrics
 

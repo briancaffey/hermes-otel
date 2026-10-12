@@ -204,11 +204,10 @@ export const ENV_GROUP_LABELS: Record<string, string> = {
   plugin: "Plugin",
   hermes: "Hermes",
   backend: "Backends: single-backend mode and credential fallbacks",
-  langsmith: "LangSmith",
   otel: "OpenTelemetry SDK",
   other: "Other OTEL_* / HERMES_OTEL_* variables set here",
 };
-const ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "langsmith", "otel", "other"];
+const ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "otel", "other"];
 
 export function groupEnv(env: EnvEntry[], showUnset: boolean, query = ""): { group: string; label: string; entries: EnvEntry[] }[] {
   const seen = new Set<string>();

@@ -188,6 +188,7 @@ class TestGreptimeMetricExporterHeaders:
         trace pipeline header would otherwise be sent to ``/v1/otlp/v1/metrics``."""
         from opentelemetry.sdk.metrics.export import InMemoryMetricReader
 
+        from hermes_otel import pipeline as pipeline_mod
         from hermes_otel import tracer as tracer_mod
         from hermes_otel.plugin_config import HermesOtelConfig
 
@@ -221,10 +222,10 @@ class TestGreptimeMetricExporterHeaders:
             def shutdown(self, *a, **k):
                 return None
 
-        monkeypatch.setattr(tracer_mod, "OTLPMetricExporter", FakeMetricExporter)
-        monkeypatch.setattr(tracer_mod, "OTLPSpanExporter", FakeSpanExporter)
+        monkeypatch.setattr(pipeline_mod, "OTLPMetricExporter", FakeMetricExporter)
+        monkeypatch.setattr(pipeline_mod, "OTLPSpanExporter", FakeSpanExporter)
         monkeypatch.setattr(
-            tracer_mod,
+            pipeline_mod,
             "PeriodicExportingMetricReader",
             lambda exporter, **kw: InMemoryMetricReader(
                 preferred_temporality=exporter._preferred_temporality,

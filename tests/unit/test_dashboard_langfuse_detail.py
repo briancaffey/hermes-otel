@@ -9,18 +9,12 @@ first-class instead of leaving them inside one ``metadata.attributes`` blob.
 from __future__ import annotations
 
 import json
-import sys
-from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import patch
 
 import pytest
 
-_DASHBOARD = Path(__file__).resolve().parents[2] / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-
-from backends.langfuse import LangfuseAdapter, _obs_to_card_attrs  # noqa: E402
+from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter, obs_to_card_attrs
 
 TRACE_ID = "bf309db7fb314cb987fdcc8e0d26a91e"
 
@@ -123,7 +117,7 @@ def _trace() -> Dict[str, Any]:
 
 
 def _detail(trace: Dict[str, Any]) -> Dict[str, Dict[str, Any]]:
-    with patch("backends.langfuse.http_get_json", return_value=trace):
+    with patch("hermes_otel.dashboard.backends.langfuse.http_get_json", return_value=trace):
         out = _adapter().get_trace(TRACE_ID)
     return {sp["name"]: sp for sp in out["batches"][0]["scopeSpans"][0]["spans"]}
 
@@ -201,7 +195,7 @@ class TestSdkIngestedObservation:
             "level": "DEFAULT",
             "metadata": {"team": "a"},
         }
-        attrs = _obs_to_card_attrs(obs, {})
+        attrs = obs_to_card_attrs(obs, {})
         assert attrs["llm.model_name"] == "gpt-4o-mini"
         assert attrs["llm.parameters.temperature"] == 0.2
         assert attrs["gen_ai.usage.input_tokens"] == 10
@@ -219,7 +213,7 @@ class TestSdkIngestedObservation:
             "model": "m-as-langfuse-sees-it",
             "usage": {"input": 1, "output": 1, "total": 2},
         }
-        attrs = _obs_to_card_attrs(
+        attrs = obs_to_card_attrs(
             obs, {"llm.model_name": "m", "gen_ai.usage.total_tokens": 2, "nullable": None}
         )
         assert attrs["llm.model_name"] == "m"

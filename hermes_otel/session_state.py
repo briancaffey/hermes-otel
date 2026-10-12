@@ -109,6 +109,14 @@ class PerSession:
     # (``response_model`` on post_api_request). Empty when none was reported;
     # never defaulted to the request model (#155).
     response_model: str = ""
+    # The model the turn started on (``on_session_start`` / the lazy root),
+    # kept so a delegated child can say whether it inherited it (#391).
+    model: str = ""
+    # agent_loop_stopped (#396): the reason the gateway gave when it stopped
+    # this turn, so the root ends "interrupted" even if only the sweep ends it.
+    stop_reason: str = ""
+    # pre_verify fired this many times this turn (#396).
+    verify_nudges: int = 0
     # 1-based index of the user turn this aggregator covers. Surfaced as the
     # ``hermes.turn.number`` span attribute so any backend can group or filter
     # a session's spans by conversation turn. See SessionState.next_turn.
@@ -118,11 +126,69 @@ class PerSession:
     # priced; see cost_rollup.
     cost_statuses: List[str] = field(default_factory=list)
     cost_usd: float = 0.0
+    # True when this session is a delegated child whose root rejoined the
+    # parent's delegation span; its API calls report ``query_source=subagent``.
+    is_subagent: bool = False
+    # Auxiliary LLM calls (#389): titling, compression, MoA references and
+    # aggregator, vision, approval, the goal judge ... run under this turn.
+    # Kept apart from ``usage`` / ``cost_usd``: the main loop's ``api.*`` span
+    # for the ``moa`` provider already carries what the MoA facade returns, so
+    # folding the auxiliary attempts into the turn totals would count them
+    # twice. They are surfaced as ``hermes.turn.auxiliary.*`` on the root.
+    aux_usage: Dict[str, int] = field(default_factory=_empty_usage)
+    aux_call_count: int = 0
+    aux_error_count: int = 0
+    aux_cost_statuses: List[str] = field(default_factory=list)
+    aux_cost_usd: float = 0.0
 
     def add_cost(self, status: str, usd: Optional[float]) -> None:
         self.cost_statuses.append(status)
         if usd is not None:
             self.cost_usd += usd
+
+    def add_auxiliary(
+        self, totals: Optional[Dict[str, int]], cost: Optional[Dict[str, Any]], *, failed: bool
+    ) -> None:
+        """Account one auxiliary provider attempt on this turn."""
+        self.aux_call_count += 1
+        if failed:
+            self.aux_error_count += 1
+        if totals:
+            for key in self.aux_usage:
+                self.aux_usage[key] += int(totals.get(key, 0) or 0)
+        if cost:
+            self.aux_cost_statuses.append(str(cost.get("status") or "unknown"))
+            usd = cost.get("usd")
+            if usd is not None:
+                self.aux_cost_usd += float(usd)
+
+    def auxiliary_rollup(self) -> Dict[str, Any]:
+        """``hermes.turn.auxiliary.*`` for the root span (empty when none ran).
+
+        Same pricing rule as :meth:`cost_rollup`: a USD total only when every
+        auxiliary call was priced, ``partial`` otherwise.
+        """
+        if not self.aux_call_count:
+            return {}
+        attrs: Dict[str, Any] = {"hermes.turn.auxiliary.api_call_count": self.aux_call_count}
+        if self.aux_error_count:
+            attrs["hermes.turn.auxiliary.error_count"] = self.aux_error_count
+        if self.aux_usage["prompt_tokens"] or self.aux_usage["completion_tokens"]:
+            attrs["hermes.turn.auxiliary.input_tokens"] = self.aux_usage["prompt_tokens"]
+            attrs["hermes.turn.auxiliary.output_tokens"] = self.aux_usage["completion_tokens"]
+        statuses = set(self.aux_cost_statuses)
+        if statuses and statuses <= {"actual", "estimated"}:
+            attrs["hermes.turn.auxiliary.cost.status"] = (
+                "actual" if statuses == {"actual"} else "estimated"
+            )
+            attrs["hermes.turn.auxiliary.cost.usage"] = self.aux_cost_usd
+        elif statuses & {"actual", "estimated"}:
+            attrs["hermes.turn.auxiliary.cost.status"] = "partial"
+        elif statuses:
+            attrs["hermes.turn.auxiliary.cost.status"] = (
+                "included" if statuses == {"included"} else "unknown"
+            )
+        return attrs
 
     def cost_rollup(self) -> Dict[str, Any]:
         """The turn's cost attributes for the root span (empty when no call was priced).
@@ -140,6 +206,62 @@ class PerSession:
         if statuses & {"actual", "estimated"}:
             return {"hermes.cost.status": "partial"}
         return {"hermes.cost.status": "included" if statuses == {"included"} else "unknown"}
+
+
+@dataclass
+class DelegationTotals:
+    """What one delegated child cost, its own turns plus every delegation it
+    made in turn (#390): the subtree under its ``subagent.*`` span."""
+
+    usage: Dict[str, int] = field(default_factory=_empty_usage)
+    cost_statuses: List[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    api_call_count: int = 0
+
+    def add_turn(self, ps: "PerSession") -> None:
+        """Fold one finished turn of the child in."""
+        for k, v in ps.usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(ps.cost_statuses)
+        self.cost_usd += ps.cost_usd
+        self.api_call_count += ps.turn_summary.api_call_count
+
+    def add(self, other: "DelegationTotals") -> None:
+        """Fold a grandchild's subtree in (a nested orchestrator)."""
+        for k, v in other.usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(other.cost_statuses)
+        self.cost_usd += other.cost_usd
+        self.api_call_count += other.api_call_count
+
+    def attributes(self) -> Dict[str, Any]:
+        """``hermes.subagent.*`` rollup attributes for the delegation span.
+
+        Namespaced, not ``gen_ai.usage.*``: the child's own root already
+        carries its turn's ``gen_ai.usage.*``, and a reader that sums those
+        over every agent span would count the child twice. Cost follows the
+        root's rule: an amount only when every call was priced.
+        """
+        u = self.usage
+        attrs: Dict[str, Any] = {
+            "hermes.subagent.usage.input_tokens": u.get("prompt_tokens", 0),
+            "hermes.subagent.usage.output_tokens": u.get("completion_tokens", 0),
+            "hermes.subagent.usage.total_tokens": u.get("total_tokens", 0),
+            "hermes.subagent.api_call_count": self.api_call_count,
+        }
+        statuses = set(self.cost_statuses)
+        if statuses and statuses <= {"actual", "estimated"}:
+            attrs["hermes.subagent.cost.status"] = (
+                "actual" if statuses == {"actual"} else "estimated"
+            )
+            attrs["hermes.subagent.cost.usage"] = self.cost_usd
+        elif statuses & {"actual", "estimated"}:
+            attrs["hermes.subagent.cost.status"] = "partial"
+        elif statuses:
+            attrs["hermes.subagent.cost.status"] = (
+                "included" if statuses == {"included"} else "unknown"
+            )
+        return attrs
 
 
 class SessionState:
@@ -182,6 +304,38 @@ class SessionState:
         # The session most recently finalized; a reset that names no old
         # session (the CLI) is taken to replace it.
         self.last_finalized: Optional[str] = None
+        # Delegated children's running totals, child_session_id -> totals,
+        # until subagent_stop reads them onto the delegation span (#390).
+        self._delegations: Dict[str, DelegationTotals] = {}
+        # Gateway session key -> the session id of its latest turn, so
+        # agent_loop_stopped (which names only the key) finds the turn (#396).
+        self._session_keys: "OrderedDict[str, str]" = OrderedDict()
+
+    def remember_session_key(self, session_key: str, session_id: str) -> None:
+        with self._lock:
+            self._remember(self._session_keys, session_key, session_id)
+
+    def session_for_key(self, session_key: Optional[str]) -> Optional[str]:
+        if not session_key:
+            return None
+        with self._lock:
+            return self._session_keys.get(session_key)
+
+    # ── Delegation rollups (#390) ────────────────────────────────────────
+
+    def add_delegation_turn(self, child_session_id: str, ps: "PerSession") -> None:
+        with self._lock:
+            self._delegations.setdefault(child_session_id, DelegationTotals()).add_turn(ps)
+
+    def add_delegation_subtree(self, child_session_id: str, totals: DelegationTotals) -> None:
+        with self._lock:
+            self._delegations.setdefault(child_session_id, DelegationTotals()).add(totals)
+
+    def pop_delegation(self, child_session_id: Optional[str]) -> Optional[DelegationTotals]:
+        if not child_session_id:
+            return None
+        with self._lock:
+            return self._delegations.pop(child_session_id, None)
 
     # ── Per-session aggregators ──────────────────────────────────────────
 

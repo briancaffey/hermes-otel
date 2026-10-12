@@ -1,0 +1,480 @@
+{
+ "logs": [],
+ "metrics": [
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 10,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.agent.token.usage",
+   "sum": 5,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.client.operation.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "input",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 10,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.token.type": "output",
+    "profile": "golden"
+   },
+   "bucket_counts": [
+    0,
+    0,
+    1,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0,
+    0
+   ],
+   "count": 1,
+   "name": "gen_ai.client.token.usage",
+   "sum": 5,
+   "unit": "{token}"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "skill_view",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "terminal",
+    "profile": "golden"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "gen_ai.execute_tool.duration",
+   "sum": "<num>",
+   "unit": "s"
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai"
+   },
+   "name": "hermes.message.count",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main"
+   },
+   "name": "hermes.model.usage",
+   "unit": "{message}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "platform": "cli",
+    "profile": "golden"
+   },
+   "name": "hermes.session.count",
+   "unit": "{session}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "profile": "golden",
+    "skill_name": "golden_skill",
+    "source": "skill_view"
+   },
+   "name": "hermes.skill.inferred",
+   "unit": "{hit}",
+   "value": 1
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main",
+    "token_type": "input"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 10
+  },
+  {
+   "attributes": {
+    "model": "gpt-4",
+    "profile": "golden",
+    "provider": "openai",
+    "query_source": "main",
+    "token_type": "output"
+   },
+   "name": "hermes.token.usage",
+   "unit": "{token}",
+   "value": 5
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "skill_view",
+    "profile": "golden",
+    "tool_name": "skill_view"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  },
+  {
+   "attributes": {
+    "gen_ai.tool.name": "terminal",
+    "profile": "golden",
+    "tool_name": "terminal"
+   },
+   "bucket_counts": "<measured>",
+   "count": 1,
+   "name": "hermes.tool.duration",
+   "sum": "<num>",
+   "unit": "ms"
+  }
+ ],
+ "spans": [
+  {
+   "attributes": {
+    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "invoke_agent",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.llm.output.chars": 12,
+    "hermes.platform": "cli",
+    "hermes.profile": "<hermes.profile>",
+    "hermes.session.completed": true,
+    "hermes.session.failed": false,
+    "hermes.session.interrupted": false,
+    "hermes.session.kind": "session",
+    "hermes.session_id": "20261012_090000_golden",
+    "hermes.turn.api_call_count": 1,
+    "hermes.turn.final_status": "completed",
+    "hermes.turn.number": 1,
+    "hermes.turn.skill_count": 1,
+    "hermes.turn.skills": "golden_skill",
+    "hermes.turn.tool_commands": "seq 1 100000",
+    "hermes.turn.tool_count": 2,
+    "hermes.turn.tool_outcomes": "completed",
+    "hermes.turn.tools": "skill_view,terminal",
+    "hermes.turn.trigger": "user",
+    "input.value": "hello",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.token_count.completion": 5,
+    "llm.token_count.prompt": 10,
+    "llm.token_count.total": 15,
+    "openinference.span.kind": "AGENT",
+    "output.value": "final answer",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "agent",
+    "wandb.is_turn": true,
+    "wandb.thread_id": "20261012_090000_golden",
+    "weave.agent.version": "<weave.agent.version>"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "agent",
+   "parent": null,
+   "span": "S1",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.input.messages": "[{\"role\": \"user\", \"content\": \"hello\"}]",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"content\": \"final answer\"}]",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "hermes.turn.number": 1,
+    "input.value": "hello",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "openinference.span.kind": "LLM",
+    "output.value": "final answer",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "llm.gpt-4",
+   "parent": "S1",
+   "span": "S2",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "chat",
+    "gen_ai.provider.name": "openai",
+    "gen_ai.request.max_tokens": 1024,
+    "gen_ai.request.model": "gpt-4",
+    "gen_ai.response.finish_reasons": [
+     "stop"
+    ],
+    "gen_ai.response.model": "gpt-4",
+    "gen_ai.system": "openai",
+    "gen_ai.usage.input_tokens": 10,
+    "gen_ai.usage.output_tokens": 5,
+    "gen_ai.usage.total_tokens": 15,
+    "hermes.query_source": "main",
+    "hermes.turn.number": 1,
+    "llm.api_mode": "chat",
+    "llm.model_name": "gpt-4",
+    "llm.provider": "openai",
+    "llm.request.approx_input_tokens": 10,
+    "llm.request.max_tokens": 1024,
+    "llm.request.message_count": 1,
+    "llm.response.duration_ms": "<num>",
+    "llm.response.finish_reason": "stop",
+    "llm.response.output_chars": 5,
+    "llm.response.tool_calls": 2,
+    "llm.token_count.completion": 5,
+    "llm.token_count.prompt": 10,
+    "llm.token_count.total": 15,
+    "openinference.span.kind": "LLM",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "api.gpt-4",
+   "parent": "S2",
+   "span": "S3",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{\"name\": \"golden_skill\"}",
+    "gen_ai.tool.call.id": "sk1",
+    "gen_ai.tool.call.result": "{\"success\": true}",
+    "gen_ai.tool.name": "skill_view",
+    "hermes.skill.name": "golden_skill",
+    "hermes.skill.source": "skill_view",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 17,
+    "hermes.turn.number": 1,
+    "input.value": "{\"name\": \"golden_skill\"}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "{\"success\": true}",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "tool.name": "skill_view",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.skill_view",
+   "parent": "S3",
+   "span": "S4",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_skill",
+    "gen_ai.skill.name": "golden_skill",
+    "hermes.skill.name": "golden_skill",
+    "hermes.skill.result_status": "completed",
+    "hermes.skill.source": "skill_view",
+    "hermes.span_kind": "skill",
+    "openinference.span.kind": "GENERAL",
+    "traceloop.span.kind": "task"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "skill.golden_skill",
+   "parent": "S1",
+   "span": "S5",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  },
+  {
+   "attributes": {
+    "gen_ai.conversation.id": "20261012_090000_golden",
+    "gen_ai.operation.name": "execute_tool",
+    "gen_ai.tool.call.arguments": "{\"command\": \"seq 1 100000\"}",
+    "gen_ai.tool.call.id": "tc1",
+    "gen_ai.tool.call.result": "{\"output\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+    "gen_ai.tool.name": "terminal",
+    "hermes.preview.output.original_chars": 30031,
+    "hermes.preview.output.truncated": true,
+    "hermes.terminal.env_type": "local",
+    "hermes.terminal.output.chars": 200000,
+    "hermes.terminal.output.truncated": false,
+    "hermes.terminal.returncode": 0,
+    "hermes.tool.command": "seq 1 100000",
+    "hermes.tool.outcome": "completed",
+    "hermes.tool.result.chars": 30031,
+    "hermes.turn.number": 1,
+    "input.value": "{\"command\": \"seq 1 100000\"}",
+    "openinference.span.kind": "TOOL",
+    "output.value": "{\"output\": \"xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx...",
+    "session.id": "20261012_090000_golden",
+    "session_id": "20261012_090000_golden",
+    "tool.name": "terminal",
+    "traceloop.span.kind": "tool"
+   },
+   "events": [],
+   "kind": "INTERNAL",
+   "links": [],
+   "name": "tool.terminal",
+   "parent": "S3",
+   "span": "S6",
+   "status": {
+    "code": "OK"
+   },
+   "trace": "T1"
+  }
+ ]
+}

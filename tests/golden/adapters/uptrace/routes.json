@@ -1,0 +1,409 @@
+[
+ {
+  "method": "GET",
+  "path": "/internal/v1/logs/1/systems",
+  "json": {
+   "systems": [
+    {
+     "groupCount": 1,
+     "system": "log:info"
+    },
+    {
+     "groupCount": 1,
+     "system": "log:warn"
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/traces/1/00000000000000000000000000000000",
+  "status": 404,
+  "text": "{\"message\":\"trace not found\"}"
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/traces/1/ab43116e1d6d4a1a449db547c36ca808",
+  "json": {
+   "id": "ab43116e1d6d4a1a449db547c36ca808",
+   "spans": [
+    {
+     "id": "65a98a08103c9da7",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "agent",
+     "displayName": "agent",
+     "time": 1791750000000.0,
+     "duration": 4029.0,
+     "statusCode": "ok",
+     "statusMessage": "",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "hermes_session_id::str": "20261011_201958_a1b2c3",
+      "session_id::str": "20261011_201958_a1b2c3",
+      "gen_ai_usage_input_tokens::int": 23504,
+      "gen_ai_usage_output_tokens::int": 186,
+      "gen_ai_usage_total_tokens::int": 23690,
+      "llm_model_name::str": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes_turn_number::int": 1,
+      "hermes_session_completed::bool": true,
+      "input_value::str": "read the file hermes_otel.yaml and say hello",
+      "output_value::str": "Here is the file."
+     },
+     "events": [],
+     "logs": [],
+     "links": []
+    },
+    {
+     "id": "aaaa000000000001",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "tool.terminal",
+     "displayName": "tool.terminal",
+     "time": 1791750001500.0,
+     "duration": 1120.77,
+     "statusCode": "ok",
+     "statusMessage": "",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "tool_name::str": "terminal",
+      "openinference_span_kind::str": "TOOL"
+     },
+     "events": [],
+     "logs": [],
+     "links": [],
+     "parentId": "65a98a08103c9da7"
+    },
+    {
+     "id": "aaaa000000000002",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "tool.read_file",
+     "displayName": "tool.read_file",
+     "time": 1791750003000.0,
+     "duration": 3.595,
+     "statusCode": "error",
+     "statusMessage": "No such file",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "tool_name::str": "read_file",
+      "openinference_span_kind::str": "TOOL"
+     },
+     "events": [],
+     "logs": [],
+     "links": [],
+     "parentId": "65a98a08103c9da7"
+    }
+   ],
+   "logs": []
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/spans/1",
+  "query_contains": "tool.%",
+  "json": {
+   "count": 3,
+   "spans": [
+    {
+     "id": "aaaa000000000001",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "tool.terminal",
+     "displayName": "tool.terminal",
+     "time": 1791750001500.0,
+     "duration": 1120.77,
+     "statusCode": "ok",
+     "statusMessage": "",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "tool_name::str": "terminal",
+      "openinference_span_kind::str": "TOOL"
+     },
+     "events": [],
+     "logs": [],
+     "links": [],
+     "parentId": "65a98a08103c9da7"
+    },
+    {
+     "id": "aaaa000000000002",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "tool.read_file",
+     "displayName": "tool.read_file",
+     "time": 1791750003000.0,
+     "duration": 3.595,
+     "statusCode": "error",
+     "statusMessage": "No such file",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "tool_name::str": "read_file",
+      "openinference_span_kind::str": "TOOL"
+     },
+     "events": [],
+     "logs": [],
+     "links": [],
+     "parentId": "65a98a08103c9da7"
+    },
+    {
+     "id": "aaaa000000000001",
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "tool.terminal",
+     "displayName": "tool.terminal",
+     "time": 1791749401500.0,
+     "duration": 1120.77,
+     "statusCode": "ok",
+     "statusMessage": "",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "tool_name::str": "terminal",
+      "openinference_span_kind::str": "TOOL"
+     },
+     "events": [],
+     "logs": [],
+     "links": [],
+     "parentId": "bbbb000000000001"
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/spans/1",
+  "json": {
+   "count": 2,
+   "spans": [
+    {
+     "id": "65a98a08103c9da7",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "agent",
+     "displayName": "agent",
+     "time": 1791750000000.0,
+     "duration": 4029.0,
+     "statusCode": "ok",
+     "statusMessage": "",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "hermes_session_id::str": "20261011_201958_a1b2c3",
+      "session_id::str": "20261011_201958_a1b2c3",
+      "gen_ai_usage_input_tokens::int": 23504,
+      "gen_ai_usage_output_tokens::int": 186,
+      "gen_ai_usage_total_tokens::int": 23690,
+      "llm_model_name::str": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes_turn_number::int": 1,
+      "hermes_session_completed::bool": true,
+      "input_value::str": "read the file hermes_otel.yaml and say hello",
+      "output_value::str": "Here is the file."
+     },
+     "events": [],
+     "logs": [],
+     "links": []
+    },
+    {
+     "id": "bbbb000000000001",
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "projectId": 1,
+     "type": "",
+     "system": "funcs",
+     "kind": "internal",
+     "name": "agent",
+     "displayName": "agent",
+     "time": 1791749400000.0,
+     "duration": 4029.0,
+     "statusCode": "error",
+     "statusMessage": "No such file",
+     "attrs": {
+      "service_name::str": "hermes-agent",
+      "hermes_session_id::str": "20261011_201958_a1b2c3",
+      "session_id::str": "20261011_201958_a1b2c3",
+      "gen_ai_usage_input_tokens::int": 23504,
+      "gen_ai_usage_output_tokens::int": 186,
+      "gen_ai_usage_total_tokens::int": 23690,
+      "llm_model_name::str": "nvidia/nemotron-3-super-120b-a12b",
+      "hermes_turn_number::int": 1,
+      "hermes_session_completed::bool": true,
+      "input_value::str": "read the file hermes_otel.yaml and say hello",
+      "output_value::str": "Here is the file."
+     },
+     "events": [],
+     "logs": [],
+     "links": []
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/logs/1",
+  "json": {
+   "count": 2,
+   "spans": [
+    {
+     "id": "7541fb626d6c0bf8",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "parentId": "65a98a08103c9da7",
+     "projectId": 1,
+     "groupId": "1",
+     "type": "log",
+     "system": "log:info",
+     "kind": "internal",
+     "name": "",
+     "eventName": "log",
+     "displayName": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+     "time": 1791750004100.0,
+     "duration": 0,
+     "statusCode": "unset",
+     "attrs": {
+      "log_severity::str": "INFO",
+      "otel_library_name::str": "hermes_otel",
+      "hermes_session_id::str": "20261011_201958_a1b2c3",
+      "hermes_log_attribution::str": "context",
+      "service_name::str": "hermes-agent"
+     }
+    },
+    {
+     "id": "49584777a3766d16",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "parentId": "65a98a08103c9da7",
+     "projectId": 1,
+     "groupId": "1",
+     "type": "log",
+     "system": "log:warn",
+     "kind": "internal",
+     "name": "",
+     "eventName": "log",
+     "displayName": "careful: the output was truncated",
+     "time": 1791750002000.0,
+     "duration": 0,
+     "statusCode": "unset",
+     "attrs": {
+      "log_severity::str": "WARN",
+      "otel_library_name::str": "cli",
+      "hermes_session_id::str": "20261011_201958_a1b2c3",
+      "hermes_log_attribution::str": "context",
+      "service_name::str": "hermes-agent",
+      "event_name::str": "hermes.turn.end"
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/tracing/1/attributes/otel_library_name::str",
+  "json": {
+   "hasMore": false,
+   "items": [
+    {
+     "value": "hermes_otel",
+     "count": 18
+    },
+    {
+     "value": "cli",
+     "count": 14
+    },
+    {
+     "value": "",
+     "count": 3
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/metrics/1/timeseries",
+  "json": {
+   "columns": [],
+   "hasMore": false,
+   "query": [
+    {
+     "disabled": false,
+     "error": "",
+     "id": "1",
+     "query": "$m group by model::str",
+     "type": "selector"
+    }
+   ],
+   "timeseries": [
+    {
+     "name": "x+nvidia/nemotron-3-nano-omni",
+     "metric": "$m group by model",
+     "unit": "{token}",
+     "attrs": {
+      "model::str": "nvidia/nemotron-3-nano-omni"
+     },
+     "time": [
+      1791746400000,
+      1791749700000
+     ],
+     "value": [
+      26748,
+      null
+     ]
+    },
+    {
+     "name": "y+nvidia/nemotron-3-super-120b-a12b",
+     "metric": "$m group by model",
+     "unit": "{token}",
+     "attrs": {
+      "model::str": "nvidia/nemotron-3-super-120b-a12b"
+     },
+     "time": [
+      1791746400000,
+      1791749700000
+     ],
+     "value": [
+      42342,
+      100
+     ]
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/internal/v1/metrics/1",
+  "json": {
+   "metrics": [
+    {
+     "name": "hermes_token_usage",
+     "instrument": "counter",
+     "unit": "{token}"
+    },
+    {
+     "name": "hermes_tool_duration",
+     "instrument": "histogram",
+     "unit": "ms"
+    },
+    {
+     "name": "system_cpu_utilization",
+     "instrument": "gauge",
+     "unit": "1"
+    }
+   ]
+  }
+ }
+]

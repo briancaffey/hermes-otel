@@ -12,7 +12,6 @@ import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
 from _helpers import span_where as _span_where
-from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode
 
 from hermes_otel.hooks import (
@@ -199,11 +198,11 @@ class TestSingleDelegationOneTrace:
             child_role="researcher",
             child_goal="g",
         )
-        assert "child-1" in plugin._subagent_registry
+        assert "child-1" in plugin.spans._subagent_registry
         on_subagent_stop(
             parent_session_id="parent", child_session_id="child-1", child_status="completed"
         )
-        assert "child-1" not in plugin._subagent_registry
+        assert "child-1" not in plugin.spans._subagent_registry
 
 
 class TestFailedDelegation:
@@ -252,7 +251,7 @@ class TestLinkFallbackCrossProcess:
         delegation_ctx = delegation_span.get_span_context()
 
         # Simulate cross-process: live span object is gone, only context remains.
-        plugin._subagent_registry["child-x"]["span"] = None
+        plugin.spans._subagent_registry["child-x"]["span"] = None
 
         on_session_start(session_id="child-x", model="gpt-4", platform="cli")
         on_session_end(
@@ -454,10 +453,10 @@ class TestSubagentFanOut:
 
 
 class TestOrphanedDelegationSwept:
-    """A delegation whose child never returns must be finalized by the orphan
-    sweep when the parent session times out (not left open forever)."""
+    """A delegation whose child never returns is closed by its own TTL
+    (``subagent_span_ttl_ms``), not by the parent's turn sweep (#392)."""
 
-    def test_unfinished_delegation_is_swept(self, inmemory_otel_setup):
+    def test_parent_turn_sweep_leaves_the_delegation_open(self, inmemory_otel_setup):
         from hermes_otel.plugin_config import HermesOtelConfig
 
         exporter, plugin = inmemory_otel_setup
@@ -471,10 +470,390 @@ class TestOrphanedDelegationSwept:
             child_role="researcher",
             child_goal="g",
         )
-        # Back-date the parent turn well past the TTL so the sweep expires it.
         plugin.register_turn("parent", started_at=time.perf_counter() - 10.0)
-        swept = plugin.sweep_expired_turns()
-        assert "parent" in swept
+        assert "parent" in plugin.sweep_expired_turns()
 
         names = [s.name for s in exporter.get_finished_spans()]
-        assert "subagent.researcher" in names
+        assert "agent" in names and "subagent.researcher" not in names
+        assert plugin.spans.has_span("subagent:c1")
+
+    def test_unfinished_delegation_is_closed_by_its_own_ttl(self, inmemory_otel_setup):
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(subagent_span_ttl_ms=1_000)
+        on_session_start(session_id="parent", model="gpt-4", platform="cli")
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="c1",
+            child_role="researcher",
+            child_goal="g",
+        )
+        record = plugin.spans.get_subagent("c1")
+        plugin.spans.register_subagent("c1", record, started_at=time.perf_counter() - 10.0)
+        assert plugin.sweep_expired_delegations() == ["c1"]
+
+        span = _span_by_name(exporter.get_finished_spans(), "subagent.researcher")
+        assert span.attributes["hermes.subagent.swept"] is True
+        assert span.status.status_code != StatusCode.ERROR
+        assert plugin.spans.get_subagent("c1") is None
+        assert plugin.sweep_expired_delegations() == []
+
+
+class TestDelegationLifecycle:
+    """The delegation modes Hermes has grown since #27 (#392)."""
+
+    def test_background_delegation_stops_in_a_later_turn(self, inmemory_otel_setup):
+        """Top-level delegate_task returns at once; subagent_stop fires after the
+        parent's turn N has ended, during turn N+1. The span stays open across
+        the turn boundary and the turn N+1 sweep, then ends with its status."""
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(root_span_ttl_ms=1_000)
+        _open_parent_turn()
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="bg-1",
+            child_role="leaf",
+            child_goal="background work",
+        )
+        _close_parent_turn()  # turn N ends with the child still running
+        turn_n_api = _span_by_name(exporter.get_finished_spans(), "api.gpt-4")
+
+        _open_parent_turn()  # turn N+1, which then outlives the TTL
+        plugin.register_turn("parent", started_at=time.perf_counter() - 10.0)
+        plugin.sweep_expired_turns()
+        _run_child("bg-1")
+        on_subagent_stop(
+            parent_session_id="parent",
+            child_session_id="bg-1",
+            child_role="leaf",
+            child_summary="done later",
+            child_status="completed",
+            duration_ms=90_000,
+        )
+
+        delegation = _span_by_name(exporter.get_finished_spans(), "subagent.leaf")
+        assert _parent_span_id(delegation) == turn_n_api.context.span_id
+        assert delegation.context.trace_id == turn_n_api.context.trace_id
+        attrs = dict(delegation.attributes)
+        assert attrs["hermes.subagent.status"] == "completed"
+        assert attrs["hermes.subagent.duration_ms"] == 90_000.0
+        assert "hermes.subagent.swept" not in attrs
+        assert plugin.spans.get_subagent("bg-1") is None
+        assert plugin.sweep_expired_delegations() == []
+
+    def test_batch_stops_in_a_different_order_than_starts(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        _open_parent_turn()
+        for i in (1, 2, 3):
+            on_subagent_start(
+                parent_session_id="parent",
+                child_session_id=f"b-{i}",
+                child_role=f"w{i}",
+                child_goal="g",
+            )
+        for i, status in ((3, "completed"), (1, "failed"), (2, "completed")):
+            on_subagent_stop(
+                parent_session_id="parent",
+                child_session_id=f"b-{i}",
+                child_status=status,
+                duration_ms=10,
+            )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        status = {
+            s.name: s.attributes["hermes.subagent.status"]
+            for s in spans
+            if s.name.startswith("subagent.")
+        }
+        assert status == {
+            "subagent.w1": "failed",
+            "subagent.w2": "completed",
+            "subagent.w3": "completed",
+        }
+        assert _span_by_name(spans, "subagent.w1").status.status_code == StatusCode.ERROR
+        assert not plugin.spans._subagent_registry
+
+    def test_stop_after_a_restart_is_harmless(self, inmemory_otel_with_metrics):
+        """A child whose parent process restarted arrives as ``unknown`` with no
+        span or record in this process: count it, open nothing, keep nothing."""
+        exporter, reader, plugin = inmemory_otel_with_metrics
+        on_subagent_stop(
+            parent_session_id="parent",
+            child_session_id="ghost",
+            child_role="leaf",
+            child_status="unknown",
+        )
+        assert not [s for s in exporter.get_finished_spans() if s.name.startswith("subagent")]
+        assert plugin.spans.get_subagent("ghost") is None
+        assert plugin.sweep_expired_delegations() == []
+        names = {
+            m.name
+            for rm in reader.get_metrics_data().resource_metrics
+            for sm in rm.scope_metrics
+            for m in sm.metrics
+        }
+        assert any("subagent" in n for n in names)
+
+
+class TestChildStatusMapping:
+    """Every final status Hermes's delegate tool reports (#392)."""
+
+    @pytest.mark.parametrize(
+        "status, error",
+        [
+            ("completed", False),
+            ("failed", True),
+            ("error", True),
+            ("timeout", True),
+            ("stalled", True),  # the stall monitor gave up on a silent child
+            ("interrupted", False),  # a user action, like an interrupted turn
+            ("unknown", False),  # nothing known (a restart); never an error
+        ],
+    )
+    def test_status(self, status, error):
+        from hermes_otel.helpers import subagent_status_to_span_status
+
+        assert subagent_status_to_span_status(status) == ("error" if error else "ok")
+
+
+class TestPerAgentModels:
+    """Which model each agent ran on, on the agent-level spans (#391)."""
+
+    def test_child_on_its_own_model_is_not_inherited(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn(model="big-model")
+        on_subagent_start(
+            parent_session_id="parent", child_session_id="c-m", child_role="leaf", child_goal="g"
+        )
+        _run_child("c-m", model="small-model")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="c-m", child_status="completed"
+        )
+        _close_parent_turn(model="big-model")
+
+        d = dict(_span_by_name(exporter.get_finished_spans(), "subagent.leaf").attributes)
+        assert d["gen_ai.request.model"] == "small-model"
+        assert d["hermes.subagent.model_inherited"] is False
+
+    def test_child_on_the_parent_model_is_inherited(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn(model="big-model")
+        on_subagent_start(
+            parent_session_id="parent", child_session_id="c-i", child_role="leaf", child_goal="g"
+        )
+        _run_child("c-i", model="big-model")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="c-i", child_status="completed"
+        )
+        _close_parent_turn(model="big-model")
+
+        d = dict(_span_by_name(exporter.get_finished_spans(), "subagent.leaf").attributes)
+        assert d["hermes.subagent.model_inherited"] is True
+
+
+class TestModelOverride:
+    """``hermes.agent.model_override`` against the profile's ``model.default``."""
+
+    @staticmethod
+    def _fake_hermes_config(monkeypatch, cfg):
+        import sys
+        import types
+
+        pkg = types.ModuleType("hermes_cli")
+        mod = types.ModuleType("hermes_cli.config")
+        mod.read_raw_config_readonly = lambda: cfg
+        pkg.config = mod
+        monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
+        monkeypatch.setitem(sys.modules, "hermes_cli.config", mod)
+
+    @pytest.mark.parametrize(
+        "cfg, model, expected",
+        [
+            ({"model": {"default": "big-model"}}, "big-model", False),
+            ({"model": {"default": "big-model"}}, "small-model", True),
+            ({"model": "big-model"}, "small-model", True),  # the shorthand spelling
+            ({}, "small-model", None),  # no default configured: no claim
+        ],
+    )
+    def test_root_says_whether_the_model_was_overridden(
+        self, inmemory_otel_setup, monkeypatch, cfg, model, expected
+    ):
+        exporter, _ = inmemory_otel_setup
+        self._fake_hermes_config(monkeypatch, cfg)
+        _run_child("solo", model=model)  # any plain turn
+        root = _span_where(exporter.get_finished_spans(), "agent", "session.id", "solo")
+        assert root.attributes.get("hermes.agent.model_override") is expected
+
+    def test_absent_outside_hermes(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _run_child("solo")
+        root = _span_where(exporter.get_finished_spans(), "agent", "session.id", "solo")
+        assert "hermes.agent.model_override" not in root.attributes
+
+
+class TestAnnotateDelegationModel:
+    """Edge cases of the rejoin annotation: nothing invented, never raises."""
+
+    class _Span:
+        def __init__(self, fail=False):
+            self.attrs, self.fail = {}, fail
+
+        def set_attribute(self, k, v):
+            if self.fail:
+                raise RuntimeError("ended")
+            self.attrs[k] = v
+
+    def test_no_child_model_sets_nothing(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        span = self._Span()
+        _annotate_delegation_model(span, "", "big")
+        assert span.attrs == {}
+
+    def test_unknown_parent_model_sets_only_the_model(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        span = self._Span()
+        _annotate_delegation_model(span, "small", "")
+        assert span.attrs == {"gen_ai.request.model": "small"}
+
+    def test_a_span_that_refuses_is_ignored(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        _annotate_delegation_model(self._Span(fail=True), "small", "big")
+
+
+def _child_turn(child, *, model="gpt-4", prompt=100, completion=50):
+    """A delegated child's turn with one API call of the given usage."""
+    on_session_start(session_id=child, model=model, platform="subagent")
+    on_pre_api_request(
+        task_id=f"{child}-api",
+        session_id=child,
+        platform="subagent",
+        model=model,
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=1,
+        tool_count=0,
+        approx_input_tokens=prompt,
+        request_char_count=10,
+        max_tokens=0,
+    )
+    on_post_api_request(
+        task_id=f"{child}-api",
+        session_id=child,
+        platform="subagent",
+        model=model,
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=0.1,
+        finish_reason="stop",
+        message_count=1,
+        response_model=model,
+        usage={"prompt_tokens": prompt, "completion_tokens": completion},
+        assistant_content_chars=5,
+        assistant_tool_call_count=0,
+    )
+
+
+def _end(child, model="gpt-4"):
+    on_session_end(
+        session_id=child, completed=True, interrupted=False, model=model, platform="subagent"
+    )
+
+
+class TestCostPerAgent:
+    """What each delegated child cost, on its delegation span (#390)."""
+
+    def test_two_concurrent_children_get_their_own_rollups(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn()
+        for cid, role in (("a", "small"), ("b", "big")):
+            on_subagent_start(
+                parent_session_id="parent", child_session_id=cid, child_role=role, child_goal="g"
+            )
+        _child_turn("a", model="m-small", prompt=10, completion=1)
+        _child_turn("b", model="m-big", prompt=1000, completion=100)
+        _end("b", "m-big")
+        _end("a", "m-small")
+        for cid in ("a", "b"):
+            on_subagent_stop(
+                parent_session_id="parent", child_session_id=cid, child_status="completed"
+            )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        a = dict(_span_by_name(spans, "subagent.small").attributes)
+        b = dict(_span_by_name(spans, "subagent.big").attributes)
+        assert (
+            a["hermes.subagent.usage.input_tokens"],
+            a["hermes.subagent.usage.output_tokens"],
+        ) == (10, 1)
+        assert (
+            b["hermes.subagent.usage.input_tokens"],
+            b["hermes.subagent.usage.output_tokens"],
+        ) == (1000, 100)
+        assert a["hermes.subagent.api_call_count"] == b["hermes.subagent.api_call_count"] == 1
+        # the parent root keeps only its own call (100/50 in _close_parent_turn)
+        parent_root = _span_where(spans, "agent", "session.id", "parent")
+        assert parent_root.attributes["gen_ai.usage.input_tokens"] == 100
+
+    def test_nested_orchestrator_counts_each_grandchild_once(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        _open_parent_turn()
+        on_subagent_start(
+            parent_session_id="parent",
+            child_session_id="orch",
+            child_role="orchestrator",
+            child_goal="g",
+        )
+        _child_turn("orch", prompt=20, completion=2)
+        on_subagent_start(
+            parent_session_id="orch", child_session_id="leaf", child_role="leaf", child_goal="g"
+        )
+        _child_turn("leaf", prompt=300, completion=30)
+        _end("leaf")
+        on_subagent_stop(
+            parent_session_id="orch", child_session_id="leaf", child_status="completed"
+        )
+        _end("orch")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="orch", child_status="completed"
+        )
+        _close_parent_turn()
+
+        spans = exporter.get_finished_spans()
+        leaf = dict(_span_by_name(spans, "subagent.leaf").attributes)
+        orch = dict(_span_by_name(spans, "subagent.orchestrator").attributes)
+        assert leaf["hermes.subagent.usage.input_tokens"] == 300
+        assert orch["hermes.subagent.usage.input_tokens"] == 320  # its own 20 + the leaf's 300
+        assert orch["hermes.subagent.api_call_count"] == 2
+        assert plugin.sessions.pop_delegation("orch") is None
+        assert plugin.sessions.pop_delegation("leaf") is None
+
+    def test_cost_follows_the_root_rule(self):
+        from hermes_otel.session_state import DelegationTotals
+
+        t = DelegationTotals(cost_statuses=["estimated", "actual"], cost_usd=0.25)
+        assert t.attributes()["hermes.subagent.cost.status"] == "estimated"
+        assert t.attributes()["hermes.subagent.cost.usage"] == 0.25
+        t.cost_statuses.append("unknown")
+        assert t.attributes()["hermes.subagent.cost.status"] == "partial"
+        assert "hermes.subagent.cost.usage" not in t.attributes()
+        assert (
+            DelegationTotals(cost_statuses=["included"]).attributes()["hermes.subagent.cost.status"]
+            == "included"
+        )
+        assert (
+            DelegationTotals(cost_statuses=["unknown"]).attributes()["hermes.subagent.cost.status"]
+            == "unknown"
+        )
+        assert "hermes.subagent.cost.status" not in DelegationTotals().attributes()

@@ -99,14 +99,6 @@ FAILED_TOOL = _span(
 TRACE_SPANS = [LLM, TOOL, FAILED_TOOL, ROOT]  # Zipkin answers in no particular order
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> zk.ZipkinAdapter:
     return zk.ZipkinAdapter({"type": "zipkin", "endpoint": "http://localhost:9411", **extra})
 

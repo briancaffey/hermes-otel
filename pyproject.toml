@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-otel"
-version = "1.25.0"
+version = "1.27.0"
 description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo, and W&B Weave."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -65,9 +65,6 @@ Issues = "https://github.com/briancaffey/hermes-otel/issues"
 Changelog = "https://github.com/briancaffey/hermes-otel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-langsmith = [
-    "langsmith",
-]
 yaml = [
     "pyyaml",
 ]
@@ -176,9 +173,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests legitimately use `pytest.importorskip(...)` before real imports (E402)
-# and commonly assign results solely for assertion setup (F841).
-"tests/**/*.py" = ["F401", "F811", "E402", "F841"]
+# Tests commonly assign results solely for assertion setup (F841). The live
+# tiers use `pytest.importorskip(...)` before real imports (E402).
+"tests/**/*.py" = ["F841"]
+"tests/smoke/*.py" = ["E402"]
+"tests/e2e/*.py" = ["E402"]
 "__init__.py" = ["F401"]
 
 [tool.setuptools]

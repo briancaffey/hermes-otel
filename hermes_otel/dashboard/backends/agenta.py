@@ -25,22 +25,26 @@ from __future__ import annotations
 import copy
 import datetime as _dt
 from typing import Any, Dict, List, Optional
-from urllib import parse as _urlparse
 
 from . import default_service_name, register
 from .base import (
     BackendAdapter,
-    BackendError,
-    ConfigError,
     StructuredFilter,
     http_post_json,
-    otlp_attrs_from_dict,
+    not_found,
     parse_kv_tokens,
+    query_origin,
+    require_credential,
     resolve_env_or_literal,
-    rewrite_host_for_docker,
-    strictly_older_traces,
-    trace_page,
 )
+from .paging import (
+    mark_full_fetch,
+    strictly_older_traces,
+    trace_end_bound,
+    trace_page,
+    widened_fetch,
+)
+from .shapes import card_attrs, card_row, flatten_dotted, otlp_batches, otlp_span
 from .victoria import rfc3339_to_ns
 
 _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
@@ -48,24 +52,6 @@ _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"
 _ROWS_PER_TRACE = 4
 _MAX_TRACE_SPANS = 2000
 
-_CARD_KEYS = frozenset(
-    {
-        "llm.model_name",
-        "llm.provider",
-        "llm.api_mode",
-        "gen_ai.usage.input_tokens",
-        "gen_ai.usage.output_tokens",
-        "gen_ai.usage.total_tokens",
-        "llm.response.finish_reason",
-        "llm.response.tool_calls",
-        "tool.name",
-        "input.value",
-        "output.value",
-        "llm.output.content",
-        "hermes.session_id",
-        "hermes.turn.number",
-    }
-)
 # Agenta's derived copies of the inputs and outputs; the plugin's own
 # ``input.value`` / ``gen_ai.input.messages`` already carry them.
 _FREE_TEXT_KEYS = ("input.value", "output.value")  # the roots' prompt and answer
@@ -78,19 +64,6 @@ _KIND = {
     "SPAN_KIND_CONSUMER": 5,
 }
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
-
-
-def flatten(obj: Any, prefix: str = "") -> Dict[str, Any]:
-    """Nested attribute objects → dotted keys (``gen_ai.usage.total_tokens``)."""
-    out: Dict[str, Any] = {}
-    if isinstance(obj, dict):
-        for k, v in obj.items():
-            key = f"{prefix}.{k}" if prefix else str(k)
-            if isinstance(v, dict) and v:
-                out.update(flatten(v, key))
-            else:
-                out[key] = v
-    return out
 
 
 def iso(ns: int) -> str:
@@ -135,11 +108,10 @@ class AgentaAdapter(BackendAdapter):
         super().__init__(cfg)
         region = str(cfg.get("region") or "us").strip().lower()
         endpoint = str(cfg.get("endpoint") or _CLOUD.get(region, _CLOUD["us"]))
-        parsed = _urlparse.urlparse(endpoint)
-        host = rewrite_host_for_docker(parsed.hostname or "localhost")
-        port = f":{parsed.port}" if parsed.port else ""
-        self.query_url = f"{parsed.scheme or 'http'}://{host}{port}"
-        self.api_url = f"{self.query_url}/api"
+        # The cloud hosts carry no port; a self-hosted entry's endpoint does.
+        origin = query_origin({**cfg, "endpoint": endpoint}, None, endpoint_port="first")
+        self.api_url = f"{origin}/api"
+        self.query_url = self.api_url
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
         if not self.api_key:
             import os
@@ -154,14 +126,14 @@ class AgentaAdapter(BackendAdapter):
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
-        base["query_url"] = self.api_url
         base["default_service"] = self.default_service
         return base
 
     def _headers(self) -> Dict[str, str]:
-        if not self.api_key:
-            raise ConfigError("Agenta needs api_key / api_key_env (the project API key) to query")
-        return {"Authorization": f"ApiKey {self.api_key}"}
+        key = require_credential(
+            self.api_key, "Agenta needs api_key / api_key_env (the project API key) to query"
+        )
+        return {"Authorization": f"ApiKey {key}"}  # Agenta's own scheme, not a bearer
 
     def _query(self, body: Dict[str, Any], timeout: float = 20.0) -> List[Dict[str, Any]]:
         data = http_post_json(
@@ -209,14 +181,11 @@ class AgentaAdapter(BackendAdapter):
         return bodies
 
     def _body(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        end_ns = int(end_s) * 1_000_000_000
-        if f.before_ns:
-            end_ns = min(end_ns, int(f.before_ns))
         body: Dict[str, Any] = {
             "formatting": {"focus": "span", "format": "agenta"},
             "windowing": {
                 "oldest": iso(int(start_s) * 1_000_000_000),
-                "newest": iso(end_ns),
+                "newest": iso(trace_end_bound(f, end_s, "ns")),
                 "limit": int(limit),
                 "order": "descending",
             },
@@ -230,7 +199,9 @@ class AgentaAdapter(BackendAdapter):
 
     @staticmethod
     def _attrs(span: Dict[str, Any]) -> Dict[str, Any]:
-        flat = flatten(span.get("attributes") or {})
+        # An empty nested object stays (``{}``): Agenta writes one for a
+        # namespace it knows but the span did not fill.
+        flat = flatten_dotted(span.get("attributes") or {}, keep_empty=True)
         return {k: v for k, v in flat.items() if not k.startswith(_DROP_PREFIXES)}
 
     @staticmethod
@@ -261,7 +232,7 @@ class AgentaAdapter(BackendAdapter):
     # ── public API ───────────────────────────────────────────────────
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        fetch = int(limit) + 1 if f.roots_only else (int(limit) + 1) * _ROWS_PER_TRACE
+        fetch = widened_fetch(limit, f.roots_only, _ROWS_PER_TRACE, inclusive=True)
         seen: set = set()
         spans: List[Dict[str, Any]] = []
         for body in self._bodies(f, start_s, end_s, fetch):
@@ -287,39 +258,24 @@ class AgentaAdapter(BackendAdapter):
         counts = self._counts(list(cards))
         rows: List[Dict[str, Any]] = []
         for tid, sp in cards.items():
-            attrs = self._attrs(sp)
-            keep = {k: v for k, v in attrs.items() if k in _CARD_KEYS}
-            keep["name"] = sp.get("span_name") or ""
-            if sp.get("status_code") == "STATUS_CODE_ERROR":
-                keep["status"] = "error"
             start, end = self._times(sp)
-            n = counts.get(tid, 1)
+            name = sp.get("span_name") or ""
             rows.append(
-                {
-                    "traceID": tid,
-                    "spanCount": n,
-                    "rootServiceName": self.default_service,
-                    "rootTraceName": sp.get("span_name") or "",
-                    "startTimeUnixNano": str(start) if start else "0",
-                    "durationMs": max(0, end - start) // 1_000_000,
-                    "spanSets": [
-                        {
-                            "spans": [
-                                {
-                                    "spanID": sp.get("span_id"),
-                                    "name": sp.get("span_name") or "",
-                                    "attributes": otlp_attrs_from_dict(keep),
-                                }
-                            ],
-                            "matched": n,
-                        }
-                    ],
-                }
+                card_row(
+                    tid,
+                    span_id=sp.get("span_id"),
+                    name=name,
+                    attrs=card_attrs(
+                        self._attrs(sp), name, sp.get("status_code") == "STATUS_CODE_ERROR"
+                    ),
+                    start_ns=start,
+                    duration_ms=max(0, end - start) // 1_000_000,
+                    service=self.default_service,
+                    span_count=counts.get(tid, 1),
+                )
             )
         page = trace_page(strictly_older_traces(rows, f), limit)
-        if not f.roots_only and len(spans) >= fetch:
-            page["has_more"] = True
-        return page
+        return mark_full_fetch(page, len(spans), fetch, widened=not f.roots_only)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # The observability page lives under /w/<workspace>/p/<project>/…, ids
@@ -335,34 +291,29 @@ class AgentaAdapter(BackendAdapter):
             }
         )
         if not spans:
-            raise BackendError(404, f"Trace {trace_id} not found in Agenta", "not_found")
+            raise not_found(trace_id, "Agenta")
         otlp = []
         for sp in spans:
             start, end = self._times(sp)
             otlp.append(
-                {
-                    "traceId": sp.get("trace_id") or trace_id,
-                    "spanId": sp.get("span_id"),
-                    "parentSpanId": sp.get("parent_id") or None,
-                    "name": sp.get("span_name") or "",
-                    "kind": _KIND.get(str(sp.get("span_kind") or ""), 1),
-                    "startTimeUnixNano": str(start) if start else "0",
-                    "endTimeUnixNano": str(end) if end else "0",
-                    "attributes": otlp_attrs_from_dict(self._attrs(sp)),
-                    "status": {
+                otlp_span(
+                    sp.get("trace_id") or trace_id,
+                    sp.get("span_id"),
+                    sp.get("parent_id"),
+                    sp.get("span_name"),
+                    start_ns=start,
+                    end_ns=end,
+                    attrs=self._attrs(sp),
+                    status={
                         "code": _STATUS.get(str(sp.get("status_code") or ""), 0),
                         "message": "",
                     },
-                }
+                    kind=_KIND.get(str(sp.get("span_kind") or ""), 1),
+                )
             )
-        batch = {
-            "resource": {
-                "attributes": otlp_attrs_from_dict({"service.name": self.default_service})
-            },
-            "scopeSpans": [{"spans": otlp}],
-        }
         return {
-            "batches": [batch],
+            # Resource attributes are not stored: the plugin's service name stands in.
+            "batches": otlp_batches({self.default_service: otlp}),
             "span_count": len(otlp),
             "truncated": len(spans) >= _MAX_TRACE_SPANS,
         }

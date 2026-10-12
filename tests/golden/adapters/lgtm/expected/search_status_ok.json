@@ -1,0 +1,113 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3200/api/search?limit=500&start=1791746400&end=1791750060&q=%7B+nestedSetParent+%3C+0+%26%26+status+%3D+ok+%7D+%7C+select%28.llm.model_name%2C+.llm.provider%2C+.llm.api_mode%2C+.gen_ai.usage.input_tokens%2C+.gen_ai.usage.output_tokens%2C+.gen_ai.usage.total_tokens%2C+.llm.response.finish_reason%2C+.llm.response.tool_calls%2C+.tool.name%2C+.input.value%2C+.output.value%2C+.llm.output.content%2C+.hermes.session_id%2C+.hermes.turn.number%2C+status%2C+name%29&spss=1"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "metrics": {
+   "inspectedBytes": "120394",
+   "inspectedTraces": 2
+  },
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "serviceStats": {
+     "hermes-agent": {
+      "errorCount": 1,
+      "spanCount": 3
+     }
+    },
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 1,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "openinference.span.kind",
+          "value": {
+           "stringValue": "TOOL"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "durationNanos": "4029000000",
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001",
+        "startTimeUnixNano": "1791750000000000000"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750000000000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "serviceStats": {
+     "hermes-agent": {
+      "errorCount": 1,
+      "spanCount": 3
+     }
+    },
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 1,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "tool.name",
+          "value": {
+           "stringValue": "terminal"
+          }
+         },
+         {
+          "key": "openinference.span.kind",
+          "value": {
+           "stringValue": "TOOL"
+          }
+         },
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "tool.terminal"
+          }
+         }
+        ],
+        "durationNanos": "4029000000",
+        "name": "tool.terminal",
+        "spanID": "aaaa000000000001",
+        "startTimeUnixNano": "1791749400000000000"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749400000000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

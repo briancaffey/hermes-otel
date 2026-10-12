@@ -224,17 +224,17 @@ class TestPipelineWiring:
         plugin = HermesOTelPlugin(config=cfg)
         seen = []
 
-        import hermes_otel.tracer as tracer_mod
+        import hermes_otel.pipeline as pipeline_mod
 
-        real_bsp = tracer_mod.BatchSpanProcessor
+        real_bsp = pipeline_mod.BatchSpanProcessor
 
         def _spy(exporter, **kwargs):
             seen.append(exporter)
             return real_bsp(exporter, **kwargs)
 
         with (
-            patch("hermes_otel.tracer.BatchSpanProcessor", side_effect=_spy),
-            patch("hermes_otel.tracer.trace.set_tracer_provider"),
+            patch("hermes_otel.pipeline.BatchSpanProcessor", side_effect=_spy),
+            patch("hermes_otel.pipeline.trace.set_tracer_provider"),
         ):
             assert plugin.init() is True
         try:

@@ -1,0 +1,487 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/default/streams/default/schema",
+  "json": {
+   "name": "default",
+   "schema": [
+    {
+     "name": "input_value",
+     "type": "Utf8"
+    },
+    {
+     "name": "output_value",
+     "type": "Utf8"
+    },
+    {
+     "name": "gen_ai_input_messages",
+     "type": "Utf8"
+    }
+   ]
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/default/streams",
+  "query_contains": "type=metrics",
+  "json": {
+   "list": [
+    {
+     "name": "hermes_token_usage",
+     "stats": {
+      "doc_num": 9
+     }
+    },
+    {
+     "name": "hermes_tool_duration_milliseconds_bucket",
+     "stats": {
+      "doc_num": 40
+     }
+    },
+    {
+     "name": "hermes_tool_duration_milliseconds_sum",
+     "stats": {
+      "doc_num": 4
+     }
+    },
+    {
+     "name": "system_cpu_utilization",
+     "stats": {
+      "doc_num": 120
+     }
+    },
+    {
+     "name": "otel_sdk_exporter_span_exported",
+     "stats": {
+      "doc_num": 3
+     }
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "query_contains": "type=metrics",
+  "body_contains": "hermes_token_usage",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791746400000000,
+     "value": 100,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791747000000000,
+     "value": 100,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "service_instance_id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791747600000000,
+     "value": 105,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791748200000000,
+     "value": 23690,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "service_instance_id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791748800000000,
+     "value": 23690,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791749400000000,
+     "value": 23795,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "service_instance_id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791750000000000,
+     "value": 23795,
+     "__name__": "hermes_token_usage",
+     "aggregation_temporality": "AGGREGATION_TEMPORALITY_CUMULATIVE",
+     "is_monotonic": "true",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "query_contains": "type=metrics",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791746400000000,
+     "value": 0.5,
+     "__name__": "system_cpu_utilization",
+     "aggregation_temporality": "",
+     "is_monotonic": "false",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791747000000000,
+     "value": 0.25,
+     "__name__": "system_cpu_utilization",
+     "aggregation_temporality": "",
+     "is_monotonic": "false",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-super-120b-a12b",
+     "service_instance_id": "f26a6d1e-4c7b-4d9a-9c3e-1b2a3c4d5e6f",
+     "telemetry_sdk_name": "opentelemetry"
+    },
+    {
+     "_timestamp": 1791747600000000,
+     "value": 0.3,
+     "__name__": "system_cpu_utilization",
+     "aggregation_temporality": "",
+     "is_monotonic": "false",
+     "start_time": 1791742800000000000,
+     "model": "nvidia/nemotron-3-nano-omni",
+     "service_instance_id": "gw",
+     "telemetry_sdk_name": "opentelemetry"
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "query_contains": "type=logs",
+  "body_contains": "GROUP BY instrumentation_library_name",
+  "json": {
+   "hits": [
+    {
+     "logger": "hermes_otel",
+     "n": 6
+    },
+    {
+     "logger": "cli",
+     "n": 2
+    },
+    {
+     "logger": "",
+     "n": 1
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "query_contains": "type=logs",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791750004100000,
+     "body": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+     "severity": "INFO",
+     "severity_number": 9,
+     "instrumentation_library_name": "hermes_otel",
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "service_name": "hermes-agent",
+     "code_line_number": 173,
+     "hermes_session_id": "20261011_201958_a1b2c3",
+     "hermes_log_attribution": "context"
+    },
+    {
+     "_timestamp": 1791750002000000,
+     "body": "careful: the output was truncated",
+     "severity": "WARN",
+     "severity_number": 13,
+     "instrumentation_library_name": "cli",
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "service_name": "hermes-agent",
+     "code_line_number": 173,
+     "event_name": "hermes.turn.end"
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "body_contains": "GROUP BY trace_id",
+  "json": {
+   "hits": [
+    {
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "n": 3
+    },
+    {
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "n": 3
+    }
+   ]
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "body_contains": "trace_id = '00000000000000000000000000000000'",
+  "json": {
+   "hits": [],
+   "total": 0
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "body_contains": "trace_id = 'ab43116e1d6d4a1a449db547c36ca808'",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791750000000000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "operation_name": "agent",
+     "start_time": 1791750000000000000,
+     "end_time": 1791750004029000000,
+     "duration": 4029000,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "OK",
+     "status_code": 1,
+     "status_message": "",
+     "flags": 1,
+     "reference_parent_span_id": "",
+     "reference_parent_trace_id": "",
+     "reference_ref_type": "",
+     "hermes_session_id": "20261011_201958_a1b2c3",
+     "session_id": "20261011_201958_a1b2c3",
+     "gen_ai_usage_input_tokens": 23504,
+     "gen_ai_usage_output_tokens": 186,
+     "gen_ai_usage_total_tokens": 23690,
+     "llm_model_name": "nvidia/nemotron-3-super-120b-a12b",
+     "hermes_turn_number": 1,
+     "hermes_session_completed": "true",
+     "input_value": "read the file hermes_otel.yaml and say hello",
+     "output_value": "Here is the file."
+    },
+    {
+     "_timestamp": 1791750001500000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000001",
+     "operation_name": "tool.terminal",
+     "start_time": 1791750001500000000,
+     "end_time": 1791750002620770000,
+     "duration": 1120770,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "OK",
+     "status_code": 1,
+     "status_message": "",
+     "flags": 1,
+     "reference_parent_span_id": "65a98a08103c9da7",
+     "reference_parent_trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "reference_ref_type": "CHILD_OF",
+     "tool_name": "terminal",
+     "openinference_span_kind": "TOOL"
+    },
+    {
+     "_timestamp": 1791750003000000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000002",
+     "operation_name": "tool.read_file",
+     "start_time": 1791750003000000000,
+     "end_time": 1791750003003595000,
+     "duration": 3595,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "ERROR",
+     "status_code": 2,
+     "status_message": "No such file",
+     "flags": 1,
+     "reference_parent_span_id": "65a98a08103c9da7",
+     "reference_parent_trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "reference_ref_type": "CHILD_OF",
+     "tool_name": "read_file",
+     "openinference_span_kind": "TOOL"
+    }
+   ],
+   "total": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "body_contains": "operation_name LIKE 'tool.%'",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791750001500000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000001",
+     "operation_name": "tool.terminal",
+     "start_time": 1791750001500000000,
+     "end_time": 1791750002620770000,
+     "duration": 1120770,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "OK",
+     "status_code": 1,
+     "status_message": "",
+     "flags": 1,
+     "reference_parent_span_id": "65a98a08103c9da7",
+     "reference_parent_trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "reference_ref_type": "CHILD_OF",
+     "tool_name": "terminal",
+     "openinference_span_kind": "TOOL"
+    },
+    {
+     "_timestamp": 1791750003000000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "aaaa000000000002",
+     "operation_name": "tool.read_file",
+     "start_time": 1791750003000000000,
+     "end_time": 1791750003003595000,
+     "duration": 3595,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "ERROR",
+     "status_code": 2,
+     "status_message": "No such file",
+     "flags": 1,
+     "reference_parent_span_id": "65a98a08103c9da7",
+     "reference_parent_trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "reference_ref_type": "CHILD_OF",
+     "tool_name": "read_file",
+     "openinference_span_kind": "TOOL"
+    },
+    {
+     "_timestamp": 1791749401500000,
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "aaaa000000000001",
+     "operation_name": "tool.terminal",
+     "start_time": 1791749401500000000,
+     "end_time": 1791749402620770000,
+     "duration": 1120770,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "OK",
+     "status_code": 1,
+     "status_message": "",
+     "flags": 1,
+     "reference_parent_span_id": "bbbb000000000001",
+     "reference_parent_trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "reference_ref_type": "CHILD_OF",
+     "tool_name": "terminal",
+     "openinference_span_kind": "TOOL"
+    }
+   ],
+   "total": 3
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/api/default/_search",
+  "json": {
+   "hits": [
+    {
+     "_timestamp": 1791750000000000,
+     "trace_id": "ab43116e1d6d4a1a449db547c36ca808",
+     "span_id": "65a98a08103c9da7",
+     "operation_name": "agent",
+     "start_time": 1791750000000000000,
+     "end_time": 1791750004029000000,
+     "duration": 4029000,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "OK",
+     "status_code": 1,
+     "status_message": "",
+     "flags": 1,
+     "reference_parent_span_id": "",
+     "reference_parent_trace_id": "",
+     "reference_ref_type": "",
+     "hermes_session_id": "20261011_201958_a1b2c3",
+     "session_id": "20261011_201958_a1b2c3",
+     "gen_ai_usage_input_tokens": 23504,
+     "gen_ai_usage_output_tokens": 186,
+     "gen_ai_usage_total_tokens": 23690,
+     "llm_model_name": "nvidia/nemotron-3-super-120b-a12b",
+     "hermes_turn_number": 1,
+     "hermes_session_completed": "true",
+     "input_value": "read the file hermes_otel.yaml and say hello",
+     "output_value": "Here is the file."
+    },
+    {
+     "_timestamp": 1791749400000000,
+     "trace_id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "span_id": "bbbb000000000001",
+     "operation_name": "agent",
+     "start_time": 1791749400000000000,
+     "end_time": 1791749404029000000,
+     "duration": 4029000,
+     "service_name": "hermes-agent",
+     "span_kind": 1,
+     "span_status": "ERROR",
+     "status_code": 2,
+     "status_message": "No such file",
+     "flags": 1,
+     "reference_parent_span_id": "",
+     "reference_parent_trace_id": "",
+     "reference_ref_type": "",
+     "hermes_session_id": "20261011_201958_a1b2c3",
+     "session_id": "20261011_201958_a1b2c3",
+     "gen_ai_usage_input_tokens": 23504,
+     "gen_ai_usage_output_tokens": 186,
+     "gen_ai_usage_total_tokens": 23690,
+     "llm_model_name": "nvidia/nemotron-3-super-120b-a12b",
+     "hermes_turn_number": 1,
+     "hermes_session_completed": "true",
+     "input_value": "read the file hermes_otel.yaml and say hello",
+     "output_value": "Here is the file."
+    }
+   ],
+   "total": 2,
+   "took": 12
+  }
+ }
+]

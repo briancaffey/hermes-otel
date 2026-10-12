@@ -1,0 +1,182 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?limit=1"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?fromTimestamp=2026-10-11T19%3A20%3A00Z&toTimestamp=2026-10-11T20%3A21%3A00Z&limit=6&page=1&name=agent"
+  }
+ ],
+ "result": {
+  "has_more": false,
+  "next_before_ns": null,
+  "traces": [
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "stringValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "stringValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "stringValue": "23690"
+          }
+         },
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "stringValue": "1"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "langfuse.sessionId",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "ab43116e1d6d4a1a449db547c36ca808"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791750000000000000",
+    "traceID": "ab43116e1d6d4a1a449db547c36ca808"
+   },
+   {
+    "durationMs": 4029,
+    "rootServiceName": "hermes-agent",
+    "rootTraceName": "agent",
+    "spanCount": 3,
+    "spanSets": [
+     {
+      "matched": 3,
+      "spans": [
+       {
+        "attributes": [
+         {
+          "key": "name",
+          "value": {
+           "stringValue": "agent"
+          }
+         },
+         {
+          "key": "llm.model_name",
+          "value": {
+           "stringValue": "nvidia/nemotron-3-super-120b-a12b"
+          }
+         },
+         {
+          "key": "gen_ai.usage.input_tokens",
+          "value": {
+           "stringValue": "23504"
+          }
+         },
+         {
+          "key": "gen_ai.usage.output_tokens",
+          "value": {
+           "stringValue": "186"
+          }
+         },
+         {
+          "key": "gen_ai.usage.total_tokens",
+          "value": {
+           "stringValue": "23690"
+          }
+         },
+         {
+          "key": "hermes.session_id",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         },
+         {
+          "key": "hermes.turn.number",
+          "value": {
+           "stringValue": "1"
+          }
+         },
+         {
+          "key": "input.value",
+          "value": {
+           "stringValue": "read the file hermes_otel.yaml and say hello"
+          }
+         },
+         {
+          "key": "output.value",
+          "value": {
+           "stringValue": "Here is the file."
+          }
+         },
+         {
+          "key": "langfuse.sessionId",
+          "value": {
+           "stringValue": "20261011_201958_a1b2c3"
+          }
+         }
+        ],
+        "name": "agent",
+        "spanID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+       }
+      ]
+     }
+    ],
+    "startTimeUnixNano": "1791749400000000000",
+    "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
+   }
+  ]
+ }
+}

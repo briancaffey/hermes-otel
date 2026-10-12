@@ -166,16 +166,6 @@ def _params(url):
     return _urlparse.parse_qs(_urlparse.urlparse(url).query)
 
 
-@pytest.fixture(autouse=True)
-def _fresh_dialect(monkeypatch):
-    # No developer config: the log pin would otherwise follow the real
-    # ``resource_attributes.service.name`` of this machine's hermes_otel.yaml.
-    monkeypatch.setattr("hermes_otel.dashboard.backends.top_level_config", lambda: {})
-    up._DIALECT_CACHE.clear()
-    yield
-    up._DIALECT_CACHE.clear()
-
-
 @pytest.fixture()
 def fake_http(monkeypatch):
     """A 2.1 server: the probe answers JSON and every signal has its own route."""

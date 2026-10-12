@@ -1,0 +1,28 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  },
+  {
+   "body": {
+    "query": "\n        query GetTrace($projectId: ID!, $traceId: ID!, $first: Int!) {\n          node(id: $projectId) {\n            ... on Project {\n              name\n              trace(traceId: $traceId) {\n                traceId\n                numSpans\n                spans(first: $first) {\n                  pageInfo { hasNextPage }\n                  edges { node {\n                    spanId name statusCode statusMessage startTime endTime\n                    parentId spanKind attributes\n                    context { traceId spanId }\n                    input { value mimeType }\n                    output { value mimeType }\n                    tokenCountTotal tokenCountPrompt tokenCountCompletion\n                  } }\n                }\n              }\n            }\n          }\n        }\n        ",
+    "variables": {
+     "first": 500,
+     "projectId": "UHJvamVjdDoy",
+     "traceId": "00000000000000000000000000000000"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in Phoenix project 'hermes-minimal'",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

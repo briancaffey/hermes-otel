@@ -1,0 +1,26 @@
+{
+ "calls": [],
+ "result": {
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "client",
+   "min_duration": "client",
+   "model": "client",
+   "name": "client",
+   "raw": "none",
+   "roots_only": "client",
+   "service": "server",
+   "session": "client",
+   "status_error": "client",
+   "status_ok": "client",
+   "tool": "client"
+  },
+  "logs": true,
+  "metrics": false,
+  "name": "aspire",
+  "query_lang_label": "no native query (filters are applied to the fetched rows)",
+  "query_url": "http://localhost:18888",
+  "raw_placeholder": "",
+  "type": "aspire"
+ }
+}

@@ -13,7 +13,7 @@ Two ways to pick backends:
     fans out via its own ``BatchSpanProcessor`` so traces land in all
     configured collectors in parallel without blocking the agent thread.
   * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
-    or LangSmith/Langfuse credentials. When ``backends:`` is empty, env-var
+    or Langfuse / LangSmith credentials. When ``backends:`` is empty, env-var
     detection is used and at most one backend is selected: LangSmith first,
     then the order of ``backends._ENV_PRIORITY``.
 """
@@ -27,6 +27,7 @@ from dataclasses import dataclass, fields, replace
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from .backend_specs import SPECS as _SPECS
 from .debug_utils import logger
 
 Scalar = Union[str, int, float, bool]
@@ -47,41 +48,61 @@ def hermes_home() -> Path:
 # Environment variable holding an explicit config file path.
 CONFIG_PATH_ENV = "HERMES_OTEL_CONFIG"
 
-# Outside the plugin directory, so it survives `hermes plugins install --force`
-# (which replaces the plugin directory wholesale — see issue #55).
-DURABLE_CONFIG_PATH = hermes_home() / "hermes_otel.yaml"
+# The two file locations, derived from the home in force *at call time* so
+# each profile of a multiplexed gateway reads its own (#405). ``None`` means
+# "derive"; a test (or an embedder) may pin either to a path.
+#
+# Durable: outside the plugin directory, so it survives
+# `hermes plugins install --force` (which replaces the plugin directory
+# wholesale, see issue #55).
+DURABLE_CONFIG_PATH: Optional[Path] = None
+# Legacy: inside the plugin directory. Still read, so existing installs keep
+# working, but it is wiped by a reinstall.
+DEFAULT_CONFIG_PATH: Optional[Path] = None
 
-# The historical location: inside the plugin directory. Still read, so existing
-# installs keep working, but it is wiped by a reinstall.
-DEFAULT_CONFIG_PATH = hermes_home() / "plugins" / "hermes_otel" / "config.yaml"
+
+def durable_config_path() -> Path:
+    """``$HERMES_HOME/hermes_otel.yaml`` for the home in force now."""
+    return DURABLE_CONFIG_PATH or hermes_home() / "hermes_otel.yaml"
 
 
-def resolve_config_path() -> Optional[Path]:
-    """Return the config file to read, or ``None`` when there is none.
+def legacy_config_path() -> Path:
+    """``$HERMES_HOME/plugins/hermes_otel/config.yaml`` for the home in force now."""
+    return DEFAULT_CONFIG_PATH or hermes_home() / "plugins" / "hermes_otel" / "config.yaml"
 
-    Order: ``HERMES_OTEL_CONFIG`` (even if missing — an explicit path that does
-    not exist is worth surfacing), then the durable location, then the legacy
-    plugin-directory copy. Module-level path constants are read at call time so
-    tests can redirect them.
+
+def resolve_config_path_with_reason() -> Tuple[Optional[Path], str]:
+    """The config file to read and the rule that picked it.
+
+    Order: ``HERMES_OTEL_CONFIG`` (``env``; even if missing, since an explicit
+    path that does not exist is worth surfacing), then the durable location
+    (``durable``), then the legacy plugin-directory copy (``legacy``);
+    ``(None, "none")`` when there is no file.
     """
     override = os.environ.get(CONFIG_PATH_ENV, "").strip()
     if override:
-        return Path(override).expanduser()
+        return Path(override).expanduser(), "env"
 
-    durable, legacy = DURABLE_CONFIG_PATH, DEFAULT_CONFIG_PATH
+    durable, legacy = durable_config_path(), legacy_config_path()
     if durable.exists():
         if legacy.exists():
             logger.warning(
                 f"[hermes-otel] using {durable}; ignoring the copy in the plugin "
                 f"directory ({legacy}). Delete the latter to silence this."
             )
-        return durable
+        return durable, "durable"
     if legacy.exists():
-        return legacy
-    return None
+        return legacy, "legacy"
+    return None, "none"
 
 
-_ENV_PREFIX = "HERMES_OTEL_"
+def resolve_config_path() -> Optional[Path]:
+    """Return the config file to read, or ``None`` when there is none
+    (see :func:`resolve_config_path_with_reason`)."""
+    return resolve_config_path_with_reason()[0]
+
+
+ENV_PREFIX = "HERMES_OTEL_"
 _TRUE_STRINGS = {"1", "true", "yes", "on"}
 _FALSE_STRINGS = {"0", "false", "no", "off"}
 
@@ -194,6 +215,11 @@ class BackendConfig:
     # victoria: the metrics and logs stores (VictoriaMetrics, VictoriaLogs); traces go to `endpoint`
     metrics_endpoint: Optional[str] = None
     logs_endpoint: Optional[str] = None
+    # Dashboard-only keys the entry carried (``query_port``, ``prometheus_url``,
+    # ...: what the type's adapter reads, per the manifest), kept so the
+    # loader never silently drops a query-side setting (#402). Pairs, so the
+    # frozen dataclass stays hashable.
+    extra: Tuple[Tuple[str, Any], ...] = ()
 
 
 @dataclass(frozen=True)
@@ -203,6 +229,12 @@ class HermesOtelConfig:
     enabled: bool = True
     sample_rate: Optional[float] = None  # None = AlwaysOn. 0..1 = ratio.
     root_span_ttl_ms: int = 600_000  # 10 min orphan sweep threshold
+    # A delegation (``subagent.*``) span outlives its parent's turn: Hermes
+    # runs top-level delegations in the background and fires subagent_stop
+    # turns later (#392). The turn sweep leaves it alone; this is its own
+    # safety net for a child whose stop never arrives. Hermes sets no child
+    # timeout by default, hence a day.
+    subagent_span_ttl_ms: int = 86_400_000
     flush_interval_ms: int = 60_000  # metrics export interval
     preview_max_chars: int = 1200  # global clip_preview truncation fallback
     capture_previews: bool = True  # global privacy kill switch
@@ -250,8 +282,9 @@ class HermesOtelConfig:
     #   "off"      no prompt, tool or response content at all; metadata only.
     # ``capture_previews`` / ``capture_full_prompts`` / ``capture_full_responses``
     # are the pre-1.11 spellings; load_config keeps them consistent with
-    # ``content_capture`` (see _reconcile_content_capture) and hook code reads
-    # the booleans. ``capture_previews: false`` still means "off".
+    # ``content_capture`` (see _reconcile_content_capture) and hook code asks
+    # ``content_mode()`` / ``captures_full_prompts()`` etc. below.
+    # ``capture_previews: false`` still means "off".
     content_capture: str = "full"
     capture_full_prompts: bool = True
     capture_full_responses: bool = True
@@ -355,6 +388,40 @@ class HermesOtelConfig:
     # ── Multi-backend fan-out ───────────────────────────────────────────
     backends: Optional[Tuple[BackendConfig, ...]] = None
 
+    def __post_init__(self) -> None:
+        # ``global_tags`` is the pre-``resource_attributes`` spelling: fold it
+        # in once, here, so the resource builder reads one mapping.
+        # ``resource_attributes`` wins on a key conflict, as it always has.
+        if self.global_tags:
+            merged = {**self.global_tags, **(self.resource_attributes or {})}
+            object.__setattr__(self, "resource_attributes", merged)
+            object.__setattr__(self, "global_tags", None)
+
+    # ── What content the hooks record (``content_capture``) ──────────────
+    # The hooks ask these instead of reading the three pre-1.11 booleans.
+    # The booleans stay as input spellings: in ``full`` mode they can still
+    # keep one side as previews (``capture_full_responses: false``).
+
+    def content_mode(self) -> str:
+        """``off`` / ``preview`` / ``full``: the mode the hooks apply."""
+        if not self.capture_previews:
+            return "off"
+        if self.capture_full_prompts or self.capture_full_responses:
+            return "full"
+        return "preview"
+
+    def captures_content(self) -> bool:
+        """Whether any prompt, tool or response content is recorded (mode is not ``off``)."""
+        return self.content_mode() != "off"
+
+    def captures_full_prompts(self) -> bool:
+        """Whether api spans carry the complete prompt instead of a preview."""
+        return self.captures_content() and self.capture_full_prompts
+
+    def captures_full_responses(self) -> bool:
+        """Whether api spans carry the complete response instead of a preview."""
+        return self.captures_content() and self.capture_full_responses
+
 
 # ── Env-var parsers ────────────────────────────────────────────────────────
 
@@ -365,7 +432,7 @@ class HermesOtelConfig:
 # (scripts/gen_config_docs.py) renders the reference tables from it. A new
 # field is therefore yaml-loadable, env-overridable and documented (or the
 # tests fail) without touching three hand-maintained lists (#93).
-_SCALAR_KINDS = ("bool", "int", "float", "str", "list")  # env-overridable kinds
+SCALAR_KINDS = ("bool", "int", "float", "str", "list")  # env-overridable kinds
 
 
 def _field_kind(field: "dataclasses.Field") -> str:
@@ -426,7 +493,7 @@ def _parse_int(value: str) -> Optional[int]:
 # ── YAML loader ────────────────────────────────────────────────────────────
 
 
-def _load_yaml(path: Path) -> Dict[str, Any]:
+def load_yaml(path: Path) -> Dict[str, Any]:
     """Load config.yaml if present and pyyaml is available.
 
     Missing file → empty dict (silent). Missing pyyaml → warn + empty dict.
@@ -464,9 +531,16 @@ def _load_yaml(path: Path) -> Dict[str, Any]:
 # ── Loader ─────────────────────────────────────────────────────────────────
 
 
-_ALLOWED_KEYS = {f.name for f in fields(HermesOtelConfig)}
+ALLOWED_KEYS = {f.name for f in fields(HermesOtelConfig)}
 TOP_LEVEL_BLOCKS = ("logs",)  # yaml keys that are blocks, not fields
-_BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)}
+_BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)} - {"extra"}
+# Dashboard-only keys (what the adapters read, from the manifest) plus the
+# generic query-side spellings; anything else unknown is warned about once.
+_QUERY_KEYS = frozenset(
+    {"query_port", "ui_url", "query_api", "query_path", "prometheus_url", "loki_url"}
+    | {k for s in _SPECS for k in s.query_keys}
+)
+_UNKNOWN_KEY_WARNED: set = set()
 
 
 # ``${VAR_NAME}`` references inside config.yaml string values (headers, api
@@ -499,7 +573,7 @@ def expand_env_refs(value: Any, *, where: str = "config") -> Any:
     return _ENV_REF.sub(_sub, value)
 
 
-def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
+def coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     """Coerce a yaml ``backends:`` list into a tuple of BackendConfig."""
     if value is None:
         return None
@@ -518,6 +592,7 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
             logger.warning(f"[hermes-otel] config.yaml backends[{idx}] missing 'type'; skipping")
             continue
         kwargs: Dict[str, Any] = {}
+        extra: List[Tuple[str, Any]] = []
         for k, v in raw.items():
             if k == "trace":
                 # Friendly alias for users who naturally mirror the singular
@@ -526,6 +601,13 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                     continue
                 k = "traces"
             if k not in _BACKEND_ALLOWED_KEYS:
+                if k in _QUERY_KEYS:
+                    extra.append((str(k), v))
+                elif k not in _UNKNOWN_KEY_WARNED:
+                    _UNKNOWN_KEY_WARNED.add(k)
+                    logger.warning(
+                        f"[hermes-otel] config.yaml backends[{idx}]: unknown key {k!r} ignored"
+                    )
                 continue
             if k == "headers":
                 if isinstance(v, dict):
@@ -557,7 +639,7 @@ def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 str(v) if not isinstance(v, str) else v, where=f"backends[{idx}].{k}"
             )
         try:
-            out.append(BackendConfig(**kwargs))
+            out.append(BackendConfig(**kwargs, extra=tuple(extra)))
         except TypeError as e:
             logger.warning(f"[hermes-otel] config.yaml backends[{idx}] invalid: {e}; skipping")
 
@@ -710,7 +792,7 @@ def normalize_yaml_data(yaml_data: Dict[str, Any], *, notice: bool = True) -> Di
     return data
 
 
-def _coerce_from_yaml(key: str, value: Any) -> Any:
+def coerce_from_yaml(key: str, value: Any, *, warn: bool = True) -> Any:
     """Coerce one config.yaml value to its field type (None = ignore).
 
     yaml.safe_load already returns native python types; this only normalises
@@ -721,14 +803,15 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None
     kind = field_kinds().get(key)
     if kind == "backends":
-        return _coerce_backends(value)
+        return coerce_backends(value)
     if kind == "map":
         if isinstance(value, dict):
             return {str(k): expand_env_refs(v, where=key) for k, v in value.items()}
-        logger.warning(f"[hermes-otel] config.yaml {key!r} must be a mapping; ignoring")
+        if warn:
+            logger.warning(f"[hermes-otel] config.yaml {key!r} must be a mapping; ignoring")
         return None
     parsed = _parse_scalar(kind, key, value)
-    if parsed is None:
+    if parsed is None and warn:
         logger.warning(
             f"[hermes-otel] config.yaml {key!r}: cannot use {value!r} as {kind}; "
             "keeping the default"
@@ -788,23 +871,121 @@ def _parse_gpu_vendor(value: str) -> Optional[str]:
     return v if v in _GPU_VENDORS else None
 
 
-def _load_env_overrides() -> Dict[str, Any]:
-    """``HERMES_OTEL_<FIELD>`` for every scalar field (maps and ``backends``
-    are yaml-only). Invalid values warn and are ignored."""
-    out: Dict[str, Any] = {}
-    for key, kind in field_kinds().items():
-        if kind not in _SCALAR_KINDS:
+@dataclass(frozen=True)
+class FieldSource:
+    """Where one config field's value came from, as the loader decided it.
+
+    ``source`` is ``default``, ``file`` or ``env``. ``file_value`` is the
+    coerced file value (``None`` when absent or ``file_invalid``) and
+    ``file_raw`` the value as written; ``env_var`` is the override variable
+    for scalar fields, ``env_raw`` its text when set. A value that was given
+    but not usable is flagged ``*_invalid`` and the field keeps its default.
+    ``derived_from`` names the keys a derived field follows (``content_capture``
+    and its legacy flags).
+    """
+
+    source: str = "default"
+    file_raw: Any = None
+    file_value: Any = None
+    file_invalid: bool = False
+    env_var: Optional[str] = None
+    env_raw: Optional[str] = None
+    env_invalid: bool = False
+    derived_from: Optional[Tuple[str, ...]] = None
+
+
+def resolve_fields(
+    yaml_data: Dict[str, Any], *, warn: bool = True
+) -> Tuple[HermesOtelConfig, Dict[str, FieldSource]]:
+    """Normalised yaml + the environment → the config and, per field, where its
+    value came from. The one implementation of the precedence rules: a file
+    value that fails coercion is ignored, an env value that fails parsing is
+    ignored, and a valid env value wins over the file. ``warn=False`` keeps a
+    report (the Settings tab) from logging the loader's warnings again.
+    """
+    kinds = field_kinds()
+    defaults = HermesOtelConfig()
+    values: Dict[str, Any] = {}
+    sources: Dict[str, Dict[str, Any]] = {}
+    for f in fields(HermesOtelConfig):
+        key, kind = f.name, kinds[f.name]
+        src: Dict[str, Any] = {
+            "env_var": ENV_PREFIX + key.upper() if kind in SCALAR_KINDS else None
+        }
+        sources[key] = src
+        raw = yaml_data.get(key)
+        if raw is not None:
+            src["file_raw"] = raw
+            coerced = coerce_from_yaml(key, raw, warn=warn)
+            if coerced is None:
+                src["file_invalid"] = True
+            else:
+                values[key] = coerced
+                src["file_value"] = coerced
+                src["source"] = "file"
+        if src["env_var"]:
+            raw_env = os.getenv(src["env_var"], "").strip()
+            if raw_env:
+                src["env_raw"] = raw_env
+                parsed = _parse_scalar(kind, key, raw_env)
+                if parsed is None:
+                    src["env_invalid"] = True
+                    if warn:
+                        logger.warning(
+                            f"[hermes-otel] {src['env_var']}={raw_env!r} is not a valid {kind}; ignoring it"
+                        )
+                else:
+                    values[key] = parsed
+                    src["source"] = "env"
+
+    # An unknown histogram or temporality is dropped (the default applies);
+    # flag it the way an uncoercible value is flagged (#413).
+    for key, valid in (
+        ("metrics_histogram", VALID_HISTOGRAMS),
+        ("metrics_temporality", VALID_TEMPORALITIES),
+    ):
+        src = sources[key]
+        if src.get("source", "default") == "default" or values.get(key) is None:
             continue
-        var = _ENV_PREFIX + key.upper()
-        raw = os.getenv(var, "").strip()
-        if not raw:
-            continue
-        parsed = _parse_scalar(kind, key, raw)
-        if parsed is None:
-            logger.warning(f"[hermes-otel] {var}={raw!r} is not a valid {kind}; ignoring it")
-            continue
-        out[key] = parsed
-    return out
+        if str(values[key]).strip().lower() not in valid:
+            src["env_invalid" if src["source"] == "env" else "file_invalid"] = True
+            src["source"] = "default"
+
+    if warn and values.get("global_tags"):
+        logger.warning(
+            "[hermes-otel] global_tags is deprecated; it is merged into resource_attributes "
+            "(which wins on a key conflict). Move the keys there."
+        )
+
+    # content_capture and the legacy booleans are kept consistent; record
+    # which key decided the others.
+    explicit = set(values)
+    _reconcile_content_capture(values, warn=warn)
+    if "content_capture" in explicit:
+        driver: Tuple[str, ...] = ("content_capture",)
+        derived = LEGACY_CONTENT_KEYS
+    else:
+        driver = tuple(k for k in LEGACY_CONTENT_KEYS if k in explicit)
+        derived = tuple(k for k in ("content_capture",) + LEGACY_CONTENT_KEYS if k not in explicit)
+    if driver:
+        for key in derived:
+            if key in values:
+                sources[key]["source"] = sources[driver[0]].get("source", "default")
+                sources[key]["derived_from"] = driver
+
+    reconcile_metrics_settings(values, warn=warn)
+
+    cfg = replace(defaults, **values)
+    return cfg, {k: FieldSource(**v) for k, v in sources.items()}
+
+
+def load_config_with_sources(
+    path: Optional[Path] = None, *, warn: bool = True
+) -> Tuple[HermesOtelConfig, Dict[str, FieldSource]]:
+    """:func:`load_config` plus where each field's value came from."""
+    yaml_path = path if path is not None else resolve_config_path()
+    yaml_data = load_yaml(yaml_path) if yaml_path is not None else {}
+    return resolve_fields(normalize_yaml_data(yaml_data, notice=warn), warn=warn)
 
 
 def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
@@ -814,35 +995,19 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
         path: Explicit config.yaml location. When omitted the file is resolved
               by :func:`resolve_config_path`.
     """
-    yaml_path = path if path is not None else resolve_config_path()
-    yaml_data = _load_yaml(yaml_path) if yaml_path is not None else {}
-
-    yaml_data = normalize_yaml_data(yaml_data)
-
-    values: Dict[str, Any] = {}
-    for key, raw in yaml_data.items():
-        if key not in _ALLOWED_KEYS:
-            continue
-        coerced = _coerce_from_yaml(key, raw)
-        if coerced is not None:
-            values[key] = coerced
-
-    values.update(_load_env_overrides())
-    _reconcile_content_capture(values)
-    _reconcile_metrics_settings(values)
-
-    # Build config with whatever we have; unset fields fall back to dataclass defaults.
-    return replace(HermesOtelConfig(), **values)
+    return load_config_with_sources(path)[0]
 
 
-_LEGACY_CONTENT_KEYS = ("capture_previews", "capture_full_prompts", "capture_full_responses")
+LEGACY_CONTENT_KEYS = ("capture_previews", "capture_full_prompts", "capture_full_responses")
 
 
 VALID_TEMPORALITIES = ("cumulative", "delta")
 VALID_HISTOGRAMS = ("explicit", "exponential")
 
 
-def normalize_temporality(value: Any, where: str = "metrics_temporality") -> Optional[str]:
+def normalize_temporality(
+    value: Any, where: str = "metrics_temporality", *, warn: bool = True
+) -> Optional[str]:
     """``cumulative`` / ``delta`` (case-insensitive) or ``None``; anything else warns and is dropped."""
     if value is None:
         return None
@@ -851,21 +1016,26 @@ def normalize_temporality(value: Any, where: str = "metrics_temporality") -> Opt
         return None
     if text in VALID_TEMPORALITIES:
         return text
+    if not warn:
+        return None
     logger.warning(
         f"[hermes-otel] {where}={value!r} is not one of {'/'.join(VALID_TEMPORALITIES)}; ignoring"
     )
     return None
 
 
-def _reconcile_metrics_settings(values: Dict[str, Any]) -> None:
+def reconcile_metrics_settings(values: Dict[str, Any], *, warn: bool = True) -> None:
     if "metrics_temporality" in values:
-        values["metrics_temporality"] = normalize_temporality(values["metrics_temporality"])
+        values["metrics_temporality"] = normalize_temporality(
+            values["metrics_temporality"], warn=warn
+        )
     hist = str(values.get("metrics_histogram", "explicit") or "explicit").strip().lower()
-    if hist not in VALID_HISTOGRAMS:
+    if hist not in VALID_HISTOGRAMS and warn:
         logger.warning(
             f"[hermes-otel] metrics_histogram={values.get('metrics_histogram')!r} is not one of "
             f"{'/'.join(VALID_HISTOGRAMS)}; using explicit"
         )
+    if hist not in VALID_HISTOGRAMS:
         hist = "explicit"
     values["metrics_histogram"] = hist
     try:
@@ -874,7 +1044,7 @@ def _reconcile_metrics_settings(values: Dict[str, Any]) -> None:
         values["metrics_label_limit"] = 100
 
 
-def _reconcile_content_capture(values: Dict[str, Any]) -> None:
+def _reconcile_content_capture(values: Dict[str, Any], *, warn: bool = True) -> None:
     """Keep ``content_capture`` and the three legacy booleans consistent.
 
     ``content_capture`` (yaml or env) wins; the legacy keys are then derived
@@ -884,7 +1054,7 @@ def _reconcile_content_capture(values: Dict[str, Any]) -> None:
     ``true`` is ``full``, a full flag explicitly ``false`` (previews on) is
     ``preview``. Nothing set means the default, ``full``.
     """
-    legacy = {k: values[k] for k in _LEGACY_CONTENT_KEYS if k in values}
+    legacy = {k: values[k] for k in LEGACY_CONTENT_KEYS if k in values}
     mode = values.get("content_capture")
     if mode is None and legacy:
         if legacy.get("capture_previews") is False:
@@ -893,6 +1063,7 @@ def _reconcile_content_capture(values: Dict[str, Any]) -> None:
             mode = "full"
         else:
             mode = "preview"
+    if mode is not None and legacy and "content_capture" not in values and warn:
         logger.warning(
             "[hermes-otel] %s %s deprecated; use content_capture: %s "
             "(off | preview | full) instead",
@@ -908,8 +1079,8 @@ def _reconcile_content_capture(values: Dict[str, Any]) -> None:
         "full": (True, True, True),
     }[mode]
     if "content_capture" in values:
-        for key, want in zip(_LEGACY_CONTENT_KEYS, derived):
-            if key in legacy and legacy[key] != want:
+        for key, want in zip(LEGACY_CONTENT_KEYS, derived):
+            if key in legacy and legacy[key] != want and warn:
                 logger.warning(
                     "[hermes-otel] %s=%r conflicts with content_capture: %s; "
                     "content_capture wins",
@@ -935,12 +1106,8 @@ def _reconcile_content_capture(values: Dict[str, Any]) -> None:
 
 
 def content_mode(cfg: HermesOtelConfig) -> str:
-    """The mode the hooks actually apply, from the booleans they read."""
-    if not cfg.capture_previews:
-        return "off"
-    if cfg.capture_full_prompts or cfg.capture_full_responses:
-        return "full"
-    return "preview"
+    """The mode the hooks actually apply (see :meth:`HermesOtelConfig.content_mode`)."""
+    return cfg.content_mode()
 
 
 DEFAULT_EXPORT_BATCH_SIZE = 512
@@ -971,6 +1138,7 @@ FIELD_DOCS = {
     "enabled": "Master kill switch; `false` unloads every hook",
     "sample_rate": "Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling)",
     "root_span_ttl_ms": "Orphan-sweep TTL: a turn root older than this with no end hook is closed",
+    "subagent_span_ttl_ms": "Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design)",
     "flush_interval_ms": "Metrics export cadence (PeriodicExportingMetricReader)",
     "preview_max_chars": "Cap on preview strings (tool args/results, user message, assistant response)",
     "capture_previews": "Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture`",
@@ -979,7 +1147,7 @@ FIELD_DOCS = {
     "llm_input_preview_max_chars": "Per-category cap for LLM input previews; `null` = `preview_max_chars`",
     "llm_output_preview_max_chars": "Per-category cap for LLM output previews; `null` = `preview_max_chars`",
     "headers": "Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these",
-    "global_tags": "Merged into the OTel Resource; overridden by `resource_attributes` on key conflict",
+    "global_tags": "Deprecated: merged into `resource_attributes` at load (which wins on a key conflict)",
     "resource_attributes": "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
     "project_name": "`openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME`",
     "span_batch_max_queue_size": "Max buffered spans per backend before drops",
@@ -1055,6 +1223,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "force_flush_wait_ms",
             "flush_interval_ms",
             "root_span_ttl_ms",
+            "subagent_span_ttl_ms",
             "span_batch_max_queue_size",
             "span_batch_schedule_delay_ms",
             "span_batch_max_export_batch_size",

@@ -87,7 +87,7 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 | `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.run_id` | A dispatcher-spawned kanban worker's card, board and attempt; absent elsewhere |
 | `openinference.project.name` | `project_name` / `OTEL_PROJECT_NAME` (the Phoenix project) |
 | `host.name` | Only with `host_metrics: true` |
-| *plus* any `resource_attributes:` / `global_tags:` from `hermes_otel.yaml` |
+| *plus* any `resource_attributes:` (and the deprecated `global_tags:`) from `hermes_otel.yaml` |
 
 The full list with every source is in the [span attributes reference](/reference/span-attributes#resource-on-every-span).
 

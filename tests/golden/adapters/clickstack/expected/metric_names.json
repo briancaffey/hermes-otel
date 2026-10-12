@@ -1,0 +1,23 @@
+{
+ "calls": [
+  {
+   "body": "SELECT 'sum' AS kind, MetricName FROM `default`.`otel_metrics_sum` WHERE TimeUnix >= toDateTime(1791746400) AND TimeUnix < toDateTime(1791750060) GROUP BY MetricName UNION ALL SELECT 'gauge', MetricName FROM `default`.`otel_metrics_gauge` WHERE TimeUnix >= toDateTime(1791746400) AND TimeUnix < toDateTime(1791750060) GROUP BY MetricName UNION ALL SELECT 'histogram', MetricName FROM `default`.`otel_metrics_histogram` WHERE TimeUnix >= toDateTime(1791746400) AND TimeUnix < toDateTime(1791750060) GROUP BY MetricName",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  }
+ ],
+ "result": [
+  {
+   "name": "hermes.token.usage"
+  },
+  {
+   "name": "hermes.tool.duration.count"
+  },
+  {
+   "name": "hermes.tool.duration.sum"
+  },
+  {
+   "name": "system.cpu.utilization"
+  }
+ ]
+}

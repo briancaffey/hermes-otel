@@ -36,6 +36,10 @@ from typing import Any, Dict, List, Optional, Tuple
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 TURN_BATCH = ROOT / "scripts" / "turn_batch"
+sys.path.insert(0, str(ROOT))
+from hermes_otel import semconv  # noqa: E402
+from hermes_otel.query_cli import otlp_attrs_to_dict  # noqa: E402
+
 DEFAULT_PROMPTS = ["shell-echo", "no-tools", "missing-file", "multi-tool"]
 SETTLE_S = 120
 
@@ -183,23 +187,8 @@ def norm_tid(tid: Any) -> str:
 
 
 def attrs_of(span: Dict[str, Any]) -> Dict[str, Any]:
-    out: Dict[str, Any] = {}
-    raw = span.get("attributes")
-    if isinstance(raw, dict):
-        return dict(raw)
-    for a in raw or []:
-        v = a.get("value") or {}
-        if "stringValue" in v:
-            out[a["key"]] = v["stringValue"]
-        elif "intValue" in v:
-            out[a["key"]] = int(v["intValue"])
-        elif "doubleValue" in v:
-            out[a["key"]] = float(v["doubleValue"])
-        elif "boolValue" in v:
-            out[a["key"]] = bool(v["boolValue"])
-        else:
-            out[a["key"]] = v
-    return out
+    """OTLP attribute list (or a plain dict) → dict, the query CLI's decoder."""
+    return otlp_attrs_to_dict(span.get("attributes"))
 
 
 def row_from_backend(t: Dict[str, Any]) -> Dict[str, Any]:
@@ -217,12 +206,10 @@ def row_from_backend(t: Dict[str, Any]) -> Dict[str, Any]:
         "rootName": name,
         "startNs": start_ns,
         "durationMs": dur,
-        "model": attrs.get("gen_ai.request.model")
-        or attrs.get("llm.model_name")
-        or attrs.get("gen_ai.response.model"),
-        "tokens": attrs.get("gen_ai.usage.total_tokens") or attrs.get("llm.token_count.total"),
-        "error": attrs.get("status") == "error" or bool(attrs.get("error.type")),
-        "session": attrs.get("hermes.session_id") or attrs.get("session.id"),
+        "model": semconv.first(attrs, semconv.MODEL_KEYS),
+        "tokens": semconv.first(attrs, semconv.TOTAL_TOKEN_KEYS),
+        "error": attrs.get("status") == "error" or bool(attrs.get(semconv.ERROR_TYPE_KEY)),
+        "session": semconv.first(attrs, semconv.SESSION_KEYS),
         "matched": [s.get("name") for s in spans],
         "attrs": attrs,
     }

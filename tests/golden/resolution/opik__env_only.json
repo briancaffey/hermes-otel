@@ -1,0 +1,32 @@
+{
+ "env": {
+  "OPIK_PROJECT_NAME": "<secret>",
+  "OPIK_WORKSPACE": "<secret>",
+  "OTEL_OPIK_API_KEY": "<secret>"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": {
+  "display_name": "Comet Opik",
+  "endpoint": "https://www.comet.com/opik/api/v1/private/otel/v1/traces",
+  "headers": {
+   "Authorization": "<secret>",
+   "Comet-Workspace": "<secret>",
+   "projectName": "<secret>"
+  },
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": false,
+  "supports_logs": false,
+  "supports_metrics": false,
+  "supports_traces": true,
+  "type": "opik"
+ },
+ "selected": "opik",
+ "type": "opik"
+}

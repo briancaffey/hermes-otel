@@ -10,7 +10,7 @@ import functools
 import json
 import os
 import re
-from typing import Any, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
 
 # Matches:
 #   ESC [ ... letter             → CSI sequences (colors, cursor)
@@ -393,7 +393,19 @@ def classify_block_provenance(block_message: Any) -> Optional[str]:
 # / empty values default to OK so a missing status never inflates error rates
 # (mirrors the tool-outcome policy in on_post_tool_call).
 _SUBAGENT_ERROR_STATUSES = frozenset(
-    {"error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out"}
+    # ``stalled``: Hermes's stall monitor gave up on a silent child and
+    # reports it as a crash (async_delegation._stalled_result), #392.
+    {
+        "error",
+        "errored",
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "timeout",
+        "timed_out",
+        "stalled",
+    }
 )
 
 
@@ -577,6 +589,81 @@ def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
     return "session"
 
 
+def parse_traceparent(value: Any) -> Optional[Tuple[int, int, int]]:
+    """``(trace_id, span_id, flags)`` from a W3C ``traceparent`` (version 00), or
+    None when it is malformed or names the all-zero (invalid) ids."""
+    parts = str(value or "").strip().lower().split("-")
+    if len(parts) != 4 or parts[0] != "00":
+        return None
+    trace_hex, span_hex, flags_hex = parts[1], parts[2], parts[3]
+    if len(trace_hex) != 32 or len(span_hex) != 16 or len(flags_hex) != 2:
+        return None
+    try:
+        trace_id, span_id, flags = int(trace_hex, 16), int(span_hex, 16), int(flags_hex, 16)
+    except ValueError:
+        return None
+    if not trace_id or not span_id:
+        return None
+    return trace_id, span_id, flags
+
+
+def format_traceparent(trace_id: int, span_id: int, flags: int) -> str:
+    """The W3C ``traceparent`` for a span context (version 00)."""
+    return f"00-{trace_id:032x}-{span_id:016x}-{'01' if flags & 1 else '00'}"
+
+
+# ``hermes.turn.trigger`` (#394): what started a turn, from what Hermes makes
+# observable at turn start (the hook's ``platform``, the session-context vars
+# and the process environment). A closed set, so a backend can group by it.
+TURN_TRIGGERS = (
+    "user",  # a person: CLI / TUI / desktop / a gateway platform / ACP
+    "cron",  # a scheduled cron job
+    "kanban",  # a kanban worker run (HERMES_KANBAN_TASK)
+    "subagent",  # a delegated child agent
+    "a2a",  # an inbound agent-to-agent call
+    "api",  # the API server (/v1/runs, /v1/chat/completions)
+    "oneshot",  # a single-query run (hermes -z, chat -q) not covered above
+    "curator",  # Hermes's background curator
+    "batch",  # the batch runner
+    "system",  # other host housekeeping (gateway hygiene)
+)
+_PLATFORM_TRIGGERS = {
+    "subagent": "subagent",
+    "cron": "cron",
+    "a2a": "a2a",
+    "api_server": "api",
+    "curator": "curator",
+    "batch": "batch",
+    "gateway_hygiene": "system",
+}
+
+
+def turn_trigger(
+    platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
+) -> str:
+    """Classify what started a turn into one of :data:`TURN_TRIGGERS`.
+
+    ``env(name)`` reads a Hermes session variable (context var first, then the
+    process environment). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
+    and bot-to-bot DMs are not observable as such at turn start (only as a
+    message prefix), so they classify as the turn they ride on.
+    """
+    p = str(platform or "").strip().lower()
+    if is_subagent or p == "subagent":
+        return "subagent"
+    if p == "cron" or env("HERMES_CRON_SESSION").strip() in ("1", "true"):
+        return "cron"
+    if env("HERMES_KANBAN_TASK").strip():
+        return "kanban"
+    if p in _PLATFORM_TRIGGERS:
+        return _PLATFORM_TRIGGERS[p]
+    if env("HERMES_SESSION_SOURCE").strip().lower() == "a2a":
+        return "a2a"
+    if env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
+        return "oneshot"
+    return "user"
+
+
 # Hermes ``status`` kwarg value -> documented ``hermes.tool.outcome`` value.
 # Success statuses are deliberately absent: they defer to the tool's own
 # result-reported status (see ``outcome_from_hook_status``).
@@ -736,3 +823,38 @@ def terminal_truncation(result: Mapping[str, Any]) -> Tuple[bool, Optional[int]]
         except ValueError:  # pragma: no cover - the regex only admits digits
             return True, None
     return False, None
+
+
+# ── Auxiliary LLM calls (#389) ───────────────────────────────────────────────
+
+# ``hermes.query_source`` values: which loop an ``api.*`` span belongs to.
+QUERY_SOURCE_MAIN = "main"
+QUERY_SOURCE_SUBAGENT = "subagent"
+QUERY_SOURCE_AUXILIARY = "auxiliary"
+
+
+def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
+    """Build the span-tracking key for one auxiliary provider attempt.
+
+    ``pre_auxiliary_call`` and ``post_auxiliary_call`` share one base payload
+    (``agent/auxiliary_hooks.py`` builds it once per attempt), so the
+    ``api_request_id`` Hermes assigns is the natural key. Hermes leaves it
+    empty for callers that pass no request metadata; then the task name plus
+    the attempt's ``started_at`` (identical on both hooks) still pairs them.
+    """
+    request_id = str(api_request_id or "").strip()
+    if request_id:
+        return f"aux:{request_id}"
+    task = str(aux_task or "").strip() or "unknown"
+    return f"aux:{task}:{started_at if started_at is not None else ''}"
+
+
+def auxiliary_task_name(aux_task: Any) -> str:
+    """The auxiliary task as a bounded label (``unknown`` when Hermes sent none)."""
+    text = str(aux_task or "").strip().lower()
+    return truncate_string(text, 80) if text else "unknown"
+
+
+def query_source_for(is_subagent: Any) -> str:
+    """``main`` or ``subagent`` for a main-loop API call."""
+    return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN

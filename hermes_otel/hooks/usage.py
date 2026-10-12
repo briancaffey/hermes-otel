@@ -5,7 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ..helpers import to_int, truncate_string
-from ._common import _as_dict
+from ._common import as_dict
 
 # Canonical token-total field order. Used when iterating or copying.
 _USAGE_FIELDS = (
@@ -18,7 +18,7 @@ _USAGE_FIELDS = (
 )
 
 
-def _normalize_usage(usage: dict) -> Dict[str, int]:
+def normalize_usage(usage: dict) -> Dict[str, int]:
     """Parse a raw hermes ``usage`` dict into canonical token totals.
 
     Hermes exposes ``output_tokens``; some providers use ``completion_tokens``.
@@ -29,7 +29,7 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
     all canonical fields, zero-filled.
     """
     if not isinstance(usage, dict):
-        usage = _as_dict(usage)
+        usage = as_dict(usage)
     completion = to_int(usage.get("output_tokens") or usage.get("completion_tokens", 0))
     prompt = to_int(usage.get("prompt_tokens") or usage.get("input_tokens", 0))
     total = to_int(usage.get("total_tokens", 0)) or (prompt + completion)
@@ -43,7 +43,7 @@ def _normalize_usage(usage: dict) -> Dict[str, int]:
     }
 
 
-def _usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
+def usage_attributes(totals: Dict[str, int]) -> Dict[str, Any]:
     """Build dual-convention OTel attributes from canonical token totals.
 
     Emits both the OTel GenAI convention (``gen_ai.usage.*`` — recognised
@@ -191,7 +191,7 @@ def _record_prompt_cache_metrics(
     )
 
 
-def _genai_metric_dims(
+def genai_metric_dims(
     model: Any,
     provider: Any,
     response_model: Any = None,

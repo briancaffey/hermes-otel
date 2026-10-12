@@ -3,27 +3,12 @@
 from __future__ import annotations
 
 import re
-import sys
-import types
 from pathlib import Path
 
+from hermes_otel.dashboard.backends import openobserve as oo
+from hermes_otel.dashboard.backends._attrs import KNOWN_ATTRIBUTES, dotted, oo_col
+
 _HERE = Path(__file__).resolve().parent.parent.parent
-_DASHBOARD = _HERE / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-if "fastapi" not in sys.modules:
-    _stub = types.ModuleType("fastapi")
-
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    _stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _stub
-
-from backends import openobserve as oo  # noqa: E402
 
 DOC = _HERE / "website" / "docs" / "reference" / "span-attributes.md"
 _NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host)\.[a-z_][a-z0-9_.]*"
@@ -36,13 +21,13 @@ def _documented() -> set:
 
 class TestColumnTable:
     def test_every_documented_attribute_round_trips(self):
-        missing = sorted(_documented() - set(oo._KNOWN_ATTRIBUTES))
-        assert missing == [], f"add to _KNOWN_ATTRIBUTES in openobserve.py: {missing}"
+        missing = sorted(_documented() - set(KNOWN_ATTRIBUTES))
+        assert missing == [], f"add to KNOWN_ATTRIBUTES in _attrs.py: {missing}"
         wrong = {}
         for attr in _documented():
-            back = oo._dotted(oo._oo_col(attr))
+            back = dotted(oo_col(attr))
             # Aliases that share a column resolve to the current spelling.
-            if back != attr and oo._oo_col(back) != oo._oo_col(attr):
+            if back != attr and oo_col(back) != oo_col(attr):
                 wrong[attr] = back
         assert wrong == {}
 
@@ -56,17 +41,16 @@ class TestColumnTable:
             "hermes_turn_final_status": "hermes.turn.final_status",
             "openinference_span_kind": "openinference.span.kind",
         }.items():
-            assert oo._dotted(col) == attr, col
+            assert dotted(col) == attr, col
 
     def test_shared_columns_prefer_the_current_spelling(self):
         assert (
-            oo._dotted("gen_ai_usage_cache_read_input_tokens")
-            == "gen_ai.usage.cache_read.input_tokens"
+            dotted("gen_ai_usage_cache_read_input_tokens") == "gen_ai.usage.cache_read.input_tokens"
         )
-        assert oo._dotted("session_id") == "session.id"
+        assert dotted("session_id") == "session.id"
 
     def test_unknown_column_is_not_invented(self):
-        assert oo._dotted("some_backend_column") == "some_backend_column"
+        assert dotted("some_backend_column") == "some_backend_column"
 
     def test_card_keys_match_after_round_trip(self):
         row = {

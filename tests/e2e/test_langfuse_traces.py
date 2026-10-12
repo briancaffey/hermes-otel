@@ -7,7 +7,6 @@ Langfuse API reference:
 """
 
 import base64
-import os
 import time
 
 import pytest
@@ -15,6 +14,7 @@ import pytest
 requests = pytest.importorskip("requests")
 
 import hermes_otel.tracer as tracer_mod
+from hermes_otel.backends import _ResolvedBackend
 from hermes_otel.hooks import (
     on_post_api_request,
     on_post_llm_call,
@@ -59,7 +59,14 @@ def _init_langfuse_plugin(otel_endpoint, public_key, secret_key):
         "x-langfuse-ingestion-version": "4",
     }
     plugin = HermesOTelPlugin()
-    result = plugin._init_otlp(otel_endpoint, headers=headers, backend_name="Langfuse")
+    backend = _ResolvedBackend(
+        type="langfuse",
+        endpoint=otel_endpoint,
+        display_name="Langfuse",
+        headers=headers,
+        supports_metrics=False,
+    )
+    result = plugin._init_otlp_pipeline([backend])
     assert result, f"Failed to initialize Langfuse plugin at {otel_endpoint}"
     tracer_mod._tracer = plugin
     return plugin

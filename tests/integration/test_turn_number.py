@@ -5,83 +5,23 @@ numbers the turn; every span opened afterwards in that turn (api / tool) and
 the turn's session root carry the same number.
 """
 
+from helpers.turns import run_turn
+
 from hermes_otel.hooks import (
-    on_post_api_request,
-    on_post_llm_call,
     on_post_tool_call,
-    on_pre_api_request,
-    on_pre_llm_call,
     on_pre_tool_call,
-    on_session_end,
-    on_session_start,
 )
 from hermes_otel.session_state import SessionState
 
 
 def _turn(session_id: str, is_first_turn: bool, tools=("terminal",)):
-    if is_first_turn:
-        on_session_start(session_id=session_id, model="gpt-4", platform="cli")
-    on_pre_llm_call(
-        session_id=session_id,
-        user_message="hello",
-        conversation_history=[],
-        is_first_turn=is_first_turn,
-        model="gpt-4",
-        platform="cli",
-    )
-    on_pre_api_request(
-        task_id=f"api-{session_id}",
-        session_id=session_id,
-        platform="cli",
-        model="gpt-4",
-        provider="openai",
-        base_url="",
-        api_mode="chat",
-        api_call_count=1,
-        message_count=1,
-        tool_count=len(tools),
-        approx_input_tokens=10,
-        request_char_count=40,
-        max_tokens=100,
-    )
-    for i, name in enumerate(tools):
-        on_pre_tool_call(
-            tool_name=name, args={"command": "ls"}, task_id=f"t{i}", session_id=session_id
-        )
-        on_post_tool_call(
-            tool_name=name,
-            args={"command": "ls"},
-            result="ok",
-            task_id=f"t{i}",
-            session_id=session_id,
-        )
-    on_post_api_request(
-        task_id=f"api-{session_id}",
-        session_id=session_id,
-        platform="cli",
-        model="gpt-4",
-        provider="openai",
-        base_url="",
-        api_mode="chat",
-        api_call_count=1,
-        api_duration=0.1,
-        finish_reason="stop",
-        message_count=1,
-        response_model="gpt-4",
+    run_turn(
+        session_id,
+        first=is_first_turn,
+        tools=tools,
         usage={"prompt_tokens": 1, "completion_tokens": 1, "total_tokens": 2},
-        assistant_content_chars=2,
-        assistant_tool_call_count=len(tools),
-    )
-    on_post_llm_call(
-        session_id=session_id,
-        user_message="hello",
+        max_tokens=100,
         assistant_response="done",
-        conversation_history=[],
-        model="gpt-4",
-        platform="cli",
-    )
-    on_session_end(
-        session_id=session_id, completed=True, interrupted=False, model="gpt-4", platform="cli"
     )
 
 

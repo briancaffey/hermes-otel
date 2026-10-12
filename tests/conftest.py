@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import sys
 from pathlib import Path
-from typing import List, Tuple
+from typing import Tuple
 
 import pytest
 
@@ -16,22 +16,12 @@ if str(PLUGIN_ROOT) not in sys.path:
 
 @pytest.fixture(autouse=True)
 def _reset_otel_state(monkeypatch, tmp_path_factory):
-    """Reset plugin singletons and the ContextVar parent stack between tests.
-
-    Resetting the tracer singleton to ``None`` transitively resets all
-    per-session aggregators (they live on ``tracer.sessions``). The only
-    state that escapes the tracer is the ``_PARENT_STACK`` ContextVar —
-    pytest runs tests in the same context, so it would otherwise bleed
-    between tests.
-
-    Also redirects every config location — the durable one, the legacy
-    plugin-directory one, and the ``HERMES_OTEL_CONFIG`` override — to
-    nonexistent temp paths, so tests never pick up the developer's real
-    config (which can define backends and change the init() code path
-    unexpectedly).
-    """
+    """Reset plugin singletons between tests (``hermes_otel.testing.reset_state``)
+    and redirect every config location and the live store to temp paths, so a
+    test never picks up the developer's real config or writes into the tree."""
+    import hermes_otel.live_store as live_store_mod
     import hermes_otel.plugin_config as plugin_config_mod
-    import hermes_otel.tracer as tracer_mod
+    from hermes_otel.testing import reset_state
 
     isolated = tmp_path_factory.mktemp("isolated-config")
     monkeypatch.setattr(plugin_config_mod, "DEFAULT_CONFIG_PATH", isolated / "nonexistent.yaml")
@@ -39,93 +29,28 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
         plugin_config_mod, "DURABLE_CONFIG_PATH", isolated / "nonexistent-durable.yaml"
     )
     monkeypatch.delenv(plugin_config_mod.CONFIG_PATH_ENV, raising=False)
-
-    # Any real init() writes its live store into a per-test temp dir, never
-    # into hermes_otel/ in the source tree.
-    import hermes_otel.live_store as live_store_mod
-
     live_dir = tmp_path_factory.mktemp("live-store")
     monkeypatch.setattr(live_store_mod, "_default_db_path", lambda: str(live_dir / "live.db"))
     monkeypatch.delenv("HERMES_OTEL_LIVE_DB", raising=False)
 
-    def _reset():
-        current = tracer_mod._tracer
-        if current is not None:
-            # Never leak a host-metrics sampler thread across tests.
-            current.stop_host_metrics()
-            # Nor exporter worker threads: readers/processors keep retrying
-            # against dead endpoints until shut down.
-            for obj in (
-                list(getattr(current, "_metric_readers", []))
-                + list(getattr(current, "_span_processors", []))
-                + [getattr(current, "_logger_provider", None)]
-            ):
-                try:
-                    if obj is not None:
-                        obj.shutdown()
-                except Exception:
-                    pass
-            handler = getattr(current, "_live_log_handler", None)
-            if handler is not None:
-                import logging
-
-                logging.getLogger().removeHandler(handler)
-        tracer_mod._tracer = None
-        tracer_mod._PARENT_STACK.set(None)
-        store = live_store_mod._LIVE_STORE
-        if store is not None:
-            try:
-                store.close()
-            except Exception:
-                pass
-        live_store_mod._LIVE_STORE = None
-
-    _reset()
+    reset_state()
     yield
-    _reset()
+    reset_state()
 
 
 def _build_inmemory_plugin(n_exporters: int = 1):
-    """Wire a ``HermesOTelPlugin`` to N ``InMemorySpanExporter``s.
+    """``(exporters, plugin, provider)`` from :func:`hermes_otel.testing.build_inmemory_plugin`
+    (kept for the fixtures below)."""
+    from hermes_otel.testing import build_inmemory_plugin
 
-    Bypasses :meth:`HermesOTelPlugin.init` (which is a once-per-process
-    operation against OTel's global ``TracerProvider``) and instead
-    constructs a fresh ``TracerProvider`` with N ``SimpleSpanProcessor``s,
-    one per exporter. Each test thus gets its own isolated pipeline.
-
-    Returns ``(exporters, plugin, provider)``. The caller registers the
-    plugin as the module singleton (so hook callbacks find it) and is
-    responsible for ``provider.shutdown()`` on teardown.
-    """
-    from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
-    from opentelemetry.sdk.trace.export import SimpleSpanProcessor
-    from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
-
-    from hermes_otel.tracer import HermesOTelPlugin
-
-    exporters = [InMemorySpanExporter() for _ in range(n_exporters)]
-    resource = Resource.create({"service.name": "hermes-otel-test"})
-    provider = TracerProvider(resource=resource)
-    processors = []
-    for exp in exporters:
-        proc = SimpleSpanProcessor(exp)
-        provider.add_span_processor(proc)
-        processors.append(proc)
-
-    plugin = HermesOTelPlugin()
-    plugin.tracer = provider.get_tracer("hermes-otel-test")
-    plugin._initialized = True
-    plugin._span_processors = processors
-    plugin._span_processor = processors[0]
-    return exporters, plugin, provider
+    pipeline = build_inmemory_plugin(exporters=n_exporters)
+    return pipeline.span_exporters, pipeline.plugin, pipeline.tracer_provider
 
 
 def _install_as_singleton(plugin) -> None:
-    """Make hooks' ``get_tracer()`` return ``plugin``."""
-    import hermes_otel.tracer as tracer_mod
+    from hermes_otel.testing import install_singleton
 
-    tracer_mod._tracer = plugin
+    install_singleton(plugin)
 
 
 @pytest.fixture()
@@ -184,7 +109,7 @@ def inmemory_otel_with_metrics():
     )
     plugin._meter = meter_provider.get_meter("hermes-otel-test")
     plugin._meter_provider = meter_provider
-    plugin._metric_reader = metric_reader
+    plugin._metric_readers = [metric_reader]
     plugin._create_metric_instruments()
 
     _install_as_singleton(plugin)
@@ -194,11 +119,3 @@ def inmemory_otel_with_metrics():
         exporters[0].clear()
         trace_provider.shutdown()
         meter_provider.shutdown()
-
-
-# Re-export helpers so test modules can build their own variations
-# without duplicating the OTel-SDK wiring boilerplate.
-__all__: List[str] = [
-    "_build_inmemory_plugin",
-    "_install_as_singleton",
-]

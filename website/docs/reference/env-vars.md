@@ -10,86 +10,113 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 
 ## Backend selection
 
-| Var | Value | Effect |
+Generated from `hermes_otel/backend_specs.py` by `scripts/gen_config_docs.py`; a test fails if it drifts. The `OTEL_*` spelling of a vendor's key is the env-var-mode opt-in ([why](/configuration/environment-variables)); the vendor's own variable is a fallback value.
+
+[//]: # (generated:backend-env-vars:start)
+
+| Var | Backend | Effect |
 |---|---|---|
-| `LANGSMITH_TRACING` | `true`/`false` | Enables LangSmith backend |
-| `LANGSMITH_API_KEY` | `lsv2_...` | LangSmith auth |
-| `LANGSMITH_ENDPOINT` | URL | LangSmith endpoint (default: `https://api.smith.langchain.com`) |
-| `LANGSMITH_PROJECT` | string | LangSmith project name |
-| `LANGSMITH_WORKSPACE_ID` | string | LangSmith workspace id header (multi-workspace orgs) |
-| `OTEL_LANGFUSE_PUBLIC_API_KEY` | `pk-lf-...` | Langfuse public key (plugin-specific) |
-| `OTEL_LANGFUSE_SECRET_API_KEY` | `sk-lf-...` | Langfuse secret key (plugin-specific) |
-| `OTEL_LANGFUSE_ENDPOINT` | URL | Langfuse OTLP endpoint |
-| `LANGFUSE_PUBLIC_KEY` | `pk-lf-...` | Langfuse public key (SDK-standard fallback; does not enable Langfuse in env-var mode on its own) |
-| `LANGFUSE_SECRET_KEY` | `sk-lf-...` | Langfuse secret key (SDK-standard) |
-| `LANGFUSE_BASE_URL` | URL | Langfuse base URL (SDK-standard) |
-| `OTEL_SIGNOZ_ENDPOINT` | URL | SigNoz OTLP endpoint (self-host: `http://localhost:4328/v1/traces`) |
-| `OTEL_SIGNOZ_INGESTION_KEY` | `sz-...` | SigNoz Cloud ingestion key |
-| `OTEL_JAEGER_ENDPOINT` | URL | Jaeger OTLP endpoint (`http://localhost:4318/v1/traces`) |
-| `OTEL_CLICKSTACK_ENDPOINT` | URL | ClickStack Collector OTLP/HTTP base (`http://localhost:4408` for the bundled stack); with a key, enables ClickStack in env-var mode |
-| `OTEL_CLICKSTACK_API_KEY` | string | ClickStack ingestion API key (bare `authorization` header); required |
-| `HYPERDX_API_KEY` | string | ClickStack / HyperDX key fallback (the vendor SDK's variable); does not enable export on its own |
-| `OTEL_AGENTA_API_KEY` | string | Agenta project API key (`Authorization: ApiKey`); alone selects Agenta Cloud (US) in env-var mode |
-| `OTEL_AGENTA_ENDPOINT` | URL | Agenta origin for a self-hosted stack (`http://localhost:3060` for the bundled one); also an opt-in |
-| `AGENTA_API_KEY` / `AGENTA_HOST` | string / URL | The Agenta SDK's own variables; credential and host fallbacks that never enable export on their own |
-| `OTEL_GIGAPIPE_ENDPOINT` | URL | Gigapipe (qryn) origin (`http://localhost:3110` for the bundled stack); enables Gigapipe in env-var mode |
-| `OTEL_GIGAPIPE_USER` / `OTEL_GIGAPIPE_PASSWORD` | string | Basic auth for a Gigapipe started with `GIGAPIPE_LOGIN` / `GIGAPIPE_PASSWORD`; both needed, omitted otherwise |
-| `OTEL_ASPIRE_ENDPOINT` | URL | Aspire Dashboard OTLP/HTTP base (`http://localhost:4418` for the bundled stack); enables Aspire in env-var mode |
-| `OTEL_ASPIRE_API_KEY` | string | Aspire OTLP API key (`x-otlp-api-key`); only with `DASHBOARD__OTLP__AUTHMODE=ApiKey`; never enables export on its own |
-| `OTEL_VICTORIA_ENDPOINT` | URL | VictoriaTraces origin (`http://localhost:10428`; OTLP at `/insert/opentelemetry/v1/traces`); enables the Victoria type in env-var mode |
-| `OTEL_VICTORIA_METRICS_ENDPOINT` | URL | VictoriaMetrics origin (`http://localhost:8428`; OTLP at `/opentelemetry/v1/metrics`); metrics are off without it |
-| `OTEL_VICTORIA_LOGS_ENDPOINT` | URL | VictoriaLogs origin (`http://localhost:9428`; OTLP at `/insert/opentelemetry/v1/logs`); logs are off without it |
-| `OTEL_VICTORIA_USER` / `OTEL_VICTORIA_PASSWORD` | string | Basic auth for stores started with `-httpAuth.*`; both needed, omitted otherwise |
-| `OTEL_GREPTIME_ENDPOINT` | URL | GreptimeDB HTTP origin (`http://localhost:4398` for the bundled stack; OTLP under `/v1/otlp`); enables GreptimeDB in env-var mode |
-| `OTEL_GREPTIME_DB` | string | GreptimeDB database for all three signals (`X-Greptime-DB-Name`; default `public`) |
-| `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD` | string | Basic auth for a GreptimeDB with a user provider; both needed, omitted otherwise; never enable export on their own |
-| `OTEL_ZIPKIN_ENDPOINT` | URL | Zipkin origin or OTLP endpoint (`http://localhost:9411`; the `zipkin-otel` image, traces only); enables Zipkin in env-var mode |
-| `OTEL_TEMPO_ENDPOINT` | URL | Tempo OTLP endpoint |
-| `OTEL_PHOENIX_ENDPOINT` | URL | Phoenix OTLP endpoint (`http://localhost:6006/v1/traces`) |
-| `OTEL_UPTRACE_ENDPOINT` | URL | Uptrace OTLP endpoint; enables Uptrace in env-var mode |
-| `OTEL_UPTRACE_DSN` / `UPTRACE_DSN` | DSN | Uptrace DSN (`uptrace-dsn` header) |
-| `OTEL_OPENOBSERVE_ENDPOINT` | URL | OpenObserve `.../api/<org>/v1/traces`; enables OpenObserve in env-var mode |
-| `OTEL_OPENOBSERVE_USER` / `OPENOBSERVE_USER` | string | OpenObserve Basic-auth user |
-| `OTEL_OPENOBSERVE_PASSWORD` / `OPENOBSERVE_PASSWORD` | string | OpenObserve Basic-auth password |
-| `OTEL_OPENOBSERVE_STREAM` | string | Optional OpenObserve stream name |
-| `OTEL_PARSEABLE_ENDPOINT` | URL | Parseable ingestor `.../v1/traces`; enables Parseable in env-var mode |
-| `OTEL_PARSEABLE_API_KEY` / `PARSEABLE_API_KEY` | string | Parseable API key |
-| `PARSEABLE_TRACES_DATASET` / `PARSEABLE_METRICS_DATASET` / `PARSEABLE_LOGS_DATASET` | string | Parseable dataset per signal (defaults `hermes-traces` / `hermes-metrics` / `hermes-logs`) |
-| `OTEL_ELASTIC_ENDPOINT` | URL | Elastic OTLP endpoint (Elastic Cloud mOTLP or EDOT Collector); enables Elastic in env-var mode |
-| `OTEL_ELASTIC_API_KEY` | string | Elastic API key (`Authorization: ApiKey`); needs `OTEL_ELASTIC_ENDPOINT` to enable Elastic in env-var mode (there is no default host) |
-| `ELASTIC_API_KEY` | string | Elastic API key fallback; does not enable Elastic in env-var mode on its own |
-| `OTEL_OPENLIT_ENDPOINT` | URL | OpenLIT OTLP/HTTP receiver base (`http://localhost:4338` for the bundled stack); enables OpenLIT in env-var mode |
-| `OTEL_OPENLIT_API_KEY` | string | OpenLIT API key (`Authorization: Bearer`); optional, needs `OTEL_OPENLIT_ENDPOINT` to enable OpenLIT in env-var mode |
-| `OPENLIT_API_KEY` | string | OpenLIT API key fallback; does not enable OpenLIT in env-var mode on its own |
-| `OTEL_MLFLOW_ENDPOINT` | URL | MLflow tracking server (`http://localhost:5001` for the bundled stack); enables MLflow in env-var mode |
-| `OTEL_MLFLOW_EXPERIMENT_ID` / `MLFLOW_EXPERIMENT_ID` | string | Experiment for the mandatory `x-mlflow-experiment-id` header (default `0`, the Default experiment) |
-| `OTEL_MLFLOW_API_KEY` / `MLFLOW_TRACKING_TOKEN` | string | Tracking token (`Authorization: Bearer`); optional, does not enable MLflow on its own |
-| `OTEL_OPIK_ENDPOINT` | URL | Opik base URL (`http://localhost:5173` for the bundled stack; default Comet cloud); enables Opik in env-var mode |
-| `OTEL_OPIK_API_KEY` | string | Opik API key (bare `Authorization` header); enables Opik in env-var mode (cloud default host) |
-| `OPIK_API_KEY` / `OPIK_URL_OVERRIDE` / `OPIK_WORKSPACE` / `OPIK_PROJECT_NAME` | string | Opik SDK variables used as fallbacks for the key, base URL, `Comet-Workspace` and `projectName`; never enable export on their own |
-| `OTEL_LAMINAR_API_KEY` | string | Laminar project API key (`Authorization: Bearer`); enables Laminar in env-var mode (cloud default host) |
-| `OTEL_LAMINAR_ENDPOINT` | URL | Laminar app-server base (`http://localhost:8100` for the bundled stack); needs a key to resolve |
-| `LMNR_PROJECT_API_KEY` / `LMNR_BASE_URL` | string | Laminar SDK variables used as fallbacks for the key and base URL; never enable export on their own |
-| `OTEL_LANGWATCH_API_KEY` | string | LangWatch project API key (`sk-lw-…`, `Authorization: Bearer`); enables LangWatch in env-var mode (cloud default host) |
-| `OTEL_LANGWATCH_ENDPOINT` | URL | LangWatch base (`http://localhost:5560` for the bundled stack); needs a key to resolve |
-| `LANGWATCH_API_KEY` / `LANGWATCH_ENDPOINT` / `LANGWATCH_PROJECT_ID` | string | LangWatch SDK variables used as fallbacks for the key, base URL and `X-Project-Id`; never enable export on their own |
-| `OTEL_LATITUDE_API_KEY` | string | Latitude API key (`Authorization: Bearer`); enables Latitude in env-var mode together with `LATITUDE_PROJECT` (cloud default host) |
-| `OTEL_LATITUDE_ENDPOINT` | URL | Latitude ingest base (`http://localhost:3002` for the bundled stack); needs a key and project to resolve |
-| `LATITUDE_API_KEY` / `LATITUDE_PROJECT` / `LATITUDE_INGEST_URL` | string | Latitude variables used for the key, the mandatory `X-Latitude-Project` slug and the ingest URL; never enable export on their own |
-| `OTEL_HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb ingest key (`x-honeycomb-team`); enables Honeycomb in env-var mode |
-| `HONEYCOMB_API_KEY` | `hcaik_...` | Honeycomb key fallback; does not enable Honeycomb in env-var mode on its own |
-| `OTEL_HONEYCOMB_ENDPOINT` | URL | Honeycomb endpoint override (default: US region) |
-| `OTEL_WEAVE_API_KEY` | string | W&B API key (plugin-specific); enables Weave in env-var mode when routing vars are also set |
-| `WANDB_API_KEY` | string | W&B API key fallback; does not enable Weave in env-var mode on its own |
-| `WANDB_ENTITY` | string | W&B entity/team for Weave routing (`wandb.entity`) |
-| `WANDB_PROJECT` | string | W&B project for Weave routing (`wandb.project`) |
-| `DEFAULT_WANDB_ENTITY` | string | Weave entity fallback, useful with an OTel Collector |
-| `DEFAULT_WANDB_PROJECT` | string | Weave project fallback, useful with an OTel Collector |
-| `OTEL_WEAVE_ENDPOINT` | URL | Full Weave OTLP traces endpoint override |
-| `WANDB_OTLP_ENDPOINT` | URL | Weave OTLP endpoint alias used by W&B docs |
-| `OTEL_WEAVE_BASE_URL` | URL | W&B base URL; plugin appends the trace ingest path |
-| `WANDB_BASE_URL` | URL | W&B base URL alias for Dedicated Cloud / Self-Managed |
-| `OTEL_PROJECT_NAME` | string | `openinference.project.name` on the Resource (the Phoenix project). `service.name` is always `hermes-agent`; override it with `resource_attributes:` |
+| `OTEL_PHOENIX_ENDPOINT` | Phoenix | Single-backend mode: Phoenix OTLP traces URL |
+| `OTEL_LANGFUSE_ENDPOINT` | Langfuse | Single-backend mode: Langfuse OTLP traces URL |
+| `LANGFUSE_BASE_URL` | Langfuse | Langfuse base URL (alternative to the endpoint) |
+| `LANGFUSE_PUBLIC_KEY` | Langfuse | Langfuse public key fallback |
+| `LANGFUSE_SECRET_KEY` | Langfuse | Langfuse secret key fallback |
+| `OTEL_LANGFUSE_PUBLIC_API_KEY` | Langfuse | Langfuse public key (preferred name) |
+| `OTEL_LANGFUSE_SECRET_API_KEY` | Langfuse | Langfuse secret key (preferred name) |
+| `OTEL_SIGNOZ_ENDPOINT` | SigNoz | Single-backend mode: SigNoz OTLP URL |
+| `OTEL_SIGNOZ_INGESTION_KEY` | SigNoz | SigNoz Cloud ingestion key |
+| `OTEL_JAEGER_ENDPOINT` | Jaeger | Single-backend mode: Jaeger OTLP URL |
+| `OTEL_ZIPKIN_ENDPOINT` | Zipkin | Single-backend mode: Zipkin OTLP URL (zipkin-otel image) |
+| `OTEL_GREPTIME_ENDPOINT` | GreptimeDB | Single-backend mode: GreptimeDB HTTP origin (OTLP under /v1/otlp) |
+| `OTEL_GREPTIME_DB` | GreptimeDB | GreptimeDB database for all three signals (X-Greptime-DB-Name; default public) |
+| `OTEL_GREPTIME_USER` | GreptimeDB | GreptimeDB user for Basic auth (only with a user provider) |
+| `OTEL_GREPTIME_PASSWORD` | GreptimeDB | GreptimeDB password for Basic auth |
+| `OTEL_CLICKSTACK_ENDPOINT` | ClickStack | Single-backend mode: ClickStack Collector OTLP/HTTP base |
+| `OTEL_CLICKSTACK_API_KEY` | ClickStack | ClickStack ingestion API key (bare authorization header; preferred name) |
+| `HYPERDX_API_KEY` | ClickStack | ClickStack / HyperDX ingestion API key fallback (the vendor SDK variable) |
+| `OTEL_VICTORIA_ENDPOINT` | Victoria | Single-backend mode: VictoriaTraces origin (OTLP at /insert/opentelemetry/v1/traces) |
+| `OTEL_VICTORIA_METRICS_ENDPOINT` | Victoria | VictoriaMetrics origin (OTLP at /opentelemetry/v1/metrics); metrics off without it |
+| `OTEL_VICTORIA_LOGS_ENDPOINT` | Victoria | VictoriaLogs origin (OTLP at /insert/opentelemetry/v1/logs); logs off without it |
+| `OTEL_VICTORIA_USER` | Victoria | Basic auth user for the Victoria stores (only with -httpAuth.*) |
+| `OTEL_VICTORIA_PASSWORD` | Victoria | Basic auth password for the Victoria stores |
+| `OTEL_ASPIRE_ENDPOINT` | Aspire Dashboard | Single-backend mode: Aspire Dashboard OTLP/HTTP base |
+| `OTEL_ASPIRE_API_KEY` | Aspire Dashboard | Aspire Dashboard OTLP API key (x-otlp-api-key); only in ApiKey auth mode |
+| `OTEL_GIGAPIPE_ENDPOINT` | Gigapipe | Single-backend mode: Gigapipe (qryn) OTLP/HTTP base |
+| `OTEL_GIGAPIPE_USER` | Gigapipe | Basic auth user for Gigapipe (only with GIGAPIPE_LOGIN/PASSWORD) |
+| `OTEL_GIGAPIPE_PASSWORD` | Gigapipe | Basic auth password for Gigapipe |
+| `OTEL_AGENTA_ENDPOINT` | Agenta | Agenta origin for a self-hosted stack (cloud by default) |
+| `OTEL_AGENTA_API_KEY` | Agenta | Agenta project API key (Authorization: ApiKey; preferred name) |
+| `AGENTA_API_KEY` | Agenta | Agenta project API key fallback (the SDK variable) |
+| `AGENTA_HOST` | Agenta | Agenta origin fallback (the SDK variable) |
+| `OTEL_TEMPO_ENDPOINT` | Tempo | Single-backend mode: Tempo / LGTM OTLP URL |
+| `OTEL_UPTRACE_ENDPOINT` | Uptrace | Single-backend mode: Uptrace OTLP URL |
+| `OTEL_UPTRACE_DSN` | Uptrace | Uptrace DSN (preferred name) |
+| `UPTRACE_DSN` | Uptrace | Uptrace DSN fallback |
+| `UPTRACE_USER_TOKEN` | Uptrace | Uptrace user token fallback for the dashboard's query API |
+| `OTEL_OPENOBSERVE_ENDPOINT` | OpenObserve | Single-backend mode: OpenObserve OTLP URL |
+| `OTEL_OPENOBSERVE_STREAM` | OpenObserve | OpenObserve stream name (default `default`) |
+| `OTEL_OPENOBSERVE_USER` | OpenObserve | OpenObserve user (preferred name) |
+| `OTEL_OPENOBSERVE_PASSWORD` | OpenObserve | OpenObserve password (preferred name) |
+| `OPENOBSERVE_USER` | OpenObserve | OpenObserve user fallback |
+| `OPENOBSERVE_PASSWORD` | OpenObserve | OpenObserve password fallback |
+| `OTEL_PARSEABLE_ENDPOINT` | Parseable | Single-backend mode: Parseable OTLP URL |
+| `OTEL_PARSEABLE_API_KEY` | Parseable | Parseable API key (preferred name) |
+| `PARSEABLE_API_KEY` | Parseable | Parseable API key fallback |
+| `PARSEABLE_TRACES_DATASET` | Parseable | Parseable dataset for traces (default `hermes-traces`) |
+| `PARSEABLE_METRICS_DATASET` | Parseable | Parseable dataset for metrics (default `hermes-metrics`) |
+| `PARSEABLE_LOGS_DATASET` | Parseable | Parseable dataset for logs (default `hermes-logs`) |
+| `OTEL_HONEYCOMB_ENDPOINT` | Honeycomb | Single-backend mode: Honeycomb OTLP URL |
+| `OTEL_HONEYCOMB_API_KEY` | Honeycomb | Honeycomb API key (preferred name) |
+| `HONEYCOMB_API_KEY` | Honeycomb | Honeycomb API key fallback |
+| `OTEL_ELASTIC_ENDPOINT` | Elastic | Single-backend mode: Elastic OTLP URL (mOTLP or EDOT Collector) |
+| `OTEL_ELASTIC_API_KEY` | Elastic | Elastic API key (preferred name; needs the endpoint too) |
+| `ELASTIC_API_KEY` | Elastic | Elastic API key fallback |
+| `OTEL_OPENLIT_ENDPOINT` | OpenLIT | Single-backend mode: OpenLIT OTLP/HTTP URL |
+| `OTEL_OPENLIT_API_KEY` | OpenLIT | OpenLIT API key (preferred name; needs the endpoint too) |
+| `OPENLIT_API_KEY` | OpenLIT | OpenLIT API key fallback |
+| `OTEL_MLFLOW_ENDPOINT` | MLflow | Single-backend mode: MLflow tracking server URL |
+| `OTEL_MLFLOW_EXPERIMENT_ID` | MLflow | MLflow experiment id for the x-mlflow-experiment-id header (preferred name) |
+| `MLFLOW_EXPERIMENT_ID` | MLflow | MLflow experiment id fallback |
+| `OTEL_MLFLOW_API_KEY` | MLflow | MLflow tracking token (preferred name; needs the endpoint too) |
+| `MLFLOW_TRACKING_TOKEN` | MLflow | MLflow tracking token fallback |
+| `OTEL_OPIK_ENDPOINT` | Comet Opik | Single-backend mode: Opik base URL (default: Comet cloud) |
+| `OTEL_OPIK_API_KEY` | Comet Opik | Opik API key (preferred name; enables Opik in env-var mode) |
+| `OPIK_API_KEY` | Comet Opik | Opik API key fallback |
+| `OPIK_URL_OVERRIDE` | Comet Opik | Opik SDK base URL fallback (…/api form accepted) |
+| `OPIK_WORKSPACE` | Comet Opik | Opik workspace for the Comet-Workspace header (cloud) |
+| `OPIK_PROJECT_NAME` | Comet Opik | Opik project for the projectName header |
+| `OTEL_LAMINAR_ENDPOINT` | Laminar | Single-backend mode: Laminar app-server URL (default: Laminar cloud) |
+| `OTEL_LAMINAR_API_KEY` | Laminar | Laminar project API key (preferred name; enables Laminar in env-var mode) |
+| `LMNR_PROJECT_API_KEY` | Laminar | Laminar project API key fallback |
+| `LMNR_BASE_URL` | Laminar | Laminar SDK base URL fallback |
+| `OTEL_LANGWATCH_ENDPOINT` | LangWatch | Single-backend mode: LangWatch base URL (default: LangWatch cloud) |
+| `OTEL_LANGWATCH_API_KEY` | LangWatch | LangWatch project API key (preferred name; enables LangWatch in env-var mode) |
+| `LANGWATCH_API_KEY` | LangWatch | LangWatch API key fallback |
+| `LANGWATCH_ENDPOINT` | LangWatch | LangWatch SDK base URL fallback |
+| `LANGWATCH_PROJECT_ID` | LangWatch | LangWatch project id for the X-Project-Id header (service keys) |
+| `OTEL_LATITUDE_ENDPOINT` | Latitude | Single-backend mode: Latitude ingest URL (default: Latitude cloud) |
+| `OTEL_LATITUDE_API_KEY` | Latitude | Latitude API key (preferred name; enables Latitude in env-var mode) |
+| `LATITUDE_API_KEY` | Latitude | Latitude API key fallback |
+| `LATITUDE_PROJECT` | Latitude | Latitude project slug for the mandatory X-Latitude-Project header |
+| `LATITUDE_INGEST_URL` | Latitude | Latitude ingest URL fallback |
+| `OTEL_WEAVE_ENDPOINT` | W&B Weave | Single-backend mode: W&B Weave OTLP URL |
+| `WANDB_OTLP_ENDPOINT` | W&B Weave | Weave OTLP URL fallback |
+| `OTEL_WEAVE_BASE_URL` | W&B Weave | Weave base URL |
+| `WANDB_BASE_URL` | W&B Weave | Weave base URL fallback |
+| `OTEL_WEAVE_API_KEY` | W&B Weave | Weave API key (preferred name) |
+| `WANDB_API_KEY` | W&B Weave | Weave API key fallback |
+| `WANDB_ENTITY` | W&B Weave | Weave entity |
+| `WANDB_PROJECT` | W&B Weave | Weave project |
+| `DEFAULT_WANDB_ENTITY` | W&B Weave | Weave entity fallback |
+| `DEFAULT_WANDB_PROJECT` | W&B Weave | Weave project fallback |
+| `OTEL_LANGSMITH_API_KEY` | LangSmith | LangSmith API key (preferred name; the env opt-in) |
+| `OTEL_LANGSMITH_ENDPOINT` | LangSmith | LangSmith endpoint override (default `https://api.smith.langchain.com/otel/v1/traces`; `region: eu` picks the EU host) |
+| `OTEL_LANGSMITH_PROJECT` | LangSmith | LangSmith project (the `Langsmith-Project` header) |
+| `LANGSMITH_API_KEY` | LangSmith | LangSmith API key fallback |
+| `LANGSMITH_ENDPOINT` | LangSmith | LangSmith API base fallback (`/otel/v1/traces` is appended) |
+| `LANGSMITH_PROJECT` | LangSmith | LangSmith project fallback |
+
+[//]: # (generated:backend-env-vars:end)
 
 ## `HERMES_OTEL_*` overrides
 
@@ -102,6 +129,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_ENABLED` | `enabled` | bool | `true` |
 | `HERMES_OTEL_SAMPLE_RATE` | `sample_rate` | float | `null` |
 | `HERMES_OTEL_ROOT_SPAN_TTL_MS` | `root_span_ttl_ms` | int | `600000` |
+| `HERMES_OTEL_SUBAGENT_SPAN_TTL_MS` | `subagent_span_ttl_ms` | int | `86400000` |
 | `HERMES_OTEL_FLUSH_INTERVAL_MS` | `flush_interval_ms` | int | `60000` |
 | `HERMES_OTEL_PREVIEW_MAX_CHARS` | `preview_max_chars` | int | `1200` |
 | `HERMES_OTEL_CAPTURE_PREVIEWS` | `capture_previews` | bool | `true` |
@@ -157,6 +185,12 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_CONFIG` | Explicit path to the config file; highest precedence — see [Where does the config live?](/configuration/overview) |
 | `HERMES_HOME` | Hermes' home (default `~/.hermes`); the plugin resolves `hermes_otel.yaml`, the live store and the debug log under it. Inside a multiplexed gateway each profile's plugin uses that profile's home instead, via Hermes's own resolver ([profiles](/configuration/profiles)) |
 | `HERMES_OTEL_LIVE_DB` | Path of the live dashboard's SQLite store (default `$HERMES_HOME/hermes_otel_live.db`) |
+
+## OpenTelemetry SDK
+
+| Var | Effect |
+|---|---|
+| `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Metric temporality (`cumulative` / `delta`) for a backend when neither its entry, its type preset nor the top-level `metrics_temporality` sets one; read by the OTLP exporter itself and shown on the Settings tab |
 
 ## Debug
 

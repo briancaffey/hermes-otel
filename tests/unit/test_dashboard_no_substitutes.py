@@ -2,35 +2,14 @@
 
 from __future__ import annotations
 
-import sys
-import types
-from pathlib import Path
 from typing import Any, Dict
 from unittest.mock import patch
 
 import pytest
+from fastapi import HTTPException
 
-_HERE = Path(__file__).resolve().parent.parent.parent
-_DASHBOARD = _HERE / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-try:  # the real FastAPI when the dev extra has it; a stub otherwise
-    import fastapi  # noqa: F401
-except ImportError:
-    _stub = types.ModuleType("fastapi")
-
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    _stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _stub
-
-from backends.langfuse import LangfuseAdapter  # noqa: E402
-from backends.phoenix import PhoenixAdapter  # noqa: E402
-from fastapi import HTTPException  # noqa: E402
+from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter
+from hermes_otel.dashboard.backends.phoenix import PhoenixAdapter
 
 _PROJECTS = {
     "projects": {
@@ -46,7 +25,7 @@ def _phoenix(project_name=None):
     cfg: Dict[str, Any] = {"type": "phoenix", "endpoint": "http://localhost:6006"}
     if project_name:
         cfg["project_name"] = project_name
-    with patch("backends.top_level_config", return_value={}):
+    with patch("hermes_otel.dashboard.backends.top_level_config", return_value={}):
         return PhoenixAdapter(cfg)
 
 
@@ -57,7 +36,7 @@ def _fake_post(url, body, headers=None, timeout=None):
 class TestPhoenixProject:
     def test_configured_but_missing_project_is_an_error_not_a_substitute(self):
         adapter = _phoenix("pr-typo")
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             with pytest.raises(HTTPException) as exc:
                 adapter._resolve_project_id()
         assert exc.value.status_code == 404
@@ -67,7 +46,7 @@ class TestPhoenixProject:
 
     def test_configured_project_resolves_by_name(self):
         adapter = _phoenix("hermes-agent")
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             assert adapter._resolve_project_id() == "P2"
         st = adapter.status()
         assert st["project_name"] == "hermes-agent"
@@ -76,7 +55,7 @@ class TestPhoenixProject:
 
     def test_no_project_configured_falls_back_and_says_so(self):
         adapter = _phoenix()
-        with patch("backends.phoenix.http_post_json", side_effect=_fake_post):
+        with patch("hermes_otel.dashboard.backends.phoenix.http_post_json", side_effect=_fake_post):
             assert adapter._resolve_project_id() == "P2"  # first with traces
         st = adapter.status()
         assert st["project_name"] is None
@@ -117,7 +96,7 @@ class TestLangfuseSyntheticRoot:
             "sessionId": "s-1",
             "observations": [_obs("obs1", "api.m"), _obs("obs2", "tool.terminal")],
         }
-        with patch("backends.langfuse.http_get_json", return_value=trace):
+        with patch("hermes_otel.dashboard.backends.langfuse.http_get_json", return_value=trace):
             out = _langfuse().get_trace(trace["id"])
         spans = out["batches"][0]["scopeSpans"][0]["spans"]
         root = spans[0]
@@ -145,7 +124,7 @@ class TestLangfuseSyntheticRoot:
             "input": {"q": "hi"},
             "observations": [_obs("root1", "agent"), _obs("obs1", "api.m", parent="root1")],
         }
-        with patch("backends.langfuse.http_get_json", return_value=trace):
+        with patch("hermes_otel.dashboard.backends.langfuse.http_get_json", return_value=trace):
             out = _langfuse().get_trace(trace["id"])
         spans = out["batches"][0]["scopeSpans"][0]["spans"]
         assert [s["name"] for s in spans] == ["agent", "api.m"]
@@ -163,12 +142,12 @@ class TestLangfuseSyntheticRoot:
             "timestamp": "2026-09-20T10:00:00.000Z",
             "observations": ["obs-id-only", _obs("root1", "agent")],
         }
-        with patch("backends.langfuse.http_get_json", return_value=trace):
+        with patch("hermes_otel.dashboard.backends.langfuse.http_get_json", return_value=trace):
             out = _langfuse().get_trace(trace["id"])
         assert out["span_count"] == 1
 
     def test_unknown_trace_is_not_found(self):
-        with patch("backends.langfuse.http_get_json", return_value={}):
+        with patch("hermes_otel.dashboard.backends.langfuse.http_get_json", return_value={}):
             with pytest.raises(HTTPException) as exc:
                 _langfuse().get_trace("nope")
         assert exc.value.status_code == 404 and exc.value.kind == "not_found"
