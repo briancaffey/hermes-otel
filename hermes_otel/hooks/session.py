@@ -10,19 +10,19 @@ from ..debug_utils import debug_log, logger
 from ..helpers import detect_session_kind, truncate_string
 from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
-    _correlation_attributes,
     _extract_correlation_id,
     _gen_ai_attributes,
     _model_attributes,
     _per_session_sender_attributes,
     _platform_attributes,
-    _profile_attributes,
     _response_model_attributes,
     _session_identity_attributes,
     _summary_attributes,
     _weave_turn_attributes,
+    correlation_attributes,
+    profile_attributes,
 )
-from .usage import _genai_metric_dims, _record_genai_token_usage, _usage_attributes
+from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
 
 try:
     from opentelemetry.trace import Link
@@ -60,14 +60,14 @@ def _start_session_span(
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
     attributes.update(_platform_attributes(platform))
-    attributes.update(_profile_attributes(tracer))
+    attributes.update(profile_attributes(tracer))
     # Hermes passes no provider on on_session_start; a host that does is honoured.
     # Otherwise the provider lands on the root at on_session_end, once the
     # turn's API calls have reported it (#153).
     attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
-    attributes.update(_correlation_attributes(tracer, session_id, extra_kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
@@ -166,14 +166,14 @@ def on_session_end(
     if exit_reason:
         attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
     attributes.update(_platform_attributes(platform))
-    attributes.update(_profile_attributes(tracer))
+    attributes.update(profile_attributes(tracer))
     # Provider: what this turn's API calls reported, else what the host passed.
     provider = (ps.provider if ps is not None else "") or kwargs.get("provider")
     attributes.update(_model_attributes(model, provider))
     attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, kwargs))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     if ps is not None and ps.io_captured:
         if ps.io.get("input"):
@@ -182,7 +182,7 @@ def on_session_end(
             attributes["output.value"] = ps.io["output"]
 
     if ps is not None and ps.usage_updated:
-        attributes.update(_usage_attributes(ps.usage))
+        attributes.update(usage_attributes(ps.usage))
         # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
         # Prefer the provider captured from this session's API calls over the
         # platform, so the dimension matches the gen_ai.client.* metrics.
@@ -191,7 +191,7 @@ def on_session_end(
             tracer,
             "gen_ai.agent.token.usage",
             ps.usage,
-            _genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
+            genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
         )
 
     if ps is not None:

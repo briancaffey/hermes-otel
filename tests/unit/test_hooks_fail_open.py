@@ -10,14 +10,14 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hermes_otel import hooks
 from hermes_otel.hooks import (
-    _as_dict,
+    _common,
     on_api_request_error,
     on_post_api_request,
     on_post_tool_call,
     on_pre_tool_call,
 )
+from hermes_otel.hooks._common import as_dict
 
 
 @pytest.fixture
@@ -141,7 +141,7 @@ class TestFailOpenDecorator:
     def test_unexpected_exception_is_swallowed_and_warned_once(self, tracer, monkeypatch, caplog):
         import logging
 
-        hooks._FAIL_OPEN_WARNED.clear()
+        _common._FAIL_OPEN_WARNED.clear()
         boom = MagicMock(side_effect=ValueError("kaboom"))
         monkeypatch.setattr("hermes_otel.hooks.tools._resolve_tool_outcome", boom)
         with caplog.at_level(logging.WARNING, logger="hermes_otel"):
@@ -156,9 +156,9 @@ class TestFailOpenDecorator:
 
 class TestAsDict:
     def test_shapes(self):
-        assert _as_dict({"a": 1}) == {"a": 1}
-        assert _as_dict(None) == {}
-        assert _as_dict("") == {}
-        assert _as_dict("msg") == {"message": "msg"}
-        assert _as_dict(SimpleNamespace(a=1)) == {"a": 1}
-        assert _as_dict(42) == {}
+        assert as_dict({"a": 1}) == {"a": 1}
+        assert as_dict(None) == {}
+        assert as_dict("") == {}
+        assert as_dict("msg") == {"message": "msg"}
+        assert as_dict(SimpleNamespace(a=1)) == {"a": 1}
+        assert as_dict(42) == {}

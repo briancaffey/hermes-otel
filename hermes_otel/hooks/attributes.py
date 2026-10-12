@@ -73,7 +73,7 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
     return attrs
 
 
-def _profile_attributes(tracer: Any) -> Dict[str, str]:
+def profile_attributes(tracer: Any) -> Dict[str, str]:
     """``hermes.profile``: the Hermes profile this plugin instance serves (#70)."""
     name = getattr(tracer, "profile_name", None)
     return {"hermes.profile": truncate_string(str(name), _PROVIDER_MAX)} if name else {}
@@ -157,9 +157,7 @@ def _extract_correlation_id(extra_kwargs: dict) -> str:
     return ""
 
 
-def _correlation_attributes(
-    tracer, session_id: Optional[str], extra_kwargs: dict
-) -> Dict[str, str]:
+def correlation_attributes(tracer, session_id: Optional[str], extra_kwargs: dict) -> Dict[str, str]:
     """``correlation.id`` for a hook callback, only when a host supplied one.
 
     Preference order:
@@ -238,7 +236,7 @@ def _session_context_attributes(tracer, session_id: Optional[str], kwargs: dict)
     if not session_id:
         return {}
     attrs: Dict[str, Any] = {}
-    attrs.update(_correlation_attributes(tracer, session_id, kwargs))
+    attrs.update(correlation_attributes(tracer, session_id, kwargs))
     attrs.update(_session_sender_attributes(tracer, session_id))
     attrs.update(_turn_attributes(tracer, session_id))
     return attrs
@@ -385,3 +383,8 @@ def _gen_ai_request_param_attributes(kwargs: dict) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
     return attrs
+
+
+# Private spellings kept for one release (#411): import the public names.
+_profile_attributes = profile_attributes
+_correlation_attributes = correlation_attributes

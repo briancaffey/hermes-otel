@@ -299,7 +299,7 @@ _LEVELS = {
 }
 
 
-def _level_no(level: Any) -> int:
+def level_no(level: Any) -> int:
     return _LEVELS.get(str(level or "info").lower(), 20)
 
 
@@ -616,7 +616,7 @@ class LiveStore:
             span_id=record.get("span_id"),
             session_id=record.get("session_id"),
             name=record.get("event_name") or record.get("logger"),
-            level=_level_no(record.get("level")),
+            level=level_no(record.get("level")),
             logger=record.get("logger"),
         )
 
@@ -1225,3 +1225,7 @@ def get_live_store(
                 except Exception:  # pragma: no cover
                     return None
     return _LIVE_STORE
+
+
+# Private spellings kept for one release (#411): import the public names.
+_level_no = level_no

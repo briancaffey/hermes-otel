@@ -16,16 +16,15 @@ from ..helpers import (
     truncate_string,
 )
 from ._common import (
-    _as_dict,
     _emit_event,
     _fail_open,
     _mark_truncated,
     _preview_for,
     _preview_marked,
+    as_dict,
     get_tracer,
 )
 from .attributes import (
-    _correlation_attributes,
     _gen_ai_attributes,
     _gen_ai_request_param_attributes,
     _message_json,
@@ -38,17 +37,18 @@ from .attributes import (
     _session_context_attributes,
     _session_identity_attributes,
     _turn_attributes,
+    correlation_attributes,
 )
 from .session import _start_session_span
 from .usage import (
     _USAGE_FIELDS,
     _estimate_cost,
-    _genai_metric_dims,
-    _normalize_usage,
     _record_genai_token_usage,
     _record_prompt_cache_metrics,
     _record_usage_metrics,
-    _usage_attributes,
+    genai_metric_dims,
+    normalize_usage,
+    usage_attributes,
 )
 
 
@@ -127,7 +127,7 @@ def on_pre_llm_call(
     attributes.update(_session_identity_attributes(session_id))
     attributes.update(_model_attributes(model, known.provider if known else None))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_turn_attributes(tracer, session_id))
 
     if tracer.config.capture_sender_id:
@@ -211,7 +211,7 @@ def on_post_llm_call(
     # Both conventions for the provider (llm.provider + the gen_ai pair).
     attributes.update(_model_attributes(None, provider))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:
         attributes["output.value"] = preview
         messages = _message_json("assistant", preview)
@@ -382,17 +382,17 @@ def on_post_api_request(
     response_id = kwargs.get("response_id") or kwargs.get("id")
     if response_id:
         attributes["gen_ai.response.id"] = truncate_string(response_id, 200)
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     model_labels = _metric_model_labels(model, provider)
     model_labels["query_source"] = _query_source(tracer, session_id)
 
     # Token usage — dual convention (gen_ai.usage.* + llm.token_count.*).
-    # See _usage_attributes for the full attribute list.
-    usage = _as_dict(usage)
+    # See usage_attributes for the full attribute list.
+    usage = as_dict(usage)
     if usage:
-        totals = _normalize_usage(usage)
-        attributes.update(_usage_attributes(totals))
+        totals = normalize_usage(usage)
+        attributes.update(usage_attributes(totals))
 
         # Roll up usage to the top-level session/cron span.
         if session_id:
@@ -421,7 +421,7 @@ def on_post_api_request(
             tracer,
             "gen_ai.client.token.usage",
             totals,
-            _genai_metric_dims(model, provider, response_model),
+            genai_metric_dims(model, provider, response_model),
         )
 
         # Cost: Hermes's own estimate for this call (#252). An unknown price
@@ -450,7 +450,7 @@ def on_post_api_request(
         tracer.record_metric(
             "gen_ai.client.operation.duration",
             api_duration,
-            _genai_metric_dims(model, provider, response_model),
+            genai_metric_dims(model, provider, response_model),
         )
     if finish_reason:
         attributes["llm.response.finish_reason"] = finish_reason
@@ -558,7 +558,7 @@ def on_api_request_error(
 
     if isinstance(error, BaseException):
         error = {"type": type(error).__name__, "message": str(error)}
-    error = _as_dict(error)
+    error = as_dict(error)
     error_type = truncate_string(error.get("type"), 200) if error.get("type") else ""
     error_message = truncate_string(error.get("message") or reason, 500)
     status_class = http_status_class(status_code)
@@ -584,7 +584,7 @@ def on_api_request_error(
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_provider_attributes(provider or platform))
-    attributes.update(_correlation_attributes(tracer, session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     # Remember why this turn failed so on_session_end can surface it on the root.
     if session_id and error_type:
@@ -671,7 +671,7 @@ def on_api_request_error(
     # OTel GenAI spec operation-duration on the failure path, tagged with
     # error.type so success/error durations are queryable from one histogram.
     if api_duration:
-        duration_dims = _genai_metric_dims(model, provider)
+        duration_dims = genai_metric_dims(model, provider)
         duration_dims["error.type"] = error_type or "unknown"
         tracer.record_metric("gen_ai.client.operation.duration", api_duration, duration_dims)
 

@@ -29,7 +29,7 @@ from ..helpers import (
     serialize_full,
     truncate_string,
 )
-from ._common import _as_dict, _emit_event, _fail_open, get_tracer
+from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .attributes import (
     _gen_ai_attributes,
     _gen_ai_request_param_attributes,
@@ -43,12 +43,12 @@ from .attributes import (
 from .llm import _request_body, _system_prompt
 from .usage import (
     _estimate_cost,
-    _genai_metric_dims,
-    _normalize_usage,
     _record_genai_token_usage,
     _record_prompt_cache_metrics,
     _record_usage_metrics,
-    _usage_attributes,
+    genai_metric_dims,
+    normalize_usage,
+    usage_attributes,
 )
 
 
@@ -182,10 +182,10 @@ def on_post_auxiliary_call(
 
     totals = None
     cost = None
-    usage = _as_dict(usage)
+    usage = as_dict(usage)
     if usage:
-        totals = _normalize_usage(usage)
-        attributes.update(_usage_attributes(totals))
+        totals = normalize_usage(usage)
+        attributes.update(usage_attributes(totals))
         _record_usage_metrics(tracer, totals, model_labels)
         _record_prompt_cache_metrics(
             tracer,
@@ -197,7 +197,7 @@ def on_post_auxiliary_call(
             tracer,
             "gen_ai.client.token.usage",
             totals,
-            _genai_metric_dims(model, provider, response_model),
+            genai_metric_dims(model, provider, response_model),
         )
         cost = _estimate_cost(model, provider, base_url, usage)
         if cost is not None:
@@ -221,7 +221,7 @@ def on_post_auxiliary_call(
         duration = None
     if duration:
         attributes["llm.response.duration_ms"] = round(duration * 1000, 1)
-        dims = _genai_metric_dims(model, provider, response_model)
+        dims = genai_metric_dims(model, provider, response_model)
         if err_type:
             dims["error.type"] = err_type
         tracer.record_metric("gen_ai.client.operation.duration", duration, dims)
@@ -236,8 +236,8 @@ def on_post_auxiliary_call(
         attributes["llm.response.tool_calls"] = assistant_tool_call_count
 
     if tracer.config.capture_previews and tracer.config.capture_full_responses:
-        response = _as_dict(kwargs.get("response"))
-        message = _as_dict(response.get("assistant_message")) if response else {}
+        response = as_dict(kwargs.get("response"))
+        message = as_dict(response.get("assistant_message")) if response else {}
         content = message.get("content")
         if isinstance(content, str) and content:
             attributes["output.value"] = content

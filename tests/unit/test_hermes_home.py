@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 
 from hermes_otel import hermes_home as hh
-from hermes_otel.hooks.attributes import _profile_attributes
+from hermes_otel.hooks.attributes import profile_attributes
 
 
 @pytest.fixture()
@@ -166,8 +166,8 @@ class TestProfileOnTelemetry:
         class T:
             profile_name = "alpha"
 
-        assert _profile_attributes(T()) == {"hermes.profile": "alpha"}
-        assert _profile_attributes(object()) == {}
+        assert profile_attributes(T()) == {"hermes.profile": "alpha"}
+        assert profile_attributes(object()) == {}
 
     def test_resource_and_metric_label(self, inmemory_otel_with_metrics):
         exporter, reader, plugin = inmemory_otel_with_metrics

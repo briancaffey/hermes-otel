@@ -769,7 +769,7 @@ class TestSigNozRowShape:
     """SigNoz's current trace detail: one row per span, columns named apart."""
 
     def test_rows_become_a_tree_with_parents_status_and_tags(self):
-        from hermes_otel.dashboard.backends.signoz import _signoz_trace_to_otlp
+        from hermes_otel.dashboard.backends.signoz import signoz_trace_to_otlp
 
         cols = [
             "__time",
@@ -825,7 +825,7 @@ class TestSigNozRowShape:
                 "Internal",
             ],
         ]
-        otlp = _signoz_trace_to_otlp([{"columns": cols, "events": rows, "isSubTree": False}])
+        otlp = signoz_trace_to_otlp([{"columns": cols, "events": rows, "isSubTree": False}])
         spans = otlp["batches"][0]["scopeSpans"][0]["spans"]
         by_name = {sp["name"]: sp for sp in spans}
         assert by_name["agent"]["parentSpanId"] is None
@@ -841,7 +841,7 @@ class TestSigNozRowShape:
         assert by_name["agent"]["status"]["code"] == 1
 
     def test_unknown_shapes_stay_empty(self):
-        from hermes_otel.dashboard.backends.signoz import _signoz_trace_to_otlp
+        from hermes_otel.dashboard.backends.signoz import signoz_trace_to_otlp
 
-        assert _signoz_trace_to_otlp("nope") == {"batches": []}
-        assert _signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}
+        assert signoz_trace_to_otlp("nope") == {"batches": []}
+        assert signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}

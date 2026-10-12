@@ -157,7 +157,7 @@ class TestSigNoz:
 
     def test_status_message_survives_the_row_shape(self):
         cols = ["__time", "SpanId", "TraceId", "ServiceName", "Name", "HasError", "StatusMessage"]
-        otlp = signoz._signoz_trace_to_otlp(
+        otlp = signoz.signoz_trace_to_otlp(
             [{"columns": cols, "events": [[1790463141232, "s", "t", "svc", "agent", True, "boom"]]}]
         )
         span = otlp["batches"][0]["scopeSpans"][0]["spans"][0]

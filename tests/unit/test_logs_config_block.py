@@ -371,10 +371,10 @@ class TestBuildWithKnobs:
 
 class TestSeveritySpelling:
     def test_store_level_map_knows_otel_spellings(self):
-        from hermes_otel.live_store import _level_no
+        from hermes_otel.live_store import level_no
 
-        assert _level_no("WARN") == 30 == _level_no("WARNING")
-        assert _level_no("FATAL") == 50 == _level_no("CRITICAL")
+        assert level_no("WARN") == 30 == level_no("WARNING")
+        assert level_no("FATAL") == 50 == level_no("CRITICAL")
 
     def test_store_schema_is_v3(self, tmp_path):
         import sqlite3

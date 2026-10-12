@@ -497,7 +497,7 @@ def _display_value(
     return value
 
 
-def _config_path_source(path: Optional[Path]) -> str:
+def config_path_source(path: Optional[Path]) -> str:
     """Which rule of :func:`resolve_config_path` picked ``path``.
 
     Judged against the home in force for this report (a profile's own under
@@ -583,7 +583,7 @@ def field_reports(
         value = default
 
         if key in yaml_data and yaml_data[key] is not None:
-            coerced = pc._coerce_from_yaml(key, yaml_data[key])
+            coerced = pc.coerce_from_yaml(key, yaml_data[key])
             if coerced is None:
                 entry["file_invalid"] = True
                 entry["file_value"] = str(yaml_data[key])
@@ -608,7 +608,7 @@ def field_reports(
         entry["derived_from"] = None
         reports.append(entry)
 
-    # The loader also normalises the metrics settings (``_reconcile_metrics_settings``):
+    # The loader also normalises the metrics settings (``reconcile_metrics_settings``):
     # an unknown histogram or temporality is dropped with a warning, never applied.
     # Flag it here the way an uncoercible value is flagged (#413).
     for key, valid in (
@@ -1149,7 +1149,7 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
         "reveal": reveal,
         "config": {
             "path": str(path) if path else None,
-            "path_source": _config_path_source(path),
+            "path_source": config_path_source(path),
             "exists": exists,
             "parse_ok": parse_ok,
             "mtime": mtime,
@@ -1207,3 +1207,7 @@ def capture_summary(cfg: HermesOtelConfig) -> Dict[str, Any]:
         "logs": cfg.capture_logs,
         "sender_id": cfg.capture_sender_id,
     }
+
+
+# Private spellings kept for one release (#411): import the public names.
+_config_path_source = config_path_source

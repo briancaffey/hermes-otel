@@ -19,8 +19,8 @@ from unittest.mock import patch
 from hermes_otel import log_handler as lh
 from hermes_otel import plugin_config as pc
 from hermes_otel import redaction
-from hermes_otel import tracer as tracer_mod
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import install_singleton
 from hermes_otel.tracer import HermesOTelPlugin, metric_views
 
 GOLDEN_ROOT = Path(__file__).resolve().parent.parent / "golden"
@@ -116,9 +116,7 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
     ):
         plugin._init_logs_pipeline(resource, [])
 
-    previous = tracer_mod._tracer
-    tracer_mod._tracer = plugin
-    tracer_mod._PARENT_STACK.set(None)
+    previous = install_singleton(plugin)
     try:
         yield Pipeline(plugin, span_exporter, metric_reader, log_exporter)
     finally:
@@ -126,8 +124,7 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
             plugin.spans.end_all()
         except Exception:
             pass
-        tracer_mod._tracer = previous
-        tracer_mod._PARENT_STACK.set(None)
+        install_singleton(previous)
         try:
             lh.uninstall_handler(None)
         except Exception:

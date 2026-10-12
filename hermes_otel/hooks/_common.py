@@ -53,7 +53,7 @@ def _fail_open(fn):
     return wrapper
 
 
-def _as_dict(value: Any) -> Dict[str, Any]:
+def as_dict(value: Any) -> Dict[str, Any]:
     """Coerce a hook payload field to a dict, never raising.
 
     Hermes documents ``usage`` / ``error`` as dicts, but SDK objects
@@ -209,3 +209,7 @@ def _resolve_session_id(
     if from_kwargs:
         return str(from_kwargs)
     return session_id_from_turn_id(turn_id) if turn_id else ""
+
+
+# Private spellings kept for one release (#411): import the public names.
+_as_dict = as_dict

@@ -1,6 +1,5 @@
 """The metrics reference page must list every instrument the tracer creates (#94)."""
 
-import re
 from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -15,15 +14,10 @@ _PHANTOMS = ("hermes.tokens.", "hermes.api.duration", "hermes.sessions", "hermes
 def _instrument_names() -> set:
     """Every OTLP instrument name the plugin can emit: the instrument table
     plus the host-metrics observables created in ``_create_host_metric_instruments``."""
-    from hermes_otel.tracer import _INSTRUMENTS
+    from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
 
     names = {spec.name for spec in _INSTRUMENTS.values()}
-    src = TRACER.read_text(encoding="utf-8")
-    body = src[src.index("def _create_host_metric_instruments") :]
-    body = body[: body.index("\n    def ", 10)]
-    names.update(
-        re.findall(r'create_(?:counter|histogram|observable_[a-z_]+)\(\s*"([a-z_.]+)"', body)
-    )
+    names.update(HOST_METRIC_NAMES)
     return names
 
 
@@ -43,3 +37,22 @@ def test_no_phantom_metric_names_in_docs():
             if p in text:
                 hits.append(f"{md.relative_to(REPO_ROOT)}: {p}")
     assert hits == []
+
+
+def test_host_metric_names_are_what_the_tracer_registers():
+    """``HOST_METRIC_NAMES`` is read by the docs tests instead of the source."""
+    from unittest.mock import MagicMock
+
+    from hermes_otel.plugin_config import HermesOtelConfig
+    from hermes_otel.tracer import HOST_METRIC_NAMES, HermesOTelPlugin
+
+    plugin = HermesOTelPlugin(config=HermesOtelConfig(host_metrics=True))
+    plugin._meter = MagicMock()
+    plugin._host_metrics = MagicMock()
+    plugin._create_host_metric_instruments()
+    created = {
+        call.args[0]
+        for method in ("create_observable_gauge", "create_observable_up_down_counter")
+        for call in getattr(plugin._meter, method).call_args_list
+    }
+    assert created == set(HOST_METRIC_NAMES)

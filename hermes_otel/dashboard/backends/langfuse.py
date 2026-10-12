@@ -138,7 +138,7 @@ def _as_text(value: Any) -> str:
 # is derived from the same ``gen_ai.usage.*`` attributes for a GENERATION and
 # zero-filled for every other type, and a zero on the root stopped the header
 # from summing the ``api.*`` spans (#346).
-def _obs_to_card_attrs(
+def obs_to_card_attrs(
     obs: Dict[str, Any], span_attrs: Optional[Dict[str, Any]] = None
 ) -> Dict[str, Any]:
     out: Dict[str, Any] = {k: v for k, v in (span_attrs or {}).items() if v is not None}
@@ -825,7 +825,7 @@ class LangfuseAdapter(BackendAdapter):
         spans_otlp: List[Dict[str, Any]] = []
         for obs in observations:
             span_attrs = _span_attributes_of(obs)
-            attrs = _obs_to_card_attrs(obs, span_attrs)
+            attrs = obs_to_card_attrs(obs, span_attrs)
             # Carry through any free-form metadata so it's still visible
             # in the attribute table; the span's own attributes were lifted
             # above and are not repeated as one ``metadata.attributes`` blob.
@@ -934,3 +934,7 @@ class LangfuseAdapter(BackendAdapter):
             "span_count": len(observations),
             "truncated": False,
         }
+
+
+# Private spellings kept for one release (#411): import the public names.
+_obs_to_card_attrs = obs_to_card_attrs

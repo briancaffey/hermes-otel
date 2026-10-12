@@ -348,7 +348,9 @@ class TestInitWeave:
             backends=(rb_config,),
         )
         plugin = HermesOTelPlugin(config=cfg)
-        resource = plugin._build_resource([plugin._resolve_backend_config(rb_config)])
+        from hermes_otel import backends as _backends
+
+        resource = plugin._build_resource([_backends.resolve(rb_config)])
         attrs = dict(resource.attributes)
         assert attrs["wandb.entity"] == "team"
         assert attrs["wandb.project"] == "proj"

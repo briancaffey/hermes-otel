@@ -499,7 +499,7 @@ def expand_env_refs(value: Any, *, where: str = "config") -> Any:
     return _ENV_REF.sub(_sub, value)
 
 
-def _coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
+def coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
     """Coerce a yaml ``backends:`` list into a tuple of BackendConfig."""
     if value is None:
         return None
@@ -710,7 +710,7 @@ def normalize_yaml_data(yaml_data: Dict[str, Any], *, notice: bool = True) -> Di
     return data
 
 
-def _coerce_from_yaml(key: str, value: Any) -> Any:
+def coerce_from_yaml(key: str, value: Any) -> Any:
     """Coerce one config.yaml value to its field type (None = ignore).
 
     yaml.safe_load already returns native python types; this only normalises
@@ -721,7 +721,7 @@ def _coerce_from_yaml(key: str, value: Any) -> Any:
         return None
     kind = field_kinds().get(key)
     if kind == "backends":
-        return _coerce_backends(value)
+        return coerce_backends(value)
     if kind == "map":
         if isinstance(value, dict):
             return {str(k): expand_env_refs(v, where=key) for k, v in value.items()}
@@ -823,13 +823,13 @@ def load_config(path: Optional[Path] = None) -> HermesOtelConfig:
     for key, raw in yaml_data.items():
         if key not in _ALLOWED_KEYS:
             continue
-        coerced = _coerce_from_yaml(key, raw)
+        coerced = coerce_from_yaml(key, raw)
         if coerced is not None:
             values[key] = coerced
 
     values.update(_load_env_overrides())
     _reconcile_content_capture(values)
-    _reconcile_metrics_settings(values)
+    reconcile_metrics_settings(values)
 
     # Build config with whatever we have; unset fields fall back to dataclass defaults.
     return replace(HermesOtelConfig(), **values)
@@ -857,7 +857,7 @@ def normalize_temporality(value: Any, where: str = "metrics_temporality") -> Opt
     return None
 
 
-def _reconcile_metrics_settings(values: Dict[str, Any]) -> None:
+def reconcile_metrics_settings(values: Dict[str, Any]) -> None:
     if "metrics_temporality" in values:
         values["metrics_temporality"] = normalize_temporality(values["metrics_temporality"])
     hist = str(values.get("metrics_histogram", "explicit") or "explicit").strip().lower()
@@ -1096,3 +1096,9 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Host metrics", ("host_metrics", "host_metrics_gpu", "host_metrics_interval_ms")),
     ("Backends", ("backends",)),
 )
+
+
+# Private spellings kept for one release (#411): import the public names.
+_coerce_from_yaml = coerce_from_yaml
+_coerce_backends = coerce_backends
+_reconcile_metrics_settings = reconcile_metrics_settings

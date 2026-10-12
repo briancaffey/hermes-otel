@@ -49,7 +49,9 @@ _seq = itertools.count(1)
 _FAILED_EXIT_KINDS = frozenset({"nonzero_exit", "signaled"})
 
 
-def _identity(task_id: Any, board: Any, assignee: Any, run_id: Any, event: str) -> Dict[str, Any]:
+def kanban_identity(
+    task_id: Any, board: Any, assignee: Any, run_id: Any, event: str
+) -> Dict[str, Any]:
     attrs: Dict[str, Any] = {"hermes.span_kind": "kanban", "hermes.kanban.event": event}
     if task_id:
         attrs["hermes.kanban.task_id"] = truncate_string(str(task_id), _ID_MAX)
@@ -86,7 +88,7 @@ def _worker_turn(tracer) -> Tuple[Optional[str], Any, Any]:
     return session_id, tracer.spans.get_current_parent(session_id) or root, root
 
 
-def _set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
+def set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
     if span is None or not hasattr(span, "set_attribute"):
         return
     for key, value in attributes.items():
@@ -151,7 +153,7 @@ def on_kanban_task_claimed(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "claimed")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "claimed")
     _transition(
         tracer,
         "kanban.claim",
@@ -181,7 +183,7 @@ def on_kanban_worker_spawned(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "spawned")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "spawned")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
     _transition(
@@ -213,7 +215,7 @@ def on_kanban_worker_exited(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "worker_exited")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "worker_exited")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
     kind = truncate_string(str(exit_kind), _SHORT_MAX) if exit_kind else "unknown"
@@ -253,7 +255,7 @@ def on_kanban_worker_stale_claim(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "stale_claim")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "stale_claim")
     if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
         attrs["hermes.kanban.worker_pid"] = worker_pid
     if isinstance(heartbeat_stale, bool):
@@ -289,7 +291,7 @@ def _finish(tracer, name: str, attrs: Dict[str, Any], outcome: str, text_key: st
         # The worker's turn root learns which card it worked and how it ended,
         # so span-only readers (the bundled dashboard's live store, a backend
         # that cannot filter on Resource attributes) can find it too.
-        _set_attributes(
+        set_attributes(
             root,
             {
                 "hermes.kanban.task_id": attrs.get("hermes.kanban.task_id"),
@@ -324,7 +326,7 @@ def on_kanban_task_completed(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "completed")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "completed")
     _finish(tracer, "kanban.complete", attrs, "completed", "hermes.kanban.summary", summary)
 
 
@@ -346,5 +348,9 @@ def on_kanban_task_blocked(
     tracer = get_tracer()
     if not tracer.is_enabled:
         return
-    attrs = _identity(task_id, board, assignee, run_id, "blocked")
+    attrs = kanban_identity(task_id, board, assignee, run_id, "blocked")
     _finish(tracer, "kanban.block", attrs, "blocked", "hermes.kanban.reason", reason)
+
+
+# Private spellings kept for one release (#411): import the public names.
+_identity = kanban_identity

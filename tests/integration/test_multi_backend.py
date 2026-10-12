@@ -105,19 +105,16 @@ class TestForceFlushFansOut:
         proc2 = MagicMock()
         proc3 = MagicMock()
         plugin._span_processors = [proc1, proc2, proc3]
-        plugin._span_processor = proc1
 
         plugin._force_flush()
 
         for p in (proc1, proc2, proc3):
             p.force_flush.assert_called_once_with(timeout_millis=2000)
 
-    def test_force_flush_falls_back_to_singular_alias(self):
-        """Test fixtures populate ``_span_processor`` only — must still flush."""
+    def test_force_flush_with_one_processor(self):
         plugin = HermesOTelPlugin()
         proc = MagicMock()
-        plugin._span_processors = []
-        plugin._span_processor = proc
+        plugin._span_processors = [proc]
 
         plugin._force_flush()
 
@@ -151,8 +148,6 @@ class TestConfigBackendsRouting:
         # Neither Phoenix (405 on /v1/metrics, #160) nor Jaeger takes metrics
         # by default → no metric reader at all.
         assert len(plugin._metric_readers) == 0
-        # Singular aliases point at the first entry.
-        assert plugin._span_processor is plugin._span_processors[0]
 
     def test_three_metrics_capable_backends(self, monkeypatch):
         _clear_backend_env(monkeypatch)

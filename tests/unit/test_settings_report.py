@@ -499,11 +499,11 @@ class TestProfileAwareReport:
         monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", tmp_path / "elsewhere" / "hermes_otel.yaml")
         monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", tmp_path / "elsewhere" / "config.yaml")
         monkeypatch.setattr(pc, "resolve_config_path", lambda: profile / "hermes_otel.yaml")
-        from hermes_otel.settings_report import _config_path_source
+        from hermes_otel.settings_report import config_path_source
 
-        assert _config_path_source(profile / "hermes_otel.yaml") == "durable"
-        assert _config_path_source(profile / "plugins" / "hermes_otel" / "config.yaml") == "legacy"
-        assert _config_path_source(tmp_path / "somewhere.yaml") == "explicit"
+        assert config_path_source(profile / "hermes_otel.yaml") == "durable"
+        assert config_path_source(profile / "plugins" / "hermes_otel" / "config.yaml") == "legacy"
+        assert config_path_source(tmp_path / "somewhere.yaml") == "explicit"
 
     def test_flat_log_spellings_are_listed_as_deprecated(self, home):
         (home / "hermes_otel.yaml").write_text(
@@ -523,7 +523,7 @@ class TestProfileAwareReport:
 
 class TestMetricsSettingsMirrorTheLoader:
     """``load_config`` drops an unknown ``metrics_histogram`` / ``metrics_temporality``
-    (``_reconcile_metrics_settings``); the report used to show the bad value as
+    (``reconcile_metrics_settings``); the report used to show the bad value as
     applied (#413)."""
 
     def test_unknown_histogram_from_the_file_is_flagged_and_the_default_applies(self, home):

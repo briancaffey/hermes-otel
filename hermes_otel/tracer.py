@@ -36,17 +36,13 @@ from .debug_utils import (
 from .helpers import derive_signal_endpoint, is_usage_key, package_version, without_usage_keys
 from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .plugin_config import (
-    BackendConfig,
     HermesOtelConfig,
     content_mode,
     effective_export_batch_size,
     load_config,
 )
 from .session_state import SessionState
-
-# Re-exported for tests (conftest resets _PARENT_STACK between runs).
-# Canonical definition lives in span_tracker so the module is self-contained.
-from .span_tracker import _PARENT_STACK, SpanTracker  # noqa: F401 (re-export)
+from .span_tracker import SpanTracker
 
 try:
     from opentelemetry import metrics, trace
@@ -278,7 +274,7 @@ if _OTEL_AVAILABLE:
             self._inner.on_start(span, parent_context=parent_context)
 
         def on_end(self, span: Any) -> None:
-            if _is_mcp_keepalive_ping(span):
+            if is_mcp_keepalive_ping(span):
                 return
             self._inner.on_end(span)
 
@@ -702,7 +698,7 @@ def metric_otlp_name(key: str) -> str:
     return spec.name if spec else key
 
 
-def _is_mcp_keepalive_ping(span: Any) -> bool:
+def is_mcp_keepalive_ping(span: Any) -> bool:
     """True for a finished MCP ``ping`` request span that did not fail.
 
     Matches on the SDK's ``mcp.method.name`` attribute, with the span name as
@@ -723,6 +719,16 @@ from .log_handler import _LiveLogNoiseFilter  # noqa: E402,F401
 # One id per process, generated at import: two Hermes processes exporting to
 # the same backend get distinct Resources and therefore distinct series.
 _SERVICE_INSTANCE_ID = str(uuid.uuid4())
+
+# The observable instruments ``_create_host_metric_instruments`` registers
+# (semantic-convention names); the docs tests read this instead of the source.
+HOST_METRIC_NAMES = (
+    "process.cpu.utilization",
+    "system.cpu.utilization",
+    "hw.gpu.utilization",
+    "hw.gpu.memory.usage",
+    "hw.power",
+)
 
 # Env vars the Hermes kanban dispatcher sets on a worker -> resource attribute.
 # Only these three: the dispatcher also exports the DB and workspace paths and
@@ -780,14 +786,10 @@ class HermesOTelPlugin:
         # only be set once per process — see _init_otlp_pipeline).
         self._tracer_provider: Optional[Any] = None
         # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
-        # per backend. The singular ``_span_processor`` / ``_metric_reader``
-        # attributes are kept as aliases pointing at the first entry so legacy
-        # tests and external callers that introspect them keep working.
+        # per backend.
         self._span_processors: List[Any] = []
         self._metric_readers: List[Any] = []
         self._log_processors: List[Any] = []
-        self._span_processor = None
-        self._metric_reader = None
         # LoggerProvider created when capture_logs is on and at least one
         # log-capable backend is wired up. None otherwise.
         self._logger_provider: Optional[Any] = None
@@ -846,11 +848,6 @@ class HermesOTelPlugin:
             self._start_host_metrics()
         return ok
 
-    @property
-    def _subagent_registry(self) -> Dict[str, Dict[str, Any]]:
-        """Alias of the tracker's delegation registry (kept for introspection)."""
-        return self.spans._subagent_registry
-
     def _reset_pipeline_state(self) -> None:
         """Forget every pipeline object from a previous init (not the config)."""
         self.tracer = None
@@ -858,8 +855,6 @@ class HermesOTelPlugin:
         self._span_processors = []
         self._metric_readers = []
         self._log_processors = []
-        self._span_processor = None
-        self._metric_reader = None
         self._logger_provider = None
         self._langsmith = None
         self._meter = None
@@ -963,7 +958,7 @@ class HermesOTelPlugin:
             backends: List[_ResolvedBackend] = []
             for bc in self.config.backends:
                 try:
-                    rb = self._resolve_backend_config(bc)
+                    rb = _backends.resolve(bc)
                 except Exception as e:
                     logger.warning(f"[hermes-otel] ✗ backend {bc.type!r} skipped: {e}")
                     continue
@@ -1020,14 +1015,6 @@ class HermesOTelPlugin:
             )
             return False
         return self._init_otlp_pipeline([rb])
-
-    def _resolve_backend_config(self, bc: BackendConfig) -> Optional[_ResolvedBackend]:
-        """Turn a yaml ``BackendConfig`` into a ready-to-wire backend.
-
-        Thin shim around :func:`backends.resolve` — kept as a method so
-        subclasses / monkeypatch-based tests have a stable seam.
-        """
-        return _backends.resolve(bc)
 
     # ── Backend initializers ─────────────────────────────────────────────
 
@@ -1272,12 +1259,6 @@ class HermesOTelPlugin:
             # (Live-only = the zero-config dashboard with no external collector.)
             if not self._span_processors and not self._live_active:
                 return False
-
-            # Back-compat singular aliases — first entry wins.
-            if self._span_processors:
-                self._span_processor = self._span_processors[0]
-            if self._metric_readers:
-                self._metric_reader = self._metric_readers[0]
 
             # The OTel globals can be set once per process: on a re-init the
             # SDK keeps the old (now shut down) provider and logs "Overriding of
@@ -1941,10 +1922,7 @@ class HermesOTelPlugin:
         instead. Per-span flushing is deliberately NOT done — it would defeat
         the whole purpose of the BatchSpanProcessor queue.
         """
-        processors = self._span_processors or (
-            [self._span_processor] if self._span_processor else []
-        )
-        for processor in processors:
+        for processor in list(self._span_processors):
             try:
                 processor.force_flush(timeout_millis=timeout_millis)
             except Exception:
@@ -2076,3 +2054,7 @@ def get_tracer() -> HermesOTelPlugin:
     if _tracer is None:
         _tracer = HermesOTelPlugin()
     return _tracer
+
+
+# Private spellings kept for one release (#411): import the public names.
+_is_mcp_keepalive_ping = is_mcp_keepalive_ping

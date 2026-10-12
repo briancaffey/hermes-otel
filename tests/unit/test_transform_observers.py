@@ -6,7 +6,7 @@ from unittest.mock import MagicMock, patch
 
 from hermes_otel.helpers import char_count, terminal_truncation
 from hermes_otel.hooks import on_transform_llm_output, on_transform_terminal_output
-from hermes_otel.hooks.transforms import _set_attributes
+from hermes_otel.hooks.transforms import set_attributes
 
 
 class _Span:
@@ -106,15 +106,15 @@ class TestLlmOutputObserver:
 
 class TestSetAttributes:
     def test_skips_objects_without_the_otel_api_and_none_values(self):
-        _set_attributes(object(), {"a": 1})  # LangSmith runs have no set_attribute
+        set_attributes(object(), {"a": 1})  # LangSmith runs have no set_attribute
         span = _Span()
-        _set_attributes(span, {"a": 1, "b": None})
+        set_attributes(span, {"a": 1, "b": None})
         assert span.attributes == {"a": 1}
 
     def test_never_raises_when_set_attribute_does(self):
         span = MagicMock()
         span.set_attribute.side_effect = RuntimeError("boom")
-        _set_attributes(span, {"a": 1})
+        set_attributes(span, {"a": 1})
 
 
 class TestFailOpen:

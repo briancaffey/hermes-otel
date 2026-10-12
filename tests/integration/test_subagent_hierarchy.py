@@ -197,11 +197,11 @@ class TestSingleDelegationOneTrace:
             child_role="researcher",
             child_goal="g",
         )
-        assert "child-1" in plugin._subagent_registry
+        assert "child-1" in plugin.spans._subagent_registry
         on_subagent_stop(
             parent_session_id="parent", child_session_id="child-1", child_status="completed"
         )
-        assert "child-1" not in plugin._subagent_registry
+        assert "child-1" not in plugin.spans._subagent_registry
 
 
 class TestFailedDelegation:
@@ -250,7 +250,7 @@ class TestLinkFallbackCrossProcess:
         delegation_ctx = delegation_span.get_span_context()
 
         # Simulate cross-process: live span object is gone, only context remains.
-        plugin._subagent_registry["child-x"]["span"] = None
+        plugin.spans._subagent_registry["child-x"]["span"] = None
 
         on_session_start(session_id="child-x", model="gpt-4", platform="cli")
         on_session_end(

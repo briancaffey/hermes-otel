@@ -2,8 +2,8 @@
 
 Each hook starts or ends a span, passing data through to OTel attributes.
 The package is split by hook family; this module re-exports every callback
-(``on_*``), the public :func:`get_current_traceparent`, and the private
-helpers tests exercise, so ``hermes_otel.hooks.<name>`` keeps working.
+(``on_*``), :func:`get_tracer` and the public :func:`get_current_traceparent`.
+Helpers live in their family module and are imported from there (#411).
 
 Per-session buffering (token totals, first input / last output, per-turn
 summary, tool start times) lives on ``tracer.sessions`` — see
@@ -30,36 +30,8 @@ Modules:
 
 from __future__ import annotations
 
-from ._common import (
-    _FAIL_OPEN_WARNED,
-    _as_dict,
-    _fail_open,
-    _preview,
-    _preview_for,
-    _resolve_session_id,
-    get_tracer,
-)
-from .approval import _approval_span_key, on_post_approval_response, on_pre_approval_request
-from .attributes import (
-    _correlation_attributes,
-    _extract_correlation_id,
-    _gen_ai_attributes,
-    _gen_ai_request_param_attributes,
-    _message_json,
-    _metric_model_labels,
-    _model_attributes,
-    _per_session_sender_attributes,
-    _provider_attributes,
-    _sender_attributes,
-    _serialize_conversation_history,
-    _session_context_attributes,
-    _session_identity_attributes,
-    _session_sender_attributes,
-    _summary_attributes,
-    _tool_host_utilization_attributes,
-    _turn_attributes,
-    _weave_turn_attributes,
-)
+from ._common import get_tracer
+from .approval import on_post_approval_response, on_pre_approval_request
 from .auxiliary import on_post_auxiliary_call, on_pre_auxiliary_call
 from .kanban import (
     on_kanban_task_blocked,
@@ -77,31 +49,10 @@ from .llm import (
     on_pre_llm_call,
 )
 from .propagation import get_current_traceparent, on_mcp_request_headers
-from .session import (
-    _start_session_span,
-    on_session_end,
-    on_session_finalize,
-    on_session_reset,
-    on_session_start,
-)
+from .session import on_session_end, on_session_finalize, on_session_reset, on_session_start
 from .subagent import on_subagent_start, on_subagent_stop
-from .tools import (
-    _open_skill_span,
-    _resolve_tool_outcome,
-    _tool_call_id,
-    on_post_tool_call,
-    on_pre_tool_call,
-)
+from .tools import on_post_tool_call, on_pre_tool_call
 from .transforms import on_transform_llm_output, on_transform_terminal_output
-from .usage import (
-    _USAGE_FIELDS,
-    _genai_metric_dims,
-    _normalize_usage,
-    _record_genai_token_usage,
-    _record_prompt_cache_metrics,
-    _record_usage_metrics,
-    _usage_attributes,
-)
 
 __all__ = [
     "get_current_traceparent",

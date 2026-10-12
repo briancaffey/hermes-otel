@@ -8,7 +8,7 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import subagent_span_key, subagent_status_to_span_status, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _correlation_attributes, _session_identity_attributes
+from .attributes import _session_identity_attributes, correlation_attributes
 
 
 @_fail_open
@@ -70,7 +70,7 @@ def on_subagent_start(
     if goal_preview is not None:
         attributes["hermes.subagent.goal"] = goal_preview
         attributes["input.value"] = goal_preview
-    attributes.update(_correlation_attributes(tracer, parent_session_id, kwargs))
+    attributes.update(correlation_attributes(tracer, parent_session_id, kwargs))
 
     # Nest under the parent session's in-flight span (api/llm/session). The
     # delegation span is NOT pushed as a parent — the parent session keeps

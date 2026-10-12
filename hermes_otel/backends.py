@@ -350,7 +350,7 @@ def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
 _LANGFUSE_OTEL_PATH = "/api/public/otel"
 
 
-def _langfuse_traces_url(endpoint: str) -> str:
+def langfuse_traces_url(endpoint: str) -> str:
     """Normalise a Langfuse ``endpoint`` to the full OTLP traces URL.
 
     The OTLP/HTTP span exporter posts to exactly the URL it is given, so a
@@ -396,7 +396,7 @@ def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
         base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
         root = base if base else "https://cloud.langfuse.com"
         ep = f"{root}/api/public/otel/v1/traces"
-    ep = _langfuse_traces_url(ep)
+    ep = langfuse_traces_url(ep)
     auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
     headers = {
         "Authorization": f"Basic {auth}",
@@ -1645,3 +1645,7 @@ def resolve_from_env() -> Optional[_ResolvedBackend]:
         except ValueError:
             continue
     return None
+
+
+# Private spellings kept for one release (#411): import the public names.
+_langfuse_traces_url = langfuse_traces_url

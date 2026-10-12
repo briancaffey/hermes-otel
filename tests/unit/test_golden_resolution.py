@@ -309,7 +309,7 @@ def snapshot(backend_type: str, path: str, home: Path, monkeypatch) -> Dict[str,
 
     entry = entry_for(backend_type, path, monkeypatch)
     out["entry"] = dict(entry)
-    coerced = pc._coerce_backends([entry]) or ()
+    coerced = pc.coerce_backends([entry]) or ()
     if not coerced:
         out["error"] = "entry rejected by the loader"
         return normalise(out, home)

@@ -463,7 +463,7 @@ class SigNozAdapter(BackendAdapter):
                 headers=headers,
                 timeout=20.0,
             )
-        out = _signoz_trace_to_otlp(data)
+        out = signoz_trace_to_otlp(data)
         n = sum(
             len(scope.get("spans") or [])
             for batch in out.get("batches") or []
@@ -838,7 +838,7 @@ def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
-def _signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
+def signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
     """Translate SigNoz's trace response shape into OTLP batches.
 
     SigNoz's shape varies by version; we handle the two known forms:
@@ -910,3 +910,7 @@ def _signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
             }
         )
     return {"batches": batches}
+
+
+# Private spellings kept for one release (#411): import the public names.
+_signoz_trace_to_otlp = signoz_trace_to_otlp

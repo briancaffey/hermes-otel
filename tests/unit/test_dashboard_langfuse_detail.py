@@ -14,7 +14,7 @@ from unittest.mock import patch
 
 import pytest
 
-from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter, _obs_to_card_attrs
+from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter, obs_to_card_attrs
 
 TRACE_ID = "bf309db7fb314cb987fdcc8e0d26a91e"
 
@@ -195,7 +195,7 @@ class TestSdkIngestedObservation:
             "level": "DEFAULT",
             "metadata": {"team": "a"},
         }
-        attrs = _obs_to_card_attrs(obs, {})
+        attrs = obs_to_card_attrs(obs, {})
         assert attrs["llm.model_name"] == "gpt-4o-mini"
         assert attrs["llm.parameters.temperature"] == 0.2
         assert attrs["gen_ai.usage.input_tokens"] == 10
@@ -213,7 +213,7 @@ class TestSdkIngestedObservation:
             "model": "m-as-langfuse-sees-it",
             "usage": {"input": 1, "output": 1, "total": 2},
         }
-        attrs = _obs_to_card_attrs(
+        attrs = obs_to_card_attrs(
             obs, {"llm.model_name": "m", "gen_ai.usage.total_tokens": 2, "nullable": None}
         )
         assert attrs["llm.model_name"] == "m"

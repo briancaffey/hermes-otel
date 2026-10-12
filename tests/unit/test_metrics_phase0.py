@@ -28,8 +28,8 @@ from hermes_otel import tracer as tracer_mod
 from hermes_otel.backends import resolve
 from hermes_otel.plugin_config import (
     BackendConfig,
-    _reconcile_metrics_settings,
     normalize_temporality,
+    reconcile_metrics_settings,
 )
 from hermes_otel.tracer import (
     _B_OP_SECONDS,
@@ -207,14 +207,14 @@ class TestTemporality:
             "metrics_histogram": "nope",
             "metrics_label_limit": "many",
         }
-        _reconcile_metrics_settings(values)
+        reconcile_metrics_settings(values)
         assert values == {
             "metrics_temporality": "delta",
             "metrics_histogram": "explicit",
             "metrics_label_limit": 100,
         }
         values = {"metrics_histogram": "Exponential", "metrics_label_limit": -5}
-        _reconcile_metrics_settings(values)
+        reconcile_metrics_settings(values)
         assert values["metrics_histogram"] == "exponential" and values["metrics_label_limit"] == 0
 
     @pytest.mark.parametrize(

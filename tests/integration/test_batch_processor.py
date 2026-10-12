@@ -81,7 +81,7 @@ def real_init_plugin(tmp_path_factory):
     yield plugin
 
     try:
-        plugin._span_processor.shutdown()
+        plugin._span_processors[0].shutdown()
     except Exception:
         pass
     store = live_store_mod._LIVE_STORE
@@ -95,7 +95,7 @@ class TestBatchProcessorInstalled:
     def test_processor_is_batch_instance(self, real_init_plugin):
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        assert isinstance(real_init_plugin._span_processor, BatchSpanProcessor)
+        assert isinstance(real_init_plugin._span_processors[0], BatchSpanProcessor)
 
     def test_config_plumbed_through(self, real_init_plugin):
         assert real_init_plugin.config.span_batch_schedule_delay_ms == 50
@@ -141,7 +141,7 @@ def _build_batch_plugin(schedule_delay_ms: int = 50):
     plugin = HermesOTelPlugin(config=cfg)
     plugin.tracer = provider.get_tracer("hermes-otel-test")
     plugin._initialized = True
-    plugin._span_processor = processor
+    plugin._span_processors = [processor]
 
     return exporter, plugin, provider
 
@@ -158,7 +158,7 @@ def batch_pipeline():
     yield exporter, plugin
 
     try:
-        plugin._span_processor.shutdown()
+        plugin._span_processors[0].shutdown()
     except Exception:
         pass
     provider.shutdown()
