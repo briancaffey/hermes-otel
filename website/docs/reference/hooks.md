@@ -192,7 +192,7 @@ Hermes' kanban is a durable task board: a dispatcher (inside the gateway, or `he
 
 Fires in the **dispatcher** process right before the worker is spawned, inside the board's dispatch lock.
 
-- **Span op:** `kanban.claim`, opened and closed at once, the root of its own trace (the dispatcher serves every session, so it never nests under whatever turn is in flight)
+- **Span op:** `kanban.claim`, opened and closed at once, the root of the run's trace (the dispatcher serves every session, so it never nests under whatever turn is in flight). The plugin sets `TRACEPARENT` to this span in the dispatcher's environment so the worker's turn joins the trace, and removes it on `on_kanban_worker_spawned` (#388)
 - **Attributes:** `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.assignee`, `hermes.kanban.run_id`, `hermes.kanban.event=claimed`
 - **Metrics:** `hermes.kanban.task.count{outcome=claimed, board}`
 
@@ -256,8 +256,8 @@ pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's
 post_auxiliary_call      close api.{model}       (auxiliary: usage, cost, ERROR on failure; turn roll-up hermes.turn.auxiliary.*)
 post_llm_call            close llm.{model}
 transform_llm_output     attr  agent/cron        (final response size; returns None)
-kanban_task_claimed      open+close kanban.claim        (dispatcher; own trace)
-on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; own trace)
+kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's root; sets TRACEPARENT for the worker)
+on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
 kanban_task_completed    open+close kanban.complete     (worker; in the turn's trace + root stamped)

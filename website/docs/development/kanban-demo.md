@@ -25,7 +25,8 @@ uv run --extra dev python scripts/kanban_demo/run_demo.py --profile minimal \
 | check | what it proves |
 |---|---|
 | every card ends terminal | the board itself worked |
-| `kanban.claim` and `kanban.spawn` roots per card, spawn carries a pid | the dispatcher-side hooks fire in the `dispatch` process and never nest under a session |
+| `kanban.claim` root per card, `kanban.spawn` under it with a pid | the dispatcher-side hooks fire in the `dispatch` process and never nest under a session |
+| the worker's turn is in the claim's trace (complete, block) | the dispatcher handed the run's context to the worker through `TRACEPARENT` (#388) |
 | `kanban.complete` has a session and a parent; the worker's root is stamped `completed` | the worker-side hook landed inside the worker's own trace, findable by span-only readers |
 | `kanban.block` is status OK with the reason | a blocked card is a hand-off, not an error |
 | `kanban.worker_exit` fired for the crash card | a dead worker is noticed on the next dispatch pass (a CLI pass reports `exit_kind=unknown`; the gateway's dispatcher knows the kind and the span is then ERROR) |

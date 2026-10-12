@@ -156,12 +156,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.spawn",
-   "parent": null,
+   "parent": "S1",
    "span": "S2",
    "status": {
     "code": "OK"
    },
-   "trace": "T2"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -183,12 +183,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.worker_exit",
-   "parent": null,
+   "parent": "S1",
    "span": "S3",
    "status": {
     "code": "ERROR"
    },
-   "trace": "T3"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -213,7 +213,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T4"
+   "trace": "T2"
   },
   {
    "attributes": {
@@ -255,7 +255,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -280,7 +280,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -305,7 +305,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -347,7 +347,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -372,7 +372,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -397,7 +397,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   }
  ]
 }

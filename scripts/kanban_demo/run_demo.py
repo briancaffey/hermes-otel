@@ -258,12 +258,13 @@ def collect(store: Path, since_ns: int, ids: Dict[str, str]) -> Dict[str, Any]:
                     "summary": a.get("hermes.kanban.summary") or a.get("hermes.kanban.reason"),
                 }
             )
-    # Worker traces: every root stamped with one of our cards.
+    # Worker turns: every turn root stamped with one of our cards. Since #388
+    # it nests under the dispatcher's kanban.claim (one trace per run), so it
+    # is a root only when the worker could not join the run's trace.
     roots = [
         s
         for s in spans
-        if s["_parent"] is None
-        and s["_name"] in ("agent", "cron")
+        if s["_name"] in ("agent", "cron")
         and s.get("attributes", {}).get("hermes.kanban.task_id") in by_id
     ]
     traces = []
@@ -362,14 +363,27 @@ def check(result: Dict[str, Any], tasks: Dict[str, Dict[str, Any]]) -> List[tupl
         rows.append(
             (f"{role}: kanban.claim root span", bool(have(role, "kanban.claim", root=True)), "")
         )
+        claim, spawn = have(role, "kanban.claim"), have(role, "kanban.spawn")
         rows.append(
             (
-                f"{role}: kanban.spawn root span with pid",
-                bool(have(role, "kanban.spawn", root=True))
-                and (have(role, "kanban.spawn") or {}).get("pid") is not None,
+                f"{role}: kanban.spawn under the run's claim, with pid",
+                bool(claim and spawn and not spawn["root"] and spawn["trace"] == claim["trace"])
+                and spawn.get("pid") is not None,
                 "",
             )
         )
+        if role in ("complete", "block"):
+            rows.append(
+                (
+                    f"{role}: worker turn in the claim's trace (one trace per run, #388)",
+                    bool(claim)
+                    and any(
+                        t["role"] == role and t["trace"] == claim["trace"]
+                        for t in result["worker_traces"]
+                    ),
+                    claim["trace"][:8] if claim else "",
+                )
+            )
     done = have("complete", "kanban.complete")
     rows.append(
         (

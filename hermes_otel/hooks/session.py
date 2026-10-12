@@ -24,6 +24,7 @@ from .attributes import (
     profile_attributes,
     turn_trigger_attributes,
 )
+from .kanban import kanban_remote_parent
 from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
 
 try:
@@ -119,6 +120,11 @@ def _start_session_span(
             links = [Link(record["context"])]
 
     attributes.update(turn_trigger_attributes(platform, is_subagent=bool(record)))
+
+    # Kanban worker (#388): the dispatcher put its claim span in TRACEPARENT
+    # before spawning this process, so the run is one trace.
+    if parent_override is None and not links:
+        parent_override = kanban_remote_parent()
 
     # Session chaining (#29): a session that replaced another (``/new``,
     # ``/reset``, expiry) names it and links to its last root span.

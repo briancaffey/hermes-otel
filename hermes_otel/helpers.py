@@ -589,6 +589,29 @@ def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
     return "session"
 
 
+def parse_traceparent(value: Any) -> Optional[Tuple[int, int, int]]:
+    """``(trace_id, span_id, flags)`` from a W3C ``traceparent`` (version 00), or
+    None when it is malformed or names the all-zero (invalid) ids."""
+    parts = str(value or "").strip().lower().split("-")
+    if len(parts) != 4 or parts[0] != "00":
+        return None
+    trace_hex, span_hex, flags_hex = parts[1], parts[2], parts[3]
+    if len(trace_hex) != 32 or len(span_hex) != 16 or len(flags_hex) != 2:
+        return None
+    try:
+        trace_id, span_id, flags = int(trace_hex, 16), int(span_hex, 16), int(flags_hex, 16)
+    except ValueError:
+        return None
+    if not trace_id or not span_id:
+        return None
+    return trace_id, span_id, flags
+
+
+def format_traceparent(trace_id: int, span_id: int, flags: int) -> str:
+    """The W3C ``traceparent`` for a span context (version 00)."""
+    return f"00-{trace_id:032x}-{span_id:016x}-{'01' if flags & 1 else '00'}"
+
+
 # ``hermes.turn.trigger`` (#394): what started a turn, from what Hermes makes
 # observable at turn start (the hook's ``platform``, the session-context vars
 # and the process environment). A closed set, so a backend can group by it.

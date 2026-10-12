@@ -64,6 +64,11 @@ def reset_state() -> None:
     _ls._LIVE_STORE = None
     _red._hermes_resolved = False
     _red._hermes_redactor = None
+    from .hooks import kanban as _kb
+
+    _kb._clear_traceparent()
+    with _kb._RUN_LOCK:
+        _kb._RUN_CONTEXTS.clear()
 
 
 def install_singleton(plugin: Optional[HermesOTelPlugin]) -> Optional[HermesOTelPlugin]:

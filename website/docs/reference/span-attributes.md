@@ -221,7 +221,7 @@ One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<
 
 ## `kanban.*`
 
-One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process (each the root of its own trace), `kanban.complete` and `kanban.block` in the worker's own trace. Opened and closed at once.
+One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process, `kanban.complete` and `kanban.block` in the worker; one run of a card is one trace rooted at `kanban.claim` ([span hierarchy](/architecture/span-hierarchy#kanban)). Opened and closed at once.
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
