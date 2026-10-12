@@ -350,7 +350,3 @@ def on_kanban_task_blocked(
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "blocked")
     _finish(tracer, "kanban.block", attrs, "blocked", "hermes.kanban.reason", reason)
-
-
-# Private spellings kept for one release (#411): import the public names.
-_identity = kanban_identity

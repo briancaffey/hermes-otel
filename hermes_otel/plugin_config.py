@@ -1257,17 +1257,3 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     ("Host metrics", ("host_metrics", "host_metrics_gpu", "host_metrics_interval_ms")),
     ("Backends", ("backends",)),
 )
-
-
-# Private spellings kept for one release (#411): import the public names.
-_coerce_from_yaml = coerce_from_yaml
-_coerce_backends = coerce_backends
-_reconcile_metrics_settings = reconcile_metrics_settings
-
-
-# Private spellings kept for one release (#405): import the public names.
-_ENV_PREFIX = ENV_PREFIX
-_SCALAR_KINDS = SCALAR_KINDS
-_LEGACY_CONTENT_KEYS = LEGACY_CONTENT_KEYS
-_ALLOWED_KEYS = ALLOWED_KEYS
-_load_yaml = load_yaml

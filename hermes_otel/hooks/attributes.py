@@ -383,8 +383,3 @@ def _gen_ai_request_param_attributes(kwargs: dict) -> Dict[str, Any]:
         except (TypeError, ValueError):
             pass
     return attrs
-
-
-# Private spellings kept for one release (#411): import the public names.
-_profile_attributes = profile_attributes
-_correlation_attributes = correlation_attributes

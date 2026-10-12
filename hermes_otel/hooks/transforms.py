@@ -118,7 +118,3 @@ def on_transform_llm_output(
         root = tracer.spans.get_current_parent(sid or None)
     set_attributes(root, {"hermes.llm.output.chars": chars})
     return None
-
-
-# Private spellings kept for one release (#411): import the public names.
-_set_attributes = set_attributes

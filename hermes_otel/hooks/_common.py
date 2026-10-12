@@ -209,7 +209,3 @@ def _resolve_session_id(
     if from_kwargs:
         return str(from_kwargs)
     return session_id_from_turn_id(turn_id) if turn_id else ""
-
-
-# Private spellings kept for one release (#411): import the public names.
-_as_dict = as_dict

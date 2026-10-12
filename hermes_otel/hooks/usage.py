@@ -231,9 +231,3 @@ def _record_genai_token_usage(
         v = totals.get(key, 0)
         if v:
             tracer.record_metric(metric_name, v, {**dims, "gen_ai.token.type": token_type})
-
-
-# Private spellings kept for one release (#411): import the public names.
-_normalize_usage = normalize_usage
-_usage_attributes = usage_attributes
-_genai_metric_dims = genai_metric_dims

@@ -865,7 +865,3 @@ class LangfuseAdapter(BackendAdapter):
             "span_count": len(observations),
             "truncated": False,
         }
-
-
-# Private spellings kept for one release (#411): import the public names.
-_obs_to_card_attrs = obs_to_card_attrs

@@ -800,7 +800,3 @@ def capture_summary(cfg: HermesOtelConfig) -> Dict[str, Any]:
         "logs": cfg.capture_logs,
         "sender_id": cfg.capture_sender_id,
     }
-
-
-# Private spellings kept for one release (#411): import the public names.
-_config_path_source = config_path_source

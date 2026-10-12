@@ -852,7 +852,3 @@ def signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
     return {
         "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
     }
-
-
-# Private spellings kept for one release (#411): import the public names.
-_signoz_trace_to_otlp = signoz_trace_to_otlp

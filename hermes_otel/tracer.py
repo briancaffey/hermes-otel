@@ -704,7 +704,3 @@ def get_tracer() -> HermesOTelPlugin:
     if _tracer is None:
         _tracer = HermesOTelPlugin()
     return _tracer
-
-
-# Private spellings kept for one release (#411): import the public names.
-_is_mcp_keepalive_ping = is_mcp_keepalive_ping

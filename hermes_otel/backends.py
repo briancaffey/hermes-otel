@@ -1580,7 +1580,3 @@ def resolve_from_env() -> Optional[_ResolvedBackend]:
         except ValueError:
             continue
     return None
-
-
-# Private spellings kept for one release (#411): import the public names.
-_langfuse_traces_url = langfuse_traces_url
