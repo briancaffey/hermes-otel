@@ -37,6 +37,31 @@ uv run --extra dev python scripts/turn_batch/check_batch.py \
 
 Every prompt gets a **marker**, `<token>-<id>`, substituted for `{marker}` and appended as `(batch marker: ...)`, so each turn can be found by text in any backend; `{token}` and `{workdir}` are also available.
 
+## Multi-agent scenarios
+
+`scripts/turn_batch/prompts-multiagent.yaml` holds the fleet shapes (#399). They run on their own because they cost more tokens and time than the default batch, and `make refactor-check` must not pick them up:
+
+```bash
+uv run --extra dev python scripts/turn_batch/run_batch.py --prompts scripts/turn_batch/prompts-multiagent.yaml
+uv run --extra dev python scripts/turn_batch/check_batch.py --manifest <runs.json>
+```
+
+| id | What it drives | What it expects |
+|---|---|---|
+| `delegation-batch` | one `delegate_task` with two tasks | two `subagent.*` spans, two rejoined child roots |
+| `delegation-nested` | an orchestrator child that delegates to a leaf (`delegation.max_spawn_depth: 2`) | an `agent` tree three deep in one trace |
+| `moa-turn` | a turn on a Mixture-of-Agents preset (`--provider moa -m cheap`) | two `moa_reference` and one `moa_aggregator` auxiliary `api.*` spans |
+
+A prompt can carry three keys the default library doesn't need:
+
+- `enable_toolsets`: adds toolsets the profile disables (`delegation` in the minimal profile).
+- `config`: deep-merged into the profile's `config.yaml` for that one turn.
+- `hermes_args`: added to its `hermes chat` command line.
+
+The runner restores `config.yaml` byte for byte after each turn, which also undoes an agent that edits its own config mid-turn. The extra expectation keys are `span_prefix_count_min`, `subagent_roots_min`, `agent_depth_min` and `attr_values_min` (described in the file's header).
+
+`chat -q` runs a delegation batch synchronously. The background path, where `subagent_stop` arrives in a later turn, is covered by `tests/integration/test_subagent_hierarchy.py`. Kanban across two profiles and a cron run need run modes the turn runner doesn't have; the kanban demo (`scripts/kanban_demo`) covers one profile's runs.
+
 ## How the turns run
 
 Each prompt is one `hermes -p <profile> chat -Q --yolo -q "<prompt>"` process with stdin closed, a per-turn timeout, and a short pause before the next one. `--yolo` answers approval prompts, so nothing waits on a human, and a turn that times out is recorded and skipped over. The batch never uses `hermes -z`: a one-shot run disables Python logging before the plugin's handler can see a record, so it would export spans and metrics but no logs (see [OTel logs](/configuration/logs#one-shot-runs-export-no-logs)).
