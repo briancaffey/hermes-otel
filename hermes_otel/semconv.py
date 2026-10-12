@@ -753,6 +753,12 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "subagent.*",
     ),
     Attr(
+        "hermes.subagent.model_inherited",
+        "subagent",
+        "Set when the child's root starts: whether the child runs on its parent's model (`false` with `delegation.model` set)",
+        "subagent.*",
+    ),
+    Attr(
         "hermes.subagent.swept",
         "subagent",
         "`true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived",
@@ -982,6 +988,12 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "api.*",
     ),
     Attr("gen_ai.request.model", "model", "Model name", "agent / cron (turn root)"),
+    Attr(
+        "hermes.agent.model_override",
+        "model",
+        "Whether the turn runs on a model other than the profile's `model.default` (delegation.model, kanban `--model`, a cron job's model, `-m`, `/model`); absent when either is unknown",
+        "agent / cron (turn root)",
+    ),
     Attr(
         "gen_ai.request.presence_penalty",
         "model",

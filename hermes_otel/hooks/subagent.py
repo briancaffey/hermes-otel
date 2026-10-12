@@ -87,10 +87,14 @@ def on_subagent_start(
         sweep_with_turn=False,
     )
 
+    parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
     record: Dict[str, Any] = {
         "span": span,
         "role": role or None,
         "parent_session_id": parent_session_id,
+        # The parent turn's model, so the child's root can say whether it
+        # inherited it (delegation.model unset) or runs on its own (#391).
+        "parent_model": parent_ps.model if parent_ps is not None else "",
     }
     if span is not None and hasattr(span, "get_span_context"):
         try:

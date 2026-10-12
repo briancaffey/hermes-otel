@@ -20,6 +20,7 @@ from .attributes import (
     _summary_attributes,
     _weave_turn_attributes,
     correlation_attributes,
+    model_override_attributes,
     profile_attributes,
 )
 from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
@@ -28,6 +29,18 @@ try:
     from opentelemetry.trace import Link
 except ImportError:  # pragma: no cover — plugin is unusable without OTel
     Link = None  # type: ignore[assignment]
+
+
+def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None:
+    text = truncate_string(model, 200) if model else ""
+    if not text:
+        return
+    try:
+        span.set_attribute("gen_ai.request.model", text)
+        if parent_model:
+            span.set_attribute("hermes.subagent.model_inherited", text == str(parent_model))
+    except Exception:
+        pass
 
 
 def _start_session_span(
@@ -54,6 +67,7 @@ def _start_session_span(
     # The root span is where a session's aggregator is born; pin the
     # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
+    ps.model = str(model or "")
     if not ps.correlation_id:
         ps.correlation_id = _extract_correlation_id(extra_kwargs)
 
@@ -65,6 +79,7 @@ def _start_session_span(
     # Otherwise the provider lands on the root at on_session_end, once the
     # turn's API calls have reported it (#153).
     attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
+    attributes.update(model_override_attributes(model))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
     attributes.update(correlation_attributes(tracer, session_id, extra_kwargs))
@@ -95,6 +110,10 @@ def _start_session_span(
         span_obj = record.get("span")
         if span_obj is not None and hasattr(span_obj, "get_span_context"):
             parent_override = span_obj
+            # subagent_start does not carry the child's model; its root does.
+            # Put it on the delegation span so the agent-level span says which
+            # model the child ran on and whether it is the parent's (#391).
+            _annotate_delegation_model(span_obj, model, record.get("parent_model"))
         elif record.get("context") is not None and Link is not None:
             links = [Link(record["context"])]
 

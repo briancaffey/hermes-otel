@@ -618,3 +618,110 @@ class TestChildStatusMapping:
         from hermes_otel.helpers import subagent_status_to_span_status
 
         assert subagent_status_to_span_status(status) == ("error" if error else "ok")
+
+
+class TestPerAgentModels:
+    """Which model each agent ran on, on the agent-level spans (#391)."""
+
+    def test_child_on_its_own_model_is_not_inherited(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn(model="big-model")
+        on_subagent_start(
+            parent_session_id="parent", child_session_id="c-m", child_role="leaf", child_goal="g"
+        )
+        _run_child("c-m", model="small-model")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="c-m", child_status="completed"
+        )
+        _close_parent_turn(model="big-model")
+
+        d = dict(_span_by_name(exporter.get_finished_spans(), "subagent.leaf").attributes)
+        assert d["gen_ai.request.model"] == "small-model"
+        assert d["hermes.subagent.model_inherited"] is False
+
+    def test_child_on_the_parent_model_is_inherited(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_parent_turn(model="big-model")
+        on_subagent_start(
+            parent_session_id="parent", child_session_id="c-i", child_role="leaf", child_goal="g"
+        )
+        _run_child("c-i", model="big-model")
+        on_subagent_stop(
+            parent_session_id="parent", child_session_id="c-i", child_status="completed"
+        )
+        _close_parent_turn(model="big-model")
+
+        d = dict(_span_by_name(exporter.get_finished_spans(), "subagent.leaf").attributes)
+        assert d["hermes.subagent.model_inherited"] is True
+
+
+class TestModelOverride:
+    """``hermes.agent.model_override`` against the profile's ``model.default``."""
+
+    @staticmethod
+    def _fake_hermes_config(monkeypatch, cfg):
+        import sys
+        import types
+
+        pkg = types.ModuleType("hermes_cli")
+        mod = types.ModuleType("hermes_cli.config")
+        mod.read_raw_config_readonly = lambda: cfg
+        pkg.config = mod
+        monkeypatch.setitem(sys.modules, "hermes_cli", pkg)
+        monkeypatch.setitem(sys.modules, "hermes_cli.config", mod)
+
+    @pytest.mark.parametrize(
+        "cfg, model, expected",
+        [
+            ({"model": {"default": "big-model"}}, "big-model", False),
+            ({"model": {"default": "big-model"}}, "small-model", True),
+            ({"model": "big-model"}, "small-model", True),  # the shorthand spelling
+            ({}, "small-model", None),  # no default configured: no claim
+        ],
+    )
+    def test_root_says_whether_the_model_was_overridden(
+        self, inmemory_otel_setup, monkeypatch, cfg, model, expected
+    ):
+        exporter, _ = inmemory_otel_setup
+        self._fake_hermes_config(monkeypatch, cfg)
+        _run_child("solo", model=model)  # any plain turn
+        root = _span_where(exporter.get_finished_spans(), "agent", "session.id", "solo")
+        assert root.attributes.get("hermes.agent.model_override") is expected
+
+    def test_absent_outside_hermes(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _run_child("solo")
+        root = _span_where(exporter.get_finished_spans(), "agent", "session.id", "solo")
+        assert "hermes.agent.model_override" not in root.attributes
+
+
+class TestAnnotateDelegationModel:
+    """Edge cases of the rejoin annotation: nothing invented, never raises."""
+
+    class _Span:
+        def __init__(self, fail=False):
+            self.attrs, self.fail = {}, fail
+
+        def set_attribute(self, k, v):
+            if self.fail:
+                raise RuntimeError("ended")
+            self.attrs[k] = v
+
+    def test_no_child_model_sets_nothing(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        span = self._Span()
+        _annotate_delegation_model(span, "", "big")
+        assert span.attrs == {}
+
+    def test_unknown_parent_model_sets_only_the_model(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        span = self._Span()
+        _annotate_delegation_model(span, "small", "")
+        assert span.attrs == {"gen_ai.request.model": "small"}
+
+    def test_a_span_that_refuses_is_ignored(self):
+        from hermes_otel.hooks.session import _annotate_delegation_model
+
+        _annotate_delegation_model(self._Span(fail=True), "small", "big")

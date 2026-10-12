@@ -53,6 +53,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
+| `hermes.agent.model_override` | hermes | bool | Whether the turn runs on a model other than the profile's `model.default` (a `delegation.model` child, a kanban `--model` worker, a cron job's own model, `-m`, `/model`); absent when either is unknown |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
 | `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
@@ -246,6 +247,7 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 | `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
 | `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
+| `hermes.subagent.model_inherited` | hermes | bool | Set when the child's root starts, with `gen_ai.request.model` (the child's model): whether the child runs on its parent's model (`false` with `delegation.model` set) |
 | `hermes.subagent.swept` | hermes | bool | `true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived |
 
 ## Metrics

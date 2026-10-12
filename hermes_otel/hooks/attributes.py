@@ -73,6 +73,35 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
     return attrs
 
 
+def configured_default_model() -> str:
+    """The profile's configured main model (``model.default`` in Hermes's
+    config.yaml), or ``""`` when Hermes is not importable or names none."""
+    try:
+        from hermes_cli.config import read_raw_config_readonly  # type: ignore[import-not-found]
+
+        cfg = read_raw_config_readonly()
+    except Exception:
+        return ""
+    m = cfg.get("model") if isinstance(cfg, dict) else None
+    if isinstance(m, str):
+        return m.strip()
+    if isinstance(m, dict):
+        return str(m.get("default") or m.get("model") or m.get("name") or "").strip()
+    return ""
+
+
+def model_override_attributes(model: Any) -> Dict[str, bool]:
+    """``hermes.agent.model_override``: whether the turn runs on a model other
+    than the profile's configured default (a ``delegation.model`` child, a
+    kanban ``--model`` worker, a cron job's own model, ``-m`` or ``/model``).
+    Absent when either side is unknown (#391)."""
+    default = configured_default_model()
+    text = str(model or "").strip()
+    if not default or not text:
+        return {}
+    return {"hermes.agent.model_override": text != default}
+
+
 def profile_attributes(tracer: Any) -> Dict[str, str]:
     """``hermes.profile``: the Hermes profile this plugin instance serves (#70)."""
     name = getattr(tracer, "profile_name", None)
