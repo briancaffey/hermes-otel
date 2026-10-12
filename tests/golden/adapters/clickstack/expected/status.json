@@ -1,0 +1,27 @@
+{
+ "calls": [],
+ "result": {
+  "database": "default",
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "server",
+   "min_duration": "server",
+   "model": "server",
+   "name": "server",
+   "raw": "server",
+   "roots_only": "server",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "server",
+   "tool": "server"
+  },
+  "logs": true,
+  "metrics": true,
+  "name": "clickstack",
+  "query_lang_label": "ClickHouse SQL predicate",
+  "query_url": "http://localhost:8124",
+  "raw_placeholder": "SpanAttributes['tool.name'] = 'terminal'",
+  "type": "clickstack"
+ }
+}

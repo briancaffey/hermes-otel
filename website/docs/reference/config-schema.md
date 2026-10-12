@@ -81,7 +81,7 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`. (LangSmith is env-var only — `LANGSMITH_TRACING=true`; it is not an OTLP backend.) |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |

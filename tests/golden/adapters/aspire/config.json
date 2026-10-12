@@ -1,0 +1,15 @@
+{
+ "counter": "hermes_token_usage_total",
+ "entry": {
+  "endpoint": "http://localhost:4418",
+  "query_port": 18888,
+  "type": "aspire"
+ },
+ "gauge": "system_cpu_utilization",
+ "group_by": "model",
+ "metrics": false,
+ "model": "nvidia/nemotron-3-super-120b-a12b",
+ "session_id": "20261011_201958_a1b2c3",
+ "t0": 1791750000,
+ "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+}

@@ -13,7 +13,7 @@ Two ways to pick backends:
     fans out via its own ``BatchSpanProcessor`` so traces land in all
     configured collectors in parallel without blocking the agent thread.
   * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
-    or LangSmith/Langfuse credentials. When ``backends:`` is empty, env-var
+    or Langfuse / LangSmith credentials. When ``backends:`` is empty, env-var
     detection is used and at most one backend is selected: LangSmith first,
     then the order of ``backends._ENV_PRIORITY``.
 """

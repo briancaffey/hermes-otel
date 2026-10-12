@@ -1,0 +1,130 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hermes"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=gen_ai"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=process"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=system"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3301/api/v3/autocomplete/aggregate_attributes?aggregateOperator=sum&dataSource=metrics&searchText=hw"
+  },
+  {
+   "body": {
+    "compositeQuery": {
+     "builderQueries": {
+      "A": {
+       "aggregateAttribute": {
+        "dataType": "float64",
+        "isColumn": true,
+        "key": "hermes.token.usage",
+        "type": "Sum"
+       },
+       "dataSource": "metrics",
+       "disabled": false,
+       "expression": "A",
+       "filters": {
+        "items": [],
+        "op": "AND"
+       },
+       "groupBy": [
+        {
+         "dataType": "string",
+         "key": "model",
+         "type": "tag"
+        },
+        {
+         "dataType": "string",
+         "key": "service.instance.id",
+         "type": "tag"
+        }
+       ],
+       "queryName": "A",
+       "spaceAggregation": "sum",
+       "stepInterval": 300,
+       "timeAggregation": "latest"
+      }
+     },
+     "panelType": "graph",
+     "queryType": "builder"
+    },
+    "end": 1791750060000,
+    "start": 1791746400000,
+    "step": 300
+   },
+   "method": "POST",
+   "url": "http://localhost:3301/api/v4/query_range"
+  }
+ ],
+ "result": {
+  "agg": "sum",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "cumulative": true,
+  "kind": "Sum",
+  "name": "hermes.token.usage",
+  "points": 3,
+  "series": {
+   "nvidia/nemotron-3-nano-omni": [
+    53739.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "nvidia/nemotron-3-super-120b-a12b": [
+    79423.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    100.0,
+    null
+   ]
+  }
+ }
+}

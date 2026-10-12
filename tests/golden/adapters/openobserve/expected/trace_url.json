@@ -1,0 +1,4 @@
+{
+ "calls": [],
+ "result": "http://localhost:5080/web/traces/trace-details?org_identifier=default&stream=default&trace_id=ab43116e1d6d4a1a449db547c36ca808&from=1789077600000000&to=1791756000000000"
+}

@@ -1,0 +1,35 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?limit=1"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces?fromTimestamp=2026-10-11T19%3A20%3A00Z&toTimestamp=2026-10-11T20%3A21%3A00Z&limit=6&page=1"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:3000/api/public/traces/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend returned 404: 404 page not found",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend returned 404: 404 page not found",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  }
+ }
+}

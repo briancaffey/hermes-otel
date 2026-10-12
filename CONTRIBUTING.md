@@ -227,6 +227,28 @@ same module holds the cross-registry consistency checks (exporter types vs
 adapter `handles`, `signal_support()` vs adapter capabilities, env vars read vs
 `KNOWN_ENV_VARS`), marked `xfail(strict=True)` while #402 is open.
 
+### Adapter goldens
+
+`tests/golden/adapters/<type>/` holds, per dashboard adapter, the backend
+entry it is built from (`config.json`), a scripted server (`routes.json`,
+answered at the `urlopen` boundary by `helpers.wire.FakeWire`, so the raw SQL
+and LogsQL transports are covered too) and the recorded answers
+(`expected/<scenario>.json`: what the adapter returned *and* the requests it
+made). `tests/unit/test_dashboard_goldens.py` runs one fixed scenario list
+(status, the search variants, the detail, metrics and logs where declared,
+the error taxonomy) over `backends.adapters()`; a new adapter fails until its
+fixtures exist, and a change in an answer or a request fails with a diff.
+
+- Record or refresh: `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_dashboard_goldens.py`.
+- The canned bodies come from `seed_responses.py` (the shapes the adapter
+  tests recorded against real backends, re-based onto one shared turn). To
+  capture a real backend instead, run the dashboard with
+  `HERMES_OTEL_RECORD_HTTP=<dir>` and read `<dir>/exchanges.jsonl`
+  (credentials are masked; ClickHouse and VictoriaLogs post through their
+  own transports and are not captured).
+- A refactor PR never changes an `expected/` file silently: when it must,
+  the PR description lists every changed fixture and why.
+
 ### The test seam (`hermes_otel.testing`)
 
 Tests never reach into the package's private names. `hermes_otel.testing`

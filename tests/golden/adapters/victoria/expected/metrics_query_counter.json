@@ -1,0 +1,66 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:8428/api/v1/query?query=hermes_token_usage_total%5B3960s%5D&time=1791750060"
+  }
+ ],
+ "result": {
+  "agg": "sum",
+  "agg_requested": "sum",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "cumulative": true,
+  "name": "hermes_token_usage_total",
+  "points": 4,
+  "promql": "hermes_token_usage_total",
+  "series": {
+   "nvidia/nemotron-3-nano-omni": [
+    5.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null
+   ],
+   "nvidia/nemotron-3-super-120b-a12b": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    23690.0,
+    null
+   ]
+  },
+  "series_start_rule": "a series with no sample in the 300s before the window counts its first value"
+ }
+}

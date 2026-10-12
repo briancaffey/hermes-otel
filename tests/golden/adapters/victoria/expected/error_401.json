@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:10428/select/jaeger/api/traces?service=hermes-agent&limit=500&start=1791746400000000&end=1791750060000000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:10428/select/jaeger/api/traces/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  }
+ }
+}

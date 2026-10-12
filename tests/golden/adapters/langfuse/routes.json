@@ -1,0 +1,271 @@
+[
+ {
+  "method": "GET",
+  "path": "/api/public/traces/00000000000000000000000000000000",
+  "status": 404,
+  "text": "{\"message\":\"Trace not found\"}"
+ },
+ {
+  "method": "GET",
+  "path": "/api/public/traces/ab43116e1d6d4a1a449db547c36ca808",
+  "json": {
+   "id": "ab43116e1d6d4a1a449db547c36ca808",
+   "name": "agent",
+   "timestamp": "2026-10-11T20:20:00.000Z",
+   "latency": 4.029,
+   "totalCost": 0.0,
+   "observations": [
+    {
+     "id": "65a98a08103c9da7",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "type": "AGENT",
+     "name": "agent",
+     "startTime": "2026-10-11T20:20:00.000Z",
+     "endTime": "2026-10-11T20:20:04.029Z",
+     "latency": 4.029,
+     "level": "DEFAULT",
+     "statusMessage": null,
+     "parentObservationId": null,
+     "input": null,
+     "output": null,
+     "metadata": {
+      "attributes": {
+       "hermes.session_id": "20261011_201958_a1b2c3",
+       "session.id": "20261011_201958_a1b2c3",
+       "gen_ai.usage.input_tokens": "23504",
+       "gen_ai.usage.output_tokens": "186",
+       "gen_ai.usage.total_tokens": "23690",
+       "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+       "hermes.turn.number": "1",
+       "hermes.session.completed": "True",
+       "input.value": "read the file hermes_otel.yaml and say hello",
+       "output.value": "Here is the file."
+      }
+     }
+    },
+    {
+     "id": "aaaa000000000001",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "type": "TOOL",
+     "name": "terminal",
+     "startTime": "2026-10-11T20:20:01.500Z",
+     "endTime": "2026-10-11T20:20:02.620Z",
+     "latency": 1.12077,
+     "level": "DEFAULT",
+     "statusMessage": null,
+     "parentObservationId": "65a98a08103c9da7",
+     "input": {
+      "command": "ls"
+     },
+     "output": "hi",
+     "metadata": {
+      "attributes": {
+       "tool.name": "terminal",
+       "openinference.span.kind": "TOOL"
+      }
+     }
+    },
+    {
+     "id": "aaaa000000000002",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "type": "TOOL",
+     "name": "read_file",
+     "startTime": "2026-10-11T20:20:03.000Z",
+     "endTime": "2026-10-11T20:20:03.003Z",
+     "latency": 0.003595,
+     "level": "ERROR",
+     "statusMessage": "No such file",
+     "parentObservationId": "65a98a08103c9da7",
+     "input": {
+      "command": "ls"
+     },
+     "output": "hi",
+     "metadata": {
+      "attributes": {
+       "tool.name": "read_file",
+       "openinference.span.kind": "TOOL"
+      }
+     }
+    }
+   ],
+   "input": "read the file hermes_otel.yaml and say hello",
+   "output": "Here is the file.",
+   "sessionId": "20261011_201958_a1b2c3",
+   "tags": [],
+   "metadata": {
+    "attributes": {
+     "hermes.session_id": "20261011_201958_a1b2c3",
+     "session.id": "20261011_201958_a1b2c3",
+     "gen_ai.usage.input_tokens": "23504",
+     "gen_ai.usage.output_tokens": "186",
+     "gen_ai.usage.total_tokens": "23690",
+     "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+     "hermes.turn.number": "1",
+     "hermes.session.completed": "True"
+    }
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/public/traces",
+  "json": {
+   "data": [
+    {
+     "id": "ab43116e1d6d4a1a449db547c36ca808",
+     "name": "agent",
+     "timestamp": "2026-10-11T20:20:00.000Z",
+     "latency": 4.029,
+     "totalCost": 0.0,
+     "observations": [
+      "65a98a08103c9da7",
+      "aaaa000000000001",
+      "aaaa000000000002"
+     ],
+     "input": "read the file hermes_otel.yaml and say hello",
+     "output": "Here is the file.",
+     "sessionId": "20261011_201958_a1b2c3",
+     "tags": [],
+     "metadata": {
+      "attributes": {
+       "hermes.session_id": "20261011_201958_a1b2c3",
+       "session.id": "20261011_201958_a1b2c3",
+       "gen_ai.usage.input_tokens": "23504",
+       "gen_ai.usage.output_tokens": "186",
+       "gen_ai.usage.total_tokens": "23690",
+       "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+       "hermes.turn.number": "1",
+       "hermes.session.completed": "True"
+      }
+     }
+    },
+    {
+     "id": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "name": "agent",
+     "timestamp": "2026-10-11T20:10:00.000Z",
+     "latency": 4.029,
+     "totalCost": 0.0,
+     "observations": [
+      "65a98a08103c9da7",
+      "aaaa000000000001",
+      "aaaa000000000002"
+     ],
+     "input": "read the file hermes_otel.yaml and say hello",
+     "output": "Here is the file.",
+     "sessionId": "20261011_201958_a1b2c3",
+     "tags": [],
+     "metadata": {
+      "attributes": {
+       "hermes.session_id": "20261011_201958_a1b2c3",
+       "session.id": "20261011_201958_a1b2c3",
+       "gen_ai.usage.input_tokens": "23504",
+       "gen_ai.usage.output_tokens": "186",
+       "gen_ai.usage.total_tokens": "23690",
+       "llm.model_name": "nvidia/nemotron-3-super-120b-a12b",
+       "hermes.turn.number": "1",
+       "hermes.session.completed": "True"
+      }
+     }
+    }
+   ],
+   "meta": {
+    "page": 1,
+    "limit": 100,
+    "totalItems": 2,
+    "totalPages": 1
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/public/observations",
+  "json": {
+   "data": [
+    {
+     "id": "aaaa000000000001",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "type": "TOOL",
+     "name": "terminal",
+     "startTime": "2026-10-11T20:20:01.500Z",
+     "endTime": "2026-10-11T20:20:02.620Z",
+     "latency": 1.12077,
+     "level": "DEFAULT",
+     "statusMessage": null,
+     "parentObservationId": "65a98a08103c9da7",
+     "input": {
+      "command": "ls"
+     },
+     "output": "hi",
+     "metadata": {
+      "attributes": {
+       "tool.name": "terminal",
+       "openinference.span.kind": "TOOL"
+      }
+     }
+    },
+    {
+     "id": "aaaa000000000002",
+     "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+     "type": "TOOL",
+     "name": "read_file",
+     "startTime": "2026-10-11T20:20:03.000Z",
+     "endTime": "2026-10-11T20:20:03.003Z",
+     "latency": 0.003595,
+     "level": "ERROR",
+     "statusMessage": "No such file",
+     "parentObservationId": "65a98a08103c9da7",
+     "input": {
+      "command": "ls"
+     },
+     "output": "hi",
+     "metadata": {
+      "attributes": {
+       "tool.name": "read_file",
+       "openinference.span.kind": "TOOL"
+      }
+     }
+    },
+    {
+     "id": "aaaa000000000001",
+     "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "type": "TOOL",
+     "name": "terminal",
+     "startTime": "2026-10-11T20:10:01.500Z",
+     "endTime": "2026-10-11T20:10:02.620Z",
+     "latency": 1.12077,
+     "level": "DEFAULT",
+     "statusMessage": null,
+     "parentObservationId": "bbbb000000000001",
+     "input": {
+      "command": "ls"
+     },
+     "output": "hi",
+     "metadata": {
+      "attributes": {
+       "tool.name": "terminal",
+       "openinference.span.kind": "TOOL"
+      }
+     }
+    }
+   ],
+   "meta": {
+    "page": 1,
+    "limit": 100,
+    "totalItems": 3,
+    "totalPages": 1
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/public/projects",
+  "json": {
+   "data": [
+    {
+     "id": "cmgk1test0000proj",
+     "name": "hermes"
+    }
+   ]
+  }
+ }
+]

@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend rejected the credentials (401): {\"error\": \"bad token\"}",
+    "kind": "auth",
+    "status_code": 503
+   }
+  }
+ }
+}

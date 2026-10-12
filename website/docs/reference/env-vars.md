@@ -12,11 +12,12 @@ Complete list. See [Environment variables](/configuration/environment-variables)
 
 | Var | Value | Effect |
 |---|---|---|
-| `LANGSMITH_TRACING` | `true`/`false` | Enables LangSmith backend |
-| `LANGSMITH_API_KEY` | `lsv2_...` | LangSmith auth |
-| `LANGSMITH_ENDPOINT` | URL | LangSmith endpoint (default: `https://api.smith.langchain.com`) |
-| `LANGSMITH_PROJECT` | string | LangSmith project name |
-| `LANGSMITH_WORKSPACE_ID` | string | LangSmith workspace id header (multi-workspace orgs) |
+| `OTEL_LANGSMITH_API_KEY` | `lsv2_...` | LangSmith API key (plugin-specific; the env-var-mode opt-in) |
+| `OTEL_LANGSMITH_ENDPOINT` | URL | LangSmith endpoint override (default `https://api.smith.langchain.com/otel/v1/traces`) |
+| `OTEL_LANGSMITH_PROJECT` | string | LangSmith project (the `Langsmith-Project` header) |
+| `LANGSMITH_API_KEY` | `lsv2_...` | LangSmith API key fallback (needs the opt-in above) |
+| `LANGSMITH_ENDPOINT` | URL | LangSmith API base fallback; `/otel/v1/traces` is appended |
+| `LANGSMITH_PROJECT` | string | LangSmith project fallback |
 | `OTEL_LANGFUSE_PUBLIC_API_KEY` | `pk-lf-...` | Langfuse public key (plugin-specific) |
 | `OTEL_LANGFUSE_SECRET_API_KEY` | `sk-lf-...` | Langfuse secret key (plugin-specific) |
 | `OTEL_LANGFUSE_ENDPOINT` | URL | Langfuse OTLP endpoint |

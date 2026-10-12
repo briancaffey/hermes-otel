@@ -1,0 +1,29 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:8428/api/v1/label/__name__/values?start=1791746400&end=1791750060&match%5B%5D=%7B__name__%3D~%22%28hermes%7Cgen_ai%7Cprocess%7Csystem%7Chw%29_.%2A%22%7D"
+  }
+ ],
+ "result": [
+  {
+   "name": "hermes_message_count_total"
+  },
+  {
+   "name": "hermes_token_usage_total"
+  },
+  {
+   "name": "hermes_tool_duration_milliseconds_count"
+  },
+  {
+   "name": "hermes_tool_duration_milliseconds_sum"
+  },
+  {
+   "name": "system_cpu_utilization"
+  },
+  {
+   "name": "up"
+  }
+ ]
+}

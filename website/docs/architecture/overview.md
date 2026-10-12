@@ -108,7 +108,6 @@ Every path below is relative to `hermes_otel/` — the package directory that `h
 | `plugin_config.py` | Config file + env-var parsing with precedence |
 | `helpers.py` | Pure functions, no OTel import: string clipping, tool identity, skill detection, outcome and approval classification, `to_int` / `detect_session_kind` / `serialize_full` |
 | `debug_utils.py` | Optional debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log` |
-| `langsmith_backend.py` | LangSmith-specific translation (not OTLP) |
 
 ## Next
 

@@ -1,0 +1,58 @@
+{
+ "calls": [
+  {
+   "body": {
+    "sql": "SELECT column_name FROM information_schema.columns WHERE table_schema = 'public' AND table_name = 'system_cpu_utilization'"
+   },
+   "method": "POST",
+   "url": "http://localhost:4398/v1/sql?db=public"
+  },
+  {
+   "body": {
+    "sql": "SELECT \"greptime_timestamp\", \"greptime_value\", \"cpu_mode\" FROM \"system_cpu_utilization\" WHERE \"greptime_timestamp\" >= 1791746400000::TIMESTAMP_MS AND \"greptime_timestamp\" < 1791750060000::TIMESTAMP_MS ORDER BY \"greptime_timestamp\""
+   },
+   "method": "POST",
+   "url": "http://localhost:4398/v1/sql?db=public"
+  }
+ ],
+ "result": {
+  "agg": "max",
+  "agg_requested": "max",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "name": "system_cpu_utilization",
+  "points": 2,
+  "series": {
+   "_": [
+    null,
+    null,
+    0.5,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    0.25,
+    null,
+    null
+   ]
+  },
+  "sql": "SELECT \"greptime_timestamp\", \"greptime_value\", \"cpu_mode\" FROM \"system_cpu_utilization\" WHERE \"greptime_timestamp\" >= 1791746400000::TIMESTAMP_MS AND \"greptime_timestamp\" < 1791750060000::TIMESTAMP_MS ORDER BY \"greptime_timestamp\""
+ }
+}

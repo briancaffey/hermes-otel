@@ -1,0 +1,35 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/spans/1?time_start=1791746400000&time_end=1791750060000&system%5B%5D=spans%3Aall&query=where+_parent_id+%3D+%22%22+%7C+where+service_name+%3D+%22hermes-agent%22&sort_by=_time&sort_dir=desc&limit=6"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/traces/1/ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend returned 500: internal error",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend returned 500: internal error",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

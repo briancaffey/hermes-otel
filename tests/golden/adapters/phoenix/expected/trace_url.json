@@ -1,0 +1,12 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": "{ projects(first: 200) { edges { node { id name hasTraces } } } }"
+   },
+   "method": "POST",
+   "url": "http://localhost:6006/graphql"
+  }
+ ],
+ "result": "http://localhost:6006/projects/UHJvamVjdDoy/traces/ab43116e1d6d4a1a449db547c36ca808"
+}

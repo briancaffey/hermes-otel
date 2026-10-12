@@ -1,0 +1,44 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": {
+     "end_time": 1791750060000000,
+     "size": 6,
+     "sql": "SELECT * FROM default WHERE 1=1 AND (reference_parent_span_id IS NULL OR reference_parent_span_id = '') ORDER BY _timestamp DESC LIMIT 6",
+     "start_time": 1791746400000000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:5080/api/default/_search?type=traces"
+  },
+  {
+   "body": {
+    "query": {
+     "end_time": 1791753660000000,
+     "size": 500,
+     "sql": "SELECT * FROM default WHERE trace_id = 'ab43116e1d6d4a1a449db547c36ca808' ORDER BY start_time ASC LIMIT 500",
+     "start_time": 1783974060000000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:5080/api/default/_search?type=traces"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend query failed: timed out",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend query failed: timed out",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

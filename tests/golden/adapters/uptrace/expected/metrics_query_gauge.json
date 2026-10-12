@@ -1,0 +1,60 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/metrics/1?time_start=1791746400000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/metrics/1/timeseries?time_start=1791746400000&time_end=1791750060000&metric=system_cpu_utilization&alias=%24m&query=max%28%24m%29"
+  }
+ ],
+ "result": {
+  "agg": "max",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "cumulative": false,
+  "instrument": "gauge",
+  "mql": "max($m)",
+  "name": "system_cpu_utilization",
+  "points": 3,
+  "series": {
+   "_": [
+    69090.0,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    100.0,
+    null
+   ]
+  }
+ }
+}

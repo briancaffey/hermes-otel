@@ -1,0 +1,70 @@
+{
+ "calls": [
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "parent_id",
+       "operator": "is",
+       "value": null
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 6,
+     "newest": "2026-10-11T20:21:00.000000Z",
+     "oldest": "2026-10-11T19:20:00.000000Z",
+     "order": "descending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  },
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "trace_id",
+       "operator": "is",
+       "value": "ab43116e1d6d4a1a449db547c36ca808"
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 2000,
+     "order": "ascending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend returned 404: 404 page not found",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend returned 404: 404 page not found",
+    "kind": "not_found",
+    "status_code": 404
+   }
+  }
+ }
+}

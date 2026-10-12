@@ -1,0 +1,26 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": {
+     "end_time": 1791750060000000,
+     "size": 200,
+     "sql": "SELECT instrumentation_library_name AS logger, COUNT(*) AS n FROM \"default\" GROUP BY instrumentation_library_name ORDER BY n DESC LIMIT 200",
+     "start_time": 1791746400000000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:5080/api/default/_search?type=logs"
+  }
+ ],
+ "result": [
+  {
+   "count": 6,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 2,
+   "logger": "cli"
+  }
+ ]
+}

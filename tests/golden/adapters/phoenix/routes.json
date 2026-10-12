@@ -1,0 +1,395 @@
+[
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": "projects(",
+  "json": {
+   "data": {
+    "projects": {
+     "edges": [
+      {
+       "node": {
+        "id": "UHJvamVjdDox",
+        "name": "default",
+        "hasTraces": false
+       }
+      },
+      {
+       "node": {
+        "id": "UHJvamVjdDoy",
+        "name": "hermes-minimal",
+        "hasTraces": true
+       }
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": "__type",
+  "json": {
+   "data": {
+    "__type": {
+     "fields": [
+      {
+       "name": "spans",
+       "args": [
+        {
+         "name": "first"
+        },
+        {
+         "name": "timeRange"
+        },
+        {
+         "name": "filterCondition"
+        },
+        {
+         "name": "sort"
+        },
+        {
+         "name": "traceFilterCondition"
+        }
+       ]
+      }
+     ]
+    }
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": [
+   "trace(traceId",
+   "00000000000000000000000000000000"
+  ],
+  "json": {
+   "data": {
+    "node": {
+     "name": "hermes-minimal",
+     "trace": null
+    }
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": "trace(traceId",
+  "json": {
+   "data": {
+    "node": {
+     "name": "hermes-minimal",
+     "trace": {
+      "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+      "numSpans": 3,
+      "spans": {
+       "edges": [
+        {
+         "node": {
+          "spanId": "65a98a08103c9da7",
+          "name": "agent",
+          "latencyMs": 4029.0,
+          "statusCode": "OK",
+          "statusMessage": "",
+          "startTime": "2026-10-11T20:20:00.000000+00:00",
+          "endTime": "2026-10-11T20:20:04.029000+00:00",
+          "parentId": null,
+          "spanKind": "agent",
+          "attributes": "{\"hermes\": {\"session_id\": \"20261011_201958_a1b2c3\", \"turn\": {\"number\": 1}, \"session\": {\"completed\": true}}, \"session\": {\"id\": \"20261011_201958_a1b2c3\"}, \"gen_ai\": {\"usage\": {\"input_tokens\": 23504, \"output_tokens\": 186, \"total_tokens\": 23690}}, \"llm\": {\"model_name\": \"nvidia/nemotron-3-super-120b-a12b\"}, \"input\": {\"value\": \"read the file hermes_otel.yaml and say hello\"}, \"output\": {\"value\": \"Here is the file.\"}}",
+          "context": {
+           "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+           "spanId": "65a98a08103c9da7"
+          },
+          "trace": {
+           "numSpans": 3
+          },
+          "input": {
+           "value": "read the file hermes_otel.yaml and say hello",
+           "mimeType": "text/plain"
+          },
+          "output": {
+           "value": "Here is the file.",
+           "mimeType": "text/plain"
+          },
+          "tokenCountTotal": 23690,
+          "tokenCountPrompt": 23504,
+          "tokenCountCompletion": 186
+         }
+        },
+        {
+         "node": {
+          "spanId": "aaaa000000000001",
+          "name": "tool.terminal",
+          "latencyMs": 1120.77,
+          "statusCode": "OK",
+          "statusMessage": "",
+          "startTime": "2026-10-11T20:20:01.500000+00:00",
+          "endTime": "2026-10-11T20:20:02.620770+00:00",
+          "parentId": "65a98a08103c9da7",
+          "spanKind": "tool",
+          "attributes": "{\"tool\": {\"name\": \"terminal\"}, \"openinference\": {\"span\": {\"kind\": \"TOOL\"}}}",
+          "context": {
+           "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+           "spanId": "aaaa000000000001"
+          },
+          "trace": {
+           "numSpans": 3
+          },
+          "input": {
+           "value": null,
+           "mimeType": "text/plain"
+          },
+          "output": {
+           "value": null,
+           "mimeType": "text/plain"
+          },
+          "tokenCountTotal": null,
+          "tokenCountPrompt": null,
+          "tokenCountCompletion": null
+         }
+        },
+        {
+         "node": {
+          "spanId": "aaaa000000000002",
+          "name": "tool.read_file",
+          "latencyMs": 3.595,
+          "statusCode": "ERROR",
+          "statusMessage": "No such file",
+          "startTime": "2026-10-11T20:20:03.000000+00:00",
+          "endTime": "2026-10-11T20:20:03.003595+00:00",
+          "parentId": "65a98a08103c9da7",
+          "spanKind": "tool",
+          "attributes": "{\"tool\": {\"name\": \"read_file\"}, \"openinference\": {\"span\": {\"kind\": \"TOOL\"}}}",
+          "context": {
+           "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+           "spanId": "aaaa000000000002"
+          },
+          "trace": {
+           "numSpans": 3
+          },
+          "input": {
+           "value": null,
+           "mimeType": "text/plain"
+          },
+          "output": {
+           "value": null,
+           "mimeType": "text/plain"
+          },
+          "tokenCountTotal": null,
+          "tokenCountPrompt": null,
+          "tokenCountCompletion": null
+         }
+        }
+       ],
+       "pageInfo": {
+        "hasNextPage": false
+       }
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": "'tool.' in name",
+  "json": {
+   "data": {
+    "node": {
+     "name": "hermes-minimal",
+     "spans": {
+      "edges": [
+       {
+        "node": {
+         "spanId": "aaaa000000000001",
+         "name": "tool.terminal",
+         "latencyMs": 1120.77,
+         "statusCode": "OK",
+         "statusMessage": "",
+         "startTime": "2026-10-11T20:20:01.500000+00:00",
+         "endTime": "2026-10-11T20:20:02.620770+00:00",
+         "parentId": "65a98a08103c9da7",
+         "spanKind": "tool",
+         "attributes": "{\"tool\": {\"name\": \"terminal\"}, \"openinference\": {\"span\": {\"kind\": \"TOOL\"}}}",
+         "context": {
+          "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+          "spanId": "aaaa000000000001"
+         },
+         "trace": {
+          "numSpans": 3
+         },
+         "input": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "output": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "tokenCountTotal": null,
+         "tokenCountPrompt": null,
+         "tokenCountCompletion": null
+        }
+       },
+       {
+        "node": {
+         "spanId": "aaaa000000000002",
+         "name": "tool.read_file",
+         "latencyMs": 3.595,
+         "statusCode": "ERROR",
+         "statusMessage": "No such file",
+         "startTime": "2026-10-11T20:20:03.000000+00:00",
+         "endTime": "2026-10-11T20:20:03.003595+00:00",
+         "parentId": "65a98a08103c9da7",
+         "spanKind": "tool",
+         "attributes": "{\"tool\": {\"name\": \"read_file\"}, \"openinference\": {\"span\": {\"kind\": \"TOOL\"}}}",
+         "context": {
+          "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+          "spanId": "aaaa000000000002"
+         },
+         "trace": {
+          "numSpans": 3
+         },
+         "input": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "output": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "tokenCountTotal": null,
+         "tokenCountPrompt": null,
+         "tokenCountCompletion": null
+        }
+       },
+       {
+        "node": {
+         "spanId": "aaaa000000000001",
+         "name": "tool.terminal",
+         "latencyMs": 1120.77,
+         "statusCode": "OK",
+         "statusMessage": "",
+         "startTime": "2026-10-11T20:10:01.500000+00:00",
+         "endTime": "2026-10-11T20:10:02.620770+00:00",
+         "parentId": "bbbb000000000001",
+         "spanKind": "tool",
+         "attributes": "{\"tool\": {\"name\": \"terminal\"}, \"openinference\": {\"span\": {\"kind\": \"TOOL\"}}}",
+         "context": {
+          "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+          "spanId": "aaaa000000000001"
+         },
+         "trace": {
+          "numSpans": 3
+         },
+         "input": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "output": {
+          "value": null,
+          "mimeType": "text/plain"
+         },
+         "tokenCountTotal": null,
+         "tokenCountPrompt": null,
+         "tokenCountCompletion": null
+        }
+       }
+      ],
+      "pageInfo": {
+       "hasNextPage": false
+      }
+     }
+    }
+   }
+  }
+ },
+ {
+  "method": "POST",
+  "path": "/graphql",
+  "body_contains": "spans(",
+  "json": {
+   "data": {
+    "node": {
+     "name": "hermes-minimal",
+     "spans": {
+      "edges": [
+       {
+        "node": {
+         "spanId": "65a98a08103c9da7",
+         "name": "agent",
+         "latencyMs": 4029.0,
+         "statusCode": "OK",
+         "statusMessage": "",
+         "startTime": "2026-10-11T20:20:00.000000+00:00",
+         "endTime": "2026-10-11T20:20:04.029000+00:00",
+         "parentId": null,
+         "spanKind": "agent",
+         "attributes": "{\"hermes\": {\"session_id\": \"20261011_201958_a1b2c3\", \"turn\": {\"number\": 1}, \"session\": {\"completed\": true}}, \"session\": {\"id\": \"20261011_201958_a1b2c3\"}, \"gen_ai\": {\"usage\": {\"input_tokens\": 23504, \"output_tokens\": 186, \"total_tokens\": 23690}}, \"llm\": {\"model_name\": \"nvidia/nemotron-3-super-120b-a12b\"}, \"input\": {\"value\": \"read the file hermes_otel.yaml and say hello\"}, \"output\": {\"value\": \"Here is the file.\"}}",
+         "context": {
+          "traceId": "ab43116e1d6d4a1a449db547c36ca808",
+          "spanId": "65a98a08103c9da7"
+         },
+         "trace": {
+          "numSpans": 3
+         },
+         "input": {
+          "value": "read the file hermes_otel.yaml and say hello",
+          "mimeType": "text/plain"
+         },
+         "output": {
+          "value": "Here is the file.",
+          "mimeType": "text/plain"
+         },
+         "tokenCountTotal": 23690,
+         "tokenCountPrompt": 23504,
+         "tokenCountCompletion": 186
+        }
+       },
+       {
+        "node": {
+         "spanId": "bbbb000000000001",
+         "name": "agent",
+         "latencyMs": 4029.0,
+         "statusCode": "ERROR",
+         "statusMessage": "No such file",
+         "startTime": "2026-10-11T20:10:00.000000+00:00",
+         "endTime": "2026-10-11T20:10:04.029000+00:00",
+         "parentId": null,
+         "spanKind": "agent",
+         "attributes": "{\"hermes\": {\"session_id\": \"20261011_201958_a1b2c3\", \"turn\": {\"number\": 1}, \"session\": {\"completed\": true}}, \"session\": {\"id\": \"20261011_201958_a1b2c3\"}, \"gen_ai\": {\"usage\": {\"input_tokens\": 23504, \"output_tokens\": 186, \"total_tokens\": 23690}}, \"llm\": {\"model_name\": \"nvidia/nemotron-3-super-120b-a12b\"}, \"input\": {\"value\": \"read the file hermes_otel.yaml and say hello\"}, \"output\": {\"value\": \"Here is the file.\"}}",
+         "context": {
+          "traceId": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+          "spanId": "bbbb000000000001"
+         },
+         "trace": {
+          "numSpans": 3
+         },
+         "input": {
+          "value": "read the file hermes_otel.yaml and say hello",
+          "mimeType": "text/plain"
+         },
+         "output": {
+          "value": "Here is the file.",
+          "mimeType": "text/plain"
+         },
+         "tokenCountTotal": 23690,
+         "tokenCountPrompt": 23504,
+         "tokenCountCompletion": 186
+        }
+       }
+      ],
+      "pageInfo": {
+       "hasNextPage": false
+      }
+     }
+    }
+   }
+  }
+ }
+]

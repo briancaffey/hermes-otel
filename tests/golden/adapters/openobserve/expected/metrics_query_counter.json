@@ -1,0 +1,72 @@
+{
+ "calls": [
+  {
+   "body": {
+    "query": {
+     "end_time": 1791750060000000,
+     "size": 10000,
+     "sql": "SELECT * FROM \"hermes_token_usage\" ORDER BY _timestamp DESC LIMIT 10000",
+     "start_time": 1791746400000000
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:5080/api/default/_search?type=metrics"
+  }
+ ],
+ "result": {
+  "agg": "sum",
+  "agg_requested": "sum",
+  "bucketS": 300,
+  "buckets": [
+   1791746400000000000,
+   1791746700000000000,
+   1791747000000000000,
+   1791747300000000000,
+   1791747600000000000,
+   1791747900000000000,
+   1791748200000000000,
+   1791748500000000000,
+   1791748800000000000,
+   1791749100000000000,
+   1791749400000000000,
+   1791749700000000000,
+   1791750000000000000
+  ],
+  "cumulative": true,
+  "name": "hermes_token_usage",
+  "points": 5,
+  "series": {
+   "nvidia/nemotron-3-nano-omni": [
+    null,
+    null,
+    null,
+    null,
+    5.0,
+    null,
+    null,
+    null,
+    23585.0,
+    null,
+    null,
+    null,
+    105.0
+   ],
+   "nvidia/nemotron-3-super-120b-a12b": [
+    null,
+    null,
+    null,
+    null,
+    null,
+    null,
+    23590.0,
+    null,
+    null,
+    null,
+    105.0,
+    null,
+    null
+   ]
+  },
+  "truncated": false
+ }
+}

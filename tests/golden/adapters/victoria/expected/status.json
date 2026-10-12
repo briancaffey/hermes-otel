@@ -1,0 +1,29 @@
+{
+ "calls": [],
+ "result": {
+  "default_service": "hermes-agent",
+  "filters": {
+   "free_text": "none",
+   "min_duration": "server",
+   "model": "server",
+   "name": "client",
+   "raw": "server",
+   "roots_only": "client",
+   "service": "server",
+   "session": "server",
+   "status_error": "server",
+   "status_ok": "none",
+   "tool": "server"
+  },
+  "logs": true,
+  "logs_url": "http://localhost:9428",
+  "metrics": true,
+  "name": "victoria",
+  "prometheus_url": "http://localhost:8428",
+  "query_api": "jaeger-compatible",
+  "query_lang_label": "Jaeger tags (key=value)",
+  "query_url": "http://localhost:10428",
+  "raw_placeholder": "tool.name=terminal error=true",
+  "type": "victoria"
+ }
+}

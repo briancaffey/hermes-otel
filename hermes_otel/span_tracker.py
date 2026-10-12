@@ -124,8 +124,7 @@ class SpanTracker:
     def discard(self, key: str):
         """Forget a tracked span without ending it; returns it (or None).
 
-        Used for LangSmith runs, which are plain dicts the tracer closes over
-        HTTP itself rather than via ``span.end()``.
+        For callers that close a span by other means than ``span.end()``.
         """
         with self._lock:
             return self._active_spans.pop(key, None)

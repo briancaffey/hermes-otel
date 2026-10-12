@@ -1,0 +1,21 @@
+{
+ "calls": [
+  {
+   "body": {
+    "sql": "SELECT \"scope_name\", count(*) AS n FROM \"opentelemetry_logs\" WHERE \"timestamp\" >= 1791746400000000000::TIMESTAMP_NS AND \"timestamp\" < 1791750060000000000::TIMESTAMP_NS GROUP BY \"scope_name\" ORDER BY n DESC LIMIT 200"
+   },
+   "method": "POST",
+   "url": "http://localhost:4398/v1/sql?db=public"
+  }
+ ],
+ "result": [
+  {
+   "count": 6,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 2,
+   "logger": "cli"
+  }
+ ]
+}

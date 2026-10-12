@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": "SELECT TraceId, SpanId, SpanName, ServiceName, StatusCode, Duration, SpanAttributes, toUnixTimestamp64Nano(Timestamp) AS ts_ns FROM `default`.`otel_traces` WHERE Timestamp >= fromUnixTimestamp64Nano(1791746400000000000) AND Timestamp < fromUnixTimestamp64Nano(1791750060000000000) AND ServiceName = 'hermes-agent' AND ParentSpanId = '' ORDER BY Timestamp DESC LIMIT 6",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  },
+  {
+   "body": "SELECT TraceId, SpanId, ParentSpanId, SpanName, SpanKind, ServiceName, StatusCode, StatusMessage, Duration, SpanAttributes, ResourceAttributes, toUnixTimestamp64Nano(Timestamp) AS ts_ns, arrayMap(t -> toUnixTimestamp64Nano(t), Events.Timestamp) AS event_ts, Events.Name AS event_names, Events.Attributes AS event_attrs FROM `default`.`otel_traces` WHERE TraceId = 'ab43116e1d6d4a1a449db547c36ca808' ORDER BY Timestamp",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "ClickHouse query failed: timed out",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "ClickHouse query failed: timed out",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

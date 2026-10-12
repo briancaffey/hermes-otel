@@ -126,7 +126,7 @@ class TestGeneratedDocs:
     def test_every_backend_env_var_is_in_the_reference(self):
         src = "".join(
             (REPO_ROOT / "hermes_otel" / f).read_text(encoding="utf-8")
-            for f in ("backends.py", "langsmith_backend.py", "live_store.py", "plugin_config.py")
+            for f in ("backends.py", "live_store.py", "plugin_config.py")
         )
         names = set(re.findall(r'"([A-Z][A-Z0-9_]{5,})"', src))
         names |= {"HERMES_OTEL_CONFIG", "HERMES_HOME", "HERMES_OTEL_DEBUG"}

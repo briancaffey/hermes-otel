@@ -168,7 +168,7 @@ OTEL_PROJECT_NAME=hermes-agent
 
 Make sure none of the higher-priority backends are also configured in the
 same file — the plugin's detection order is LangSmith > Langfuse > SigNoz >
-Phoenix, so comment out `LANGSMITH_*`, `OTEL_LANGFUSE_*`, and `LANGFUSE_*`
+Phoenix, so comment out `OTEL_LANGSMITH_*`, `OTEL_LANGFUSE_*`, and `LANGFUSE_*`
 vars if you want hermes-otel to pick SigNoz.
 
 Restart `hermes gateway` and confirm:

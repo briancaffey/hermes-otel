@@ -1,0 +1,44 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1/systems?time_start=1791750000000&time_end=1791750060000"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/logs/1?time_start=1791746400000&time_end=1791750060000&system%5B%5D=log%3Aall&sort_by=_time&sort_dir=desc&limit=50&query=where+service_name+%3D+%22hermes-agent%22+%7C+where+_trace_id+%3D+%22ab43116e1d6d4a1a449db547c36ca808%22"
+  }
+ ],
+ "result": [
+  {
+   "attributes": {
+    "hermes.log.attribution": "context"
+   },
+   "body": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+   "event_name": null,
+   "level": "INFO",
+   "logger": "hermes_otel",
+   "session_id": "20261011_201958_a1b2c3",
+   "severity_number": 9,
+   "span_id": "65a98a08103c9da7",
+   "time_unix_nano": 1791750004100000000,
+   "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+  },
+  {
+   "attributes": {
+    "hermes.log.attribution": "context"
+   },
+   "body": "careful: the output was truncated",
+   "event_name": "hermes.turn.end",
+   "level": "WARN",
+   "logger": "cli",
+   "session_id": "20261011_201958_a1b2c3",
+   "severity_number": 13,
+   "span_id": "65a98a08103c9da7",
+   "time_unix_nano": 1791750002000000000,
+   "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ]
+}

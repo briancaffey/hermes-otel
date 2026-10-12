@@ -1,0 +1,14 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:18888/api/telemetry/traces/00000000000000000000000000000000"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in Aspire",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

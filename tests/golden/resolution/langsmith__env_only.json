@@ -1,0 +1,10 @@
+{
+ "env": {
+  "OTEL_LANGSMITH_ENDPOINT": "http://localhost:4318/v1/traces"
+ },
+ "env_notices": [],
+ "path": "env_only",
+ "resolved": null,
+ "selected": null,
+ "type": "langsmith"
+}

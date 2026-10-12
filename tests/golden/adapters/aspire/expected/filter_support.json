@@ -1,0 +1,16 @@
+{
+ "calls": [],
+ "result": {
+  "free_text": "client",
+  "min_duration": "client",
+  "model": "client",
+  "name": "client",
+  "raw": "none",
+  "roots_only": "client",
+  "service": "server",
+  "session": "client",
+  "status_error": "client",
+  "status_ok": "client",
+  "tool": "client"
+ }
+}

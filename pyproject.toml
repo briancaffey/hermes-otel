@@ -65,9 +65,6 @@ Issues = "https://github.com/briancaffey/hermes-otel/issues"
 Changelog = "https://github.com/briancaffey/hermes-otel/blob/main/CHANGELOG.md"
 
 [project.optional-dependencies]
-langsmith = [
-    "langsmith",
-]
 yaml = [
     "pyyaml",
 ]

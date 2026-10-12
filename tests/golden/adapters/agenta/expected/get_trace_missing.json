@@ -1,0 +1,33 @@
+{
+ "calls": [
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
+       "field": "trace_id",
+       "operator": "is",
+       "value": "00000000000000000000000000000000"
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 2000,
+     "order": "ascending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  }
+ ],
+ "error": {
+  "detail": "Trace 00000000000000000000000000000000 not found in Agenta",
+  "kind": "not_found",
+  "status_code": 404
+ }
+}

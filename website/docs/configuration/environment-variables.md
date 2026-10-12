@@ -6,7 +6,7 @@ description: "Where to set environment variables and how they combine with the y
 
 # Environment variables
 
-Most shaping vars are `HERMES_OTEL_*`-prefixed and override the corresponding field in `~/.hermes/hermes_otel.yaml`; backend vars (`OTEL_PHOENIX_ENDPOINT`, `LANGSMITH_TRACING`, …) select a single backend when no `backends:` list is configured.
+Most shaping vars are `HERMES_OTEL_*`-prefixed and override the corresponding field in `~/.hermes/hermes_otel.yaml`; backend vars (`OTEL_PHOENIX_ENDPOINT`, `OTEL_LANGSMITH_API_KEY`, …) select a single backend when no `backends:` list is configured.
 
 ## The complete list
 

@@ -1,0 +1,19 @@
+{
+ "calls": [
+  {
+   "body": "SELECT ScopeName, count() AS n FROM `default`.`otel_logs` WHERE Timestamp >= fromUnixTimestamp64Nano(1791746400000000000) AND Timestamp < fromUnixTimestamp64Nano(1791750060000000000) GROUP BY ScopeName ORDER BY n DESC LIMIT 200",
+   "method": "POST",
+   "url": "http://localhost:8124/?database=default&default_format=JSON&output_format_json_quote_64bit_integers=0"
+  }
+ ],
+ "result": [
+  {
+   "count": 6,
+   "logger": "hermes_otel"
+  },
+  {
+   "count": 2,
+   "logger": "cli"
+  }
+ ]
+}

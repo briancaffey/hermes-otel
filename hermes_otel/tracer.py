@@ -3,9 +3,6 @@
 Provides a singleton tracer manager that fans out spans/metrics to one or more
 collector backends (Phoenix, Langfuse, SigNoz, Jaeger, Tempo, LGTM, Uptrace,
 OpenObserve, Parseable, or any other OTLP-compatible collector via the ``otlp`` type).
-LangSmith remains a separate, env-var-only single-backend path because it uses
-its own HTTP API rather than OTLP.
-
 When multiple backends are configured the SDK's TracerProvider holds one
 ``BatchSpanProcessor`` per backend — each processor owns its own background
 worker thread, so no single slow collector can block the agent's hot path or
@@ -793,8 +790,6 @@ class HermesOTelPlugin:
         # LoggerProvider created when capture_logs is on and at least one
         # log-capable backend is wired up. None otherwise.
         self._logger_provider: Optional[Any] = None
-        # LangSmith backend (None when using OTLP). Set when LANGSMITH_TRACING=true.
-        self._langsmith = None
         # Metrics
         self._meter = None
         self._meter_provider = None
@@ -856,7 +851,6 @@ class HermesOTelPlugin:
         self._metric_readers = []
         self._log_processors = []
         self._logger_provider = None
-        self._langsmith = None
         self._meter = None
         self._meter_provider = None
         self._live_active = False
@@ -906,11 +900,6 @@ class HermesOTelPlugin:
                     obj.shutdown()
                 except Exception:
                     pass
-        if self._langsmith is not None:
-            try:
-                self._langsmith.shutdown()
-            except Exception:
-                pass
         if self._logger_provider is not None:
             try:
                 from . import log_handler
@@ -931,12 +920,11 @@ class HermesOTelPlugin:
         """Initialize one or more backends.
 
         Resolution order:
-          1. ``LANGSMITH_TRACING=true`` → LangSmith (HTTP API, single backend).
-          2. ``config.backends`` non-empty → fan out to every entry via
+          1. ``config.backends`` non-empty → fan out to every entry via
              ``_init_otlp_pipeline``.
-          3. Explicit ``endpoint`` arg → single Phoenix backend (via
+          2. Explicit ``endpoint`` arg → single Phoenix backend (via
              ``_init_otlp`` for back-compat).
-          4. Legacy env-var detection (single backend, first match wins, in
+          3. Legacy env-var detection (single backend, first match wins, in
              the order of ``backends._ENV_PRIORITY``).
 
         Returns True if at least one backend was initialized.
@@ -949,11 +937,7 @@ class HermesOTelPlugin:
             logger.info("[hermes-otel] Disabled via config (enabled=false)")
             return False
 
-        # 1. LangSmith short-circuit (legacy compat).
-        if self._wants_langsmith():
-            return self._init_langsmith()
-
-        # 2. Multi-backend fan-out from yaml config.
+        # 1. Multi-backend fan-out from yaml config.
         if self.config.backends:
             backends: List[_ResolvedBackend] = []
             for bc in self.config.backends:
@@ -969,20 +953,14 @@ class HermesOTelPlugin:
                 return False
             return self._init_otlp_pipeline(backends)
 
-        # 3. Explicit endpoint arg → single Phoenix backend.
+        # 2. Explicit endpoint arg → single Phoenix backend.
         if endpoint:
             return self._init_otlp(endpoint, backend_name="Phoenix")
 
-        # 4. Legacy env-var detection (single backend).
+        # 3. Legacy env-var detection (single backend).
         return self._init_otlp_from_env()
 
     # ── Backend resolution ───────────────────────────────────────────────
-
-    @staticmethod
-    def _wants_langsmith() -> bool:
-        return os.getenv("LANGSMITH_TRACING", "").strip().lower() == "true" and bool(
-            os.getenv("LANGSMITH_API_KEY", "").strip()
-        )
 
     def _init_otlp_from_env(self) -> bool:
         """First-match-wins single-backend init from environment variables.
@@ -1010,8 +988,8 @@ class HermesOTelPlugin:
             types = ", ".join(_backends._ENV_PRIORITY)
             logger.warning(
                 "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
-                f"type's credentials for one of: {types}; or LANGSMITH_TRACING; or define "
-                "'backends:' in hermes_otel.yaml)"
+                f"type's credentials for one of: {types}; or define 'backends:' in "
+                "hermes_otel.yaml)"
             )
             return False
         return self._init_otlp_pipeline([rb])
@@ -1036,22 +1014,6 @@ class HermesOTelPlugin:
             supports_metrics=backend_name.lower() not in _TRACES_ONLY,
         )
         return self._init_otlp_pipeline([backend])
-
-    def _init_langsmith(self) -> bool:
-        """Initialize LangSmith backend from environment variables."""
-        from .langsmith_backend import LangSmithBackend
-
-        try:
-            backend = LangSmithBackend.from_env()
-            if backend is None:
-                return False
-            self._langsmith = backend
-            self._initialized = True
-            logger.info(f"[hermes-otel] ✓ LangSmith at {backend.endpoint}")
-            return True
-        except Exception as e:
-            logger.error(f"[hermes-otel] ✗ LangSmith init failed: {e}")
-            return False
 
     def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
         # Process identity (OTel semconv). ``service.instance.id`` is what keeps
@@ -1771,22 +1733,6 @@ class HermesOTelPlugin:
         if session_id:
             self._session_keys.setdefault(session_id, set()).add(key)
 
-        # LangSmith mode — HTTP only
-        if self._langsmith:
-            parent_run = parent if parent is not None else self.spans.get_current_parent(session_id)
-            run_obj = self._langsmith.start_span(
-                name,
-                key,
-                kind,
-                attributes,
-                parent_run=parent_run,
-            )
-            if run_obj is None:
-                return INVALID_SPAN
-            self.spans.start_span(key, run_obj)
-            return run_obj
-
-        # OTLP mode (Phoenix/Langfuse/etc.)
         if not self.tracer:
             return INVALID_SPAN
 
@@ -1821,23 +1767,11 @@ class HermesOTelPlugin:
     ):
         """End a tracked span by its key."""
         try:
-            # LangSmith mode — HTTP
-            if self._langsmith:
-                run = self.spans.get_span(key)
-                if run:
-                    self._langsmith.end_span(
-                        run, attributes=attributes, status=status, error_message=error_message
-                    )
-                    # Bypass SpanTracker.end_span (it calls .end(), but LangSmith
-                    # runs are dicts the client closes over HTTP).
-                    self.spans.discard(key)
-            else:
-                # OTLP mode — just enqueue. BatchSpanProcessor handles
-                # export asynchronously. on_session_end / atexit flush
-                # when data actually needs to be visible.
-                self.spans.end_span(
-                    key, attributes=attributes, status=status, error_message=error_message
-                )
+            # Just enqueue: the BatchSpanProcessor exports asynchronously;
+            # on_session_end / atexit flush when data needs to be visible.
+            self.spans.end_span(
+                key, attributes=attributes, status=status, error_message=error_message
+            )
             # Remove this key from any session's active-key set.
             for sid, keys in list(self._session_keys.items()):
                 keys.discard(key)

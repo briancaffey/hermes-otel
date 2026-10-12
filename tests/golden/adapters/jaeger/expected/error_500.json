@@ -1,0 +1,30 @@
+{
+ "calls": [
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:16686/api/services"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:16686/api/services"
+  }
+ ],
+ "outcomes": {
+  "get_trace": {
+   "error": {
+    "detail": "Backend returned 500: internal error",
+    "kind": "backend",
+    "status_code": 502
+   }
+  },
+  "search": {
+   "error": {
+    "detail": "Backend returned 500: internal error",
+    "kind": "backend",
+    "status_code": 502
+   }
+  }
+ }
+}

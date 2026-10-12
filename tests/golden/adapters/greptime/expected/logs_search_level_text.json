@@ -1,0 +1,39 @@
+{
+ "calls": [
+  {
+   "body": {
+    "sql": "SELECT \"timestamp\", \"severity_text\", \"severity_number\", \"scope_name\", \"body\", \"trace_id\", \"span_id\", \"log_attributes\" FROM \"opentelemetry_logs\" WHERE \"timestamp\" >= 1791746400000000000::TIMESTAMP_NS AND \"timestamp\" < 1791750060000000000::TIMESTAMP_NS AND \"severity_number\" >= 13 AND \"body\" LIKE '%careful%' ORDER BY \"timestamp\" DESC LIMIT 100"
+   },
+   "method": "POST",
+   "url": "http://localhost:4398/v1/sql?db=public"
+  }
+ ],
+ "result": [
+  {
+   "attributes": {
+    "code.file.path": "/x.py"
+   },
+   "body": "[hermes-otel] session 20261011_201958_a1b2c3 finalized",
+   "event_name": null,
+   "level": "INFO",
+   "logger": "hermes_otel",
+   "session_id": "20261011_201958_a1b2c3",
+   "severity_number": 9,
+   "span_id": "65a98a08103c9da7",
+   "time_unix_nano": 1791750004100000000,
+   "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+  },
+  {
+   "attributes": {},
+   "body": "careful: the output was truncated",
+   "event_name": "hermes.turn.end",
+   "level": "WARN",
+   "logger": "cli",
+   "session_id": null,
+   "severity_number": 13,
+   "span_id": null,
+   "time_unix_nano": 1791750002000000000,
+   "trace_id": "ab43116e1d6d4a1a449db547c36ca808"
+  }
+ ]
+}

@@ -28,6 +28,7 @@ from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple, Union
 from urllib import error as _urlerror
+from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
@@ -662,6 +663,57 @@ def _error_body(text: str) -> str:
     return body[:_ERROR_BODY_CHARS] + ("…" if len(body) > _ERROR_BODY_CHARS else "")
 
 
+_RECORD_ENV = "HERMES_OTEL_RECORD_HTTP"
+_SECRET_QUERY_KEYS = ("token", "key", "secret", "password", "api_key", "apikey")
+
+
+def _record_exchange(req: Any, status: Optional[int], body: Optional[bytes]) -> None:
+    """Dev-only: with ``HERMES_OTEL_RECORD_HTTP=<dir>`` every request this
+    function sends is appended to ``<dir>/exchanges.jsonl`` with its answer,
+    the raw material for an adapter golden (#408). Credentials never land in
+    the file: ``Authorization`` / ``*-key`` headers and secret-looking query
+    parameters are masked. Off unless the variable is set; never raises."""
+    target = os.environ.get(_RECORD_ENV, "").strip()
+    if not target:
+        return
+    try:
+        import json as _json
+        from pathlib import Path as _Path
+
+        parsed = _urlparse.urlsplit(req.full_url)
+        query = [
+            (k, "***" if any(s in k.lower() for s in _SECRET_QUERY_KEYS) else v)
+            for k, v in _urlparse.parse_qsl(parsed.query, keep_blank_values=True)
+        ]
+        url = _urlparse.urlunsplit(
+            (parsed.scheme, parsed.netloc, parsed.path, _urlparse.urlencode(query, safe="*"), "")
+        )
+        headers = {
+            k: ("***" if k.lower() in ("authorization",) or k.lower().endswith("-key") else v)
+            for k, v in req.header_items()
+        }
+        data = req.data if isinstance(req.data, bytes) else None
+        text = body.decode("utf-8", errors="replace") if body is not None else None
+        try:
+            answer: Any = _json.loads(text) if text else text
+        except ValueError:
+            answer = text
+        entry = {
+            "method": req.get_method(),
+            "url": url,
+            "headers": headers,
+            "request": data.decode("utf-8", errors="replace") if data else None,
+            "status": status,
+            "response": answer,
+        }
+        d = _Path(target).expanduser()
+        d.mkdir(parents=True, exist_ok=True)
+        with (d / "exchanges.jsonl").open("a", encoding="utf-8") as fh:
+            fh.write(_json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+
+
 def _execute(req: _urlrequest.Request, timeout: float) -> Any:
     """Send one request; every failure is a :class:`BackendError` with a kind.
 
@@ -676,6 +728,7 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
             detail = e.read().decode("utf-8", errors="replace")
         except Exception:
             detail = str(e)
+        _record_exchange(req, e.code, detail.encode("utf-8"))
         excerpt = _error_body(detail)
         if e.code == 404:
             raise BackendError(404, f"Backend returned 404: {excerpt}", "not_found")
@@ -688,6 +741,7 @@ def _execute(req: _urlrequest.Request, timeout: float) -> Any:
         raise BackendError(502, f"Backend unreachable: {e.reason}")
     except Exception as e:
         raise BackendError(502, f"Backend query failed: {e}")
+    _record_exchange(req, 200, body)
     if not body:
         return None
     try:
