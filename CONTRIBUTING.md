@@ -149,10 +149,17 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 
 Before opening a PR:
 
-- [ ] `make ci` passes locally. It runs exactly what GitHub Actions runs, job
-      for job (lockfile check, ruff, black, plugin scan, tests with the 85%
-      coverage gate, dashboard bundle up to date + vitest, docs build, wheel
-      build), so a green `make ci` is a green pipeline. `make ci-fast` skips the
+- [ ] `make ci` passes locally. It runs what GitHub Actions runs, job for
+      job (lockfile check, ruff, black, plugin scan, tests with the 85%
+      coverage gate and the per-module floors in `coverage-floors.json`,
+      dashboard bundle up to date + vitest, docs build, wheel build), so a
+      green `make ci` is a green pipeline, with three exceptions it names in
+      its header: the Python version matrix, `make ci-floor` (the suite on
+      the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
+      A module may not drop more than one point under its floor; after a
+      change that deliberately adds or removes coverage, re-record with
+      `python scripts/coverage_floor.py --update` and commit the file.
+      The pull request template carries this list. `make ci-fast` skips the
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
