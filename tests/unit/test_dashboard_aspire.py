@@ -19,14 +19,6 @@ T0 = 1_791_751_500
 TRACE = "ab43116e1d6d4a1a449db547c36ca808"
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> asp.AspireAdapter:
     return asp.AspireAdapter(
         {"type": "aspire", "endpoint": "http://localhost:4418", "query_port": 18888, **extra}

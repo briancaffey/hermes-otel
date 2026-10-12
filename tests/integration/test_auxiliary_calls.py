@@ -12,7 +12,6 @@ from __future__ import annotations
 import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
-from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode
 
 from hermes_otel.hooks import (

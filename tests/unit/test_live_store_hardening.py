@@ -6,9 +6,9 @@ file, in-place migration, host-sample cap, trim on open.
 from __future__ import annotations
 
 import sqlite3
-import time
 
-import pytest
+from helpers.live import NOW  # noqa: E402
+from helpers.live import span as _span  # noqa: E402
 
 from hermes_otel import live_store as ls
 from hermes_otel.live_store import (
@@ -19,31 +19,6 @@ from hermes_otel.live_store import (
     summarize_trace,
     trace_totals,
 )
-
-NOW = time.time_ns()
-
-
-def _span(trace, name, sid, parent, attrs=None, start=None, end=None, status="OK"):
-    start = NOW - 2_000_000_000 if start is None else start
-    end = NOW - 1_000_000_000 if end is None else end
-    return {
-        "trace_id": trace,
-        "span_id": sid,
-        "parent_span_id": parent,
-        "name": name,
-        "start_time_unix_nano": start,
-        "end_time_unix_nano": end,
-        "duration_ms": (end - start) / 1e6,
-        "status": status,
-        "attributes": attrs or {},
-    }
-
-
-@pytest.fixture()
-def store(tmp_path):
-    s = LiveStore(db_path=str(tmp_path / "live.db"))
-    yield s
-    s.close()
 
 
 class TestStatusAndPartial:

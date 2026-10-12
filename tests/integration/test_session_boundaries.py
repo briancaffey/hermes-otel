@@ -12,74 +12,16 @@ from __future__ import annotations
 import time
 
 import pytest
+from helpers.turns import run_turn
 
 from hermes_otel.hooks import (
-    on_post_api_request,
-    on_post_llm_call,
-    on_pre_api_request,
-    on_pre_llm_call,
-    on_session_end,
     on_session_finalize,
     on_session_reset,
-    on_session_start,
 )
 
 
 def _turn(session_id: str, is_first_turn: bool, *, end: bool = True) -> None:
-    if is_first_turn:
-        on_session_start(session_id=session_id, model="gpt-4", platform="cli")
-    on_pre_llm_call(
-        session_id=session_id,
-        user_message="hello",
-        conversation_history=[],
-        is_first_turn=is_first_turn,
-        model="gpt-4",
-        platform="cli",
-    )
-    on_pre_api_request(
-        task_id=f"api-{session_id}",
-        session_id=session_id,
-        platform="cli",
-        model="gpt-4",
-        provider="openai",
-        base_url="",
-        api_mode="chat",
-        api_call_count=1,
-        message_count=1,
-        tool_count=0,
-        approx_input_tokens=10,
-        request_char_count=40,
-        max_tokens=0,
-    )
-    on_post_api_request(
-        task_id=f"api-{session_id}",
-        session_id=session_id,
-        platform="cli",
-        model="gpt-4",
-        provider="openai",
-        base_url="",
-        api_mode="chat",
-        api_call_count=1,
-        api_duration=0.1,
-        finish_reason="stop",
-        message_count=1,
-        response_model="gpt-4",
-        usage={"prompt_tokens": 10, "completion_tokens": 5},
-        assistant_content_chars=5,
-        assistant_tool_call_count=0,
-    )
-    on_post_llm_call(
-        session_id=session_id,
-        user_message="hello",
-        assistant_response="hi",
-        conversation_history=[],
-        model="gpt-4",
-        platform="cli",
-    )
-    if end:
-        on_session_end(
-            session_id=session_id, completed=True, interrupted=False, model="gpt-4", platform="cli"
-        )
+    run_turn(session_id, first=is_first_turn, end=end)
 
 
 def _roots(exporter):

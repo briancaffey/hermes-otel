@@ -7,20 +7,15 @@ in ``tmp_path`` filled with a captured turn.
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
+from helpers.live import span
 
+from hermes_otel.dashboard import plugin_api
 from hermes_otel.live_store import LiveStore
-
-_DASHBOARD = Path(__file__).resolve().parent.parent.parent / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-import plugin_api  # noqa: E402
 
 NOW_NS = time.time_ns()
 MODEL = "nvidia/nemotron-3-nano-omni-30b-a3b-reasoning-nvfp4"
@@ -28,27 +23,18 @@ T1 = "daaf7828a1b2c3d4e5f60718293a4b5c"
 T2 = "68947a9f2faf8802aaaaaaaaaaaaaaaa"
 
 
-def _span(
-    trace,
-    name,
-    sid,
-    parent,
-    attrs=None,
-    start=NOW_NS - 5_000_000_000,
-    end=NOW_NS - 1_000_000_000,
-    status="OK",
-):
-    return {
-        "trace_id": trace,
-        "span_id": sid,
-        "parent_span_id": parent,
-        "name": name,
-        "start_time_unix_nano": start,
-        "end_time_unix_nano": end,
-        "duration_ms": (end - start) / 1e6,
-        "status": status,
-        "attributes": attrs or {},
-    }
+def _span(trace, name, sid, parent, attrs=None, start=None, end=None, status="OK"):
+    # Five seconds ago by default: inside every lookback the routes are given.
+    return span(
+        trace,
+        name,
+        sid,
+        parent,
+        attrs,
+        NOW_NS - 5_000_000_000 if start is None else start,
+        NOW_NS - 1_000_000_000 if end is None else end,
+        status,
+    )
 
 
 @pytest.fixture()

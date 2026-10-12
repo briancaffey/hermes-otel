@@ -2,7 +2,6 @@
 
 import threading
 
-import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
 

@@ -176,9 +176,11 @@ ignore = [
 ]
 
 [tool.ruff.lint.per-file-ignores]
-# Tests legitimately use `pytest.importorskip(...)` before real imports (E402)
-# and commonly assign results solely for assertion setup (F841).
-"tests/**/*.py" = ["F401", "F811", "E402", "F841"]
+# Tests commonly assign results solely for assertion setup (F841). The live
+# tiers use `pytest.importorskip(...)` before real imports (E402).
+"tests/**/*.py" = ["F841"]
+"tests/smoke/*.py" = ["E402"]
+"tests/e2e/*.py" = ["E402"]
 "__init__.py" = ["F401"]
 
 [tool.setuptools]

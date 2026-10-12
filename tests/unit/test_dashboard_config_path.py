@@ -4,31 +4,9 @@ tracer does, or the Traces tab's query backend silently resolves to nothing.
 
 from __future__ import annotations
 
-import sys
-import types
-from pathlib import Path
-
 import pytest
 
-# ``fastapi`` is a dashboard-side runtime dependency, not a plugin/test one
-# (see test_dashboard_backends_roots_only.py) — stub the one symbol imported.
-if "fastapi" not in sys.modules:
-    _fastapi_stub = types.ModuleType("fastapi")
-
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    _fastapi_stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _fastapi_stub
-
-_DASHBOARD = Path(__file__).resolve().parent.parent.parent / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-
-import backends as dash_backends  # noqa: E402
+from hermes_otel.dashboard import backends as dash_backends
 
 
 @pytest.fixture(autouse=True)

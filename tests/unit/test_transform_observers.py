@@ -4,8 +4,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
-
 from hermes_otel.helpers import char_count, terminal_truncation
 from hermes_otel.hooks import on_transform_llm_output, on_transform_terminal_output
 from hermes_otel.hooks.transforms import _set_attributes
@@ -17,25 +15,6 @@ class _Span:
 
     def set_attribute(self, key, value):
         self.attributes[key] = value
-
-
-@pytest.fixture()
-def mock_tracer():
-    from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.session_state import SessionState
-
-    tracer = MagicMock()
-    tracer.is_enabled = True
-    tracer.spans = MagicMock()
-    tracer.spans._active_spans = {}
-    tracer.spans.get_span = lambda key: tracer.spans._active_spans.get(key)
-    tracer.spans._roots = {}
-    tracer.spans.get_session_root = lambda sid=None: tracer.spans._roots.get(sid)
-    tracer.spans.get_current_parent = lambda sid=None: None
-    tracer.sessions = SessionState()
-    tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
-        yield tracer
 
 
 class TestCharCount:

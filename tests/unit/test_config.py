@@ -2,12 +2,10 @@
 
 import logging
 import sys
-from pathlib import Path
 
 import pytest
 
 from hermes_otel.plugin_config import (
-    BackendConfig,
     HermesOtelConfig,
     content_mode,
     effective_export_batch_size,

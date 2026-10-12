@@ -5,6 +5,9 @@ OTLP exporters are stubbed so a real ``init()`` never opens a socket.
 from unittest.mock import MagicMock, patch
 
 import pytest
+from helpers.dashboard import client, isolated_backends  # noqa: F401
+from helpers.live import store  # noqa: F401
+from helpers.tracer import disabled_tracer, mock_tracer  # noqa: F401
 
 
 @pytest.hookimpl(tryfirst=True)

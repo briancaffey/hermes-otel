@@ -13,7 +13,6 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-import pytest
 from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig

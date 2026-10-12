@@ -7,7 +7,6 @@ Langfuse API reference:
 """
 
 import base64
-import os
 import time
 
 import pytest

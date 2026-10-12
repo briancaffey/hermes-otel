@@ -1,15 +1,6 @@
 """Unit tests for the SQLite-backed live store (zero-config dashboard)."""
 
-import pytest
-
 from hermes_otel.live_store import LiveStore, get_live_store
-
-
-@pytest.fixture()
-def store(tmp_path):
-    s = LiveStore(db_path=str(tmp_path / "live.db"))
-    yield s
-    s.close()
 
 
 class TestLiveStore:

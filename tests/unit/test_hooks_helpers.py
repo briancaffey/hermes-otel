@@ -1,7 +1,5 @@
 """Tests for pure helper functions in helpers.py and the hooks package."""
 
-import pytest
-
 from hermes_otel.helpers import (
     classify_approval_choice,
     classify_block_provenance,

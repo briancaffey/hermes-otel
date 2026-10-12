@@ -4,12 +4,10 @@ from __future__ import annotations
 
 import logging
 
-import pytest
-
 from hermes_otel import backends as be
 from hermes_otel import log_handler as lh
 from hermes_otel import plugin_config as pc
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig, load_config
+from hermes_otel.plugin_config import HermesOtelConfig, load_config
 
 
 def _write(tmp_path, text):

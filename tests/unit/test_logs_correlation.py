@@ -11,7 +11,6 @@ import pytest
 from hermes_otel import hooks
 from hermes_otel import log_handler as lh
 from hermes_otel.plugin_config import HermesOtelConfig
-from hermes_otel.tracer import HermesOTelPlugin
 
 
 def _fake(prefix: str, body: str) -> str:

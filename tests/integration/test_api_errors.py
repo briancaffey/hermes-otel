@@ -5,7 +5,6 @@ ERROR (with a recorded exception event + retry metadata) instead of leaving it
 to end OK via the orphan sweep.
 """
 
-import pytest
 from _helpers import span_by_name as _span_by_name
 from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode

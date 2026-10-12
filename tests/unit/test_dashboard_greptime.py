@@ -19,18 +19,6 @@ NS = 1_000_000_000
 T0 = 1_791_746_900  # window start (s)
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    jaeger._API_PROBE_CACHE.clear()
-    gp._COLUMNS_CACHE.clear()
-    yield
-    backends.clear_caches()
-    jaeger._API_PROBE_CACHE.clear()
-    gp._COLUMNS_CACHE.clear()
-
-
 def _adapter(**extra: Any) -> gp.GreptimeAdapter:
     return gp.GreptimeAdapter({"type": "greptime", "endpoint": "http://localhost:4398", **extra})
 

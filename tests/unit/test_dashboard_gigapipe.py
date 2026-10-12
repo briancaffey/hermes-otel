@@ -21,14 +21,6 @@ T0 = 1_791_752_700
 TRACE = "65c73f64f88cc17e1ee86943ad7cfcda"
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> gp.GigapipeAdapter:
     return gp.GigapipeAdapter({"type": "gigapipe", "endpoint": "http://localhost:3110", **extra})
 

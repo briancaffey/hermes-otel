@@ -8,7 +8,6 @@ No network.
 import re
 
 import pytest
-from opentelemetry import trace as _trace
 from opentelemetry.sdk.trace import TracerProvider
 
 from hermes_otel import hooks

@@ -5,7 +5,6 @@ exercised via fake modules injected into sys.modules. The ``rocm-smi`` CLI
 fallback is exercised by stubbing ``subprocess.run``.
 """
 
-import os
 import sys
 import types
 from types import SimpleNamespace

@@ -26,22 +26,6 @@ ALL = (
 )
 
 
-@pytest.fixture()
-def mock_tracer():
-    from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.session_state import SessionState
-
-    tracer = MagicMock()
-    tracer.is_enabled = True
-    tracer.spans = MagicMock()
-    tracer.spans.single_active_session = lambda: None
-    tracer.spans.get_current_parent = lambda sid=None: None
-    tracer.sessions = SessionState()
-    tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
-        yield tracer
-
-
 class TestObserverContract:
     @pytest.mark.parametrize("hook", ALL)
     def test_returns_none_and_accepts_any_payload(self, mock_tracer, hook):

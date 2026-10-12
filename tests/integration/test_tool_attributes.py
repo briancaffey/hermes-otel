@@ -1,6 +1,5 @@
 """Integration tests for hermes.tool.* and hermes.skill.* attributes on tool spans."""
 
-import pytest
 from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (

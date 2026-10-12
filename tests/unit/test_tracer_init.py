@@ -1,9 +1,8 @@
 """Tests for HermesOTelPlugin.init() environment detection logic."""
 
 import base64
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
-import pytest
 from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
@@ -547,7 +546,7 @@ class TestSampling:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.sampling import ParentBased, TraceIdRatioBased
+        from opentelemetry.sdk.trace.sampling import ParentBased
 
         from hermes_otel.plugin_config import HermesOtelConfig
 

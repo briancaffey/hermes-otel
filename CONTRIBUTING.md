@@ -170,6 +170,27 @@ Release PRs are opened by release-please. Its version bump also updates
 release branch passes the lockfile check on its first run; a superseded run
 on any branch is cancelled rather than left red.
 
+## Test scaffolding
+
+`tests/helpers/` holds what more than one test file needs (#406); nothing in
+it is a test. Import builders where used; the fixtures are registered by the
+tier `conftest.py` files.
+
+| Module | What it gives |
+|---|---|
+| `helpers/dashboard.py` | `isolated_backends` (autouse for every `test_dashboard_*` / `test_openobserve_*` module: no developer config, caches and probe results cleared), `FakeHttp` / `fake_http(monkeypatch, routes)` (a route table replacing the adapters' HTTP functions, calls recorded), `adapter(type, **cfg)`, the contract app's `client` fixture, `down`, `row`, `http_error` |
+| `helpers/live.py` | `span(...)` / `metric(...)` / `log(...)` rows in the live store's shape, the `store` fixture, the shared `NOW` |
+| `helpers/turns.py` | `run_turn(session_id, ...)`, `api_call(...)`, `tool_call(...)` and the payload builders: one fake Hermes turn, every documented field, overridable |
+| `helpers/tracer.py` | `mock_tracer` / `disabled_tracer` for single-hook unit tests |
+| `tests/_helpers.py` | span/metric lookups and `clear_backend_env` (older, kept) |
+
+Import the dashboard package as `hermes_otel.dashboard.backends`, never by
+putting `hermes_otel/dashboard` on `sys.path`: the latter creates a second copy
+of every adapter module, and a monkeypatch on one copy does not reach the other.
+The contract test (`test_dashboard_adapter_contract.py`) parametrizes its
+invariants over `backends.adapters()`, so a new adapter is covered by it the
+moment it registers; its own response parsing goes in `test_dashboard_<type>.py`.
+
 ## Adding a new backend
 
 1. Add the resolver in `tracer.py` (for now; this will move to

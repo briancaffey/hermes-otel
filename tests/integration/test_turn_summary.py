@@ -1,6 +1,5 @@
 """Integration tests for per-turn summary attributes on the session span."""
 
-import pytest
 from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (

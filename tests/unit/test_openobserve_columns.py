@@ -3,27 +3,11 @@
 from __future__ import annotations
 
 import re
-import sys
-import types
 from pathlib import Path
 
+from hermes_otel.dashboard.backends import openobserve as oo
+
 _HERE = Path(__file__).resolve().parent.parent.parent
-_DASHBOARD = _HERE / "hermes_otel" / "dashboard"
-if str(_DASHBOARD) not in sys.path:
-    sys.path.insert(0, str(_DASHBOARD))
-if "fastapi" not in sys.modules:
-    _stub = types.ModuleType("fastapi")
-
-    class _StubHTTPException(Exception):
-        def __init__(self, status_code: int = 500, detail: str = "") -> None:
-            super().__init__(detail)
-            self.status_code = status_code
-            self.detail = detail
-
-    _stub.HTTPException = _StubHTTPException  # type: ignore[attr-defined]
-    sys.modules["fastapi"] = _stub
-
-from backends import openobserve as oo  # noqa: E402
 
 DOC = _HERE / "website" / "docs" / "reference" / "span-attributes.md"
 _NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host)\.[a-z_][a-z0-9_.]*"

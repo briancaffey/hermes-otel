@@ -1,7 +1,7 @@
 """Tests for all 8 hook callbacks in hooks.py with mocked tracer."""
 
 import json
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,46 +15,6 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
-
-
-@pytest.fixture()
-def mock_tracer():
-    """Create a mock tracer and patch get_tracer() to return it.
-
-    ``spans._active_spans`` and ``sessions`` are real so hooks that
-    reach into them (e.g. continuation-turn lazy session-span creation,
-    per-session I/O / usage / tool-time buffering) behave as they would
-    in production — and tests can inspect the resulting state rather
-    than mocking every method chain.
-    """
-    from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.session_state import SessionState
-
-    tracer = MagicMock()
-    tracer.is_enabled = True
-    tracer.spans = MagicMock()
-    tracer.spans._active_spans = {}
-    # Hooks ask the tracker, not the dict; keep the answer tied to the dict.
-    tracer.spans.has_span = lambda key: key in tracer.spans._active_spans
-    tracer.spans.get_span = lambda key: tracer.spans._active_spans.get(key)
-    tracer.spans.get_subagent = lambda sid: None
-    tracer.spans.pop_subagent = lambda sid: None
-    tracer.sessions = SessionState()
-    tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
-        yield tracer
-
-
-@pytest.fixture()
-def disabled_tracer():
-    """Create a disabled mock tracer."""
-    from hermes_otel.plugin_config import HermesOtelConfig
-
-    tracer = MagicMock()
-    tracer.is_enabled = False
-    tracer.config = HermesOtelConfig()
-    with patch("hermes_otel.tracer.get_tracer", return_value=tracer):
-        yield tracer
 
 
 class TestOnSessionStart:

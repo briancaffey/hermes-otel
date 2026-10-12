@@ -1,6 +1,5 @@
 """E2E tests: fire hooks with a real Phoenix backend and verify traces via GraphQL."""
 
-import json
 import os
 import time
 

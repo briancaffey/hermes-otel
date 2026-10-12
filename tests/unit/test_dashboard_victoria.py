@@ -35,16 +35,6 @@ CFG = {
 }
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    jaeger._API_PROBE_CACHE.clear()
-    yield
-    backends.clear_caches()
-    jaeger._API_PROBE_CACHE.clear()
-
-
 def _adapter(**extra: Any) -> vt.VictoriaAdapter:
     return vt.VictoriaAdapter({**CFG, **extra})
 

@@ -8,8 +8,6 @@ import json
 from unittest.mock import MagicMock, patch
 from urllib.error import HTTPError
 
-import pytest
-
 from hermes_otel.langsmith_backend import (
     LangSmithBackend,
     _coerce_int,

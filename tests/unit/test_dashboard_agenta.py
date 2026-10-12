@@ -18,14 +18,6 @@ TRACE = "43ee4400ec42281d784993ce6d26cb27"
 T0 = 1_791_754_699  # 2026-10-11T21:38:19Z
 
 
-@pytest.fixture(autouse=True)
-def _isolated(monkeypatch):
-    monkeypatch.setattr(backends, "top_level_config", lambda: {})
-    backends.clear_caches()
-    yield
-    backends.clear_caches()
-
-
 def _adapter(**extra: Any) -> ag.AgentaAdapter:
     return ag.AgentaAdapter(
         {"type": "agenta", "endpoint": "http://localhost:3060", "api_key": "ak", **extra}
