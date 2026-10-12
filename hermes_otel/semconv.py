@@ -989,6 +989,12 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     ),
     Attr("gen_ai.request.model", "model", "Model name", "agent / cron (turn root)"),
     Attr(
+        "hermes.turn.trigger",
+        "session",
+        "What started the turn: `user`, `cron`, `kanban`, `subagent`, `a2a`, `api`, `oneshot`, `curator`, `batch` or `system`",
+        "agent / cron (turn root)",
+    ),
+    Attr(
         "hermes.agent.model_override",
         "model",
         "Whether the turn runs on a model other than the profile's `model.default` (delegation.model, kanban `--model`, a cron job's model, `-m`, `/model`); absent when either is unknown",

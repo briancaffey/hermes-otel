@@ -22,6 +22,7 @@ from .attributes import (
     correlation_attributes,
     model_override_attributes,
     profile_attributes,
+    turn_trigger_attributes,
 )
 from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
 
@@ -116,6 +117,8 @@ def _start_session_span(
             _annotate_delegation_model(span_obj, model, record.get("parent_model"))
         elif record.get("context") is not None and Link is not None:
             links = [Link(record["context"])]
+
+    attributes.update(turn_trigger_attributes(platform, is_subagent=bool(record)))
 
     # Session chaining (#29): a session that replaced another (``/new``,
     # ``/reset``, expiry) names it and links to its last root span.

@@ -268,6 +268,7 @@
     "hermes.turn.api_call_count": 2,
     "hermes.turn.final_status": "completed",
     "hermes.turn.number": 1,
+    "hermes.turn.trigger": "user",
     "input.value": "hello",
     "llm.model_name": "gpt-4",
     "llm.provider": "openai",

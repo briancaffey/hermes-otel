@@ -407,6 +407,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "gen_ai.request.frequency_penalty",
   "gen_ai.request.max_tokens",
   "gen_ai.request.model",
+  "hermes.turn.trigger",
   "hermes.agent.model_override",
   "gen_ai.request.presence_penalty",
   "gen_ai.request.reasoning.level",

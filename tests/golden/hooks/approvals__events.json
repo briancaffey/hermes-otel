@@ -245,6 +245,7 @@
     "hermes.turn.tool_count": 1,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "bash",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "20261012_090000_golden",

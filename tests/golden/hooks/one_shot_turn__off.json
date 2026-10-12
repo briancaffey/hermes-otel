@@ -301,6 +301,7 @@
     "hermes.turn.tool_count": 2,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "read_file,terminal",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "llm.provider": "openai",
     "llm.token_count.completion": 5,

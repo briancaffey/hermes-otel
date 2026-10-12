@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from ..helpers import clip_joined, optional_number, package_version, truncate_string
+from ..helpers import clip_joined, optional_number, package_version, truncate_string, turn_trigger
 from ..session_state import TurnSummary
 
 _DEFAULT_AGENT_NAME = "hermes-agent"
@@ -71,6 +71,25 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
         attrs["llm.provider"] = truncate_string(provider, _PROVIDER_MAX)
         attrs.update(_provider_attributes(provider))
     return attrs
+
+
+def session_env(name: str) -> str:
+    """A Hermes session variable: the gateway's per-turn context var when Hermes
+    is importable (it falls back to the environment itself), else ``os.environ``."""
+    try:
+        from gateway.session_context import get_session_env  # type: ignore[import-not-found]
+
+        return str(get_session_env(name) or "")
+    except Exception:
+        import os
+
+        return os.environ.get(name, "")
+
+
+def turn_trigger_attributes(platform: Any, is_subagent: bool = False) -> Dict[str, str]:
+    """``hermes.turn.trigger``: what started the turn (#394), see
+    :func:`hermes_otel.helpers.turn_trigger`."""
+    return {"hermes.turn.trigger": turn_trigger(platform, is_subagent=is_subagent, env=session_env)}
 
 
 def configured_default_model() -> str:
