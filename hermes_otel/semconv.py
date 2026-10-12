@@ -1025,6 +1025,24 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     ),
     Attr("gen_ai.request.model", "model", "Model name", "agent / cron (turn root)"),
     Attr(
+        "hermes.api.ttfc_ms",
+        "api",
+        "Streaming calls: milliseconds from the call's start (retries included) to the first response chunk, from Hermes's `started_at` / `first_chunk_at`",
+        "api.*",
+    ),
+    Attr(
+        "hermes.turn.stop_reason",
+        "session",
+        "Set when `agent_loop_stopped` fires for the turn (`/stop`, the `/new` fast path): the reason Hermes gives",
+        "agent / cron (turn root)",
+    ),
+    Attr(
+        "hermes.turn.verify_nudges",
+        "session",
+        "How many times `pre_verify` fired this turn (the agent edited code and was about to finish)",
+        "agent / cron (turn root)",
+    ),
+    Attr(
         "hermes.turn.trigger",
         "session",
         "What started the turn: `user`, `cron`, `kanban`, `subagent`, `a2a`, `api`, `oneshot`, `curator`, `batch` or `system`",

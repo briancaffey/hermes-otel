@@ -22,6 +22,7 @@ from .attributes import (
     correlation_attributes,
     model_override_attributes,
     profile_attributes,
+    session_env,
     turn_trigger_attributes,
 )
 from .kanban import kanban_remote_parent
@@ -70,6 +71,9 @@ def _start_session_span(
     # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
     ps.model = str(model or "")
+    gateway_key = session_env("HERMES_SESSION_KEY").strip()
+    if gateway_key:
+        tracer.sessions.remember_session_key(gateway_key, session_id)
     if not ps.correlation_id:
         ps.correlation_id = _extract_correlation_id(extra_kwargs)
 
@@ -239,6 +243,10 @@ def on_session_end(
     attributes.update(_per_session_sender_attributes(ps))
     if ps is not None and ps.turn_number:
         attributes["hermes.turn.number"] = ps.turn_number
+    if ps is not None and ps.verify_nudges:
+        attributes["hermes.turn.verify_nudges"] = ps.verify_nudges
+    if ps is not None and ps.stop_reason:
+        attributes["hermes.turn.stop_reason"] = ps.stop_reason
 
     if failed:
         final_status = "failed"
@@ -465,3 +473,58 @@ def on_session_reset(
         _finalize_session(tracer, old_id, platform, reason or "reset", event="reset")
     if new_id and old_id:
         tracer.sessions.set_previous(new_id, old_id)
+
+
+# ── Interruption and verification (#396) ─────────────────────────────────
+
+
+@_fail_open
+def on_agent_loop_stopped(
+    session_key: Any = None,
+    platform: Any = None,
+    reason: Any = None,
+    invalidation_reason: Any = None,
+    **kwargs: Any,
+):
+    """The gateway stopped a running turn (``/stop``, the ``/new`` fast path).
+
+    The turn is not ended here: Hermes usually still finishes it with
+    ``on_session_end(interrupted=True)``, which carries the turn's usage. The
+    root is marked instead, so it says why, and so the orphan sweep ends it
+    ``interrupted`` rather than ``timed_out`` if no end ever arrives.
+    """
+    debug_log(f"agent_loop_stopped fired: key={session_key} reason={reason}")
+    tracer = get_tracer()
+    if not tracer.is_enabled:
+        return
+    session_id = tracer.sessions.session_for_key(str(session_key or "").strip())
+    if not session_id:
+        return
+    text = truncate_string(str(reason or invalidation_reason or "stopped"), 120)
+    ps = tracer.sessions.peek(session_id)
+    if ps is not None:
+        ps.stop_reason = text
+    root = tracer.spans.get_span(f"session:{session_id}")
+    if root is not None and hasattr(root, "set_attribute"):
+        try:
+            root.set_attribute("hermes.turn.stop_reason", text)
+        except Exception:
+            pass
+
+
+@_fail_open
+def on_pre_verify(session_id: Any = None, **kwargs: Any) -> None:
+    """Count verification nudges (the agent edited code and is about to finish).
+
+    ``pre_verify`` is a decision hook: a dict return keeps the turn going.
+    This observer always returns None, and never records the changed paths
+    or the final response.
+    """
+    debug_log(f"pre_verify fired: session={session_id} attempt={kwargs.get('attempt')}")
+    tracer = get_tracer()
+    if not tracer.is_enabled or not session_id:
+        return None
+    ps = tracer.sessions.peek(str(session_id))
+    if ps is not None:
+        ps.verify_nudges += 1
+    return None

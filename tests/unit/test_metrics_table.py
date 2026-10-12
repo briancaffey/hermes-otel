@@ -31,6 +31,7 @@ EXPECTED_KEYS = {
     "retry_count",
     "kanban_task_count",
     "kanban_dispatch_count",
+    "api_time_to_first_chunk",
     "kanban_dispatch_result",
     "kanban_task_updated",
     "approval_count",

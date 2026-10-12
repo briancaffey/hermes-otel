@@ -51,7 +51,14 @@ from .llm import (
     on_pre_llm_call,
 )
 from .propagation import get_current_traceparent, on_mcp_request_headers
-from .session import on_session_end, on_session_finalize, on_session_reset, on_session_start
+from .session import (
+    on_agent_loop_stopped,
+    on_pre_verify,
+    on_session_end,
+    on_session_finalize,
+    on_session_reset,
+    on_session_start,
+)
 from .subagent import on_subagent_start, on_subagent_stop
 from .tools import on_post_tool_call, on_pre_tool_call
 from .transforms import on_transform_llm_output, on_transform_terminal_output
@@ -81,6 +88,8 @@ __all__ = [
     "on_pre_tool_call",
     "on_session_end",
     "on_session_finalize",
+    "on_agent_loop_stopped",
+    "on_pre_verify",
     "on_session_reset",
     "on_session_start",
     "on_subagent_start",

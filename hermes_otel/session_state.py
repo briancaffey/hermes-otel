@@ -112,6 +112,11 @@ class PerSession:
     # The model the turn started on (``on_session_start`` / the lazy root),
     # kept so a delegated child can say whether it inherited it (#391).
     model: str = ""
+    # agent_loop_stopped (#396): the reason the gateway gave when it stopped
+    # this turn, so the root ends "interrupted" even if only the sweep ends it.
+    stop_reason: str = ""
+    # pre_verify fired this many times this turn (#396).
+    verify_nudges: int = 0
     # 1-based index of the user turn this aggregator covers. Surfaced as the
     # ``hermes.turn.number`` span attribute so any backend can group or filter
     # a session's spans by conversation turn. See SessionState.next_turn.
@@ -302,6 +307,19 @@ class SessionState:
         # Delegated children's running totals, child_session_id -> totals,
         # until subagent_stop reads them onto the delegation span (#390).
         self._delegations: Dict[str, DelegationTotals] = {}
+        # Gateway session key -> the session id of its latest turn, so
+        # agent_loop_stopped (which names only the key) finds the turn (#396).
+        self._session_keys: "OrderedDict[str, str]" = OrderedDict()
+
+    def remember_session_key(self, session_key: str, session_id: str) -> None:
+        with self._lock:
+            self._remember(self._session_keys, session_key, session_id)
+
+    def session_for_key(self, session_key: Optional[str]) -> Optional[str]:
+        if not session_key:
+            return None
+        with self._lock:
+            return self._session_keys.get(session_key)
 
     # ── Delegation rollups (#390) ────────────────────────────────────────
 

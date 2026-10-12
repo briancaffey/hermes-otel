@@ -218,6 +218,22 @@ Fires in the **dispatcher** when a claim's TTL expired with no heartbeat.
 - **Span op:** `kanban.stale_claim`, a root of its own, status `OK`
 - **Attributes:** the card identity plus `hermes.kanban.worker_pid`, `hermes.kanban.heartbeat_stale`, `hermes.kanban.retry_status`
 
+### `agent_loop_stopped`
+
+Fires in the **gateway** when it stops a running turn (`/stop`, or the running-agent fast path of `/new`). Kwargs: `session_key`, `platform`, `reason`, `invalidation_reason`.
+
+- **Effect:** the turn is found by its gateway session key, which the plugin records from `HERMES_SESSION_KEY` when the root opens. The root is marked `hermes.turn.stop_reason`. The turn is **not** ended here, because Hermes usually still ends it with `on_session_end(interrupted=True)`, which carries the turn's usage. If no end arrives, the orphan sweep finalizes the marked root as `hermes.turn.final_status=interrupted` instead of `timed_out`.
+
+### `pre_verify`
+
+Fires once per turn when the agent edited code and is about to verify or finish. It's a decision hook: a dict return keeps Hermes's turn going.
+
+- **Effect:** the plugin's observer always returns `None`. It counts the calls into `hermes.turn.verify_nudges` on the root, and never records `changed_paths` or `final_response`.
+
+### Streaming hooks (`on_stream_*`, `on_interim_message`): not used
+
+Time to first chunk comes from `post_api_request`, which already carries Hermes's own `started_at` and `first_chunk_at` (wall clock, `first_chunk_at` only for a streamed call). `hermes.api.ttfc_ms` goes on the `api.*` span and into `hermes.api.time_to_first_chunk`. The stream hooks run on a queued worker thread (drop-oldest), and their payloads carry no timestamps, so they would only measure later and less exactly.
+
 ### `on_kanban_dispatch_tick` / `on_kanban_task_updated`
 
 Board health (#397), metrics only.
@@ -267,6 +283,8 @@ kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's r
 on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; ERROR on crash/kill)
 on_kanban_worker_stale_claim open+close kanban.stale_claim (dispatcher)
+agent_loop_stopped       attr  agent root          (hermes.turn.stop_reason; sweep ends it interrupted, not timed_out)
+pre_verify               attr  agent root          (hermes.turn.verify_nudges; always returns None)
 on_kanban_dispatch_tick  metrics only: hermes.kanban.dispatch.count / .result (dispatcher, after the lock)
 on_kanban_task_updated   metrics only: hermes.kanban.task.updated{field}
 kanban_task_completed    open+close kanban.complete     (worker; in the turn's trace + root stamped)

@@ -29,6 +29,7 @@ from .api_call import (
     add_exception_event,
     apply_usage,
     ensure_span,
+    record_first_chunk,
     record_operation_duration,
     request_attributes,
     response_attributes,
@@ -404,6 +405,7 @@ def on_post_api_request(
     record_operation_duration(
         tracer, api_duration, genai_metric_dims(model, provider, response_model)
     )
+    record_first_chunk(tracer, attributes, payload, _metric_model_labels(model, provider))
 
     if tracer.config.captures_full_responses():
         attributes.update(_full_response_attributes(payload))

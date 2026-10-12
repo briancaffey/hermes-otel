@@ -669,9 +669,13 @@ class HermesOTelPlugin:
             self.end_span(key, status="ok")
 
         if self.spans.has_span(session_key):
+            # A turn the gateway stopped (agent_loop_stopped) whose end never
+            # arrived is interrupted, not timed out (#396).
+            ps = self.sessions.peek(session_id)
+            stopped = ps is not None and bool(ps.stop_reason)
             self.end_span(
                 session_key,
-                attributes={"hermes.turn.final_status": "timed_out"},
+                attributes={"hermes.turn.final_status": "interrupted" if stopped else "timed_out"},
                 status="ok",
             )
         # Drop the expired session's parent stack, skill spans, delegation

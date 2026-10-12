@@ -53,6 +53,8 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
+| `hermes.turn.stop_reason` | hermes | string | Set when `agent_loop_stopped` fires for the turn (`/stop`, the `/new` fast path); a stopped turn whose end never arrives is swept as `interrupted`, not `timed_out` |
+| `hermes.turn.verify_nudges` | hermes | int | How many times `pre_verify` fired this turn (the agent edited code and was about to finish); never the paths or the response |
 | `hermes.turn.trigger` | hermes | string | What started the turn: `user` (CLI, TUI, desktop, a gateway platform, ACP), `cron`, `kanban` (a worker), `subagent` (a delegated child), `a2a`, `api` (the API server), `oneshot` (`hermes -z`, `chat -q`), `curator`, `batch` or `system`. `/loop`, `/heartbeat` and `/goal` re-entries and bot-to-bot DMs are not observable at turn start and classify as the turn they ride on (#444) |
 | `hermes.agent.model_override` | hermes | bool | Whether the turn runs on a model other than the profile's `model.default` (a `delegation.model` child, a kanban `--model` worker, a cron job's own model, `-m`, `/model`); absent when either is unknown |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
@@ -143,6 +145,7 @@ Set at **end** (success):
 | `gen_ai.response.finish_reasons` | gen_ai | string[] | `["stop"]`, `["tool_use"]`, … |
 | `llm.response.finish_reason` | hermes | string | Same, scalar |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
+| `hermes.api.ttfc_ms` | hermes | float | Streaming calls: milliseconds from the call's start (retries included) to the first response chunk, from Hermes's `started_at` / `first_chunk_at`; absent for a non-streamed call |
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
 | `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
 | `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |

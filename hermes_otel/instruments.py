@@ -240,6 +240,15 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "one",
         labels=("outcome", "board"),
     ),
+    "api_time_to_first_chunk": InstrumentSpec(
+        "hermes.api.time_to_first_chunk",
+        "histogram",
+        "s",
+        "Streaming API calls: seconds from the call's start (retries included) to the first response chunk, as Hermes measured them",
+        "record",
+        boundaries=_B_OP_SECONDS,
+        labels=_MODEL_LABELS,
+    ),
     "kanban_dispatch_count": InstrumentSpec(
         "hermes.kanban.dispatch.count",
         "counter",

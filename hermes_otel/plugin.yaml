@@ -53,4 +53,6 @@ provides_hooks:
   - on_kanban_worker_exited
   - on_kanban_worker_stale_claim
   - on_kanban_dispatch_tick
+  - agent_loop_stopped
+  - pre_verify
   - on_kanban_task_updated
