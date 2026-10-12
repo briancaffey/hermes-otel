@@ -53,6 +53,11 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
 | `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
 | `gen_ai.request.model` | gen_ai | string | Model name |
+| `hermes.human_input.kind`, `hermes.human_input.prompt`, `hermes.human_input.outcome`, `hermes.human_input.wait_s` | hermes | mixed | On a `human_input.{kind}` span (`clarify`, a password prompt; not approvals): what the person was asked (Hermes redacts it; a preview under `content_capture`), how the wait ended and how long it took |
+| `hermes.turn.stop_reason` | hermes | string | Set when `agent_loop_stopped` fires for the turn (`/stop`, the `/new` fast path); a stopped turn whose end never arrives is swept as `interrupted`, not `timed_out` |
+| `hermes.turn.verify_nudges` | hermes | int | How many times `pre_verify` fired this turn (the agent edited code and was about to finish); never the paths or the response |
+| `hermes.turn.trigger` | hermes | string | What started the turn: `user` (CLI, TUI, desktop, a gateway platform, ACP), `cron`, `kanban` (a worker), `subagent` (a delegated child), `a2a`, `api` (the API server), `oneshot` (`hermes -z`, `chat -q`), `curator`, `batch` or `system`. `/loop`, `/heartbeat` and `/goal` re-entries and bot-to-bot DMs are not observable at turn start and classify as the turn they ride on (#444) |
+| `hermes.agent.model_override` | hermes | bool | Whether the turn runs on a model other than the profile's `model.default` (a `delegation.model` child, a kanban `--model` worker, a cron job's own model, `-m`, `/model`); absent when either is unknown |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
 | `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
@@ -141,6 +146,7 @@ Set at **end** (success):
 | `gen_ai.response.finish_reasons` | gen_ai | string[] | `["stop"]`, `["tool_use"]`, … |
 | `llm.response.finish_reason` | hermes | string | Same, scalar |
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
+| `hermes.api.ttfc_ms` | hermes | float | Streaming calls: milliseconds from the call's start (retries included) to the first response chunk, from Hermes's `started_at` / `first_chunk_at`; absent for a non-streamed call |
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
 | `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
 | `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |
@@ -219,7 +225,7 @@ One per human-in-the-loop (or smart-guardian) approval prompt, named `approval.<
 
 ## `kanban.*`
 
-One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process (each the root of its own trace), `kanban.complete` and `kanban.block` in the worker's own trace. Opened and closed at once.
+One per kanban board transition ([hooks](/reference/hooks#kanban-board-transitions)): `kanban.claim`, `kanban.spawn`, `kanban.worker_exit`, `kanban.stale_claim` in the dispatcher process, `kanban.complete` and `kanban.block` in the worker; one run of a card is one trace rooted at `kanban.claim` ([span hierarchy](/architecture/span-hierarchy#kanban)). Opened and closed at once.
 
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
@@ -246,6 +252,9 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 | `hermes.subagent.child_session_id`, `hermes.subagent.child_id` | hermes | string | Child session / sub-agent ids |
 | `hermes.subagent.parent_session_id`, `hermes.subagent.parent_turn_id`, `hermes.subagent.parent_id` | hermes | string | Parent identity |
 | `hermes.subagent.status`, `hermes.subagent.duration_ms`, `hermes.subagent.summary`, `output.value` | hermes | mixed | On stop: reported `child_status`, wall-clock, result summary |
+| `hermes.subagent.model_inherited` | hermes | bool | Set when the child's root starts, with `gen_ai.request.model` (the child's model): whether the child runs on its parent's model (`false` with `delegation.model` set) |
+| `hermes.subagent.usage.input_tokens`, `hermes.subagent.usage.output_tokens`, `hermes.subagent.usage.total_tokens`, `hermes.subagent.api_call_count` | hermes | int | On stop: tokens and API calls of the child's whole subtree (its own turns plus every delegation it made); namespaced so the child root's `gen_ai.usage.*` is not counted twice by a reader that sums agent spans |
+| `hermes.subagent.cost.usage`, `hermes.subagent.cost.status` | hermes | mixed | On stop: the subtree's USD and pricing status, by the turn root's rule (an amount only when every call was priced) |
 | `hermes.subagent.swept` | hermes | bool | `true` when the delegation was closed by its TTL (`subagent_span_ttl_ms`) because `subagent_stop` never arrived |
 
 ## Metrics

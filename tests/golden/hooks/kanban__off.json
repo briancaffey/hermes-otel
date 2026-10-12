@@ -156,12 +156,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.spawn",
-   "parent": null,
+   "parent": "S1",
    "span": "S2",
    "status": {
     "code": "OK"
    },
-   "trace": "T2"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -183,12 +183,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.worker_exit",
-   "parent": null,
+   "parent": "S1",
    "span": "S3",
    "status": {
     "code": "ERROR"
    },
-   "trace": "T3"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -213,7 +213,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T4"
+   "trace": "T2"
   },
   {
    "attributes": {
@@ -236,6 +236,7 @@
     "hermes.turn.tool_count": 1,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "kanban_complete",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "worker-a",
@@ -254,7 +255,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -279,7 +280,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -304,7 +305,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -327,6 +328,7 @@
     "hermes.turn.tool_count": 1,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "kanban_block",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "worker-b",
@@ -345,7 +347,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -370,7 +372,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -395,7 +397,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   }
  ]
 }

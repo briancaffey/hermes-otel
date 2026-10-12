@@ -236,6 +236,36 @@ def response_attributes(
     return attributes
 
 
+def first_chunk_seconds(started_at: Any, first_chunk_at: Any) -> Optional[float]:
+    """Seconds from the call's start to its first stream chunk (#396).
+
+    Hermes passes both as wall-clock ``time.time()`` values on
+    ``post_api_request`` (``first_chunk_at`` only for a streamed response);
+    ``started_at`` is taken before any retry, so this includes retries.
+    None when either is missing or the difference is negative.
+    """
+    try:
+        if started_at is None or first_chunk_at is None:
+            return None
+        s, f = float(started_at), float(first_chunk_at)
+    except (TypeError, ValueError):
+        return None
+    if f < s:
+        return None
+    return f - s
+
+
+def record_first_chunk(
+    tracer, attributes: Dict[str, Any], payload: Any, labels: Dict[str, Any]
+) -> None:
+    """``hermes.api.ttfc_ms`` on the span and the time-to-first-chunk histogram."""
+    seconds = first_chunk_seconds(payload.get("started_at"), payload.get("first_chunk_at"))
+    if seconds is None:
+        return
+    attributes["hermes.api.ttfc_ms"] = round(seconds * 1000, 1)
+    tracer.record_metric("api_time_to_first_chunk", seconds, labels)
+
+
 def record_operation_duration(
     tracer, api_duration: Optional[float], dims: Dict[str, Any], error_type: Optional[str] = None
 ) -> None:

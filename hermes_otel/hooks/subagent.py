@@ -87,10 +87,14 @@ def on_subagent_start(
         sweep_with_turn=False,
     )
 
+    parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
     record: Dict[str, Any] = {
         "span": span,
         "role": role or None,
         "parent_session_id": parent_session_id,
+        # The parent turn's model, so the child's root can say whether it
+        # inherited it (delegation.model unset) or runs on its own (#391).
+        "parent_model": parent_ps.model if parent_ps is not None else "",
     }
     if span is not None and hasattr(span, "get_span_context"):
         try:
@@ -153,6 +157,16 @@ def on_subagent_stop(
     if summary_preview is not None:
         attributes["hermes.subagent.summary"] = summary_preview
         attributes["output.value"] = summary_preview
+
+    # What the child's subtree cost: its own turns plus any delegations it
+    # made (a nested orchestrator), passed up one level so a grandchild is
+    # counted once at every level above it (#390).
+    totals = tracer.sessions.pop_delegation(child_session_id)
+    if totals is not None:
+        attributes.update(totals.attributes())
+        parent_ps = tracer.sessions.peek(parent_session_id) if parent_session_id else None
+        if parent_ps is not None and parent_ps.is_subagent:
+            tracer.sessions.add_delegation_subtree(parent_session_id, totals)
 
     error_message = None
     if status == "error":

@@ -258,12 +258,13 @@ def collect(store: Path, since_ns: int, ids: Dict[str, str]) -> Dict[str, Any]:
                     "summary": a.get("hermes.kanban.summary") or a.get("hermes.kanban.reason"),
                 }
             )
-    # Worker traces: every root stamped with one of our cards.
+    # Worker turns: every turn root stamped with one of our cards. Since #388
+    # it nests under the dispatcher's kanban.claim (one trace per run), so it
+    # is a root only when the worker could not join the run's trace.
     roots = [
         s
         for s in spans
-        if s["_parent"] is None
-        and s["_name"] in ("agent", "cron")
+        if s["_name"] in ("agent", "cron")
         and s.get("attributes", {}).get("hermes.kanban.task_id") in by_id
     ]
     traces = []
@@ -283,11 +284,19 @@ def collect(store: Path, since_ns: int, ids: Dict[str, str]) -> Dict[str, Any]:
             }
         )
     metrics: Dict[tuple, float] = {}
+    # Board health (#397): dispatcher passes by outcome, what they did by kind.
+    dispatch: Dict[str, float] = {}
     for m in live_rows(store, "metric", since_ns):
+        a = m.get("attributes", {})
         if m.get("name") == "hermes.kanban.task.count":
-            a = m.get("attributes", {})
             k = (a.get("outcome"), a.get("board"))
             metrics[k] = metrics.get(k, 0) + float(m.get("value") or 0)
+        elif m.get("name") == "hermes.kanban.dispatch.count":
+            k2 = f"tick:{a.get('outcome')}"
+            dispatch[k2] = dispatch.get(k2, 0) + float(m.get("value") or 0)
+        elif m.get("name") == "hermes.kanban.dispatch.result":
+            k2 = str(a.get("kind"))
+            dispatch[k2] = dispatch.get(k2, 0) + float(m.get("value") or 0)
     events = []
     events_on = False
     for e in live_rows(store, "log", since_ns):
@@ -307,6 +316,7 @@ def collect(store: Path, since_ns: int, ids: Dict[str, str]) -> Dict[str, Any]:
         "kanban_spans": kanban,
         "worker_traces": traces,
         "metrics": metrics,
+        "dispatch": dispatch,
         "events": events,
         "events_on": events_on,
     }
@@ -362,14 +372,27 @@ def check(result: Dict[str, Any], tasks: Dict[str, Dict[str, Any]]) -> List[tupl
         rows.append(
             (f"{role}: kanban.claim root span", bool(have(role, "kanban.claim", root=True)), "")
         )
+        claim, spawn = have(role, "kanban.claim"), have(role, "kanban.spawn")
         rows.append(
             (
-                f"{role}: kanban.spawn root span with pid",
-                bool(have(role, "kanban.spawn", root=True))
-                and (have(role, "kanban.spawn") or {}).get("pid") is not None,
+                f"{role}: kanban.spawn under the run's claim, with pid",
+                bool(claim and spawn and not spawn["root"] and spawn["trace"] == claim["trace"])
+                and spawn.get("pid") is not None,
                 "",
             )
         )
+        if role in ("complete", "block"):
+            rows.append(
+                (
+                    f"{role}: worker turn in the claim's trace (one trace per run, #388)",
+                    bool(claim)
+                    and any(
+                        t["role"] == role and t["trace"] == claim["trace"]
+                        for t in result["worker_traces"]
+                    ),
+                    claim["trace"][:8] if claim else "",
+                )
+            )
     done = have("complete", "kanban.complete")
     rows.append(
         (
@@ -456,6 +479,14 @@ def check(result: Dict[str, Any], tasks: Dict[str, Dict[str, Any]]) -> List[tupl
             "metric hermes.kanban.task.count has claimed/completed/blocked points",
             all(any(k[0] == o for k in m) for o in ("claimed", "completed", "blocked")),
             str({f"{k[0]}/{k[1]}": v for k, v in m.items()}),
+        )
+    )
+    d = result.get("dispatch", {})
+    rows.append(
+        (
+            "metric hermes.kanban.dispatch.count/result: passes counted, 4 spawns (#397)",
+            sum(v for k, v in d.items() if k.startswith("tick:")) > 0 and d.get("spawned", 0) >= 4,
+            str({k: v for k, v in sorted(d.items())}),
         )
     )
     if result["events_on"]:

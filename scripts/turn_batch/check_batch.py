@@ -165,6 +165,41 @@ def evaluate(
         names = [str((s.get("attributes") or {}).get("tool.name") or s.get("name")) for s in tools]
         if not any(any(w in n for w in ex["tool_names_any"]) for n in names):
             out.append(("FAIL", f"tool names {names} contain none of {ex['tool_names_any']}"))
+    # Multi-agent shapes (#399).
+    for prefix, want in (ex.get("span_prefix_count_min") or {}).items():
+        n = sum(1 for s in spans if str(s.get("name", "")).startswith(prefix))
+        if n < int(want):
+            out.append(("FAIL", f"{n} span(s) named {prefix}*, expected ≥ {want}"))
+    if ex.get("subagent_roots_min") is not None:
+        n = sum(
+            1
+            for s in spans
+            if s.get("name") == "agent"
+            and (s.get("attributes") or {}).get("hermes.session.is_subagent") in (True, "true")
+        )
+        if n < int(ex["subagent_roots_min"]):
+            out.append(
+                ("FAIL", f"{n} rejoined child root(s), expected ≥ {ex['subagent_roots_min']}")
+            )
+    if ex.get("agent_depth_min") is not None:
+        by_id = {s.get("span_id"): s for s in spans}
+
+        def depth(s: Dict[str, Any]) -> int:
+            d, seen = 0, set()
+            while s is not None and s.get("span_id") not in seen:
+                seen.add(s.get("span_id"))
+                d += s.get("name") == "agent"
+                s = by_id.get(s.get("parent_span_id"))
+            return d
+
+        got = max((depth(s) for s in spans), default=0)
+        if got < int(ex["agent_depth_min"]):
+            out.append(("FAIL", f"agent nesting depth {got}, expected ≥ {ex['agent_depth_min']}"))
+    for key, wants in (ex.get("attr_values_min") or {}).items():
+        for value, want in wants.items():
+            n = sum(1 for s in spans if str((s.get("attributes") or {}).get(key)) == str(value))
+            if n < int(want):
+                out.append(("FAIL", f"{n} span(s) with {key}={value}, expected ≥ {want}"))
     if ex.get("span_names_any"):
         names = [str(s.get("name")) for s in spans]
         if not any(any(w in n for w in ex["span_names_any"]) for n in names):

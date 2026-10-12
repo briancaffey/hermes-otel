@@ -109,6 +109,14 @@ class PerSession:
     # (``response_model`` on post_api_request). Empty when none was reported;
     # never defaulted to the request model (#155).
     response_model: str = ""
+    # The model the turn started on (``on_session_start`` / the lazy root),
+    # kept so a delegated child can say whether it inherited it (#391).
+    model: str = ""
+    # agent_loop_stopped (#396): the reason the gateway gave when it stopped
+    # this turn, so the root ends "interrupted" even if only the sweep ends it.
+    stop_reason: str = ""
+    # pre_verify fired this many times this turn (#396).
+    verify_nudges: int = 0
     # 1-based index of the user turn this aggregator covers. Surfaced as the
     # ``hermes.turn.number`` span attribute so any backend can group or filter
     # a session's spans by conversation turn. See SessionState.next_turn.
@@ -200,6 +208,62 @@ class PerSession:
         return {"hermes.cost.status": "included" if statuses == {"included"} else "unknown"}
 
 
+@dataclass
+class DelegationTotals:
+    """What one delegated child cost, its own turns plus every delegation it
+    made in turn (#390): the subtree under its ``subagent.*`` span."""
+
+    usage: Dict[str, int] = field(default_factory=_empty_usage)
+    cost_statuses: List[str] = field(default_factory=list)
+    cost_usd: float = 0.0
+    api_call_count: int = 0
+
+    def add_turn(self, ps: "PerSession") -> None:
+        """Fold one finished turn of the child in."""
+        for k, v in ps.usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(ps.cost_statuses)
+        self.cost_usd += ps.cost_usd
+        self.api_call_count += ps.turn_summary.api_call_count
+
+    def add(self, other: "DelegationTotals") -> None:
+        """Fold a grandchild's subtree in (a nested orchestrator)."""
+        for k, v in other.usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(other.cost_statuses)
+        self.cost_usd += other.cost_usd
+        self.api_call_count += other.api_call_count
+
+    def attributes(self) -> Dict[str, Any]:
+        """``hermes.subagent.*`` rollup attributes for the delegation span.
+
+        Namespaced, not ``gen_ai.usage.*``: the child's own root already
+        carries its turn's ``gen_ai.usage.*``, and a reader that sums those
+        over every agent span would count the child twice. Cost follows the
+        root's rule: an amount only when every call was priced.
+        """
+        u = self.usage
+        attrs: Dict[str, Any] = {
+            "hermes.subagent.usage.input_tokens": u.get("prompt_tokens", 0),
+            "hermes.subagent.usage.output_tokens": u.get("completion_tokens", 0),
+            "hermes.subagent.usage.total_tokens": u.get("total_tokens", 0),
+            "hermes.subagent.api_call_count": self.api_call_count,
+        }
+        statuses = set(self.cost_statuses)
+        if statuses and statuses <= {"actual", "estimated"}:
+            attrs["hermes.subagent.cost.status"] = (
+                "actual" if statuses == {"actual"} else "estimated"
+            )
+            attrs["hermes.subagent.cost.usage"] = self.cost_usd
+        elif statuses & {"actual", "estimated"}:
+            attrs["hermes.subagent.cost.status"] = "partial"
+        elif statuses:
+            attrs["hermes.subagent.cost.status"] = (
+                "included" if statuses == {"included"} else "unknown"
+            )
+        return attrs
+
+
 class SessionState:
     """Per-session aggregators + a flat tool-timing registry.
 
@@ -240,6 +304,38 @@ class SessionState:
         # The session most recently finalized; a reset that names no old
         # session (the CLI) is taken to replace it.
         self.last_finalized: Optional[str] = None
+        # Delegated children's running totals, child_session_id -> totals,
+        # until subagent_stop reads them onto the delegation span (#390).
+        self._delegations: Dict[str, DelegationTotals] = {}
+        # Gateway session key -> the session id of its latest turn, so
+        # agent_loop_stopped (which names only the key) finds the turn (#396).
+        self._session_keys: "OrderedDict[str, str]" = OrderedDict()
+
+    def remember_session_key(self, session_key: str, session_id: str) -> None:
+        with self._lock:
+            self._remember(self._session_keys, session_key, session_id)
+
+    def session_for_key(self, session_key: Optional[str]) -> Optional[str]:
+        if not session_key:
+            return None
+        with self._lock:
+            return self._session_keys.get(session_key)
+
+    # ── Delegation rollups (#390) ────────────────────────────────────────
+
+    def add_delegation_turn(self, child_session_id: str, ps: "PerSession") -> None:
+        with self._lock:
+            self._delegations.setdefault(child_session_id, DelegationTotals()).add_turn(ps)
+
+    def add_delegation_subtree(self, child_session_id: str, totals: DelegationTotals) -> None:
+        with self._lock:
+            self._delegations.setdefault(child_session_id, DelegationTotals()).add(totals)
+
+    def pop_delegation(self, child_session_id: Optional[str]) -> Optional[DelegationTotals]:
+        if not child_session_id:
+            return None
+        with self._lock:
+            return self._delegations.pop(child_session_id, None)
 
     # ── Per-session aggregators ──────────────────────────────────────────
 

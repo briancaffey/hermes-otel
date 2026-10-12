@@ -201,6 +201,7 @@
     "hermes.turn.auxiliary.output_tokens": 3,
     "hermes.turn.final_status": "completed",
     "hermes.turn.number": 1,
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "20261012_090000_golden",

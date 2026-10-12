@@ -283,7 +283,7 @@ class LiveStore:
         self.max_rows = max(10, int(max_rows))
         self.retention_ns = int(max(0.0, float(retention_hours)) * 3600 * 1e9)
         self._local = threading.local()
-        self._conns: list = []  # every connection ever opened, for close()
+        self._conns: list = []  # (owner thread, connection) still open, for close()
         self._conns_lock = threading.Lock()
         self._writes = 0
         # Writes are buffered and committed in one transaction by a daemon
@@ -318,7 +318,7 @@ class LiveStore:
         self.flush()
         with self._conns_lock:
             conns, self._conns = self._conns, []
-        for c in conns:
+        for _owner, c in conns:
             try:
                 c.close()
             except Exception:  # pragma: no cover: never raise on shutdown
@@ -334,8 +334,25 @@ class LiveStore:
             c.execute("PRAGMA busy_timeout=3000")
             c.execute("PRAGMA synchronous=NORMAL")
             self._local.conn = c
+            me = threading.current_thread()
             with self._conns_lock:
-                self._conns.append(c)
+                # A thread-local connection outlives its thread (sqlite3
+                # connections can't be weakref'd, and _conns keeps them
+                # alive). Close the ones whose owner thread has exited, or a
+                # gateway serving reads/writes from transient worker threads
+                # leaks 2 fds (db + wal) per thread until it crosses
+                # FD_SETSIZE and select() callers in the process break.
+                live = []
+                for owner, conn in self._conns:
+                    if owner.is_alive() or owner is me:
+                        live.append((owner, conn))
+                    else:
+                        try:
+                            conn.close()
+                        except Exception:  # pragma: no cover
+                            pass
+                live.append((me, c))
+                self._conns = live
         return c
 
     # Indexed columns added since v2, in the order they were introduced; an

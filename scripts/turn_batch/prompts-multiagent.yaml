@@ -1,0 +1,63 @@
+# Multi-agent scenarios (#399), run on their own: they cost more tokens and
+# time than the default batch, and `make refactor-check` must not pick them up.
+#
+#   uv run --extra dev python scripts/turn_batch/run_batch.py \
+#       --prompts scripts/turn_batch/prompts-multiagent.yaml
+#   uv run --extra dev python scripts/turn_batch/check_batch.py --manifest <runs.json>
+#
+# A prompt's `hermes_args:` are added to its `hermes chat` command line, and
+# its `config:` is deep-merged into the profile's config.yaml for that
+# one turn and `enable_toolsets:` adds toolsets the profile disables; the
+# runner restores the file byte for byte afterwards. Note: `chat -q` runs a
+# delegation batch synchronously, so the background path (subagent_stop in a
+# later turn) is covered by tests/integration/test_subagent_hierarchy.py.
+#
+# Extra expect keys (check_batch.py):
+#   span_prefix_count_min  {prefix: n}            spans whose name starts with prefix
+#   subagent_roots_min     int                    child `agent` roots rejoined (hermes.session.is_subagent)
+#   agent_depth_min        int                    `agent` spans on the deepest root-to-leaf path
+#   attr_values_min        {key: {value: n}}      spans carrying key=value
+
+profile: minimal
+
+prompts:
+  - id: delegation-batch
+    why: one delegate_task call with two tasks; one subagent.* span per task, each child root rejoined
+    enable_toolsets: [delegation]
+    prompt: "Use the delegate_task tool once with two tasks in one batch: task 1, run 'echo {marker}-a' in the terminal; task 2, run 'echo {marker}-b' in the terminal. Wait for both and reply with both outputs. Do not change any configuration."
+    expect:
+      status: ok
+      span_prefix_count_min: {"subagent.": 2}
+      subagent_roots_min: 2
+      agent_depth_min: 2
+
+  - id: delegation-nested
+    why: an orchestrator child that delegates to a leaf; a depth-3 agent tree in one trace
+    enable_toolsets: [delegation]
+    config:
+      delegation:
+        max_spawn_depth: 2
+    prompt: "Use delegate_task with role 'orchestrator' for one task: the orchestrator must itself call delegate_task to give one leaf worker the job of running 'echo {marker}-n' in the terminal, then return the worker's output. Reply with what the orchestrator returns. Do not change any configuration."
+    expect:
+      status: ok
+      span_prefix_count_min: {"subagent.": 2}
+      subagent_roots_min: 2
+      agent_depth_min: 3
+
+  - id: moa-turn
+    why: a Mixture-of-Agents turn (two references and the aggregator on the profile's NVIDIA model); reference and aggregator calls as auxiliary api.* spans
+    hermes_args: [--provider, moa, -m, cheap]
+    config:
+      moa:
+        presets:
+          cheap:
+            enabled: true
+            reference_models:
+              - {provider: nvidia, model: "nvidia/nemotron-3-super-120b-a12b"}
+              - {provider: nvidia, model: "nvidia/nemotron-3-super-120b-a12b"}
+            aggregator: {provider: nvidia, model: "nvidia/nemotron-3-super-120b-a12b"}
+    prompt: "In one sentence, name a prime number between 10 and 20. Include the text {marker}-moa in your reply."
+    expect:
+      status: ok
+      attr_values_min:
+        hermes.auxiliary.task: {moa_reference: 2, moa_aggregator: 1}

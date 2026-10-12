@@ -10,7 +10,7 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from ..helpers import clip_joined, optional_number, package_version, truncate_string
+from ..helpers import clip_joined, optional_number, package_version, truncate_string, turn_trigger
 from ..session_state import TurnSummary
 
 _DEFAULT_AGENT_NAME = "hermes-agent"
@@ -71,6 +71,54 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
         attrs["llm.provider"] = truncate_string(provider, _PROVIDER_MAX)
         attrs.update(_provider_attributes(provider))
     return attrs
+
+
+def session_env(name: str) -> str:
+    """A Hermes session variable: the gateway's per-turn context var when Hermes
+    is importable (it falls back to the environment itself), else ``os.environ``."""
+    try:
+        from gateway.session_context import get_session_env  # type: ignore[import-not-found]
+
+        return str(get_session_env(name) or "")
+    except Exception:
+        import os
+
+        return os.environ.get(name, "")
+
+
+def turn_trigger_attributes(platform: Any, is_subagent: bool = False) -> Dict[str, str]:
+    """``hermes.turn.trigger``: what started the turn (#394), see
+    :func:`hermes_otel.helpers.turn_trigger`."""
+    return {"hermes.turn.trigger": turn_trigger(platform, is_subagent=is_subagent, env=session_env)}
+
+
+def configured_default_model() -> str:
+    """The profile's configured main model (``model.default`` in Hermes's
+    config.yaml), or ``""`` when Hermes is not importable or names none."""
+    try:
+        from hermes_cli.config import read_raw_config_readonly  # type: ignore[import-not-found]
+
+        cfg = read_raw_config_readonly()
+    except Exception:
+        return ""
+    m = cfg.get("model") if isinstance(cfg, dict) else None
+    if isinstance(m, str):
+        return m.strip()
+    if isinstance(m, dict):
+        return str(m.get("default") or m.get("model") or m.get("name") or "").strip()
+    return ""
+
+
+def model_override_attributes(model: Any) -> Dict[str, bool]:
+    """``hermes.agent.model_override``: whether the turn runs on a model other
+    than the profile's configured default (a ``delegation.model`` child, a
+    kanban ``--model`` worker, a cron job's own model, ``-m`` or ``/model``).
+    Absent when either side is unknown (#391)."""
+    default = configured_default_model()
+    text = str(model or "").strip()
+    if not default or not text:
+        return {}
+    return {"hermes.agent.model_override": text != default}
 
 
 def profile_attributes(tracer: Any) -> Dict[str, str]:

@@ -34,9 +34,11 @@ from ._common import get_tracer
 from .approval import on_post_approval_response, on_pre_approval_request
 from .auxiliary import on_post_auxiliary_call, on_pre_auxiliary_call
 from .kanban import (
+    on_kanban_dispatch_tick,
     on_kanban_task_blocked,
     on_kanban_task_claimed,
     on_kanban_task_completed,
+    on_kanban_task_updated,
     on_kanban_worker_exited,
     on_kanban_worker_spawned,
     on_kanban_worker_stale_claim,
@@ -48,8 +50,22 @@ from .llm import (
     on_pre_api_request,
     on_pre_llm_call,
 )
+from .observers import (
+    on_human_input_request,
+    on_human_input_resolved,
+    on_pre_command,
+    on_pre_transcription,
+    on_skill_lifecycle,
+)
 from .propagation import get_current_traceparent, on_mcp_request_headers
-from .session import on_session_end, on_session_finalize, on_session_reset, on_session_start
+from .session import (
+    on_agent_loop_stopped,
+    on_pre_verify,
+    on_session_end,
+    on_session_finalize,
+    on_session_reset,
+    on_session_start,
+)
 from .subagent import on_subagent_start, on_subagent_stop
 from .tools import on_post_tool_call, on_pre_tool_call
 from .transforms import on_transform_llm_output, on_transform_terminal_output
@@ -64,6 +80,8 @@ __all__ = [
     "on_kanban_worker_exited",
     "on_kanban_worker_spawned",
     "on_kanban_worker_stale_claim",
+    "on_kanban_dispatch_tick",
+    "on_kanban_task_updated",
     "on_mcp_request_headers",
     "on_post_api_request",
     "on_post_approval_response",
@@ -77,6 +95,13 @@ __all__ = [
     "on_pre_tool_call",
     "on_session_end",
     "on_session_finalize",
+    "on_agent_loop_stopped",
+    "on_pre_verify",
+    "on_pre_command",
+    "on_human_input_request",
+    "on_human_input_resolved",
+    "on_skill_lifecycle",
+    "on_pre_transcription",
     "on_session_reset",
     "on_session_start",
     "on_subagent_start",

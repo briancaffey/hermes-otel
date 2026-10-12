@@ -31,7 +31,7 @@
    "event_name": "hermes.kanban.transition",
    "severity": "INFO",
    "span": "S2",
-   "trace": "T2"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -52,7 +52,7 @@
    "event_name": "hermes.kanban.transition",
    "severity": "ERROR",
    "span": "S3",
-   "trace": "T3"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -71,7 +71,7 @@
    "event_name": "hermes.kanban.transition",
    "severity": "WARN",
    "span": "S4",
-   "trace": "T4"
+   "trace": "T2"
   },
   {
    "attributes": {
@@ -94,7 +94,7 @@
    "event_name": "hermes.turn.end",
    "severity": "INFO",
    "span": "S5",
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -114,7 +114,7 @@
    "event_name": "hermes.tool.call",
    "severity": "INFO",
    "span": "S6",
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -135,7 +135,7 @@
    "event_name": "hermes.kanban.transition",
    "severity": "INFO",
    "span": "S7",
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -156,7 +156,7 @@
    "event_name": "hermes.kanban.transition",
    "severity": "WARN",
    "span": "S10",
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -179,7 +179,7 @@
    "event_name": "hermes.turn.end",
    "severity": "INFO",
    "span": "S8",
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -199,7 +199,7 @@
    "event_name": "hermes.tool.call",
    "severity": "INFO",
    "span": "S9",
-   "trace": "T6"
+   "trace": "T4"
   }
  ],
  "metrics": [
@@ -358,12 +358,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.spawn",
-   "parent": null,
+   "parent": "S1",
    "span": "S2",
    "status": {
     "code": "OK"
    },
-   "trace": "T2"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -385,12 +385,12 @@
    "kind": "INTERNAL",
    "links": [],
    "name": "kanban.worker_exit",
-   "parent": null,
+   "parent": "S1",
    "span": "S3",
    "status": {
     "code": "ERROR"
    },
-   "trace": "T3"
+   "trace": "T1"
   },
   {
    "attributes": {
@@ -415,7 +415,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T4"
+   "trace": "T2"
   },
   {
    "attributes": {
@@ -438,6 +438,7 @@
     "hermes.turn.tool_count": 1,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "kanban_complete",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "worker-a",
@@ -456,7 +457,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -485,7 +486,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -511,7 +512,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T5"
+   "trace": "T3"
   },
   {
    "attributes": {
@@ -534,6 +535,7 @@
     "hermes.turn.tool_count": 1,
     "hermes.turn.tool_outcomes": "completed",
     "hermes.turn.tools": "kanban_block",
+    "hermes.turn.trigger": "user",
     "llm.model_name": "gpt-4",
     "openinference.span.kind": "AGENT",
     "session.id": "worker-b",
@@ -552,7 +554,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -581,7 +583,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   },
   {
    "attributes": {
@@ -607,7 +609,7 @@
    "status": {
     "code": "OK"
    },
-   "trace": "T6"
+   "trace": "T4"
   }
  ]
 }
