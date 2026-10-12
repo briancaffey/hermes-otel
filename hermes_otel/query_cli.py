@@ -1452,6 +1452,104 @@ def cmd_sql(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
+def cmd_mcp_config(args: argparse.Namespace, out: TextIO) -> int:
+    """``mcp-config``: the opentelemetry-mcp server config for the configured backends (#304)."""
+    from . import mcp_config as mc
+    from .hermes_home import resolve_hermes_home
+
+    backends = _import_backends()
+    cfg_path, configured, pin = backends.load_config()
+    results = mc.classify(configured)
+    wanted = (getattr(args, "source", None) or "").strip() or None
+    if wanted and wanted.lower() == "live":
+        wanted = None
+    target = mc.pick_target(results, wanted=wanted, pin=pin)
+    name = getattr(args, "name", None) or mc.DEFAULT_SERVER_NAME
+    home = resolve_hermes_home()
+    existing = mc.existing_server_names(home)
+    report: Dict[str, Any] = {
+        "config_file": str(cfg_path) if cfg_path else None,
+        "package": mc.MCP_PACKAGE_SPEC,
+        "server_name": name,
+        "backends": [
+            (
+                {"name": r.name, "type": r.backend_type, "queryable": True, "env": r.env()}
+                if isinstance(r, mc.QueryTarget)
+                else {
+                    "name": r.name,
+                    "type": r.backend_type,
+                    "queryable": False,
+                    "reason": r.reason,
+                }
+            )
+            for r in results
+        ],
+        "selected": target.name if target else None,
+        "existing_mcp_servers": existing,
+    }
+    if target is not None:
+        report["mcp_servers_yaml"] = mc.render_yaml(target, name)
+        report["hermes_mcp_add"] = mc.hermes_add_argv(target, name)
+        report["claude_mcp_add"] = mc.render_claude_code_add(target, name)
+        report["mcp_json"] = mc.render_mcp_json(target, name)
+    applied: List[List[str]] = []
+    if getattr(args, "apply", False):
+        if target is None:
+            raise CliError("nothing to apply: no configured backend is queryable over MCP")
+        try:
+            applied = mc.apply(target, home, name, force=bool(getattr(args, "force", False)))
+        except mc.ApplyRefused as exc:
+            raise CliError(str(exc))
+        except Exception as exc:  # subprocess failures: hermes missing, add rejected
+            raise CliError(f"hermes mcp add failed: {exc.__class__.__name__}: {exc}")
+        report["applied"] = applied
+    if args.json:
+        _emit_json(report, out)
+        return 0
+    out.write(f"config file   {report['config_file'] or '(none found: env vars only)'}\n")
+    if not results:
+        out.write("backends      none configured; the MCP server needs a Jaeger or Tempo entry\n")
+    else:
+        out.write("backends\n")
+        for b in report["backends"]:
+            if b["queryable"]:
+                env = b["env"]
+                q = f"queryable over MCP: BACKEND_TYPE={env['BACKEND_TYPE']} BACKEND_URL={env['BACKEND_URL']}"
+            else:
+                q = f"not queryable over MCP ({b['reason']})"
+            out.write(f"  {b['name']:<14} {b['type']:<12} {q}\n")
+    if wanted and target is None:
+        raise CliError(f"--source {wanted!r} names no configured backend the MCP server can read")
+    if target is None:
+        out.write(
+            "\nNo entry the server can read. Add a Jaeger (v1) or Tempo backend, or query the live "
+            "store with this tool instead.\n"
+        )
+        return 0
+    out.write(f"\nselected      {target.name} ({target.backend_type})\n")
+    out.write(f"\n# {home / 'config.yaml'} (what `hermes mcp add` writes)\n")
+    out.write(report["mcp_servers_yaml"])
+    out.write("\n# Hermes (answer Y to the enable prompt)\n")
+    out.write(mc.render_hermes_add(target, name) + "\n")
+    out.write("\n# Claude Code\n")
+    out.write(report["claude_mcp_add"] + "\n")
+    out.write("\n# Cursor / Claude Desktop (mcp.json)\n")
+    out.write(json.dumps(report["mcp_json"], indent=2) + "\n")
+    if name in existing and not applied:
+        out.write(
+            f"\nnote: an MCP server named {name!r} already exists in config.yaml; "
+            "--apply needs --force to replace it.\n"
+        )
+    if applied:
+        out.write("\napplied: " + "; ".join(" ".join(a) for a in applied) + "\n")
+        out.write("Start a new Hermes session (or /reload-mcp) to use the tools.\n")
+    out.write(
+        "\nThe server reads traces only and returns stored prompts to whoever connects; "
+        "caveats: https://briancaffey.github.io/hermes-otel/configuration/mcp-query-server#caveats\n"
+    )
+    return 0
+
+
 # ── argument parsing ──────────────────────────────────────────────────────
 
 
@@ -1568,6 +1666,23 @@ def build_parser() -> argparse.ArgumentParser:
         "--interval", type=float, default=2.0, help="poll interval for --follow, seconds"
     )
 
+    s = sub.add_parser(
+        "mcp-config",
+        help="the opentelemetry-mcp server config (mcp_servers block, hermes mcp add) for a Jaeger or Tempo entry",
+    )
+    s.add_argument("--json", action="store_true", help="machine-readable output")
+    s.add_argument(
+        "--source",
+        default=None,
+        help="which backend entry (name or type); default: the query_backend pin, else the first readable one",
+    )
+    s.add_argument("--name", default=None, help="MCP server name (default otel)")
+    s.add_argument(
+        "--apply", action="store_true", help="run `hermes mcp add` for the selected entry"
+    )
+    s.add_argument(
+        "--force", action="store_true", help="with --apply: replace an existing server of that name"
+    )
     s = sub.add_parser("sql", help="read-only SQL against the live store (table `events`)")
     s.add_argument("query")
     s.add_argument("--json", action="store_true")
@@ -1586,6 +1701,7 @@ _COMMANDS = {
     "metrics": cmd_metrics,
     "logs": cmd_logs,
     "sql": cmd_sql,
+    "mcp-config": cmd_mcp_config,
 }
 
 

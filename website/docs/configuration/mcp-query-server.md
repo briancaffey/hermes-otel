@@ -45,7 +45,24 @@ ingest port the plugin exports to.
 ## Register it in Hermes
 
 Hermes auto-registers MCP servers only from portable plugin packages, not from native
-plugins like hermes-otel, so the server is added once by hand:
+plugins like hermes-otel, so the server is added once. The plugin's query tool derives
+the registration from the backends you already configured, so you never look a query
+port up:
+
+```bash
+python3 ~/.hermes/plugins/hermes_otel/skills/observability/scripts/otel.py mcp-config
+```
+
+It lists every configured entry (Jaeger and Tempo entries are readable; LGTM counts as
+Tempo on port 3200; everything else says why it is not), picks the `query_backend` pin or
+the first readable one (`--source <name>` to choose), and prints the `mcp_servers:` block,
+the `hermes mcp add` command, the Claude Code command and the `mcp.json` shape below, all
+with the version pinned. Nothing secret is copied: the server's environment gets
+`BACKEND_TYPE` and `BACKEND_URL` only. The query port is the entry's `query_port`, the
+same key the dashboard adapter reads, or the stack default; the repo's Tempo compose
+stack remaps 3200 to 3210, so its entry carries `query_port: 3210`. `--apply` runs the
+add for you and refuses to replace an existing server of that name unless you pass
+`--force`; `--json` returns the same for scripts. Or by hand:
 
 ```bash
 hermes mcp add otel --command uvx --connect-timeout 60 \
