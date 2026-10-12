@@ -27,26 +27,26 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bearer,
-    bucketize,
-    counter_increases,
     finish_log_row,
     http_get_json,
     http_post_json,
-    log_end_ns,
     not_found,
-    ns_from_any,
-    ns_from_magnitude,
     otlp_status,
     query_origin,
     rejected_request,
     require_credential,
     resolve_env_or_literal,
+)
+from .metrics_math import bucketize, counter_increases
+from .paging import (
+    log_end_ns,
     strictly_older,
     strictly_older_traces,
     trace_end_bound,
     trace_page,
     widened_fetch,
 )
+from .severity import otel_severity_for
 from .shapes import (
     CARD_ATTRIBUTE_KEYS,
     card_row,
@@ -55,6 +55,7 @@ from .shapes import (
     otlp_span,
     span_count_of,
 )
+from .timeconv import ns_from_any, ns_from_magnitude
 
 _DEFAULT_SIGNOZ_PORT = 3301
 # The trace detail asks for this many spans and says so when there are more.
@@ -129,16 +130,6 @@ _SPACE_AGGREGATION: Dict[str, str] = {
 }
 # Histogram internals never make useful "instrument" rows; ``.sum``/``.count`` stay.
 _METRIC_NAME_SKIP_SUFFIXES = (".bucket", ".min", ".max")
-
-# Python logging levels → the smallest OTel severity number of that band
-# (the exporter maps DEBUG→5, INFO→9, WARNING→13, ERROR→17, CRITICAL→21).
-_OTEL_SEVERITY_FLOOR = {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}
-
-
-def _otel_severity_for(min_level: int) -> int:
-    """The ``severity_number`` lower bound matching a Python ``min_level``."""
-    band = max((lvl for lvl in _OTEL_SEVERITY_FLOOR if lvl <= int(min_level)), default=0)
-    return _OTEL_SEVERITY_FLOOR.get(band, 1)
 
 
 def _column(key: str, data_type: str = "string") -> Dict[str, Any]:
@@ -601,7 +592,7 @@ class SigNozAdapter(BackendAdapter):
                 {
                     "key": _column("severity_number", "int64"),
                     "op": ">=",
-                    "value": _otel_severity_for(f.min_level),
+                    "value": otel_severity_for(f.min_level),
                 }
             )
         if f.text:

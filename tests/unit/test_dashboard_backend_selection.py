@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from hermes_otel.dashboard import backends, plugin_api
-from hermes_otel.dashboard.backends.base import bucketize, counter_increases
+from hermes_otel.dashboard.backends.metrics_math import bucketize, counter_increases
 
 CFG = [
     {"type": "phoenix", "name": "phx", "endpoint": "http://localhost:6006"},

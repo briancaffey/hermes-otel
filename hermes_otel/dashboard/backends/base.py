@@ -15,8 +15,12 @@ Adapters return data in two normalized shapes:
   [{spans: [...]}]}]}`` — the shape the frontend's ``buildSpanTree``
   already consumes.
 
-HTTP + OTLP helpers live here to keep adapters short. No side effects
-at import time.
+This module holds the adapter ABC, the structured and log filters, the
+error taxonomy and the HTTP core. The rest is split by concern (#403):
+``shapes`` (card rows, OTLP spans and batches), ``paging`` (trace and log
+pages, cursor bounds), ``metrics_math`` (name mapping, counter increases,
+bucketing), ``severity`` (level tables) and ``timeconv`` (timestamps to ns).
+No side effects at import time.
 """
 
 from __future__ import annotations
@@ -26,13 +30,14 @@ import os
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
 from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 # The OTLP attribute / status builders live in ``shapes`` (#403) and are
 # re-exported here because every adapter imports them from ``base``.
+from .severity import severity_number_for  # noqa: F401  (finish_log_row; re-exported)
 from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status  # noqa: F401
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
@@ -342,33 +347,6 @@ def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str],
     return applied, ignored
 
 
-def strictly_older_traces(
-    traces: List[Dict[str, Any]], f: StructuredFilter
-) -> List[Dict[str, Any]]:
-    """Drop trace rows that started at or after the cursor (backends bound time
-    at their own precision; this keeps the page exact)."""
-    if not f.before_ns:
-        return traces
-    cut = int(f.before_ns)
-    return [t for t in traces if int(t.get("startTimeUnixNano") or 0) < cut]
-
-
-def trace_page(traces: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
-    """The envelope a trace search returns: newest-first rows, the start of the
-    oldest row as the next cursor, and whether asking is worthwhile. ``traces``
-    should carry at least one row beyond ``limit`` so ``has_more`` is exact."""
-    rows = sorted(traces, key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
-    n = int(limit)
-    page, rest = rows[:n], rows[n:]
-    starts = [int(t.get("startTimeUnixNano") or 0) for t in page if t.get("startTimeUnixNano")]
-    has_more = bool(rest)
-    return {
-        "traces": page,
-        "next_before_ns": min(starts) if has_more and starts else None,
-        "has_more": has_more,
-    }
-
-
 def parse_kv_tokens(raw: Optional[str]) -> Dict[str, str]:
     """``key=value key2=value2`` → a dict (the native-query grammar of the
     adapters whose backend takes query parameters or tags: Jaeger, Langfuse)."""
@@ -385,42 +363,10 @@ def parse_kv_tokens(raw: Optional[str]) -> Dict[str, str]:
 
 # ── The search template (#403): what every adapter's search() does ─────
 #
-# Bound the window by the cursor, over-fetch when the rows are spans rather
-# than traces, find each trace's root, re-check the structured predicates on
-# a span the backend could only match loosely, and say when the fetch came
-# back full. Each piece used to be copied into ten adapters, each with its
-# own spelling.
-
-_UNIT_DIV = {"ns": 1, "us": 1_000, "ms": 1_000_000, "s": 1_000_000_000}
-
-
-def trace_end_bound(
-    f: StructuredFilter, end_s: int, unit: str = "ns", round_up: bool = False
-) -> int:
-    """The query's end bound in ``unit`` (``ns`` / ``us`` / ``ms`` / ``s``):
-    the window end, tightened by the paging cursor when there is one.
-    ``round_up`` adds one unit for a backend that bounds time at that
-    precision, so the row the cursor was taken from stays inside the window
-    and :func:`strictly_older_traces` makes the cut exact afterwards."""
-    div = _UNIT_DIV[unit]
-    end = int(end_s) * (1_000_000_000 // div)
-    if f.before_ns:
-        end = min(end, int(f.before_ns) // div + (1 if round_up else 0))
-    return end
-
-
-def widened_fetch(
-    limit: int, roots_only: bool, rows_per_trace: int = 4, inclusive: bool = False
-) -> int:
-    """How many rows to ask for: one beyond the page when every row is a
-    trace (so ``has_more`` is exact), several per requested trace when the
-    rows are spans (a widened search returns the matching spans, several of
-    one trace, and they are folded into one card each). ``inclusive`` is the
-    other spelling in use, ``(limit + 1) * rows_per_trace``."""
-    n = int(limit)
-    if roots_only:
-        return n + 1
-    return (n + 1) * rows_per_trace if inclusive else n * rows_per_trace + 1
+# Find each trace's root and re-check the structured predicates on a span the
+# backend could only match loosely. The window/cursor bounds and the
+# over-fetch arithmetic are in ``paging``. Each piece used to be copied into
+# ten adapters, each with its own spelling.
 
 
 def root_of(
@@ -480,17 +426,6 @@ def span_matches(
     return True
 
 
-def mark_full_fetch(
-    page: Dict[str, Any], fetched: int, fetch: int, widened: bool
-) -> Dict[str, Any]:
-    """A widened search fetched spans, several per trace, so a full fetch
-    means older rows exist even when they collapsed into fewer traces than
-    the page holds: say so."""
-    if widened and fetched >= fetch:
-        page["has_more"] = True
-    return page
-
-
 def not_found(trace_id: str, backend: str, detail: Optional[str] = None) -> BackendError:
     """The ``not_found`` error every ``get_trace`` raises for an unknown id."""
     return BackendError(404, detail or f"Trace {trace_id} not found in {backend}", "not_found")
@@ -513,21 +448,6 @@ def validate_label_name(label: Optional[str]) -> Optional[str]:
     if not _LABEL_NAME_RE.match(label):
         raise BackendError(400, f"Invalid group_by attribute {label!r}", "request")
     return label
-
-
-# Units the OTLP-to-Prometheus translation appends to a name; ``{token}``
-# style units are dropped by it, so no ``_tokens`` here.
-_PROM_UNIT_SUFFIXES = (
-    "_milliseconds",
-    "_seconds",
-    "_bytes",
-    "_ratio",
-    "_percent",
-    "_watts",
-)
-
-
-_UNDERSCORE_SEGMENTS = ("gen_ai", "prompt_cache")
 
 
 # ── Adapter base ───────────────────────────────────────────────────────
@@ -658,70 +578,6 @@ LOG_ROW_KEYS = (
 )
 
 
-def otlp_metric_name(native: str) -> str:
-    """The plugin's dotted instrument name behind a backend's native spelling,
-    so the UI can match its curated panels on every source (#284).
-
-    ``hermes_token_usage_total`` → ``hermes.token.usage``;
-    ``hermes_tool_duration_milliseconds_sum`` → ``hermes.tool.duration``;
-    a dotted name passes through. Best effort: the Prometheus translation
-    appends ``_total`` to counters and the unit to everything with one.
-    """
-    n = str(native or "")
-    if "." in n:
-        base = n
-        for suffix in (".sum", ".count", ".bucket", ".min", ".max"):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-        return base
-    base = n
-    for suffix in ("_total", "_sum", "_count", "_bucket"):
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    for suffix in _PROM_UNIT_SUFFIXES:
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    # Name segments that carry an underscore of their own (``gen_ai``,
-    # ``prompt_cache``) are kept whole; every other underscore was a dot.
-    toks = base.split("_")
-    out: List[str] = []
-    i = 0
-    while i < len(toks):
-        pair = f"{toks[i]}_{toks[i + 1]}" if i + 1 < len(toks) else None
-        if pair in _UNDERSCORE_SEGMENTS:
-            out.append(pair)
-            i += 2
-        else:
-            out.append(toks[i])
-            i += 1
-    return ".".join(out)
-
-
-_SEVERITY_NUMBERS = {
-    "TRACE": 1,
-    "DEBUG": 5,
-    "INFO": 9,
-    "WARN": 13,
-    "WARNING": 13,
-    "ERROR": 17,
-    "CRITICAL": 21,
-    "FATAL": 21,
-}
-
-
-def severity_number_for(level: Any) -> Optional[int]:
-    """OTel severity number for a level spelling (Python or OTel); None when unknown."""
-    if level is None:
-        return None
-    text = str(level).strip().upper()
-    if text.isdigit():
-        n = int(text)
-        return n if n <= 24 else {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}.get(n)
-    return _SEVERITY_NUMBERS.get(text)
-
-
 def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     """Normalise one adapter row: OTel level spelling, severity number, the
     event name and the leftover fields under ``attributes`` (#268)."""
@@ -742,135 +598,6 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     row["attributes"] = attrs
     row.setdefault("span_id", None)
     return row
-
-
-def log_end_ns(end_s: int, f: "LogFilter") -> int:
-    """The exclusive upper bound of a logs query in ns: the window end, tightened
-    by the paging cursor when there is one."""
-    end_ns = int(end_s) * 1_000_000_000
-    return min(end_ns, int(f.before_ns)) if f.before_ns else end_ns
-
-
-def strictly_older(records: List[Dict[str, Any]], f: "LogFilter") -> List[Dict[str, Any]]:
-    """Drop rows at or after the cursor. Backends bound time at their own
-    precision (ms, µs); this keeps the page exact at the nanosecond so a
-    cursor never repeats the row it was taken from."""
-    if not f.before_ns:
-        return records
-    cut = int(f.before_ns)
-    return [r for r in records if int(r.get("time_unix_nano") or 0) < cut]
-
-
-# Adapters fetch this many rows beyond the page so log_page() can see whether
-# the last row's timestamp continues past the page boundary.
-LOG_PAGE_SLACK = 50
-
-
-def log_page(records: List[Dict[str, Any]], limit: int) -> Dict[str, Any]:
-    """The envelope every logs route returns: the rows plus where the next
-    page starts and whether asking is worthwhile.
-
-    The cursor is a timestamp, and timestamps are not unique (a burst can log
-    several lines in one nanosecond). A page therefore keeps every row that
-    shares its last row's timestamp, so the next page — "strictly older than
-    that timestamp" — neither repeats nor loses a tied row. ``records`` must be
-    newest-first and should carry ``LOG_PAGE_SLACK`` rows beyond ``limit``.
-    """
-    rows = list(records)
-    n = int(limit)
-    if len(rows) > n:
-        boundary = int(rows[n - 1].get("time_unix_nano") or 0)
-        while n < len(rows) and int(rows[n].get("time_unix_nano") or 0) == boundary:
-            n += 1
-    page, rest = rows[:n], rows[n:]
-    times = [int(r.get("time_unix_nano") or 0) for r in page if r.get("time_unix_nano")]
-    has_more = bool(rest)
-    return {
-        "logs": page,
-        "next_before_ns": min(times) if has_more and times else None,
-        "has_more": has_more,
-    }
-
-
-def bucketize(
-    points: Iterable[Tuple[int, float, str]],
-    start_ns: int,
-    end_ns: int,
-    bucket_s: int,
-    agg: str = "sum",
-) -> Dict[str, Any]:
-    """Fold ``(ts_ns, value, label)`` points into the live store's bucket shape.
-
-    Shared by the backend adapters so every source renders identically.
-    """
-    bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
-    start_ns = int(start_ns) - int(start_ns) % bucket_ns
-    n = max(1, int((int(end_ns) - start_ns) // bucket_ns) + 1)
-    series: Dict[str, List[List[float]]] = {}
-    count = 0
-    for ts, value, label in points:
-        count += 1
-        idx = int((int(ts) - start_ns) // bucket_ns)
-        if idx < 0 or idx >= n:
-            continue
-        series.setdefault(label or "_", [[] for _ in range(n)])[idx].append(float(value))
-
-    def reduce(vals: List[float]) -> Optional[float]:
-        if not vals:
-            return None
-        if agg == "count":
-            return float(len(vals))
-        if agg == "avg":
-            return sum(vals) / len(vals)
-        if agg == "max":
-            return max(vals)
-        if agg == "last":
-            return vals[-1]
-        return sum(vals)
-
-    return {
-        "agg": agg,
-        "bucketS": int(bucket_s),
-        "buckets": [start_ns + i * bucket_ns for i in range(n)],
-        "series": {label: [reduce(v) for v in vals] for label, vals in series.items()},
-        "points": count,
-    }
-
-
-def counter_increases(
-    samples: Iterable[Tuple[int, float, str]],
-    *,
-    started_in_window: Optional[Iterable[str]] = None,
-    window_start_ns: Optional[int] = None,
-) -> List[Tuple[int, float, str]]:
-    """Turn cumulative counter samples into per-sample increases.
-
-    OTLP counters arrive cumulative (the exporter's temporality); a bucketed
-    "tokens per 15 s" chart needs the increase between consecutive samples of
-    the same series. A drop (process restart) counts the new value in full.
-
-    A series' first sample is an increase too when the series started inside
-    the window: every ``hermes -z`` run is a new process whose counters start
-    at zero, so its one or two cumulative samples carry the whole turn.
-    Callers say which series those are, either by name (``started_in_window``,
-    for stores that record the counter's start time) or by giving
-    ``window_start_ns`` and passing samples from before the window as well: a
-    series whose first sample lies at or after the window start is new, one
-    with an earlier sample is not (and its earlier value is the baseline).
-    Without either, the first sample is a baseline only (the old behaviour).
-    """
-    new = set(started_in_window or ())
-    last: Dict[str, float] = {}
-    out: List[Tuple[int, float, str]] = []
-    for ts, value, label in sorted(samples, key=lambda p: (p[2], p[0])):
-        prev = last.get(label)
-        if prev is None:
-            if label in new or (window_start_ns is not None and int(ts) >= int(window_start_ns)):
-                out.append((ts, value, label))
-        else:
-            out.append((ts, value if value < prev else value - prev, label))
-        last[label] = value
-    return out
 
 
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──
@@ -1013,60 +740,3 @@ def http_post_json(
         req_headers.update(headers)
     req = _urlrequest.Request(url, data=data, headers=req_headers, method="POST")
     return _execute(req, timeout)
-
-
-def ns_from_any(value: Any) -> Optional[int]:
-    """Best-effort parse of a time value into unix-nanoseconds.
-
-    Accepts int/str nanoseconds, ISO-8601 strings, and float seconds.
-    Returns None if nothing works so adapters can skip the field.
-    """
-    if value is None:
-        return None
-    # Raw int or numeric string — treat as ns (Tempo/Jaeger) or ms (some
-    # backends) based on magnitude.
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return _scale_to_ns(value)
-    if isinstance(value, str):
-        s = value.strip()
-        if not s:
-            return None
-        # Numeric string?
-        try:
-            return _scale_to_ns(float(s))
-        except ValueError:
-            pass
-        # ISO-8601.
-        try:
-            from datetime import datetime
-
-            s_iso = s.replace("Z", "+00:00")
-            dt = datetime.fromisoformat(s_iso)
-            return int(dt.timestamp() * 1_000_000_000)
-        except Exception:
-            return None
-    return None
-
-
-def ns_from_magnitude(n: float) -> int:
-    """Public spelling of :func:`_scale_to_ns` for adapters whose timestamps
-    come as ms or ns depending on the version (SigNoz)."""
-    return _scale_to_ns(n)
-
-
-def _scale_to_ns(n: float) -> int:
-    """Infer time unit from magnitude. Handy when backends differ."""
-    # Anything larger than ~1e18 is already ns.
-    # 1e15–1e18 → microseconds (Jaeger)
-    # 1e12–1e15 → milliseconds
-    # below that → seconds
-    abs_n = abs(n)
-    if abs_n >= 1e18:
-        return int(n)
-    if abs_n >= 1e15:
-        return int(n * 1_000)
-    if abs_n >= 1e12:
-        return int(n * 1_000_000)
-    return int(n * 1_000_000_000)

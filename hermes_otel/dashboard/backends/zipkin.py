@@ -41,10 +41,8 @@ from .base import (
     resolve_env_or_literal,
     root_of,
     span_matches,
-    strictly_older_traces,
-    trace_end_bound,
-    trace_page,
 )
+from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import (
     card_attrs,
     card_row,

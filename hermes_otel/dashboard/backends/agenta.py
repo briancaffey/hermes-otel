@@ -31,12 +31,14 @@ from .base import (
     BackendAdapter,
     StructuredFilter,
     http_post_json,
-    mark_full_fetch,
     not_found,
     parse_kv_tokens,
     query_origin,
     require_credential,
     resolve_env_or_literal,
+)
+from .paging import (
+    mark_full_fetch,
     strictly_older_traces,
     trace_end_bound,
     trace_page,

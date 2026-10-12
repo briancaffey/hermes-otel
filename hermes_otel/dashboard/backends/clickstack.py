@@ -35,32 +35,33 @@ from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import default_service_name, register
-from ._loki import otel_severity_for
 from .base import (
-    LOG_PAGE_SLACK,
     BackendAdapter,
     BackendError,
     LogFilter,
     StructuredFilter,
     _execute,
     basic_auth,
-    bucketize,
-    counter_increases,
     finish_log_row,
-    log_end_ns,
-    mark_full_fetch,
     not_found,
     otlp_status,
     query_origin,
     resolve_env_or_literal,
+    validate_label_name,
+    validate_metric_name,
+)
+from .metrics_math import bucketize, counter_increases
+from .paging import (
+    LOG_PAGE_SLACK,
+    log_end_ns,
+    mark_full_fetch,
     strictly_older,
     strictly_older_traces,
     trace_end_bound,
     trace_page,
-    validate_label_name,
-    validate_metric_name,
     widened_fetch,
 )
+from .severity import otel_severity_for
 from .shapes import card_attrs, card_row, otlp_batch, otlp_event, otlp_span, to_int
 from .zipkin import coerce_tag
 

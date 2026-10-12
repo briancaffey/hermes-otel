@@ -1,7 +1,7 @@
 """The dashboard's FastAPI routes, driven through a TestClient over a temp live store (#189).
 
 The Hermes dashboard mounts ``plugin_api.router`` at ``/api/plugins/hermes_otel``.
-Here the router is mounted bare and ``_get_live_store`` is pointed at a store
+Here the router is mounted bare and ``live_api._get_live_store`` is pointed at a store
 in ``tmp_path`` filled with a captured turn.
 """
 
@@ -14,7 +14,7 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from helpers.live import span
 
-from hermes_otel.dashboard import plugin_api
+from hermes_otel.dashboard import live_api, plugin_api
 from hermes_otel.live_store import LiveStore
 
 NOW_NS = time.time_ns()
@@ -113,7 +113,7 @@ def client(tmp_path, monkeypatch):
             "session_id": "sess-1",
         }
     )
-    monkeypatch.setattr(plugin_api, "_get_live_store", lambda: store)
+    monkeypatch.setattr(live_api, "_get_live_store", lambda: store)
     app = FastAPI()
     app.include_router(plugin_api.router)
     with TestClient(app) as c:
@@ -358,7 +358,7 @@ class TestLiveHardening:
         assert client.get("/live/sessions").json()["has_more"] is False
 
     def test_status_names_the_real_reason(self, monkeypatch, tmp_path):
-        monkeypatch.setattr(plugin_api, "_get_live_store", lambda: None)
+        monkeypatch.setattr(live_api, "_get_live_store", lambda: None)
         app = FastAPI()
         app.include_router(plugin_api.router)
         with TestClient(app) as c:
@@ -367,7 +367,7 @@ class TestLiveHardening:
         bad = tmp_path / "bad.db"
         bad.write_bytes(b"junk" * 50)
         store = LiveStore(db_path=str(bad))
-        monkeypatch.setattr(plugin_api, "_get_live_store", lambda: store)
+        monkeypatch.setattr(live_api, "_get_live_store", lambda: store)
         with TestClient(app) as c:
             r = c.get("/live/status").json()
             assert r["live"] is False and "could not be opened" in r["reason"]

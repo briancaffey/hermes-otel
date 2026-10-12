@@ -23,8 +23,6 @@ from .base import (
     LogFilter,
     StructuredFilter,
     basic_auth,
-    bucketize,
-    counter_increases,
     finish_log_row,
     http_get_json,
     http_post_json,
@@ -34,6 +32,9 @@ from .base import (
     rejected_request,
     require_credential,
     resolve_env_or_literal,
+)
+from .metrics_math import bucketize, counter_increases
+from .paging import (
     strictly_older,
     strictly_older_traces,
     trace_end_bound,

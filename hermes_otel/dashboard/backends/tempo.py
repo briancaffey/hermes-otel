@@ -36,10 +36,8 @@ from .base import (
     not_found,
     query_origin,
     rejected_request,
-    strictly_older_traces,
-    trace_end_bound,
-    trace_page,
 )
+from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import CARD_ATTRIBUTE_KEYS, span_count_of
 
 _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")

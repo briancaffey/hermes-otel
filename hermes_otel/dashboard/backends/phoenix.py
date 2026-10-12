@@ -28,12 +28,10 @@ from .base import (
     query_origin,
     register_cache,
     resolve_env_or_literal,
-    strictly_older_traces,
-    trace_end_bound,
-    trace_page,
-    widened_fetch,
 )
+from .paging import strictly_older_traces, trace_end_bound, trace_page, widened_fetch
 from .shapes import CARD_ATTRIBUTE_SET, card_row, flatten_dotted, otlp_batches, otlp_span
+from .timeconv import iso_to_ns
 
 _DEFAULT_PHOENIX_PORT = 6006
 # Phoenix pages spans; the detail view asks for this many and says so when
@@ -55,17 +53,6 @@ def _attributes_of(span: Dict[str, Any]) -> Dict[str, Any]:
         return flatten_dotted(json.loads(raw))
     except Exception:
         return {}
-
-
-def _iso_to_ns(iso: Optional[str]) -> Optional[int]:
-    if not iso:
-        return None
-    try:
-        s = iso.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        return int(dt.timestamp() * 1_000_000_000)
-    except Exception:
-        return None
 
 
 def _ns_to_iso(ns: int) -> str:
@@ -267,8 +254,8 @@ class PhoenixAdapter(BackendAdapter):
             span.get("spanId") or ctx.get("spanId"),
             span.get("parentId"),
             span.get("name"),
-            start_ns=_iso_to_ns(span.get("startTime")) or 0,
-            end_ns=_iso_to_ns(span.get("endTime")) or 0,
+            start_ns=iso_to_ns(span.get("startTime")) or 0,
+            end_ns=iso_to_ns(span.get("endTime")) or 0,
             attrs=raw_attrs,
             status=otlp_status(span.get("statusCode"), span.get("statusMessage") or ""),
         )
@@ -400,7 +387,7 @@ class PhoenixAdapter(BackendAdapter):
             trace_id = (span.get("context") or {}).get("traceId")
             if not trace_id:
                 continue
-            row_start = _iso_to_ns(span.get("startTime"))
+            row_start = iso_to_ns(span.get("startTime"))
             if row_start:
                 oldest_fetched[trace_id] = min(oldest_fetched.get(trace_id, row_start), row_start)
             if not f.roots_only and trace_id in seen_traces:
@@ -428,7 +415,7 @@ class PhoenixAdapter(BackendAdapter):
                     span_id=span.get("spanId"),
                     name=span.get("name"),
                     attrs=self._span_to_card_attrs(span),
-                    start_ns=_iso_to_ns(span.get("startTime")) or 0,
+                    start_ns=iso_to_ns(span.get("startTime")) or 0,
                     duration_ms=int(span.get("latencyMs") or 0),
                     # A Phoenix project is the service (see ``filter_support``).
                     service=project_name,

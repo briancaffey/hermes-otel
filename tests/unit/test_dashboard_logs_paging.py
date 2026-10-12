@@ -10,8 +10,9 @@ import pytest
 from hermes_otel.dashboard.backends import _loki
 from hermes_otel.dashboard.backends import signoz as sz
 from hermes_otel.dashboard.backends import uptrace as up
-from hermes_otel.dashboard.backends.base import LogFilter, log_end_ns, log_page, strictly_older
+from hermes_otel.dashboard.backends.base import LogFilter
 from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
+from hermes_otel.dashboard.backends.paging import log_end_ns, log_page, strictly_older
 from hermes_otel.live_store import LiveStore
 
 NS = 1_000_000_000

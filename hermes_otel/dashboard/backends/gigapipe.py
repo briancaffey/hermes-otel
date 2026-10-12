@@ -38,20 +38,18 @@ from .base import (
     BackendError,
     LogFilter,
     StructuredFilter,
-    bucketize,
-    counter_increases,
     finish_log_row,
     http_get_json,
-    log_end_ns,
     not_found,
     query_origin,
     root_of,
-    severity_number_for,
     span_matches,
-    strictly_older,
     validate_label_name,
     validate_metric_name,
 )
+from .metrics_math import bucketize, counter_increases
+from .paging import log_end_ns, strictly_older
+from .severity import severity_number_for
 from .shapes import (
     card_attrs,
     card_span_set,

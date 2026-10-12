@@ -46,17 +46,18 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bearer,
-    bucketize,
-    counter_increases,
     finish_log_row,
     http_get_json,
-    log_end_ns,
     not_found,
     otlp_status,
     query_origin,
     register_cache,
     require_credential,
     resolve_env_or_literal,
+)
+from .metrics_math import bucketize, counter_increases
+from .paging import (
+    log_end_ns,
     strictly_older,
     strictly_older_traces,
     trace_end_bound,

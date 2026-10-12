@@ -29,7 +29,7 @@ from helpers.dashboard import (
     row as _row,
 )
 
-from hermes_otel.dashboard import backends, plugin_api
+from hermes_otel.dashboard import backends, plugin_api, route_helpers
 from hermes_otel.dashboard.backends import (
     _loki,
     _prometheus,
@@ -50,11 +50,10 @@ from hermes_otel.dashboard.backends.base import (
     StructuredFilter,
     error_kind,
     filter_support_of,
-    otlp_metric_name,
     split_applied_filters,
-    strictly_older_traces,
-    trace_page,
 )
+from hermes_otel.dashboard.backends.metrics_math import otlp_metric_name
+from hermes_otel.dashboard.backends.paging import strictly_older_traces, trace_page
 
 MODULES = {
     "phx": phoenix,
@@ -421,11 +420,11 @@ class TestCaches:
 
 class TestApiLeftovers:
     def test_epoch_window_start_is_a_value_not_unset(self):
-        start_ns, end_ns = plugin_api._window(1.0, 0, 100)
+        start_ns, end_ns = route_helpers.window_ns(1.0, 0, 100)
         assert (start_ns, end_ns) == (0, 100 * 10**9)
-        assert plugin_api._window_s(1.0, 0, 100) == (0, 100)
+        assert route_helpers.window_s(1.0, 0, 100) == (0, 100)
         with pytest.raises(Exception, match="start_s must not be after end_s"):
-            plugin_api._window_s(1.0, 200, 100)
+            route_helpers.window_s(1.0, 200, 100)
 
     def test_query_host_override_rewrites_every_host(self, monkeypatch):
         from hermes_otel.dashboard.backends.base import rewrite_host_for_docker

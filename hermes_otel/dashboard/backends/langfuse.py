@@ -47,11 +47,10 @@ from .base import (
     register_cache,
     require_credential,
     resolve_env_or_literal,
-    strictly_older_traces,
-    trace_end_bound,
-    trace_page,
 )
+from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import card_row, otlp_batches, otlp_span
+from .timeconv import iso_to_ns
 
 _DEFAULT_LANGFUSE_PORT = 3000
 # How far the client-side duration filter walks through the list.
@@ -112,17 +111,6 @@ def _span_name(obs: Dict[str, Any]) -> str:
     if obs.get("type") == "TOOL" and name and not name.startswith("tool."):
         return f"tool.{name}"
     return name
-
-
-def _iso_to_ns(iso: Optional[str]) -> Optional[int]:
-    if not iso:
-        return None
-    try:
-        s = iso.replace("Z", "+00:00")
-        dt = datetime.fromisoformat(s)
-        return int(dt.timestamp() * 1_000_000_000)
-    except Exception:
-        return None
 
 
 def _as_text(value: Any) -> str:
@@ -536,8 +524,8 @@ class LangfuseAdapter(BackendAdapter):
             obs.get("id"),
             obs.get("parentObservationId"),
             _span_name(obs),
-            start_ns=_iso_to_ns(obs.get("startTime")) or 0,
-            end_ns=_iso_to_ns(obs.get("endTime")) or 0,
+            start_ns=iso_to_ns(obs.get("startTime")) or 0,
+            end_ns=iso_to_ns(obs.get("endTime")) or 0,
             attrs=attrs,
             status=otlp_status(
                 "error" if obs.get("level") == "ERROR" else "ok", obs.get("statusMessage") or ""
@@ -669,7 +657,7 @@ class LangfuseAdapter(BackendAdapter):
     def _observation_row(
         self, o: Dict[str, Any], trace_id: str, card_name: str, f: StructuredFilter
     ) -> Optional[Dict[str, Any]]:
-        start_ns = _iso_to_ns(o.get("startTime"))
+        start_ns = iso_to_ns(o.get("startTime"))
         latency = o.get("latency")
         duration_ms = (
             int(latency * 1000)
@@ -712,7 +700,7 @@ class LangfuseAdapter(BackendAdapter):
         name = t.get("name") or ""
         if f.name_prefix and not name.startswith(f.name_prefix):
             return None
-        start_ns = _iso_to_ns(t.get("timestamp"))
+        start_ns = iso_to_ns(t.get("timestamp"))
         # The public API documents ``latency`` in seconds.
         latency = t.get("latency")
         duration_ms = 0
@@ -841,8 +829,8 @@ class LangfuseAdapter(BackendAdapter):
             # synthetic so the UI can label it and nobody mistakes it for a
             # span the agent emitted (#159); the plugin marks its own lazily
             # created roots the same way (``hermes.session.synthesized``).
-            trace_start = _iso_to_ns(data.get("timestamp"))
-            trace_end = max((_iso_to_ns(o.get("endTime")) or 0 for o in observations), default=0)
+            trace_start = iso_to_ns(data.get("timestamp"))
+            trace_end = max((iso_to_ns(o.get("endTime")) or 0 for o in observations), default=0)
             root_attrs: Dict[str, Any] = {
                 **trace_attrs,
                 "synthetic": True,

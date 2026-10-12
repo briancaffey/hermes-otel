@@ -299,20 +299,58 @@ earlier base run.
 
 ## Adding a new backend
 
-1. Add the resolver in `tracer.py` (for now; this will move to
-   `backends.py` in a later phase).
-2. Add `docker-compose/<backend>/docker-compose.yaml` and `README.md` (see
-   `docker-compose/README.md` for the folder convention) if the backend runs
-   locally.
-3. Add a `docs/backends/<name>.md` (will exist after Phase 1) or a
-   section in `README.md` with: required env vars, docker-compose
-   snippet, link to the project's docs.
-4. Add an entry under `backends:` in `config.yaml.example`.
-5. Add a unit test covering the resolver (env-var precedence, header
-   construction). Integration tests via `InMemorySpanExporter` are
-   encouraged; E2E tests are optional unless the backend has
-   backend-specific attributes.
-6. Update the "Supported backends" table in `README.md`.
+A backend has two halves: the **exporter** side (where the plugin sends
+OTLP) and, optionally, the **dashboard** side (an adapter that reads
+traces, metrics and logs back for the Hermes dashboard tab). Most of the
+per-type facts are declared once and derived everywhere else.
+
+**Exporter side**
+
+1. Add one `BackendSpec` to `SPECS` in `hermes_otel/backend_specs.py`:
+   display name, the OTLP signals it accepts, temporality and root-usage
+   presets, how env-var mode selects it, its credential fields and the env
+   vars each falls back to. The exporter, the Settings tab, the MCP config
+   and the dashboard registry all read their tables from here.
+2. Add `_resolve_<type>(bc)` in `hermes_otel/backends.py` and register it in
+   `_RESOLVERS`. It turns a `BackendConfig` into endpoints and headers. Use
+   `_resolve_secret` for credentials, so precedence matches every other type.
+3. Run `uv run --extra dev python scripts/gen_config_docs.py --write` to
+   regenerate the type list and the env-var reference.
+4. Tests: `tests/unit/test_backends_<type>.py` for env-var precedence and
+   header construction. Re-record the resolution snapshot with
+   `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_resolution.py`
+   and check the diff is only your new type. `tests/unit/test_backend_specs.py`
+   fails if the spec, the resolver and the registry disagree.
+
+**Dashboard side (optional)**
+
+5. Add `hermes_otel/dashboard/backends/<type>.py`: subclass `BackendAdapter`
+   from `base.py`, decorate it with `@register` (from the package
+   `__init__`), and name the module in the spec's `adapter_module`.
+   Build on the shared pieces instead of re-deriving them:
+   - `shapes`: card rows, OTLP spans and batches.
+   - `base`: the search template (`root_of`, `span_matches`),
+     `query_origin`, `basic_auth`/`bearer`/`require_credential`, the HTTP
+     core and `register_cache` for any probe cache.
+   - `paging`: trace and log pages, cursor bounds.
+   - `metrics_math`, `severity` and `timeconv`.
+   Declare `filter_support` honestly: `server`, `client` or `none` per key.
+6. Tests: `tests/unit/test_dashboard_<type>.py`, plus adapter goldens.
+   Add `tests/golden/adapters/<type>/config.json` and `routes.json`, then
+   `UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_dashboard_goldens.py`
+   (see [Adapter goldens](#adapter-goldens)). The parametrized contract test
+   picks the adapter up automatically.
+7. Verify it live with `scripts/dashboard_verify` against the local stack.
+
+**Around it**
+
+8. If the backend runs locally, add `docker-compose/<type>/docker-compose.yaml`
+   and a `README.md` (see `docker-compose/README.md` for the folder
+   convention), and note anything surprising in `docker-compose/QUIRKS.md`.
+9. Add `website/docs/backends/<type>.md` (required env vars, a compose
+   snippet, a link to the project's docs) and list it in `website/sidebars.ts`.
+10. Add a commented entry under `backends:` in `config.yaml.example`, and a
+    link in the "Backends" list of `README.md`.
 
 ## Reporting bugs
 

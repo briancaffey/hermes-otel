@@ -13,13 +13,9 @@ from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
 from ._attrs import dotted as _dotted
-from .base import (
-    LogFilter,
-    finish_log_row,
-    http_get_json,
-    log_end_ns,
-    strictly_older,
-)
+from .base import LogFilter, finish_log_row, http_get_json
+from .paging import log_end_ns, strictly_older
+from .severity import otel_severity_for
 
 DEFAULT_SELECTOR = '{service_name=~".+"}'
 
@@ -27,15 +23,6 @@ DEFAULT_SELECTOR = '{service_name=~".+"}'
 # hour by default); every window here is clamped to that so a one-year
 # lookback never turns into a 400 (#296).
 MAX_RANGE_S = 30 * 86400
-
-# Python logging levels → the smallest OTel severity number of that band
-# (the exporter maps DEBUG→5, INFO→9, WARNING→13, ERROR→17, CRITICAL→21).
-_OTEL_SEVERITY_FLOOR = {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}
-
-
-def otel_severity_for(min_level: int) -> int:
-    band = max((lvl for lvl in _OTEL_SEVERITY_FLOOR if lvl <= int(min_level)), default=0)
-    return _OTEL_SEVERITY_FLOOR.get(band, 1)
 
 
 def _quote(value: str) -> str:

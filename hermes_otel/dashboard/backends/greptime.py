@@ -34,27 +34,24 @@ from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import register
-from ._loki import otel_severity_for
 from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from ._prometheus import metric_names as _prom_metric_names
 from .base import (
-    LOG_PAGE_SLACK,
     BackendError,
     LogFilter,
     _execute,
     basic_auth,
     bearer,
-    bucketize,
-    counter_increases,
     finish_log_row,
-    log_end_ns,
     register_cache,
     resolve_env_or_literal,
-    strictly_older,
     validate_label_name,
     validate_metric_name,
 )
 from .jaeger import JaegerAdapter
+from .metrics_math import bucketize, counter_increases
+from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
+from .severity import otel_severity_for
 
 _DEFAULT_GREPTIME_PORT = 4000
 # ``/api/traces?limit=N`` keeps N arbitrary traces, not the newest (verified on

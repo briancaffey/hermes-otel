@@ -13,13 +13,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from .base import (
-    bucketize,
-    counter_increases,
-    http_get_json,
-    validate_label_name,
-    validate_metric_name,
-)
+from .base import http_get_json, validate_label_name, validate_metric_name
+from .metrics_math import bucketize, counter_increases
 
 _HISTOGRAM_INTERNAL_SUFFIXES = ("_bucket",)
 

@@ -37,11 +37,9 @@ from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import register
-from ._loki import otel_severity_for
 from ._prometheus import metric_names as _prom_metric_names
 from ._prometheus import metrics_query as _prom_metrics_query
 from .base import (
-    LOG_PAGE_SLACK,
     BackendError,
     ConfigError,
     LogFilter,
@@ -49,12 +47,12 @@ from .base import (
     basic_auth,
     bearer,
     finish_log_row,
-    log_end_ns,
     resolve_env_or_literal,
     rewrite_host_for_docker,
-    strictly_older,
 )
 from .jaeger import JaegerAdapter
+from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
+from .severity import otel_severity_for
 from .zipkin import coerce_tag
 
 _DEFAULT_TRACES_PORT = 10428

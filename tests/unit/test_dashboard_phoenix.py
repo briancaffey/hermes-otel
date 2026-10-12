@@ -207,7 +207,7 @@ class TestPhoenix:
         assert out["traces"][0]["spanSets"][0]["spans"][0]["name"] == "tool.terminal"
         assert out["has_more"] is True
         # the cursor sits below t1's OLDEST fetched span (s1 at :10), not the shown one (:30)
-        assert out["next_before_ns"] == phoenix._iso_to_ns("2026-10-09T20:18:10.000+00:00")
+        assert out["next_before_ns"] == phoenix.iso_to_ns("2026-10-09T20:18:10.000+00:00")
 
     def test_detail_reports_truncation_and_the_whole_count(self, monkeypatch):
         a = self._adapter()

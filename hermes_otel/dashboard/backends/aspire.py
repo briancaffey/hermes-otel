@@ -31,23 +31,19 @@ from urllib import parse as _urlparse
 
 from . import default_service_name, register
 from .base import (
-    LOG_PAGE_SLACK,
     BackendAdapter,
     BackendError,
     LogFilter,
     StructuredFilter,
     finish_log_row,
     http_get_json,
-    log_end_ns,
     not_found,
     query_origin,
     resolve_env_or_literal,
     root_of,
     span_matches,
-    strictly_older,
-    strictly_older_traces,
-    trace_page,
 )
+from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older, strictly_older_traces, trace_page
 from .shapes import card_attrs, card_row, otlp_attrs_to_dict, otlp_unwrap, span_count_of, to_int
 
 _DEFAULT_UI_PORT = 18888
@@ -302,7 +298,7 @@ class AspireAdapter(BackendAdapter):
         start_ns, end_ns = int(start_s) * 1_000_000_000, log_end_ns(end_s, f)
         floor = 0
         if f.min_level:
-            from ._loki import otel_severity_for
+            from .severity import otel_severity_for
 
             floor = otel_severity_for(f.min_level)
         records: List[Dict[str, Any]] = []

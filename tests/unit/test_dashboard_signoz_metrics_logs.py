@@ -375,7 +375,7 @@ class TestLogs:
         assert items == [{"key": sz._tag("event.name"), "op": "exists"}]
 
     def test_severity_floor_per_python_level(self):
-        assert [sz._otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
+        assert [sz.otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
             5,
             9,
             9,
