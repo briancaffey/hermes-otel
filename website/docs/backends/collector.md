@@ -41,7 +41,7 @@ from the environment; the compose header lists every variable.
 |---|---|---|---|
 | `debug` (default) | the container's stdout, `COLLECTOR_DEBUG_VERBOSITY` = `basic` / `normal` / `detailed` | none | verified with one Hermes turn: `Traces` batches of 4 + 1 spans, a `Metrics` batch of 24 metrics, `Logs` batches with each record's resource, scope and body |
 | `otlphttp` | any OTLP/HTTP backend at `OTLP_TARGET_ENDPOINT` (one of the repo's stacks via `host.docker.internal`, or a vendor) | none; copy the file to add a header | verified into [otel-desktop-viewer](/backends/viewers): one turn added 1 trace / 5 spans, 26 log records and 74 metric data points, no errors on either side |
-| `azuremonitor` | Azure Monitor / Application Insights via `azure_monitor` (beta: traces, metrics, logs), with `cumulative_to_delta` on metrics | `APPLICATIONINSIGHTS_CONNECTION_STRING` | documented, not verified (needs an Azure subscription; #228) |
+| `azuremonitor` | [Azure Monitor / Application Insights](/backends/azure-monitor) via `azure_monitor` (beta: traces, metrics, logs), with `cumulative_to_delta` on metrics | `APPLICATIONINSIGHTS_CONNECTION_STRING` | documented, not verified (needs an Azure subscription; #228) |
 | `aws` | X-Ray (`awsxray`, beta), CloudWatch metrics as EMF (`awsemf`, beta), CloudWatch Logs (`awscloudwatchlogs`, alpha) | `AWS_REGION`, the SDK's key variables, `AWS_LOG_GROUP` | documented, not verified (needs an AWS account) |
 | `googlecloud` | Cloud Trace, Monitoring and Logging via `googlecloud` (beta) | `GOOGLE_CLOUD_PROJECT`, `GCP_CREDENTIALS_FILE` | documented, not verified (needs a GCP project) |
 

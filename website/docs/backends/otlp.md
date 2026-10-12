@@ -90,7 +90,7 @@ backends:
     endpoint: http://otel-collector.internal:4318/v1/traces
 ```
 
-The repo ships a ready-made one for destinations the plugin cannot reach with a static header (Azure Monitor, AWS, Google Cloud) and for printing the raw export: see [OpenTelemetry Collector](/backends/collector).
+The repo ships a ready-made one for destinations the plugin cannot reach with a static header ([Azure Monitor](/backends/azure-monitor), AWS, Google Cloud) and for printing the raw export: see [OpenTelemetry Collector](/backends/collector).
 
 ### Metrics-only at a separate endpoint
 

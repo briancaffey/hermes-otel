@@ -32,6 +32,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 | **[Honeycomb](/backends/honeycomb)** | Traces + metrics + logs | Cloud (US / EU) | Generous free tier · paid plans |
 | **[W&B Weave](/backends/weave)** | Traces | W&B Cloud · Dedicated Cloud · Self-Managed | W&B account |
 | **[Elastic](/backends/elastic)** | Traces + metrics + logs | Elastic Cloud (mOTLP) · self-hosted EDOT Collector | Elastic license / cloud plan |
+| **[Azure Monitor](/backends/azure-monitor)** (via the Collector, generic `otlp`) | Traces + metrics + logs | Azure subscription + the repo's Collector container | Azure pricing; documented, not verified |
 | **[OpenLIT](/backends/openlit)** | Traces + metrics + logs | Local (docker compose, 2 containers) · Helm | OSS (Apache-2.0), no account |
 | **[MLflow](/backends/mlflow)** | Traces | Local (docker compose, 1 container) · Helm · Databricks | OSS (Apache-2.0), no account |
 | **[Comet Opik](/backends/opik)** | Traces | Local (docker compose, 7 containers) · Helm · Comet cloud | OSS (Apache-2.0) · free cloud tier |
@@ -112,6 +113,9 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 **"My company already has an OTel collector / New Relic / Datadog"**
 → [Generic OTLP](/backends/otlp) — point at its ingest endpoint and it just works.
 
+**"We are on Azure / Application Insights"**
+→ [Azure Monitor](/backends/azure-monitor) — no static-header OTLP endpoint exists, so the repo's [Collector](/backends/collector) with `COLLECTOR_TARGET=azuremonitor` sends with the connection string; `type: otlp` at `:4448`.
+
 **"I want several of the above simultaneously"**
 → [Multi-backend fan-out](/backends/multi-backend) — same spans, parallel, non-blocking.
 
@@ -141,6 +145,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | Honeycomb | ✅ | ✅ | ✅ |
 | W&B Weave | ✅ | ❌ | ❌ |
 | Elastic | ✅ | ✅ | ✅ |
+| Azure Monitor (via the Collector) | ✅ | ✅ (converted to delta in the Collector) | ✅ |
 | OpenLIT | ✅ | ✅ | ✅ |
 | MLflow | ✅ | ❌ | ❌ |
 | Comet Opik | ✅ | ❌ | ❌ |
@@ -170,6 +175,7 @@ Two metric settings depend on the backend (since 1.15; details on the [metrics r
 | Honeycomb | either | cumulative (default) | not verified |
 | Parseable, generic `otlp` | depends on the collector behind it | cumulative (default) | depends |
 | Elastic | delta required (ES does not handle cumulative histograms) | `delta` | accepted |
+| Azure Monitor (via the Collector) | delta required for the Application Insights experiences (Microsoft's statement); the `azuremonitor` target runs `cumulative_to_delta` | cumulative (default; the Collector converts) | required by the same statement; not converted by the target, `metrics_histogram: exponential` is global |
 | OpenLIT | cumulative stored as-is (verified) | cumulative (default) | stored (exponential histogram type) |
 | Datadog, New Relic, Logfire (via generic `otlp` today, explicit types tracked in #232) | delta required (Datadog rejects cumulative sums; Logfire dashboards stay empty on cumulative; New Relic prefers delta) | set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them |
 

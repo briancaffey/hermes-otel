@@ -398,7 +398,7 @@ knob (OpenLIT, Opik, Laminar, Langtrace, Tempo, Grafana, Parseable; ClickStack's
 | Pydantic Logfire | all three signals at `logfire-{us,eu}.pydantic.dev/v1/*`; the header is a **bare write token**; dashboards stay empty on cumulative metrics, so `delta` is needed; self-host is enterprise-only; unbuilt until there is an account to verify against | #225 |
 | Datadog | agentless intake `otlp.<site>/v1/*`, `dd-api-key` on every signal and **`dd-otlp-source: llmobs`** on traces to land in Agent Observability; metrics intake accepts **delta only**; payload caps 512 KiB / 5.1 MiB / 15 MiB; 3-5 min delay | #226 |
 | New Relic | `otlp.nr-data.net/v1/*`, `api-key: <license key>`; **1 MB payload cap**, 4095-char values, 128 span attributes; prefers delta | #227 |
-| Azure Monitor | no static-key OTLP endpoint: needs a Microsoft Entra bearer from the Collector's `azure_auth` extension; requires delta and exponential histograms; proposed as docs-only through a contrib Collector | #228 |
+| Azure Monitor | no static-key OTLP endpoint: needs a Microsoft Entra bearer from the Collector's `azure_auth` extension; requires delta and exponential histograms; docs-only through the `collector/` folder's `azuremonitor` target (`azure_monitor` exporter, connection string, `cumulative_to_delta`), not verified | #228 |
 | (all four) | work today through generic `otlp` with `metrics_temporality: delta`; explicit types tracked | #232 |
 | Honeycomb, W&B Weave, LangSmith, telemetry.dev | SaaS only; documented on the site, nothing to compose | — |
 
@@ -699,7 +699,7 @@ The short version, for the overview page and the video:
 - `root_usage` (#327, #353, 1.24.0) was verified live on Opik only; LangWatch was not re-run after it.
 - Elastic Cloud managed OTLP: contributor-verified only (#333).
 - Latitude per-span columns never inspected (PR #331); Uptrace 2.0 dialect not re-run since 2.0.2 (PR #277).
-- Logfire, Datadog, New Relic, Azure Monitor need accounts (#225-#228); AgentOps needs a token-exchange design (#231).
+- Logfire, Datadog, New Relic need accounts (#225-#227); Azure Monitor is documented through the Collector but unverified (#228); AgentOps needs a token-exchange design (#231).
 
 ## Keeping this file honest
 

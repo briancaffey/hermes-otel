@@ -42,6 +42,7 @@ const sidebars: SidebarsConfig = {
         'backends/parseable',
         'backends/viewers',
         'backends/collector',
+        'backends/azure-monitor',
         'backends/honeycomb',
         'backends/weave',
         'backends/elastic',

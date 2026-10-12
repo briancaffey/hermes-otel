@@ -10,7 +10,8 @@
 #                                  record to `docker logs` — nothing else needed
 #   COLLECTOR_TARGET=otlphttp      forward to any OTLP/HTTP backend (one of the
 #                                  stacks in this directory, or a vendor)
-#   COLLECTOR_TARGET=azuremonitor  Azure Monitor / Application Insights (#228)
+#   COLLECTOR_TARGET=azuremonitor  Azure Monitor / Application Insights (#228;
+#                                  docs: /backends/azure-monitor)
 #   COLLECTOR_TARGET=aws           AWS X-Ray (traces) + CloudWatch (metrics as
 #                                  EMF, logs) with SigV4 from the usual AWS env
 #   COLLECTOR_TARGET=googlecloud   Google Cloud Trace / Monitoring / Logging
