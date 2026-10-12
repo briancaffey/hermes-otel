@@ -178,8 +178,11 @@ and poll. Enable every opt-in flag the PR adds so the new path actually runs.)
 
 Then look at three places:
 
-1. **The plugin's own record:** `sqlite3 $H/plugins/hermes_otel/live.db
+1. **The plugin's own record:** `sqlite3 $H/hermes_otel_live.db
    "select json_extract(data,'$.name'), json_extract(data,'$.attributes.\"<new.attr>\"') from events where kind='span'"`
+   (the live store lives in `$HERMES_HOME`, not the plugin dir, since #100;
+   `sqlite3` on a wrong path silently creates an empty file and reports
+   "no such table: events")
    and `$H/plugins/hermes_otel/debug.log` if `HERMES_OTEL_DEBUG=true`.
 2. **The backend:** Phoenix GraphQL at `https://phoenix.lan/graphql` (or
    whatever `hermes_otel.yaml` points at) filtered to the review project —
