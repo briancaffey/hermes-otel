@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.26.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.25.0...hermes-otel-v1.26.0) (2026-10-12)
+
+
+### Features
+
+* **backends:** retire the LangSmith run-tree client; type: langsmith is an OTLP preset that fans out like every other backend ([#421](https://github.com/briancaffey/hermes-otel/issues/421)) ([349b679](https://github.com/briancaffey/hermes-otel/commit/349b6793b139c0a01023a8001d92e889910eaf37))
+* **spans:** auxiliary LLM calls as api.* spans with query_source (pre/post_auxiliary_call) ([#401](https://github.com/briancaffey/hermes-otel/issues/401)) ([68539b9](https://github.com/briancaffey/hermes-otel/commit/68539b960db76a4f125eca73a5c7cbfda428c61b)), closes [#389](https://github.com/briancaffey/hermes-otel/issues/389)
+
+
+### Bug Fixes
+
+* **spans:** traceloop.span.kind carries Traceloop's lowercase kinds (agent, tool, task, unknown) ([#385](https://github.com/briancaffey/hermes-otel/issues/385)) ([0d6789f](https://github.com/briancaffey/hermes-otel/commit/0d6789f603efb0f69d6c67c29bbb4bdfc63da47c)), closes [#382](https://github.com/briancaffey/hermes-otel/issues/382)
+* the bugs the refactor audit found: Laminar signal_support, aspire status, Phoenix empty pages, secret precedence, Langfuse status probe, dashboard config path, settings report ([#413](https://github.com/briancaffey/hermes-otel/issues/413)) ([#416](https://github.com/briancaffey/hermes-otel/issues/416)) ([d6d76e0](https://github.com/briancaffey/hermes-otel/commit/d6d76e0d3dab7f44d4f0785c7d0b9a3a4ab4b2f3))
+
 ## [1.25.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.24.0...hermes-otel-v1.25.0) (2026-10-12)
 
 
