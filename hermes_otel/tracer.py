@@ -746,6 +746,17 @@ class HermesOTelPlugin:
         "general": "GENERAL",
         "agent": "AGENT",
     }
+    # Traceloop's ``TraceloopSpanKindValues`` (openllmetry's
+    # opentelemetry-semantic-conventions-ai): lowercase ``workflow`` / ``task``
+    # / ``agent`` / ``tool`` / ``unknown``. It has no LLM kind — model spans are
+    # recognised by their ``gen_ai.*`` attributes — so ``llm`` and ``general``
+    # both map to ``task`` (#382).
+    _TRACELOOP_KIND_MAP = {
+        "tool": "tool",
+        "llm": "task",
+        "general": "task",
+        "agent": "agent",
+    }
 
     def __init__(self, config: Optional[HermesOtelConfig] = None):
         self.tracer = None
@@ -1794,10 +1805,10 @@ class HermesOTelPlugin:
         try:
             attrs = dict(attributes or {})
 
-            # OpenInference semantic conventions — Phoenix recognizes these
-            kind_value = self._KIND_MAP.get(kind, "GENERAL")
-            attrs["traceloop.span.kind"] = kind_value
-            attrs["openinference.span.kind"] = kind_value
+            # Dual convention: OpenInference (Phoenix) and Traceloop (openllmetry,
+            # opentelemetry-mcp) each get their own vocabulary (#382).
+            attrs["openinference.span.kind"] = self._KIND_MAP.get(kind, "GENERAL")
+            attrs["traceloop.span.kind"] = self._TRACELOOP_KIND_MAP.get(kind, "unknown")
 
             # Check for active parent — an explicit ``parent`` wins (sub-agent
             # delegation), otherwise prefer the session-keyed stack so nesting
@@ -1811,7 +1822,7 @@ class HermesOTelPlugin:
 
             span = self.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
             self.spans.start_span(key, span)
-            debug_log(f"start_span: {name} (key={key}, kind={kind_value})")
+            debug_log(f"start_span: {name} (key={key}, kind={kind})")
             return span
         except Exception as e:
             debug_log(f"Error starting span '{name}': {e}")

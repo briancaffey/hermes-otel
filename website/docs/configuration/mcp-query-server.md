@@ -186,10 +186,11 @@ linked to the turn; that is the gap described in [MCP trace propagation](/config
    routes; v2 serves only `/api/v3/...`. Use `docker-compose/jaeger`, not `jaeger-v2`.
 3. **`list_llm_tools_tool` never works**: it asks its own query layer for 2000 spans and
    the layer caps at 1000. Ask for tool spans with `search_spans_tool` and
-   `operation_name: "tool.<name>"` instead. A `traceloop.span.kind == tool` filter also
-   finds nothing today because the plugin writes the OpenInference spelling (`TOOL`) into
-   that attribute while Traceloop's convention is lowercase; tracked in the plugin as
-   [#382](https://github.com/briancaffey/hermes-otel/issues/382).
+   `operation_name: "tool.<name>"` instead, or filter on `traceloop.span.kind == "tool"`:
+   since hermes-otel 1.26.0 that attribute carries Traceloop's lowercase vocabulary
+   (`agent`, `tool`, `task`, `unknown`). Spans exported by earlier releases hold the
+   OpenInference spelling (`TOOL`) there and do not match
+   ([#382](https://github.com/briancaffey/hermes-otel/issues/382)).
 4. **Tempo ids.** `search_spans_tool` returns trace and span ids base64-encoded
    (`Koy2F0Bucnz3poNZUWbI8A==`) while `search_traces` returns hex, and a hex trace id with
    a leading zero loses it (`02f734c9…` becomes `2f734c9…`). Copy ids from `search_traces`

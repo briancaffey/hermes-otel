@@ -23,7 +23,7 @@ from hermes_otel.tracer import HermesOTelPlugin, _RootUsageStrippingExporter, st
 
 ROLLUP = {
     "openinference.span.kind": "AGENT",
-    "traceloop.span.kind": "AGENT",
+    "traceloop.span.kind": "agent",
     "gen_ai.usage.input_tokens": 14280,
     "gen_ai.usage.output_tokens": 120,
     "gen_ai.usage.total_tokens": 14400,
