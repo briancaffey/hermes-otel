@@ -453,7 +453,7 @@ Format: **quirk** → treatment (issue).
 - **v2 serves only `/api/v3`** (OTLP-JSON) and 404s the classic routes; Jaeger 1.x also exposes an `/api/v3` gateway with snake_case parameters → the adapter probes classic first, then v3; `query_api: v1|v3` pins (#245, PR #338). v3 silently ignores `attributes[k]=v`, so the tag map goes JSON-encoded in `query.attributes`; an empty search is a 404 "No traces found".
 - `tags=` and `operation=` match any span of a trace → with roots-only the adapter re-checks the root itself (#295); the root is the span with no `CHILD_OF` reference.
 - No default endpoint (#93).
-- Every search must name a service → `service_name`, else `resource_attributes.service.name`, else `hermes-agent`.
+- Every search must name a service → `service_name`, else `resource_attributes.service.name`, else `hermes-agent` (the viewed profile's name with `service_name_from_profile`, #395).
 - The query port is the UI port, not the OTLP port → set `query_port` (or `ui_url`) when the entry's endpoint is `:4318`.
 - Host port 4318 collides with LGTM.
 

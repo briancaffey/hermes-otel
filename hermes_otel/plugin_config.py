@@ -248,6 +248,11 @@ class HermesOtelConfig:
     global_tags: Optional[Dict[str, Scalar]] = None
     resource_attributes: Optional[Dict[str, Scalar]] = None
     project_name: Optional[str] = None  # supersedes OTEL_PROJECT_NAME
+    # Opt-in: a named profile reports itself as its own service
+    # (``service.name=<profile>``, ``service.namespace=hermes-agent``) so a
+    # fleet shows up as one service per profile in service pickers and maps
+    # (#395). Off: every profile is ``service.name=hermes-agent``.
+    service_name_from_profile: bool = False
     # ── BatchSpanProcessor tunables (Phase 2: non-blocking export) ──────
     span_batch_max_queue_size: int = 2048  # spans buffered before drops
     span_batch_schedule_delay_ms: int = 1000  # worker wake-up cadence
@@ -1150,6 +1155,7 @@ FIELD_DOCS = {
     "global_tags": "Deprecated: merged into `resource_attributes` at load (which wins on a key conflict)",
     "resource_attributes": "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
     "project_name": "`openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME`",
+    "service_name_from_profile": "A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins",
     "span_batch_max_queue_size": "Max buffered spans per backend before drops",
     "span_batch_schedule_delay_ms": "BatchSpanProcessor worker wake-up cadence",
     "span_batch_max_export_batch_size": "Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full`",
@@ -1197,7 +1203,15 @@ FIELD_DOCS = {
 FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
     (
         "General",
-        ("enabled", "sample_rate", "project_name", "global_tags", "resource_attributes", "headers"),
+        (
+            "enabled",
+            "sample_rate",
+            "project_name",
+            "service_name_from_profile",
+            "global_tags",
+            "resource_attributes",
+            "headers",
+        ),
     ),
     (
         "Content capture",

@@ -384,7 +384,7 @@
  "spans": [
   {
    "attributes": {
-    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.agent.name": "golden",
     "gen_ai.conversation.id": "old",
     "gen_ai.operation.name": "invoke_agent",
     "gen_ai.provider.name": "openai",
@@ -507,7 +507,7 @@
   },
   {
    "attributes": {
-    "gen_ai.agent.name": "hermes-agent",
+    "gen_ai.agent.name": "golden",
     "gen_ai.conversation.id": "new",
     "gen_ai.operation.name": "invoke_agent",
     "gen_ai.provider.name": "openai",

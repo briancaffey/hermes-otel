@@ -87,7 +87,9 @@ def _start_session_span(
     attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
     attributes.update(model_override_attributes(model))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
-    attributes.update(_weave_turn_attributes(session_id, extra_kwargs))
+    attributes.update(
+        _weave_turn_attributes(session_id, extra_kwargs, getattr(tracer, "profile_name", None))
+    )
     attributes.update(correlation_attributes(tracer, session_id, extra_kwargs))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
@@ -204,7 +206,9 @@ def on_session_end(
     attributes.update(_model_attributes(model, provider))
     attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
     attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
-    attributes.update(_weave_turn_attributes(session_id, kwargs))
+    attributes.update(
+        _weave_turn_attributes(session_id, kwargs, getattr(tracer, "profile_name", None))
+    )
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     if ps is not None and ps.io_captured:

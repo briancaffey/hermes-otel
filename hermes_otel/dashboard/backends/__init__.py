@@ -186,20 +186,51 @@ def top_level_config() -> Dict[str, Any]:
     return data
 
 
+def _profile_service_name(top: Dict[str, Any]) -> str:
+    """The viewed profile's name when ``service_name_from_profile`` is on (the
+    ``HERMES_OTEL_SERVICE_NAME_FROM_PROFILE`` env var when set, else the file)
+    and a named profile is active, else ``""`` (#395).
+
+    The dashboard resolves the home per request (``?profile=``), so this is the
+    profile being viewed, not the one the process started in. Imported lazily:
+    the adapters also load as a top-level ``backends`` package.
+    """
+    import importlib
+
+    helpers = importlib.import_module("hermes_otel.helpers")
+    env = helpers.coerce_bool(os.environ.get("HERMES_OTEL_SERVICE_NAME_FROM_PROFILE"))
+    enabled = env if env is not None else helpers.coerce_bool(top.get("service_name_from_profile"))
+    if not enabled:
+        return ""
+    return helpers.named_profile(resolve_profile_name())
+
+
+def resolve_profile_name() -> str:
+    """``hermes_otel.hermes_home.resolve_profile_name`` (a seam for tests)."""
+    import importlib
+
+    return importlib.import_module("hermes_otel.hermes_home").resolve_profile_name()
+
+
 def default_service_name(cfg: Dict[str, Any]) -> str:
     """The service an adapter scopes its queries to when the filter names none:
     the entry's ``service_name``, else the plugin's own
-    ``resource_attributes.service.name``, else ``hermes-agent`` (the plugin's
-    default resource). Jaeger needs one for every search; Uptrace pins its
-    log queries to it (#295, #298)."""
+    ``resource_attributes.service.name``, else the service the plugin's
+    resource reports for the requested profile: ``hermes-agent``, or the
+    profile's name with ``service_name_from_profile`` (#395). Jaeger needs one
+    for every search; Uptrace pins its log queries to it (#295, #298)."""
     explicit = cfg.get("service_name")
     if isinstance(explicit, str) and explicit.strip():
         return explicit.strip()
     try:
-        resource = top_level_config().get("resource_attributes") or {}
+        top = top_level_config()
+        resource = top.get("resource_attributes") or {}
         name = resource.get("service.name") if isinstance(resource, dict) else None
         if isinstance(name, str) and name.strip():
             return name.strip()
+        profile = _profile_service_name(top)
+        if profile:
+            return profile
     except Exception:
         pass
     return "hermes-agent"

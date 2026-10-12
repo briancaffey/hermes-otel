@@ -16,7 +16,8 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 
 | Attribute | Source |
 |---|---|
-| `service.name` | `hermes-agent` (fixed; override via `resource_attributes:`) |
+| `service.name` | `hermes-agent`; the named profile (`coder`) with `service_name_from_profile: true`. `resource_attributes:` overrides either |
+| `service.namespace` | `hermes-agent`, only with `service_name_from_profile: true` and a named profile active (see [Profiles](/configuration/profiles#one-service-per-profile)) |
 | `service.instance.id` | UUID generated once per process — keeps two Hermes processes on different metric series |
 | `service.version` | Plugin version, read from the shipped `plugin.yaml` |
 | `process.pid` | Process id |
@@ -59,7 +60,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.turn.trigger` | hermes | string | What started the turn: `user` (CLI, TUI, desktop, a gateway platform, ACP), `cron`, `kanban` (a worker), `subagent` (a delegated child), `a2a`, `api` (the API server), `oneshot` (`hermes -z`, `chat -q`), `curator`, `batch` or `system`. `/loop`, `/heartbeat` and `/goal` re-entries and bot-to-bot DMs are not observable at turn start and classify as the turn they ride on (#444) |
 | `hermes.agent.model_override` | hermes | bool | Whether the turn runs on a model other than the profile's `model.default` (a `delegation.model` child, a kanban `--model` worker, a cron job's own model, `-m`, `/model`); absent when either is unknown |
 | `gen_ai.operation.name` | gen_ai | string | `invoke_agent` |
-| `gen_ai.agent.name` | gen_ai | string | `hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent) |
+| `gen_ai.agent.name` | gen_ai | string | The host's `agent_name` when it passes one, else the active named profile (`coder`), else `hermes-agent`; Weave shows it as the agent |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
 | `weave.agent.version` | Weave | string | Plugin version (optional) |
 | `hermes.session.synthesized` | hermes | bool | `true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hook of the turn (optional) |

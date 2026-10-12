@@ -70,7 +70,13 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     Attr(
         "service.name",
         "resource",
-        "`hermes-agent` (fixed; override via `resource_attributes:`)",
+        "`hermes-agent`; the named profile (`coder`) with `service_name_from_profile: true`. `resource_attributes:` overrides either",
+        "Resource (on every span)",
+    ),
+    Attr(
+        "service.namespace",
+        "resource",
+        "`hermes-agent`, only with `service_name_from_profile: true` and a named profile active",
         "Resource (on every span)",
     ),
     Attr(
@@ -995,7 +1001,7 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     Attr(
         "gen_ai.agent.name",
         "model",
-        "`hermes-agent` (a constant unless the host passes `agent_name`; Weave shows it as the agent)",
+        "The host's `agent_name` when it passes one, else the active named profile (`coder`), else `hermes-agent`; Weave shows it as the agent",
         "agent / cron (turn root)",
     ),
     Attr("gen_ai.operation.name", "model", "`invoke_agent`", "agent / cron (turn root)"),

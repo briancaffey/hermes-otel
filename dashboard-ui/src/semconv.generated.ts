@@ -232,6 +232,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "process.pid",
   "service.instance.id",
   "service.name",
+  "service.namespace",
   "service.version",
   "telemetry.sdk.language",
   "telemetry.sdk.name",

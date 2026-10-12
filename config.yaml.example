@@ -27,6 +27,13 @@
 # on every span. Also settable via OTEL_PROJECT_NAME / HERMES_OTEL_PROJECT_NAME.
 # project_name: hermes-agent
 
+# Fleets: report each named profile as its own service, so service pickers and
+# service maps show `coder`, `reviewer`... instead of one `hermes-agent`.
+# Sets service.name=<profile> and service.namespace=hermes-agent; the default
+# profile stays service.name=hermes-agent. resource_attributes.service.name
+# still wins. Also settable via HERMES_OTEL_SERVICE_NAME_FROM_PROFILE.
+# service_name_from_profile: false
+
 # Free-form key/value pairs merged into the OTel Resource of every span.
 # Good for deployment tags (env, region, team).
 # resource_attributes:

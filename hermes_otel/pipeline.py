@@ -17,7 +17,14 @@ from typing import Any, Dict, List, Optional
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
-from .helpers import derive_signal_endpoint, is_usage_key, package_version, without_usage_keys
+from .helpers import (
+    DEFAULT_SERVICE_NAME,
+    derive_signal_endpoint,
+    is_usage_key,
+    named_profile,
+    package_version,
+    without_usage_keys,
+)
 from .instruments import (
     _INSTRUMENTS,
     metric_preferred_aggregation,
@@ -304,11 +311,20 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
     # cumulative counters interleave into one sawtooth (#79). Users can
     # still override any of these via resource_attributes.
     config = plugin.config
+    # With ``service_name_from_profile`` a named profile is its own service
+    # in the ``hermes-agent`` namespace, so a fleet shows one service per
+    # profile (#395). The namespace is only set then: OTLP-to-Prometheus
+    # folds it into ``job`` (``hermes-agent/hermes-agent``), which would
+    # rename every metric series of a plain install. ``resource_attributes``
+    # below still override both.
+    profile_service = named_profile(plugin.profile_name) if config.service_name_from_profile else ""
     attrs: Dict[str, Any] = {
-        "service.name": "hermes-agent",
+        "service.name": profile_service or DEFAULT_SERVICE_NAME,
         "service.instance.id": _SERVICE_INSTANCE_ID,
         "process.pid": os.getpid(),
     }
+    if profile_service:
+        attrs["service.namespace"] = DEFAULT_SERVICE_NAME
     pkg_version = package_version()
     if pkg_version:
         attrs["service.version"] = pkg_version

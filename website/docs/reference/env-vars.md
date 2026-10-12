@@ -138,6 +138,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_LLM_INPUT_PREVIEW_MAX_CHARS` | `llm_input_preview_max_chars` | int | `null` |
 | `HERMES_OTEL_LLM_OUTPUT_PREVIEW_MAX_CHARS` | `llm_output_preview_max_chars` | int | `null` |
 | `HERMES_OTEL_PROJECT_NAME` | `project_name` | string | *(unset)* |
+| `HERMES_OTEL_SERVICE_NAME_FROM_PROFILE` | `service_name_from_profile` | bool | `false` |
 | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` | `span_batch_max_queue_size` | int | `2048` |
 | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` | `span_batch_schedule_delay_ms` | int | `1000` |
 | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` | `span_batch_max_export_batch_size` | int | `null` |

@@ -418,6 +418,13 @@ class TestRegistriesAgree:
         for src in sources:
             read |= set(pattern.findall(src.read_text(encoding="utf-8")))
         known = {name for name, _group, _desc in settings_report.KNOWN_ENV_VARS}
+        # A config field's HERMES_OTEL_<FIELD> override is listed too (the
+        # inventory adds every scalar field's variable before these).
+        known |= {
+            pc.ENV_PREFIX + key.upper()
+            for key, kind in pc.field_kinds().items()
+            if kind in pc.SCALAR_KINDS
+        }
         assert sorted(read - known) == []
 
     def test_default_query_ports_agree_with_mcp_config(self):

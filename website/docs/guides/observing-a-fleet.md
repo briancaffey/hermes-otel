@@ -12,7 +12,7 @@ Hermes runs more than one agent in several ways: a turn delegates to children, a
 
 | Surface | What it is | Identified by | Hangs from | Links to its parent by | Not linked yet |
 |---|---|---|---|---|---|
-| Profile | one agent's home: config, model, skills, plugins | `hermes.profile` on the root and the Resource; `profile` on every metric | its own turn roots | — | — |
+| Profile | one agent's home: config, model, skills, plugins | `hermes.profile` on the root and the Resource; `profile` on every metric; `gen_ai.agent.name` on the root; `service.name` with [`service_name_from_profile`](/configuration/profiles#one-service-per-profile) | its own turn roots | — | — |
 | `delegate_task` child | a child agent in the same process (background by default) | `subagent.{role}` span; the child root has `hermes.session.is_subagent=true`, `hermes.turn.trigger=subagent` | the parent turn's in-flight span | being nested: one trace for the whole tree, including nested orchestrators | a child in another process gets a span link only |
 | Kanban worker | a separate `hermes -p <assignee>` process per card run | `hermes.kanban.task_id` / `run_id` on the root and the Resource, `hermes.turn.trigger=kanban` | the dispatcher's `kanban.claim` (`TRACEPARENT` hand-off) | one trace per run: claim → spawn → worker turn → worker exit | the dependency between two cards (a swarm's worker → verifier) is in the board, not the trace |
 | Kanban swarm | workers → verifier → synthesizer, as cards | each card is a kanban run above | each run's own `kanban.claim` | — | the swarm as one trace |
@@ -68,6 +68,8 @@ Board health is metrics, not spans:
 - *Metrics (Prometheus-style backends):* `sum by (profile) (increase(hermes_token_usage_total[1h]))` for tokens, and `hermes_cost_usage_total` for USD where Hermes priced the calls. Add `query_source` to split main calls from sub-agent and auxiliary calls.
 - *Spans:* group turn roots (`agent`, `cron`) by `hermes.profile` and sum their `gen_ai.usage.*`.
 
+**One service per agent.** Set `service_name_from_profile: true` in every profile's `hermes_otel.yaml` and each named profile exports as its own `service.name` under `service.namespace=hermes-agent`. Service pickers (Jaeger, Tempo, SigNoz, Uptrace) then list `coder`, `reviewer` … instead of one `hermes-agent`, and a kanban run's trace crosses services: the dispatcher's profile owns `kanban.claim`, the assignee's profile owns the worker's `agent` root. See [Profiles](/configuration/profiles#one-service-per-profile) for what changes in saved queries.
+
 **Spend per kanban card.**
 - *Jaeger:* search tags `hermes.kanban.task_id=<id>`. Each run is one trace, and the worker's `agent` root carries the run's totals.
 - *Tempo:* the TraceQL `{ span.hermes.kanban.task_id = "<id>" && name = "agent" }`.
@@ -95,6 +97,6 @@ uv run --extra dev python scripts/fleet_demo/run_demo.py --jaeger-url http://loc
 
 | Convention | Here |
 |---|---|
-| `invoke_agent` | the turn root, a `subagent.*` delegation, a kanban worker's turn |
+| `invoke_agent` | the turn root, a `subagent.*` delegation, a kanban worker's turn; `gen_ai.agent.name` is the named profile on a root, the role on a `subagent.*` span |
 | `invoke_workflow` | not emitted: a kanban board, a swarm and a room have no single span that spans them |
 | `create_agent` | not applicable: Hermes creates agents in-process, not through a remote agent service |

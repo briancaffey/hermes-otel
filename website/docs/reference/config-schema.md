@@ -31,6 +31,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
+| `service_name_from_profile` | bool | `false` | A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |
 | `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence |
 | `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full` |

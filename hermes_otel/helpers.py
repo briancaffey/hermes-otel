@@ -638,6 +638,26 @@ _PLATFORM_TRIGGERS = {
 }
 
 
+DEFAULT_SERVICE_NAME = "hermes-agent"
+
+# Profile names that do not identify one agent: the pre-profile home and an
+# arbitrary ``HERMES_HOME`` outside the profiles root (``hermes_home``).
+_UNNAMED_PROFILES = frozenset({"", "default", "custom"})
+
+
+def named_profile(profile: Any) -> str:
+    """The profile name when it identifies one agent of a fleet, else ``""``.
+
+    ``default`` and ``custom`` are not agent names: every single-profile
+    install is ``default``, and ``custom`` is any home outside the profiles
+    root (#395).
+    """
+    if not isinstance(profile, str):
+        return ""
+    name = profile.strip()
+    return "" if name in _UNNAMED_PROFILES else name
+
+
 def turn_trigger(
     platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
 ) -> str:

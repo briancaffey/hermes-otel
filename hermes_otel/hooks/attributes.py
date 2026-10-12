@@ -10,10 +10,18 @@ from __future__ import annotations
 import json
 from typing import Any, Dict, Optional
 
-from ..helpers import clip_joined, optional_number, package_version, truncate_string, turn_trigger
+from ..helpers import (
+    DEFAULT_SERVICE_NAME,
+    clip_joined,
+    named_profile,
+    optional_number,
+    package_version,
+    truncate_string,
+    turn_trigger,
+)
 from ..session_state import TurnSummary
 
-_DEFAULT_AGENT_NAME = "hermes-agent"
+_DEFAULT_AGENT_NAME = DEFAULT_SERVICE_NAME
 
 # Truncation limits for identifiers. One place, so root / llm / api / tool
 # spans agree (they used to mix 120 and 200 for the same id).
@@ -162,10 +170,18 @@ def _gen_ai_attributes(session_id: Optional[str], operation_name: str) -> Dict[s
 def _weave_turn_attributes(
     session_id: Optional[str],
     extra_kwargs: Optional[dict] = None,
+    profile: Any = None,
 ) -> Dict[str, Any]:
-    """Attributes that make raw OTLP spans render cleanly in Weave's Agents UI."""
+    """Attributes that make raw OTLP spans render cleanly in Weave's Agents UI.
+
+    ``gen_ai.agent.name`` is the host's ``agent_name`` when it passes one, else
+    the active named profile (the closest thing Hermes has to a stable agent
+    name, #395), else ``hermes-agent``.
+    """
     kwargs = extra_kwargs or {}
-    agent_name = truncate_string(kwargs.get("agent_name") or _DEFAULT_AGENT_NAME, _ID_MAX)
+    agent_name = truncate_string(
+        kwargs.get("agent_name") or named_profile(profile) or _DEFAULT_AGENT_NAME, _ID_MAX
+    )
     attrs: Dict[str, Any] = {
         "gen_ai.agent.name": agent_name,
         "wandb.is_turn": True,

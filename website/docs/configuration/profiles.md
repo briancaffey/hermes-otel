@@ -53,6 +53,28 @@ The name is the one `hermes profile list` shows, derived the way Hermes derives 
 
 Filter by it wherever the backend allows: `hermes.profile = "coder"` on spans in Phoenix; `profile="coder"` on any metric in Prometheus-style backends; the [dashboard tab](/dashboard) lists it in each trace's attributes. The terminal tool's `traces --text coder` matches it in the live store, and `stats` per profile is one store per profile anyway.
 
+## One service per profile {#one-service-per-profile}
+
+By default every profile exports as one service, `service.name = hermes-agent`, so a backend's service picker and service map show a single node for an orchestrator and all of its workers; the profile is only an attribute filter. To have each named profile show up as its own service, turn on `service_name_from_profile` in each profile's `hermes_otel.yaml` (settings are per profile, see above) or set `HERMES_OTEL_SERVICE_NAME_FROM_PROFILE=true` in its environment:
+
+```yaml
+service_name_from_profile: true
+```
+
+| Profile | `service.name` | `service.namespace` |
+|---|---|---|
+| Off (the default), any profile | `hermes-agent` | not set |
+| On, a named profile (`coder`) | `coder` | `hermes-agent` |
+| On, `default` or `custom` | `hermes-agent` | not set |
+
+- `resource_attributes.service.name` in the same file still wins, as it does today.
+- `service.instance.id` stays one per process, so two processes of one profile still write separate metric series.
+- The namespace is only set in this mode on purpose: Prometheus-style backends fold it into the `job` label (`hermes-agent/coder`), and setting it on every install would rename every existing series.
+- The [dashboard tab](/dashboard) scopes its backend queries to the service of the profile you are viewing (`?profile=coder` queries `coder`), so set the option for the dashboard's profile too. A backend entry's own `service_name` still pins one.
+- Dashboards and saved queries that filter on `service.name = "hermes-agent"` (the examples in each `docker-compose/<backend>/README.md` do) need the profile's name, or a filter on `service.namespace = "hermes-agent"` to see the whole fleet.
+
+Independently of the option, the turn root's `gen_ai.agent.name` is the active named profile (`coder`) instead of the constant `hermes-agent`, so GenAI agent views (Weave's Agents tab, Azure's Agents view) tell the agents of a fleet apart. The default and custom profiles keep `hermes-agent`, and a host that passes `agent_name` still wins.
+
 ## A2A: turns forwarded to another profile
 
 The [A2A platform](https://github.com/NousResearch/hermes-agent/tree/main/plugins/platforms/a2a) can route an inbound task to a named profile. Hermes then runs that turn as a **fresh process** with that profile's environment (`hermes chat --source a2a` under the target profile's home). Two consequences:
