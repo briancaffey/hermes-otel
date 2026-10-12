@@ -384,13 +384,10 @@
 # Grafana for `lgtm`, Jaeger's :16686, SigNoz's :8080).
 #
 # When `backends:` is absent or empty, the plugin falls back to single-backend
-# env-var detection (LANGSMITH_TRACING, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
+# env-var detection (OTEL_LANGSMITH_API_KEY, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
 # OTEL_PARSEABLE_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT,
 # OTEL_PHOENIX_ENDPOINT — first match wins). Setting `backends:` takes full
 # control away from env detection.
-#
-# LangSmith remains env-var-only because it doesn't speak OTLP; setting
-# LANGSMITH_TRACING=true will short-circuit the `backends:` list entirely.
 #
 # Example: fan out to all five local collectors (assumes they're running via
 # docker-compose/all.sh). Uncomment to use.
@@ -671,12 +668,18 @@
 #     # base_url: https://acme.wandb.io       # plugin appends /traces/otel/v1/traces
 #     # endpoint: https://trace.wandb.ai/otel/v1/traces  # optional full override
 
-# ── LangSmith (env-var only, alternative to the above) ────────────────────────
+# ── LangSmith quickstart ──────────────────────────────────────────────────────
 #
-# LangSmith uses its own HTTP Run API, not OTLP. To enable, set:
-#   LANGSMITH_TRACING=true
-#   LANGSMITH_API_KEY=lsv2_...
-#   LANGSMITH_PROJECT=hermes-langsmith-otel               # optional
-#   LANGSMITH_ENDPOINT=https://api.smith.langchain.com    # optional override
-# No config.yaml entry is needed — env is enough, and it short-circuits the
-# `backends:` list above.
+# LangSmith (SaaS, OTLP/HTTP) — traces only. A regular entry since 1.26
+# (#415): it fans out with the rest. The plugin posts to the ingest at
+# api.smith.langchain.com/otel/v1/traces with x-api-key and, when a project
+# is set, the Langsmith-Project header. In env-var mode
+# OTEL_LANGSMITH_API_KEY selects it; LANGSMITH_API_KEY / LANGSMITH_PROJECT /
+# LANGSMITH_ENDPOINT are fallback values only. LANGSMITH_TRACING selects nothing.
+#
+# backends:
+#   - type: langsmith
+#     api_key_env: LANGSMITH_API_KEY          # or inline api_key: (discouraged)
+#     project: hermes-agent                   # optional: or project_env: LANGSMITH_PROJECT
+#     # region: eu                            # optional: the EU host
+#     # endpoint: https://api.smith.langchain.com   # optional: /otel/v1/traces is appended

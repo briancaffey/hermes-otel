@@ -3901,11 +3901,10 @@
     plugin: "Plugin",
     hermes: "Hermes",
     backend: "Backends: single-backend mode and credential fallbacks",
-    langsmith: "LangSmith",
     otel: "OpenTelemetry SDK",
     other: "Other OTEL_* / HERMES_OTEL_* variables set here"
   };
-  var ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "langsmith", "otel", "other"];
+  var ENV_GROUP_ORDER = ["override", "plugin", "hermes", "backend", "otel", "other"];
   function groupEnv(env, showUnset, query = "") {
     const seen = /* @__PURE__ */ new Set();
     const q = query.trim().toLowerCase();

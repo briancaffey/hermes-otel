@@ -140,6 +140,10 @@ _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     },
     "parseable": {"api_key": ("OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY")},
     "honeycomb": {"api_key": ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")},
+    "langsmith": {
+        "api_key": ("OTEL_LANGSMITH_API_KEY", "LANGSMITH_API_KEY"),
+        "project": ("OTEL_LANGSMITH_PROJECT", "LANGSMITH_PROJECT"),
+    },
     "elastic": {"api_key": ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")},
     "openlit": {"api_key": ("OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY")},
     "opik": {
@@ -280,6 +284,7 @@ _UI_RULES: Dict[str, Optional[str]] = {
     "tempo": "proxied",
     "lgtm": "proxied",
     "honeycomb": "fixed",
+    "langsmith": "fixed",
     "weave": "fixed",
     "otlp": None,
     "elastic": None,
@@ -298,6 +303,7 @@ _UI_RULES: Dict[str, Optional[str]] = {
 }
 _UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
 _HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
+_LANGSMITH_UI = {"us": "https://smith.langchain.com", "eu": "https://eu.smith.langchain.com"}
 _WEAVE_UI = "https://wandb.ai"
 _LANGFUSE_CLOUD = "https://cloud.langfuse.com"
 
@@ -362,6 +368,13 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
             "note": f"the {human} UI is on a different port than OTLP ingest; {hint}",
         }
     if rule == "fixed":
+        if t == "langsmith":
+            region = (bc.region or "us").strip().lower()
+            return {
+                "url": _LANGSMITH_UI.get(region, _LANGSMITH_UI["us"]),
+                "source": "derived",
+                "note": f"the LangSmith UI for region {region}",
+            }
         if t == "honeycomb":
             region = (bc.region or "us").strip().lower()
             url = _HONEYCOMB_UI.get(region, _HONEYCOMB_UI["us"])
@@ -664,7 +677,7 @@ def field_reports(
 
 # ── Environment inventory ─────────────────────────────────────────────────
 
-# (name, group, description). Groups: plugin, hermes, backend, langsmith, otel.
+# (name, group, description). Groups: plugin, hermes, backend, otel.
 KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     (
         "HERMES_HOME",
@@ -883,15 +896,21 @@ KNOWN_ENV_VARS: Tuple[Tuple[str, str, str], ...] = (
     ("WANDB_PROJECT", "backend", "Weave project"),
     ("DEFAULT_WANDB_ENTITY", "backend", "Weave entity fallback"),
     ("DEFAULT_WANDB_PROJECT", "backend", "Weave project fallback"),
-    ("LANGSMITH_TRACING", "langsmith", "`true` enables the LangSmith backend (with an API key)"),
-    ("LANGSMITH_API_KEY", "langsmith", "LangSmith API key"),
+    ("OTEL_LANGSMITH_API_KEY", "backend", "LangSmith API key (preferred name; the env opt-in)"),
+    (
+        "OTEL_LANGSMITH_ENDPOINT",
+        "backend",
+        "LangSmith endpoint override (default `https://api.smith.langchain.com/otel/v1/traces`; "
+        "`region: eu` picks the EU host)",
+    ),
+    ("OTEL_LANGSMITH_PROJECT", "backend", "LangSmith project (the `Langsmith-Project` header)"),
+    ("LANGSMITH_API_KEY", "backend", "LangSmith API key fallback"),
     (
         "LANGSMITH_ENDPOINT",
-        "langsmith",
-        "LangSmith API URL (default `https://api.smith.langchain.com`)",
+        "backend",
+        "LangSmith API base fallback (`/otel/v1/traces` is appended)",
     ),
-    ("LANGSMITH_PROJECT", "langsmith", "LangSmith project (default `hermes-langsmith-otel`)"),
-    ("LANGSMITH_WORKSPACE_ID", "langsmith", "LangSmith workspace id"),
+    ("LANGSMITH_PROJECT", "backend", "LangSmith project fallback"),
     (
         "OTEL_EXPORTER_OTLP_ENDPOINT",
         "otel",

@@ -72,14 +72,6 @@ Why: tail-based sampling requires buffering spans until the trace is complete, w
 
 The standard answer is to run an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) in the middle with a `tail_sampling` processor. The Collector can fan-out to all your backends and apply tail-based policy centrally.
 
-## LangSmith not in fan-out
-
-Setting `LANGSMITH_TRACING=true` short-circuits the `backends:` list entirely. You can have LangSmith **or** a multi-backend fan-out, not both.
-
-Why: LangSmith uses its own HTTP Run API rather than OTLP; its transport doesn't fit into the OTel `BatchSpanProcessor` shape.
-
-Workaround if you need both: run the OTel Collector and have it route traces to LangSmith's OTLP-compatible beta ingest, if/when LangSmith ships one.
-
 ## Weave is trace-ingest only
 
 W&B Weave's documented OTLP endpoint is `/otel/v1/traces`, authenticated with

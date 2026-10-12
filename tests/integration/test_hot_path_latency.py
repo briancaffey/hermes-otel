@@ -1,17 +1,16 @@
 """Hook-thread latency guards (#91).
 
-Three things used to run synchronously inside the hook thread, that is inside
-the agent loop: the turn-end force-flush of every backend, a LangSmith HTTP
-round-trip per span start and end, and a SQLite commit per live-store row.
+Two things used to run synchronously inside the hook thread, that is inside
+the agent loop: the turn-end force-flush of every backend and a SQLite commit
+per live-store row. (A third, LangSmith's run-tree client, went with #415.)
 These tests put a collector that never answers behind each path and assert
 the hook returns promptly anyway, so a regression is visible.
 """
 
 from __future__ import annotations
 
-import threading
 import time
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 from opentelemetry.sdk.trace import TracerProvider
@@ -19,7 +18,6 @@ from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, Spa
 
 import hermes_otel.tracer as tracer_mod
 from hermes_otel.hooks import on_session_end, on_session_start
-from hermes_otel.langsmith_backend import LangSmithBackend
 from hermes_otel.live_store import LiveStore
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
@@ -160,32 +158,6 @@ class TestTurnEndFlush:
             session_id="s2", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
         assert not plugin._flush_pending.is_set()
-
-
-class TestLangSmithQueue:
-    def test_span_start_and_end_do_not_wait_on_http(self):
-        gate = threading.Event()
-
-        def stuck_urlopen(req, timeout=None):
-            gate.wait(5)
-            resp = MagicMock()
-            resp.read.return_value = b""
-            resp.__enter__ = lambda s: s
-            resp.__exit__ = MagicMock(return_value=False)
-            return resp
-
-        backend = LangSmithBackend(api_key="k", endpoint="https://api.smith.test", project="p")
-        with patch("hermes_otel.langsmith_backend.urllib.request.urlopen", stuck_urlopen):
-            t0 = time.perf_counter()
-            for i in range(20):
-                run = backend.start_span(f"tool.t{i}", f"tool:t{i}", kind="tool")
-                backend.end_span(run, attributes={"output.value": "ok"})
-            elapsed = time.perf_counter() - t0
-            assert elapsed < 20 * PER_SPAN_BUDGET_S, f"20 spans took {elapsed:.3f}s"
-            assert backend._queue.qsize() >= 39  # queued, not sent
-            gate.set()
-            assert backend.flush(timeout=10)
-        backend.shutdown()
 
 
 class TestLiveStoreBatching:

@@ -42,7 +42,7 @@ _ENV_TYPE_MAX = 64
 
 def _set_attributes(span: Any, attributes: dict) -> None:
     """Set attributes on a live span; a no-op for span objects without the
-    OTel API (LangSmith runs) and never raises."""
+    OTel API (``INVALID_SPAN`` stand-ins) and never raises."""
     if span is None or not hasattr(span, "set_attribute"):
         return
     for key, value in attributes.items():

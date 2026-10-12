@@ -159,7 +159,7 @@ Per backend, `supports_logs` is derived from the type and overridden with `logs:
 | [Honeycomb](/backends/honeycomb) | ✅ | default on; one dataset per signal with Classic keys |
 | [Phoenix](/backends/phoenix) | ❌ | traces only |
 | [Langfuse](/backends/langfuse) | ❌ | traces only |
-| [LangSmith](/backends/langsmith) | ❌ | not OTLP |
+| [LangSmith](/backends/langsmith) | ❌ | traces only |
 | [Jaeger](/backends/jaeger) | ❌ | traces only |
 | [Grafana Tempo](/backends/tempo) | ❌ | traces only; use [LGTM](/backends/lgtm) for all three signals |
 | [W&B Weave](/backends/weave) | ❌ | trace ingest only |

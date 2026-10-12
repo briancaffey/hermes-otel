@@ -120,7 +120,6 @@ ln -s ~/git/hermes-otel/hermes_otel ~/.hermes/plugins/hermes_otel
 
 | Extra | Install | What it does |
 |---|---|---|
-| `langsmith` | `pip install langsmith` | Enables [LangSmith](/backends/langsmith) as a backend and gives you time-ordered `uuid7` run IDs. |
 | `yaml` | `pip install pyyaml` | Enables [`hermes_otel.yaml`](/configuration/yaml) parsing. Without it, only env vars + defaults apply. |
 
 ## Requirements
