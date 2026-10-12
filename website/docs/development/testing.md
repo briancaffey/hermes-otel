@@ -126,3 +126,14 @@ See `tests/unit/test_backends.py` and `tests/integration/test_fanout.py` for exa
 ## CI behavior
 
 GitHub Actions runs unit + integration + ruff + black on every push to `main` and every PR. Coverage is posted as a workflow artifact. E2E and smoke tiers aren't in CI — they need Docker and maintainers run them locally before releases.
+
+## Hook drift against Hermes
+
+`scripts/hook_audit/hook_audit.py --hermes-agent ~/git/hermes-agent` reads Hermes's `VALID_HOOKS` straight from the checkout's source, without importing it, and compares it with `provides_hooks` in `hermes_otel/plugin.yaml`. Every hook Hermes offers must be registered or listed in the script's `NOT_REGISTERED`, with the reason. It exits 1 on:
+
+- a hook the plugin registers that Hermes renamed or removed
+- a new hook nobody has decided about
+- a skip entry that has gone stale
+
+`tests/unit/test_hook_audit.py` runs it against `$HERMES_AGENT_DIR` (default `~/git/hermes-agent`) when that checkout exists. Re-run it after every `hermes update`.
+
