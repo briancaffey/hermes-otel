@@ -526,9 +526,13 @@ class OpenObserveAdapter(BackendAdapter):
             return "—"
 
         points = [(ts, v, label_of(ident)) for ts, v, ident in samples]
+        # ``last`` of a counter's increases has no per-bucket meaning: fold them
+        # with ``sum`` and say so, as the Prometheus-family adapters do.
+        fold = "sum" if (cumulative and agg == "last") else agg
         out = bucketize(
-            points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, agg
+            points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, fold
         )
+        out["agg_requested"] = agg
         out["name"] = name
         out["cumulative"] = cumulative
         out["truncated"] = truncated

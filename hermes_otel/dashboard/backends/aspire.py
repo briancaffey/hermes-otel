@@ -317,7 +317,7 @@ class AspireAdapter(BackendAdapter):
                 continue
             keep = {k: v for k, v in attrs.items() if k in _CARD_KEYS}
             keep["name"] = card.get("name") or ""
-            if self._status_code(attrs and card) == 2:
+            if self._status_code(card) == 2:
                 keep["status"] = "error"
             dur_ns = max(0, _int(card.get("endTimeUnixNano")) - card_start)
             rows.append(

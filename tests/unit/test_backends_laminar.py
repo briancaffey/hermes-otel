@@ -124,3 +124,20 @@ class TestLaminarEnvMode:
         monkeypatch.setenv("OTEL_LAMINAR_API_KEY", "pk")
         rb = backends.resolve_from_env()
         assert rb is not None and rb.type == "opik"
+
+
+class TestSignalSupportTable:
+    def test_signal_support_refuses_metrics_like_the_resolver(self):
+        # ``signal_support`` read only _TRACES_ONLY, so the Settings tab showed
+        # Laminar metrics as exported while the resolver skipped them (#413).
+        assert backends.signal_support("laminar") == {
+            "traces": True,
+            "metrics": False,
+            "logs": True,
+        }
+
+    def test_signal_support_agrees_with_the_resolver_defaults_for_every_type(self):
+        for t in sorted(backends.KNOWN_TYPES):
+            support = backends.signal_support(t)
+            assert support["metrics"] == backends._metrics_for(t, None), t
+            assert support["logs"] == backends._logs_for(t, None), t

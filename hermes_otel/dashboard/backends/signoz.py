@@ -612,9 +612,9 @@ class SigNozAdapter(BackendAdapter):
         out["agg"] = agg
         out["name"] = name
         out["kind"] = kind
+        # True only when the counter fold above ran: ``avg`` / ``max`` of a Sum
+        # are SigNoz's own aggregates of the raw cumulative values, not increases.
         out["cumulative"] = cumulative
-        # A ``Sum`` instrument is a counter shown as the increase per bucket.
-        out["cumulative"] = kind == "Sum"
         return out
 
     # ── logs (#194) ───────────────────────────────────────────────────

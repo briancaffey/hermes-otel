@@ -1564,13 +1564,17 @@ def signal_support(backend_type: str) -> Dict[str, bool]:
     """Which OTLP signals a backend type accepts when the entry sets no override.
 
     Mirrors :func:`_traces_for`, :func:`_metrics_for` and :func:`_logs_for`:
-    every type takes traces; the ``_TRACES_ONLY`` types refuse metrics; only the
-    ``_LOGS_CAPABLE`` types take logs. An explicit ``traces`` / ``metrics`` /
+    every type takes traces; the ``_TRACES_ONLY`` and ``_NO_METRICS`` types
+    refuse metrics; only the ``_LOGS_CAPABLE`` types take logs. An explicit ``traces`` / ``metrics`` /
     ``logs`` on the entry still wins over this table, which is what the
     Settings tab uses to tell "off because unsupported" from "off by choice".
     """
     t = (backend_type or "").strip().lower()
-    return {"traces": True, "metrics": t not in _TRACES_ONLY, "logs": t in _LOGS_CAPABLE}
+    return {
+        "traces": True,
+        "metrics": t not in _TRACES_ONLY and t not in _NO_METRICS,
+        "logs": t in _LOGS_CAPABLE,
+    }
 
 
 def preset_temporality(backend_type: str) -> Optional[str]:

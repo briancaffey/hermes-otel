@@ -240,3 +240,5 @@ backends:
     secret_key_env: LANGFUSE_SECRET_KEY
     base_url: https://cloud.langfuse.com
 ```
+
+Credentials resolve the same way for the exporter and the dashboard's query adapters: an inline value (`secret_key: ...`) wins over the env var a `*_env` key names, which wins over the type's vendor fallbacks (`LANGFUSE_SECRET_KEY` and friends). An entry that sets both therefore exports and queries with one key. Prefer the `*_env` spelling so secrets stay out of the file.

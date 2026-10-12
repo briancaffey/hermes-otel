@@ -79,3 +79,30 @@ def test_env_override_wins(monkeypatch, tmp_path):
 def test_nothing_found(tmp_path):
     assert dash_backends.resolve_config_path() is None
     assert dash_backends.candidate_config_paths()[0] == tmp_path / "home" / "hermes_otel.yaml"
+
+
+def test_candidates_are_exactly_the_tracer_s(tmp_path):
+    # The dashboard used to add a ``config.yaml`` beside its own package, a file
+    # the tracer never reads (#413).
+    home = tmp_path / "home"
+    assert dash_backends.candidate_config_paths() == [
+        home / "hermes_otel.yaml",
+        home / "plugins" / "hermes_otel" / "config.yaml",
+    ]
+
+
+def test_two_files_present_warns_once(tmp_path, caplog):
+    import logging
+
+    home = tmp_path / "home"
+    durable = home / "hermes_otel.yaml"
+    legacy = home / "plugins" / "hermes_otel" / "config.yaml"
+    legacy.parent.mkdir(parents=True)
+    durable.write_text("backends: []\n")
+    legacy.write_text("backends: []\n")
+    dash_backends._WARNED_TWO_FILES.clear()
+    with caplog.at_level(logging.WARNING, logger="hermes_otel"):
+        assert dash_backends.resolve_config_path() == durable
+        assert dash_backends.resolve_config_path() == durable
+    warnings = [r.getMessage() for r in caplog.records if "ignoring" in r.getMessage()]
+    assert len(warnings) == 1 and str(legacy) in warnings[0]

@@ -519,3 +519,37 @@ class TestProfileAwareReport:
         rep = build_settings_report()
         assert rep["config"]["deprecated_keys"] == []
         assert rep["process"]["note"].startswith("Resolved by the dashboard process")
+
+
+class TestMetricsSettingsMirrorTheLoader:
+    """``load_config`` drops an unknown ``metrics_histogram`` / ``metrics_temporality``
+    (``_reconcile_metrics_settings``); the report used to show the bad value as
+    applied (#413)."""
+
+    def test_unknown_histogram_from_the_file_is_flagged_and_the_default_applies(self, home):
+        (home / "hermes_otel.yaml").write_text(YAML + "metrics_histogram: sideways\n")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        entry = by_key["metrics_histogram"]
+        assert entry["file_invalid"] is True and entry["source"] == "default"
+        assert entry["value"] == "explicit"
+
+    def test_env_temporality_is_normalised_or_flagged(self, home, monkeypatch):
+        monkeypatch.setenv("HERMES_OTEL_METRICS_TEMPORALITY", "DELTA")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        assert by_key["metrics_temporality"]["value"] == "delta"
+        assert by_key["metrics_temporality"]["source"] == "env"
+        monkeypatch.setenv("HERMES_OTEL_METRICS_TEMPORALITY", "sometimes")
+        by_key = {f["key"]: f for f in build_settings_report()["fields"]}
+        entry = by_key["metrics_temporality"]
+        assert entry["env_invalid"] is True and entry["source"] == "default"
+
+    def test_sdk_env_preference_is_reported_as_the_default(self, home, monkeypatch):
+        (home / "hermes_otel.yaml").write_text(
+            "backends:\n  - type: lgtm\n    endpoint: http://l:4318/v1/traces\n", encoding="utf-8"
+        )
+        monkeypatch.setenv("OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE", "delta")
+        (card,) = build_settings_report()["fields"][-1]["value"]
+        assert card["metrics_temporality"] == {
+            "value": "delta",
+            "source": "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE",
+        }

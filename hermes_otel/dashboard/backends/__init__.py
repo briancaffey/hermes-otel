@@ -8,6 +8,7 @@ Look up the active adapter via :func:`resolve_adapter`.
 from __future__ import annotations
 
 import json
+import logging
 import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
@@ -79,17 +80,30 @@ def _candidate_config_paths() -> List[Path]:
         paths.append(Path(override).expanduser())
     home = _hermes_home()
     paths.append(home / "hermes_otel.yaml")
-    here = Path(__file__).resolve().parent  # dashboard/backends/
-    plugin_root = here.parent.parent  # plugin root (…/hermes_otel/)
-    paths.append(plugin_root / "config.yaml")
+    # The legacy copy inside the plugin directory, as the tracer resolves it.
+    # (A checkout elsewhere used to add its own ``config.yaml`` here, a file
+    # the tracer never reads, #413.)
     paths.append(home / "plugins" / "hermes_otel" / "config.yaml")
     seen: set = set()
     return [p for p in paths if not (p in seen or seen.add(p))]
 
 
+_WARNED_TWO_FILES: set = set()
+
+
 def resolve_config_path() -> Optional[Path]:
-    for p in _candidate_config_paths():
+    candidates = _candidate_config_paths()
+    for p in candidates:
         if p.exists():
+            # Same message the tracer logs when both the durable and the legacy
+            # file exist, once per pair so the dashboard's polling cannot spam it.
+            others = [o for o in candidates[candidates.index(p) + 1 :] if o.exists()]
+            if others and (str(p), str(others[0])) not in _WARNED_TWO_FILES:
+                _WARNED_TWO_FILES.add((str(p), str(others[0])))
+                logging.getLogger("hermes_otel").warning(
+                    f"[hermes-otel] dashboard using {p}; ignoring {others[0]}. "
+                    "Delete the latter to silence this."
+                )
             return p
     return None
 

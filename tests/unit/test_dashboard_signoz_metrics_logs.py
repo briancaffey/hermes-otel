@@ -406,3 +406,17 @@ class TestLogs:
             "trace_id": None,
             "session_id": None,
         }
+
+
+class TestCumulativeFlag:
+    def test_only_the_counter_fold_marks_a_series_cumulative(self, adapter, fake_http):
+        # ``cumulative`` tells the UI the values are per-bucket increases. That
+        # is true only when the adapter folded the counter itself (sum / count /
+        # last); ``avg`` of a Sum is SigNoz's own aggregate of the raw cumulative
+        # values. A second assignment used to overwrite the flag with
+        # ``kind == "Sum"`` (#413).
+        start, end = 1790294400 - 3600, 1790298000 + 3600
+        folded = adapter.metrics_query("hermes.token.usage", start, end, 3600, agg="sum")
+        raw = adapter.metrics_query("hermes.token.usage", start, end, 3600, agg="avg")
+        assert folded["cumulative"] is True
+        assert raw["cumulative"] is False and raw["kind"] == "Sum"

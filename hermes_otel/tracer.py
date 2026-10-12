@@ -1012,12 +1012,11 @@ class HermesOTelPlugin:
                     "live-only mode (in-process dashboard store)."
                 )
                 return self._init_otlp_pipeline([])
+            types = ", ".join(_backends._ENV_PRIORITY)
             logger.warning(
-                "[hermes-otel] ✗ No backend configured "
-                "(set OTEL_PHOENIX_ENDPOINT, OTEL_SIGNOZ_ENDPOINT, "
-                "OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT, "
-                "Langfuse credentials, or LANGSMITH_TRACING; or define "
-                "'backends:' in config.yaml)"
+                "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
+                f"type's credentials for one of: {types}; or LANGSMITH_TRACING; or define "
+                "'backends:' in hermes_otel.yaml)"
             )
             return False
         return self._init_otlp_pipeline([rb])

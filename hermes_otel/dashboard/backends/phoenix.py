@@ -354,7 +354,7 @@ class PhoenixAdapter(BackendAdapter):
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         project_id = self._resolve_project_id()
         if not project_id:
-            return {"traces": []}
+            return trace_page([], limit)
 
         fc = self._build_filter_condition(f)
         legacy_root_args = self._supports_root_args()
@@ -531,7 +531,9 @@ class PhoenixAdapter(BackendAdapter):
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         project_id = self._resolve_project_id()
         if not project_id:
-            return {"batches": []}
+            raise BackendError(
+                404, f"Trace {trace_id} not found in Phoenix (no project has traces)", "not_found"
+            )
 
         query = """
         query GetTrace($projectId: ID!, $traceId: ID!, $first: Int!) {

@@ -403,6 +403,9 @@ def _signal_report(bc: BackendConfig) -> Dict[str, Dict[str, Any]]:
     return out
 
 
+_SDK_TEMPORALITY_ENV = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
+
+
 def _temporality_report(bc: BackendConfig, top_level: Optional[str]) -> Dict[str, Any]:
     """The temporality this backend's metric reader gets, and which rule set it."""
     entry = (bc.metrics_temporality or "").strip().lower()
@@ -413,6 +416,10 @@ def _temporality_report(bc: BackendConfig, top_level: Optional[str]) -> Dict[str
         return {"value": preset, "source": "type preset"}
     if top_level:
         return {"value": str(top_level).strip().lower(), "source": "top-level metrics_temporality"}
+    # With no preference passed, the OTLP exporter reads the SDK's own env var.
+    env_pref = os.getenv(_SDK_TEMPORALITY_ENV, "").strip().lower()
+    if env_pref:
+        return {"value": env_pref, "source": _SDK_TEMPORALITY_ENV}
     return {"value": "cumulative", "source": "SDK default"}
 
 
@@ -600,6 +607,24 @@ def field_reports(
         values[key] = value
         entry["derived_from"] = None
         reports.append(entry)
+
+    # The loader also normalises the metrics settings (``_reconcile_metrics_settings``):
+    # an unknown histogram or temporality is dropped with a warning, never applied.
+    # Flag it here the way an uncoercible value is flagged (#413).
+    for key, valid in (
+        ("metrics_histogram", pc.VALID_HISTOGRAMS),
+        ("metrics_temporality", pc.VALID_TEMPORALITIES),
+    ):
+        entry = next(r for r in reports if r["key"] == key)
+        if entry["source"] == "default" or values.get(key) is None:
+            continue
+        text = str(values[key]).strip().lower()
+        if text in valid:
+            values[key] = text
+            continue
+        entry["env_invalid" if entry["source"] == "env" else "file_invalid"] = True
+        entry["source"] = "default"
+        values[key] = getattr(defaults, key)
 
     # content_capture and the legacy booleans are kept consistent by the
     # loader; mirror that so the tab shows what the hooks apply, and say

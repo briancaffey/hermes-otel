@@ -111,19 +111,21 @@ def rewrite_host_for_docker(host: str) -> str:
 
 
 def resolve_env_or_literal(cfg: Dict[str, Any], literal_key: str, env_key: str) -> Optional[str]:
-    """Return ``cfg[env_key]``-resolved env value, else ``cfg[literal_key]``.
+    """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]`` names.
 
-    Adapters prefer the ``*_env`` variants so secrets stay out of yaml;
-    inline fields remain supported for convenience.
+    The same precedence as the exporter's ``backends._resolve_secret`` (inline
+    > named env), so an entry that sets both queries with the key it exports
+    with (#413). ``*_env`` keeps secrets out of yaml; inline stays for
+    convenience.
     """
+    lit = cfg.get(literal_key)
+    if isinstance(lit, str) and lit.strip():
+        return lit.strip()
     env_name = cfg.get(env_key)
     if isinstance(env_name, str) and env_name.strip():
         v = os.environ.get(env_name.strip(), "").strip()
         if v:
             return v
-    lit = cfg.get(literal_key)
-    if isinstance(lit, str) and lit.strip():
-        return lit.strip()
     return None
 
 
@@ -305,47 +307,6 @@ _PROM_UNIT_SUFFIXES = (
 )
 
 
-def otlp_metric_name(native: str) -> str:
-    """The plugin's dotted instrument name behind a backend's native spelling,
-    so the UI can match its curated panels on every source (#284).
-
-    ``hermes_token_usage_total`` → ``hermes.token.usage``;
-    ``hermes_tool_duration_milliseconds_sum`` → ``hermes.tool.duration``;
-    a dotted name passes through. Best effort: the Prometheus translation
-    appends ``_total`` to counters and the unit to everything with one.
-    """
-    n = str(native or "")
-    if "." in n:
-        base = n
-        for suffix in (".sum", ".count", ".bucket", ".min", ".max"):
-            if base.endswith(suffix):
-                base = base[: -len(suffix)]
-        return base
-    base = n
-    for suffix in ("_total", "_sum", "_count", "_bucket"):
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    for suffix in _PROM_UNIT_SUFFIXES:
-        if base.endswith(suffix):
-            base = base[: -len(suffix)]
-            break
-    # Name segments that carry an underscore of their own (``gen_ai``,
-    # ``prompt_cache``) are kept whole; every other underscore was a dot.
-    toks = base.split("_")
-    out: List[str] = []
-    i = 0
-    while i < len(toks):
-        pair = f"{toks[i]}_{toks[i + 1]}" if i + 1 < len(toks) else None
-        if pair in _UNDERSCORE_SEGMENTS:
-            out.append(pair)
-            i += 2
-        else:
-            out.append(toks[i])
-            i += 1
-    return ".".join(out)
-
-
 _UNDERSCORE_SEGMENTS = ("gen_ai", "prompt_cache")
 
 
@@ -468,6 +429,48 @@ LOG_ROW_KEYS = (
     "event_name",
     "attributes",
 )
+
+
+def otlp_metric_name(native: str) -> str:
+    """The plugin's dotted instrument name behind a backend's native spelling,
+    so the UI can match its curated panels on every source (#284).
+
+    ``hermes_token_usage_total`` → ``hermes.token.usage``;
+    ``hermes_tool_duration_milliseconds_sum`` → ``hermes.tool.duration``;
+    a dotted name passes through. Best effort: the Prometheus translation
+    appends ``_total`` to counters and the unit to everything with one.
+    """
+    n = str(native or "")
+    if "." in n:
+        base = n
+        for suffix in (".sum", ".count", ".bucket", ".min", ".max"):
+            if base.endswith(suffix):
+                base = base[: -len(suffix)]
+        return base
+    base = n
+    for suffix in ("_total", "_sum", "_count", "_bucket"):
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    for suffix in _PROM_UNIT_SUFFIXES:
+        if base.endswith(suffix):
+            base = base[: -len(suffix)]
+            break
+    # Name segments that carry an underscore of their own (``gen_ai``,
+    # ``prompt_cache``) are kept whole; every other underscore was a dot.
+    toks = base.split("_")
+    out: List[str] = []
+    i = 0
+    while i < len(toks):
+        pair = f"{toks[i]}_{toks[i + 1]}" if i + 1 < len(toks) else None
+        if pair in _UNDERSCORE_SEGMENTS:
+            out.append(pair)
+            i += 2
+        else:
+            out.append(toks[i])
+            i += 1
+    return ".".join(out)
+
 
 _SEVERITY_NUMBERS = {
     "TRACE": 1,

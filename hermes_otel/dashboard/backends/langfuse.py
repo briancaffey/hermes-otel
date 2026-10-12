@@ -279,8 +279,14 @@ class LangfuseAdapter(BackendAdapter):
 
     def filter_support_for(self, f: Optional[StructuredFilter] = None) -> Dict[str, str]:
         """The v2 observations list honours more of the search bar than the
-        v3 trace list (session, roots, an error level) and less of the rest."""
-        return dict(_V4_FILTER_SUPPORT) if self._api() == "v4" else {}
+        v3 trace list (session, roots, an error level) and less of the rest.
+
+        Answers from what is already known (an explicit ``query_api`` or the
+        probe a previous search cached) and never probes itself, so ``/status``
+        stays a pure read: an unreachable Langfuse used to cost every status
+        poll a 10 s timeout (#413)."""
+        api = self.query_api if self.query_api != "auto" else _API_CACHE.get(self.query_url)
+        return dict(_V4_FILTER_SUPPORT) if api == "v4" else {}
 
     def _v4_list(self, params: Dict[str, Any]) -> List[Dict[str, Any]]:
         url = f"{self.query_url}{_V2_OBSERVATIONS}?" + _urlparse.urlencode(params, doseq=True)

@@ -387,3 +387,15 @@ class TestLogs:
             {"logger": "cli", "count": 2},
             {"logger": "x", "count": 1},
         ]
+
+
+class TestStatusOffTheSpan:
+    def test_error_status_is_read_off_the_span_even_without_attributes(self, monkeypatch):
+        # ``_status_code(attrs and card)`` handed the (empty) attribute dict to
+        # the status reader whenever a span carried no attributes, so such a
+        # failed root could never be marked error (#413).
+        bare = _span("bbbb000000000001", "agent", T0 * NS, 1_000_000, status=2)
+        _capture(monkeypatch, {"/api/telemetry/traces": _traces_doc(bare)})
+        row = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)["traces"][0]
+        attrs = {x["key"]: x["value"] for x in row["spanSets"][0]["spans"][0]["attributes"]}
+        assert attrs["status"] == {"stringValue": "error"}

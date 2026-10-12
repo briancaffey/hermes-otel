@@ -27,7 +27,7 @@ own origin. Verified against ``ghcr.io/metrico/gigapipe`` v5.5.3 on
 
 from __future__ import annotations
 
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
 from . import register
@@ -166,6 +166,10 @@ def _unwrap(value: Any) -> Any:
     return value
 
 
+# Concurrent detail fetches per search page (one per card that needs one).
+_DETAIL_WORKERS = 8
+
+
 @register
 class GigapipeAdapter(TempoAdapter):
     handles = frozenset({"gigapipe", "qryn"})
@@ -188,16 +192,49 @@ class GigapipeAdapter(TempoAdapter):
 
     # ── traces ────────────────────────────────────────────────────────
 
+    def _details_for(self, trace_ids: List[str]) -> Dict[str, Dict[str, Any]]:
+        """One detail per card, fetched concurrently (bounded).
+
+        A build that ignores ``select()`` lists cards without attributes, so
+        each card costs a round trip; fetched one after another a page of 50
+        cost 50 round trips (#413). A card whose detail fails is left as the
+        list returned it."""
+        out: Dict[str, Dict[str, Any]] = {}
+
+        def one(tid: str) -> Tuple[str, Optional[Dict[str, Any]]]:
+            try:
+                return tid, self.get_trace(tid)
+            except BackendError:
+                return tid, None
+
+        if len(trace_ids) <= 1:
+            results = [one(t) for t in trace_ids]
+        else:
+            from concurrent.futures import ThreadPoolExecutor
+
+            with ThreadPoolExecutor(
+                max_workers=min(_DETAIL_WORKERS, len(trace_ids)),
+                thread_name_prefix="hermes-otel-gigapipe",
+            ) as pool:
+                results = list(pool.map(one, trace_ids))
+        for tid, detail in results:
+            if detail is not None:
+                out[tid] = detail
+        return out
+
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         page = super().search(f, start_s, end_s, limit)
+        pending = []
         for row in page.get("traces") or []:
             sets = row.get("spanSets") or []
             spans = (sets[0].get("spans") if sets else None) or []
             if spans and spans[0].get("attributes"):
                 continue  # a build that honours select(): nothing to add
-            try:
-                detail = self.get_trace(row["traceID"])
-            except BackendError:
+            pending.append((row, spans))
+        details = self._details_for([row["traceID"] for row, _spans in pending])
+        for row, spans in pending:
+            detail = details.get(row["traceID"])
+            if detail is None:
                 continue
             all_spans = [
                 sp
