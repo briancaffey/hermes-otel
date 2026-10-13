@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.28.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.27.1...hermes-otel-v1.28.0) (2026-10-13)
+
+
+### Features
+
+* **resource:** one service per profile with service_name_from_profile; gen_ai.agent.name from the named profile ([#395](https://github.com/briancaffey/hermes-otel/issues/395)) ([#460](https://github.com/briancaffey/hermes-otel/issues/460)) ([7af19fd](https://github.com/briancaffey/hermes-otel/commit/7af19fd79157e487dd7b8f3427333613bd6d09bf))
+
 ## [1.27.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.27.0...hermes-otel-v1.27.1) (2026-10-12)
 
 
