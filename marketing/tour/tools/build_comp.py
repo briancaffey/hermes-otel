@@ -564,7 +564,7 @@ def terminal_scene(idx: int, sid: str) -> str:
 @S .bg {{ background:#0d1117; }}
 @S .hd {{ position:absolute; left:{left}px; right:{left}px; top:52px; display:flex; justify-content:space-between; align-items:flex-end; }}
 @S .hd .h2 {{ font-size:48px; }}
-@S .cap {{ position:absolute; right:{left}px; top:118px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2;
+@S .cap {{ position:absolute; right:{left}px; top:56px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2;
   letter-spacing:.06em; text-transform:uppercase; opacity:0; text-align:right; }}
 @S .slot {{ position:absolute; left:{left}px; top:{top}px; width:{w}px; height:{h}px; }}
 """
