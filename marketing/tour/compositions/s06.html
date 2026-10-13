@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s06" data-width="1920" data-height="1080" data-duration="46.16">
+<div data-composition-id="s06" data-width="1920" data-height="1080" data-duration="38.28">
 <style>
 [data-composition-id="s06"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s06"] .wrap * { box-sizing:border-box; }
@@ -41,23 +41,30 @@
 [data-composition-id="s06"] .code .c { color:#8a8a92; } [data-composition-id="s06"] .code .k { color:#3d8bff; } [data-composition-id="s06"] .code .s { color:#ffb300; } [data-composition-id="s06"] .code .p { color:#34d399; }
 [data-composition-id="s06"] .line { display:block; }
 
-[data-composition-id="s06"] .fr { left:96px; top:200px; width:1728px; height:780px; }
-[data-composition-id="s06"] .fr .shot { height:1080px; }
-[data-composition-id="s06"] .ph { position:absolute; inset:0; opacity:0; }
-[data-composition-id="s06"] .tabs { position:absolute; left:96px; top:112px; display:flex; gap:12px; }
-[data-composition-id="s06"] .tab { padding:10px 20px; border-radius:8px; border:1px solid #2a2a30; background:#121216; font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; color:#8a8a92; }
-[data-composition-id="s06"] .tab.on { color:#0a0a0c; background:#3d8bff; border-color:#3d8bff; }
-[data-composition-id="s06"] .hd { position:absolute; left:96px; top:48px; display:flex; gap:24px; align-items:baseline; }
-[data-composition-id="s06"] .hd .h2 { font-size:44px; }
+[data-composition-id="s06"] .hd { position:absolute; left:96px; top:56px; }
+[data-composition-id="s06"] .tbl { position:absolute; left:96px; top:230px; width:1728px; }
+[data-composition-id="s06"] .tr { display:grid; grid-template-columns:250px repeat(6, 1fr); gap:12px; margin-top:12px; }
+[data-composition-id="s06"] .th { font-weight:900; font-size:26px; letter-spacing:-.01em; padding:0 8px 6px; border-bottom:2px solid #2a2a30; }
+[data-composition-id="s06"] .rl { font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; text-transform:uppercase; color:#9a9aa2;
+  display:flex; align-items:center; }
+[data-composition-id="s06"] .td { font-family:"IBM Plex Mono", monospace; font-size:20px; line-height:1.3; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:8px; padding:12px 12px; min-height:104px; display:flex; align-items:center; overflow-wrap:anywhere; }
+[data-composition-id="s06"] .td.dim { color:#6a6a72; }
+[data-composition-id="s06"] .code { position:absolute; left:96px; top:250px; width:820px; opacity:0; }
+[data-composition-id="s06"] .picks { position:absolute; left:1000px; top:250px; width:824px; opacity:0; }
+[data-composition-id="s06"] .pk { display:flex; align-items:center; gap:18px; font-weight:700; font-size:40px; margin-top:22px; }
+[data-composition-id="s06"] .pk i { width:16px; height:16px; border-radius:50%; background:#34d399; display:block; flex:none; }
 </style>
 <div id="s06-wrap" class="wrap">
 <div class="bg"></div>
 
 <div class="gridbg"></div>
-<div class="hd"><div class="kicker">the dashboard tab</div><div class="h2" id="s06-t">Hermes web UI → OTel</div></div>
-<div class="tabs" id="s06-tabs"><div class="tab" id="s06-tab0">Live</div><div class="tab" id="s06-tab1">Traces</div><div class="tab" id="s06-tab2">Trace detail</div><div class="tab" id="s06-tab3">Metrics</div><div class="tab" id="s06-tab4">Logs</div><div class="tab" id="s06-tab5">Sessions</div></div>
-<div class="frame fr" id="s06-fr"><div class="ph" id="s06-p0"><div class="shot" id="s06-s0" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-live.jpg)"></div></div><div class="ph" id="s06-p1"><div class="shot" id="s06-s1" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-traces.jpg)"></div></div><div class="ph" id="s06-p2"><div class="shot" id="s06-s2" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-detail-hero.jpg)"></div></div><div class="ph" id="s06-p3"><div class="shot" id="s06-s3" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-metrics.jpg)"></div></div><div class="ph" id="s06-p4"><div class="shot" id="s06-s4" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-logs.jpg)"></div></div><div class="ph" id="s06-p5"><div class="shot" id="s06-s5" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-sessions.jpg)"></div></div></div>
-<div class="meta"><span>hermes-otel · tour</span><span>dashboard · lgtm-local</span><span>06 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="hd"><div class="kicker">every backend is a little different</div>
+  <div class="h2" id="s06-t" style="margin-top:12px">Same protocol. Different accents.</div></div>
+<div class="tbl" id="s06-tbl"><div class="tr" id="s06-hd"><div></div><div class="th" id="s06-h0">Phoenix</div><div class="th" id="s06-h1">Langfuse</div><div class="th" id="s06-h2">Grafana LGTM</div><div class="th" id="s06-h3">SigNoz</div><div class="th" id="s06-h4">Opik</div><div class="th" id="s06-h5">Laminar</div></div><div class="tr" id="s06-row0"><div class="rl">ingest path</div><div class="td" id="s06-c0-0">/v1/traces</div><div class="td" id="s06-c0-1">/api/public/otel/v1/traces</div><div class="td" id="s06-c0-2">/v1/traces</div><div class="td" id="s06-c0-3">/v1/traces</div><div class="td" id="s06-c0-4">/api/v1/private/otel/v1/traces</div><div class="td" id="s06-c0-5">/v1/traces on the app server</div></div><div class="tr" id="s06-row1"><div class="rl">auth header</div><div class="td" id="s06-c1-0">none locally</div><div class="td" id="s06-c1-1">Basic public:secret</div><div class="td" id="s06-c1-2">none</div><div class="td" id="s06-c1-3">signoz-ingestion-key (cloud)</div><div class="td" id="s06-c1-4">bare key + Comet-Workspace</div><div class="td" id="s06-c1-5">Bearer project key</div></div><div class="tr" id="s06-row2"><div class="rl">signals stored</div><div class="td" id="s06-c2-0">traces</div><div class="td" id="s06-c2-1">traces</div><div class="td" id="s06-c2-2">traces · metrics · logs</div><div class="td" id="s06-c2-3">traces · metrics · logs</div><div class="td" id="s06-c2-4">traces</div><div class="td" id="s06-c2-5">traces · logs (metrics: 200, nothing stored)</div></div><div class="tr" id="s06-row3"><div class="rl">metric temporality</div><div class="td dim" id="s06-c3-0">—</div><div class="td dim" id="s06-c3-1">—</div><div class="td" id="s06-c3-2">cumulative</div><div class="td" id="s06-c3-3">delta</div><div class="td dim" id="s06-c3-4">—</div><div class="td dim" id="s06-c3-5">— (metrics off)</div></div><div class="tr" id="s06-row4"><div class="rl">trace token total</div><div class="td" id="s06-c4-0">reads the root</div><div class="td" id="s06-c4-1">reads the root</div><div class="td dim" id="s06-c4-2">— (raw tags)</div><div class="td dim" id="s06-c4-3">— (span table)</div><div class="td" id="s06-c4-4">sums every span</div><div class="td" id="s06-c4-5">reads the root</div></div></div>
+<div class="code" id="s06-code"><span class="line"><span class="c"># ~/.hermes/hermes_otel.yaml</span></span><span class="line"><span class="k">backends</span>:</span><span class="line">  - <span class="k">type</span>: <span class="p">phoenix</span></span><span class="line">  - <span class="k">type</span>: <span class="p">langfuse</span></span><span class="line">  - <span class="k">type</span>: <span class="p">lgtm</span></span><span class="line">  - <span class="k">type</span>: <span class="p">signoz</span></span><span class="line">  - <span class="k">type</span>: <span class="p">opik</span></span><span class="line">  - <span class="k">type</span>: <span class="p">laminar</span></span><span class="line"><span class="c">    # + endpoint and api_key per entry</span></span></div>
+<div class="picks" id="s06-picks"><div class="kicker">the type line picks</div><div class="pk" id="s06-p0"><i></i>ingest path</div><div class="pk" id="s06-p1"><i></i>auth header</div><div class="pk" id="s06-p2"><i></i>signals</div><div class="pk" id="s06-p3"><i></i>temporality</div><div class="pk" id="s06-p4"><i></i>token roll-up</div></div>
+<div class="meta"><span>hermes-otel · tour</span><span>how it works · one type line</span><span>06 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -65,39 +72,32 @@ window.__timelines = window.__timelines || {};
 (function () {
   const tl = gsap.timeline({ paused: true });
   tl.fromTo("#s06-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
-  tl.from("#s06-t", {opacity:0, y:20, duration:0.6, ease:"expo.out"}, 1.10);
-  tl.from("#s06-tabs .tab", {opacity:0, y:12, duration:0.4, stagger:0.08, ease:"power3.out"}, 1.40);
-  tl.from("#s06-fr", {opacity:0, y:30, duration:0.7, ease:"expo.out"}, 1.70);
-  tl.to("#s06-p0", {opacity:1, duration:0.45, ease:"power2.out"}, 1.70);
-  tl.to("#s06-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.70);
-  tl.fromTo("#s06-s0", {y:0}, {y:-120, duration:12.85, ease:"none"}, 1.70);
-  tl.to("#s06-p1", {opacity:1, duration:0.45, ease:"power2.out"}, 14.55);
-  tl.to("#s06-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 14.55);
-  tl.to("#s06-p0", {opacity:0, duration:0.45, ease:"power2.out"}, 14.55);
-  tl.to("#s06-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 14.55);
-  tl.fromTo("#s06-s1", {y:0}, {y:-300, duration:5.99, ease:"none"}, 14.55);
-  tl.to("#s06-p2", {opacity:1, duration:0.45, ease:"power2.out"}, 20.54);
-  tl.to("#s06-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 20.54);
-  tl.to("#s06-p1", {opacity:0, duration:0.45, ease:"power2.out"}, 20.54);
-  tl.to("#s06-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 20.54);
-  tl.fromTo("#s06-s2", {y:0}, {y:-300, duration:10.67, ease:"none"}, 20.54);
-  tl.to("#s06-p3", {opacity:1, duration:0.45, ease:"power2.out"}, 31.21);
-  tl.to("#s06-tab3", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 31.21);
-  tl.to("#s06-p2", {opacity:0, duration:0.45, ease:"power2.out"}, 31.21);
-  tl.to("#s06-tab2", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 31.21);
-  tl.fromTo("#s06-s3", {y:0}, {y:-120, duration:4.87, ease:"none"}, 31.21);
-  tl.to("#s06-p4", {opacity:1, duration:0.45, ease:"power2.out"}, 36.08);
-  tl.to("#s06-tab4", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 36.08);
-  tl.to("#s06-p3", {opacity:0, duration:0.45, ease:"power2.out"}, 36.08);
-  tl.to("#s06-tab3", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 36.08);
-  tl.fromTo("#s06-s4", {y:0}, {y:-300, duration:6.36, ease:"none"}, 36.08);
-  tl.to("#s06-p5", {opacity:1, duration:0.45, ease:"power2.out"}, 42.44);
-  tl.to("#s06-tab5", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 42.44);
-  tl.to("#s06-p4", {opacity:0, duration:0.45, ease:"power2.out"}, 42.44);
-  tl.to("#s06-tab4", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 42.44);
-  tl.fromTo("#s06-s5", {y:0}, {y:-120, duration:3.22, ease:"none"}, 42.44);
-  tl.fromTo("#s06-s2", {scale:1}, {scale:1.12, transformOrigin:"20% 40%", immediateRender:false, duration:8.31, ease:"power1.inOut"}, 22.90);
-  tl.to("#s06-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 45.66);
+  tl.from("#s06-t", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 1.10);
+  tl.from("#s06-hd .th", {opacity:0, y:14, duration:0.4, stagger:0.12, ease:"power3.out"}, 1.70);
+  tl.from("#s06-row0 .rl", {opacity:0, x:-16, duration:0.4, ease:"power3.out"}, 6.16);
+  tl.from("#s06-row0 .td", {opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}, 6.26);
+  tl.to("#s06-c0-1", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 7.06);
+  tl.to("#s06-c0-4", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 7.06);
+  tl.from("#s06-row1 .rl", {opacity:0, x:-16, duration:0.4, ease:"power3.out"}, 7.76);
+  tl.from("#s06-row1 .td", {opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}, 7.86);
+  tl.from("#s06-row2 .rl", {opacity:0, x:-16, duration:0.4, ease:"power3.out"}, 11.17);
+  tl.from("#s06-row2 .td", {opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}, 11.27);
+  tl.to("#s06-c2-5", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 12.07);
+  tl.from("#s06-row3 .rl", {opacity:0, x:-16, duration:0.4, ease:"power3.out"}, 18.27);
+  tl.from("#s06-row3 .td", {opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}, 18.37);
+  tl.to("#s06-c3-2", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 19.17);
+  tl.to("#s06-c3-3", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 19.17);
+  tl.from("#s06-row4 .rl", {opacity:0, x:-16, duration:0.4, ease:"power3.out"}, 22.91);
+  tl.from("#s06-row4 .td", {opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}, 23.01);
+  tl.to("#s06-c4-0", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 23.81);
+  tl.to("#s06-c4-1", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 23.81);
+  tl.to("#s06-c4-4", {borderColor:"#ffb300", color:"#ffd27a", duration:0.3}, 23.81);
+  tl.to("#s06-tbl", {opacity:0, y:-30, duration:0.5, ease:"power2.in"}, 28.51);
+  tl.to("#s06-code", {opacity:1, duration:0.5, ease:"expo.out"}, 29.01);
+  tl.from("#s06-code .line", {opacity:0, x:-12, duration:0.3, stagger:0.12, ease:"power3.out"}, 29.01);
+  tl.to("#s06-picks", {opacity:1, duration:0.4}, 30.31);
+  tl.from("#s06-picks .pk", {opacity:0, x:20, duration:0.4, stagger:0.45, ease:"power3.out"}, 30.51);
+  tl.to("#s06-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 37.78);
   window.__timelines["s06"] = tl;
 })();
 </script>

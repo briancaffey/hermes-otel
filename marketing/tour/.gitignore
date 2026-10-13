@@ -9,3 +9,5 @@ renders/
 snapshots/
 node_modules/
 .DS_Store
+# prep_clips.py cuts these from marketing/terminal/renders
+assets/clips/

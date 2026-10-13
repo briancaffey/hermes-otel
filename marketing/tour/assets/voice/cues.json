@@ -108,18 +108,53 @@
    },
    {
     "start": 5.52,
-    "dur": 9.85,
-    "text": "Nineteen backend types are supported, from Phoenix and Langfuse to Grafana, SigNoz, Elastic and Honeycomb, plus a generic O-T-L-P entry for anything else."
+    "dur": 9.47,
+    "text": "Twenty-seven backend types are supported, from Phoenix and Langfuse to Grafana, SigNoz, Elastic and Honeycomb, plus a generic O-T-L-P entry for anything else."
    },
    {
-    "start": 15.69,
+    "start": 15.32,
     "dur": 4.09,
     "text": "Several can run at once, and every signal fans out to all of them in parallel."
    }
   ],
-  "total": 19.77
+  "total": 19.4
  },
  "S06": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 4.74,
+    "text": "Every one of those backends speaks O-T-L-P, and each one has its own accent."
+   },
+   {
+    "start": 5.06,
+    "dur": 4.69,
+    "text": "The ingest path changes from one to the next, and so does the header that carries the key."
+   },
+   {
+    "start": 10.07,
+    "dur": 6.78,
+    "text": "Some keep all three signals, some keep only traces, and Laminar answers two hundred O-K to metrics and stores nothing."
+   },
+   {
+    "start": 17.17,
+    "dur": 4.32,
+    "text": "SigNoz wants delta counters, while the Prometheus family wants cumulative ones."
+   },
+   {
+    "start": 21.81,
+    "dur": 5.48,
+    "text": "Opik adds up the tokens on every span, while Phoenix and Langfuse read the total from the root."
+   },
+   {
+    "start": 27.61,
+    "dur": 8.17,
+    "text": "In the yaml file it is one type line per backend, and the plugin picks the path, the header, the signals, the temporality and the token roll-up."
+   }
+  ],
+  "total": 35.78
+ },
+ "S07": {
   "sentences": [
    {
     "start": 0.0,
@@ -169,7 +204,42 @@
   ],
   "total": 43.66
  },
- "S07": {
+ "S08": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 2.32,
+    "text": "You do not need a browser to read a trace."
+   },
+   {
+    "start": 2.64,
+    "dur": 5.02,
+    "text": "The plugin ships an observability skill, so the agent can answer questions about its own runs."
+   },
+   {
+    "start": 7.98,
+    "dur": 6.59,
+    "text": "Here it counts some files, then draws that turn as a span tree, with every model call, tool call and token count."
+   }
+  ],
+  "total": 14.57
+ },
+ "S09": {
+  "sentences": [
+   {
+    "start": 0.0,
+    "dur": 6.69,
+    "text": "The same query tool works at a plain shell, with no model involved, listing the recent turns and drawing the last one as a tree."
+   },
+   {
+    "start": 7.01,
+    "dur": 6.78,
+    "text": "And an M-C-P server reads the traces back out of the backend, so any agent can ask how many tokens each model has used."
+   }
+  ],
+  "total": 13.79
+ },
+ "S10": {
   "sentences": [
    {
     "start": 0.0,
@@ -184,7 +254,7 @@
   ],
   "total": 7.05
  },
- "S08": {
+ "S11": {
   "sentences": [
    {
     "start": 0.0,
@@ -199,7 +269,7 @@
   ],
   "total": 11.74
  },
- "S09": {
+ "S12": {
   "sentences": [
    {
     "start": 0.0,
@@ -214,7 +284,7 @@
   ],
   "total": 7.84
  },
- "S10": {
+ "S13": {
   "sentences": [
    {
     "start": 0.0,
@@ -229,7 +299,7 @@
   ],
   "total": 8.73
  },
- "S11": {
+ "S14": {
   "sentences": [
    {
     "start": 0.0,
@@ -239,7 +309,7 @@
   ],
   "total": 5.76
  },
- "S12": {
+ "S15": {
   "sentences": [
    {
     "start": 0.0,
@@ -254,7 +324,7 @@
   ],
   "total": 8.31
  },
- "S13": {
+ "S16": {
   "sentences": [
    {
     "start": 0.0,
@@ -269,7 +339,7 @@
   ],
   "total": 14.76
  },
- "S14": {
+ "S17": {
   "sentences": [
    {
     "start": 0.0,
@@ -284,7 +354,7 @@
   ],
   "total": 8.77
  },
- "S15": {
+ "S18": {
   "sentences": [
    {
     "start": 0.0,
@@ -304,7 +374,7 @@
   ],
   "total": 13.92
  },
- "S16": {
+ "S19": {
   "sentences": [
    {
     "start": 0.0,

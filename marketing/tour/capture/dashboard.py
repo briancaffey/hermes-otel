@@ -20,11 +20,16 @@ from pathlib import Path
 
 from playwright.sync_api import sync_playwright
 
-BASE = "http://127.0.0.1:9119"
+BASE = "http://127.0.0.1:9119"  # --base points at another dashboard (Hermes serves one per host)
 ROOT = Path(__file__).resolve().parents[1]
 HIDE_CSS = """
 [class*="otel"] {}
 """
+
+
+def set_base(url: str) -> None:
+    global BASE
+    BASE = url.rstrip("/")
 
 
 def token() -> str:
@@ -84,7 +89,9 @@ def main() -> int:
     ap.add_argument("--token", required=True, help="batch token whose turns to feature")
     ap.add_argument("--lookback", default="24")
     ap.add_argument("--out", default=str(ROOT / "assets" / "shots"))
+    ap.add_argument("--base", default=BASE, help="dashboard URL (default %(default)s)")
     a = ap.parse_args()
+    set_base(a.base)
     tok = token()
     out = Path(a.out) / a.source
     out.mkdir(parents=True, exist_ok=True)

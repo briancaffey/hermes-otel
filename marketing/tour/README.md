@@ -1,7 +1,8 @@
 # hermes-otel tour video
 
 A narrated, screenshot-driven tour of the plugin: what it records, how hooks become spans, the three
-signals, the dashboard tab, and the same workload read back from seven backends. Built with
+signals, why each backend needs its own `type:`, the dashboard tab, the plugin from a terminal, and the
+same workload read back from seven backends. Built with
 [HyperFrames](https://github.com/heygen-com/hyperframes); narrated with NVIDIA Magpie TTS.
 
 ```
@@ -11,10 +12,11 @@ marketing/tour/
   STORYBOARD.md      scene list and transitions
   prompts.yaml       the workload replayed against every backend (turn_batch format)
   capture/           Playwright capture of the Hermes dashboard and of each backend's own UI
-  tools/             synth_voice.py (TTS → assets/voice), prep_frames.py, build_comp.py
+  tools/             synth_voice.py (TTS → assets/voice), prep_frames.py, prep_clips.py, build_comp.py
   assets/shots/      raw 3200x2000 captures per source (+ manifest.json with the trace ids) — committed
   assets/frames/     1920-wide JPEGs the composition uses — generated, not in git
   assets/voice/      per-scene narration MP3s (not in git), cues.json + durations.json (in git)
+  assets/clips/      the terminal recordings cut for S08/S09 by prep_clips.py — generated, not in git
   index.html         orchestrator (generated)
   compositions/      one sub-composition per scene (generated)
   renders/           output MP4s — not in git
@@ -36,8 +38,10 @@ uv run --with playwright python marketing/tour/capture/backend.py --source <name
 # 2. narration (sentence by sentence; cached per sentence)
 python3 marketing/tour/tools/synth_voice.py --url https://magpie.lan
 
-# 3. frames + composition
+# 3. frames, terminal clips + composition
 uv run --with pillow python marketing/tour/tools/prep_frames.py
+marketing/terminal/tools/take_all.sh                 # the terminal recordings (see marketing/terminal/README.md)
+python3 marketing/tour/tools/prep_clips.py           # cut them into assets/clips/
 python3 marketing/tour/tools/build_comp.py
 
 # 4. check and render

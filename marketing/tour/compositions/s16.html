@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s16" data-width="1920" data-height="1080" data-duration="12.56">
+<div data-composition-id="s16" data-width="1920" data-height="1080" data-duration="17.26">
 <style>
 [data-composition-id="s16"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s16"] .wrap * { box-sizing:border-box; }
@@ -41,25 +41,31 @@
 [data-composition-id="s16"] .code .c { color:#8a8a92; } [data-composition-id="s16"] .code .k { color:#3d8bff; } [data-composition-id="s16"] .code .s { color:#ffb300; } [data-composition-id="s16"] .code .p { color:#34d399; }
 [data-composition-id="s16"] .line { display:block; }
 
-[data-composition-id="s16"] .glow { left:300px; top:-800px; }
-[data-composition-id="s16"] .left { position:absolute; left:96px; top:140px; width:980px; }
-[data-composition-id="s16"] .lock { position:absolute; left:96px; top:560px; opacity:0; }
-[data-composition-id="s16"] .title { font-weight:900; font-size:150px; line-height:.92; letter-spacing:-.04em; }
-[data-composition-id="s16"] .title span { color:#3d8bff; }
-[data-composition-id="s16"] .tag { font-weight:900; font-size:60px; letter-spacing:-.02em; margin-top:18px; color:#ffb300; }
-[data-composition-id="s16"] .url { position:absolute; left:96px; bottom:120px; font-family:"IBM Plex Mono", monospace; font-size:28px; color:#c9c9cf; letter-spacing:.04em; opacity:0; }
+[data-composition-id="s16"] .hd { position:absolute; left:96px; top:56px; right:96px; display:flex; justify-content:space-between; align-items:flex-end; }
+[data-composition-id="s16"] .hd .h1 { font-size:72px; }
+[data-composition-id="s16"] .fl { left:96px; top:230px; width:848px; height:560px; }
+[data-composition-id="s16"] .fr { left:976px; top:230px; width:848px; height:560px; }
+[data-composition-id="s16"] .shot { height:560px; background-size:cover; background-position:50% 0%; }
+[data-composition-id="s16"] .ph { position:absolute; inset:0; opacity:0; }
+[data-composition-id="s16"] .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
+[data-composition-id="s16"] .cap b { color:#f5f5f7; }
+[data-composition-id="s16"] .tid { position:absolute; left:96px; top:880px; right:96px; display:flex; gap:28px; align-items:center; font-family:"IBM Plex Mono", monospace; font-size:22px; color:#c9c9cf; }
+[data-composition-id="s16"] .tid .k { color:#3d8bff; font-weight:700; }
+[data-composition-id="s16"] .phl { position:absolute; left:96px; top:168px; display:flex; gap:12px; }
+[data-composition-id="s16"] .phl .tab { padding:8px 16px; border-radius:8px; border:1px solid #2a2a30; background:#121216; font-family:"IBM Plex Mono", monospace; font-size:20px; font-weight:700; color:#8a8a92; }
 </style>
 <div id="s16-wrap" class="wrap">
 <div class="bg"></div>
 
-<div class="gridbg"></div><div class="glow" data-layout-allow-overflow></div>
-<div class="left" id="s16-left">
-  <div class="kicker">install</div>
-  <div class="code" id="s16-code" style="margin-top:20px"><span class="line"><span class="c">$</span> hermes plugins install hermes-otel</span><span class="line"> </span><span class="line"><span class="c"># ~/.hermes/hermes_otel.yaml</span></span><span class="line"><span class="k">backends</span>:</span><span class="line">  - <span class="k">type</span>: <span class="p">phoenix</span></span><span class="line">    <span class="k">endpoint</span>: <span class="s">http://localhost:6006/v1/traces</span></span><span class="line"> </span><span class="line"><span class="c">$</span> hermes gateway restart</span></div>
-</div>
-<div class="lock" id="s16-lock"><div class="title">HERMES <span>OTEL</span></div><div class="tag" id="s16-tag">See every span.</div></div>
-<div class="url" id="s16-url">briancaffey.github.io/hermes-otel · github.com/briancaffey/hermes-otel</div>
-<div class="meta"><span>hermes-otel · tour</span><span>install</span><span>16 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="gridbg"></div>
+<div class="hd"><div><div class="kicker">backend 6 of 7</div><div class="h1" id="s16-t">Arize Phoenix</div></div><div class="badges"><span class="badge t">traces</span><span class="badge off">metrics</span><span class="badge off">logs</span></div></div>
+<div class="phl" id="s16-phl"><div class="tab" id="s16-tab0">trace detail</div><div class="tab" id="s16-tab1">trace list</div></div>
+<div class="frame fl" id="s16-fl"><div class="ph" id="s16-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-ui-trace.jpg)"></div></div><div class="ph" id="s16-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-ui-traces.jpg)"></div></div></div>
+<div class="frame fr" id="s16-fr"><div class="ph" id="s16-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-detail-hero.jpg)"></div></div><div class="ph" id="s16-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-traces.jpg)"></div></div></div>
+<div class="cap" style="left:96px" id="s16-c1"><b>Phoenix</b> · the backend's own UI</div>
+<div class="cap" style="left:976px" id="s16-c2"><b>Hermes dashboard</b> · source phoenix-local</div>
+<div class="tid" id="s16-tid"><span><span class="k">trace</span> cc0e3762b9007c619f209098379d52b5</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> phoenix-local</span><span><span class="k">prompt</span> hero-research</span></div>
+<div class="meta"><span>hermes-otel · tour</span><span>gallery · phoenix-local</span><span>16 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -67,15 +73,18 @@ window.__timelines = window.__timelines || {};
 (function () {
   const tl = gsap.timeline({ paused: true });
   tl.fromTo("#s16-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
-
-  tl.from("#s16-code .line", {opacity:0, x:-12, duration:0.35, stagger:0.14, ease:"power3.out"}, 1.10);
-  tl.to("#s16-left", {y:-60, duration:0.6, ease:"power3.inOut"}, 6.11);
-  tl.to("#s16-lock", {opacity:1, duration:0.6, ease:"expo.out"}, 6.51);
-  tl.from("#s16-lock", {y:40, duration:0.7, ease:"expo.out"}, 6.51);
-  tl.from("#s16-tag", {opacity:0, x:-20, duration:0.5, ease:"power3.out"}, 10.05);
-  tl.to("#s16-url", {opacity:1, duration:0.5}, 10.65);
-
-  tl.to("#s16-wrap", {opacity:0, duration:0.9, ease:"power2.in"}, 11.66);
+  tl.from("#s16-t", {opacity:0, x:-30, duration:0.6, ease:"expo.out"}, 0.55);
+  tl.from(["#s16-fl","#s16-fr"], {opacity:0, y:30, duration:0.7, stagger:0.12, ease:"expo.out"}, 0.7);
+  tl.from(["#s16-c1","#s16-c2","#s16-tid"], {opacity:0, duration:0.5, stagger:0.1}, 1.2);
+  tl.to(["#s16-l0","#s16-r0"], {opacity:1, duration:0.45, ease:"power2.out"}, 1.40);
+  tl.to("#s16-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.40);
+  tl.fromTo(["#s16-l0 .shot","#s16-r0 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:7.23, ease:"none"}, 1.40);
+  tl.to(["#s16-l1","#s16-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 8.63);
+  tl.to("#s16-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 8.63);
+  tl.to(["#s16-l0","#s16-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 8.63);
+  tl.to("#s16-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 8.63);
+  tl.fromTo(["#s16-l1 .shot","#s16-r1 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:8.13, ease:"none"}, 8.63);
+  tl.to("#s16-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 16.76);
   window.__timelines["s16"] = tl;
 })();
 </script>

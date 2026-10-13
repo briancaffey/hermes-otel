@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s13" data-width="1920" data-height="1080" data-duration="17.26">
+<div data-composition-id="s13" data-width="1920" data-height="1080" data-duration="11.23">
 <style>
 [data-composition-id="s13"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s13"] .wrap * { box-sizing:border-box; }
@@ -45,7 +45,7 @@
 [data-composition-id="s13"] .hd .h1 { font-size:72px; }
 [data-composition-id="s13"] .fl { left:96px; top:230px; width:848px; height:560px; }
 [data-composition-id="s13"] .fr { left:976px; top:230px; width:848px; height:560px; }
-[data-composition-id="s13"] .shot { height:560px; }
+[data-composition-id="s13"] .shot { height:560px; background-size:cover; background-position:50% 0%; }
 [data-composition-id="s13"] .ph { position:absolute; inset:0; opacity:0; }
 [data-composition-id="s13"] .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
 [data-composition-id="s13"] .cap b { color:#f5f5f7; }
@@ -58,14 +58,14 @@
 <div class="bg"></div>
 
 <div class="gridbg"></div>
-<div class="hd"><div><div class="kicker">backend 6 of 7</div><div class="h1" id="s13-t">Arize Phoenix</div></div><div class="badges"><span class="badge t">traces</span><span class="badge off">metrics</span><span class="badge off">logs</span></div></div>
-<div class="phl" id="s13-phl"><div class="tab" id="s13-tab0">trace detail</div><div class="tab" id="s13-tab1">trace list</div></div>
-<div class="frame fl" id="s13-fl"><div class="ph" id="s13-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-ui-trace.jpg)"></div></div><div class="ph" id="s13-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-ui-traces.jpg)"></div></div></div>
-<div class="frame fr" id="s13-fr"><div class="ph" id="s13-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-detail-hero.jpg)"></div></div><div class="ph" id="s13-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/phoenix-local-traces.jpg)"></div></div></div>
-<div class="cap" style="left:96px" id="s13-c1"><b>Phoenix</b> · the backend's own UI</div>
-<div class="cap" style="left:976px" id="s13-c2"><b>Hermes dashboard</b> · source phoenix-local</div>
-<div class="tid" id="s13-tid"><span><span class="k">trace</span> cc0e3762b9007c619f209098379d52b5</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> phoenix-local</span><span><span class="k">prompt</span> hero-research</span></div>
-<div class="meta"><span>hermes-otel · tour</span><span>gallery · phoenix-local</span><span>13 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="hd"><div><div class="kicker">backend 3 of 7</div><div class="h1" id="s13-t">SigNoz</div></div><div class="badges"><span class="badge t">traces</span><span class="badge m">metrics</span><span class="badge l">logs</span></div></div>
+<div class="phl" id="s13-phl"><div class="tab" id="s13-tab0">trace detail</div><div class="tab" id="s13-tab1">logs for the trace</div><div class="tab" id="s13-tab2">metrics</div></div>
+<div class="frame fl" id="s13-fl"><div class="ph" id="s13-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-ui-trace.jpg)"></div></div><div class="ph" id="s13-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-ui-logs.jpg)"></div></div><div class="ph" id="s13-l2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-ui-metrics.jpg)"></div></div></div>
+<div class="frame fr" id="s13-fr"><div class="ph" id="s13-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-detail-hero.jpg)"></div></div><div class="ph" id="s13-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-logs-trace.jpg)"></div></div><div class="ph" id="s13-r2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/signoz-local-metrics.jpg)"></div></div></div>
+<div class="cap" style="left:96px" id="s13-c1"><b>SigNoz</b> · the backend's own UI</div>
+<div class="cap" style="left:976px" id="s13-c2"><b>Hermes dashboard</b> · source signoz-local</div>
+<div class="tid" id="s13-tid"><span><span class="k">trace</span> f5e1f4ee627452ff5cc067ce61fdf972</span><span><span class="k">spans</span> 15</span><span><span class="k">source</span> signoz-local</span><span><span class="k">prompt</span> hero-research</span></div>
+<div class="meta"><span>hermes-otel · tour</span><span>gallery · signoz-local</span><span>13 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -78,13 +78,18 @@ window.__timelines = window.__timelines || {};
   tl.from(["#s13-c1","#s13-c2","#s13-tid"], {opacity:0, duration:0.5, stagger:0.1}, 1.2);
   tl.to(["#s13-l0","#s13-r0"], {opacity:1, duration:0.45, ease:"power2.out"}, 1.40);
   tl.to("#s13-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.40);
-  tl.fromTo(["#s13-l0 .shot","#s13-r0 .shot"], {y:0}, {y:-160, duration:7.23, ease:"none"}, 1.40);
-  tl.to(["#s13-l1","#s13-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 8.63);
-  tl.to("#s13-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 8.63);
-  tl.to(["#s13-l0","#s13-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 8.63);
-  tl.to("#s13-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 8.63);
-  tl.fromTo(["#s13-l1 .shot","#s13-r1 .shot"], {y:0}, {y:-160, duration:8.13, ease:"none"}, 8.63);
-  tl.to("#s13-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 16.76);
+  tl.fromTo(["#s13-l0 .shot","#s13-r0 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:2.81, ease:"none"}, 1.40);
+  tl.to(["#s13-l1","#s13-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 4.21);
+  tl.to("#s13-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 4.21);
+  tl.to(["#s13-l0","#s13-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 4.21);
+  tl.to("#s13-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 4.21);
+  tl.fromTo(["#s13-l1 .shot","#s13-r1 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:2.81, ease:"none"}, 4.21);
+  tl.to(["#s13-l2","#s13-r2"], {opacity:1, duration:0.45, ease:"power2.out"}, 7.02);
+  tl.to("#s13-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 7.02);
+  tl.to(["#s13-l1","#s13-r1"], {opacity:0, duration:0.45, ease:"power2.out"}, 7.02);
+  tl.to("#s13-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 7.02);
+  tl.fromTo(["#s13-l2 .shot","#s13-r2 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:3.71, ease:"none"}, 7.02);
+  tl.to("#s13-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 10.73);
   window.__timelines["s13"] = tl;
 })();
 </script>

@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s11" data-width="1920" data-height="1080" data-duration="8.26">
+<div data-composition-id="s11" data-width="1920" data-height="1080" data-duration="14.24">
 <style>
 [data-composition-id="s11"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s11"] .wrap * { box-sizing:border-box; }
@@ -45,7 +45,7 @@
 [data-composition-id="s11"] .hd .h1 { font-size:72px; }
 [data-composition-id="s11"] .fl { left:96px; top:230px; width:848px; height:560px; }
 [data-composition-id="s11"] .fr { left:976px; top:230px; width:848px; height:560px; }
-[data-composition-id="s11"] .shot { height:560px; }
+[data-composition-id="s11"] .shot { height:560px; background-size:cover; background-position:50% 0%; }
 [data-composition-id="s11"] .ph { position:absolute; inset:0; opacity:0; }
 [data-composition-id="s11"] .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
 [data-composition-id="s11"] .cap b { color:#f5f5f7; }
@@ -58,14 +58,14 @@
 <div class="bg"></div>
 
 <div class="gridbg"></div>
-<div class="hd"><div><div class="kicker">backend 4 of 7</div><div class="h1" id="s11-t">Uptrace</div></div><div class="badges"><span class="badge t">traces</span><span class="badge m">metrics</span><span class="badge l">logs</span></div></div>
+<div class="hd"><div><div class="kicker">backend 1 of 7</div><div class="h1" id="s11-t">Grafana LGTM</div></div><div class="badges"><span class="badge t">traces</span><span class="badge m">metrics</span><span class="badge l">logs</span></div></div>
 <div class="phl" id="s11-phl"><div class="tab" id="s11-tab0">trace detail</div><div class="tab" id="s11-tab1">logs for the trace</div><div class="tab" id="s11-tab2">metrics</div></div>
-<div class="frame fl" id="s11-fl"><div class="ph" id="s11-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-ui-trace.jpg)"></div></div><div class="ph" id="s11-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-ui-logs.jpg)"></div></div><div class="ph" id="s11-l2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-ui-metrics.jpg)"></div></div></div>
-<div class="frame fr" id="s11-fr"><div class="ph" id="s11-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-detail-hero.jpg)"></div></div><div class="ph" id="s11-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-logs-trace.jpg)"></div></div><div class="ph" id="s11-r2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/uptrace-local-metrics.jpg)"></div></div></div>
-<div class="cap" style="left:96px" id="s11-c1"><b>Uptrace</b> · the backend's own UI</div>
-<div class="cap" style="left:976px" id="s11-c2"><b>Hermes dashboard</b> · source uptrace-local</div>
-<div class="tid" id="s11-tid"><span><span class="k">trace</span> c36b7b2c1d1a8f11aead3b4f8cb19a76</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> uptrace-local</span><span><span class="k">prompt</span> hero-research</span></div>
-<div class="meta"><span>hermes-otel · tour</span><span>gallery · uptrace-local</span><span>11 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="frame fl" id="s11-fl"><div class="ph" id="s11-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-trace.jpg)"></div></div><div class="ph" id="s11-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-logs.jpg)"></div></div><div class="ph" id="s11-l2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-metrics.jpg)"></div></div></div>
+<div class="frame fr" id="s11-fr"><div class="ph" id="s11-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-detail-hero.jpg)"></div></div><div class="ph" id="s11-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-logs-trace.jpg)"></div></div><div class="ph" id="s11-r2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-metrics.jpg)"></div></div></div>
+<div class="cap" style="left:96px" id="s11-c1"><b>Grafana · Tempo, Prometheus, Loki</b> · the backend's own UI</div>
+<div class="cap" style="left:976px" id="s11-c2"><b>Hermes dashboard</b> · source lgtm-local</div>
+<div class="tid" id="s11-tid"><span><span class="k">trace</span> ddca10f94a46bbb2a22262b1eb29ee37</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> lgtm-local</span><span><span class="k">prompt</span> hero-research</span></div>
+<div class="meta"><span>hermes-otel · tour</span><span>gallery · lgtm-local</span><span>11 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -78,18 +78,18 @@ window.__timelines = window.__timelines || {};
   tl.from(["#s11-c1","#s11-c2","#s11-tid"], {opacity:0, duration:0.5, stagger:0.1}, 1.2);
   tl.to(["#s11-l0","#s11-r0"], {opacity:1, duration:0.45, ease:"power2.out"}, 1.40);
   tl.to("#s11-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.40);
-  tl.fromTo(["#s11-l0 .shot","#s11-r0 .shot"], {y:0}, {y:-160, duration:1.82, ease:"none"}, 1.40);
-  tl.to(["#s11-l1","#s11-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 3.22);
-  tl.to("#s11-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 3.22);
-  tl.to(["#s11-l0","#s11-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 3.22);
-  tl.to("#s11-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 3.22);
-  tl.fromTo(["#s11-l1 .shot","#s11-r1 .shot"], {y:0}, {y:-160, duration:1.82, ease:"none"}, 3.22);
-  tl.to(["#s11-l2","#s11-r2"], {opacity:1, duration:0.45, ease:"power2.out"}, 5.04);
-  tl.to("#s11-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 5.04);
-  tl.to(["#s11-l1","#s11-r1"], {opacity:0, duration:0.45, ease:"power2.out"}, 5.04);
-  tl.to("#s11-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 5.04);
-  tl.fromTo(["#s11-l2 .shot","#s11-r2 .shot"], {y:0}, {y:-160, duration:2.72, ease:"none"}, 5.04);
-  tl.to("#s11-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 7.76);
+  tl.fromTo(["#s11-l0 .shot","#s11-r0 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:3.81, ease:"none"}, 1.40);
+  tl.to(["#s11-l1","#s11-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 5.21);
+  tl.to("#s11-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 5.21);
+  tl.to(["#s11-l0","#s11-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 5.21);
+  tl.to("#s11-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 5.21);
+  tl.fromTo(["#s11-l1 .shot","#s11-r1 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:3.81, ease:"none"}, 5.21);
+  tl.to(["#s11-l2","#s11-r2"], {opacity:1, duration:0.45, ease:"power2.out"}, 9.03);
+  tl.to("#s11-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 9.03);
+  tl.to(["#s11-l1","#s11-r1"], {opacity:0, duration:0.45, ease:"power2.out"}, 9.03);
+  tl.to("#s11-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 9.03);
+  tl.fromTo(["#s11-l2 .shot","#s11-r2 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:4.71, ease:"none"}, 9.03);
+  tl.to("#s11-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 13.74);
   window.__timelines["s11"] = tl;
 })();
 </script>

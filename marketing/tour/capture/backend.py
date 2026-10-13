@@ -126,7 +126,10 @@ def capture_signoz(page, out: Path, m: dict, base: str = "http://localhost:3301"
         except Exception as e:  # noqa: BLE001
             print("  expand:", str(e)[:80])
         shot(page, out, "trace", settle=4)
-    page.goto(base + "/metrics-explorer/explorer?relativeTime=24h", wait_until="networkidle")
+    # 1 h, not 24 h: at 24 h the whole workload falls into one aggregation bucket and the counter is a
+    # single point (#349). The workload runs in three batches a few minutes apart (README) so the series
+    # has a shape at this range.
+    page.goto(base + "/metrics-explorer/explorer?relativeTime=1h", wait_until="networkidle")
     time.sleep(5)
     try:  # pick the token counter and run
         sel = page.locator(".ant-select-selection-search-input").first

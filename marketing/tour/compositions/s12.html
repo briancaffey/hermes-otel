@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s12" data-width="1920" data-height="1080" data-duration="10.81">
+<div data-composition-id="s12" data-width="1920" data-height="1080" data-duration="10.34">
 <style>
 [data-composition-id="s12"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s12"] .wrap * { box-sizing:border-box; }
@@ -45,7 +45,7 @@
 [data-composition-id="s12"] .hd .h1 { font-size:72px; }
 [data-composition-id="s12"] .fl { left:96px; top:230px; width:848px; height:560px; }
 [data-composition-id="s12"] .fr { left:976px; top:230px; width:848px; height:560px; }
-[data-composition-id="s12"] .shot { height:560px; }
+[data-composition-id="s12"] .shot { height:560px; background-size:cover; background-position:50% 0%; }
 [data-composition-id="s12"] .ph { position:absolute; inset:0; opacity:0; }
 [data-composition-id="s12"] .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
 [data-composition-id="s12"] .cap b { color:#f5f5f7; }
@@ -58,14 +58,14 @@
 <div class="bg"></div>
 
 <div class="gridbg"></div>
-<div class="hd"><div><div class="kicker">backend 5 of 7</div><div class="h1" id="s12-t">Jaeger</div></div><div class="badges"><span class="badge t">traces</span><span class="badge off">metrics</span><span class="badge off">logs</span></div></div>
-<div class="phl" id="s12-phl"><div class="tab" id="s12-tab0">trace detail</div><div class="tab" id="s12-tab1">trace list</div></div>
-<div class="frame fl" id="s12-fl"><div class="ph" id="s12-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/jaeger-local-ui-trace.jpg)"></div></div><div class="ph" id="s12-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/jaeger-local-ui-traces.jpg)"></div></div></div>
-<div class="frame fr" id="s12-fr"><div class="ph" id="s12-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/jaeger-local-detail-hero.jpg)"></div></div><div class="ph" id="s12-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/jaeger-local-traces.jpg)"></div></div></div>
-<div class="cap" style="left:96px" id="s12-c1"><b>Jaeger</b> · the backend's own UI</div>
-<div class="cap" style="left:976px" id="s12-c2"><b>Hermes dashboard</b> · source jaeger-local</div>
-<div class="tid" id="s12-tid"><span><span class="k">trace</span> 4765e51b7d65e234b6546e9bb6d8a23e</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> jaeger-local</span><span><span class="k">prompt</span> hero-research</span></div>
-<div class="meta"><span>hermes-otel · tour</span><span>gallery · jaeger-local</span><span>12 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="hd"><div><div class="kicker">backend 2 of 7</div><div class="h1" id="s12-t">OpenObserve</div></div><div class="badges"><span class="badge t">traces</span><span class="badge m">metrics</span><span class="badge l">logs</span></div></div>
+<div class="phl" id="s12-phl"><div class="tab" id="s12-tab0">trace detail</div><div class="tab" id="s12-tab1">logs for the trace</div><div class="tab" id="s12-tab2">metrics</div></div>
+<div class="frame fl" id="s12-fl"><div class="ph" id="s12-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-ui-trace.jpg)"></div></div><div class="ph" id="s12-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-ui-logs.jpg)"></div></div><div class="ph" id="s12-l2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-ui-metrics.jpg)"></div></div></div>
+<div class="frame fr" id="s12-fr"><div class="ph" id="s12-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-detail-hero.jpg)"></div></div><div class="ph" id="s12-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-logs-trace.jpg)"></div></div><div class="ph" id="s12-r2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/openobserve-local-metrics.jpg)"></div></div></div>
+<div class="cap" style="left:96px" id="s12-c1"><b>OpenObserve</b> · the backend's own UI</div>
+<div class="cap" style="left:976px" id="s12-c2"><b>Hermes dashboard</b> · source openobserve-local</div>
+<div class="tid" id="s12-tid"><span><span class="k">trace</span> ce275abd769dfb3f1eb83af90c011b86</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> openobserve-local</span><span><span class="k">prompt</span> hero-research</span></div>
+<div class="meta"><span>hermes-otel · tour</span><span>gallery · openobserve-local</span><span>12 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -78,13 +78,18 @@ window.__timelines = window.__timelines || {};
   tl.from(["#s12-c1","#s12-c2","#s12-tid"], {opacity:0, duration:0.5, stagger:0.1}, 1.2);
   tl.to(["#s12-l0","#s12-r0"], {opacity:1, duration:0.45, ease:"power2.out"}, 1.40);
   tl.to("#s12-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.40);
-  tl.fromTo(["#s12-l0 .shot","#s12-r0 .shot"], {y:0}, {y:-160, duration:4.00, ease:"none"}, 1.40);
-  tl.to(["#s12-l1","#s12-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 5.41);
-  tl.to("#s12-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 5.41);
-  tl.to(["#s12-l0","#s12-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 5.41);
-  tl.to("#s12-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 5.41);
-  tl.fromTo(["#s12-l1 .shot","#s12-r1 .shot"], {y:0}, {y:-160, duration:4.91, ease:"none"}, 5.41);
-  tl.to("#s12-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 10.31);
+  tl.fromTo(["#s12-l0 .shot","#s12-r0 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:2.51, ease:"none"}, 1.40);
+  tl.to(["#s12-l1","#s12-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 3.91);
+  tl.to("#s12-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 3.91);
+  tl.to(["#s12-l0","#s12-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 3.91);
+  tl.to("#s12-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 3.91);
+  tl.fromTo(["#s12-l1 .shot","#s12-r1 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:2.51, ease:"none"}, 3.91);
+  tl.to(["#s12-l2","#s12-r2"], {opacity:1, duration:0.45, ease:"power2.out"}, 6.43);
+  tl.to("#s12-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 6.43);
+  tl.to(["#s12-l1","#s12-r1"], {opacity:0, duration:0.45, ease:"power2.out"}, 6.43);
+  tl.to("#s12-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 6.43);
+  tl.fromTo(["#s12-l2 .shot","#s12-r2 .shot"], {scale:1.0}, {scale:1.06, transformOrigin:"50% 0%", duration:3.41, ease:"none"}, 6.43);
+  tl.to("#s12-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 9.84);
   window.__timelines["s12"] = tl;
 })();
 </script>

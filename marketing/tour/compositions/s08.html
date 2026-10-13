@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s08" data-width="1920" data-height="1080" data-duration="14.24">
+<div data-composition-id="s08" data-width="1920" data-height="1080" data-duration="24.70">
 <style>
 [data-composition-id="s08"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s08"] .wrap * { box-sizing:border-box; }
@@ -41,31 +41,20 @@
 [data-composition-id="s08"] .code .c { color:#8a8a92; } [data-composition-id="s08"] .code .k { color:#3d8bff; } [data-composition-id="s08"] .code .s { color:#ffb300; } [data-composition-id="s08"] .code .p { color:#34d399; }
 [data-composition-id="s08"] .line { display:block; }
 
-[data-composition-id="s08"] .hd { position:absolute; left:96px; top:56px; right:96px; display:flex; justify-content:space-between; align-items:flex-end; }
-[data-composition-id="s08"] .hd .h1 { font-size:72px; }
-[data-composition-id="s08"] .fl { left:96px; top:230px; width:848px; height:560px; }
-[data-composition-id="s08"] .fr { left:976px; top:230px; width:848px; height:560px; }
-[data-composition-id="s08"] .shot { height:560px; }
-[data-composition-id="s08"] .ph { position:absolute; inset:0; opacity:0; }
-[data-composition-id="s08"] .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
-[data-composition-id="s08"] .cap b { color:#f5f5f7; }
-[data-composition-id="s08"] .tid { position:absolute; left:96px; top:880px; right:96px; display:flex; gap:28px; align-items:center; font-family:"IBM Plex Mono", monospace; font-size:22px; color:#c9c9cf; }
-[data-composition-id="s08"] .tid .k { color:#3d8bff; font-weight:700; }
-[data-composition-id="s08"] .phl { position:absolute; left:96px; top:168px; display:flex; gap:12px; }
-[data-composition-id="s08"] .phl .tab { padding:8px 16px; border-radius:8px; border:1px solid #2a2a30; background:#121216; font-family:"IBM Plex Mono", monospace; font-size:20px; font-weight:700; color:#8a8a92; }
+[data-composition-id="s08"] .bg { background:#0d1117; }
+[data-composition-id="s08"] .hd { position:absolute; left:240px; right:240px; top:52px; display:flex; justify-content:space-between; align-items:flex-end; }
+[data-composition-id="s08"] .hd .h2 { font-size:48px; }
+[data-composition-id="s08"] .cap { position:absolute; right:240px; top:118px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2;
+  letter-spacing:.06em; text-transform:uppercase; opacity:0; text-align:right; }
+[data-composition-id="s08"] .slot { position:absolute; left:240px; top:176px; width:1440px; height:810px; }
 </style>
 <div id="s08-wrap" class="wrap">
 <div class="bg"></div>
 
-<div class="gridbg"></div>
-<div class="hd"><div><div class="kicker">backend 1 of 7</div><div class="h1" id="s08-t">Grafana LGTM</div></div><div class="badges"><span class="badge t">traces</span><span class="badge m">metrics</span><span class="badge l">logs</span></div></div>
-<div class="phl" id="s08-phl"><div class="tab" id="s08-tab0">trace detail</div><div class="tab" id="s08-tab1">logs for the trace</div><div class="tab" id="s08-tab2">metrics</div></div>
-<div class="frame fl" id="s08-fl"><div class="ph" id="s08-l0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-trace.jpg)"></div></div><div class="ph" id="s08-l1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-logs.jpg)"></div></div><div class="ph" id="s08-l2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-ui-metrics.jpg)"></div></div></div>
-<div class="frame fr" id="s08-fr"><div class="ph" id="s08-r0"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-detail-hero.jpg)"></div></div><div class="ph" id="s08-r1"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-logs-trace.jpg)"></div></div><div class="ph" id="s08-r2"><div class="shot" data-layout-allow-overflow style="background-image:url(assets/frames/lgtm-local-metrics.jpg)"></div></div></div>
-<div class="cap" style="left:96px" id="s08-c1"><b>Grafana · Tempo, Prometheus, Loki</b> · the backend's own UI</div>
-<div class="cap" style="left:976px" id="s08-c2"><b>Hermes dashboard</b> · source lgtm-local</div>
-<div class="tid" id="s08-tid"><span><span class="k">trace</span> ddca10f94a46bbb2a22262b1eb29ee37</span><span><span class="k">spans</span> 14</span><span><span class="k">source</span> lgtm-local</span><span><span class="k">prompt</span> hero-research</span></div>
-<div class="meta"><span>hermes-otel · tour</span><span>gallery · lgtm-local</span><span>08 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="hd"><div><div class="kicker">in the terminal</div><div class="h2" id="s08-t" style="margin-top:10px">Ask the agent about its own runs.</div></div></div>
+<div class="cap" id="s08-cap0">the observability skill · a span tree in the chat</div>
+<div class="slot" id="s08-slot"></div>
+<div class="meta"><span>hermes-otel · tour</span><span>terminal · span-tree</span><span>08 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -73,23 +62,9 @@ window.__timelines = window.__timelines || {};
 (function () {
   const tl = gsap.timeline({ paused: true });
   tl.fromTo("#s08-wrap", {x:1920}, {x:0, duration:0.5, ease:"power4.out"}, 0);
-  tl.from("#s08-t", {opacity:0, x:-30, duration:0.6, ease:"expo.out"}, 0.55);
-  tl.from(["#s08-fl","#s08-fr"], {opacity:0, y:30, duration:0.7, stagger:0.12, ease:"expo.out"}, 0.7);
-  tl.from(["#s08-c1","#s08-c2","#s08-tid"], {opacity:0, duration:0.5, stagger:0.1}, 1.2);
-  tl.to(["#s08-l0","#s08-r0"], {opacity:1, duration:0.45, ease:"power2.out"}, 1.40);
-  tl.to("#s08-tab0", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 1.40);
-  tl.fromTo(["#s08-l0 .shot","#s08-r0 .shot"], {y:0}, {y:-160, duration:3.81, ease:"none"}, 1.40);
-  tl.to(["#s08-l1","#s08-r1"], {opacity:1, duration:0.45, ease:"power2.out"}, 5.21);
-  tl.to("#s08-tab1", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 5.21);
-  tl.to(["#s08-l0","#s08-r0"], {opacity:0, duration:0.45, ease:"power2.out"}, 5.21);
-  tl.to("#s08-tab0", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 5.21);
-  tl.fromTo(["#s08-l1 .shot","#s08-r1 .shot"], {y:0}, {y:-160, duration:3.81, ease:"none"}, 5.21);
-  tl.to(["#s08-l2","#s08-r2"], {opacity:1, duration:0.45, ease:"power2.out"}, 9.03);
-  tl.to("#s08-tab2", {color:"#0a0a0c", backgroundColor:"#3d8bff", borderColor:"#3d8bff", duration:0.3}, 9.03);
-  tl.to(["#s08-l1","#s08-r1"], {opacity:0, duration:0.45, ease:"power2.out"}, 9.03);
-  tl.to("#s08-tab1", {color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}, 9.03);
-  tl.fromTo(["#s08-l2 .shot","#s08-r2 .shot"], {y:0}, {y:-160, duration:4.71, ease:"none"}, 9.03);
-  tl.to("#s08-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 13.74);
+  tl.from("#s08-t", {opacity:0, y:20, duration:0.6, ease:"expo.out"}, 0.55);
+  tl.to("#s08-cap0", {opacity:1, duration:0.3}, 0.70);
+  tl.to("#s08-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 24.20);
   window.__timelines["s08"] = tl;
 })();
 </script>

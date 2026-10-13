@@ -1,5 +1,5 @@
 <template>
-<div data-composition-id="s05" data-width="1920" data-height="1080" data-duration="22.27">
+<div data-composition-id="s05" data-width="1920" data-height="1080" data-duration="21.90">
 <style>
 [data-composition-id="s05"] { position:absolute; inset:0; overflow:hidden; }
 [data-composition-id="s05"] .wrap * { box-sizing:border-box; }
@@ -43,8 +43,8 @@
 
 [data-composition-id="s05"] .left { position:absolute; left:96px; top:120px; width:760px; }
 [data-composition-id="s05"] .right { position:absolute; left:920px; top:120px; width:904px; }
-[data-composition-id="s05"] .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-top:28px; }
-[data-composition-id="s05"] .ty { font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; padding:16px 10px; text-align:center; border-radius:8px;
+[data-composition-id="s05"] .grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; margin-top:28px; }
+[data-composition-id="s05"] .ty { font-family:"IBM Plex Mono", monospace; font-size:20px; font-weight:700; padding:14px 6px; text-align:center; border-radius:8px;
   background:#121216; border:1px solid #2a2a30; color:#e6e6ea; }
 [data-composition-id="s05"] .fan { position:absolute; left:96px; top:790px; width:760px; height:200px; }
 [data-composition-id="s05"] .node { position:absolute; left:0; top:60px; padding:16px 24px; border-radius:10px; background:#3d8bff; color:#0a0a0c; font-weight:900; font-size:26px; }
@@ -63,11 +63,11 @@
   <div class="env" id="s05-env">or one variable · <b>OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces</b></div>
 </div>
 <div class="right">
-  <div class="kicker">19 backend types</div>
-  <div class="grid" id="s05-grid"><div class="ty" id="s05-t0">phoenix</div><div class="ty" id="s05-t1">langfuse</div><div class="ty" id="s05-t2">lgtm</div><div class="ty" id="s05-t3">tempo</div><div class="ty" id="s05-t4">signoz</div><div class="ty" id="s05-t5">uptrace</div><div class="ty" id="s05-t6">jaeger</div><div class="ty" id="s05-t7">openobserve</div><div class="ty" id="s05-t8">elastic</div><div class="ty" id="s05-t9">honeycomb</div><div class="ty" id="s05-t10">weave</div><div class="ty" id="s05-t11">openlit</div><div class="ty" id="s05-t12">mlflow</div><div class="ty" id="s05-t13">opik</div><div class="ty" id="s05-t14">laminar</div><div class="ty" id="s05-t15">langwatch</div><div class="ty" id="s05-t16">latitude</div><div class="ty" id="s05-t17">parseable</div><div class="ty" id="s05-t18">otlp</div></div>
+  <div class="kicker">27 backend types</div>
+  <div class="grid" id="s05-grid"><div class="ty" id="s05-t0">phoenix</div><div class="ty" id="s05-t1">langfuse</div><div class="ty" id="s05-t2">lgtm</div><div class="ty" id="s05-t3">tempo</div><div class="ty" id="s05-t4">signoz</div><div class="ty" id="s05-t5">jaeger</div><div class="ty" id="s05-t6">zipkin</div><div class="ty" id="s05-t7">greptime</div><div class="ty" id="s05-t8">clickstack</div><div class="ty" id="s05-t9">victoria</div><div class="ty" id="s05-t10">aspire</div><div class="ty" id="s05-t11">gigapipe</div><div class="ty" id="s05-t12">agenta</div><div class="ty" id="s05-t13">uptrace</div><div class="ty" id="s05-t14">openobserve</div><div class="ty" id="s05-t15">parseable</div><div class="ty" id="s05-t16">honeycomb</div><div class="ty" id="s05-t17">elastic</div><div class="ty" id="s05-t18">openlit</div><div class="ty" id="s05-t19">mlflow</div><div class="ty" id="s05-t20">opik</div><div class="ty" id="s05-t21">laminar</div><div class="ty" id="s05-t22">langwatch</div><div class="ty" id="s05-t23">latitude</div><div class="ty" id="s05-t24">weave</div><div class="ty" id="s05-t25">langsmith</div><div class="ty" id="s05-t26">otlp</div></div>
 </div>
 <div class="fan" id="s05-fan"><div class="node">hermes-otel</div><div class="ln" id="s05-ln0" style="top:80px;width:540px;transform:rotate(-8deg)"></div><div class="ln" id="s05-ln1" style="top:82px;width:520px;transform:rotate(0deg)"></div><div class="ln" id="s05-ln2" style="top:84px;width:540px;transform:rotate(8deg)"></div></div>
-<div class="meta"><span>hermes-otel · tour</span><span>how it works · backends</span><span>05 / 16</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
+<div class="meta"><span>hermes-otel · tour</span><span>how it works · backends</span><span>05 / 19</span></div><div class="marks"><div class="mark tl"></div><div class="mark tr"></div><div class="mark bl"></div><div class="mark br"></div></div>
 
 </div>
 <script>
@@ -79,12 +79,12 @@ window.__timelines = window.__timelines || {};
   tl.from("#s05-t", {opacity:0, y:24, duration:0.6, ease:"expo.out"}, 1.10);
   tl.from("#s05-code .line", {opacity:0, x:-12, duration:0.35, stagger:0.18, ease:"power3.out"}, 1.40);
   tl.from("#s05-env", {opacity:0, duration:0.5}, 3.50);
-  tl.from("#s05-grid .ty", {opacity:0, scale:0.85, duration:0.4, stagger:0.48, ease:"back.out(1.6)"}, 6.62);
-  tl.from("#s05-fan .node", {opacity:0, scale:0.9, duration:0.4, ease:"back.out(1.6)"}, 16.79);
-  tl.fromTo(["#s05-ln0","#s05-ln1","#s05-ln2"], {scaleX:0}, {scaleX:1, duration:0.8, stagger:0.1, ease:"power3.out"}, 17.09);
-  tl.to(["#s05-t0","#s05-t2","#s05-t4"], {borderColor:"#3d8bff", color:"#9ec5ff", duration:0.4, stagger:0.1}, 17.69);
+  tl.from("#s05-grid .ty", {opacity:0, scale:0.85, duration:0.4, stagger:0.33, ease:"back.out(1.6)"}, 6.62);
+  tl.from("#s05-fan .node", {opacity:0, scale:0.9, duration:0.4, ease:"back.out(1.6)"}, 16.42);
+  tl.fromTo(["#s05-ln0","#s05-ln1","#s05-ln2"], {scaleX:0}, {scaleX:1, duration:0.8, stagger:0.1, ease:"power3.out"}, 16.72);
+  tl.to(["#s05-t0","#s05-t2","#s05-t4"], {borderColor:"#3d8bff", color:"#9ec5ff", duration:0.4, stagger:0.1}, 17.32);
 
-  tl.to("#s05-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 21.77);
+  tl.to("#s05-wrap", {x:-1920, duration:0.5, ease:"power4.in"}, 21.40);
   window.__timelines["s05"] = tl;
 })();
 </script>

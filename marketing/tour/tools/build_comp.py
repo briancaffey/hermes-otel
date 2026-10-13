@@ -9,18 +9,45 @@ by hand here except the copy.
 """
 from __future__ import annotations
 
+import importlib.util
 import json
+import re
+import subprocess
+import sys
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+REPO = ROOT.parents[1]
+CLIPS = ROOT / "assets" / "clips"
 CUES = {k.lower(): v for k, v in json.loads((ROOT / "assets" / "voice" / "cues.json").read_text()).items()}
 SHOTS = ROOT / "assets" / "shots"
 
 LEAD = 1.1  # seconds of scene before the narration starts (0.5 push + 0.6 settle)
 TAIL = 0.9  # seconds after the narration ends before the push out
 PUSH = 0.5  # push-slide length; consecutive slots overlap by this much
+TOTAL_SCENES = 19
 
 BLUE, AMBER, GREEN, YELLOW = "#3d8bff", "#ffb300", "#34d399", "#fbbf24"
+
+
+def plugin_version() -> str:
+    m = re.search(r"^version:\s*(\S+)", (REPO / "hermes_otel" / "plugin.yaml").read_text(), re.M)
+    return m.group(1) if m else ""
+
+
+def backend_types() -> list[str]:
+    """The canonical ``type:`` values, in ``hermes_otel.backend_specs.SPECS`` order (aliases left out)."""
+    spec = importlib.util.spec_from_file_location("backend_specs", REPO / "hermes_otel" / "backend_specs.py")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules["backend_specs"] = mod
+    spec.loader.exec_module(mod)
+    return [s.type for s in mod.SPECS]
+
+
+def clip_duration(name: str) -> float:
+    out = subprocess.check_output(["ffprobe", "-v", "error", "-show_entries", "format=duration", "-of", "csv=p=0",
+                                   str(CLIPS / f"{name}.mp4")])
+    return round(float(out.strip()), 2)
 
 
 def manifest(source: str) -> dict:
@@ -92,7 +119,7 @@ def scoped(css: str, sid: str) -> str:
 
 def meta_strip(idx: int, label: str) -> str:
     return (f'<div class="meta"><span>hermes-otel · tour</span><span>{label}</span>'
-            f'<span>{idx:02d} / 16</span></div>'
+            f'<span>{idx:02d} / {TOTAL_SCENES}</span></div>'
             '<div class="marks"><div class="mark tl"></div><div class="mark tr"></div>'
             '<div class="mark bl"></div><div class="mark br"></div></div>')
 
@@ -137,7 +164,10 @@ def narr(sid: str) -> float:
 
 
 def slot_duration(sid: str) -> float:
-    return round(LEAD + narr(sid) + TAIL + PUSH, 2)
+    base = round(LEAD + narr(sid) + TAIL + PUSH, 2)
+    if sid in TERMINAL:  # long enough for the clips too; the narration can end first
+        return max(base, terminal_min_duration(sid))
+    return base
 
 
 # ── S01 cold open ─────────────────────────────────────────────────────────────
@@ -213,7 +243,7 @@ def s02() -> str:
   <div class="rule" id="{sid}-r"></div>
   <div class="sub" id="{sid}-s">OpenTelemetry for Hermes Agent</div>
   <div class="tag" id="{sid}-tag"><span class="pill">one plugin</span><span class="pill">every turn</span><span class="pill">any backend</span></div>
-  <div class="ver mono" id="{sid}-v">v1.22.1 · traces · metrics · logs · OTLP/HTTP</div>
+  <div class="ver mono" id="{sid}-v">v{plugin_version()} · traces · metrics · logs · OTLP/HTTP</div>
 </div>
 {meta_strip(2, 'title')}
 """
@@ -376,9 +406,10 @@ def s04() -> str:
 
 
 # ── S05 any backend ──────────────────────────────────────────────────────────
-# exactly hermes_otel.backends.KNOWN_TYPES (19), in the order the grid shows them
-TYPES = ["phoenix", "langfuse", "lgtm", "tempo", "signoz", "uptrace", "jaeger", "openobserve", "elastic", "honeycomb",
-         "weave", "openlit", "mlflow", "opik", "laminar", "langwatch", "latitude", "parseable", "otlp"]
+# every canonical type in hermes_otel.backend_specs, with the three the scene highlights (phoenix, lgtm,
+# signoz) at grid positions 0, 2 and 4
+_LEAD = ["phoenix", "langfuse", "lgtm", "tempo", "signoz"]
+TYPES = _LEAD + [t for t in backend_types() if t not in _LEAD and t != "otlp"] + ["otlp"]
 
 
 def s05() -> str:
@@ -386,8 +417,8 @@ def s05() -> str:
     css = """
 @S .left { position:absolute; left:96px; top:120px; width:760px; }
 @S .right { position:absolute; left:920px; top:120px; width:904px; }
-@S .grid { display:grid; grid-template-columns:repeat(4, 1fr); gap:14px; margin-top:28px; }
-@S .ty { font-family:"IBM Plex Mono", monospace; font-size:22px; font-weight:700; padding:16px 10px; text-align:center; border-radius:8px;
+@S .grid { display:grid; grid-template-columns:repeat(5, 1fr); gap:12px; margin-top:28px; }
+@S .ty { font-family:"IBM Plex Mono", monospace; font-size:20px; font-weight:700; padding:14px 6px; text-align:center; border-radius:8px;
   background:#121216; border:1px solid #2a2a30; color:#e6e6ea; }
 @S .fan { position:absolute; left:96px; top:790px; width:760px; height:200px; }
 @S .node { position:absolute; left:0; top:60px; padding:16px 24px; border-radius:10px; background:#3d8bff; color:#0a0a0c; font-weight:900; font-size:26px; }
@@ -407,7 +438,7 @@ def s05() -> str:
   <div class="env" id="{sid}-env">or one variable · <b>OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces</b></div>
 </div>
 <div class="right">
-  <div class="kicker">19 backend types</div>
+  <div class="kicker">{len(TYPES)} backend types</div>
   <div class="grid" id="{sid}-grid">{types}</div>
 </div>
 <div class="fan" id="{sid}-fan"><div class="node">hermes-otel</div>{lines}</div>
@@ -428,9 +459,140 @@ def s05() -> str:
     return scene_file(sid, 5, d, css, body, js)
 
 
-# ── S06 dashboard tour ───────────────────────────────────────────────────────
+# ── S06 every backend is a little different (#355) ──────────────────────────
+# Every cell is a row of docker-compose/QUIRKS.md (matrices A, B, D, E and F), which cites the code or
+# the issue behind it. Nothing here is typed in from memory.
+QUIRK_COLS = ["Phoenix", "Langfuse", "Grafana LGTM", "SigNoz", "Opik", "Laminar"]
+QUIRK_ROWS = [  # (row label, cells, cells to highlight at that row's cue)
+    ("ingest path", ["/v1/traces", "/api/public/otel/v1/traces", "/v1/traces", "/v1/traces",
+                     "/api/v1/private/otel/v1/traces", "/v1/traces on the app server"], [1, 4]),
+    ("auth header", ["none locally", "Basic public:secret", "none", "signoz-ingestion-key (cloud)",
+                     "bare key + Comet-Workspace", "Bearer project key"], []),
+    ("signals stored", ["traces", "traces", "traces · metrics · logs", "traces · metrics · logs", "traces",
+                        "traces · logs (metrics: 200, nothing stored)"], [5]),
+    ("metric temporality", ["—", "—", "cumulative", "delta", "—", "— (metrics off)"], [2, 3]),
+    ("trace token total", ["reads the root", "reads the root", "— (raw tags)", "— (span table)", "sums every span",
+                           "reads the root"], [0, 1, 4]),
+]
+QUIRK_PICKS = ["ingest path", "auth header", "signals", "temporality", "token roll-up"]
+
+
 def s06() -> str:
-    sid, src = "s06", "lgtm-local"
+    sid = "s06"
+    css = """
+@S .hd { position:absolute; left:96px; top:56px; }
+@S .tbl { position:absolute; left:96px; top:230px; width:1728px; }
+@S .tr { display:grid; grid-template-columns:250px repeat(6, 1fr); gap:12px; margin-top:12px; }
+@S .th { font-weight:900; font-size:26px; letter-spacing:-.01em; padding:0 8px 6px; border-bottom:2px solid #2a2a30; }
+@S .rl { font-family:"IBM Plex Mono", monospace; font-size:18px; letter-spacing:.08em; text-transform:uppercase; color:#9a9aa2;
+  display:flex; align-items:center; }
+@S .td { font-family:"IBM Plex Mono", monospace; font-size:20px; line-height:1.3; color:#e6e6ea; background:#121216;
+  border:1px solid #2a2a30; border-radius:8px; padding:12px 12px; min-height:104px; display:flex; align-items:center; overflow-wrap:anywhere; }
+@S .td.dim { color:#6a6a72; }
+@S .code { position:absolute; left:96px; top:250px; width:820px; opacity:0; }
+@S .picks { position:absolute; left:1000px; top:250px; width:824px; opacity:0; }
+@S .pk { display:flex; align-items:center; gap:18px; font-weight:700; font-size:40px; margin-top:22px; }
+@S .pk i { width:16px; height:16px; border-radius:50%; background:#34d399; display:block; flex:none; }
+"""
+    head = "".join(f'<div class="th" id="{sid}-h{j}">{c}</div>' for j, c in enumerate(QUIRK_COLS))
+    rows = [f'<div class="tr" id="{sid}-hd"><div></div>{head}</div>']
+    for i, (label, cells, _) in enumerate(QUIRK_ROWS):
+        tds = "".join(f'<div class="td{" dim" if c.startswith("—") else ""}" id="{sid}-c{i}-{j}">{c}</div>'
+                      for j, c in enumerate(cells))
+        rows.append(f'<div class="tr" id="{sid}-row{i}"><div class="rl">{label}</div>{tds}</div>')
+    yaml = ('<span class="line"><span class="c"># ~/.hermes/hermes_otel.yaml</span></span>'
+            '<span class="line"><span class="k">backends</span>:</span>'
+            + "".join(f'<span class="line">  - <span class="k">type</span>: <span class="p">{t}</span></span>'
+                      for t in ["phoenix", "langfuse", "lgtm", "signoz", "opik", "laminar"])
+            + '<span class="line"><span class="c">    # + endpoint and api_key per entry</span></span>')
+    picks = "".join(f'<div class="pk" id="{sid}-p{i}"><i></i>{p}</div>' for i, p in enumerate(QUIRK_PICKS))
+    body = f"""
+<div class="gridbg"></div>
+<div class="hd"><div class="kicker">every backend is a little different</div>
+  <div class="h2" id="{sid}-t" style="margin-top:12px">Same protocol. Different accents.</div></div>
+<div class="tbl" id="{sid}-tbl">{''.join(rows)}</div>
+<div class="code" id="{sid}-code">{yaml}</div>
+<div class="picks" id="{sid}-picks"><div class="kicker">the type line picks</div>{picks}</div>
+{meta_strip(6, 'how it works · one type line')}
+"""
+    d = slot_duration(sid)
+    c = [cue(sid, i) for i in range(6)]
+    row_cue = [c[1], c[1] + 1.6, c[2], c[3], c[4]]
+    js = [f'tl.from("#{sid}-t", {{opacity:0, y:24, duration:0.6, ease:"expo.out"}}, {c[0]:.2f});',
+          f'tl.from("#{sid}-hd .th", {{opacity:0, y:14, duration:0.4, stagger:0.12, ease:"power3.out"}}, {c[0] + 0.6:.2f});']
+    for i, (_, cells, hl) in enumerate(QUIRK_ROWS):
+        t = row_cue[i]
+        js.append(f'tl.from("#{sid}-row{i} .rl", {{opacity:0, x:-16, duration:0.4, ease:"power3.out"}}, {t:.2f});')
+        js.append(f'tl.from("#{sid}-row{i} .td", {{opacity:0, y:12, duration:0.35, stagger:0.1, ease:"power3.out"}}, {t + 0.1:.2f});')
+        for j in hl:
+            js.append(f'tl.to("#{sid}-c{i}-{j}", {{borderColor:"{AMBER}", color:"#ffd27a", duration:0.3}}, {t + 0.9:.2f});')
+    js += [f'tl.to("#{sid}-tbl", {{opacity:0, y:-30, duration:0.5, ease:"power2.in"}}, {c[5] - 0.2:.2f});',
+           f'tl.to("#{sid}-code", {{opacity:1, duration:0.5, ease:"expo.out"}}, {c[5] + 0.3:.2f});',
+           f'tl.from("#{sid}-code .line", {{opacity:0, x:-12, duration:0.3, stagger:0.12, ease:"power3.out"}}, {c[5] + 0.3:.2f});',
+           f'tl.to("#{sid}-picks", {{opacity:1, duration:0.4}}, {c[5] + 1.6:.2f});',
+           f'tl.from("#{sid}-picks .pk", {{opacity:0, x:20, duration:0.4, stagger:0.45, ease:"power3.out"}}, {c[5] + 1.8:.2f});']
+    return scene_file(sid, 6, d, css, body, "\n".join("  " + l for l in js))
+
+
+# ── S08–S09 the terminal (#442) ──────────────────────────────────────────────
+# The clips are <video> elements at the root of index.html (HyperFrames only drives media there); the
+# scene draws the header and the caption, and the frame the clip sits in. See terminal_plan().
+TERMINAL = {  # sid -> (kicker, title, [(clip, caption)])
+    "s08": ("in the terminal", "Ask the agent about its own runs.",
+            [("span-tree", "the observability skill · a span tree in the chat")]),
+    "s09": ("at the shell, and over MCP", "No browser, no dashboard.",
+            [("cli", "otel.py at a plain shell · no model"), ("mcp", "opentelemetry-mcp · tokens per model, from Jaeger")]),
+}
+CLIP_BOX = (240, 176, 1440, 810)  # left, top, width, height: the 1920x1080 clip at 75 %
+CLIP_IN, CLIP_GAP, CLIP_OUT = 0.7, 0.25, 0.4
+
+
+def terminal_plan(sid: str) -> list[tuple[str, float, float]]:
+    """(clip, local start, duration) for each clip of a terminal scene."""
+    plan, t = [], CLIP_IN
+    for name, _ in TERMINAL[sid][2]:
+        dur = clip_duration(name)
+        plan.append((name, round(t, 2), dur))
+        t += dur + CLIP_GAP
+    return plan
+
+
+def terminal_scene(idx: int, sid: str) -> str:
+    kicker, title, clips = TERMINAL[sid]
+    left, top, w, h = CLIP_BOX
+    css = f"""
+@S .bg {{ background:#0d1117; }}
+@S .hd {{ position:absolute; left:{left}px; right:{left}px; top:52px; display:flex; justify-content:space-between; align-items:flex-end; }}
+@S .hd .h2 {{ font-size:48px; }}
+@S .cap {{ position:absolute; right:{left}px; top:118px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2;
+  letter-spacing:.06em; text-transform:uppercase; opacity:0; text-align:right; }}
+@S .slot {{ position:absolute; left:{left}px; top:{top}px; width:{w}px; height:{h}px; }}
+"""
+    caps = "".join(f'<div class="cap" id="{sid}-cap{i}">{cap}</div>' for i, (_, cap) in enumerate(clips))
+    body = f"""
+<div class="hd"><div><div class="kicker">{kicker}</div><div class="h2" id="{sid}-t" style="margin-top:10px">{title}</div></div></div>
+{caps}
+<div class="slot" id="{sid}-slot"></div>
+{meta_strip(idx, 'terminal · ' + ' + '.join(n for n, _ in clips))}
+"""
+    d = slot_duration(sid)
+    js = [f'tl.from("#{sid}-t", {{opacity:0, y:20, duration:0.6, ease:"expo.out"}}, 0.55);']
+    plan = terminal_plan(sid)
+    for i, (_, start, dur) in enumerate(plan):
+        js.append(f'tl.to("#{sid}-cap{i}", {{opacity:1, duration:0.3}}, {start:.2f});')
+        if i + 1 < len(plan):
+            js.append(f'tl.to("#{sid}-cap{i}", {{opacity:0, duration:0.25}}, {start + dur:.2f});')
+    return scene_file(sid, idx, d, css, body, "\n".join("  " + l for l in js))
+
+
+def terminal_min_duration(sid: str) -> float:
+    name, start, dur = terminal_plan(sid)[-1]
+    return round(start + dur + CLIP_OUT + PUSH, 2)
+
+
+# ── S07 dashboard tour ───────────────────────────────────────────────────────
+def s07() -> str:
+    sid, src = "s07", "lgtm-local"
     phases = [  # (page, label, cue index at which it appears)
         ("live", "Live", 0), ("traces", "Traces", 3), ("detail-hero", "Trace detail", 4),
         ("metrics", "Metrics", 6), ("logs", "Logs", 7), ("sessions", "Sessions", 8)]
@@ -452,7 +614,7 @@ def s06() -> str:
 <div class="hd"><div class="kicker">the dashboard tab</div><div class="h2" id="{sid}-t">Hermes web UI → OTel</div></div>
 <div class="tabs" id="{sid}-tabs">{tabs}</div>
 <div class="frame fr" id="{sid}-fr">{shots}</div>
-{meta_strip(6, 'dashboard · lgtm-local')}
+{meta_strip(7, 'dashboard · lgtm-local')}
 """
     d = slot_duration(sid)
     c = [cue(sid, i) for i in range(9)]
@@ -471,10 +633,10 @@ def s06() -> str:
         pan = -300 if page in ("detail-hero", "logs", "traces") else -120
         js.append(f'tl.fromTo("#{sid}-s{i}", {{y:0}}, {{y:{pan}, duration:{max(end - t, 0.5):.2f}, ease:"none"}}, {t:.2f});')
     js.append(f'tl.fromTo("#{sid}-s2", {{scale:1}}, {{scale:1.12, transformOrigin:"20% 40%", immediateRender:false, duration:{c[6]-c[5]:.2f}, ease:"power1.inOut"}}, {c[5]:.2f});')
-    return scene_file(sid, 6, d, css, body, "\n".join("  " + l for l in js))
+    return scene_file(sid, 7, d, css, body, "\n".join("  " + l for l in js))
 
 
-# ── S07 gallery intro ────────────────────────────────────────────────────────
+# ── S10 gallery intro ────────────────────────────────────────────────────────
 GALLERY = [  # (source, display name, backend UI caption, metrics, logs)
     ("lgtm-local", "Grafana LGTM", "Grafana · Tempo, Prometheus, Loki", True, True),
     ("openobserve-local", "OpenObserve", "OpenObserve", True, True),
@@ -486,8 +648,8 @@ GALLERY = [  # (source, display name, backend UI caption, metrics, logs)
 ]
 
 
-def s07() -> str:
-    sid = "s07"
+def s10() -> str:
+    sid = "s10"
     css = """
 @S .glow { left:400px; top:-900px; }
 @S .c { position:absolute; left:96px; top:300px; width:1728px; }
@@ -504,7 +666,7 @@ def s07() -> str:
   <div class="names" id="{sid}-names">{names}</div>
   <div class="sub" id="{sid}-sub">marketing/tour/prompts.yaml · 11 prompts · replayed against each backend · dashboard left, backend's own UI right</div>
 </div>
-{meta_strip(7, 'gallery')}
+{meta_strip(10, 'gallery')}
 """
     d = slot_duration(sid)
     c = [cue(sid, i) for i in range(2)]
@@ -513,10 +675,10 @@ def s07() -> str:
   tl.from("#{sid}-names .nm", {{opacity:0, y:16, duration:0.4, stagger:0.1, ease:"power3.out"}}, {c[0]+0.6:.2f});
   tl.from("#{sid}-sub", {{opacity:0, duration:0.5}}, {c[1]:.2f});
 """
-    return scene_file(sid, 7, d, css, body, js)
+    return scene_file(sid, 10, d, css, body, js)
 
 
-# ── S08–S14 backend scenes ───────────────────────────────────────────────────
+# ── S11–S17 backend scenes ───────────────────────────────────────────────────
 def gallery_scene(idx: int, sid: str, source: str, name: str, caption: str, metrics: bool, logs: bool, label: str) -> str:
     m = manifest(source)
     hero = m.get("backend_links", {}).get("hero-research") or m.get("backend_links", {}).get("multi-tool") or {}
@@ -539,7 +701,7 @@ def gallery_scene(idx: int, sid: str, source: str, name: str, caption: str, metr
 @S .hd .h1 { font-size:72px; }
 @S .fl { left:96px; top:230px; width:848px; height:560px; }
 @S .fr { left:976px; top:230px; width:848px; height:560px; }
-@S .shot { height:560px; }
+@S .shot { height:560px; background-size:cover; background-position:50% 0%; }
 @S .ph { position:absolute; inset:0; opacity:0; }
 @S .cap { position:absolute; top:808px; font-family:"IBM Plex Mono", monospace; font-size:20px; color:#9a9aa2; letter-spacing:.06em; text-transform:uppercase; }
 @S .cap b { color:#f5f5f7; }
@@ -560,7 +722,7 @@ def gallery_scene(idx: int, sid: str, source: str, name: str, caption: str, metr
     facts += f'<span><span class="k">source</span> {source}</span><span><span class="k">prompt</span> hero-research</span>'
     body = f"""
 <div class="gridbg"></div>
-<div class="hd"><div><div class="kicker">backend {idx-7} of 7</div><div class="h1" id="{sid}-t">{name}</div></div>{badges}</div>
+<div class="hd"><div><div class="kicker">backend {idx-10} of {len(GALLERY)}</div><div class="h1" id="{sid}-t">{name}</div></div>{badges}</div>
 <div class="phl" id="{sid}-phl">{tabs}</div>
 <div class="frame fl" id="{sid}-fl">{left}</div>
 <div class="frame fr" id="{sid}-fr">{right}</div>
@@ -582,13 +744,15 @@ def gallery_scene(idx: int, sid: str, source: str, name: str, caption: str, metr
         if i:
             js.append(f'tl.to(["#{sid}-l{i-1}","#{sid}-r{i-1}"], {{opacity:0, duration:0.45, ease:"power2.out"}}, {t:.2f});')
             js.append(f'tl.to("#{sid}-tab{i-1}", {{color:"#8a8a92", backgroundColor:"#121216", borderColor:"#2a2a30", duration:0.3}}, {t:.2f});')
-        js.append(f'tl.fromTo(["#{sid}-l{i} .shot","#{sid}-r{i} .shot"], {{y:0}}, {{y:-160, duration:{max(end - t, 0.5):.2f}, ease:"none"}}, {t:.2f});')
+        # A slow Ken Burns push that never leaves the image (#348): the shot covers the frame
+        # (background-size: cover), so scaling from the top keeps every edge filled.
+        js.append(f'tl.fromTo(["#{sid}-l{i} .shot","#{sid}-r{i} .shot"], {{scale:1.0}}, {{scale:1.06, transformOrigin:"50% 0%", duration:{max(end - t, 0.5):.2f}, ease:"none"}}, {t:.2f});')
     return scene_file(sid, idx, d, css, body, "\n".join("  " + l for l in js))
 
 
-# ── S15 verification ─────────────────────────────────────────────────────────
-def s15() -> str:
-    sid = "s15"
+# ── S18 verification ─────────────────────────────────────────────────────────
+def s18() -> str:
+    sid = "s18"
     css = """
 @S .left { position:absolute; left:96px; top:120px; width:860px; }
 @S .right { position:absolute; left:1020px; top:120px; width:804px; }
@@ -617,7 +781,7 @@ def s15() -> str:
   <table id="{sid}-tbl"><thead><tr><th>backend</th><th>traces</th><th>metrics</th><th>logs</th></tr></thead><tbody>{rows}</tbody></table>
   <div class="note" id="{sid}-note"><b>—</b> means the backend does not store that signal. The tab says so instead of filling the gap from somewhere else.</div>
 </div>
-{meta_strip(15, 'verification')}
+{meta_strip(18, 'verification')}
 """
     d = slot_duration(sid)
     c = [cue(sid, i) for i in range(3)]
@@ -628,12 +792,12 @@ def s15() -> str:
   tl.from("#{sid}-tbl tbody tr", {{opacity:0, x:16, duration:0.4, stagger:0.14, ease:"power3.out"}}, {c[1]+0.3:.2f});
   tl.from("#{sid}-note", {{opacity:0, y:12, duration:0.5, ease:"power3.out"}}, {c[2]:.2f});
 """
-    return scene_file(sid, 15, d, css, body, js)
+    return scene_file(sid, 18, d, css, body, js)
 
 
-# ── S16 install / outro ──────────────────────────────────────────────────────
-def s16() -> str:
-    sid = "s16"
+# ── S19 install / outro ──────────────────────────────────────────────────────
+def s19() -> str:
+    sid = "s19"
     css = """
 @S .glow { left:300px; top:-800px; }
 @S .left { position:absolute; left:96px; top:140px; width:980px; }
@@ -651,7 +815,7 @@ def s16() -> str:
 </div>
 <div class="lock" id="{sid}-lock"><div class="title">HERMES <span>OTEL</span></div><div class="tag" id="{sid}-tag">See every span.</div></div>
 <div class="url" id="{sid}-url">briancaffey.github.io/hermes-otel · github.com/briancaffey/hermes-otel</div>
-{meta_strip(16, 'install')}
+{meta_strip(19, 'install')}
 """
     d = slot_duration(sid)
     c = [cue(sid, i) for i in range(4)]
@@ -663,21 +827,24 @@ def s16() -> str:
   tl.from("#{sid}-tag", {{opacity:0, x:-20, duration:0.5, ease:"power3.out"}}, {c[3]:.2f});
   tl.to("#{sid}-url", {{opacity:1, duration:0.5}}, {c[3]+0.6:.2f});
 """
-    return scene_file(sid, 16, d, css, body, js, last=True)
+    return scene_file(sid, 19, d, css, body, js, last=True)
 
 
 # ── orchestrator ─────────────────────────────────────────────────────────────
 def build() -> None:
     comps = ROOT / "compositions"
     comps.mkdir(exist_ok=True)
-    scenes = [("s01", s01), ("s02", s02), ("s03", s03), ("s04", s04), ("s05", s05), ("s06", s06), ("s07", s07)]
+    scenes = [("s01", s01), ("s02", s02), ("s03", s03), ("s04", s04), ("s05", s05), ("s06", s06), ("s07", s07),
+              ("s08", lambda: terminal_scene(8, "s08")), ("s09", lambda: terminal_scene(9, "s09")), ("s10", s10)]
     for i, (src, name, caption, metrics, logs) in enumerate(GALLERY):
-        sid = f"s{8+i:02d}"
+        sid = f"s{11+i:02d}"
         scenes.append((sid, lambda sid=sid, i=i, src=src, name=name, caption=caption, metrics=metrics, logs=logs:
-                       gallery_scene(8 + i, sid, src, name, caption, metrics, logs, f"gallery · {src}")))
-    scenes += [("s15", s15), ("s16", s16)]
+                       gallery_scene(11 + i, sid, src, name, caption, metrics, logs, f"gallery · {src}")))
+    scenes += [("s18", s18), ("s19", s19)]
+    assert len(scenes) == TOTAL_SCENES
 
-    slots, audio, t = [], [], 0.0
+    slots, audio, videos, fades, t = [], [], [], [], 0.0
+    left, top, w, h = CLIP_BOX
     for n, (sid, fn) in enumerate(scenes):
         html = fn()
         (comps / f"{sid}.html").write_text(html)
@@ -687,6 +854,14 @@ def build() -> None:
                      f'data-start="{t:.2f}" data-duration="{d:.2f}" data-track-index="{track}"></div>')
         audio.append(f'      <audio id="vo-{sid}" src="assets/voice/{sid.upper()}.mp3" data-start="{t + LEAD:.2f}" '
                      f'data-duration="{narr(sid):.2f}" data-track-index="10" data-volume="1"></audio>')
+        if sid in TERMINAL:
+            for i, (name, start, dur) in enumerate(terminal_plan(sid)):
+                vid, g = f"clip-{sid}-{i}", t + start
+                videos.append(f'      <video id="{vid}" src="assets/clips/{name}.mp4" data-start="{g:.2f}" data-duration="{dur:.2f}" '
+                              f'data-track-index="{3 + i % 2}" muted playsinline style="position:absolute;left:{left}px;top:{top}px;'
+                              f'width:{w}px;height:{h}px;object-fit:contain;opacity:0"></video>')
+                fades.append(f'      tl.fromTo("#{vid}", {{opacity:0}}, {{opacity:1, duration:0.3, ease:"power2.out"}}, {g:.2f});')
+                fades.append(f'      tl.to("#{vid}", {{opacity:0, duration:0.25, ease:"power2.in"}}, {g + dur - 0.25:.2f});')
         t += d - PUSH
     total = round(t + PUSH, 2)
     index = f"""<!doctype html>
@@ -707,11 +882,14 @@ def build() -> None:
     <div id="root" data-composition-id="tour" data-width="1920" data-height="1080" data-duration="{total:.2f}">
       <div class="fill"></div>
 {chr(10).join(slots)}
+{chr(10).join(videos)}
 {chr(10).join(audio)}
     </div>
     <script>
       window.__timelines = window.__timelines || {{}};
-      window.__timelines["tour"] = gsap.timeline({{ paused: true }});
+      const tl = gsap.timeline({{ paused: true }});
+{chr(10).join(fades)}
+      window.__timelines["tour"] = tl;
     </script>
   </body>
 </html>

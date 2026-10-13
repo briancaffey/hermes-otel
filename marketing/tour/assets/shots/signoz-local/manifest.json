@@ -1,20 +1,20 @@
 {
  "source": "signoz-local",
- "token": "V261010-signoz",
+ "token": "V261013-signoz",
  "traces": {
-  "hero-research": "d9ca0bdac2577d62fcb4f1e0f25267a8",
-  "multi-tool": "d026c20d0e515719de22e79abfe43251",
-  "missing-file": "87a2c98d478cf5b7ad124947a3fad79c",
-  "web-fetch": "6bef84c8e45cf41d6424ca1df880b21f",
-  "skill-load": "55b5664a74e660c782b9582c2ee61f40",
-  "slow-tools": "6fad87af04bfbc24243dd18973fe06a0",
-  "file-roundtrip": "e3b5e4b9aed9788287de309e3f66fc33",
-  "shell-echo": "41f8ff307f3ba97c5776c31c0264043c",
-  "no-tools": "d5f19ddaf17400686e4809cc541f6319",
-  "long-output": "2a75509a3c3b62675a7924c055023310",
-  "shell-nonzero": "bc0d5d29186e39d731743a074ab7196e"
+  "hero-research": "f5e1f4ee627452ff5cc067ce61fdf972",
+  "multi-tool": "267789a47647b87ec4d9be6af0277779",
+  "missing-file": "d9fb76caa9dcff2660a1bc6be68bbd69",
+  "web-fetch": "244e3bfe9ed37ab876fc5e0348372ac0",
+  "skill-load": "9944bd51d6091fbec5b74c8f66170577",
+  "slow-tools": "0af8202428af8be1af3c3c5e8ef2a045",
+  "file-roundtrip": "fd5ff3bdc3bd6f83c37718cc8a09b722",
+  "shell-echo": "21bf4b5fd624d824e735fc6e8d07bf5c",
+  "no-tools": "c74a09025f49a7d036d7466cb5ce9ca7",
+  "long-output": "28d0c81f12d47018806047951eae43a8",
+  "shell-nonzero": "f15acbbf552d79eaf2c3a9c96b9f13c2"
  },
- "captured_at": "2026-10-09T23:31:54",
+ "captured_at": "2026-10-12T21:00:37",
  "status": {
   "type": "signoz",
   "metrics": true,
@@ -23,57 +23,59 @@
  },
  "backend_links": {
   "hero-research": {
-   "trace_id": "d9ca0bdac2577d62fcb4f1e0f25267a8",
-   "ui_url": "http://localhost:3301/trace/d9ca0bdac2577d62fcb4f1e0f25267a8",
-   "span_count": 14
+   "trace_id": "f5e1f4ee627452ff5cc067ce61fdf972",
+   "ui_url": "http://localhost:3301/trace/f5e1f4ee627452ff5cc067ce61fdf972",
+   "span_count": 15
   },
   "multi-tool": {
-   "trace_id": "d026c20d0e515719de22e79abfe43251",
-   "ui_url": "http://localhost:3301/trace/d026c20d0e515719de22e79abfe43251",
-   "span_count": 9
+   "trace_id": "267789a47647b87ec4d9be6af0277779",
+   "ui_url": "http://localhost:3301/trace/267789a47647b87ec4d9be6af0277779",
+   "span_count": 10
   },
   "missing-file": {
-   "trace_id": "87a2c98d478cf5b7ad124947a3fad79c",
-   "ui_url": "http://localhost:3301/trace/87a2c98d478cf5b7ad124947a3fad79c",
-   "span_count": 5
-  },
-  "web-fetch": {
-   "trace_id": "6bef84c8e45cf41d6424ca1df880b21f",
-   "ui_url": "http://localhost:3301/trace/6bef84c8e45cf41d6424ca1df880b21f",
-   "span_count": 5
-  },
-  "skill-load": {
-   "trace_id": "55b5664a74e660c782b9582c2ee61f40",
-   "ui_url": "http://localhost:3301/trace/55b5664a74e660c782b9582c2ee61f40",
+   "trace_id": "d9fb76caa9dcff2660a1bc6be68bbd69",
+   "ui_url": "http://localhost:3301/trace/d9fb76caa9dcff2660a1bc6be68bbd69",
    "span_count": 6
   },
-  "slow-tools": {
-   "trace_id": "6fad87af04bfbc24243dd18973fe06a0",
-   "ui_url": "http://localhost:3301/trace/6fad87af04bfbc24243dd18973fe06a0",
+  "web-fetch": {
+   "trace_id": "244e3bfe9ed37ab876fc5e0348372ac0",
+   "ui_url": "http://localhost:3301/trace/244e3bfe9ed37ab876fc5e0348372ac0",
+   "span_count": 6
+  },
+  "skill-load": {
+   "trace_id": "9944bd51d6091fbec5b74c8f66170577",
+   "ui_url": "http://localhost:3301/trace/9944bd51d6091fbec5b74c8f66170577",
    "span_count": 7
+  },
+  "slow-tools": {
+   "trace_id": "0af8202428af8be1af3c3c5e8ef2a045",
+   "ui_url": "http://localhost:3301/trace/0af8202428af8be1af3c3c5e8ef2a045",
+   "span_count": 8
   },
   "file-roundtrip": {
-   "trace_id": "e3b5e4b9aed9788287de309e3f66fc33",
-   "ui_url": "http://localhost:3301/trace/e3b5e4b9aed9788287de309e3f66fc33",
-   "span_count": 7
+   "trace_id": "fd5ff3bdc3bd6f83c37718cc8a09b722",
+   "ui_url": "http://localhost:3301/trace/fd5ff3bdc3bd6f83c37718cc8a09b722",
+   "span_count": 8
   },
   "shell-echo": {
-   "trace_id": "41f8ff307f3ba97c5776c31c0264043c",
-   "error": "HTTP Error 404: Not Found"
+   "trace_id": "21bf4b5fd624d824e735fc6e8d07bf5c",
+   "ui_url": "http://localhost:3301/trace/21bf4b5fd624d824e735fc6e8d07bf5c",
+   "span_count": 6
   },
   "no-tools": {
-   "trace_id": "d5f19ddaf17400686e4809cc541f6319",
-   "error": "HTTP Error 404: Not Found"
+   "trace_id": "c74a09025f49a7d036d7466cb5ce9ca7",
+   "ui_url": "http://localhost:3301/trace/c74a09025f49a7d036d7466cb5ce9ca7",
+   "span_count": 4
   },
   "long-output": {
-   "trace_id": "2a75509a3c3b62675a7924c055023310",
-   "ui_url": "http://localhost:3301/trace/2a75509a3c3b62675a7924c055023310",
-   "span_count": 7
+   "trace_id": "28d0c81f12d47018806047951eae43a8",
+   "ui_url": "http://localhost:3301/trace/28d0c81f12d47018806047951eae43a8",
+   "span_count": 6
   },
   "shell-nonzero": {
-   "trace_id": "bc0d5d29186e39d731743a074ab7196e",
-   "ui_url": "http://localhost:3301/trace/bc0d5d29186e39d731743a074ab7196e",
-   "span_count": 5
+   "trace_id": "f15acbbf552d79eaf2c3a9c96b9f13c2",
+   "ui_url": "http://localhost:3301/trace/f15acbbf552d79eaf2c3a9c96b9f13c2",
+   "span_count": 6
   }
  }
 }
