@@ -25,7 +25,13 @@ marketing/terminal/
 
 ## One-time setup
 
+Record from a checkout whose path reads well on camera: Hermes prints the working directory in its
+banner, and the skill runs `otel.py` by absolute path, so the tool lines show it too. The clips in the
+tour were taken from a worktree at `/Users/Shared/hermes-otel` (no user name, no branch-named
+directory); `make_profile.sh` links the `promo` profile's plugin to whichever checkout runs it.
+
 ```bash
+git worktree add --detach /Users/Shared/hermes-otel origin/main   # then run everything below from there
 marketing/terminal/tools/install_tools.sh   # asciinema + agg into ~/.local/bin
 marketing/terminal/tools/fetch_assets.sh    # player + font into .cache/
 marketing/terminal/tools/make_profile.sh    # ~/.hermes/profiles/promo
@@ -50,7 +56,9 @@ setting in it is there on purpose:
 | `onboarding.seen.*` | the one-time hints (OpenClaw residue, busy input, …) |
 | removing the seeded `autonomous-ai-agents` skill | `--no-skills` still seeds it |
 
-The random `✦ Tip:` line under the banner has no switch; it differs between takes.
+The random `✦ Tip:` line under the banner has no switch; it differs between takes. `take.sh` empties
+the profile's `.hermes_history` before each take, because Hermes autosuggests from it: a prompt typed
+in an earlier take would otherwise appear as dim ghost text ahead of the cursor.
 
 ## A take
 

@@ -15,5 +15,5 @@ steps:
   - pause: 1.5
   - say: "How many Python files are in hermes_otel/, and which one is the biggest?"
   - pause: 2.5
-  - say: "Use the hermes_otel:observability skill to show me that last turn as a span tree."
+  - say: "Use the hermes_otel:observability skill to show me my previous turn, the one that counted the files, as a span tree in a code block."
   - pause: 4

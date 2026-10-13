@@ -5,42 +5,42 @@
   "start_at": "ready"
  },
  {
-  "t": 1.1640734998509288,
+  "t": 1.0541065419092774,
   "event": "type_start",
   "text": "hermes"
  },
  {
-  "t": 1.8229338338132948,
+  "t": 1.5930320417974144,
   "event": "type_end"
  },
  {
-  "t": 1.8552741669118404,
+  "t": 1.6001832499168813,
   "event": "key",
   "key": "Enter"
  },
  {
-  "t": 18.359598249895498,
+  "t": 10.04965520882979,
   "event": "ready"
  },
  {
-  "t": 19.595102041959763,
+  "t": 11.264629416866228,
   "event": "type_start",
   "text": "Ask Jaeger through the otel MCP tools: how many tokens per model have my agents used? Let the tools pick the time window."
  },
  {
-  "t": 34.6064381247852,
+  "t": 22.97726249997504,
   "event": "type_end"
  },
  {
-  "t": 35.0941935419105,
+  "t": 23.43726508389227,
   "event": "submit"
  },
  {
-  "t": 56.117438374785706,
+  "t": 39.783652500016615,
   "event": "turn_end"
  },
  {
-  "t": 60.1279139588587,
+  "t": 43.78918749978766,
   "event": "end"
  }
 ]

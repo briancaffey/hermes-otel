@@ -5,59 +5,59 @@
   "start_at": "start"
  },
  {
-  "t": 2.353758083889261,
+  "t": 2.3035299158655107,
   "event": "type_start",
   "text": "hermes"
  },
  {
-  "t": 3.1012808750383556,
+  "t": 2.98515099985525,
   "event": "type_end"
  },
  {
-  "t": 3.517622624989599,
+  "t": 3.4096074998378754,
   "event": "key",
   "key": "Enter"
  },
  {
-  "t": 16.36433858401142,
+  "t": 7.673608707962558,
   "event": "ready"
  },
  {
-  "t": 17.88380604190752,
+  "t": 9.179762540850788,
   "event": "type_start",
   "text": "How many Python files are in hermes_otel/, and which one is the biggest?"
  },
  {
-  "t": 25.56182441697456,
+  "t": 16.208234874997288,
   "event": "type_end"
  },
  {
-  "t": 26.04120416706428,
+  "t": 16.669838374946266,
   "event": "submit"
  },
  {
-  "t": 48.89855229202658,
+  "t": 28.158418082864955,
   "event": "turn_end"
  },
  {
-  "t": 51.40239774994552,
+  "t": 30.66949208290316,
   "event": "type_start",
-  "text": "Use the hermes_otel:observability skill to show me that last turn as a span tree."
+  "text": "Use the hermes_otel:observability skill to show me my previous turn, the one that counted the files, as a span tree in a code block."
  },
  {
-  "t": 60.44395066704601,
+  "t": 44.34321229089983,
   "event": "type_end"
  },
  {
-  "t": 60.90940762497485,
+  "t": 44.80634074984118,
   "event": "submit"
  },
  {
-  "t": 89.00303087499924,
+  "t": 75.74874937487766,
   "event": "turn_end"
  },
  {
-  "t": 93.01352754188702,
+  "t": 79.75258254096843,
   "event": "end"
  }
 ]
