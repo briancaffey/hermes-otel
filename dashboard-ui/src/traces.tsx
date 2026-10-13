@@ -383,6 +383,7 @@ function BackendTraces({
     inPreview: null,
     outPreview: null,
     raw: { traceID: id },
+    subagents: null,
   });
 
   const search = useCallback(async () => {

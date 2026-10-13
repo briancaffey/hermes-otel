@@ -51,6 +51,11 @@ function SessionCard({ row, open, onToggle, children, partial }: { row: SessionR
             </span>
           ) : null}
           {row.tokens != null ? <span className="tabular-nums">{fmtTokens(row.tokens)} tok</span> : null}
+          {row.subagentTokens ? (
+            <span className="tabular-nums" title="tokens of the turns' top-level delegations, on top of the turns' own">
+              +{fmtTokens(row.subagentTokens)} sub-agents
+            </span>
+          ) : null}
           {row.cost != null ? <span className="tabular-nums otel-c-cost">{fmtCostExact(row.cost)}</span> : null}
           <span className="tabular-nums" title="wall time from the first turn's start to the last turn's end">
             {fmtDurationMs((row.endNs - row.startNs) / 1e6)} wall

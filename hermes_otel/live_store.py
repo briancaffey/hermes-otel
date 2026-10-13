@@ -55,6 +55,11 @@ _SESSION_KEYS = _sc.SESSION_KEYS
 _MODEL_KEYS = _sc.MODEL_KEYS
 _TOKEN_KEYS = _sc.TOTAL_TOKEN_KEYS
 _COST_KEYS = _sc.COST_KEYS
+# A delegation span's roll-up of the child's whole subtree (#390); the parent's
+# root keeps only the parent's own calls.
+_SUB_TOKENS = "hermes.subagent.usage.total_tokens"
+_SUB_CALLS = "hermes.subagent.api_call_count"
+_SUB_COST = "hermes.subagent.cost.usage"
 _KIND_PREFIXES: Dict[str, Tuple[str, ...]] = _sc.KIND_PREFIXES
 
 
@@ -207,6 +212,58 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
     return {"tokens": pick(_TOKEN_KEYS), "cost": None if no_cost_total else pick(_COST_KEYS)}
 
 
+def top_level_subagents(spans: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """The trace's delegation spans that no other delegation in it made (#447).
+
+    A nested orchestrator's grandchildren are already inside its child's
+    roll-up, so only the outermost ``subagent.*`` spans are summed. A
+    delegation is nested when its parent session is another delegation's
+    child session.
+    """
+    subs = [
+        s for s in spans if span_kind(str(s.get("name") or ""), s.get("attributes")) == "subagent"
+    ]
+    children = {
+        str(c)
+        for s in subs
+        for c in [(s.get("attributes") or {}).get("hermes.subagent.child_session_id")]
+        if c
+    }
+    return [
+        s
+        for s in subs
+        if str((s.get("attributes") or {}).get("hermes.subagent.parent_session_id") or "")
+        not in children
+    ]
+
+
+def subagent_totals(spans: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+    """What the turn's top-level delegations cost: count, tokens, API calls, USD.
+
+    ``None`` when the trace delegated nothing. A figure no delegation reported
+    is ``None``; the cost is an amount only when every delegation has one (the
+    turn root's pricing rule), never a partial sum.
+    """
+    top = top_level_subagents(spans)
+    if not top:
+        return None
+
+    def total(key: str) -> Optional[float]:
+        vals = [_num((s.get("attributes") or {}).get(key)) for s in top]
+        known = [v for v in vals if v is not None]
+        return sum(known) if known else None
+
+    costs = [_num((s.get("attributes") or {}).get(_SUB_COST)) for s in top]
+    return {
+        "count": len(top),
+        "tokens": total(_SUB_TOKENS),
+        "calls": total(_SUB_CALLS),
+        "cost": (
+            sum(c for c in costs if c is not None) if all(c is not None for c in costs) else None
+        ),
+    }
+
+
 def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
     """One trace-list row from its spans (the shape ``LiveTrace`` uses in the UI).
 
@@ -219,12 +276,17 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
     start = min(int(s.get("start_time_unix_nano") or 0) for s in spans)
     end = max(int(s.get("end_time_unix_nano") or s.get("start_time_unix_nano") or 0) for s in spans)
     totals = trace_totals(spans)
+    rattrs = root.get("attributes") or {}
+    # The delegations are reported next to the turn's own figures only when
+    # the root carries those figures: without them (a partial trace, a
+    # kanban.claim run) the totals already sum every api.* span, children's
+    # included, so a split would count them twice.
+    own = not partial and _num(_first(rattrs, _TOKEN_KEYS)) is not None
     model = None
     for s in spans:
         model = _first(s.get("attributes") or {}, _MODEL_KEYS)
         if model:
             break
-    rattrs = root.get("attributes") or {}
     return {
         "traceId": root.get("trace_id"),
         "rootName": root.get("name"),
@@ -250,6 +312,7 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
         "turn": _num(rattrs.get("hermes.turn.number")),
         "platform": rattrs.get("hermes.platform"),
         "partial": partial,
+        "subagents": subagent_totals(spans) if own else None,
     }
 
 
@@ -924,6 +987,7 @@ class LiveStore:
                     "tokens": 0.0,
                     "cost": 0.0,
                     "toolCalls": 0,
+                    "subagentTokens": 0.0,
                     "startNs": s["startNs"],
                     "endNs": s["endNs"],
                     "platform": s.get("platform"),
@@ -936,6 +1000,7 @@ class LiveStore:
             row["errors"] += sum(1 for sp in spans if sp.get("status") == "ERROR")
             row["tokens"] += s["tokens"] or 0
             row["cost"] += s["cost"] or 0
+            row["subagentTokens"] += (s.get("subagents") or {}).get("tokens") or 0
             row["toolCalls"] += sum(
                 1 for sp in spans if str(sp.get("name", "")).startswith("tool.")
             )
@@ -947,6 +1012,7 @@ class LiveStore:
         for r in rows:
             r["tokens"] = r["tokens"] or None
             r["cost"] = r["cost"] or None
+            r["subagentTokens"] = r["subagentTokens"] or None
         return {"sessions": rows, "has_more": len(ordered) > len(rows)}
 
     def metric_names(self) -> List[Dict[str, Any]]:

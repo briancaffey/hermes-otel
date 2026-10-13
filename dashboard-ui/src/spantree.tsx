@@ -22,6 +22,7 @@ import {
   TraceRow,
   rowFromLive,
   findRoot,
+  SubagentTotals,
 } from "./lib";
 import { kindIcon, IconChevronRight } from "./icons";
 import { TraceHeader, TraceTabs, SpanSummary, AttrGroups } from "./detail";
@@ -196,6 +197,20 @@ export function SpanTreeView({ roots, defaultOpen, source }: { roots: TreeSpan[]
 
 // One trace card for every source (#281): the normalised TraceRow carries
 // what a card shows; previews and the tool badge appear when the source has them.
+// "+12k tok · 2 sub-agents" next to a delegating turn's own figures (#447).
+export function SubagentChip({ s }: { s: SubagentTotals }) {
+  const parts = [
+    s.tokens != null ? `+${fmtTokens(s.tokens)} tok` : null,
+    s.cost != null ? `+${fmtCostExact(s.cost)}` : null,
+    `${s.count} sub-agent${s.count === 1 ? "" : "s"}`,
+  ].filter(Boolean);
+  return (
+    <span className="tabular-nums" title="the turn's top-level delegations, on top of its own tokens and cost (each delegation's whole subtree)">
+      {parts.join(" · ")}
+    </span>
+  );
+}
+
 export function TraceCard({ row, onSelect }: { row: TraceRow; onSelect: (r: TraceRow) => void }) {
   const Icon = kindIcon(row.rootKind);
   return (
@@ -268,6 +283,7 @@ export function TraceCard({ row, onSelect }: { row: TraceRow; onSelect: (r: Trac
             </>
           ) : null}
           {row.cost != null ? <span className="tabular-nums otel-c-cost">{fmtCostExact(row.cost)}</span> : null}
+          {row.subagents ? <SubagentChip s={row.subagents} /> : null}
           <span className="text-border" aria-hidden>
             ·
           </span>

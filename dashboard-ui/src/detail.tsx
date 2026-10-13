@@ -1,7 +1,21 @@
 // Trace detail pieces (#185, #283): the summary header, per-kind span
 // summaries, grouped attributes, and the Spans / Logs / Raw sub-tabs.
 import { React, useState, useEffect, useMemo, Badge, Button, cn } from "./sdk";
-import { fmtDurationMs, fmtTokens, fmtCostExact, kindOf, groupAttrs, headerFacts, HeaderFacts, TreeSpan, NamedAttrs, KIND_COLOR } from "./lib";
+import {
+  fmtDurationMs,
+  fmtTokens,
+  fmtCostExact,
+  fmtInt,
+  kindOf,
+  groupAttrs,
+  headerFacts,
+  HeaderFacts,
+  TreeSpan,
+  NamedAttrs,
+  KIND_COLOR,
+  agentBreakdown,
+  AgentBreakdown,
+} from "./lib";
 import { ValueView, Facts, StatusBadge, Chips } from "./render";
 import { splitList, turnTools, fmtCount } from "./values";
 import { withBackend } from "./source";
@@ -18,6 +32,54 @@ function Fact({ label, children }: { label: string; children: any }) {
     <div className="min-w-0">
       <div className="text-[10px] uppercase tracking-wide text-muted-foreground">{label}</div>
       <div className="truncate text-sm text-foreground">{children}</div>
+    </div>
+  );
+}
+
+// Cost and tokens per agent (#447): the turn's own loop and each top-level
+// delegation, plus the whole run. Rendered only when the turn delegated.
+export function AgentBreakdownTable({ b }: { b: AgentBreakdown }) {
+  const cost = (v: number | null) => (v != null ? <span className="otel-c-cost">{fmtCostExact(v)}</span> : <span className="text-muted-foreground">—</span>);
+  const num = (v: number | null, fmt: (n: number) => string | null) => (v != null ? fmt(v) : <span className="text-muted-foreground">—</span>);
+  return (
+    <div className="space-y-1" data-testid="agent-breakdown">
+      <div
+        className="text-[10px] uppercase tracking-wide text-muted-foreground"
+        title="the turn's own calls, then each delegation's whole subtree (a nested orchestrator's children are inside its row)"
+      >
+        by agent
+      </div>
+      <table className="otel-md-table">
+        <thead>
+          <tr>
+            <th>agent</th>
+            <th>model</th>
+            <th>tokens</th>
+            <th>API calls</th>
+            <th>cost</th>
+          </tr>
+        </thead>
+        <tbody>
+          {b.rows.map((r, i) => (
+            <tr key={i}>
+              <td className={r.error ? "otel-tone-bad" : ""}>{r.main ? "main" : <span className="font-mono">{r.label}</span>}</td>
+              <td className="font-mono">{r.model || <span className="text-muted-foreground">—</span>}</td>
+              <td className="tabular-nums">{num(r.tokens, fmtTokens)}</td>
+              <td className="tabular-nums">{num(r.calls, fmtInt)}</td>
+              <td className="tabular-nums">{cost(r.cost)}</td>
+            </tr>
+          ))}
+          <tr>
+            <td>whole run</td>
+            <td />
+            <td className="tabular-nums">{num(b.total.tokens, fmtTokens)}</td>
+            <td className="tabular-nums">{num(b.total.calls, fmtInt)}</td>
+            <td className="tabular-nums" title={b.total.cost == null ? "an amount only when every row is priced" : undefined}>
+              {cost(b.total.cost)}
+            </td>
+          </tr>
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -56,6 +118,7 @@ export function TraceHeader({
   onBack: () => void;
 }) {
   const f: HeaderFacts = headerFacts(rootAttrs, spans || []);
+  const breakdown = useMemo(() => agentBreakdown(rootAttrs, spans || []), [rootAttrs, spans]);
   const tokens =
     f.totalTokens != null
       ? `${fmtTokens(f.totalTokens)}${
@@ -121,8 +184,8 @@ export function TraceHeader({
             </span>
           ) : null}
         </Fact>
-        <Fact label="tokens">{tokens}</Fact>
-        <Fact label="cost">
+        <Fact label={breakdown ? "tokens (main)" : "tokens"}>{tokens}</Fact>
+        <Fact label={breakdown ? "cost (main)" : "cost"}>
           {f.cost != null ? <span className="otel-c-cost">{fmtCostExact(f.cost)}</span> : <span className="text-muted-foreground">no pricing data</span>}
         </Fact>
         <Fact label="tools">{f.tools.length ? f.tools.join(", ") : null}</Fact>
@@ -142,6 +205,7 @@ export function TraceHeader({
           ) : null}
         </Fact>
       </div>
+      {breakdown ? <AgentBreakdownTable b={breakdown} /> : null}
     </div>
   );
 }

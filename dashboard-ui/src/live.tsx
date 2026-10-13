@@ -28,6 +28,9 @@ export function deriveStats(rows: TraceRow[]) {
   for (const t of rows) {
     if (t.cost != null) cost = (cost || 0) + t.cost;
     if (t.tokens != null) tokens = (tokens || 0) + t.tokens;
+    // A delegating turn's own figures exclude its children (#447): add them back.
+    if (t.subagents?.cost != null) cost = (cost || 0) + t.subagents.cost;
+    if (t.subagents?.tokens != null) tokens = (tokens || 0) + t.subagents.tokens;
     if (t.error) errors++;
     if (t.spanCount == null) spansKnown = false;
     else spans += t.spanCount;

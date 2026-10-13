@@ -378,7 +378,12 @@ export type LiveTrace = {
   platform?: string | null;
   /** contract §4/§8: the root span has not finished yet */
   partial?: boolean;
+  /** the turn's top-level delegations (#447); set only when the root carries the turn's own totals */
+  subagents?: SubagentTotals | null;
 };
+
+/** What a turn's top-level delegations cost (#447): the parent's root keeps only its own calls. */
+export type SubagentTotals = { count: number; tokens: number | null; calls: number | null; cost: number | null };
 
 /** One row shape for the trace list, whatever the source (#281). */
 export type TraceRow = {
@@ -401,6 +406,8 @@ export type TraceRow = {
   outPreview: string | null;
   /** the source's own record, for the detail view */
   raw: any;
+  /** live rows only: the delegations next to the turn's own figures (#447) */
+  subagents: SubagentTotals | null;
 };
 
 export function rowFromLive(t: LiveTrace): TraceRow {
@@ -423,6 +430,7 @@ export function rowFromLive(t: LiveTrace): TraceRow {
     inPreview: null,
     outPreview: null,
     raw: t,
+    subagents: t.subagents || null,
   };
 }
 
@@ -450,6 +458,8 @@ export function rowFromBackend(t: any): TraceRow {
     inPreview: clip(extractInputPreview(attrs), 140),
     outPreview: clip(extractOutputPreview(attrs), 140),
     raw: t,
+    // A backend card is the root alone; the split needs the spans (trace detail).
+    subagents: null,
   };
 }
 
@@ -467,6 +477,8 @@ export type SessionRow = {
   model: string | null;
   platform: string | null;
   traceIds: string[];
+  /** live sessions: tokens of the turns' top-level delegations, on top of `tokens` (#447) */
+  subagentTokens?: number | null;
 };
 
 // Session id of a BACKEND card (adapters put it on the card attributes).
@@ -736,6 +748,83 @@ export function headerFacts(root: Record<string, any>, spans: NamedAttrs[] = [])
     session: a["hermes.session_id"] || a["session.id"] || a["session_id"] || null,
     turn: num("hermes.turn.number"),
     platform: a["hermes.platform"] || null,
+  };
+}
+
+// ── cost and tokens per agent (#447) ─────────────────────────────────────
+// The parent's root keeps only the parent's own calls; each subagent.* span
+// carries its child's WHOLE subtree (hermes.subagent.usage.* / cost.*). The
+// run is the root plus the top-level delegations, never the root plus every
+// span (#178). A delegation is nested when its parent session is another
+// delegation's child session. Mirrors live_store.top_level_subagents.
+export function topLevelSubagents(spans: NamedAttrs[]): NamedAttrs[] {
+  const subs = spans.filter((s) => kindOf(s.name || "", s.attributes) === "subagent");
+  const children = new Set(
+    subs
+      .map((s) => s.attributes?.["hermes.subagent.child_session_id"])
+      .filter((v) => v != null && v !== "")
+      .map(String)
+  );
+  return subs.filter((s) => !children.has(String(s.attributes?.["hermes.subagent.parent_session_id"] ?? "")));
+}
+
+export type AgentRow = {
+  /** "main" for the turn's own loop, else the delegation's role */
+  label: string;
+  main: boolean;
+  model: string | null;
+  tokens: number | null;
+  calls: number | null;
+  cost: number | null;
+  error: boolean;
+};
+export type AgentBreakdown = { rows: AgentRow[]; total: { tokens: number | null; calls: number | null; cost: number | null } };
+
+// helpers._SUBAGENT_ERROR_STATUSES: the child statuses the plugin marks ERROR (#392)
+const SUBAGENT_ERROR_STATUSES = new Set(["error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out", "stalled"]);
+
+const sumKnown = (vals: (number | null)[]): number | null => {
+  const known = vals.filter((v): v is number => v != null);
+  return known.length ? known.reduce((a, b) => a + b, 0) : null;
+};
+
+/** One row for the turn's own calls and one per top-level delegation, or null
+ *  when the turn delegated nothing. The cost total is an amount only when every
+ *  row has one (the turn root's pricing rule), never a partial sum. */
+export function agentBreakdown(rootAttrs: Record<string, any>, spans: NamedAttrs[]): AgentBreakdown | null {
+  const top = topLevelSubagents(spans);
+  if (!top.length) return null;
+  const f = headerFacts(rootAttrs, spans);
+  const main: AgentRow = {
+    label: "main",
+    main: true,
+    model: f.requestModel,
+    tokens: f.totalTokens,
+    calls: attrNum(rootAttrs || {}, "hermes.turn.api_call_count"),
+    cost: f.cost,
+    error: false,
+  };
+  const subs: AgentRow[] = top.map((s) => {
+    const a = s.attributes || {};
+    const role = a["hermes.subagent.role"] || a["gen_ai.agent.name"] || (s.name.startsWith("subagent.") ? s.name.slice("subagent.".length) : "");
+    return {
+      label: role ? String(role) : "subagent",
+      main: false,
+      model: a["gen_ai.request.model"] || null,
+      tokens: attrNum(a, "hermes.subagent.usage.total_tokens"),
+      calls: attrNum(a, "hermes.subagent.api_call_count"),
+      cost: attrNum(a, "hermes.subagent.cost.usage"),
+      error: SUBAGENT_ERROR_STATUSES.has(String(a["hermes.subagent.status"] || "").toLowerCase()),
+    };
+  });
+  const rows = [main, ...subs];
+  return {
+    rows,
+    total: {
+      tokens: sumKnown(rows.map((r) => r.tokens)),
+      calls: sumKnown(rows.map((r) => r.calls)),
+      cost: rows.every((r) => r.cost != null) ? sumKnown(rows.map((r) => r.cost)) : null,
+    },
   };
 }
 

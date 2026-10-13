@@ -457,7 +457,8 @@
       toolName: null,
       inPreview: null,
       outPreview: null,
-      raw: t
+      raw: t,
+      subagents: t.subagents || null
     };
   }
   function rowFromBackend(t) {
@@ -483,7 +484,9 @@
       toolName: attrs["tool.name"] ? String(attrs["tool.name"]) : null,
       inPreview: clip(extractInputPreview(attrs), 140),
       outPreview: clip(extractOutputPreview(attrs), 140),
-      raw: t
+      raw: t,
+      // A backend card is the root alone; the split needs the spans (trace detail).
+      subagents: null
     };
   }
   function sessionOfCard(trace) {
@@ -639,6 +642,60 @@
       session: a["hermes.session_id"] || a["session.id"] || a["session_id"] || null,
       turn: num("hermes.turn.number"),
       platform: a["hermes.platform"] || null
+    };
+  }
+  function topLevelSubagents(spans) {
+    const subs = spans.filter((s) => kindOf(s.name || "", s.attributes) === "subagent");
+    const children = new Set(
+      subs.map((s) => {
+        var _a;
+        return (_a = s.attributes) == null ? void 0 : _a["hermes.subagent.child_session_id"];
+      }).filter((v) => v != null && v !== "").map(String)
+    );
+    return subs.filter((s) => {
+      var _a, _b;
+      return !children.has(String((_b = (_a = s.attributes) == null ? void 0 : _a["hermes.subagent.parent_session_id"]) != null ? _b : ""));
+    });
+  }
+  var SUBAGENT_ERROR_STATUSES = /* @__PURE__ */ new Set(["error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out", "stalled"]);
+  var sumKnown = (vals) => {
+    const known = vals.filter((v) => v != null);
+    return known.length ? known.reduce((a, b) => a + b, 0) : null;
+  };
+  function agentBreakdown(rootAttrs, spans) {
+    const top = topLevelSubagents(spans);
+    if (!top.length) return null;
+    const f = headerFacts(rootAttrs, spans);
+    const main = {
+      label: "main",
+      main: true,
+      model: f.requestModel,
+      tokens: f.totalTokens,
+      calls: attrNum(rootAttrs || {}, "hermes.turn.api_call_count"),
+      cost: f.cost,
+      error: false
+    };
+    const subs = top.map((s) => {
+      const a = s.attributes || {};
+      const role = a["hermes.subagent.role"] || a["gen_ai.agent.name"] || (s.name.startsWith("subagent.") ? s.name.slice("subagent.".length) : "");
+      return {
+        label: role ? String(role) : "subagent",
+        main: false,
+        model: a["gen_ai.request.model"] || null,
+        tokens: attrNum(a, "hermes.subagent.usage.total_tokens"),
+        calls: attrNum(a, "hermes.subagent.api_call_count"),
+        cost: attrNum(a, "hermes.subagent.cost.usage"),
+        error: SUBAGENT_ERROR_STATUSES.has(String(a["hermes.subagent.status"] || "").toLowerCase())
+      };
+    });
+    const rows = [main, ...subs];
+    return {
+      rows,
+      total: {
+        tokens: sumKnown(rows.map((r) => r.tokens)),
+        calls: sumKnown(rows.map((r) => r.calls)),
+        cost: rows.every((r) => r.cost != null) ? sumKnown(rows.map((r) => r.cost)) : null
+      }
     };
   }
   function metricOtlpName(n) {
@@ -2535,6 +2592,18 @@
     if (children == null || children === "" || children === false) return null;
     return /* @__PURE__ */ React.createElement("div", { className: "min-w-0" }, /* @__PURE__ */ React.createElement("div", { className: "text-[10px] uppercase tracking-wide text-muted-foreground" }, label), /* @__PURE__ */ React.createElement("div", { className: "truncate text-sm text-foreground" }, children));
   }
+  function AgentBreakdownTable({ b }) {
+    const cost = (v) => v != null ? /* @__PURE__ */ React.createElement("span", { className: "otel-c-cost" }, fmtCostExact(v)) : /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "\u2014");
+    const num = (v, fmt) => v != null ? fmt(v) : /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "\u2014");
+    return /* @__PURE__ */ React.createElement("div", { className: "space-y-1", "data-testid": "agent-breakdown" }, /* @__PURE__ */ React.createElement(
+      "div",
+      {
+        className: "text-[10px] uppercase tracking-wide text-muted-foreground",
+        title: "the turn's own calls, then each delegation's whole subtree (a nested orchestrator's children are inside its row)"
+      },
+      "by agent"
+    ), /* @__PURE__ */ React.createElement("table", { className: "otel-md-table" }, /* @__PURE__ */ React.createElement("thead", null, /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("th", null, "agent"), /* @__PURE__ */ React.createElement("th", null, "model"), /* @__PURE__ */ React.createElement("th", null, "tokens"), /* @__PURE__ */ React.createElement("th", null, "API calls"), /* @__PURE__ */ React.createElement("th", null, "cost"))), /* @__PURE__ */ React.createElement("tbody", null, b.rows.map((r, i) => /* @__PURE__ */ React.createElement("tr", { key: i }, /* @__PURE__ */ React.createElement("td", { className: r.error ? "otel-tone-bad" : "" }, r.main ? "main" : /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, r.label)), /* @__PURE__ */ React.createElement("td", { className: "font-mono" }, r.model || /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "\u2014")), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums" }, num(r.tokens, fmtTokens)), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums" }, num(r.calls, fmtInt)), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums" }, cost(r.cost)))), /* @__PURE__ */ React.createElement("tr", null, /* @__PURE__ */ React.createElement("td", null, "whole run"), /* @__PURE__ */ React.createElement("td", null), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums" }, num(b.total.tokens, fmtTokens)), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums" }, num(b.total.calls, fmtInt)), /* @__PURE__ */ React.createElement("td", { className: "tabular-nums", title: b.total.cost == null ? "an amount only when every row is priced" : void 0 }, cost(b.total.cost))))));
+  }
   function TraceHeader({
     title,
     traceId,
@@ -2553,8 +2622,9 @@
   }) {
     var _a, _b;
     const f = headerFacts(rootAttrs, spans || []);
+    const breakdown = useMemo(() => agentBreakdown(rootAttrs, spans || []), [rootAttrs, spans]);
     const tokens = f.totalTokens != null ? `${fmtTokens(f.totalTokens)}${f.inputTokens != null || f.outputTokens != null ? ` (in ${fmtTokens((_a = f.inputTokens) != null ? _a : 0)} \xB7 out ${fmtTokens((_b = f.outputTokens) != null ? _b : 0)}${f.reasoningTokens ? ` \xB7 reasoning ${fmtTokens(f.reasoningTokens)}` : ""}${f.cacheReadTokens ? ` \xB7 cache read ${fmtTokens(f.cacheReadTokens)}` : ""})` : ""}` : null;
-    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-start justify-between gap-3" }, /* @__PURE__ */ React.createElement("div", { className: "min-w-0 space-y-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-lg font-semibold uppercase tracking-tight" }, title), error ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "text-[10px]" }, "error") : null, partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: "the root span has not finished yet; totals are provisional" }, "in progress") : null, truncated ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: `the backend returned the first spans only${spanCount ? ` of ${spanCount}` : ""}` }, "truncated") : null, f.platform ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, f.platform) : null, f.turn != null ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, "turn ", f.turn) : null), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2 text-xs text-muted-foreground" }, service ? /* @__PURE__ */ React.createElement("span", null, service) : null, /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, traceId), /* @__PURE__ */ React.createElement(CopyButton, { text: traceId, label: "copy id" }), uiUrl ? /* @__PURE__ */ React.createElement("a", { className: "otel-link", href: uiUrl, target: "_blank", rel: "noreferrer" }, "open in ", uiLabel || "backend", " \u2197") : null)), /* @__PURE__ */ React.createElement(Button, { variant: "ghost", size: "sm", onClick: onBack }, "\u2190 Back")), /* @__PURE__ */ React.createElement("div", { className: "otel-facts-grid" }, /* @__PURE__ */ React.createElement(Fact, { label: "duration" }, fmtDurationMs(durationMs)), /* @__PURE__ */ React.createElement(Fact, { label: "model" }, f.requestModel ? /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, f.requestModel) : null, f.responseModel ? /* @__PURE__ */ React.createElement("span", { className: "ml-1 text-xs text-muted-foreground", title: "the model named in the response, when it differs from the request" }, "(served: ", f.responseModel, ")") : null), /* @__PURE__ */ React.createElement(Fact, { label: "tokens" }, tokens), /* @__PURE__ */ React.createElement(Fact, { label: "cost" }, f.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "otel-c-cost" }, fmtCostExact(f.cost)) : /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "no pricing data")), /* @__PURE__ */ React.createElement(Fact, { label: "tools" }, f.tools.length ? f.tools.join(", ") : null), /* @__PURE__ */ React.createElement(Fact, { label: "outcome" }, f.finalStatus || f.exitReason ? `${f.finalStatus || ""}${f.finalStatus && f.exitReason ? " \xB7 " : ""}${f.exitReason || ""}` : null), /* @__PURE__ */ React.createElement(Fact, { label: "session" }, f.session ? /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-start justify-between gap-3" }, /* @__PURE__ */ React.createElement("div", { className: "min-w-0 space-y-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-lg font-semibold uppercase tracking-tight" }, title), error ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "text-[10px]" }, "error") : null, partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: "the root span has not finished yet; totals are provisional" }, "in progress") : null, truncated ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: `the backend returned the first spans only${spanCount ? ` of ${spanCount}` : ""}` }, "truncated") : null, f.platform ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, f.platform) : null, f.turn != null ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, "turn ", f.turn) : null), /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2 text-xs text-muted-foreground" }, service ? /* @__PURE__ */ React.createElement("span", null, service) : null, /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, traceId), /* @__PURE__ */ React.createElement(CopyButton, { text: traceId, label: "copy id" }), uiUrl ? /* @__PURE__ */ React.createElement("a", { className: "otel-link", href: uiUrl, target: "_blank", rel: "noreferrer" }, "open in ", uiLabel || "backend", " \u2197") : null)), /* @__PURE__ */ React.createElement(Button, { variant: "ghost", size: "sm", onClick: onBack }, "\u2190 Back")), /* @__PURE__ */ React.createElement("div", { className: "otel-facts-grid" }, /* @__PURE__ */ React.createElement(Fact, { label: "duration" }, fmtDurationMs(durationMs)), /* @__PURE__ */ React.createElement(Fact, { label: "model" }, f.requestModel ? /* @__PURE__ */ React.createElement("span", { className: "font-mono" }, f.requestModel) : null, f.responseModel ? /* @__PURE__ */ React.createElement("span", { className: "ml-1 text-xs text-muted-foreground", title: "the model named in the response, when it differs from the request" }, "(served: ", f.responseModel, ")") : null), /* @__PURE__ */ React.createElement(Fact, { label: breakdown ? "tokens (main)" : "tokens" }, tokens), /* @__PURE__ */ React.createElement(Fact, { label: breakdown ? "cost (main)" : "cost" }, f.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "otel-c-cost" }, fmtCostExact(f.cost)) : /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "no pricing data")), /* @__PURE__ */ React.createElement(Fact, { label: "tools" }, f.tools.length ? f.tools.join(", ") : null), /* @__PURE__ */ React.createElement(Fact, { label: "outcome" }, f.finalStatus || f.exitReason ? `${f.finalStatus || ""}${f.finalStatus && f.exitReason ? " \xB7 " : ""}${f.exitReason || ""}` : null), /* @__PURE__ */ React.createElement(Fact, { label: "session" }, f.session ? /* @__PURE__ */ React.createElement(
       "button",
       {
         type: "button",
@@ -2563,7 +2633,7 @@
         onClick: () => navigate({ tab: "traces", source, view: "sessions", session: String(f.session), trace: "" })
       },
       f.session
-    ) : null)));
+    ) : null)), breakdown ? /* @__PURE__ */ React.createElement(AgentBreakdownTable, { b: breakdown }) : null);
   }
   function Block2({ label, children }) {
     if (children == null) return null;
@@ -2866,6 +2936,14 @@
       }
     ))));
   }
+  function SubagentChip({ s }) {
+    const parts = [
+      s.tokens != null ? `+${fmtTokens(s.tokens)} tok` : null,
+      s.cost != null ? `+${fmtCostExact(s.cost)}` : null,
+      `${s.count} sub-agent${s.count === 1 ? "" : "s"}`
+    ].filter(Boolean);
+    return /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "the turn's top-level delegations, on top of its own tokens and cost (each delegation's whole subtree)" }, parts.join(" \xB7 "));
+  }
   function TraceCard({ row, onSelect }) {
     const Icon = kindIcon(row.rootKind);
     return /* @__PURE__ */ React.createElement(
@@ -2880,7 +2958,7 @@
         title: row.traceId
       },
       /* @__PURE__ */ React.createElement("div", { className: "shrink-0 pt-0.5", style: { color: KIND_COLOR[row.rootKind] }, "aria-hidden": true }, /* @__PURE__ */ React.createElement(Icon, { size: 16 })),
-      /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1 space-y-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex min-w-0 items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "truncate font-mono text-sm" }, row.rootName), row.rootKind !== "other" ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 text-[10px]" }, row.rootKind) : null, row.error ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "shrink-0 text-[10px]" }, "error") : null, row.partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 text-[10px]", title: "the root span has not finished: name, kind and totals are provisional" }, "in progress") : null, row.toolName ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 font-mono text-[10px]" }, row.toolName) : null), row.inPreview || row.outPreview ? /* @__PURE__ */ React.createElement("div", { className: "otel-pl-2 space-y-0.5 border-l-2 border-border/60 text-xs" }, row.inPreview ? /* @__PURE__ */ React.createElement("div", { className: "truncate text-foreground/80" }, /* @__PURE__ */ React.createElement("span", { className: "otel-mr-2 text-[10px] text-muted-foreground" }, "in"), row.inPreview) : null, row.outPreview ? /* @__PURE__ */ React.createElement("div", { className: "truncate text-foreground/80" }, /* @__PURE__ */ React.createElement("span", { className: "otel-mr-2 text-[10px] text-muted-foreground" }, "out"), row.outPreview) : null) : null, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, row.service && row.service !== "hermes" ? /* @__PURE__ */ React.createElement("span", null, row.service) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spanCount != null ? `${row.spanCount} span${row.spanCount === 1 ? "" : "s"}` : "spans ?"), /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtDurationMs(row.durationMs)), row.tokens != null ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok")) : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { title: fmtAbsTime(row.startNs) }, fmtTimeAgo(row.endNs || row.startNs)))),
+      /* @__PURE__ */ React.createElement("div", { className: "min-w-0 flex-1 space-y-1" }, /* @__PURE__ */ React.createElement("div", { className: "flex min-w-0 items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "truncate font-mono text-sm" }, row.rootName), row.rootKind !== "other" ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 text-[10px]" }, row.rootKind) : null, row.error ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "shrink-0 text-[10px]" }, "error") : null, row.partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 text-[10px]", title: "the root span has not finished: name, kind and totals are provisional" }, "in progress") : null, row.toolName ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "shrink-0 font-mono text-[10px]" }, row.toolName) : null), row.inPreview || row.outPreview ? /* @__PURE__ */ React.createElement("div", { className: "otel-pl-2 space-y-0.5 border-l-2 border-border/60 text-xs" }, row.inPreview ? /* @__PURE__ */ React.createElement("div", { className: "truncate text-foreground/80" }, /* @__PURE__ */ React.createElement("span", { className: "otel-mr-2 text-[10px] text-muted-foreground" }, "in"), row.inPreview) : null, row.outPreview ? /* @__PURE__ */ React.createElement("div", { className: "truncate text-foreground/80" }, /* @__PURE__ */ React.createElement("span", { className: "otel-mr-2 text-[10px] text-muted-foreground" }, "out"), row.outPreview) : null) : null, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, row.service && row.service !== "hermes" ? /* @__PURE__ */ React.createElement("span", null, row.service) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spanCount != null ? `${row.spanCount} span${row.spanCount === 1 ? "" : "s"}` : "spans ?"), /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtDurationMs(row.durationMs)), row.tokens != null ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok")) : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, row.subagents ? /* @__PURE__ */ React.createElement(SubagentChip, { s: row.subagents }) : null, /* @__PURE__ */ React.createElement("span", { className: "text-border", "aria-hidden": true }, "\xB7"), /* @__PURE__ */ React.createElement("span", { title: fmtAbsTime(row.startNs) }, fmtTimeAgo(row.endNs || row.startNs)))),
       /* @__PURE__ */ React.createElement("div", { className: "otel-self-center otel-reveal shrink-0 text-muted-foreground transition-opacity", "aria-hidden": true }, /* @__PURE__ */ React.createElement(IconChevronRight, { size: 16 }))
     );
   }
@@ -2929,6 +3007,7 @@
   var BUCKETS = 50;
   var BUCKET_S = 2;
   function deriveStats(rows) {
+    var _a, _b;
     let cost = null;
     let tokens = null;
     let errors = 0;
@@ -2938,6 +3017,8 @@
     for (const t of rows) {
       if (t.cost != null) cost = (cost || 0) + t.cost;
       if (t.tokens != null) tokens = (tokens || 0) + t.tokens;
+      if (((_a = t.subagents) == null ? void 0 : _a.cost) != null) cost = (cost || 0) + t.subagents.cost;
+      if (((_b = t.subagents) == null ? void 0 : _b.tokens) != null) tokens = (tokens || 0) + t.subagents.tokens;
       if (t.error) errors++;
       if (t.spanCount == null) spansKnown = false;
       else spans += t.spanCount;
@@ -3144,7 +3225,7 @@
       row.platform ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]" }, row.platform) : null,
       row.errors ? /* @__PURE__ */ React.createElement(Badge, { variant: "destructive", className: "text-[10px]" }, row.errors, " error", row.errors === 1 ? "" : "s") : null,
       partial ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "text-[10px]", title: "grouped from the traces on this page of results, not the whole session" }, "this page only") : null,
-      /* @__PURE__ */ React.createElement("span", { className: "ml-auto flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.turns, " turn", row.turns === 1 ? "" : "s"), row.spans != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spans, " spans") : null, row.toolCalls != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.toolCalls, " tool call", row.toolCalls === 1 ? "" : "s") : null, row.tokens != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok") : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "wall time from the first turn's start to the last turn's end" }, fmtDurationMs((row.endNs - row.startNs) / 1e6), " wall"), /* @__PURE__ */ React.createElement(
+      /* @__PURE__ */ React.createElement("span", { className: "ml-auto flex flex-wrap items-center gap-x-3 text-xs text-muted-foreground" }, row.model ? /* @__PURE__ */ React.createElement("span", { className: "font-mono text-foreground/80" }, row.model) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.turns, " turn", row.turns === 1 ? "" : "s"), row.spans != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.spans, " spans") : null, row.toolCalls != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, row.toolCalls, " tool call", row.toolCalls === 1 ? "" : "s") : null, row.tokens != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums" }, fmtTokens(row.tokens), " tok") : null, row.subagentTokens ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "tokens of the turns' top-level delegations, on top of the turns' own" }, "+", fmtTokens(row.subagentTokens), " sub-agents") : null, row.cost != null ? /* @__PURE__ */ React.createElement("span", { className: "tabular-nums otel-c-cost" }, fmtCostExact(row.cost)) : null, /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "wall time from the first turn's start to the last turn's end" }, fmtDurationMs((row.endNs - row.startNs) / 1e6), " wall"), /* @__PURE__ */ React.createElement(
         "button",
         {
           type: "button",
@@ -3477,7 +3558,8 @@
       toolName: null,
       inPreview: null,
       outPreview: null,
-      raw: { traceID: id }
+      raw: { traceID: id },
+      subagents: null
     });
     const search = useCallback(async () => {
       if (!(status == null ? void 0 : status.configured) || inflight.current) return;

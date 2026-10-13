@@ -70,6 +70,8 @@ Board health is metrics, not spans:
 
 **One service per agent.** Set `service_name_from_profile: true` in every profile's `hermes_otel.yaml` and each named profile exports as its own `service.name` under `service.namespace=hermes-agent`. Service pickers (Jaeger, Tempo, SigNoz, Uptrace) then list `coder`, `reviewer` … instead of one `hermes-agent`, and a kanban run's trace crosses services: the dispatcher's profile owns `kanban.claim`, the assignee's profile owns the worker's `agent` root. See [Profiles](/configuration/profiles#one-service-per-profile) for what changes in saved queries.
 
+**Cost per agent.** In the [dashboard](/dashboard#cost-and-tokens-per-agent), open a turn that delegated: the **by agent** table lists the parent's own calls, each top-level delegation (role, model, tokens, API calls, cost) and the whole run. Live cards show `+tokens · N sub-agents` next to the turn's own figures. Elsewhere, read `hermes.subagent.usage.*` / `cost.*` on the top-level `subagent.*` spans and add the root's own `gen_ai.usage.*`; on metrics, `sum by (query_source) (increase(hermes_token_usage_total[1h]))` splits `main` from `subagent` calls.
+
 **Spend per kanban card.**
 - *Jaeger:* search tags `hermes.kanban.task_id=<id>`. Each run is one trace, and the worker's `agent` root carries the run's totals.
 - *Tempo:* the TraceQL `{ span.hermes.kanban.task_id = "<id>" && name = "agent" }`.
