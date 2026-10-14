@@ -170,6 +170,9 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
         return
 
     tracer.sweep_expired_turns()
+    if session_id:
+        # A previous turn of this session that failed and never ended (#467).
+        tracer.close_failed_turn(session_id)
     tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
     _start_session_span(session_id, model, platform, kwargs, synthesized=False)
 
@@ -369,16 +372,22 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
                 tracer.end_span(
                     skill_key, attributes={"hermes.skill.result_status": event}, status="ok"
                 )
+        attributes = {
+            _REASON_KEY[event]: truncate_string(reason, 120),
+            "hermes.turn.final_status": _FINAL_STATUS[event],
+        }
+        status, error_message = "ok", None
+        # Every API attempt of this turn failed and Hermes skipped
+        # on_session_end (#467): the turn failed, it was not just finalized.
+        ps = tracer.sessions.peek(session_id)
+        failure = ps.api_failure_close() if ps is not None else None
+        if failure:
+            attributes.update(failure)
+            status = "error"
+            error_message = f"turn failed: {failure.get('error.type') or 'API request failed'}"
         _remember_root(tracer, session_id)
         tracer.spans.pop_parent(session_id=session_id)
-        tracer.end_span(
-            key,
-            attributes={
-                _REASON_KEY[event]: truncate_string(reason, 120),
-                "hermes.turn.final_status": _FINAL_STATUS[event],
-            },
-            status="ok",
-        )
+        tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)
 
     known = tracer.sessions.drop_session(session_id)
     tracer.spans.drop_session(session_id)

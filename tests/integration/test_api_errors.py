@@ -5,6 +5,8 @@ ERROR (with a recorded exception event + retry metadata) instead of leaving it
 to end OK via the orphan sweep.
 """
 
+import time
+
 from _helpers import span_by_name as _span_by_name
 from _helpers import spans_by_name as _spans_by_name
 from opentelemetry.trace import StatusCode
@@ -16,8 +18,10 @@ from hermes_otel.hooks import (
     on_pre_api_request,
     on_pre_llm_call,
     on_session_end,
+    on_session_finalize,
     on_session_start,
 )
+from hermes_otel.plugin_config import HermesOtelConfig
 
 
 def _has_exception_event(span):
@@ -348,3 +352,129 @@ class TestNetworkErrorNoStatusCode:
         }
         dp = list(metrics["hermes.api.error.count"].data.data_points)[0]
         assert dp.attributes["status_class"] == "network"
+
+
+# ── #467: a turn whose API attempts all failed ───────────────────────────
+#
+# Hermes returns from that path without post_llm_call or on_session_end, so
+# the root is closed later by finalize, the orphan sweep, or the session's
+# next turn. Each must record the turn as failed, not finalized / timed out.
+
+
+def _failed_turn(session_id="s1", start=True, user_message="hi"):
+    if start:
+        on_session_start(session_id=session_id, model="gpt-4", platform="cli")
+    on_pre_llm_call(
+        session_id=session_id,
+        user_message=user_message,
+        conversation_history=[],
+        is_first_turn=start,
+        model="gpt-4",
+        platform="cli",
+    )
+    for _ in range(2):
+        _pre_api(task_id="a1", session_id=session_id)
+        on_api_request_error(
+            task_id="a1",
+            session_id=session_id,
+            model="gpt-4",
+            provider="openai",
+            status_code=None,
+            retry_count=0,
+            retryable=True,
+            error={"type": "APIConnectionError", "message": "Connection error."},
+        )
+
+
+def _roots(exporter):
+    return [s for s in exporter.get_finished_spans() if s.parent is None]
+
+
+class TestTurnEndedByProviderFailure:
+    def test_finalize_closes_root_as_failed(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _failed_turn()
+        on_session_finalize(session_id="s1", platform="cli", reason="shutdown")
+
+        (root,) = _roots(exporter)
+        assert root.name == "agent"
+        assert root.status.status_code == StatusCode.ERROR
+        assert root.attributes["hermes.turn.final_status"] == "failed"
+        assert root.attributes["hermes.session.failed"] is True
+        assert root.attributes["error.type"] == "APIConnectionError"
+        assert root.attributes["hermes.session.finalize_reason"] == "shutdown"
+
+    def test_retry_that_succeeds_is_not_failed(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _failed_turn()
+        _pre_api(task_id="a1")
+        _post_api_ok(task_id="a1")
+        on_session_finalize(session_id="s1", platform="cli", reason="shutdown")
+
+        (root,) = _roots(exporter)
+        assert root.status.status_code != StatusCode.ERROR
+        assert root.attributes["hermes.turn.final_status"] == "finalized"
+
+    def test_sweep_closes_root_as_failed(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(root_span_ttl_ms=1_000)
+        _failed_turn()
+        plugin.register_turn("s1", started_at=time.perf_counter() - 10.0)
+        assert plugin.sweep_expired_turns() == ["s1"]
+
+        (root,) = _roots(exporter)
+        assert root.status.status_code == StatusCode.ERROR
+        assert root.attributes["hermes.turn.final_status"] == "failed"
+        assert root.attributes["error.type"] == "APIConnectionError"
+
+    def test_next_turn_closes_the_failed_one_and_gets_its_own_trace(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _failed_turn()
+        # The gateway's next message on the same session: a turn that works.
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="again",
+            conversation_history=[{"role": "user", "content": "hi"}],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
+        )
+        _pre_api(task_id="a2")
+        _post_api_ok(task_id="a2")
+        on_post_llm_call(
+            session_id="s1",
+            user_message="again",
+            assistant_response="done",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        failed, ok = sorted(_roots(exporter), key=lambda s: s.start_time)
+        assert failed.context.trace_id != ok.context.trace_id
+        assert failed.status.status_code == StatusCode.ERROR
+        assert failed.attributes["hermes.turn.final_status"] == "failed"
+        assert ok.status.status_code != StatusCode.ERROR
+        assert ok.attributes["hermes.turn.final_status"] == "completed"
+        assert ok.attributes["hermes.turn.number"] == 2
+        assert "error.type" not in ok.attributes
+        # The failed turn's llm span closed inside its own trace.
+        llm = [s for s in exporter.get_finished_spans() if s.name.startswith("llm.")]
+        assert {s.context.trace_id for s in llm} == {failed.context.trace_id, ok.context.trace_id}
+
+    def test_healthy_turn_is_untouched(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hi",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+        assert plugin.close_failed_turn("s1") is False
+        assert plugin.close_failed_turn("unknown") is False

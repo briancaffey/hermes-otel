@@ -48,8 +48,12 @@ All become single-span filters on the root instead of span-tree traversals.
 | `interrupted` | User cancelled mid-turn (Ctrl-C, `/cancel`, etc.) |
 | `incomplete` | Turn ended without a final assistant response (edge case) |
 | `timed_out` | Orphan-sweep finalized a stale session — see [Orphan-span sweep](/architecture/orphan-sweep) |
+| `failed` | Hermes reported the turn failed (`on_session_end` with `failed`), or its last API attempt ended in `api_request_error` and the turn never ended (see below) |
+| `finalized` / `reset` | A still-open root closed by `on_session_finalize` / `on_session_reset` |
 
-`completed` and `timed_out` both map the span `StatusCode` to `OK`. `interrupted` also stays `OK` (user interrupts aren't errors). Only actual tool/API errors inside the turn raise `StatusCode.ERROR` — at the child span level, not the root.
+`completed` and `timed_out` both map the span `StatusCode` to `OK`. `interrupted` also stays `OK` (user interrupts aren't errors). `failed` is `ERROR`, with `error.type` from the last API error.
+
+**A turn whose API attempts all fail (#467).** When the provider can't be reached, Hermes fires `api_request_error` for each attempt but neither `post_llm_call` nor `on_session_end`. The root is closed later: by `on_session_finalize` (the CLI's exit), by the orphan sweep, or, in a gateway, when the session's next turn starts. Whichever comes first sees that the last main-loop attempt failed with no success after it and closes the root `ERROR`, `final_status=failed`, `hermes.session.failed=true`, `error.type` from that attempt. The next turn then gets its own trace instead of joining the failed one.
 
 This matters because every backend has a "error rate" widget that reads `StatusCode`. You don't want orphan-sweeps or user interrupts polluting that number.
 

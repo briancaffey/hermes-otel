@@ -71,6 +71,11 @@ don't fire that hook, a failed request's span is instead finalized by the
 [orphan sweep](/architecture/orphan-sweep) on the next turn and ends `OK` — so
 on those builds failures remain invisible until you upgrade Hermes.
 
+When every attempt of a turn fails, Hermes skips `on_session_end`, so the
+root is closed later (finalize, the sweep, or the session's next turn) as
+`failed`; in a gateway that can be up to `root_span_ttl_ms` after the failure
+if the session gets no next message ([#467](https://github.com/briancaffey/hermes-otel/issues/467)).
+
 A hard crash *before* the error hook fires (or before the next sweep) can still
 lose the in-flight span, the same buffered-span trade-off described above.
 

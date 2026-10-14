@@ -655,6 +655,23 @@ class HermesOTelPlugin:
             )
         return expired
 
+    def close_failed_turn(self, session_id: str) -> bool:
+        """Close a turn left open because every API attempt failed (#467).
+
+        Hermes fires neither post_llm_call nor on_session_end on that path, so
+        in a gateway the session's next message would otherwise land in the
+        failed turn's trace. Called from pre_llm_call; returns True when a
+        stale failed turn was closed (as failed, with its open children).
+        """
+        ps = self.sessions.peek(session_id)
+        if ps is None or not ps.last_api_failed:
+            return False
+        if not self.spans.has_span(f"session:{session_id}"):
+            return False
+        self._finalize_orphan(session_id)
+        self.unregister_turn(session_id)
+        return True
+
     def _finalize_orphan(self, session_id: str) -> None:
         """End any still-active spans for a timed-out session.
 
@@ -673,11 +690,23 @@ class HermesOTelPlugin:
             # arrived is interrupted, not timed out (#396).
             ps = self.sessions.peek(session_id)
             stopped = ps is not None and bool(ps.stop_reason)
-            self.end_span(
-                session_key,
-                attributes={"hermes.turn.final_status": "interrupted" if stopped else "timed_out"},
-                status="ok",
-            )
+            failure = ps.api_failure_close() if ps is not None and not stopped else None
+            if failure:
+                # Every API attempt failed and on_session_end never came (#467).
+                self.end_span(
+                    session_key,
+                    attributes=failure,
+                    status="error",
+                    error_message=f"turn failed: {failure.get('error.type') or 'API request failed'}",
+                )
+            else:
+                self.end_span(
+                    session_key,
+                    attributes={
+                        "hermes.turn.final_status": "interrupted" if stopped else "timed_out"
+                    },
+                    status="ok",
+                )
         # Drop the expired session's parent stack, skill spans, delegation
         # record and aggregator — the sweep is a safety net and later hooks
         # rebuild state. The ContextVar stack is deliberately untouched: it

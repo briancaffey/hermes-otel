@@ -77,7 +77,7 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | Attribute | Type | Meaning |
 |---|---|---|
 | `hermes.session.completed`, `hermes.session.interrupted` | bool | Hook payload flags |
-| `hermes.turn.final_status` | hermes | string | `completed` · `interrupted` · `failed` · `incomplete` · `timed_out` — from Hermes' `completed` / `interrupted` / `failed` flags (`timed_out` from the orphan sweep) |
+| `hermes.turn.final_status` | hermes | string | `completed` · `interrupted` · `failed` · `incomplete` · `timed_out` · `finalized` · `reset` — from Hermes' `completed` / `interrupted` / `failed` flags (`timed_out` from the orphan sweep; `finalized` / `reset` when a session boundary closed the root; `failed` also when the turn's last API attempt failed and Hermes never ended it, #467) |
 | `hermes.session.failed` | hermes | bool | Hermes' `failed` flag on `on_session_end` |
 | `hermes.turn.exit_reason` | hermes | string | Hermes' `turn_exit_reason` (`interrupted_by_user`, `guardrail_halt`, `context_compression_timeout`, `max_iterations_reached(n/m)` …), when reported |
 | `hermes.turn.tool_count`, `hermes.turn.tools` | int / string | Distinct tool names (sorted CSV, ≤500 chars) |

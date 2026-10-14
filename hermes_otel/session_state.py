@@ -101,6 +101,12 @@ class PerSession:
     # The most recent API error's ``error.type`` for this session, surfaced on
     # the root span at on_session_end so a failed turn shows *why* it failed.
     last_error_type: str = ""
+    # True while this turn's most recent main-loop API attempt ended in
+    # api_request_error with no successful post_api_request after it. Hermes
+    # fires neither post_llm_call nor on_session_end when every attempt fails
+    # (#467), so finalize and the orphan sweep read this to close the root as
+    # failed instead of finalized / timed_out.
+    last_api_failed: bool = False
     # The LLM provider seen on this session's API calls (e.g. "openrouter").
     # on_session_end only receives the platform (e.g. "cli"), so the real
     # provider is captured here for the agent-level GenAI metric dimensions.
@@ -188,6 +194,23 @@ class PerSession:
             attrs["hermes.turn.auxiliary.cost.status"] = (
                 "included" if statuses == {"included"} else "unknown"
             )
+        return attrs
+
+    def api_failure_close(self) -> Optional[Dict[str, Any]]:
+        """Root attributes for a turn closed by finalize or the sweep whose
+        last main-loop API attempt failed (#467), or None when it did not.
+
+        Hermes returns from that path without post_llm_call or on_session_end,
+        so this is the only place the turn can be recorded as failed.
+        """
+        if not self.last_api_failed:
+            return None
+        attrs: Dict[str, Any] = {
+            "hermes.turn.final_status": "failed",
+            "hermes.session.failed": True,
+        }
+        if self.last_error_type:
+            attrs["error.type"] = self.last_error_type
         return attrs
 
     def cost_rollup(self) -> Dict[str, Any]:

@@ -32,6 +32,8 @@ Any root older than `root_span_ttl_ms` (default: 10 minutes) gets:
 2. `StatusCode.OK` (not `ERROR` — timeouts shouldn't pollute error dashboards)
 3. `span.end()` called, which enqueues it for export
 
+The exception is a turn whose last API attempt failed (`api_request_error` with no success after it): Hermes ends that turn without `on_session_end`, so the sweep closes it as `final_status = "failed"` with `StatusCode.ERROR` and the attempt's `error.type` (#467).
+
 Delegation spans (`subagent.*`) are the exception: they are not part of the turn and the turn sweep leaves them open, because Hermes delivers background delegations' results turns later. They have their own TTL, `subagent_span_ttl_ms` (default 24 hours), after which a delegation whose `subagent_stop` never arrived is ended with `hermes.subagent.swept=true` and `StatusCode.OK`.
 
 Finalizing a session also drops everything the plugin buffered for it: its parent stack, open skill spans, delegation record and the per-session aggregator (token totals, previews, turn summary), so a crashed turn cannot pin memory for the life of a gateway process. The sweep never touches the parent stack of the session that happened to trigger it.
@@ -70,7 +72,7 @@ The orphan sweep isn't involved in graceful shutdown — it only runs on the hoo
 
 ## Seeing it in action
 
-The simplest way to verify: start Hermes, begin a turn that does nothing (just sits at a prompt), hard-kill the process, restart Hermes, start a new turn. A few seconds after the new turn's first hook fires, check the backend UI — you should see the previous orphan showing up as `completed`... wait, let me correct that — as `timed_out` with a ~TTL-ish duration.
+The simplest way to verify: start Hermes, begin a turn that does nothing (just sits at a prompt), hard-kill the process, restart Hermes, start a new turn. A few seconds after the new turn's first hook fires, check the backend UI — you should see the previous orphan showing up as `timed_out` with a ~TTL-ish duration.
 
 If it's showing up as indefinitely open, either:
 

@@ -219,14 +219,13 @@ scenarios:
     suite: full
     why: the provider is unreachable for the whole turn; api_request_error fires, the root ends in error, nothing is left open
     expect_exit: nonzero
-    known_issue: "#467"   # Hermes fires no on_session_end on this path; the root ends OK at finalize
     config:
       model: {base_url: "http://127.0.0.1:9/v1"}
       agent: {api_max_retries: 1, auto_recovery_cycles: 0}
     prompt: "Reply with only the text {marker}-never."
     expect:
       status: error
-      span_attrs_any: {hermes.turn.final_status: ""}
+      root_attrs: {hermes.turn.final_status: failed, error.type: APIConnectionError}
 
   # ── The gateway (API server platform) ──────────────────────────────────
   - id: gateway-five-sessions
