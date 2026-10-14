@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.30.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.29.0...hermes-otel-v1.30.0) (2026-10-14)
+
+
+### Features
+
+* **scenarios:** scenario harness: real Hermes runs (cli, resume, gateway, cron, kanban) with telemetry expectations ([#468](https://github.com/briancaffey/hermes-otel/issues/468)) ([7e5cff8](https://github.com/briancaffey/hermes-otel/commit/7e5cff87774ed846229e2bed1d3c1ff2bf23471e))
+
+
+### Bug Fixes
+
+* **spans:** a turn whose API attempts all fail ends failed, not finalized ([#471](https://github.com/briancaffey/hermes-otel/issues/471)) ([a215dd4](https://github.com/briancaffey/hermes-otel/commit/a215dd4bf377d7c1a7f3604b7bef4bc9af7a114d)), closes [#467](https://github.com/briancaffey/hermes-otel/issues/467)
+* **spans:** hermes.cron.job_id on cron roots, parsed from the scheduler's session id ([#465](https://github.com/briancaffey/hermes-otel/issues/465)) ([080616f](https://github.com/briancaffey/hermes-otel/commit/080616f1e0a710c90bd4a3dc933763815a679ea1))
+* **spans:** hermes.turn.number continues on a resumed session instead of restarting at 1 ([#466](https://github.com/briancaffey/hermes-otel/issues/466)) ([18e28c4](https://github.com/briancaffey/hermes-otel/commit/18e28c49ecc986680a1648f9639516ed7269b9fc))
+
 ## [1.29.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.28.0...hermes-otel-v1.29.0) (2026-10-13)
 
 
