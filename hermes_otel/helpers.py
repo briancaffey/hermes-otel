@@ -6,11 +6,12 @@ the OpenTelemetry SDK dependency tree.
 
 from __future__ import annotations
 
+import contextlib
 import functools
 import json
 import os
 import re
-from typing import Any, Callable, Dict, List, Mapping, Optional, Tuple
+from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
 
 # Matches:
 #   ESC [ ... letter             → CSI sequences (colors, cursor)
@@ -899,3 +900,32 @@ def auxiliary_task_name(aux_task: Any) -> str:
 def query_source_for(is_subagent: Any) -> str:
     """``main`` or ``subagent`` for a main-loop API call."""
     return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN
+
+
+# The OTLP exporters read these when constructed without headers (``headers or
+# parse_env_headers(...)``). The plugin's config file is the single source of
+# headers (#472), so they are hidden while exporters are built.
+OTLP_HEADER_ENV_VARS: Tuple[str, ...] = (
+    "OTEL_EXPORTER_OTLP_HEADERS",
+    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
+    "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
+    "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
+)
+
+
+@contextlib.contextmanager
+def without_otlp_header_env() -> Iterator[None]:
+    """Hide the ``OTEL_EXPORTER_OTLP_*HEADERS`` variables while exporters are built.
+
+    A backend entry without ``headers:`` is constructed with ``headers=None``
+    and the SDK then falls back to the environment, so a token exported for
+    some other tool (Honeycomb, Grafana Cloud, Logfire …) would be sent to
+    every credential-less backend in the file (#472). The variables are
+    restored on exit, also when construction raises; nothing else in the
+    environment is touched.
+    """
+    saved = {name: os.environ.pop(name) for name in OTLP_HEADER_ENV_VARS if name in os.environ}
+    try:
+        yield
+    finally:
+        os.environ.update(saved)

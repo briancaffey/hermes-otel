@@ -191,6 +191,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 
 | Var | Effect |
 |---|---|
+| `OTEL_EXPORTER_OTLP_HEADERS`, `OTEL_EXPORTER_OTLP_TRACES_HEADERS`, `OTEL_EXPORTER_OTLP_METRICS_HEADERS`, `OTEL_EXPORTER_OTLP_LOGS_HEADERS` | **Ignored** since 1.30.1 (#472). The SDK adds them to every exporter built without headers, so a token exported for another tool reached every credential-less backend in a multi-backend file. Put headers in the file instead: top-level `headers:` for all backends, a backend entry's `headers:` for one |
 | `OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE` | Metric temporality (`cumulative` / `delta`) for a backend when neither its entry, its type preset nor the top-level `metrics_temporality` sets one; read by the OTLP exporter itself and shown on the Settings tab |
 
 ## Debug

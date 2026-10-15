@@ -23,6 +23,7 @@ from .helpers import (
     is_usage_key,
     named_profile,
     package_version,
+    without_otlp_header_env,
     without_usage_keys,
 )
 from .instruments import (
@@ -388,6 +389,10 @@ def merge_headers(plugin, backend_headers: Optional[Dict[str, str]]) -> Optional
     A conflict must favour the backend: its headers include resolver-built
     auth (``Authorization`` for Langfuse, ``x-honeycomb-team`` ...), which a
     global header must never clobber. Same rule in ``log_handler``.
+
+    ``None`` when nothing is configured; the exporters are then built inside
+    :func:`without_otlp_header_env` so the SDK cannot fill the gap from the
+    shell (#472).
     """
     merged: Dict[str, str] = dict(plugin.config.headers or {})
     if backend_headers:
@@ -453,7 +458,8 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
             hdrs = plugin._merge_headers(b.headers)
             if b.supports_traces:
                 try:
-                    inner: Any = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
+                    with without_otlp_header_env():
+                        inner: Any = OTLPSpanExporter(endpoint=b.endpoint, headers=hdrs)
                     if not b.root_usage:
                         # This backend sums usage over every span (#327).
                         inner = _RootUsageStrippingExporter(inner)
@@ -484,14 +490,15 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
                         b.metrics_headers if b.metrics_headers is not None else b.headers
                     )
                     temporality = b.metrics_temporality or config.metrics_temporality
-                    m_exporter = OTLPMetricExporter(
-                        endpoint=metrics_endpoint,
-                        headers=metric_hdrs,
-                        preferred_temporality=metric_temporality_map(temporality),
-                        preferred_aggregation=metric_preferred_aggregation(
-                            config.metrics_histogram
-                        ),
-                    )
+                    with without_otlp_header_env():
+                        m_exporter = OTLPMetricExporter(
+                            endpoint=metrics_endpoint,
+                            headers=metric_hdrs,
+                            preferred_temporality=metric_temporality_map(temporality),
+                            preferred_aggregation=metric_preferred_aggregation(
+                                config.metrics_histogram
+                            ),
+                        )
                     if temporality:
                         debug_log(f"metrics temporality for {b.display_name}: {temporality}")
                     reader = PeriodicExportingMetricReader(

@@ -31,6 +31,8 @@ resource_attributes:
 
 # Extra HTTP headers added to every OTLP request across ALL backends.
 # Per-backend `headers:` are merged on top (per-backend wins on conflict).
+# This file is the only source of headers: the SDK's OTEL_EXPORTER_OTLP_*HEADERS
+# variables are ignored so one backend's token never reaches another (#472).
 headers:
   X-Scope-OrgID: tenant-a
 ```
