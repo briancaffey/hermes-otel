@@ -222,6 +222,83 @@ class BackendConfig:
     extra: Tuple[Tuple[str, Any], ...] = ()
 
 
+# ── Numeric bounds (#487) ───────────────────────────────────────────────────
+# Every numeric knob and the smallest value it may take. Out-of-range values
+# (a ``0`` queue size, a negative timeout, a sample rate above 1) used to
+# reach the SDK, which raises inside the pipeline init: every backend then
+# logged "traces init failed" and the run exported nothing. Now the field
+# warns at load and keeps its default, the way every other bad value in this
+# file is handled. ``None`` stays ``None`` for the Optional fields.
+# The config reference renders these bounds from this table.
+NUMERIC_BOUNDS: Dict[str, Tuple[float, Optional[float]]] = {
+    "sample_rate": (0.0, 1.0),
+    "root_span_ttl_ms": (1, None),
+    "subagent_span_ttl_ms": (1, None),
+    "flush_interval_ms": (1, None),
+    "preview_max_chars": (1, None),
+    "tool_input_preview_max_chars": (1, None),
+    "tool_output_preview_max_chars": (1, None),
+    "llm_input_preview_max_chars": (1, None),
+    "llm_output_preview_max_chars": (1, None),
+    "span_batch_max_queue_size": (1, None),
+    "span_batch_schedule_delay_ms": (1, None),
+    "span_batch_max_export_batch_size": (1, None),
+    "span_batch_export_timeout_ms": (1, None),
+    "force_flush_wait_ms": (0, None),
+    "conversation_history_max_chars": (1, None),
+    "metrics_label_limit": (0, None),
+    "log_max_attribute_length": (1, None),
+    "log_batch_schedule_delay_ms": (1, None),
+    "log_batch_max_queue_size": (1, None),
+    "log_batch_max_export_batch_size": (1, None),
+    "log_batch_export_timeout_ms": (1, None),
+    "dashboard_live_max_spans": (1, None),
+    "dashboard_live_retention_hours": (0.0, None),
+    "host_metrics_interval_ms": (1, None),
+}
+
+# ``max_export_batch_size`` may not exceed ``max_queue_size`` (the SDK raises):
+# (batch field, queue field).
+_BATCH_PAIRS: Tuple[Tuple[str, str], ...] = (
+    ("span_batch_max_export_batch_size", "span_batch_max_queue_size"),
+    ("log_batch_max_export_batch_size", "log_batch_max_queue_size"),
+)
+
+
+def _validate_numeric_bounds(cfg: Any) -> None:
+    """Warn about and reset every numeric field outside :data:`NUMERIC_BOUNDS`.
+
+    Runs from ``__post_init__`` so yaml, env and direct construction all pass
+    through it. Strings that are not numbers never get here: the loader
+    rejected them already. A bool is not a number for this purpose.
+    """
+    defaults = {f.name: f.default for f in dataclasses.fields(cfg)}
+    for name, (lo, hi) in NUMERIC_BOUNDS.items():
+        value = getattr(cfg, name)
+        if value is None:
+            continue
+        ok = isinstance(value, (int, float)) and not isinstance(value, bool)
+        if ok and (value < lo or (hi is not None and value > hi)):
+            ok = False
+        if ok:
+            continue
+        default = defaults[name]
+        want = f"at least {lo}" if hi is None else f"between {lo} and {hi}"
+        logger.warning(
+            f"[hermes-otel] {name}={value!r} must be {want}; using "
+            + ("null" if default is None else repr(default))
+        )
+        object.__setattr__(cfg, name, default)
+    for batch_name, queue_name in _BATCH_PAIRS:
+        batch, queue = getattr(cfg, batch_name), getattr(cfg, queue_name)
+        if batch is not None and batch > queue:
+            logger.warning(
+                f"[hermes-otel] {batch_name}={batch} exceeds {queue_name}={queue}; "
+                f"using {queue}"
+            )
+            object.__setattr__(cfg, batch_name, queue)
+
+
 @dataclass(frozen=True)
 class HermesOtelConfig:
     """Frozen configuration object passed through the plugin."""
@@ -401,6 +478,7 @@ class HermesOtelConfig:
             merged = {**self.global_tags, **(self.resource_attributes or {})}
             object.__setattr__(self, "resource_attributes", merged)
             object.__setattr__(self, "global_tags", None)
+        _validate_numeric_bounds(self)
 
     # ── What content the hooks record (``content_capture``) ──────────────
     # The hooks ask these instead of reading the three pre-1.11 booleans.

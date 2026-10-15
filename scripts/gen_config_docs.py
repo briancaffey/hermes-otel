@@ -22,7 +22,12 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from hermes_otel import log_events as EV  # noqa: E402
 from hermes_otel.backend_specs import SPECS  # noqa: E402
-from hermes_otel.plugin_config import FIELD_DOCS, HermesOtelConfig, field_kinds  # noqa: E402
+from hermes_otel.plugin_config import (  # noqa: E402
+    FIELD_DOCS,
+    NUMERIC_BOUNDS,
+    HermesOtelConfig,
+    field_kinds,
+)
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
 
@@ -56,8 +61,19 @@ def render_fields_table() -> str:
         typ = _TYPE_LABEL[kind]
         if kind in ("float", "int", "str") and str(f.type).startswith("Optional"):
             typ += " \\| null"
-        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {FIELD_DOCS[f.name]} |")
+        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {_describe(f.name)} |")
     return "\n".join(rows)
+
+
+def _describe(name: str) -> str:
+    """The field's description plus its numeric bounds (``NUMERIC_BOUNDS``, #487)."""
+    desc = FIELD_DOCS[name]
+    bounds = NUMERIC_BOUNDS.get(name)
+    if bounds is None:
+        return desc
+    lo, hi = bounds
+    rule = f"{lo}–{hi}" if hi is not None else f"≥ {lo}"
+    return f"{desc}. Bounds: {rule}"
 
 
 def render_env_table() -> str:

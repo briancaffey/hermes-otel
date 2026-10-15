@@ -8,7 +8,7 @@ description: "Complete config.yaml schema, field by field."
 
 Complete schema for `~/.hermes/hermes_otel.yaml` (or a legacy `~/.hermes/plugins/hermes_otel/config.yaml`, or the file named by `HERMES_OTEL_CONFIG`). See [`config.yaml`](/configuration/yaml) for the narrative version.
 
-The field table below is generated from `HermesOtelConfig` by `scripts/gen_config_docs.py`; a test fails if it drifts.
+The field table below is generated from `HermesOtelConfig` by `scripts/gen_config_docs.py`; a test fails if it drifts. A numeric field's **Bounds** are enforced at load (#487): a value outside them, in the yaml or an env override, logs a warning naming the field and the default takes its place, and an export batch size larger than its queue size is clamped to the queue size. Before 1.30.1 such a value reached the SDK, which raised during pipeline init, so every backend logged `traces init failed` and the run exported nothing.
 
 ## Top level
 
@@ -17,29 +17,29 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | Field | Type | Default | Description |
 |---|---|---|---|
 | `enabled` | bool | `true` | Master kill switch; `false` unloads every hook |
-| `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling) |
-| `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed |
-| `subagent_span_ttl_ms` | int | `86400000` | Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design) |
-| `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader) |
-| `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response) |
+| `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling). Bounds: 0.0–1.0 |
+| `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed. Bounds: ≥ 1 |
+| `subagent_span_ttl_ms` | int | `86400000` | Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design). Bounds: ≥ 1 |
+| `flush_interval_ms` | int | `60000` | Metrics export cadence (PeriodicExportingMetricReader). Bounds: ≥ 1 |
+| `preview_max_chars` | int | `1200` | Cap on preview strings (tool args/results, user message, assistant response). Bounds: ≥ 1 |
 | `capture_previews` | bool | `true` | Deprecated spelling of `content_capture: off` (when `false`); kept consistent with `content_capture` |
-| `tool_input_preview_max_chars` | int \| null | `null` | Per-category cap for tool args previews; `null` = `preview_max_chars` |
-| `tool_output_preview_max_chars` | int \| null | `null` | Per-category cap for tool result previews; `null` = `preview_max_chars` |
-| `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars` |
-| `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars` |
+| `tool_input_preview_max_chars` | int \| null | `null` | Per-category cap for tool args previews; `null` = `preview_max_chars`. Bounds: ≥ 1 |
+| `tool_output_preview_max_chars` | int \| null | `null` | Per-category cap for tool result previews; `null` = `preview_max_chars`. Bounds: ≥ 1 |
+| `llm_input_preview_max_chars` | int \| null | `null` | Per-category cap for LLM input previews; `null` = `preview_max_chars`. Bounds: ≥ 1 |
+| `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars`. Bounds: ≥ 1 |
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
 | `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `service_name_from_profile` | bool | `false` | A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins |
-| `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops |
-| `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence |
-| `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full` |
-| `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout |
+| `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops. Bounds: ≥ 1 |
+| `span_batch_schedule_delay_ms` | int | `1000` | BatchSpanProcessor worker wake-up cadence. Bounds: ≥ 1 |
+| `span_batch_max_export_batch_size` | int \| null | `null` | Max spans per OTLP POST; `null` = 512, or 64 when `content_capture` is `full`. Bounds: ≥ 1 |
+| `span_batch_export_timeout_ms` | int | `30000` | Per-export HTTP timeout. Bounds: ≥ 1 |
 | `force_flush_on_session_end` | bool | `true` | Flush every backend's span queue at the end of each turn, from a background thread (500 ms per backend, coalesced) |
-| `force_flush_wait_ms` | int | `1500` | How long the turn waits for that background flush (spans, then metrics and logs on a second thread) before returning to Hermes; a one-shot run exits right after, so this bounds what it exports; `0` = do not wait |
+| `force_flush_wait_ms` | int | `1500` | How long the turn waits for that background flush (spans, then metrics and logs on a second thread) before returning to Hermes; a one-shot run exits right after, so this bounds what it exports; `0` = do not wait. Bounds: ≥ 0 |
 | `capture_conversation_history` | bool | `false` | Attach the full message JSON to `llm.*` spans |
-| `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on |
+| `conversation_history_max_chars` | int | `20000` | JSON cap when conversation capture is on. Bounds: ≥ 1 |
 | `content_capture` | string | `"full"` | `full` (default): complete prompt and response on every `api.*` span · `preview`: clipped previews only · `off`: no content, metadata only; see [Conversation capture](/configuration/conversation-capture) |
 | `capture_full_prompts` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps prompts as previews in `full` mode |
 | `capture_full_responses` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps responses as previews in `full` mode |
@@ -50,26 +50,26 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `log_exclude_loggers` | list of strings (env: comma-separated) | `('opentelemetry', 'urllib3', 'httpx', 'httpcore', 'requests', 'openai', 'asyncio', 'hpack', 'grpc', 'websockets', 'charset_normalizer', 'markdown_it')` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
 | `log_logger_levels` | map | *(unset)* | Per-logger minimum level, e.g. `{gateway.config: WARNING}`; `logs.logger_levels` |
 | `log_only_in_turn` | bool | `false` | Drop records the plugin cannot attribute to a session; `logs.only_in_turn` |
-| `log_max_attribute_length` | int | `4096` | Longest exported string attribute on a log record (characters); `logs.max_attribute_length` |
-| `log_batch_schedule_delay_ms` | int | `1000` | Log batch processor: export every N ms; `logs.batch.schedule_delay_ms` |
-| `log_batch_max_queue_size` | int | `2048` | Log batch processor: queued records before drops; `logs.batch.max_queue_size` |
-| `log_batch_max_export_batch_size` | int | `512` | Log batch processor: records per export request; `logs.batch.max_export_batch_size` |
-| `log_batch_export_timeout_ms` | int | `30000` | Log batch processor: per-export timeout; `logs.batch.export_timeout_ms` |
+| `log_max_attribute_length` | int | `4096` | Longest exported string attribute on a log record (characters); `logs.max_attribute_length`. Bounds: ≥ 1 |
+| `log_batch_schedule_delay_ms` | int | `1000` | Log batch processor: export every N ms; `logs.batch.schedule_delay_ms`. Bounds: ≥ 1 |
+| `log_batch_max_queue_size` | int | `2048` | Log batch processor: queued records before drops; `logs.batch.max_queue_size`. Bounds: ≥ 1 |
+| `log_batch_max_export_batch_size` | int | `512` | Log batch processor: records per export request; `logs.batch.max_export_batch_size`. Bounds: ≥ 1 |
+| `log_batch_export_timeout_ms` | int | `30000` | Log batch processor: per-export timeout; `logs.batch.export_timeout_ms`. Bounds: ≥ 1 |
 | `log_live_min_level` | string | `"INFO"` | Floor for the dashboard's live Logs tab (`INFO` default; the OTLP path keeps `log_level`); `logs.live_min_level` |
 | `log_events` | bool | `false` | Emit structured `hermes.*` / GenAI events from the hooks (Phase 2); `logs.events.enabled` |
 | `log_events_content` | string | `"inherit"` | Content on events: `inherit` (follow `content_capture`) / `full` / `preview` / `off`; `logs.events.content` |
 | `emit_genai_metrics` | bool | `true` | Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`) |
 | `metrics_temporality` | string \| null | *(unset)* | Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins |
 | `metrics_histogram` | string | `"explicit"` | Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it) |
-| `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap) |
+| `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap). Bounds: ≥ 0 |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
 | `discovery_prompt` | bool | `false` | Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in) |
 | `dashboard_live` | bool | `true` | Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode |
-| `dashboard_live_max_spans` | int | `1000` | Rows kept per kind (spans, metrics, logs) in the live store |
-| `dashboard_live_retention_hours` | float | `168.0` | Rows older than this are dropped from the live store (`0` = only the row cap applies) |
+| `dashboard_live_max_spans` | int | `1000` | Rows kept per kind (spans, metrics, logs) in the live store. Bounds: ≥ 1 |
+| `dashboard_live_retention_hours` | float | `168.0` | Rows older than this are dropped from the live store (`0` = only the row cap applies). Bounds: ≥ 0.0 |
 | `host_metrics` | bool | `false` | Sample CPU/GPU and emit `process.*` / `system.*` / `hw.*` metrics; see [Host & GPU metrics](/configuration/host-metrics) |
 | `host_metrics_gpu` | string | `"auto"` | `auto` · `amd` · `nvidia` · `off` — which GPU SDK to probe |
-| `host_metrics_interval_ms` | int | `1000` | Host sampling cadence (floor 50 ms) |
+| `host_metrics_interval_ms` | int | `1000` | Host sampling cadence (floor 50 ms). Bounds: ≥ 1 |
 | `suppress_mcp_ping_spans` | bool | `true` | Drop successful MCP keepalive `ping` spans before export |
 | `backends` | list | *(unset)* | Multi-backend fan-out list; see the `backends[]` section |
 
