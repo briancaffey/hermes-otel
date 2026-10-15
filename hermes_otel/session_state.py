@@ -333,6 +333,10 @@ class SessionState:
         # Gateway session key -> the session id of its latest turn, so
         # agent_loop_stopped (which names only the key) finds the turn (#396).
         self._session_keys: "OrderedDict[str, str]" = OrderedDict()
+        # Session ids whose root span this process has already counted in
+        # ``hermes.session.count`` (#473): outlives the per-turn PerSession so
+        # continuation turns (synthesised roots) count nothing.
+        self._counted: "OrderedDict[str, bool]" = OrderedDict()
 
     def remember_session_key(self, session_key: str, session_id: str) -> None:
         with self._lock:
@@ -424,6 +428,24 @@ class SessionState:
         while len(table) > self._MAX_TURN_COUNTERS:
             table.popitem(last=False)
 
+    def first_root(self, session_id: str) -> bool:
+        """True once per session id per process: the caller counts the session.
+
+        A real ``on_session_start`` and a root synthesised on ``pre_llm_call``
+        (resumed, gateway and cron turns, where Hermes never fires
+        ``on_session_start`` in this process) both create a root; whichever
+        comes first wins and every later root of the same session is a
+        continuation turn (#473). ``drop_session`` forgets the id, so a
+        session that is finalized and then reused counts again.
+        """
+        if not session_id:
+            return False
+        with self._lock:
+            if session_id in self._counted:
+                return False
+            self._remember(self._counted, session_id, True)
+            return True
+
     def first_seen(self, session_id: str) -> Optional[float]:
         """Wall-clock time the session's first turn started, if seen in this process."""
         with self._lock:
@@ -465,6 +487,7 @@ class SessionState:
                 turns = max(turns, ps.turn_number)
             first_seen = self._first_seen.pop(session_id, None)
             self._previous_session.pop(session_id, None)
+            self._counted.pop(session_id, None)
             return {"turns": turns, "first_seen": first_seen, "had_state": ps is not None}
 
     def turn_number(self, session_id: str) -> int:

@@ -18,7 +18,7 @@ Every instrument the plugin creates, exactly as named in `tracer._create_metric_
 
 | Metric | Kind | Unit | Labels | Recorded by |
 |---|---|---|---|---|
-| `hermes.session.count` | Counter | `{session}` | `platform` | `session_start` |
+| `hermes.session.count` | Counter | `{session}` | `platform` | the first root span this process creates for the session: `session_start`, or the root synthesised on `pre_llm_call` when Hermes fires no `session_start` in this process (a resumed `hermes -r`, gateway and cron turns; #473). Continuation turns of a counted session add nothing |
 | `hermes.session.turns` | Histogram | `{turn}` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: turns the finished session had |
 | `hermes.session.duration` | Histogram | `s` | `platform`, `reason` | `on_session_finalize` / `on_session_reset`: seconds from the session's first turn to its end |
 | `hermes.message.count` | Counter | `{message}` | `model`, `provider` (the provider the turn's API calls reported; absent before any did) | `post_llm_call` (one per completed assistant message) |

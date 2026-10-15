@@ -76,6 +76,11 @@ def _start_session_span(
         tracer.sessions.remember_session_key(gateway_key, session_id)
     if not ps.correlation_id:
         ps.correlation_id = _extract_correlation_id(extra_kwargs)
+    # Count the session when this process first roots it, whichever hook
+    # gets there first (#473): a resumed, gateway or cron session has no
+    # on_session_start in this process and used to go uncounted.
+    if tracer.sessions.first_root(session_id):
+        tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
@@ -173,7 +178,6 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     if session_id:
         # A previous turn of this session that failed and never ended (#467).
         tracer.close_failed_turn(session_id)
-    tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
     _start_session_span(session_id, model, platform, kwargs, synthesized=False)
 
 
