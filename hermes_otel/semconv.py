@@ -1024,9 +1024,15 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     ),
     Attr("gen_ai.operation.name", "model", "`invoke_agent`", "agent / cron (turn root)"),
     Attr(
+        "hermes.provider",
+        "model",
+        "The provider id as Hermes names it (`openrouter`, `nvidia`, `xai`, `bedrock` …), beside the convention spellings in `gen_ai.provider.name` / `llm.provider` (#475)",
+        "agent / cron (turn root)",
+    ),
+    Attr(
         "gen_ai.provider.name",
         "model",
-        "The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one.",
+        "The LLM provider the turn's API calls reported, set at **end**; absent when no API call reported one. the OTel GenAI well-known spelling (`x_ai`, `aws.bedrock`, `gcp.vertex_ai`, `azure.ai.inference` …) when the convention has one for the Hermes id, else the raw id; the raw id is always in `hermes.provider` (#475)",
         "agent / cron (turn root)",
     ),
     Attr(
@@ -1155,7 +1161,7 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     Attr(
         "gen_ai.system",
         "model",
-        "The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one.",
+        "The LLM provider the turn's API calls reported, set at **end**; absent when no API call reported one. the OTel GenAI well-known spelling (`x_ai`, `aws.bedrock`, `gcp.vertex_ai`, `azure.ai.inference` …) when the convention has one for the Hermes id, else the raw id; the raw id is always in `hermes.provider` (#475)",
         "agent / cron (turn root)",
     ),
     Attr(
@@ -1180,7 +1186,7 @@ ATTRIBUTES: Tuple[Attr, ...] = (
     Attr(
         "llm.provider",
         "model",
-        "The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one.",
+        "The LLM provider the turn's API calls reported, set at **end**; absent when no API call reported one. OpenInference's spelling (`xai`, `aws`, `google`, `azure`, `moonshot` …) when the convention has one for the Hermes id, else the raw id; the raw id is always in `hermes.provider` (#475)",
         "agent / cron (turn root)",
     ),
     Attr("llm.request.approx_input_tokens", "model", "Request shape as Hermes reports it", "api.*"),

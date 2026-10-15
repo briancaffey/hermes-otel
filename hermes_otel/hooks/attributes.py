@@ -8,7 +8,7 @@ identity keys) cannot drift between hooks (#104).
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from ..helpers import (
     DEFAULT_SERVICE_NAME,
@@ -50,15 +50,65 @@ def _session_identity_attributes(
     return attrs
 
 
+# Hermes provider id -> (OTel GenAI ``gen_ai.provider.name``, OpenInference
+# ``llm.provider``) when the conventions have a well-known spelling for it
+# (#475). Ids with no entry pass through unchanged (``openrouter``, ``nvidia``,
+# ``custom``, ``lmstudio`` …): the conventions name no value for them, and an
+# invented one would be worse than the raw id. The raw id always stays in
+# ``hermes.provider``. Sources: ``GenAiProviderNameValues`` in
+# opentelemetry-semantic-conventions, ``OpenInferenceLLMProviderValues`` in
+# openinference-semantic-conventions, ``PROVIDER_REGISTRY`` in Hermes.
+PROVIDER_CANONICAL: Dict[str, Tuple[Optional[str], Optional[str]]] = {
+    "anthropic": ("anthropic", "anthropic"),
+    "openai": ("openai", "openai"),
+    "openai-api": ("openai", "openai"),
+    "openai-codex": ("openai", "openai"),
+    "xai": ("x_ai", "xai"),
+    "xai-oauth": ("x_ai", "xai"),
+    "deepseek": ("deepseek", "deepseek"),
+    "bedrock": ("aws.bedrock", "aws"),
+    "vertex": ("gcp.vertex_ai", "google"),
+    "gemini": ("gcp.gemini", "google"),
+    "azure-foundry": ("azure.ai.inference", "azure"),
+    "groq": ("groq", "groq"),
+    "cohere": ("cohere", "cohere"),
+    "perplexity": ("perplexity", "perplexity"),
+    "mistral": ("mistral_ai", "mistralai"),
+    "minimax": (None, "minimax"),
+    "minimax-cn": (None, "minimax"),
+    "minimax-oauth": (None, "minimax"),
+    "kimi-coding": (None, "moonshot"),
+    "kimi-coding-cn": (None, "moonshot"),
+    "zai": (None, "zai"),
+    "ollama-cloud": (None, "ollama"),
+}
+
+
+def canonical_provider(provider: Any) -> Tuple[str, str, str]:
+    """``(raw, gen_ai, openinference)`` for a Hermes provider id; empty strings when unset.
+
+    ``gen_ai`` is the value for ``gen_ai.provider.name`` / ``gen_ai.system``
+    and the ``provider`` metric label, ``openinference`` the value for
+    ``llm.provider``; each is the raw id when the convention names nothing.
+    """
+    raw = truncate_string(provider, _PROVIDER_MAX) if provider else ""
+    if not raw:
+        return "", "", ""
+    gen_ai, oi = PROVIDER_CANONICAL.get(raw.strip().lower(), (None, None))
+    return raw, gen_ai or raw, oi or raw
+
+
 def _provider_attributes(provider: Any) -> Dict[str, str]:
     """Return current and compatibility provider attributes."""
-    value = truncate_string(provider, _PROVIDER_MAX) if provider else ""
-    if not value:
+    raw, gen_ai, _oi = canonical_provider(provider)
+    if not raw:
         return {}
     return {
-        "gen_ai.provider.name": value,
+        "gen_ai.provider.name": gen_ai,
         # Kept for older OTel drafts and existing dashboards.
-        "gen_ai.system": value,
+        "gen_ai.system": gen_ai,
+        # The Hermes id as configured, whatever the conventions call it.
+        "hermes.provider": raw,
     }
 
 
@@ -76,7 +126,7 @@ def _model_attributes(model: Any, provider: Any = None) -> Dict[str, str]:
         attrs["llm.model_name"] = truncate_string(model, _ID_MAX)
         attrs["gen_ai.request.model"] = truncate_string(model, _ID_MAX)
     if provider:
-        attrs["llm.provider"] = truncate_string(provider, _PROVIDER_MAX)
+        attrs["llm.provider"] = canonical_provider(provider)[2]
         attrs.update(_provider_attributes(provider))
     return attrs
 
@@ -155,7 +205,8 @@ def _metric_model_labels(model: Any, provider: Any) -> Dict[str, str]:
     if model:
         labels["model"] = truncate_string(model, _ID_MAX)
     if provider:
-        labels["provider"] = truncate_string(provider, _PROVIDER_MAX)
+        # The same spelling as gen_ai.provider.name on the spans (#475).
+        labels["provider"] = canonical_provider(provider)[1]
     return labels
 
 

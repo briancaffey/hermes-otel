@@ -53,7 +53,8 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.platform` | hermes | string | The Hermes surface the turn ran on: `cli` · `telegram` · `discord` · `cron` · … (never reported as a provider) |
 | `hermes.profile` | hermes | string | The Hermes profile that ran the turn: `default`, the profile id under `~/.hermes/profiles/`, or `custom`. Also a resource attribute and the `profile` label on every metric ([profiles](/configuration/profiles)) |
 | `hermes.llm.output.chars` | hermes | int | Size of the turn's final response text, observed on `transform_llm_output` ([hooks](/reference/hooks#transform_llm_output)); absent when the finalizer did not run (optional) |
-| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported (`openrouter`, `anthropic` …), set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start` |
+| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider the turn's API calls reported, set at **end**; absent when no API call reported one. Hermes 0.21 passes no provider on `on_session_start`. Each carries its convention's well-known spelling when there is one for the Hermes id (`gen_ai.*`: `x_ai`, `aws.bedrock`, `gcp.vertex_ai`, `gcp.gemini`, `azure.ai.inference`, `openai` for `openai-api` / `openai-codex`; `llm.provider`: `xai`, `aws`, `google`, `azure`, `moonshot`, `minimax`), else the raw id (`openrouter`, `nvidia`, `custom` …) (#475) |
+| `hermes.provider` | hermes | string | The provider id exactly as Hermes names it (`xai`, `bedrock`, `openai-api`, `openrouter` …), beside the convention spellings above; wherever those are set |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `hermes.human_input.kind`, `hermes.human_input.prompt`, `hermes.human_input.outcome`, `hermes.human_input.wait_s` | hermes | mixed | On a `human_input.{kind}` span (`clarify`, a password prompt; not approvals): what the person was asked (Hermes redacts it; a preview under `content_capture`), how the wait ended and how long it took |
 | `hermes.turn.stop_reason` | hermes | string | Set when `agent_loop_stopped` fires for the turn (`/stop`, the `/new` fast path); a stopped turn whose end never arrives is swept as `interrupted`, not `timed_out` |
@@ -104,7 +105,7 @@ One per `run_conversation` call (span kind `LLM`).
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
 | `llm.model_name` | OpenInference | string | Model |
-| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider reported by this turn's API calls; absent on the first call before any API request reported one |
+| `llm.provider`, `gen_ai.provider.name`, `gen_ai.system` | both | string | The LLM provider reported by this turn's API calls, in each convention's spelling (see the turn root); absent on the first call before any API request reported one |
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
 | `input.value`, `input.mime_type` | OpenInference | string | User message (`text/plain`) or, with `capture_conversation_history`, the conversation JSON (`application/json`) |
@@ -122,7 +123,7 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | Attribute | Convention | Type | Meaning |
 |---|---|---|---|
 | `llm.model_name`, `llm.provider` | OpenInference | string | Model / provider |
-| `gen_ai.request.model`, `gen_ai.system`, `gen_ai.provider.name` | gen_ai | string | Model / provider (`gen_ai.system` is the legacy spelling Langfuse reads) |
+| `gen_ai.request.model`, `gen_ai.system`, `gen_ai.provider.name` | gen_ai | string | Model / provider (`gen_ai.system` is the legacy spelling Langfuse reads); the provider in the GenAI well-known spelling when there is one, else the Hermes id, which `hermes.provider` always carries (#475) |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
 | `hermes.query_source` | hermes | string | Which loop the call belongs to: `main` (the agent loop), `subagent` (a delegated child's own loop), `auxiliary` (a call Hermes made on the agent's behalf: titling, compression, MoA reference models and aggregator, vision, approval, the kanban decomposer, the `/goal` judge, …; [hooks](/reference/hooks#pre_auxiliary_call--post_auxiliary_call)) |
 | `hermes.auxiliary.task` | hermes | string | The auxiliary task, as Hermes names it (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …); `unknown` when it sent none. Auxiliary spans only |

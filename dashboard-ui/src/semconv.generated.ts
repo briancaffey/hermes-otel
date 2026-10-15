@@ -412,6 +412,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "hermes.log.attribution",
   "gen_ai.agent.name",
   "gen_ai.operation.name",
+  "hermes.provider",
   "gen_ai.provider.name",
   "gen_ai.request.choice.count",
   "gen_ai.request.frequency_penalty",
