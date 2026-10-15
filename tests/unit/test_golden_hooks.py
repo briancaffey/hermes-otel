@@ -29,6 +29,8 @@ def _stable_environment(monkeypatch):
         "HERMES_KANBAN_BOARD",
         "HERMES_KANBAN_RUN_ID",
         "HERMES_PROFILE",
+        "HERMES_OTEL_TRACEPARENT",
+        "HERMES_OTEL_TRACESTATE",
     ):
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("HERMES_REDACT_SECRETS", "true")

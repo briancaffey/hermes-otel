@@ -219,6 +219,12 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "tool.* / api.* / llm.* / approval.* / skill.*",
     ),
     Attr(
+        "hermes.trace.remote_parent",
+        "session",
+        "`true` when the root was parented under the span an outer process named in `HERMES_OTEL_TRACEPARENT` (#474); absent otherwise",
+        "agent / cron (turn root)",
+    ),
+    Attr(
         "hermes.session.synthesized",
         "session",
         "`true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hoo…",

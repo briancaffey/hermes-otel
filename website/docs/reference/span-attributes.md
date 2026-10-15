@@ -64,6 +64,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `gen_ai.agent.name` | gen_ai | string | The host's `agent_name` when it passes one, else the active named profile (`coder`), else `hermes-agent`; Weave shows it as the agent |
 | `wandb.is_turn`, `wandb.thread_id` | Weave | bool / string | Marks a Weave conversation turn and groups turns by session |
 | `weave.agent.version` | Weave | string | Plugin version (optional) |
+| `hermes.trace.remote_parent` | hermes | bool | `true` when the root was parented under the span an outer process named in `HERMES_OTEL_TRACEPARENT` ([env vars](/reference/env-vars#join-an-outer-trace), #474); absent otherwise |
 | `hermes.session.synthesized` | hermes | bool | `true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hook of the turn (optional) |
 | `hermes.session.previous_id` | hermes | string | The session this one replaced (`/new`, `/reset`); the root also carries a span link (`hermes.link=previous_session`) to that session's last root (optional) |
 | `hermes.session.finalize_reason`, `hermes.session.reset_reason` | hermes | string | Set when a still-open root was closed by `on_session_finalize` / `on_session_reset`, with `hermes.turn.final_status` `finalized` / `reset` (optional) |

@@ -208,6 +208,16 @@
 # Also settable via HERMES_OTEL_SKILL_SPANS.
 # skill_spans: true
 
+# ── Join an outer trace (#474) ────────────────────────────────────────────────
+#
+# Whatever launches Hermes (a CI job, a script, another agent) can export
+# HERMES_OTEL_TRACEPARENT (a W3C traceparent) and optionally
+# HERMES_OTEL_TRACESTATE; every turn root of the process is then a child of
+# that span, marked hermes.trace.remote_parent=true. Set false to ignore the
+# variables. The kanban worker hand-off (plain TRACEPARENT) is separate.
+# Also settable via HERMES_OTEL_REMOTE_PARENT.
+# remote_parent: true
+
 # ── Telemetry discovery prompt (opt-in) ───────────────────────────────────────
 #
 # Plugin skills do not appear in Hermes' <available_skills> catalog, so by

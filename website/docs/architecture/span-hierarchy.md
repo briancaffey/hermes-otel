@@ -231,6 +231,13 @@ removes it in `on_kanban_worker_spawned`. A worker (a process with
 parents its turn root under the claim. A `TRACEPARENT` anywhere else is left
 alone, and the plugin never removes one it did not set.
 
+Any other launcher can do the same with `HERMES_OTEL_TRACEPARENT` (and
+`HERMES_OTEL_TRACESTATE`): a CI job, a shell script or another agent that
+exports its own span's context before running `hermes` gets the turn root as
+a child of that span, marked `hermes.trace.remote_parent=true` (#474). The
+plugin-prefixed name never collides with a `TRACEPARENT` some unrelated tool
+left in the shell; `remote_parent: false` switches it off.
+
 The claim itself is a root: the gateway serves every session, so nesting it
 under whatever turn happens to be in flight would mis-parent it. The later
 dispatcher transitions (`kanban.spawn`, `kanban.worker_exit`,

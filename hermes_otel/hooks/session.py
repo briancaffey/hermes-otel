@@ -26,6 +26,7 @@ from .attributes import (
     turn_trigger_attributes,
 )
 from .kanban import kanban_remote_parent
+from .propagation import remote_parent
 from .usage import _record_genai_token_usage, genai_metric_dims, usage_attributes
 
 try:
@@ -140,6 +141,11 @@ def _start_session_span(
     # before spawning this process, so the run is one trace.
     if parent_override is None and not links:
         parent_override = kanban_remote_parent()
+    # Any other launcher (#474): HERMES_OTEL_TRACEPARENT names the outer span.
+    if parent_override is None and not links and tracer.config.remote_parent:
+        parent_override = remote_parent()
+        if parent_override is not None:
+            attributes["hermes.trace.remote_parent"] = True
 
     # Session chaining (#29): a session that replaced another (``/new``,
     # ``/reset``, expiry) names it and links to its last root span.

@@ -14,9 +14,61 @@ advertises it; no release does today (#130).
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
+from ..debug_utils import debug_log, logger
+from ..helpers import parse_traceparent
 from ._common import _fail_open, _resolve_session_id, get_tracer
+
+# An outer process (a CI job, a script, another agent) that launches Hermes
+# can make the turn a child of its own span by exporting these (#474). The
+# plugin-prefixed names never collide with a ``TRACEPARENT`` some unrelated
+# tool left in the shell, which the kanban hand-off reads only inside a
+# worker.
+REMOTE_PARENT_ENV = "HERMES_OTEL_TRACEPARENT"
+REMOTE_STATE_ENV = "HERMES_OTEL_TRACESTATE"
+_warned_invalid: Optional[str] = None
+
+
+def remote_parent() -> Any:
+    """The span named by ``HERMES_OTEL_TRACEPARENT`` as a remote parent for a
+    turn root, or None when the variable is unset or malformed (#474).
+
+    ``HERMES_OTEL_TRACESTATE`` is carried along when set. A malformed value
+    is reported once per process and ignored; the turn then starts its own
+    trace, as it would without the variable.
+    """
+    global _warned_invalid
+    raw = os.environ.get(REMOTE_PARENT_ENV, "")
+    if not raw.strip():
+        return None
+    parsed = parse_traceparent(raw)
+    if parsed is None:
+        if _warned_invalid != raw:
+            _warned_invalid = raw
+            logger.warning(
+                f"[hermes-otel] {REMOTE_PARENT_ENV} is not a valid W3C traceparent "
+                f"({len(raw)} chars); the turn starts its own trace"
+            )
+        return None
+    trace_id, span_id, flags = parsed
+    try:
+        from opentelemetry.trace import NonRecordingSpan, SpanContext, TraceFlags
+        from opentelemetry.trace.span import TraceState
+
+        state = TraceState()
+        raw_state = os.environ.get(REMOTE_STATE_ENV, "").strip()
+        if raw_state:
+            state = TraceState.from_header([raw_state])
+        return NonRecordingSpan(
+            SpanContext(
+                trace_id, span_id, is_remote=True, trace_flags=TraceFlags(flags), trace_state=state
+            )
+        )
+    except Exception as e:  # pragma: no cover - OTel is a hard dependency
+        debug_log(f"remote_parent: {e}")
+        return None
 
 
 def get_current_traceparent(session_id: Optional[str] = None) -> Optional[str]:

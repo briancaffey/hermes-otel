@@ -431,6 +431,12 @@ class HermesOtelConfig:
     # overlap freely. Set false to keep only the hermes.skill.* attribute and
     # the skill_inferred counter.
     skill_spans: bool = True
+    # ── Remote parent (#474) ─────────────────────────────────────────────
+    # An outer process that launches Hermes can export HERMES_OTEL_TRACEPARENT
+    # (and HERMES_OTEL_TRACESTATE) to make the turn a child of its own span.
+    # false ignores the variables (a kanban worker's TRACEPARENT hand-off is
+    # separate and unaffected).
+    remote_parent: bool = True
     # ── Telemetry discovery prompt (opt-in) ─────────────────────────────
     # Register a short system-prompt section (via Hermes'
     # register_system_prompt_section) telling the model that telemetry is
@@ -1265,6 +1271,7 @@ FIELD_DOCS = {
     "metrics_histogram": "Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it)",
     "metrics_label_limit": "Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap)",
     "skill_spans": "Open a `skill.<name>` span on each successful skill load, closed at turn end",
+    "remote_parent": "Parent the turn root under the span named by `HERMES_OTEL_TRACEPARENT` (+ `HERMES_OTEL_TRACESTATE`) when an outer process exported them; `false` ignores the variables. The kanban worker hand-off (`TRACEPARENT`) is separate",
     "discovery_prompt": "Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in)",
     "dashboard_live": "Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode",
     "dashboard_live_max_spans": "Rows kept per kind (spans, metrics, logs) in the live store",
@@ -1330,6 +1337,7 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "metrics_histogram",
             "metrics_label_limit",
             "skill_spans",
+            "remote_parent",
             "suppress_mcp_ping_spans",
             "discovery_prompt",
         ),
