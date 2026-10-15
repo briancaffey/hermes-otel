@@ -317,6 +317,10 @@ def on_session_end(
         span=root_span,
         content=False,
     )
+    # Children the turn left open (a tool without post_tool_call, an api.*
+    # cut mid-stream, an approval that timed out) end here, marked, before
+    # the root so the root still contains them (#477).
+    tracer.end_leftover_children(session_id, "turn_end")
     _remember_root(tracer, session_id)
     tracer.spans.pop_parent(session_id=session_id)
     tracer.end_span(key, attributes=attributes, status=status)
@@ -369,6 +373,7 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
     key = f"session:{session_id}"
     closed_root = tracer.spans.has_span(key)
     if closed_root:
+        tracer.end_leftover_children(session_id, "session_end")
         # A turn still in flight (or an orphan) at the session's end: close it
         # as finalized rather than leaving it to the TTL sweep.
         if tracer.config.skill_spans:

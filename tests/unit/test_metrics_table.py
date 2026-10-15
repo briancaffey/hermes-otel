@@ -13,6 +13,7 @@ from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import _INSTRUMENTS, HermesOTelPlugin, metric_otlp_name
 
 EXPECTED_KEYS = {
+    "span_swept",
     "session_count",
     "session_turns",
     "session_duration",

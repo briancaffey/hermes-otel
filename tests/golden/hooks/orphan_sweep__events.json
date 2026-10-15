@@ -240,6 +240,16 @@
   },
   {
    "attributes": {
+    "profile": "golden",
+    "reason": "ttl",
+    "span_kind": "api"
+   },
+   "name": "hermes.span.swept.count",
+   "unit": "{span}",
+   "value": 1
+  },
+  {
+   "attributes": {
     "model": "gpt-4",
     "profile": "golden",
     "provider": "openai",
@@ -305,6 +315,8 @@
     "gen_ai.request.model": "gpt-4",
     "gen_ai.system": "openai",
     "hermes.query_source": "main",
+    "hermes.span.ended_by": "sweep",
+    "hermes.span.sweep_reason": "ttl",
     "llm.api_mode": "chat",
     "llm.model_name": "gpt-4",
     "llm.provider": "openai",

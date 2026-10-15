@@ -64,7 +64,7 @@ from .pipeline import (  # noqa: F401 — re-exported
 )
 from .plugin_config import HermesOtelConfig, load_config
 from .session_state import SessionState
-from .span_tracker import SpanTracker
+from .span_tracker import SpanTracker, sweep_attributes
 
 try:
     from opentelemetry.trace import INVALID_SPAN, set_span_in_context
@@ -204,7 +204,7 @@ class HermesOTelPlugin:
         # flush, then stop the workers.
         debug_log(f"shutdown: begin (flush pending={self._flush_pending.is_set()})")
         try:
-            self.spans.end_all()
+            self.spans.end_all(attributes=sweep_attributes("shutdown"))
         except Exception:
             pass
         try:
@@ -668,11 +668,37 @@ class HermesOTelPlugin:
             return False
         if not self.spans.has_span(f"session:{session_id}"):
             return False
-        self._finalize_orphan(session_id)
+        self._finalize_orphan(session_id, reason="turn_failed")
         self.unregister_turn(session_id)
         return True
 
-    def _finalize_orphan(self, session_id: str) -> None:
+    def end_leftover_children(self, session_id: str, reason: str) -> int:
+        """End every child span still open under ``session_id`` and say why (#477).
+
+        A tool whose ``post_tool_call`` never fired, an ``api.*`` span cut by a
+        stream abort or an approval that timed out used to stay open past
+        the turn's end: never exported until shutdown, and exported with no
+        trace of what happened. Each one is ended with status OK (a sweep is
+        not an error of the operation) and ``hermes.span.ended_by=sweep`` +
+        ``hermes.span.sweep_reason=<reason>``, and counted in
+        ``hermes.span.swept.count``. Ends children before the root so the
+        root still contains them. Returns how many were ended.
+        """
+        session_key = f"session:{session_id}"
+        swept = 0
+        for key in self.spans.pop_session_keys(session_id):
+            if key == session_key or not self.spans.has_span(key):
+                continue
+            self.end_span(key, attributes=sweep_attributes(reason), status="ok")
+            self.record_metric(
+                "span_swept", 1, {"span_kind": key.split(":", 1)[0], "reason": reason}
+            )
+            swept += 1
+        if swept:
+            debug_log(f"swept {swept} leftover span(s) of session={session_id}: {reason}")
+        return swept
+
+    def _finalize_orphan(self, session_id: str, reason: str = "ttl") -> None:
         """End any still-active spans for a timed-out session.
 
         Marks the session span (if present) with `hermes.turn.final_status=timed_out`
@@ -681,9 +707,7 @@ class HermesOTelPlugin:
         # End non-session active spans first (api.*, tool.*, llm.*) so the
         # session span ends last and contains them in the hierarchy.
         session_key = f"session:{session_id}"
-        keys = self.spans.pop_session_keys(session_id)
-        for key in [k for k in keys if k != session_key]:
-            self.end_span(key, status="ok")
+        self.end_leftover_children(session_id, reason)
 
         if self.spans.has_span(session_key):
             # A turn the gateway stopped (agent_loop_stopped) whose end never

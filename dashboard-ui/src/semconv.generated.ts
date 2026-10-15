@@ -258,6 +258,8 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "hermes.session.kind",
   "hermes.session.previous_id",
   "hermes.session.reset_reason",
+  "hermes.span.ended_by",
+  "hermes.span.sweep_reason",
   "hermes.session.synthesized",
   "hermes.session.turn_count",
   "hermes.session_id",

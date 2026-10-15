@@ -38,6 +38,7 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 | `session.id`, `session_id` | OTel / hermes | Hermes session id, on the root and on `llm.*` / `api.*` / `tool.*` / `subagent.*`; `session_id` is the plugin's oldest spelling of the same value, kept for dashboards built on it |
 | `gen_ai.conversation.id` | gen_ai | Same id, gen_ai spelling, wherever `gen_ai.operation.name` is set |
 | `correlation.id` | hermes | A correlation id the host passed on the hook (`correlation_id` / `correlation.id` / `x-correlation-id` …), reused on every span of that session. Hermes 0.21 passes none, so the attribute is absent; group by `session.id` instead |
+| `hermes.span.ended_by`, `hermes.span.sweep_reason` | hermes | On a child span (`tool.*` / `api.*` / `llm.*` / `approval.*` / `skill.*`) the plugin ended on the operation's behalf because the operation's own end hook never came: `ended_by` is `sweep` and `sweep_reason` says why, `turn_end` (still open at `on_session_end`) · `session_end` (at finalize / reset) · `turn_failed` (every API attempt of the turn failed and the next turn closed it) · `ttl` (the [orphan sweep](/architecture/orphan-sweep), `root_span_ttl_ms`) · `shutdown`. Absent on a normally ended span (#477) |
 | `user.id`, `hermes.sender.id` | OTel / hermes | Gateway sender identity — only with `capture_sender_id: true`. `user.id` is `platform:sender` |
 
 ## `agent` / `cron` (turn root)

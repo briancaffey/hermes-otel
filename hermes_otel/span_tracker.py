@@ -63,6 +63,20 @@ _PARENT_STACK: contextvars.ContextVar[Optional[list]] = contextvars.ContextVar(
 )
 
 
+SWEEP_REASONS = ("turn_end", "session_end", "turn_failed", "ttl", "shutdown")
+
+
+def sweep_attributes(reason: str) -> dict:
+    """The marker set on a span the plugin ended on the operation's behalf (#477).
+
+    ``reason`` is one of :data:`SWEEP_REASONS`: ``turn_end`` (open at
+    ``on_session_end``), ``session_end`` (open at finalize / reset),
+    ``turn_failed`` (the turn's API attempts all failed and the next turn
+    closed it), ``ttl`` (the orphan sweep) or ``shutdown``.
+    """
+    return {"hermes.span.ended_by": "sweep", "hermes.span.sweep_reason": reason}
+
+
 class SpanTracker:
     """Active-span registry + parent-span stack. See module docstring.
 
@@ -406,18 +420,19 @@ class SpanTracker:
 
         span.end()
 
-    def end_all(self) -> None:
+    def end_all(self, attributes: Optional[dict] = None) -> None:
         """End every tracked span and drop all shared state (cleanup).
 
         Clears the session-keyed stacks, skill spans, approval starts and the
         delegation registry, plus *this* context's ContextVar stack. Other
         contexts' ContextVar stacks are unreachable from here and are left
-        as they are.
+        as they are. ``attributes`` are set on every span ended here (the
+        shutdown sweep marker, #477).
         """
         with self._lock:
             keys = list(self._active_spans.keys())
         for key in keys:
-            self.end_span(key)
+            self.end_span(key, attributes=attributes)
         with self._lock:
             self._active_spans.clear()
             self._session_parent_stacks.clear()

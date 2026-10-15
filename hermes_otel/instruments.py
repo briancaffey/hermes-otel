@@ -98,6 +98,14 @@ _GENAI_LABELS = (
 
 
 _INSTRUMENTS: Dict[str, InstrumentSpec] = {
+    "span_swept": InstrumentSpec(
+        "hermes.span.swept.count",
+        "counter",
+        "{span}",
+        "Child spans the plugin ended on the operation's behalf (#477)",
+        "one",
+        labels=("span_kind", "reason"),
+    ),
     "session_count": InstrumentSpec(
         "hermes.session.count",
         "counter",

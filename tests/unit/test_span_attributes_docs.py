@@ -9,6 +9,8 @@ CODE = sorted((REPO_ROOT / "hermes_otel" / "hooks").glob("*.py")) + [
     REPO_ROOT / "hermes_otel" / "pipeline.py",
     # Per-session roll-ups the root span carries (cost, auxiliary calls).
     REPO_ROOT / "hermes_otel" / "session_state.py",
+    # The sweep marker on children ended on the operation's behalf (#477).
+    REPO_ROOT / "hermes_otel" / "span_tracker.py",
 ]
 DOC = REPO_ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 

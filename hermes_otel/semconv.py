@@ -207,6 +207,18 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "agent / cron (turn root)",
     ),
     Attr(
+        "hermes.span.ended_by",
+        "turn",
+        "`sweep` when the plugin ended the span on the operation's behalf because the operation's own end hook never came; absent on a normally ended span",
+        "tool.* / api.* / llm.* / approval.* / skill.*",
+    ),
+    Attr(
+        "hermes.span.sweep_reason",
+        "turn",
+        "Why a swept span was ended: `turn_end` (still open at `on_session_end`), `session_end` (at finalize / reset), `turn_failed` (every API attempt of the turn failed and the next turn closed it), `ttl` (the orphan sweep, `root_span_ttl_ms`) or `shutdown`",
+        "tool.* / api.* / llm.* / approval.* / skill.*",
+    ),
+    Attr(
         "hermes.session.synthesized",
         "session",
         "`true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hoo…",
