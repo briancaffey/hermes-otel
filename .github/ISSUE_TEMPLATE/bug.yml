@@ -1,0 +1,64 @@
+name: Bug report
+description: Something the plugin does wrong, or does not do.
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks. The three version lines and the settings report answer most questions on their own.
+  - type: input
+    id: plugin-version
+    attributes:
+      label: hermes-otel version
+      description: "`hermes plugins list`, or the `version` in `~/.hermes/plugins/hermes_otel/plugin.yaml`"
+      placeholder: "1.31.0"
+    validations:
+      required: true
+  - type: input
+    id: hermes-version
+    attributes:
+      label: Hermes version
+      description: "`hermes --version`"
+      placeholder: "Hermes Agent v0.22.2"
+    validations:
+      required: true
+  - type: input
+    id: backend
+    attributes:
+      label: Backend
+      description: "The `type:` of the backend entry involved and how it runs (the repo's docker-compose stack, your own, SaaS)."
+      placeholder: "openobserve, docker-compose/openobserve"
+    validations:
+      required: true
+  - type: dropdown
+    id: mode
+    attributes:
+      label: How Hermes was running
+      options:
+        - "hermes chat / hermes -z (CLI)"
+        - "gateway"
+        - "cron"
+        - "kanban worker"
+        - "sub-agent / delegation"
+        - "other (say below)"
+    validations:
+      required: true
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened, and what you expected
+      description: "Which span, metric, log record or dashboard view is wrong. A span or trace id from the backend helps."
+    validations:
+      required: true
+  - type: textarea
+    id: settings
+    attributes:
+      label: Settings report
+      description: "The output of `python3 ~/.hermes/plugins/hermes_otel/skills/observability/scripts/otel.py status`, or the dashboard's Settings tab. Credentials are masked in both."
+      render: text
+  - type: textarea
+    id: debug
+    attributes:
+      label: Debug log excerpt
+      description: "With `HERMES_OTEL_DEBUG=true` in `~/.hermes/.env`, the lines around the problem from `~/.hermes/plugins/hermes_otel/debug.log`. Remove anything private."
+      render: text

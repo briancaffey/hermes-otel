@@ -1,0 +1,38 @@
+name: PR title
+
+# release-please reads the squash-merged commit, whose message is the PR
+# title, so the title decides whether a release is cut and which section
+# the change lands in: feat / fix / docs cut a release, the others do not.
+# Check it on every edit of the PR so a wrong type never reaches main.
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  pull-requests: read
+
+jobs:
+  title:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@48f256284bd46cdaab1048c3721360e808335d50 # v6.1.1
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            docs
+            refactor
+            test
+            ci
+            chore
+            build
+            perf
+            revert
+          requireScope: false
+          subjectPattern: ^(?![A-Z]).+$
+          subjectPatternError: |
+            The subject "{subject}" must start with a lower-case word, as the
+            commit history does ("fix(spans): …", not "fix(spans): A …").

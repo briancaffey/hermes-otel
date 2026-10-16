@@ -1,0 +1,11 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Documentation
+    url: https://briancaffey.github.io/hermes-otel/
+    about: Installation, configuration, every backend, the attribute and metric references.
+  - name: Backend quirks catalog
+    url: https://briancaffey.github.io/hermes-otel/backends/quirks
+    about: What each backend does differently with the plugin's telemetry, before you report it as a bug.
+  - name: Security report
+    url: https://github.com/briancaffey/hermes-otel/security/advisories/new
+    about: Report a vulnerability privately (see SECURITY.md).

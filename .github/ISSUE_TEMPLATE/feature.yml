@@ -1,0 +1,21 @@
+name: Feature request
+description: A new attribute, metric, log event, config knob or dashboard view.
+labels: ["enhancement"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: What question can you not answer today?
+      description: "The dashboard query or alert you want to write, and what is missing from the telemetry to write it."
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: "The attribute, metric, event or knob you have in mind. Names in the OTel GenAI or OpenInference conventions are preferred where one exists."
+  - type: input
+    id: backend
+    attributes:
+      label: Backend you would verify it on
+      placeholder: "lgtm, phoenix, …"

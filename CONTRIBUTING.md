@@ -25,6 +25,11 @@ and is summarized in the docs under
 If you use Claude Code, that skill loads automatically in this repo, so the
 agent follows the same workflow you do.
 
+## Reporting a security problem
+
+Privately, through GitHub's vulnerability reporting; see [SECURITY.md](SECURITY.md).
+Not as a public issue.
+
 ## Local setup
 
 The project uses [`uv`](https://github.com/astral-sh/uv) for dependency

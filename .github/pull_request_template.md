@@ -7,7 +7,7 @@
 ## Checks
 
 - [ ] `make ci` is green locally (lint, scan, suite with the 85 % gate and the per-module coverage floors, dashboard bundle, docs, wheel). `make ci-fast` when `dashboard-ui/` and `website/` are untouched.
-- [ ] Conventional-commit type matches the change: `feat:` / `fix:` / `docs:` cut a release, `refactor:` / `test:` / `ci:` / `chore:` do not.
+- [ ] Conventional-commit type matches the change: `feat:` / `fix:` / `docs:` cut a release, `refactor:` / `test:` / `ci:` / `chore:` do not. The **PR title** check enforces the shape; the type is your call.
 - [ ] Docs updated where behaviour, config or telemetry changed (`website/docs/reference/*`, `README.md`).
 
 ### Refactor milestone PRs (#414) only

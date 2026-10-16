@@ -1,0 +1,46 @@
+name: Backend request
+description: Ask for an explicit `type:` for an OTLP-capable backend, or report that an existing one broke.
+labels: ["enhancement"]
+body:
+  - type: input
+    id: name
+    attributes:
+      label: Backend
+      description: "Name and link. Most backends already work through `type: otlp` with the right endpoint and headers; an explicit type adds a preset, credentials from env and a dashboard adapter."
+    validations:
+      required: true
+  - type: dropdown
+    id: ingest
+    attributes:
+      label: How does it take OTLP?
+      options:
+        - "OTLP/HTTP (protobuf) with a path per signal"
+        - "OTLP/HTTP behind an auth header or a vendor path"
+        - "gRPC only"
+        - "Not sure"
+    validations:
+      required: true
+  - type: checkboxes
+    id: signals
+    attributes:
+      label: Signals it stores
+      options:
+        - label: traces
+        - label: metrics
+        - label: logs
+  - type: dropdown
+    id: hosting
+    attributes:
+      label: Can it run locally?
+      description: "A docker-compose stack lets the plugin's harness verify it without an account."
+      options:
+        - "Yes, open source with a container image"
+        - "SaaS only (a free tier exists)"
+        - "SaaS only (paid)"
+        - "Not sure"
+  - type: textarea
+    id: tried
+    attributes:
+      label: "What you tried with the generic otlp type"
+      description: "The backend entry (credentials removed) and what arrived, or the error."
+      render: yaml
