@@ -55,6 +55,18 @@ ATTRIBUTES: Tuple[Attr, ...] = (
         "Resource (on every span)",
     ),
     Attr(
+        "host.arch",
+        "resource",
+        "CPU architecture in the OTel spelling (`arm64`, `amd64`, `x86` …), from `platform.machine()` (#476)",
+        "Resource (on every span)",
+    ),
+    Attr(
+        "os.type",
+        "resource",
+        "Operating system in the OTel spelling (`darwin`, `linux`, `windows`), from `platform.system()` (#476)",
+        "Resource (on every span)",
+    ),
+    Attr(
         "openinference.project.name",
         "resource",
         "`project_name` / `OTEL_PROJECT_NAME` (the Phoenix project); optional",

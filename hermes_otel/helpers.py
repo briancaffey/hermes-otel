@@ -929,3 +929,46 @@ def without_otlp_header_env() -> Iterator[None]:
         yield
     finally:
         os.environ.update(saved)
+
+
+# ``platform.machine()`` spellings -> the OTel ``host.arch`` well-known value
+# (``HostArchValues``). Unknown machines pass through lower-cased.
+_HOST_ARCH = {
+    "x86_64": "amd64",
+    "amd64": "amd64",
+    "arm64": "arm64",
+    "aarch64": "arm64",
+    "i386": "x86",
+    "i486": "x86",
+    "i586": "x86",
+    "i686": "x86",
+    "x86": "x86",
+    "armv6l": "arm32",
+    "armv7l": "arm32",
+    "armv8l": "arm32",
+    "arm": "arm32",
+    "ppc64": "ppc64",
+    "ppc64le": "ppc64",
+    "ppc": "ppc32",
+    "s390x": "s390x",
+    "ia64": "ia64",
+}
+
+
+def os_type(system: Optional[str] = None) -> str:
+    """The OTel ``os.type`` for this host (``darwin`` / ``linux`` / ``windows`` …),
+    from ``platform.system()``; empty when unknown (#476)."""
+    import platform
+
+    text = (system if system is not None else platform.system()).strip().lower()
+    return text
+
+
+def host_arch(machine: Optional[str] = None) -> str:
+    """The OTel ``host.arch`` for this host (``arm64`` / ``amd64`` / ``x86`` …),
+    from ``platform.machine()``; the raw spelling, lower-cased, when the
+    conventions name nothing for it; empty when unknown (#476)."""
+    import platform
+
+    text = (machine if machine is not None else platform.machine()).strip().lower()
+    return _HOST_ARCH.get(text, text)

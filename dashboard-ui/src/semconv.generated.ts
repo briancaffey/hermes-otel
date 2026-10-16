@@ -228,6 +228,8 @@ export const KIND_EXAMPLES: readonly { name: string; attrs: Record<string, strin
 ];
 export const ATTRIBUTE_NAMES: readonly string[] = [
   "host.name",
+  "host.arch",
+  "os.type",
   "openinference.project.name",
   "process.pid",
   "service.instance.id",

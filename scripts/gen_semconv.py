@@ -35,7 +35,7 @@ DOC = ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 PROSE_ONLY = {"telemetry.sdk.*", "resource_attributes.*", "global_tags.*"}
 _NAME = (
     r"(?:gen_ai|llm|hermes|openinference|traceloop|session|user|error|input|output|tool|"
-    r"correlation|http|service|process|wandb|weave|exception|host|code|telemetry)"
+    r"correlation|http|service|process|wandb|weave|exception|host|os|code|telemetry)"
     r"\.[a-z_][a-z0-9_.]*|session_id"
 )
 TICKED = re.compile(r"`(" + _NAME + r")`")

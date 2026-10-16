@@ -21,6 +21,7 @@ A test (`tests/unit/test_span_attributes_docs.py`) fails if the code sets an att
 | `service.instance.id` | UUID generated once per process — keeps two Hermes processes on different metric series |
 | `service.version` | Plugin version, read from the shipped `plugin.yaml` |
 | `process.pid` | Process id |
+| `os.type`, `host.arch` | The operating system (`darwin`, `linux`, `windows`) and CPU architecture (`arm64`, `amd64`, `x86` …) in the OTel spellings, so a fleet can be split by platform (#476) |
 | `openinference.project.name` | `project_name` / `OTEL_PROJECT_NAME` (the Phoenix project); optional |
 | `hermes.kanban.task_id`, `hermes.kanban.board`, `hermes.kanban.run_id` | The kanban card, its board and the attempt a dispatcher-spawned worker is running, from `HERMES_KANBAN_TASK` / `_BOARD` / `_RUN_ID`. Only when the task is set: Hermes pins the board into every chat's environment, so the board alone never marks a worker |
 | `host.name` | Hostname, only when `host_metrics: true` |

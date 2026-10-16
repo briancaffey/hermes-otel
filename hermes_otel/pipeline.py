@@ -20,8 +20,10 @@ from .debug_utils import debug_log, logger
 from .helpers import (
     DEFAULT_SERVICE_NAME,
     derive_signal_endpoint,
+    host_arch,
     is_usage_key,
     named_profile,
+    os_type,
     package_version,
     without_otlp_header_env,
     without_usage_keys,
@@ -324,6 +326,10 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
         "service.instance.id": _SERVICE_INSTANCE_ID,
         "process.pid": os.getpid(),
     }
+    # The platform, so a fleet can split by OS and CPU architecture (#476).
+    for key, value in (("os.type", os_type()), ("host.arch", host_arch())):
+        if value:
+            attrs[key] = value
     if profile_service:
         attrs["service.namespace"] = DEFAULT_SERVICE_NAME
     pkg_version = package_version()

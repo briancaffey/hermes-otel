@@ -14,7 +14,7 @@ CODE = sorted((REPO_ROOT / "hermes_otel" / "hooks").glob("*.py")) + [
 ]
 DOC = REPO_ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 
-_NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host)\.[a-z_][a-z0-9_.]*"
+_NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host|os)\.[a-z_][a-z0-9_.]*"
 _QUOTED = re.compile(r'"(' + _NAME + r')"')
 _TICKED = re.compile(r"`(" + _NAME + r")`")
 # Documented in prose (wildcards), not as literals.
