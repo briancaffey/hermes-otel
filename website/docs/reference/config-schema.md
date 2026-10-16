@@ -64,6 +64,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap). Bounds: ≥ 0 |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
 | `remote_parent` | bool | `true` | Parent the turn root under the span named by `HERMES_OTEL_TRACEPARENT` (+ `HERMES_OTEL_TRACESTATE`) when an outer process exported them; `false` ignores the variables. The kanban worker hand-off (`TRACEPARENT`) is separate |
+| `probe_backends` | bool | `true` | At init, open one TCP connection to each backend endpoint on a background thread and log reachable / unreachable per backend; once, never periodic, no bytes sent, exports never wait for it |
 | `discovery_prompt` | bool | `false` | Register a system-prompt section advertising `hermes_otel:observability` (changes what the model sees every turn; opt-in) |
 | `dashboard_live` | bool | `true` | Keep recent spans/metrics/logs in `$HERMES_HOME/hermes_otel_live.db` for the dashboard's Live mode |
 | `dashboard_live_max_spans` | int | `1000` | Rows kept per kind (spans, metrics, logs) in the live store. Bounds: ≥ 1 |

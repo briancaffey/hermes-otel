@@ -577,6 +577,19 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
                 "[hermes-otel] ✓ Live dashboard store active"
                 + ("" if plugin._span_processors else " (no OTLP backend — live-only)")
             )
+        if config.probe_backends and backends:
+            # One TCP connect per endpoint on a background thread (#481): a
+            # dead backend is said so at startup instead of 30 s later inside
+            # the batch worker. Never gates an export.
+            from .probe import start_probe
+
+            def _report(results):
+                plugin.probe_results = results
+                for r in results:
+                    (logger.info if r.ok else logger.warning)(r.line())
+                    debug_log(r.line())
+
+            plugin._probe_thread = start_probe(backends, _report)
         return True
     except Exception as e:
         logger.error(f"[hermes-otel] ✗ pipeline init failed: {e}")

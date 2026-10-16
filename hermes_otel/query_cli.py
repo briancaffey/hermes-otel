@@ -844,10 +844,24 @@ def cmd_status(args: argparse.Namespace, out: TextIO) -> int:
                 "traces" + (" · metrics" if b["metrics"] else "") + (" · logs" if b["logs"] else "")
             )
             q = f"queryable here: {caps}" if b["queryable"] else "no query adapter (use its own UI)"
-            out.write(f"  {b['name']:<14} {b['type']:<12} {b['endpoint'] or '-':<48} {q}\n")
+            out.write(
+                f"  {b['name']:<14} {b['type']:<12} {b['endpoint'] or '-':<48} "
+                f"{_reachability(b['endpoint']):<22} {q}\n"
+            )
         if info.get("query_backend_pin"):
             out.write(f"  default --source: {info['query_backend_pin']} (query_backend)\n")
     return 0
+
+
+def _reachability(endpoint: Any) -> str:
+    """One TCP connect to the endpoint (#481): ``reachable (3 ms)`` or the error."""
+    from .probe import parse_host_port, probe_tcp
+
+    parsed = parse_host_port(endpoint)
+    if parsed is None:
+        return "-"
+    ok, ms, error = probe_tcp(parsed[0], parsed[1], timeout_s=1.0)
+    return f"reachable ({ms:.0f} ms)" if ok else f"unreachable: {error}"
 
 
 def _trace_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, str]]:

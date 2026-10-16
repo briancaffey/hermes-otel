@@ -169,6 +169,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_METRICS_LABEL_LIMIT` | `metrics_label_limit` | int | `100` |
 | `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | bool | `true` |
 | `HERMES_OTEL_REMOTE_PARENT` | `remote_parent` | bool | `true` |
+| `HERMES_OTEL_PROBE_BACKENDS` | `probe_backends` | bool | `true` |
 | `HERMES_OTEL_DISCOVERY_PROMPT` | `discovery_prompt` | bool | `false` |
 | `HERMES_OTEL_DASHBOARD_LIVE` | `dashboard_live` | bool | `true` |
 | `HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS` | `dashboard_live_max_spans` | int | `1000` |

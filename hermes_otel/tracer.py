@@ -180,6 +180,10 @@ class HermesOTelPlugin:
 
     def _reset_pipeline_state(self) -> None:
         """Forget every pipeline object from a previous init (not the config)."""
+        # Reachability probe results (#481): filled by a background thread
+        # shortly after init; [] until then or when the probe is off.
+        self.probe_results = []
+        self._probe_thread = None
         self.tracer = None
         self._tracer_provider = None
         self._span_processors = []

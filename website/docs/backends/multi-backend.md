@@ -65,6 +65,7 @@ Each backend runs in **its own worker thread with its own bounded queue**:
 
 - A single slow collector backs up **only its own queue** — the others keep draining.
 - If one backend is completely unreachable, the plugin logs the failed POST attempts and drops the oldest spans in that queue when the buffer fills. The others continue.
+- At init the plugin opens one TCP connection to each backend endpoint on a background thread and logs `✓ <name> reachable at host:port (3 ms)` or `⚠ <name> unreachable at host:port (Connection refused)`, so a dead backend is said so at startup rather than 30 s later inside the export worker (#481). It runs once, sends no bytes and never gates an export; a proxy that accepts the connection passes even when the service behind it is down. `hermes otel status` probes on demand and prints the same verdict per backend. `probe_backends: false` turns the startup probe off.
 - No backend's latency is on Hermes' hot path. `span.end()` is still a queue push.
 
 ## Per-backend signal overrides

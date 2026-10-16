@@ -238,7 +238,7 @@ class TestRenderings:
         reports, _ = field_reports({})
         text = effective_yaml(reports, None)
         assert "with no config file" in text
-        assert "backends" not in text.split("\n\n", 1)[1]  # unset list is omitted
+        assert "\nbackends:" not in text.split("\n\n", 1)[1]  # unset list is omitted
 
     def test_config_block_reports_path_and_source(self, home):
         cfg = build_settings_report()["config"]

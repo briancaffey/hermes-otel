@@ -119,3 +119,21 @@ def inmemory_otel_with_metrics():
         exporters[0].clear()
         trace_provider.shutdown()
         meter_provider.shutdown()
+
+
+@pytest.fixture(autouse=True)
+def _no_backend_probe(monkeypatch):
+    """The reachability probe (#481) never runs in tests unless a test opts in
+    with ``real_backend_probe``: the fake hostnames the suites use would hit
+    the resolver and the network (``phoenix`` resolves on some LANs)."""
+    from hermes_otel import probe
+
+    monkeypatch.setattr(probe, "start_probe", lambda *a, **k: None)
+
+
+@pytest.fixture()
+def real_backend_probe(monkeypatch):
+    """Restore the real ``start_probe`` for a test that exercises it."""
+    from hermes_otel import probe
+
+    monkeypatch.setattr(probe, "start_probe", probe.__dict__["_real_start_probe"])

@@ -218,6 +218,15 @@
 # Also settable via HERMES_OTEL_REMOTE_PARENT.
 # remote_parent: true
 
+# ── Reachability probe (#481) ─────────────────────────────────────────────────
+#
+# At init the plugin opens one TCP connection to each backend endpoint on a
+# background thread and logs "reachable" or "unreachable" per backend, so a
+# backend that is down is said so at startup instead of 30 s later inside the
+# export worker. Once, never periodic; no bytes are sent; exports never wait
+# for it. Also settable via HERMES_OTEL_PROBE_BACKENDS.
+# probe_backends: true
+
 # ── Telemetry discovery prompt (opt-in) ───────────────────────────────────────
 #
 # Plugin skills do not appear in Hermes' <available_skills> catalog, so by
