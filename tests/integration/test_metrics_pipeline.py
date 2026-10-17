@@ -601,3 +601,80 @@ class TestClaudeCodeCompat:
         assert self._labels(metric_reader, "claude_code.session.count") == [
             {"profile": plugin.profile_name, "start_type": "resume"}
         ]
+
+
+class TestCommitCount:
+    """One ``hermes.commit.count`` point and one ``commit`` record per
+    successful ``git commit`` through the terminal tool (#478)."""
+
+    @staticmethod
+    def _commit(session_id, task, exit_code=0, command="git commit -m 'add note'", **kw):
+        args = {"command": command}
+        on_pre_tool_call(tool_name="terminal", args=args, task_id=task, session_id=session_id)
+        on_post_tool_call(
+            tool_name="terminal",
+            args=args,
+            result='{"output": "[main 1234abc] add note", "exit_code": %d}' % exit_code,
+            task_id=task,
+            session_id=session_id,
+            **kw,
+        )
+
+    def test_counted_by_the_session_platform_and_model(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._commit("s1", "t1")
+        self._commit("s1", "t2")
+        self._commit("s1", "t3", exit_code=1)  # a failed commit is not one
+        self._commit("s1", "t4", command="git commit-tree HEAD^{tree}")
+        metric = _get_metric(metric_reader, "hermes.commit.count")
+        assert metric is not None and metric.unit == "{commit}"
+        points = _points(metric)
+        assert len(points) == 1 and points[0].value == 2
+        assert dict(points[0].attributes) == {
+            "profile": plugin.profile_name,
+            "platform": "cli",
+            "model": "gpt-4",
+        }
+
+    def test_without_a_session_the_platform_is_unknown(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        args = {"command": "git commit -m x"}
+        on_pre_tool_call(tool_name="terminal", args=args, task_id="t1")
+        on_post_tool_call(
+            tool_name="terminal", args=args, result='{"output": "", "exit_code": 0}', task_id="t1"
+        )
+        points = _points(_get_metric(metric_reader, "hermes.commit.count"))
+        assert [dict(p.attributes) for p in points] == [
+            {"profile": plugin.profile_name, "platform": "unknown"}
+        ]
+
+    def test_nothing_without_a_commit(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._commit("s1", "t1", command="git status")
+        assert _get_metric(metric_reader, "hermes.commit.count") is None
+
+    def test_one_point_and_one_record_on_the_same_pipeline(self):
+        from hermes_otel.testing import build_inmemory_plugin, install_singleton
+
+        pipeline = build_inmemory_plugin(
+            metrics=True, logs=True, config=HermesOtelConfig(log_events=True)
+        )
+        previous = install_singleton(pipeline.plugin)
+        try:
+            on_session_start(session_id="s1", model="gpt-4", platform="cli")
+            self._commit("s1", "t1")
+            assert _get_metric_value(pipeline.metric_reader, "hermes.commit.count") == 1
+            records = [
+                r.log_record
+                for r in pipeline.log_exporter.get_finished_logs()
+                if r.log_record.event_name == "commit"
+            ]
+            assert len(records) == 1
+            assert records[0].body == "commit"
+            assert records[0].attributes["hermes.session_id"] == "s1"
+            assert records[0].attributes["hermes.commit.subject"] == "add note"
+        finally:
+            install_singleton(previous)
+            pipeline.shutdown()

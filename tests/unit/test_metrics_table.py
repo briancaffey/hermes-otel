@@ -37,6 +37,7 @@ EXPECTED_KEYS = {
     "kanban_dispatch_count",
     "api_time_to_first_chunk",
     "command_count",
+    "commit_count",
     "human_input_count",
     "skill_lifecycle_count",
     "transcription_count",

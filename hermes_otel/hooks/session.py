@@ -128,6 +128,7 @@ def _start_session_span(
     # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
     ps.model = str(model or "")
+    ps.platform = str(platform or "")
     gateway_key = session_env("HERMES_SESSION_KEY").strip()
     if gateway_key:
         tracer.sessions.remember_session_key(gateway_key, session_id)

@@ -110,7 +110,7 @@ class TestScenarioFile:
             "agent_depth_min", "attr_values_min", "span_names_any", "output_contains",
             "root_attrs", "span_attrs_any", "attrs_absent", "attr_max_len", "text_absent",
             "logs_min", "log_levels_any", "events_min", "event_names_any", "events_max",
-            "logs_only_events", "logs_text_absent",
+            "logs_only_events", "logs_text_absent", "metrics_min",
         }  # fmt: skip
         known_run = {
             "turn_numbers", "same_session", "sessions_distinct", "traces_distinct",

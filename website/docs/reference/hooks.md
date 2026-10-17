@@ -26,7 +26,8 @@ Fires when the tool returns (success, error, timeout, block, or cancel).
 - **Attributes set on end:** `output.value` (result), `hermes.tool.outcome` (a specific non-success hook `status` — `timeout` / `blocked` / `cancelled` — is authoritative; a coarse hook `error` yields to an explicit `blocked` / `timeout` / `cancelled` in the result's `status` field, so governance blocks are not counted as errors; otherwise the result's own `status`, else `completed`)
 - **Span status:** `ERROR` if outcome is `error`, else `OK`
 - **Skill spans:** when the call loaded a skill and succeeded (`skill_view` result `success: true`, or a `/skills/` file read that did not error), opens the `skill.<name>` span and adds the skill to `hermes.turn.skills`; failed loads do neither
-- **Metrics:** `hermes.tool.duration{tool_name}` histogram (on end); `hermes.skill.inferred{skill_name, source}` counter (on start) — see [Metrics](/reference/metrics)
+- **Commits (#478):** when the terminal tool's command was a `git commit` (matched as a word, so `git commit-tree` is not one) and it exited 0 (the result's `exit_code`), the span gets `hermes.tool.git_commit: true`, `hermes.commit.count{platform, model}` is incremented and the `commit` event is emitted with the message's first line from git's own `[branch sha] subject` confirmation (redacted, content-gated). A failed commit, another tool or another command leaves nothing behind
+- **Metrics:** `hermes.tool.duration{tool_name}` histogram (on end); `hermes.skill.inferred{skill_name, source}` counter (on start); `hermes.commit.count{platform, model}` on a successful `git commit` — see [Metrics](/reference/metrics)
 
 ### `pre_llm_call`
 
@@ -287,7 +288,7 @@ pre_api_request          open  api.{model}       (child of llm)
 pre_tool_call            open  tool.{name}       (child of api or llm)
 subagent_start           open  subagent.{role}   (child of api or llm)
 transform_terminal_output  attrs tool.terminal   (raw output size, return code, env type; returns None)
-post_tool_call           close tool.{name}       + result size, terminal truncation
+post_tool_call           close tool.{name}       + result size, terminal truncation, git commit (attr + hermes.commit.count + commit event)
 post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
 pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's llm/api/root, or own root; not a parent)

@@ -229,6 +229,7 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `hermes.tool.outcome` | hermes | string | `error` · `timeout` · `blocked` · `cancelled` from Hermes' hook status or the tool's own result status; `completed` means the tool returned and nothing reported a failure |
 | `hermes.tool.blocked_by` | hermes | string | Which governance floor blocked the call — `deny_rule` · `hardline` · `stdin_password_guard` (optional; only when positively classified, `outcome=blocked`) |
 | `hermes.tool.decided_by` | hermes | string | `hard_floor` on the tool span when a floor (not a human) blocked the call; see also `hermes.approval.decided_by` on `approval.*` spans (optional) |
+| `hermes.tool.git_commit` | hermes | bool | `true` when a terminal command was a `git commit` (matched as a word, so `git commit-tree` is not one) that exited 0: the call the commit counter ([metrics](/reference/metrics)) and the `commit` [event](/reference/log-events#commit) came from (optional) |
 | `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional) |
 | `hermes.skill.name`, `hermes.skill.source` | hermes | string | Bare skill name and `skill_view` / `path_match` when the call loaded a skill (optional) |
 | `hermes.tool.cpu.utilization.avg`, `hermes.tool.cpu.utilization.peak` | hermes | float | Process-tree CPU (0..1) during the call — `host_metrics` only |

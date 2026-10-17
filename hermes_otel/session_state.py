@@ -151,6 +151,9 @@ class PerSession:
     # The model the turn started on (``on_session_start`` / the lazy root),
     # kept so a delegated child can say whether it inherited it (#391).
     model: str = ""
+    # The Hermes surface the turn runs on (``cli``, ``telegram`` …), as the
+    # root received it; the tool hooks label per-session metrics with it (#478).
+    platform: str = ""
     # agent_loop_stopped (#396): the reason the gateway gave when it stopped
     # this turn, so the root ends "interrupted" even if only the sweep ends it.
     stop_reason: str = ""

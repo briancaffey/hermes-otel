@@ -330,6 +330,14 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "one",
         labels=("command", "surface"),
     ),
+    "commit_count": InstrumentSpec(
+        "hermes.commit.count",
+        "counter",
+        "{commit}",
+        "Successful `git commit` commands run through the terminal tool, by platform and model; never the message or the repository (#478)",
+        "one",
+        labels=("platform", "model"),
+    ),
     "human_input_count": InstrumentSpec(
         "hermes.human_input.count",
         "counter",
