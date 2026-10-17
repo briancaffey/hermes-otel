@@ -16,11 +16,9 @@ CODE = sorted((REPO_ROOT / "hermes_otel" / "hooks").glob("*.py")) + [
 ]
 DOC = REPO_ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 
-_NAME = r"(?:gen_ai|llm|hermes|openinference|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host|os)\.[a-z_][a-z0-9_.]*"
+_NAME = r"(?:gen_ai|llm|hermes|openinference|traceloop|session|user|error|input|output|tool|correlation|http|service|process|wandb|weave|exception|host|os)\.[a-z_][a-z0-9_.]*"
 _QUOTED = re.compile(r'"(' + _NAME + r')"')
 _TICKED = re.compile(r"`(" + _NAME + r")`")
-# Documented in prose (wildcards), not as literals.
-_PROSE_ONLY = {"telemetry.sdk.*", "resource_attributes.*", "global_tags.*"}
 
 
 # Metric-only literals: instrument names created in tracer.py (documented in
@@ -62,5 +60,5 @@ def test_every_emitted_attribute_is_documented():
 
 
 def test_every_documented_attribute_is_emitted():
-    phantom = sorted(_doc_attributes() - _code_attributes() - _PROSE_ONLY)
+    phantom = sorted(_doc_attributes() - _code_attributes())
     assert phantom == [], f"span-attributes.md lists attributes the code never sets: {phantom}"

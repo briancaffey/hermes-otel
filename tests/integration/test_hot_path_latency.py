@@ -100,17 +100,25 @@ class TestTurnEndFlush:
         assert time.perf_counter() - t0 < 0.3  # returned as soon as the flush finished
         fast.force_flush.assert_called_once()
 
-    def test_zero_wait_returns_immediately(self, stuck_plugin):
+    def test_zero_wait_returns_immediately(self, stuck_plugin, monkeypatch):
+        # ``force_flush_wait_ms: 0`` queues the flush and never waits for it.
+        # Asserted on the flusher's calls, not the wall clock: a loaded CI box
+        # made a ``< 0.05 s`` bound flaky (#564).
         exporter, plugin = stuck_plugin
         plugin.config = HermesOtelConfig(
             force_flush_on_session_end=True, force_flush_wait_ms=0, dashboard_live=False
         )
+        queued = MagicMock(wraps=plugin.flusher.flush_async)
+        waited = MagicMock(wraps=plugin.flusher.wait)
+        monkeypatch.setattr(plugin.flusher, "flush_async", queued)
+        monkeypatch.setattr(plugin.flusher, "wait", waited)
         on_session_start(session_id="s4", model="gpt-4", platform="cli")
-        t0 = time.perf_counter()
         on_session_end(
             session_id="s4", completed=True, interrupted=False, model="gpt-4", platform="cli"
         )
-        assert time.perf_counter() - t0 < 0.05
+        queued.assert_called_once_with(plugin.pipeline)  # a flush was queued …
+        waited.assert_not_called()  # … and the hook did not wait for it
+        monkeypatch.undo()
         plugin.flusher.wait(timeout_s=5)
 
     def test_flushes_coalesce_while_one_is_queued(self, stuck_plugin):
