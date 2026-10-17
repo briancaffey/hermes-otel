@@ -1,5 +1,26 @@
 # Changelog
 
+## [1.31.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.30.0...hermes-otel-v1.31.0) (2026-10-17)
+
+
+### Features
+
+* **attributes:** gen_ai.provider.name and llm.provider use their convention's well-known spelling; the Hermes id stays in hermes.provider ([#475](https://github.com/briancaffey/hermes-otel/issues/475)) ([#495](https://github.com/briancaffey/hermes-otel/issues/495)) ([4b2e705](https://github.com/briancaffey/hermes-otel/commit/4b2e70534a9b0b4be6ca14fff44c4f7b0d815eab))
+* **lgtm:** Agents: Hermes and Claude Code Grafana dashboard, generated, beside the community one ([#485](https://github.com/briancaffey/hermes-otel/issues/485)) ([22168a3](https://github.com/briancaffey/hermes-otel/commit/22168a3bd984483fdbf27c70e988cce51b4865e5))
+* **metrics:** Claude Code metric-name compatibility (claude_code.*) and the Claude Code Grafana dashboard in the LGTM stack ([#485](https://github.com/briancaffey/hermes-otel/issues/485)) ([4c95d15](https://github.com/briancaffey/hermes-otel/commit/4c95d15cd48eb6925ef7818b979337ad55d496f7))
+* **pipeline:** one TCP reachability probe per backend endpoint at init, logged per backend, and a reachability column in the status CLI ([#481](https://github.com/briancaffey/hermes-otel/issues/481)) ([#496](https://github.com/briancaffey/hermes-otel/issues/496)) ([bfa2b55](https://github.com/briancaffey/hermes-otel/commit/bfa2b55207a4940bb21d79817630ed32c8e7d3a6))
+* **propagation:** HERMES_OTEL_TRACEPARENT parents every turn root under an outer span, not only inside a kanban worker ([#474](https://github.com/briancaffey/hermes-otel/issues/474)) ([#494](https://github.com/briancaffey/hermes-otel/issues/494)) ([6f07903](https://github.com/briancaffey/hermes-otel/commit/6f0790362cd00a28ef9fd043034a9b78338acf80))
+* **resource:** os.type and host.arch on the Resource, in the OTel spellings ([#476](https://github.com/briancaffey/hermes-otel/issues/476)) ([#497](https://github.com/briancaffey/hermes-otel/issues/497)) ([2ac1891](https://github.com/briancaffey/hermes-otel/commit/2ac1891ce68ac16980a64d5e461aa256784f7790))
+
+
+### Bug Fixes
+
+* **config:** numeric settings are range-checked at load; out of range warns and keeps the default ([#487](https://github.com/briancaffey/hermes-otel/issues/487)) ([#491](https://github.com/briancaffey/hermes-otel/issues/491)) ([d1dad6a](https://github.com/briancaffey/hermes-otel/commit/d1dad6abf6a1083a91e0e7ae696f1e122c243396))
+* **metrics:** hermes.session.count counts a session when this process first roots it, not only on on_session_start ([#473](https://github.com/briancaffey/hermes-otel/issues/473)) ([#490](https://github.com/briancaffey/hermes-otel/issues/490)) ([5a9f3f4](https://github.com/briancaffey/hermes-otel/commit/5a9f3f4c3e8fb9b92dba5feef3802af5f9cde25b))
+* **pipeline:** exporters built without headers no longer inherit OTEL_EXPORTER_OTLP_*HEADERS from the shell ([#472](https://github.com/briancaffey/hermes-otel/issues/472)) ([#489](https://github.com/briancaffey/hermes-otel/issues/489)) ([a578cbf](https://github.com/briancaffey/hermes-otel/commit/a578cbfa17af89ddbd517183a018bef313e05be3))
+* **settings:** derive the Settings tab's backend field lists from the manifest and BackendConfig ([#501](https://github.com/briancaffey/hermes-otel/issues/501)) ([5ab2da6](https://github.com/briancaffey/hermes-otel/commit/5ab2da691dd2d9bbbd4cee5d5285479bbfe47b6f))
+* **spans:** children still open when a turn ends are ended, marked hermes.span.ended_by=sweep with a reason, and counted ([#477](https://github.com/briancaffey/hermes-otel/issues/477)) ([#493](https://github.com/briancaffey/hermes-otel/issues/493)) ([dcfd056](https://github.com/briancaffey/hermes-otel/commit/dcfd056aad6c7cabd001f8d42cb8e7eb489909ea))
+
 ## [1.30.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.29.0...hermes-otel-v1.30.0) (2026-10-14)
 
 
