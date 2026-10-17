@@ -7,8 +7,8 @@ The live path is verified against the compose stack in docker-compose/zipkin.
 import pytest
 
 from hermes_otel import backends
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backend_specs import spec_for
-from hermes_otel.plugin_config import BackendConfig
 
 
 class TestZipkinBackendType:

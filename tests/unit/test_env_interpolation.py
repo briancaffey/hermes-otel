@@ -3,7 +3,8 @@
 import logging
 
 from hermes_otel import plugin_config
-from hermes_otel.plugin_config import coerce_backends, coerce_from_yaml, expand_env_refs
+from hermes_otel.backend_config import coerce_backends
+from hermes_otel.plugin_config import coerce_from_yaml, expand_env_refs
 
 
 class TestExpandEnvRefs:

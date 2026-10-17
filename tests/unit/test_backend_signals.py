@@ -1,8 +1,8 @@
 """Which signals each backend type receives by default (#160)."""
 
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backend_specs import SPECS
 from hermes_otel.backends import resolve
-from hermes_otel.plugin_config import BackendConfig
 
 
 class TestPhoenixIsTracesOnly:

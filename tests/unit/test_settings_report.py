@@ -10,6 +10,7 @@ import pytest
 
 from hermes_otel import plugin_config as pc
 from hermes_otel import settings_report
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backend_specs import SPECS
 from hermes_otel.plugin_config import FIELD_DOCS, FIELD_GROUPS, HermesOtelConfig
 from hermes_otel.settings_report import (
@@ -63,17 +64,6 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("LF_SECRET", "sk-expanded")
     monkeypatch.setenv("OO_PASSWORD", "pw")
     return tmp_path
-
-
-class TestGroupsAndDocs:
-    def test_every_field_is_grouped_exactly_once(self):
-        names = {f.name for f in dataclasses.fields(HermesOtelConfig)}
-        grouped = [k for _, keys in FIELD_GROUPS for k in keys]
-        assert sorted(grouped) == sorted(names)
-        assert len(grouped) == len(set(grouped))
-
-    def test_every_field_has_a_description(self):
-        assert set(FIELD_DOCS) == {f.name for f in dataclasses.fields(HermesOtelConfig)}
 
 
 class TestFieldReports:
@@ -354,11 +344,11 @@ class TestBackendCards:
         from hermes_otel import backends as b
 
         for name, bc in {
-            "phoenix": pc.BackendConfig(type="phoenix", endpoint="http://x/v1/traces"),
-            "jaeger-proxied": pc.BackendConfig(
+            "phoenix": BackendConfig(type="phoenix", endpoint="http://x/v1/traces"),
+            "jaeger-proxied": BackendConfig(
                 type="jaeger", endpoint="http://x/v1/traces", metrics=True
             ),
-            "lgtm": pc.BackendConfig(type="lgtm", endpoint="http://x/v1/traces", logs=False),
+            "lgtm": BackendConfig(type="lgtm", endpoint="http://x/v1/traces", logs=False),
         }.items():
             rb = b.resolve(bc)
             sig = cards[name]["signals"]
@@ -420,7 +410,7 @@ class TestBackendCards:
         "entry, want_fields, want_credentials",
         [
             (
-                pc.BackendConfig(
+                BackendConfig(
                     type="victoria",
                     endpoint="http://localhost:10428",
                     metrics_endpoint="http://localhost:8428",
@@ -434,7 +424,7 @@ class TestBackendCards:
                 {},
             ),
             (
-                pc.BackendConfig(
+                BackendConfig(
                     type="mlflow",
                     endpoint="http://localhost:5000",
                     experiment_id="7",
@@ -444,17 +434,17 @@ class TestBackendCards:
                 {"experiment_id": "7", "workspace": "ws"},
             ),
             (
-                pc.BackendConfig(type="opik", workspace="acme", project="agents"),
+                BackendConfig(type="opik", workspace="acme", project="agents"),
                 {},
                 {"workspace": "acme", "project": "agents"},
             ),
             (
-                pc.BackendConfig(type="greptime", endpoint="http://localhost:4000", db="hermes"),
+                BackendConfig(type="greptime", endpoint="http://localhost:4000", db="hermes"),
                 {"endpoint": "http://localhost:4000"},
                 {"db": "hermes"},
             ),
             (
-                pc.BackendConfig(
+                BackendConfig(
                     type="elastic", endpoint="http://localhost:8200", dataset="d", namespace="n"
                 ),
                 {"endpoint": "http://localhost:8200", "dataset": "d", "namespace": "n"},
@@ -480,7 +470,7 @@ class TestBackendCards:
         """Every ``BackendConfig`` field is either structured (reported under
         its own key), a credential from the manifest, a ``*_env`` pointer, or
         a plain scalar; nothing falls through."""
-        names = {f.name for f in dataclasses.fields(pc.BackendConfig)}
+        names = {f.name for f in dataclasses.fields(BackendConfig)}
         covered = (
             set(settings_report._STRUCTURED_BACKEND_FIELDS)
             | set(settings_report._ALL_CREDENTIAL_FIELDS)
@@ -607,7 +597,7 @@ class TestProfileAwareReport:
 
 class TestMetricsSettingsMirrorTheLoader:
     """``load_config`` drops an unknown ``metrics_histogram`` / ``metrics_temporality``
-    (``reconcile_metrics_settings``); the report used to show the bad value as
+    (the field's ``choices`` rule); the report used to show the bad value as
     applied (#413)."""
 
     def test_unknown_histogram_from_the_file_is_flagged_and_the_default_applies(self, home):

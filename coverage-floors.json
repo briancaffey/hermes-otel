@@ -1,6 +1,7 @@
 {
   "_comment": "Per-module coverage floors (percent, branch coverage included), recorded from main by `python scripts/coverage_floor.py --update`. A PR may not drop a module more than one point under its floor; raise floors when a change deliberately adds coverage (#412).",
   "hermes_otel/__init__.py": 92,
+  "hermes_otel/backend_config.py": 87,
   "hermes_otel/backend_specs.py": 100,
   "hermes_otel/backends.py": 97,
   "hermes_otel/coerce.py": 100,
