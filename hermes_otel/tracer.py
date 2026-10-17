@@ -58,7 +58,6 @@ from .pipeline import (  # noqa: F401 — re-exported
     _OTEL_AVAILABLE,
     _SERVICE_INSTANCE_ID,
     _LiveSpanProcessor,
-    _LoggingSpanExporter,
     _MCPPingFilterProcessor,
     _RootUsageStrippingExporter,
     is_mcp_keepalive_ping,
@@ -175,7 +174,16 @@ class HermesOTelPlugin:
         self.profile_name = resolve_profile_name()
         # Debug mode also captures what the SDK's exporters log (#167).
         install_sdk_log_forwarding()
-        ok = self._init_backends(endpoint)
+        try:
+            ok = self._init_backends(endpoint)
+        except Exception:
+            # The plugin fails open: a bug in pipeline init disables telemetry
+            # for this process, with its traceback in the log, and Hermes keeps
+            # running. Configuration errors are reported (and return False)
+            # before this point; only unexpected exceptions land here.
+            logger.error("[hermes-otel] ✗ pipeline init failed", exc_info=True)
+            self._reset_pipeline_state()
+            return False
         if ok:
             self._start_host_metrics()
         return ok
@@ -343,13 +351,6 @@ class HermesOTelPlugin:
 
     def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> Any:
         return _pipeline.build_resource(self, backends)
-
-    @staticmethod
-    def _derive_metrics_endpoint(traces_endpoint: str) -> str:
-        return _pipeline.derive_metrics_endpoint(traces_endpoint)
-
-    def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        return _pipeline.merge_headers(self, backend_headers)
 
     def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
         return _pipeline.init_otlp_pipeline(self, backends)
