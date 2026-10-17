@@ -140,7 +140,7 @@ class TestLiveStoreMirror:
             def add_metric(self, name, value, attrs, ts):
                 seen.append((name, value, ts))
 
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         monkeypatch.setattr(ls, "get_live_store", lambda: _Store())
         plugin._live_active = True

@@ -35,11 +35,15 @@ import sqlite3
 import threading
 import time
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Tuple, TypeVar
 
 from . import semconv as _sc
+from .buckets import bucketize
 from .coerce import optional_number
+from .live_summary import _session_of, summarize_trace
 from .severity import python_level
+
+T = TypeVar("T")
 
 LIVE_DB_FILENAME = "hermes_otel_live.db"
 SCHEMA_VERSION = 3  # v3 (#266): log rows carry OTel severity spelling, span_id, attributes
@@ -53,15 +57,7 @@ HOST_SAMPLE_MAX_ROWS = 200
 _HOST_METRIC_SQL = "(name LIKE 'process.cpu.%' OR name LIKE 'system.cpu.%' OR name LIKE 'hw.%')"
 
 # The vocabulary lives in ``semconv`` (#404); these names stay for the readers.
-_SESSION_KEYS = _sc.SESSION_KEYS
 _MODEL_KEYS = _sc.MODEL_KEYS
-_TOKEN_KEYS = _sc.TOTAL_TOKEN_KEYS
-_COST_KEYS = _sc.COST_KEYS
-# A delegation span's roll-up of the child's whole subtree (#390); the parent's
-# root keeps only the parent's own calls.
-_SUB_TOKENS = "hermes.subagent.usage.total_tokens"
-_SUB_CALLS = "hermes.subagent.api_call_count"
-_SUB_COST = "hermes.subagent.cost.usage"
 _KIND_PREFIXES: Dict[str, Tuple[str, ...]] = _sc.KIND_PREFIXES
 
 
@@ -110,200 +106,6 @@ def _default_db_path() -> str:
     from .plugin_config import hermes_home
 
     return default_db_path_for(hermes_home())
-
-
-# ── pure helpers (also used by the dashboard API) ─────────────────────────
-
-
-def _first(attrs: Dict[str, Any], keys: Sequence[str]) -> Any:
-    for k in keys:
-        v = attrs.get(k)
-        if v not in (None, ""):
-            return v
-    return None
-
-
-def _session_of(attrs: Dict[str, Any]) -> Optional[str]:
-    v = _first(attrs, _SESSION_KEYS)
-    return str(v) if v is not None else None
-
-
-def span_kind(name: str, attrs: Optional[Dict[str, Any]] = None) -> str:
-    """The registry's classification (``semconv.span_kind``; ``kindOf`` in ``lib.ts``)."""
-    return _sc.span_kind(name, attrs)
-
-
-def root_of(spans: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], bool]:
-    """The trace's root span and whether the trace is still **partial**.
-
-    The root is the span with no parent at all (the turn's ``agent`` /
-    ``cron`` span). A span whose parent is merely absent from the store is
-    *not* promoted to root: the root ends last by construction, so while a
-    turn is in flight every stored span is a child. Such a trace is reported
-    as partial with its earliest span standing in, so a running turn is never
-    summarised as "a tool call named terminal" with a child's token count
-    (#291).
-    """
-    spans = list(spans)
-    if not spans:
-        return None, True
-    root = next((s for s in spans if not s.get("parent_span_id")), None)
-    if root is not None:
-        return root, False
-    ids = {s.get("span_id") for s in spans}
-    # Every parent is present except the one(s) above the stored set: the
-    # earliest orphan is the best stand-in for the list row.
-    orphans = [s for s in spans if s.get("parent_span_id") not in ids]
-    pool = orphans or spans
-    return min(pool, key=lambda s: int(s.get("start_time_unix_nano") or 0)), True
-
-
-def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
-    """Tokens and cost for ONE trace, counted once (#178).
-
-    The ``agent`` root already carries the turn's totals and every ``api.*``
-    span carries its own call, so summing all spans doubled every turn. Use
-    the root's figure when it has one; otherwise sum the ``api.*`` spans only
-    (``llm.*`` spans mirror the API spans). Mirrors ``traceTotals`` in
-    ``dashboard-ui/src/lib.ts``. A partial trace (no root yet) always sums
-    the ``api.*`` spans.
-    """
-    spans = list(spans)
-    root, partial = root_of(spans)
-    if partial:
-        root = None
-
-    def pick(keys: Sequence[str]) -> Optional[float]:
-        if root is not None:
-            v = optional_number(_first(root.get("attributes") or {}, keys))
-            if v is not None:
-                return v
-        total, seen = 0.0, False
-        for s in spans:
-            if not str(s.get("name", "")).startswith("api."):
-                continue
-            # Auxiliary attempts (#389) are reported on the root as
-            # hermes.turn.auxiliary.*, never inside the turn's totals.
-            if (s.get("attributes") or {}).get("hermes.query_source") == "auxiliary":
-                continue
-            v = optional_number(_first(s.get("attributes") or {}, keys))
-            if v is not None:
-                total += v
-                seen = True
-        return total if seen else None
-
-    # A root with a cost status but no amount (unknown, included or partial
-    # pricing) has no total; never fall back to a subtotal (#252).
-    root_attrs = (root.get("attributes") or {}) if root is not None else {}
-    no_cost_total = (
-        "hermes.cost.status" in root_attrs
-        and optional_number(_first(root_attrs, _COST_KEYS)) is None
-    )
-    return {"tokens": pick(_TOKEN_KEYS), "cost": None if no_cost_total else pick(_COST_KEYS)}
-
-
-def top_level_subagents(spans: Iterable[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """The trace's delegation spans that no other delegation in it made (#447).
-
-    A nested orchestrator's grandchildren are already inside its child's
-    roll-up, so only the outermost ``subagent.*`` spans are summed. A
-    delegation is nested when its parent session is another delegation's
-    child session.
-    """
-    subs = [
-        s for s in spans if span_kind(str(s.get("name") or ""), s.get("attributes")) == "subagent"
-    ]
-    children = {
-        str(c)
-        for s in subs
-        for c in [(s.get("attributes") or {}).get("hermes.subagent.child_session_id")]
-        if c
-    }
-    return [
-        s
-        for s in subs
-        if str((s.get("attributes") or {}).get("hermes.subagent.parent_session_id") or "")
-        not in children
-    ]
-
-
-def subagent_totals(spans: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-    """What the turn's top-level delegations cost: count, tokens, API calls, USD.
-
-    ``None`` when the trace delegated nothing. A figure no delegation reported
-    is ``None``; the cost is an amount only when every delegation has one (the
-    turn root's pricing rule), never a partial sum.
-    """
-    top = top_level_subagents(spans)
-    if not top:
-        return None
-
-    def total(key: str) -> Optional[float]:
-        vals = [optional_number((s.get("attributes") or {}).get(key)) for s in top]
-        known = [v for v in vals if v is not None]
-        return sum(known) if known else None
-
-    costs = [optional_number((s.get("attributes") or {}).get(_SUB_COST)) for s in top]
-    return {
-        "count": len(top),
-        "tokens": total(_SUB_TOKENS),
-        "calls": total(_SUB_CALLS),
-        "cost": (
-            sum(c for c in costs if c is not None) if all(c is not None for c in costs) else None
-        ),
-    }
-
-
-def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
-    """One trace-list row from its spans (the shape ``LiveTrace`` uses in the UI).
-
-    ``partial`` is true while the trace has no root span yet (a turn in
-    flight); the row then describes its earliest stored span and the totals
-    are the ``api.*`` subtotal so far.
-    """
-    root, partial = root_of(spans)
-    assert root is not None  # spans is non-empty by contract
-    start = min(int(s.get("start_time_unix_nano") or 0) for s in spans)
-    end = max(int(s.get("end_time_unix_nano") or s.get("start_time_unix_nano") or 0) for s in spans)
-    totals = trace_totals(spans)
-    rattrs = root.get("attributes") or {}
-    # The delegations are reported next to the turn's own figures only when
-    # the root carries those figures: without them (a partial trace, a
-    # kanban.claim run) the totals already sum every api.* span, children's
-    # included, so a split would count them twice.
-    own = not partial and optional_number(_first(rattrs, _TOKEN_KEYS)) is not None
-    model = None
-    for s in spans:
-        model = _first(s.get("attributes") or {}, _MODEL_KEYS)
-        if model:
-            break
-    return {
-        "traceId": root.get("trace_id"),
-        "rootName": root.get("name"),
-        "rootKind": span_kind(root.get("name") or "", rattrs),
-        "service": rattrs.get("service.name") or "hermes",
-        "startNs": start,
-        "endNs": end,
-        "durationMs": (end - start) / 1e6,
-        "spanCount": len(spans),
-        "model": model,
-        "tokens": totals["tokens"],
-        "cost": totals["cost"],
-        "error": any(s.get("status") == "ERROR" for s in spans),
-        "session": _session_of(rattrs)
-        or next(
-            (
-                _session_of(s.get("attributes") or {})
-                for s in spans
-                if _session_of(s.get("attributes") or {})
-            ),
-            None,
-        ),
-        "turn": optional_number(rattrs.get("hermes.turn.number")),
-        "platform": rattrs.get("hermes.platform"),
-        "partial": partial,
-        "subagents": subagent_totals(spans) if own else None,
-    }
 
 
 class LiveStore:
@@ -640,6 +442,23 @@ class LiveStore:
             logger=record.get("logger"),
         )
 
+    # ── readers ───────────────────────────────────────────────────────────
+    def _read(self, default: T, fn: Callable[[sqlite3.Connection], T]) -> T:
+        """Flush, then run ``fn`` on this thread's connection; ``default`` on failure.
+
+        The one guard every reader goes through (#518): a corrupt or locked
+        file answers "no telemetry" to the caller and says why in the debug
+        log (rate-limited by :meth:`_log_error`), instead of ten silent copies.
+        """
+        self.flush()
+        try:
+            return fn(self._conn())
+        except Exception as e:
+            self._log_error(
+                f"live store: read from {self.db_path} failed ({type(e).__name__}: {e})"
+            )
+            return default
+
     # ── cursor readers (dashboard API, unchanged since v1) ────────────────
     @staticmethod
     def _rows_to_dicts(rows: Iterable) -> List[Dict[str, Any]]:
@@ -654,15 +473,13 @@ class LiveStore:
         return out
 
     def _query(self, kind: str, since: int, limit: int) -> List[Dict[str, Any]]:
-        self.flush()
-        try:
-            c = self._conn()
-            rows = c.execute(
+        rows = self._read(
+            [],
+            lambda c: c.execute(
                 "SELECT seq, data FROM events WHERE kind=? AND seq>? ORDER BY seq DESC LIMIT ?",
                 (kind, int(since or 0), int(limit) if limit else 1000000),
-            ).fetchall()
-        except Exception:  # pragma: no cover
-            return []
+            ).fetchall(),
+        )
         return self._rows_to_dicts(reversed(rows))  # back to ascending seq
 
     def spans(self, since: int = 0, limit: int = 0) -> List[Dict[str, Any]]:
@@ -675,25 +492,17 @@ class LiveStore:
         return self._query("log", since, limit)
 
     def cursor(self) -> int:
-        self.flush()
-        try:
-            r = self._conn().execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()
-            return int(r[0]) if r else 0
-        except Exception:  # pragma: no cover
-            return 0
+        return self._read(
+            0, lambda c: int(c.execute("SELECT COALESCE(MAX(seq), 0) FROM events").fetchone()[0])
+        )
 
     def stats(self) -> Dict[str, Any]:
         """Row counts per kind and the cursor; ``open_error`` / ``write_error``
         when the file could not be opened or the last commit failed."""
-        self.flush()
-        try:
-            c = self._conn()
-            counts = {
-                k: n
-                for k, n in c.execute("SELECT kind, COUNT(*) FROM events GROUP BY kind").fetchall()
-            }
-        except Exception:  # pragma: no cover
-            counts = {}
+        counts = self._read(
+            {},
+            lambda c: dict(c.execute("SELECT kind, COUNT(*) FROM events GROUP BY kind").fetchall()),
+        )
         out: Dict[str, Any] = {
             "spans": int(counts.get("span", 0)),
             "metrics": int(counts.get("metric", 0)),
@@ -807,12 +616,11 @@ class LiveStore:
 
     def spans_for_traces(self, trace_ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
         """All stored spans of the given traces, grouped by trace id."""
-        self.flush()
         out: Dict[str, List[Dict[str, Any]]] = {t: [] for t in trace_ids}
         if not trace_ids:
             return out
-        try:
-            c = self._conn()
+
+        def fill(c: sqlite3.Connection) -> Dict[str, List[Dict[str, Any]]]:
             for chunk_start in range(0, len(trace_ids), 500):
                 chunk = list(trace_ids[chunk_start : chunk_start + 500])
                 marks = ", ".join("?" * len(chunk))
@@ -823,9 +631,9 @@ class LiveStore:
                 ).fetchall()
                 for d in self._rows_to_dicts(rows):
                     out.setdefault(d.get("trace_id"), []).append(d)
-        except Exception:  # pragma: no cover
-            pass
-        return out
+            return out
+
+        return self._read(out, fill)
 
     def query_traces(
         self,
@@ -854,7 +662,6 @@ class LiveStore:
         trace regardless of the cursor; ``has_more`` says whether rows exist
         past this page.
         """
-        self.flush()
         where, args = self._span_where(
             start_ns,
             end_ns,
@@ -876,8 +683,8 @@ class LiveStore:
         )
         having = " HAVING first < ?" if before_ns else ""
         cursor_args = [int(before_ns)] if before_ns else []
-        try:
-            c = self._conn()
+
+        def page(c: sqlite3.Connection) -> Tuple[int, int, List[tuple]]:
             total = int(
                 c.execute(
                     f"SELECT COUNT(DISTINCT trace_id) FROM events WHERE {where}", args
@@ -894,8 +701,10 @@ class LiveStore:
                 f"{grouped}{having} ORDER BY first DESC LIMIT ? OFFSET ?",
                 args + cursor_args + [int(limit), int(offset)],
             ).fetchall()
-        except Exception:  # pragma: no cover
-            return {"traces": [], "total": 0, "has_more": False, "next_before_ns": None}
+            return total, remaining, rows
+
+        # On a read failure the default yields the empty envelope below.
+        total, remaining, rows = self._read((0, 0, []), page)
         ids = [r[0] for r in rows]
         by_trace = self.spans_for_traces(ids)
         traces = [summarize_trace(by_trace[t]) for t in ids if by_trace.get(t)]
@@ -907,7 +716,6 @@ class LiveStore:
         }
 
     def trace(self, trace_id: str) -> Dict[str, Any]:
-        self.flush()
         spans = self.spans_for_traces([trace_id]).get(trace_id) or []
         if not spans:
             return {"trace": None, "spans": []}
@@ -925,21 +733,19 @@ class LiveStore:
         store is bounded by its row cap, so this is at most ``max_rows``
         spans); ``has_more`` says whether more sessions than ``limit`` exist.
         """
-        self.flush()
         where, args = self._span_where(start_ns, end_ns, None, None, None, None, None)
-        try:
-            c = self._conn()
-            ids = [
-                r[0]
-                for r in c.execute(
+        ids = [
+            r[0]
+            for r in self._read(
+                [],
+                lambda c: c.execute(
                     f"SELECT trace_id FROM events WHERE {where} AND session_id IS NOT NULL "
                     "AND trace_id IS NOT NULL GROUP BY trace_id "
                     "ORDER BY MAX(COALESCE(end_ns, start_ns, ts)) DESC",
                     args,
-                ).fetchall()
-            ]
-        except Exception:  # pragma: no cover
-            return {"sessions": [], "has_more": False}
+                ).fetchall(),
+            )
+        ]
         by_trace = self.spans_for_traces(ids)
         sessions: Dict[str, Dict[str, Any]] = {}
         for t in ids:
@@ -989,17 +795,12 @@ class LiveStore:
         return {"sessions": rows, "has_more": len(ordered) > len(rows)}
 
     def metric_names(self) -> List[Dict[str, Any]]:
-        self.flush()
-        try:
-            rows = (
-                self._conn()
-                .execute(
-                    "SELECT name, COUNT(*), MAX(ts) FROM events WHERE kind='metric' GROUP BY name ORDER BY name"
-                )
-                .fetchall()
-            )
-        except Exception:  # pragma: no cover
-            return []
+        rows = self._read(
+            [],
+            lambda c: c.execute(
+                "SELECT name, COUNT(*), MAX(ts) FROM events WHERE kind='metric' GROUP BY name ORDER BY name"
+            ).fetchall(),
+        )
         return [{"name": n, "count": int(c), "lastTs": int(t or 0)} for n, c, t in rows]
 
     def metric_buckets(
@@ -1011,58 +812,31 @@ class LiveStore:
         group_by: Optional[str] = None,
         agg: str = "sum",
     ) -> Dict[str, Any]:
-        """Aggregate one instrument into fixed time buckets, optionally per attribute value."""
-        self.flush()
+        """Aggregate one instrument into fixed time buckets, optionally per attribute value.
+
+        ``points`` counts every stored row of the instrument in the window,
+        valueless rows included (:func:`bucketize`).
+        """
         bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
-        start_ns = int(start_ns) - int(start_ns) % bucket_ns
-        n_buckets = max(1, int((int(end_ns) - start_ns) // bucket_ns) + 1)
-        try:
-            rows = (
-                self._conn()
-                .execute(
-                    "SELECT ts, value, data FROM events WHERE kind='metric' AND name=? AND ts>=? AND ts<=?",
-                    (name, start_ns, int(end_ns)),
-                )
-                .fetchall()
-            )
-        except Exception:  # pragma: no cover
-            rows = []
-        series: Dict[str, List[List[float]]] = {}
-        for ts, value, data in rows:
-            if value is None:
-                continue
-            idx = int((int(ts) - start_ns) // bucket_ns)
-            if idx < 0 or idx >= n_buckets:
-                continue
-            label = "_"
-            if group_by:
-                try:
-                    label = str(json.loads(data).get("attributes", {}).get(group_by, "—"))
-                except Exception:
-                    label = "—"
-            series.setdefault(label, [[] for _ in range(n_buckets)])[idx].append(float(value))
+        lo = int(start_ns) - int(start_ns) % bucket_ns
+        rows = self._read(
+            [],
+            lambda c: c.execute(
+                "SELECT ts, value, data FROM events WHERE kind='metric' AND name=? AND ts>=? AND ts<=?",
+                (name, lo, int(end_ns)),
+            ).fetchall(),
+        )
 
-        def reduce(vals: List[float]) -> Optional[float]:
-            if not vals:
-                return None
-            if agg == "count":
-                return float(len(vals))
-            if agg == "avg":
-                return sum(vals) / len(vals)
-            if agg == "max":
-                return max(vals)
-            if agg == "last":
-                return vals[-1]
-            return sum(vals)
+        def label_of(data: str) -> str:
+            if not group_by:
+                return "_"
+            try:
+                return str(json.loads(data).get("attributes", {}).get(group_by, "—"))
+            except Exception:
+                return "—"
 
-        return {
-            "name": name,
-            "agg": agg,
-            "bucketS": int(bucket_s),
-            "buckets": [start_ns + i * bucket_ns for i in range(n_buckets)],
-            "series": {label: [reduce(v) for v in vals] for label, vals in series.items()},
-            "points": len(rows),
-        }
+        points = [(ts, value, label_of(data)) for ts, value, data in rows]
+        return {"name": name, **bucketize(points, lo, end_ns, bucket_s, agg)}
 
     def query_logs(
         self,
@@ -1079,7 +853,6 @@ class LiveStore:
         event_name: Optional[str] = None,
         events_only: bool = False,
     ) -> List[Dict[str, Any]]:
-        self.flush()
         where = ["kind='log'"]
         args: List[Any] = []
         if trace_id:
@@ -1115,136 +888,21 @@ class LiveStore:
             # Keyset paging: the page after the one that ended at ``before_ns``.
             where.append("ts < ?")
             args.append(int(before_ns))
-        try:
-            rows = (
-                self._conn()
-                .execute(
-                    f"SELECT seq, data FROM events WHERE {' AND '.join(where)} ORDER BY seq DESC LIMIT ?",
-                    args + [int(limit)],
-                )
-                .fetchall()
-            )
-        except Exception:  # pragma: no cover
-            return []
+        rows = self._read(
+            [],
+            lambda c: c.execute(
+                f"SELECT seq, data FROM events WHERE {' AND '.join(where)} ORDER BY seq DESC LIMIT ?",
+                args + [int(limit)],
+            ).fetchall(),
+        )
         return self._rows_to_dicts(rows)  # newest first
 
     def loggers(self) -> List[Dict[str, Any]]:
-        self.flush()
-        try:
-            rows = (
-                self._conn()
-                .execute(
-                    "SELECT logger, COUNT(*) FROM events WHERE kind='log' AND logger IS NOT NULL "
-                    "GROUP BY logger ORDER BY COUNT(*) DESC"
-                )
-                .fetchall()
-            )
-        except Exception:  # pragma: no cover
-            return []
+        rows = self._read(
+            [],
+            lambda c: c.execute(
+                "SELECT logger, COUNT(*) FROM events WHERE kind='log' AND logger IS NOT NULL "
+                "GROUP BY logger ORDER BY COUNT(*) DESC"
+            ).fetchall(),
+        )
         return [{"logger": n, "count": int(c)} for n, c in rows]
-
-
-# Per-process singleton; both processes point at the same SQLite file (default
-# path), so they share data without sharing memory.
-_LIVE_STORE: Optional[LiveStore] = None
-_LIVE_LOCK = threading.Lock()
-# Read-side stores by file, for a dashboard that serves several profiles from
-# one process (#70): each profile has its own ``hermes_otel_live.db``.
-_STORES_BY_PATH: Dict[str, LiveStore] = {}
-
-
-def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
-    """The live store of the Hermes home in force for the caller.
-
-    In the dashboard, Hermes resolves the home per request (``?profile=``), so
-    the Live source must open that profile's file rather than the one the
-    process opened first. The process singleton is reused when it already
-    points at the same file; other files get one reader each, kept for the
-    life of the process. ``None`` when the file cannot be opened.
-    """
-    path = os.environ.get("HERMES_OTEL_LIVE_DB") or _default_db_path()
-    current = _LIVE_STORE
-    if current is not None and str(getattr(current, "db_path", "")) == path:
-        return current
-    with _LIVE_LOCK:
-        _evict_stale_readers(keep=path)
-        store = _STORES_BY_PATH.get(path)
-        if store is None and create:
-            try:
-                store = LiveStore(db_path=path, **_configured_limits())
-            except Exception:  # pragma: no cover
-                return None
-            _STORES_BY_PATH[path] = store
-            _evict_stale_readers(keep=path)
-    return store
-
-
-# Readers kept at most, beyond the one being asked for: a dashboard that has
-# served many profiles does not hold a connection per profile forever (#290).
-MAX_READERS = 16
-
-
-def _evict_stale_readers(keep: str) -> None:
-    """Drop readers whose file no longer exists, then the oldest beyond
-    ``MAX_READERS``; ``keep`` is never dropped. Caller holds ``_LIVE_LOCK``."""
-    for p in list(_STORES_BY_PATH):
-        if p != keep and not os.path.exists(p):
-            _close_reader(_STORES_BY_PATH.pop(p))
-    while len(_STORES_BY_PATH) > MAX_READERS:
-        oldest = next((p for p in _STORES_BY_PATH if p != keep), None)
-        if oldest is None:
-            break
-        _close_reader(_STORES_BY_PATH.pop(oldest))
-
-
-def _close_reader(store: Any) -> None:
-    close = getattr(store, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:  # pragma: no cover
-            pass
-
-
-def _configured_limits() -> Dict[str, Any]:
-    """The row cap and retention of this home's config, so a reader that trims
-    on open never trims harder than the gateway that writes the file."""
-    try:
-        from .plugin_config import load_config
-
-        cfg = load_config()
-        return {
-            "max_rows": int(cfg.dashboard_live_max_spans),
-            "retention_hours": float(cfg.dashboard_live_retention_hours),
-        }
-    except Exception:  # pragma: no cover: defaults keep the reader working
-        return {}
-
-
-def get_live_store(
-    create: bool = False,
-    db_path: Optional[str] = None,
-    max_rows: int = 4000,
-    retention_hours: float = 168.0,
-    **_ignored: Any,
-) -> Optional[LiveStore]:
-    """Return the process-wide :class:`LiveStore`.
-
-    ``create=True`` lazily builds it (the tracer, when ``dashboard_live`` is on).
-    The dashboard API calls with ``create=True`` too (read side) so the file is
-    opened even if the dashboard process started first. ``None`` only when the
-    SQLite backend can't be opened at all.
-    """
-    global _LIVE_STORE
-    if _LIVE_STORE is None and create:
-        with _LIVE_LOCK:
-            if _LIVE_STORE is None:
-                try:
-                    _LIVE_STORE = LiveStore(
-                        db_path=db_path or os.environ.get("HERMES_OTEL_LIVE_DB"),
-                        max_rows=max_rows,
-                        retention_hours=retention_hours,
-                    )
-                except Exception:  # pragma: no cover
-                    return None
-    return _LIVE_STORE

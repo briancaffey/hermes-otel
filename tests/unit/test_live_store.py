@@ -1,6 +1,7 @@
 """Unit tests for the SQLite-backed live store (zero-config dashboard)."""
 
-from hermes_otel.live_store import LiveStore, get_live_store
+from hermes_otel.live_store import LiveStore
+from hermes_otel.live_store_registry import get_live_store
 
 
 class TestLiveStore:
@@ -111,7 +112,7 @@ class TestLiveStore:
         assert _is_live_noise("hermes_otel", {"k": "v"}) is False
 
     def test_singleton_create_flag(self, tmp_path):
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         ls._LIVE_STORE = None
         assert get_live_store(create=False) is None

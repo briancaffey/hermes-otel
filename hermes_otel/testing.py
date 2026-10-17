@@ -29,7 +29,7 @@ def reset_state() -> None:
     """Forget the plugin singleton, the parent-stack ContextVar, the live-store
     singleton and the redaction cache. Shuts down a previous plugin's exporter
     threads and host sampler so nothing retries against a dead endpoint."""
-    from . import live_store as _ls
+    from . import live_store_registry as _ls
     from . import redaction as _red
     from . import span_tracker as _st
     from . import tracer as _tr

@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_otel import live_store, log_events, semconv
+from hermes_otel import live_store, live_summary, log_events, semconv
 from hermes_otel.dashboard.backends import _attrs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -102,13 +102,13 @@ class TestSpanKinds:
     def test_span_kind(self, name, attrs, kind):
         assert semconv.span_kind(name, attrs) == kind
         # the live store's classifier is the registry's
-        assert live_store.span_kind(name, attrs) == kind
+        assert live_summary.span_kind(name, attrs) == kind
 
     def test_live_store_tables_derive_from_the_registry(self):
         assert live_store._KIND_PREFIXES == semconv.KIND_PREFIXES
-        assert live_store._SESSION_KEYS == semconv.SESSION_KEYS
-        assert live_store._MODEL_KEYS == semconv.MODEL_KEYS
-        assert live_store._TOKEN_KEYS == semconv.TOTAL_TOKEN_KEYS
+        assert live_summary._SESSION_KEYS == semconv.SESSION_KEYS
+        assert live_store._MODEL_KEYS == live_summary._MODEL_KEYS == semconv.MODEL_KEYS
+        assert live_summary._TOKEN_KEYS == semconv.TOTAL_TOKEN_KEYS
         assert set(_attrs.KNOWN_ATTRIBUTES) == set(semconv.ATTRIBUTE_NAMES)
 
     def test_every_kind_has_a_prefix_table(self):

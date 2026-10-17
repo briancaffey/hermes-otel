@@ -24,15 +24,12 @@ def _get_live_store():
     shared SQLite file itself (``create=True``) and reads what the gateway
     writes. The store follows the profile of the request (#70): a dashboard
     serving several profiles reads each one's own file. ``None`` only when the
-    ``hermes_otel.live_store`` module cannot be imported.
+    plugin's live store (``hermes_otel.live_store_registry``) cannot be imported.
     """
-    mod = plugin_module("live_store")
+    mod = plugin_module("live_store_registry")
     if mod is None:
         return None
-    per_home = getattr(mod, "get_live_store_for_home", None)
-    if per_home is not None:
-        return per_home(create=True)
-    return mod.get_live_store(create=True)
+    return mod.get_live_store_for_home(create=True)
 
 
 @router.get("/live/status")

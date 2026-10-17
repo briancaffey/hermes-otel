@@ -11,14 +11,9 @@ from helpers.live import NOW  # noqa: E402
 from helpers.live import span as _span  # noqa: E402
 
 from hermes_otel import live_store as ls
-from hermes_otel.live_store import (
-    HOST_SAMPLE_MAX_ROWS,
-    SCHEMA_VERSION,
-    LiveStore,
-    root_of,
-    summarize_trace,
-    trace_totals,
-)
+from hermes_otel import live_store_registry as reg
+from hermes_otel.live_store import HOST_SAMPLE_MAX_ROWS, SCHEMA_VERSION, LiveStore
+from hermes_otel.live_summary import root_of, summarize_trace, trace_totals
 
 
 class TestStatusAndPartial:
@@ -209,6 +204,28 @@ class TestDurability:
         finally:
             s.close()
 
+    def test_read_failure_answers_empty_and_logs_once(self, tmp_path, monkeypatch):
+        """Every reader goes through ``_read`` (#518): a file that turns bad
+        after the store opened answers the empty envelope and says why in the
+        debug log, once, instead of failing silently."""
+        logged = []
+        monkeypatch.setattr("hermes_otel.debug_utils.debug_log", lambda msg: logged.append(msg))
+        path = tmp_path / "live.db"
+        s = LiveStore(db_path=str(path))
+        s.add_span(_span("t", "agent", "r", None))
+        s.flush()
+        s.close()  # drops the connection, so the next read reopens the file
+        path.write_bytes(b"this is not a sqlite file" * 100)
+        assert s.query_traces() == {
+            "traces": [],
+            "total": 0,
+            "has_more": False,
+            "next_before_ns": None,
+        }
+        assert len(logged) == 1
+        assert logged[0].startswith(f"live store: read from {path} failed (DatabaseError")
+        assert s.spans() == [] and s.cursor() == 0  # the others answer empty too
+
 
 class TestMigration:
     def _v2_file(self, path, version=2):
@@ -284,15 +301,15 @@ class TestBounds:
             s.close()
 
     def test_reader_uses_the_configured_limits(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(ls, "_LIVE_STORE", None)
-        monkeypatch.setattr(ls, "_STORES_BY_PATH", {})
+        monkeypatch.setattr(reg, "_LIVE_STORE", None)
+        monkeypatch.setattr(reg, "_STORES_BY_PATH", {})
         monkeypatch.setenv("HERMES_OTEL_LIVE_DB", str(tmp_path / "cfg.db"))
         monkeypatch.setattr(
-            ls,
+            reg,
             "_configured_limits",
             lambda: {"max_rows": 123, "retention_hours": 0},
         )
-        st = ls.get_live_store_for_home()
+        st = reg.get_live_store_for_home()
         try:
             assert st is not None and st.max_rows == 123 and st.retention_ns == 0
         finally:
@@ -301,4 +318,4 @@ class TestBounds:
     def test_configured_limits_read_the_plugin_config(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS", "77")
         monkeypatch.setenv("HERMES_OTEL_DASHBOARD_LIVE_RETENTION_HOURS", "2")
-        assert ls._configured_limits() == {"max_rows": 77, "retention_hours": 2.0}
+        assert reg._configured_limits() == {"max_rows": 77, "retention_hours": 2.0}

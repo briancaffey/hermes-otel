@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from hermes_otel import live_store, redaction, span_tracker, testing, tracer
+from hermes_otel import live_store, live_store_registry, redaction, span_tracker, testing, tracer
 from hermes_otel.hooks import get_tracer, on_session_end, on_session_start
 from hermes_otel.plugin_config import HermesOtelConfig
 
@@ -26,12 +26,12 @@ class TestSingleton:
         testing.install_singleton(pipeline.plugin)
         span_tracker._PARENT_STACK.set(["x"])
         store = live_store.LiveStore(db_path=str(tmp_path / "live.db"))
-        live_store._LIVE_STORE = store
+        live_store_registry._LIVE_STORE = store
         redaction._hermes_resolved, redaction._hermes_redactor = True, (lambda s: s)
         testing.reset_state()
         assert tracer._tracer is None
         assert span_tracker._PARENT_STACK.get() is None
-        assert live_store._LIVE_STORE is None
+        assert live_store_registry._LIVE_STORE is None
         assert redaction._hermes_resolved is False and redaction._hermes_redactor is None
         pipeline.shutdown()
 

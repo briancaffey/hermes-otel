@@ -494,7 +494,7 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
     # backend configured — install the plugin, open the tab, see traces.
     plugin._live_active = False
     if config.dashboard_live and _LiveSpanProcessor is not None:
-        from .live_store import get_live_store
+        from .live_store_registry import get_live_store
 
         store = get_live_store(
             create=True,
@@ -667,7 +667,7 @@ def init_logs_pipeline(plugin, resource: "Resource", backends: List[_ResolvedBac
     live_store = None
     if plugin._live_active:
         try:
-            from .live_store import get_live_store
+            from .live_store_registry import get_live_store
 
             live_store = get_live_store(create=False)
         except Exception:  # pragma: no cover

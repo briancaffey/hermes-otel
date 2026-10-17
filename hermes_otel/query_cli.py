@@ -39,7 +39,8 @@ from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
 from . import query_sources
 from . import semconv as _sc
 from .coerce import optional_number
-from .live_store import LiveStore, _default_db_path, summarize_trace
+from .live_store import LiveStore, _default_db_path
+from .live_summary import summarize_trace
 from .query_render import (
     TURN_KINDS,
     fmt_cost,

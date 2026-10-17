@@ -8,7 +8,8 @@ produces in ``_init_otlp_pipeline``.
 import pytest
 
 from hermes_otel import hooks
-from hermes_otel.live_store import LiveStore, get_live_store
+from hermes_otel.live_store import LiveStore
+from hermes_otel.live_store_registry import get_live_store
 from hermes_otel.plugin_config import HermesOtelConfig
 
 
@@ -17,7 +18,7 @@ def live_plugin(tmp_path):
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
 
-    import hermes_otel.live_store as ls
+    import hermes_otel.live_store_registry as ls
     import hermes_otel.tracer as tracer_mod
     from hermes_otel.tracer import HermesOTelPlugin, _LiveSpanProcessor
 

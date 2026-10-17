@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from typing import Any, Container, Dict, Iterable, List, Mapping, Optional, Tuple
 
+from hermes_otel.buckets import bucketize  # noqa: F401  (the adapters import it from here)
+
 # Units the OTLP-to-Prometheus translation appends to a name; ``{token}``
 # style units are dropped by it, so no ``_tokens`` here.
 _PROM_UNIT_SUFFIXES = (
@@ -68,51 +70,6 @@ def otlp_metric_name(native: str) -> str:
             out.append(toks[i])
             i += 1
     return ".".join(out)
-
-
-def bucketize(
-    points: Iterable[Tuple[int, float, str]],
-    start_ns: int,
-    end_ns: int,
-    bucket_s: int,
-    agg: str = "sum",
-) -> Dict[str, Any]:
-    """Fold ``(ts_ns, value, label)`` points into the live store's bucket shape.
-
-    Shared by the backend adapters so every source renders identically.
-    """
-    bucket_ns = max(1, int(bucket_s)) * 1_000_000_000
-    start_ns = int(start_ns) - int(start_ns) % bucket_ns
-    n = max(1, int((int(end_ns) - start_ns) // bucket_ns) + 1)
-    series: Dict[str, List[List[float]]] = {}
-    count = 0
-    for ts, value, label in points:
-        count += 1
-        idx = int((int(ts) - start_ns) // bucket_ns)
-        if idx < 0 or idx >= n:
-            continue
-        series.setdefault(label or "_", [[] for _ in range(n)])[idx].append(float(value))
-
-    def reduce(vals: List[float]) -> Optional[float]:
-        if not vals:
-            return None
-        if agg == "count":
-            return float(len(vals))
-        if agg == "avg":
-            return sum(vals) / len(vals)
-        if agg == "max":
-            return max(vals)
-        if agg == "last":
-            return vals[-1]
-        return sum(vals)
-
-    return {
-        "agg": agg,
-        "bucketS": int(bucket_s),
-        "buckets": [start_ns + i * bucket_ns for i in range(n)],
-        "series": {label: [reduce(v) for v in vals] for label, vals in series.items()},
-        "points": count,
-    }
 
 
 def counter_increases(

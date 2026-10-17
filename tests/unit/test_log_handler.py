@@ -667,16 +667,17 @@ class TestTracerLogsPipelineWiring:
     def test_live_store_alone_gets_a_provider(self, clean_root_logger, caplog, tmp_path):
         from opentelemetry.sdk.resources import Resource
 
-        from hermes_otel import live_store as ls
+        from hermes_otel import live_store_registry as reg
+        from hermes_otel.live_store import LiveStore
         from hermes_otel.plugin_config import HermesOtelConfig
         from hermes_otel.tracer import HermesOTelPlugin
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=True, dashboard_live=True))
-        store = ls.LiveStore(db_path=str(tmp_path / "live.db"))
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
         plugin._live_active = True
         traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
         with (
-            patch.object(ls, "get_live_store", return_value=store),
+            patch.object(reg, "get_live_store", return_value=store),
             caplog.at_level("INFO", logger="hermes_otel"),
         ):
             plugin._init_logs_pipeline(Resource.create({}), [traces_only])

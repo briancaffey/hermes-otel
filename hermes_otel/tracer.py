@@ -520,7 +520,7 @@ class HermesOTelPlugin:
         attributes = self._bound_labels(attributes)
         if self._live_active and not spec.compat:
             with contextlib.suppress(Exception):  # never break the hot path
-                from .live_store import get_live_store
+                from .live_store_registry import get_live_store
 
                 store = get_live_store()
                 if store is not None:

@@ -15,7 +15,7 @@ from typing import Any, Callable, Dict, List, NamedTuple, Optional, TextIO, Tupl
 
 from . import semconv as _sc
 from .coerce import optional_number
-from .live_store import trace_totals
+from .live_summary import trace_totals
 
 TREE_BAR_WIDTH = 16
 

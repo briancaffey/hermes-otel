@@ -234,7 +234,7 @@ class TestRecording:
 
     def test_unknown_key_is_dropped_with_a_debug_line(self, plugin, monkeypatch):
         store = MagicMock()
-        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         plugin._live_active = True
         lines = []
         monkeypatch.setattr("hermes_otel.tracer.debug_log", lines.append)
@@ -262,7 +262,7 @@ class TestRecording:
 
     def test_live_store_gets_the_otlp_name(self, plugin, monkeypatch):
         store = MagicMock()
-        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         plugin._live_active = True
         plugin.record_metric("token_usage", 3, {"token_type": "output"})
         name, value, attrs, ts = store.add_metric.call_args.args
@@ -272,7 +272,7 @@ class TestRecording:
 
     def test_live_store_respects_the_genai_gate(self, plugin, monkeypatch):
         store = MagicMock()
-        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         plugin._live_active = True
         plugin.config = HermesOtelConfig(emit_genai_metrics=False)
         plugin.record_metric("gen_ai.client.token.usage", 3, {})
