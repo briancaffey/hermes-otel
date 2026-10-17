@@ -35,6 +35,13 @@ class BackendConfig:
     # the types whose UI shares the OTLP origin (Phoenix, Langfuse, ...).
     ui_url: Optional[str] = None
     headers: Optional[Dict[str, str]] = None  # extra/override HTTP headers
+    # A command whose stdout mints headers (a JSON object or ``Name=value``
+    # lines) for every signal's exporter, merged over ``headers`` and the
+    # resolver's own; re-run once, and the batch retried once, when the
+    # backend answers 401/403 (#483). An argv string split with shlex, no
+    # shell. ``None`` timeout = 5000 ms.
+    headers_helper: Optional[str] = None
+    headers_helper_timeout_ms: Optional[int] = None
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
     metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
     metrics_temporality: Optional[str] = None  # cumulative | delta; None = type preset / top-level
@@ -172,6 +179,16 @@ def coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 overrides = _coerce_backend_log_overrides(v, idx)
                 if overrides:
                     kwargs["log_overrides"] = overrides
+                continue
+            if k == "headers_helper_timeout_ms":
+                parsed = _parse_scalar("int", v)
+                if parsed is None or parsed <= 0:
+                    logger.warning(
+                        f"[hermes-otel] config.yaml backends[{idx}].{k}: {v!r} is not a positive "
+                        "integer; using the default (5000)"
+                    )
+                else:
+                    kwargs[k] = parsed
                 continue
             if k in ("traces", "metrics", "logs", "root_usage"):
                 if isinstance(v, (bool, str)):

@@ -98,6 +98,8 @@ Shared fields (all optional unless noted):
 | `root_usage` | bool | Send the turn's token roll-up (`gen_ai.usage.*` / `llm.token_count.*` on the `agent` / `cron` root) to this backend. Preset `false` for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); `true` everywhere else. Only this entry's exporter is affected: the span is rebuilt without those keys on its way out, the `api.*` spans and `hermes.cost.*` stay |
 | `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
 | `headers` | map | Per-backend HTTP headers (merged onto top-level `headers`) |
+| `headers_helper` | string | A command (argv string, no shell) whose stdout, a JSON object or `Name=value` lines, mints headers merged over `headers` and the type's own auth header on every signal of this entry; on a 401/403 it is re-run once and the batch retried once ([short-lived credentials](/configuration/short-lived-credentials), [#483](https://github.com/briancaffey/hermes-otel/issues/483)) |
+| `headers_helper_timeout_ms` | int | How long one helper run may take; default `5000` |
 
 ### Type-specific fields
 

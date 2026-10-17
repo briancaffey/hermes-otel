@@ -58,6 +58,18 @@
 # Per-backend headers (under `backends:` below) are merged on top and win on conflict.
 # headers:
 #   X-Company-Auth: shared-secret
+#
+# Headers that expire (a Google Cloud access token, a vault-issued OIDC token, a
+# rotated key) come from a per-backend `headers_helper:` instead: a command (an
+# argv string, no shell) whose stdout — a JSON object or `Name=value` lines — is
+# merged over the entry's static headers on every signal. On a 401/403 the plugin
+# re-runs it once and retries that batch once (#483). The helper runs with the
+# plugin's environment. See website/docs/configuration/short-lived-credentials.md.
+# backends:
+#   - type: otlp
+#     endpoint: https://telemetry.googleapis.com/v1/traces
+#     headers_helper: /home/me/.hermes/mint-gcp-headers.sh   # prints Authorization=Bearer ...
+#     headers_helper_timeout_ms: 5000                          # default
 
 # ── Telemetry shaping ─────────────────────────────────────────────────────────
 

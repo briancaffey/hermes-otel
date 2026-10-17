@@ -131,7 +131,7 @@ Traces fan out to both; metrics and logs go only to OpenObserve (Phoenix ingests
 
 **"401 Unauthorized in agent logs"**
 
-Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve/docker-compose.yaml` match what you're passing to the plugin.
+Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve/docker-compose.yaml` match what you're passing to the plugin. A password that is rotated while Hermes runs can be followed with a [`headers_helper`](/configuration/short-lived-credentials#example-a-rotated-password-openobserve) that prints the current `Authorization` header: the plugin re-runs it on the first 401 and retries that batch.
 
 **"I see `✓ OpenObserve at ...` but no traces appear"**
 
