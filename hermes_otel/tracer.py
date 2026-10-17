@@ -23,6 +23,7 @@ pieces it used to carry live next door since #405 and are re-exported here:
 from __future__ import annotations
 
 import atexit
+import contextlib
 import threading
 import time
 from pathlib import Path
@@ -219,45 +220,33 @@ class HermesOTelPlugin:
         # End whatever is still open first so it reaches the exporters, then
         # flush, then stop the workers.
         debug_log(f"shutdown: begin (flush pending={self._flush_pending.is_set()})")
-        try:
+        with contextlib.suppress(Exception):
             self.spans.end_all(attributes=sweep_attributes("shutdown"))
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(Exception):
             self.flush_wait(timeout_s=2.0)
             self._force_flush()
-        except Exception:
-            pass
         executor, self._flush_executor = self._flush_executor, None
         if executor is not None:
-            try:
+            with contextlib.suppress(Exception):
                 executor.shutdown(wait=False)
-            except Exception:
-                pass
         self.stop_host_metrics()
         self._host_metrics = None
         # Shutting the provider down shuts every attached processor down (the
         # live store's, the MCP filter wrappers', the OTLP batchers').
         for obj in (self._tracer_provider, self._meter_provider, self._logger_provider):
             if obj is not None:
-                try:
+                with contextlib.suppress(Exception):
                     obj.shutdown()
-                except Exception:
-                    pass
         if self._tracer_provider is None:
             # Test fixtures wire processors without a provider of ours.
             for obj in list(self._span_processors) + list(self._metric_readers):
-                try:
+                with contextlib.suppress(Exception):
                     obj.shutdown()
-                except Exception:
-                    pass
         if self._logger_provider is not None:
-            try:
+            with contextlib.suppress(Exception):
                 from . import log_handler
 
                 log_handler.uninstall_handler(self.config.log_attach_logger)
-            except Exception:
-                pass
         self.spans.end_all()
         self.spans.clear_turns()
         self.sessions.clear()
@@ -536,20 +525,18 @@ class HermesOTelPlugin:
             attributes[COMPAT_SESSION_LABEL] = str(session_label)
         attributes = self._bound_labels(attributes)
         if self._live_active and not is_compat:
-            try:
+            with contextlib.suppress(Exception):  # never break the hot path
                 from .live_store import get_live_store
 
                 store = get_live_store()
                 if store is not None:
                     store.add_metric(otlp_name, value, attributes or {}, time.time_ns())
-            except Exception:  # pragma: no cover — never break the hot path
-                pass
 
         instrument = self._instruments.get(name) if self._meter else None
         if instrument is None or spec is None or not export:
             return
         attrs = dict(attributes or {})
-        try:
+        with contextlib.suppress(Exception):  # never break the hot path
             if spec.value == "record":
                 instrument.record(int(value) if spec.unit == "{token}" else value, attrs)
             elif spec.value == "one":
@@ -558,8 +545,6 @@ class HermesOTelPlugin:
                 instrument.add(int(value), attrs)
             else:
                 instrument.add(value, attrs)
-        except Exception:  # pragma: no cover — never break the hot path
-            pass
 
     # ── Spans ────────────────────────────────────────────────────────────
 

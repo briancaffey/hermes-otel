@@ -27,60 +27,14 @@ def register(ctx):
     if not tracer.is_enabled:
         return
 
-    # Core hooks (always available)
-    ctx.register_hook("pre_tool_call", hooks.on_pre_tool_call)
-    ctx.register_hook("post_tool_call", hooks.on_post_tool_call)
-    ctx.register_hook("pre_llm_call", hooks.on_pre_llm_call)
-    ctx.register_hook("post_llm_call", hooks.on_post_llm_call)
-    ctx.register_hook("pre_api_request", hooks.on_pre_api_request)
-    ctx.register_hook("post_api_request", hooks.on_post_api_request)
-
-    # Session + sub-agent hooks (available on newer Hermes versions). Each is
-    # registered defensively so an older Hermes that lacks a given hook name
-    # doesn't break registration of the rest.
-    optional_hooks = 0
-    for hook_name, callback in [
-        ("on_session_start", hooks.on_session_start),
-        ("on_session_end", hooks.on_session_end),
-        ("on_session_finalize", hooks.on_session_finalize),
-        ("on_session_reset", hooks.on_session_reset),
-        ("subagent_start", hooks.on_subagent_start),
-        ("subagent_stop", hooks.on_subagent_stop),
-        ("api_request_error", hooks.on_api_request_error),
-        # Auxiliary LLM calls (#389): titling, compression, MoA, vision, ...
-        ("pre_auxiliary_call", hooks.on_pre_auxiliary_call),
-        ("post_auxiliary_call", hooks.on_post_auxiliary_call),
-        ("pre_approval_request", hooks.on_pre_approval_request),
-        ("post_approval_response", hooks.on_post_approval_response),
-        # Observers on two transform hooks: they always return None, so the
-        # content is never replaced (#33).
-        ("transform_terminal_output", hooks.on_transform_terminal_output),
-        ("transform_llm_output", hooks.on_transform_llm_output),
-        # Kanban board transitions (#31): dispatcher-side claim / spawn /
-        # exit / stale-claim and worker-side complete / block.
-        ("kanban_task_claimed", hooks.on_kanban_task_claimed),
-        ("kanban_task_completed", hooks.on_kanban_task_completed),
-        ("kanban_task_blocked", hooks.on_kanban_task_blocked),
-        ("on_kanban_worker_spawned", hooks.on_kanban_worker_spawned),
-        ("on_kanban_worker_exited", hooks.on_kanban_worker_exited),
-        ("on_kanban_worker_stale_claim", hooks.on_kanban_worker_stale_claim),
-        # Small observers (#400): slash commands, human-input waits, skill
-        # lifecycle facts, voice transcriptions. All return None.
-        ("pre_command", hooks.on_pre_command),
-        ("on_human_input_request", hooks.on_human_input_request),
-        ("on_human_input_resolved", hooks.on_human_input_resolved),
-        ("on_skill_lifecycle", hooks.on_skill_lifecycle),
-        ("pre_transcription", hooks.on_pre_transcription),
-        # Interruption and verification (#396).
-        ("agent_loop_stopped", hooks.on_agent_loop_stopped),
-        ("pre_verify", hooks.on_pre_verify),
-        # Board health (#397): counts only.
-        ("on_kanban_dispatch_tick", hooks.on_kanban_dispatch_tick),
-        ("on_kanban_task_updated", hooks.on_kanban_task_updated),
-    ]:
+    # Every hook the manifest declares, in one table (hooks.HOOKS). Each is
+    # registered defensively so a Hermes that lacks a given hook name doesn't
+    # break registration of the rest.
+    registered = 0
+    for hook_name, callback in hooks.HOOKS:
         try:
             ctx.register_hook(hook_name, callback)
-            optional_hooks += 1
+            registered += 1
         except Exception:
             debug_log(f"{hook_name} hook unavailable")
 
@@ -92,7 +46,6 @@ def register(ctx):
     # in VALID_HOOKS. When the registry cannot be inspected at all, fail
     # closed: the catalog validator diffs declared vs. registered hooks and an
     # undeclared registration fails admission (#130).
-    mcp_hooks = 0
     try:
         from hermes_cli.plugins import VALID_HOOKS as _valid_hooks
     except Exception:
@@ -100,7 +53,7 @@ def register(ctx):
     if _valid_hooks is not None and "mcp_request_headers" in _valid_hooks:
         try:
             ctx.register_hook("mcp_request_headers", hooks.on_mcp_request_headers)
-            mcp_hooks = 1
+            registered += 1
         except Exception:
             debug_log("mcp_request_headers hook unavailable")
     elif _valid_hooks is None:
@@ -108,7 +61,7 @@ def register(ctx):
     else:
         debug_log("mcp_request_headers hook not supported by this Hermes; skipping")
 
-    logger.info(f"[hermes-otel] Registered {6 + optional_hooks + mcp_hooks} hooks")
+    logger.info(f"[hermes-otel] Registered {registered} hooks")
 
     # Bundle a companion Hermes skill that explains how to turn on and read this
     # plugin's telemetry. Resolvable as `hermes_otel:observability` via
@@ -142,7 +95,7 @@ def register(ctx):
     # hermes-otel is observer-only unless the user opts in. Only registered
     # when the skill it points at actually registered, and never allowed to
     # raise — Hermes drops the whole plugin if register() fails.
-    if skill_registered and getattr(getattr(tracer, "config", None), "discovery_prompt", False):
+    if skill_registered and tracer.config.discovery_prompt:
         try:
             ctx.register_system_prompt_section(
                 "hermes-otel.discovery",

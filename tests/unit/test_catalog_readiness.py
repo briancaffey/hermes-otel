@@ -156,6 +156,23 @@ class TestRegisteredHooksMatchManifest:
         hermes_otel.register(ctx)
         assert sorted(ctx.hooks) == sorted(declared + ["mcp_request_headers"])
 
+    def test_a_host_lacking_any_declared_hook_registers_the_rest(self, monkeypatch, enabled_tracer):
+        # Every row of hooks.HOOKS is guarded the same way (#511): a host that
+        # rejects one name, core or not, keeps the other 33.
+        monkeypatch.setitem(sys.modules, "hermes_cli", None)
+        monkeypatch.setitem(sys.modules, "hermes_cli.plugins", None)
+
+        class _Older(_Ctx):
+            def register_hook(self, name, callback):
+                if name in ("pre_tool_call", "on_kanban_task_updated"):
+                    raise ValueError("unknown hook")
+                super().register_hook(name, callback)
+
+        ctx = _Older()
+        hermes_otel.register(ctx)
+        declared = set(_manifest()["provides_hooks"])
+        assert set(ctx.hooks) == declared - {"pre_tool_call", "on_kanban_task_updated"}
+
     def test_registering_the_hook_can_fail_without_aborting(self, monkeypatch, enabled_tracer):
         _fake_hermes_cli(monkeypatch, frozenset({"mcp_request_headers", "pre_tool_call"}))
 

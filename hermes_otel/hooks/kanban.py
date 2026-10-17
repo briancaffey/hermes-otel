@@ -44,7 +44,7 @@ from typing import Any, Dict, Optional, Tuple
 from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import format_traceparent, parse_traceparent, truncate_string
-from ._common import _emit_event, _fail_open, _preview_for, get_tracer
+from ._common import _emit_event, _fail_open, _preview_for, get_tracer, set_span_attributes
 from .attributes import _ID_MAX, _session_identity_attributes
 
 _SHORT_MAX = 64
@@ -166,18 +166,6 @@ def _worker_turn(tracer) -> Tuple[Optional[str], Any, Any]:
         return None, None, None
     session_id, root = live
     return session_id, tracer.spans.get_current_parent(session_id) or root, root
-
-
-def set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
-    if span is None or not hasattr(span, "set_attribute"):
-        return
-    for key, value in attributes.items():
-        if value is None:
-            continue
-        try:
-            span.set_attribute(key, value)
-        except Exception:  # pragma: no cover - never let telemetry raise
-            pass
 
 
 def _transition(
@@ -378,7 +366,7 @@ def _finish(tracer, name: str, attrs: Dict[str, Any], outcome: str, text_key: st
         # The worker's turn root learns which card it worked and how it ended,
         # so span-only readers (the bundled dashboard's live store, a backend
         # that cannot filter on Resource attributes) can find it too.
-        set_attributes(
+        set_span_attributes(
             root,
             {
                 "hermes.kanban.task_id": attrs.get("hermes.kanban.task_id"),
