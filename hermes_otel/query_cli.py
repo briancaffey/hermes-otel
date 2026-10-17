@@ -43,6 +43,7 @@ from .live_store import (
     summarize_trace,
     trace_totals,
 )
+from .severity import python_level
 
 _PKG_DIR = Path(__file__).resolve().parent
 
@@ -366,7 +367,7 @@ class LiveSource:
         return self.store.query_logs(
             trace_id=f.trace or None,
             session=f.session or None,
-            level_min=_LEVELS.get((f.level or "").lower()) or None,
+            level_min=python_level(f.level, 0) or None,
             logger=f.logger or None,
             text=f.text or None,
             start_ns=start_ns,
@@ -375,17 +376,6 @@ class LiveSource:
             event_name=getattr(f, "event", None) or None,
             events_only=bool(getattr(f, "events_only", False)),
         )
-
-
-_LEVELS = {
-    "debug": 10,
-    "info": 20,
-    "warning": 30,
-    "warn": 30,
-    "error": 40,
-    "critical": 50,
-    "fatal": 50,
-}
 
 
 def _import_backends():
@@ -469,7 +459,7 @@ class BackendSource:
         lf = backends.base.LogFilter(
             trace_id=f.trace or None,
             session=f.session or None,
-            min_level=_LEVELS.get((f.level or "").lower(), 0),
+            min_level=python_level(f.level, 0),
             logger=f.logger or None,
             text=f.text or None,
             event_name=getattr(f, "event", None) or None,

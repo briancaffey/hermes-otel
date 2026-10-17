@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import register
 from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from ._prometheus import metric_names as _prom_metric_names
@@ -52,7 +54,6 @@ from .base import (
 from .jaeger import JaegerAdapter
 from .metrics_math import bucketize, counter_increases
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
-from .severity import otel_severity_for
 from .shapes import to_int
 
 # The logs table's columns; session and event live in ``log_attributes``.
@@ -277,7 +278,7 @@ class GreptimeAdapter(JaegerAdapter):
         if f.logger:
             preds.append(f'"scope_name" = {sql_str(f.logger)}')
         if f.min_level:
-            preds.append(f'"severity_number" >= {otel_severity_for(f.min_level)}')
+            preds.append(f'"severity_number" >= {otel_severity(f.min_level)}')
         if f.event_name:
             preds.append(
                 f'json_get_string("log_attributes", {json_key("event.name")}) '

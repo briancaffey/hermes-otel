@@ -12,10 +12,11 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
+from hermes_otel.severity import otel_severity
+
 from ._attrs import dotted as _dotted
 from .base import LogColumns, LogFilter, http_get_json, log_row
 from .paging import log_end_ns, strictly_older
-from .severity import otel_severity_for
 
 DEFAULT_SELECTOR = '{service_name=~".+"}'
 
@@ -61,7 +62,7 @@ def logql_for(f: LogFilter, selector: str = DEFAULT_SELECTOR) -> str:
     if f.logger:
         stages.append(f"| scope_name={_quote(f.logger)}")
     if f.min_level:
-        stages.append(f"| severity_number >= {otel_severity_for(f.min_level)}")
+        stages.append(f"| severity_number >= {otel_severity(f.min_level)}")
     if f.text:
         stages.append(f"|= {_quote(f.text)}")
     return " ".join([selector, *stages])

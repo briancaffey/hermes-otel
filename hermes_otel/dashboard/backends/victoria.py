@@ -35,6 +35,8 @@ from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import register
 from ._prometheus import metric_names as _prom_metric_names
 from ._prometheus import metrics_query as _prom_metrics_query
@@ -52,7 +54,6 @@ from .base import (
 )
 from .jaeger import JaegerAdapter
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
-from .severity import otel_severity_for
 from .shapes import coerce_tag
 from .timeconv import ns_to_rfc3339, rfc3339_to_ns
 
@@ -220,7 +221,7 @@ class VictoriaAdapter(JaegerAdapter):
         if f.logger:
             parts.append(f"scope.name:{logsql_str(f.logger)}")
         if f.min_level:
-            parts.append(f"severity_number:>={otel_severity_for(f.min_level)}")
+            parts.append(f"severity_number:>={otel_severity(f.min_level)}")
         if f.event_name:
             parts.append(f"event.name:{logsql_str(f.event_name)}")
         elif f.events_only:

@@ -272,9 +272,9 @@ class AspireAdapter(BackendAdapter):
         start_ns, end_ns = int(start_s) * 1_000_000_000, log_end_ns(end_s, f)
         floor = 0
         if f.min_level:
-            from .severity import otel_severity_for
+            from hermes_otel.severity import otel_severity
 
-            floor = otel_severity_for(f.min_level)
+            floor = otel_severity(f.min_level)
         records: List[Dict[str, Any]] = []
         for rec in self._records(f, self.default_service):
             ts = to_int(rec.get("timeUnixNano"))

@@ -10,10 +10,10 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from hermes_otel.dashboard import live_api, plugin_api
-from hermes_otel.dashboard.backends import _loki, base
+from hermes_otel.dashboard.backends import _loki
 from hermes_otel.dashboard.backends.base import LogColumns, LogFilter, finish_log_row, log_row
-from hermes_otel.dashboard.backends.severity import level_names_at_least
 from hermes_otel.live_store import LiveStore
+from hermes_otel.severity import level_names_at_least, severity_number
 
 
 class TestRowShape:
@@ -39,9 +39,9 @@ class TestRowShape:
         assert row["event_name"] == "hermes.tool.call" and row["attributes"] == {"a": 1}
 
     def test_severity_numbers_accept_python_and_otel_spellings(self):
-        assert base.severity_number_for("CRITICAL") == 21 == base.severity_number_for("FATAL")
-        assert base.severity_number_for("30") == 13 and base.severity_number_for("13") == 13
-        assert base.severity_number_for("nope") is None
+        assert severity_number("CRITICAL") == 21 == severity_number("FATAL")
+        assert severity_number("30") == 13 and severity_number("13") == 13
+        assert severity_number("nope") is None
 
     def test_log_row_reads_fallback_columns_and_drops_the_backend_bookkeeping(self):
         cols = LogColumns(

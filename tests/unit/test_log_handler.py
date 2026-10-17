@@ -7,7 +7,7 @@ Covers the three parts the tracer depends on:
 * :func:`install_handler` — attaches an OTel ``LoggingHandler`` to the
   right Python logger, sets level appropriately, is idempotent across
   repeated installs, and filters out OTel-internal logger records.
-* :func:`resolve_level` — string-to-int level parsing.
+* :mod:`hermes_otel.severity` — the level spellings the pipeline is configured with.
 """
 
 from __future__ import annotations
@@ -19,28 +19,33 @@ import pytest
 
 from hermes_otel import log_handler
 from hermes_otel.backends import _ResolvedBackend
+from hermes_otel.severity import otel_severity, python_level
 
-# ── resolve_level ──────────────────────────────────────────────────────────
+# ── python_level ───────────────────────────────────────────────────────────
 
 
-class TestResolveLevel:
+class TestPythonLevel:
     def test_named_levels(self):
-        assert log_handler.resolve_level("DEBUG") == logging.DEBUG
-        assert log_handler.resolve_level("INFO") == logging.INFO
-        assert log_handler.resolve_level("warning") == logging.WARNING
-        assert log_handler.resolve_level("Error") == logging.ERROR
+        assert python_level("DEBUG") == logging.DEBUG
+        assert python_level("INFO") == logging.INFO
+        assert python_level("warning") == logging.WARNING
+        assert python_level("Error") == logging.ERROR
+
+    def test_otel_spellings_and_trace(self):
+        assert python_level("WARN") == logging.WARNING and python_level("FATAL") == logging.CRITICAL
+        assert python_level("trace") == 5  # below DEBUG, where OTel puts it (#521)
 
     def test_numeric_level(self):
-        assert log_handler.resolve_level("20") == 20
-        assert log_handler.resolve_level("40") == 40
+        assert python_level("20") == 20
+        assert python_level("40") == 40
 
     def test_unknown_falls_back_to_default(self):
-        assert log_handler.resolve_level("bogus") == logging.INFO
-        assert log_handler.resolve_level("") == logging.INFO
-        assert log_handler.resolve_level(None) == logging.INFO
+        assert python_level("bogus") == logging.INFO
+        assert python_level("") == logging.INFO
+        assert python_level(None) == logging.INFO
 
     def test_custom_default(self):
-        assert log_handler.resolve_level(None, default=logging.WARNING) == logging.WARNING
+        assert python_level(None, default=logging.WARNING) == logging.WARNING
 
 
 # ── Endpoint derivation ─────────────────────────────────────────────────────
@@ -554,7 +559,9 @@ class TestParseableBackendType:
         assert rb.headers["X-P-Stream"] == "env-traces"
 
 
-class TestExcludeOTelInternalFilter:
+class TestDefaultLoggerRulesFilter:
+    """``_LoggerRulesFilter()`` with no rules carries the built-in exclusions."""
+
     def _record(self, name: str, level: int = logging.DEBUG) -> logging.LogRecord:
         return logging.LogRecord(
             name=name,
@@ -567,7 +574,7 @@ class TestExcludeOTelInternalFilter:
         )
 
     def test_drops_opentelemetry_records(self):
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record("opentelemetry.sdk._logs.export")) is False
 
     @pytest.mark.parametrize(
@@ -582,11 +589,11 @@ class TestExcludeOTelInternalFilter:
     )
     def test_drops_http_client_records(self, logger_name):
         """HTTP-client DEBUG logs would loop if we forwarded them."""
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record(logger_name)) is False
 
     def test_keeps_application_records(self):
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record("hermes_otel.hooks", level=logging.INFO)) is True
         assert f.filter(self._record("hermes.gateway", level=logging.INFO)) is True
         assert f.filter(self._record("myapp.module", level=logging.INFO)) is True
@@ -961,8 +968,8 @@ class TestLiveSinkOnTheProvider:
         assert [type(c).__name__ for c in chain] == ["HermesLogProcessor", "LiveLogProcessor"]
         store.close()
 
-    def test_python_to_severity_bands(self):
-        f = log_handler._python_to_severity
+    def test_otel_severity_bands(self):
+        f = otel_severity
         assert (f(logging.DEBUG), f(logging.INFO), f(logging.WARNING)) == (5, 9, 13)
         assert (f(logging.ERROR), f(logging.CRITICAL), f(0)) == (17, 21, 1)
 

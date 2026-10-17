@@ -71,9 +71,6 @@ CONTENT_ATTRIBUTES: Tuple[str, ...] = (
 CONTENT_MODES: Tuple[str, ...] = ("off", "preview", "full")
 _CONTENT_RANK = {"off": 0, "preview": 1, "full": 2}
 
-# Severity text -> OTel severity number (the bottom of each band).
-SEVERITY_NUMBERS = {"TRACE": 1, "DEBUG": 5, "INFO": 9, "WARN": 13, "ERROR": 17, "FATAL": 21}
-
 EVENTS: Dict[str, Dict[str, Any]] = {
     "hermes.turn.start": {
         "hook": "pre_llm_call",
@@ -243,10 +240,6 @@ EVENTS: Dict[str, Dict[str, Any]] = {
         ),
     },
 }
-
-
-def severity_number(text: str) -> int:
-    return SEVERITY_NUMBERS.get(str(text).upper(), 9)
 
 
 def resolve_content_mode(events_content: str, span_content_mode: str) -> str:

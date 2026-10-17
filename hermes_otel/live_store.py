@@ -39,6 +39,7 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import semconv as _sc
 from .coerce import optional_number
+from .severity import python_level
 
 LIVE_DB_FILENAME = "hermes_otel_live.db"
 SCHEMA_VERSION = 3  # v3 (#266): log rows carry OTel severity spelling, span_id, attributes
@@ -303,23 +304,6 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
         "partial": partial,
         "subagents": subagent_totals(spans) if own else None,
     }
-
-
-# Python spellings and the OTel display spellings (WARN, FATAL) the store writes since v3 (#266).
-_LEVELS = {
-    "trace": 5,
-    "debug": 10,
-    "info": 20,
-    "warning": 30,
-    "warn": 30,
-    "error": 40,
-    "critical": 50,
-    "fatal": 50,
-}
-
-
-def level_no(level: Any) -> int:
-    return _LEVELS.get(str(level or "info").lower(), 20)
 
 
 class LiveStore:
@@ -652,7 +636,7 @@ class LiveStore:
             span_id=record.get("span_id"),
             session_id=record.get("session_id"),
             name=record.get("event_name") or record.get("logger"),
-            level=level_no(record.get("level")),
+            level=python_level(record.get("level")),
             logger=record.get("logger"),
         )
 

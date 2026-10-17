@@ -39,6 +39,7 @@
   "hermes_otel/redaction.py": 95,
   "hermes_otel/semconv.py": 100,
   "hermes_otel/session_state.py": 96,
+  "hermes_otel/severity.py": 100,
   "hermes_otel/settings_report.py": 94,
   "hermes_otel/skills/observability/scripts/otel.py": 77,
   "hermes_otel/span_tracker.py": 94,

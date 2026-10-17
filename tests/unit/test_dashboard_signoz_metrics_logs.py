@@ -13,6 +13,7 @@ import pytest
 from hermes_otel.dashboard.backends import signoz as sz
 from hermes_otel.dashboard.backends.base import BackendError, LogFilter
 from hermes_otel.dashboard.backends.timeconv import ns_from_any
+from hermes_otel.severity import otel_severity
 
 CFG = {
     "type": "signoz",
@@ -376,7 +377,7 @@ class TestLogs:
         assert items == [{"key": sz._tag("event.name"), "op": "exists"}]
 
     def test_severity_floor_per_python_level(self):
-        assert [sz.otel_severity_for(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
+        assert [otel_severity(l) for l in (10, 20, 25, 30, 40, 50, 0)] == [
             5,
             9,
             9,
