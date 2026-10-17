@@ -7,6 +7,8 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 CODE = sorted((REPO_ROOT / "hermes_otel" / "hooks").glob("*.py")) + [
     REPO_ROOT / "hermes_otel" / "tracer.py",
     REPO_ROOT / "hermes_otel" / "pipeline.py",
+    # The resource attributes a backend routes by (``required_resource_attributes``).
+    REPO_ROOT / "hermes_otel" / "backend_specs.py",
     # Per-session roll-ups the root span carries (cost, auxiliary calls).
     REPO_ROOT / "hermes_otel" / "session_state.py",
     # The sweep marker on children ended on the operation's behalf (#477).

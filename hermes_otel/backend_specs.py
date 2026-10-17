@@ -26,7 +26,7 @@ No OTel imports here: the dashboard package and the scripts import this.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Dict, Optional, Tuple
+from typing import Any, Dict, List, Mapping, Optional, Tuple
 
 #: The metric temporality a type's docs ask for; ``None`` is the SDK default.
 Temporality = Optional[str]
@@ -78,6 +78,17 @@ class AdapterSignals:
 
 
 @dataclass(frozen=True)
+class ProjectPage:
+    """A ``fixed`` SaaS UI with a page per project under ``ui_url`` (W&B Weave):
+    the path template formatted with the entry's ``entity`` and ``project``,
+    and the Settings card's notes with and without them."""
+
+    path: str
+    note: str
+    home_note: str
+
+
+@dataclass(frozen=True)
 class BackendSpec:
     type: str
     display_name: str
@@ -118,9 +129,33 @@ class BackendSpec:
     query_api: Optional[QueryApi] = None
     #: The port the read API / UI listens on in the repo's compose stacks.
     default_query_port: Optional[int] = None
-    #: Where the web UI lives relative to the OTLP endpoint (settings card):
-    #: ``origin`` | ``proxied`` | ``fixed`` | ``None``.
+    #: Where the web UI lives relative to the OTLP endpoint, for the Settings
+    #: card's link when the entry sets no ``ui_url``:
+    #:   origin   the UI is served on the OTLP endpoint's scheme://host:port
+    #:            (Phoenix :6006, Langfuse :3000, OpenObserve :5080, Uptrace
+    #:            :14318, Parseable :8000 all serve UI and ingest on one port);
+    #:            ``ui_url`` is the cloud UI when the entry names no host
+    #:   proxied  the UI normally sits on another port (Jaeger :16686, SigNoz
+    #:            :8080, Grafana :3000 vs OTLP :4318), so the origin is used
+    #:            only when the endpoint names no port, i.e. a reverse-proxied
+    #:            hostname such as https://jaeger.example.com; with
+    #:            ``ui_on_query_port`` the entry's ``query_port`` is honoured
+    #:   fixed    a SaaS UI at a known address: ``ui_by_region``, or ``ui_url``
+    #:            with an optional ``ui_project_page``
+    #:   None     nothing to derive (a generic OTLP collector has no UI)
     ui_rule: Optional[str] = None
+    #: The SaaS UI home (``fixed``), or the cloud UI an ``origin`` type links
+    #: when the entry names no host.
+    ui_url: Optional[str] = None
+    #: ``region`` -> UI host for ``fixed`` SaaS types with several (``us`` default).
+    ui_by_region: Dict[str, str] = field(default_factory=dict)
+    #: ``proxied`` types whose query API and UI share a port (Jaeger, SigNoz).
+    ui_on_query_port: bool = False
+    ui_project_page: Optional[ProjectPage] = None
+    #: Resource attributes the backend routes by (Weave: ``wandb.entity`` /
+    #: ``wandb.project``): ``build_resource`` fails without them, and env-var
+    #: mode skips the type unless the environment supplies them.
+    required_resource_attributes: Tuple[str, ...] = ()
     #: Module under ``hermes_otel.dashboard.backends`` whose adapter handles
     #: this type; ``None`` = export-only (``status`` lists it as not queryable).
     adapter_module: Optional[str] = None
@@ -136,6 +171,10 @@ class BackendSpec:
     @property
     def traces_only(self) -> bool:
         return not self.metrics and not self.logs
+
+    def missing_resource_attributes(self, attrs: Mapping[str, Any]) -> List[str]:
+        """The ``required_resource_attributes`` that ``attrs`` lacks."""
+        return [key for key in self.required_resource_attributes if not attrs.get(key)]
 
     @property
     def docs_path(self) -> str:
@@ -173,6 +212,7 @@ _SPECS = [
         endpoint_env="OTEL_LANGFUSE_ENDPOINT",
         default_query_port=3000,
         ui_rule="origin",
+        ui_url="https://cloud.langfuse.com",
         adapter_module="langfuse",
         query_keys=("query_api", "query_port"),
         env_vars=(
@@ -195,6 +235,7 @@ _SPECS = [
         auth=AuthHeader("signoz-ingestion-key", field="ingestion_key"),
         default_query_port=3301,
         ui_rule="proxied",
+        ui_on_query_port=True,
         adapter_module="signoz",
         query_keys=("query_port", "ui_url"),
         env_vars=(
@@ -211,6 +252,7 @@ _SPECS = [
         query_api=QueryApi("jaeger"),
         default_query_port=16686,
         ui_rule="proxied",
+        ui_on_query_port=True,
         adapter_module="jaeger",
         query_keys=("query_api", "query_path", "query_port", "search_fetch"),
         env_vars=(("OTEL_JAEGER_ENDPOINT", "Single-backend mode: Jaeger OTLP URL"),),
@@ -536,6 +578,7 @@ _SPECS = [
             "eu": "https://api.eu1.honeycomb.io/v1/traces",
         },
         ui_rule="fixed",
+        ui_by_region={"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"},
         env_vars=(
             ("OTEL_HONEYCOMB_ENDPOINT", "Single-backend mode: Honeycomb OTLP URL"),
             ("OTEL_HONEYCOMB_API_KEY", "Honeycomb API key (preferred name)"),
@@ -746,6 +789,13 @@ _SPECS = [
         endpoint_env="OTEL_WEAVE_ENDPOINT",
         endpoint_env_fallbacks=("WANDB_OTLP_ENDPOINT",),
         ui_rule="fixed",
+        ui_url="https://wandb.ai",
+        ui_project_page=ProjectPage(
+            "/{entity}/{project}/weave",
+            "the Weave page of the entry's entity and project",
+            "the W&B home; set entity and project to link the Weave page",
+        ),
+        required_resource_attributes=("wandb.entity", "wandb.project"),
         env_vars=(
             ("OTEL_WEAVE_ENDPOINT", "Single-backend mode: W&B Weave OTLP URL"),
             ("WANDB_OTLP_ENDPOINT", "Weave OTLP URL fallback"),
@@ -777,6 +827,7 @@ _SPECS = [
             "eu": "https://eu.api.smith.langchain.com/otel/v1/traces",
         },
         ui_rule="fixed",
+        ui_by_region={"us": "https://smith.langchain.com", "eu": "https://eu.smith.langchain.com"},
         env_vars=(
             ("OTEL_LANGSMITH_API_KEY", "LangSmith API key (preferred name; the env opt-in)"),
             (

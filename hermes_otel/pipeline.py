@@ -15,6 +15,7 @@ import os
 import uuid
 from typing import Any, Dict, List, Optional
 
+from .backend_specs import spec_for
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
 from .helpers import (
@@ -314,50 +315,85 @@ else:  # pragma: no cover — plugin is unusable without OTel
 # ── the Resource ───────────────────────────────────────────────────────
 
 
-def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
-    # Process identity (OTel semconv). ``service.instance.id`` is what keeps
-    # two Hermes processes on one host (gateway + dashboard, two profiles)
-    # from writing the same metric series — without it their independent
-    # cumulative counters interleave into one sawtooth (#79). Users can
-    # still override any of these via resource_attributes.
+def _service_identity(plugin) -> Dict[str, Any]:
+    """Process identity (OTel semconv) and the Hermes profile (#70).
+
+    ``service.instance.id`` is what keeps two Hermes processes on one host
+    (gateway + dashboard, two profiles) from writing the same metric series;
+    without it their independent cumulative counters interleave into one
+    sawtooth (#79). With ``service_name_from_profile`` a named profile is its
+    own service in the ``hermes-agent`` namespace, so a fleet shows one service
+    per profile (#395). The namespace is only set then: OTLP-to-Prometheus
+    folds it into ``job`` (``hermes-agent/hermes-agent``), which would rename
+    every metric series of a plain install.
+    """
     config = plugin.config
-    # With ``service_name_from_profile`` a named profile is its own service
-    # in the ``hermes-agent`` namespace, so a fleet shows one service per
-    # profile (#395). The namespace is only set then: OTLP-to-Prometheus
-    # folds it into ``job`` (``hermes-agent/hermes-agent``), which would
-    # rename every metric series of a plain install. ``resource_attributes``
-    # below still override both.
     profile_service = named_profile(plugin.profile_name) if config.service_name_from_profile else ""
     attrs: Dict[str, Any] = {
         "service.name": profile_service or DEFAULT_SERVICE_NAME,
         "service.instance.id": _SERVICE_INSTANCE_ID,
         "process.pid": os.getpid(),
     }
-    # The platform, so a fleet can split by OS and CPU architecture (#476).
-    for key, value in (("os.type", os_type()), ("host.arch", host_arch())):
-        if value:
-            attrs[key] = value
     if profile_service:
         attrs["service.namespace"] = DEFAULT_SERVICE_NAME
     pkg_version = package_version()
     if pkg_version:
         attrs["service.version"] = pkg_version
-    # Which Hermes profile produced this telemetry (#70). A resource
-    # attribute so backends can split traces and metrics per agent even
-    # where span attributes are not filterable; also on the root span.
     attrs["hermes.profile"] = plugin.profile_name
-    # Kanban worker identity: the dispatcher exports these into a worker's
-    # environment, so everything a card's run emits can be joined back to
-    # the card and to the attempt. Keyed on the task: Hermes pins the
-    # current board into HERMES_KANBAN_BOARD at the start of EVERY chat
-    # (hermes-agent #20074), so the board alone does not mark a worker.
-    if os.getenv("HERMES_KANBAN_TASK", "").strip():
-        for env_name, attr_name in _KANBAN_ENV_ATTRS:
-            value = os.getenv(env_name, "").strip()
-            if value:
-                attrs[attr_name] = value
-    if config.resource_attributes:
-        attrs.update(config.resource_attributes)
+    return attrs
+
+
+def _platform(plugin) -> Dict[str, Any]:
+    """The platform, so a fleet can split by OS and CPU architecture (#476)."""
+    return {k: v for k, v in (("os.type", os_type()), ("host.arch", host_arch())) if v}
+
+
+def _kanban_identity(plugin) -> Dict[str, Any]:
+    """Kanban worker identity: the dispatcher exports these into a worker's
+    environment, so everything a card's run emits can be joined back to the
+    card and to the attempt. Keyed on the task: Hermes pins the current board
+    into HERMES_KANBAN_BOARD at the start of EVERY chat (hermes-agent #20074),
+    so the board alone does not mark a worker."""
+    if not os.getenv("HERMES_KANBAN_TASK", "").strip():
+        return {}
+    values = ((attr, os.getenv(env, "").strip()) for env, attr in _KANBAN_ENV_ATTRS)
+    return {attr: value for attr, value in values if value}
+
+
+def _project(plugin) -> Dict[str, Any]:
+    """The OpenInference project (Phoenix et al.), from the config or ``OTEL_PROJECT_NAME``."""
+    name = plugin.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
+    return {"openinference.project.name": name} if name else {}
+
+
+def _host_name(plugin) -> Dict[str, Any]:
+    """``host.name`` lets the host/GPU series join the traces they were sampled
+    alongside (and a Collector's hostmetrics series, if one runs too)."""
+    if not plugin.config.host_metrics:
+        return {}
+    try:
+        import socket
+
+        return {"host.name": socket.gethostname()}
+    except Exception:  # pragma: no cover — never block init on this
+        return {}
+
+
+#: The attributes every Resource starts from, before the user's overlay.
+_RESOURCE_CONTRIBUTORS = (_service_identity, _platform, _kanban_identity)
+
+
+def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
+    """The process's Resource, lowest precedence first: the contributors, the
+    config's ``resource_attributes`` (which may override any of them), each
+    backend's own attributes (a value that disagrees with a configured one
+    fails init), then the project name; ``host.name`` only when nothing set
+    it. A backend's ``required_resource_attributes`` (Weave's routing) must be
+    present by then, from either overlay."""
+    attrs: Dict[str, Any] = {}
+    for contribute in _RESOURCE_CONTRIBUTORS:
+        attrs.update(contribute(plugin))
+    attrs.update(plugin.config.resource_attributes or {})
     for b in backends or []:
         for key, value in (b.resource_attributes or {}).items():
             existing = attrs.get(key)
@@ -368,26 +404,16 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
                 )
             attrs[key] = value
     for b in backends or []:
-        if b.type == "weave":
-            missing = [key for key in ("wandb.entity", "wandb.project") if not attrs.get(key)]
-            if missing:
-                joined = ", ".join(missing)
-                raise ValueError(
-                    f"Weave requires {joined} as resource attributes "
-                    "(set them under resource_attributes or on the weave backend entry)"
-                )
-    project_name = config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
-    if project_name:
-        attrs["openinference.project.name"] = project_name
-    # host.name lets the host/GPU series join the traces they were sampled
-    # alongside (and a Collector's hostmetrics series, if one runs too).
-    if config.host_metrics and not attrs.get("host.name"):
-        try:
-            import socket
-
-            attrs["host.name"] = socket.gethostname()
-        except Exception:  # pragma: no cover — never block init on this
-            pass
+        spec = spec_for(b.type)
+        missing = spec.missing_resource_attributes(attrs) if spec is not None else []
+        if missing:
+            raise ValueError(
+                f"{b.display_name} requires {', '.join(missing)} as resource attributes "
+                f"(set them under resource_attributes or on the {b.type} backend entry)"
+            )
+    attrs.update(_project(plugin))
+    if not attrs.get("host.name"):
+        attrs.update(_host_name(plugin))
     return Resource.create(attrs)
 
 
