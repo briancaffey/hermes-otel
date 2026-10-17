@@ -69,7 +69,10 @@ _SHELL_TOOL_NAMES = frozenset({"terminal", "bash", "shell"})
 # ``git commit`` as a word, however the command is prefixed (``cd x &&``,
 # ``GIT_X=1``, a second space); ``git commit-tree`` and ``git committed`` are
 # not it. The pattern opencode-plugin-otel uses, so both agents count alike.
-_GIT_COMMIT = re.compile(r"\bgit\s+commit(?![-\w])")
+# ``git commit`` with any of git's own options in between (``git -c k=v
+# commit``, ``git -C repo commit``, ``git --no-pager commit``); never
+# ``git commit-tree`` or ``git committed``.
+_GIT_COMMIT = re.compile(r"\bgit(?:\s+-{1,2}[\w.:/=,-]+(?:\s+[\w.@:/=,-]+)?)*\s+commit(?![-\w])")
 # git's own confirmation line: ``[main abc1234] Subject`` or, for the first
 # commit, ``[main (root-commit) abc1234] Subject``.
 _COMMIT_SUMMARY = re.compile(r"^\[[^\]\n]+ [0-9a-f]{7,40}\] (?P<subject>[^\n]*)", re.MULTILINE)
