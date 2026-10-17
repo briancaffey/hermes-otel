@@ -23,7 +23,7 @@ from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import serialize_full, truncate_string
+from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .api_call import (
@@ -33,12 +33,14 @@ from .api_call import (
     apply_usage,
     duration_seconds,
     ensure_span,
+    full_response_attributes,
     record_operation_duration,
     request_attributes,
     response_attributes,
     token_suffix,
 )
 from .attributes import (
+    _ID_MAX,
     _gen_ai_attributes,
     _metric_model_labels,
     _model_attributes,
@@ -170,7 +172,7 @@ def on_post_auxiliary_call(
     owner = _owning_session(session_id)
     key = auxiliary_span_key(api_request_id, task, started_at)
     failed = error is not None or bool(error_type)
-    err_type = truncate_string(error_type, 200) if error_type else ("error" if failed else "")
+    err_type = truncate_string(error_type, _ID_MAX) if error_type else ("error" if failed else "")
     err_message = truncate_string(error, 500) if error else ""
 
     attributes: Dict[str, Any] = {
@@ -219,18 +221,7 @@ def on_post_auxiliary_call(
     )
     if streaming:
         attributes["gen_ai.request.stream"] = True
-
-    if tracer.config.captures_full_responses():
-        response = as_dict(kwargs.get("response"))
-        message = as_dict(response.get("assistant_message")) if response else {}
-        content = message.get("content")
-        if isinstance(content, str) and content:
-            attributes["output.value"] = content
-            attributes["output.mime_type"] = "text/plain"
-            attributes["gen_ai.output.messages"] = serialize_full(
-                [{"role": "assistant", "content": content}]
-            )
-            attributes["hermes.content.output_chars"] = len(content)
+    attributes.update(full_response_attributes(tracer, HookPayload(kwargs)))
 
     tracer.record_metric(
         "auxiliary_count",

@@ -14,6 +14,7 @@ from ..instruments import COMPAT_SESSION_LABEL
 from ..session_state import PerSession
 from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
+    _ID_MAX,
     _extract_correlation_id,
     _gen_ai_attributes,
     _model_attributes,
@@ -70,7 +71,7 @@ def cron_job_id_from_session(session_id: Any) -> str:
 
 
 def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None:
-    text = truncate_string(model, 200) if model else ""
+    text = truncate_string(model, _ID_MAX) if model else ""
     if not text:
         return
     try:
@@ -164,7 +165,7 @@ def _start_session_span(
         or cron_job_id_from_session(session_id)
     )
     if cron_job_id:
-        attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, 200)
+        attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, _ID_MAX)
 
     # Sub-agent rejoin: if this session is a delegated child (its session_id was
     # registered by on_subagent_start in the parent), nest its root span under
@@ -178,7 +179,7 @@ def _start_session_span(
         attributes["hermes.session.is_subagent"] = True
         ps.is_subagent = True
         if record.get("role"):
-            attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
+            attributes["hermes.subagent.role"] = truncate_string(record["role"], _ID_MAX)
         if record.get("parent_session_id"):
             attributes["hermes.subagent.parent_session_id"] = truncate_string(
                 record["parent_session_id"], 200
@@ -209,7 +210,7 @@ def _start_session_span(
     # ``/reset``, expiry) names it and links to its last root span.
     previous = tracer.sessions.previous_session(session_id)
     if previous:
-        attributes["hermes.session.previous_id"] = truncate_string(previous, 200)
+        attributes["hermes.session.previous_id"] = truncate_string(previous, _ID_MAX)
         prev_ctx = tracer.sessions.root_context(previous)
         if prev_ctx is not None and Link is not None:
             links = list(links or []) + [

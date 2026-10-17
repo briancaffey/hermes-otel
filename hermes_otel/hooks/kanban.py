@@ -45,9 +45,8 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import format_traceparent, parse_traceparent, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _session_identity_attributes
+from .attributes import _ID_MAX, _session_identity_attributes
 
-_ID_MAX = 200
 _SHORT_MAX = 64
 _seq = itertools.count(1)
 
@@ -133,6 +132,16 @@ def kanban_identity(
     if run_id is not None and str(run_id) != "":
         attrs["hermes.kanban.run_id"] = truncate_string(str(run_id), _SHORT_MAX)
     return attrs
+
+
+def _int_attributes(*fields: Tuple[str, Any]) -> Dict[str, Any]:
+    """The ``(key, value)`` pairs whose value Hermes sent as a real int (a
+    pid, an exit code); a bool or a digit string is not one."""
+    return {
+        key: value
+        for key, value in fields
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
 
 
 def _own_root():
@@ -262,8 +271,7 @@ def on_kanban_worker_spawned(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "spawned")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(_int_attributes(("hermes.kanban.worker_pid", worker_pid)))
     _clear_traceparent()  # the worker's environment is already built
     _transition(
         tracer,
@@ -295,12 +303,13 @@ def on_kanban_worker_exited(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "worker_exited")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(
+        _int_attributes(
+            ("hermes.kanban.worker_pid", worker_pid), ("hermes.kanban.exit_code", exit_code)
+        )
+    )
     kind = truncate_string(str(exit_kind), _SHORT_MAX) if exit_kind else "unknown"
     attrs["hermes.kanban.exit_kind"] = kind
-    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-        attrs["hermes.kanban.exit_code"] = exit_code
     if outcome:
         attrs["hermes.kanban.outcome"] = truncate_string(str(outcome), _SHORT_MAX)
     if retry_status:
@@ -335,8 +344,7 @@ def on_kanban_worker_stale_claim(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "stale_claim")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(_int_attributes(("hermes.kanban.worker_pid", worker_pid)))
     if isinstance(heartbeat_stale, bool):
         attrs["hermes.kanban.heartbeat_stale"] = heartbeat_stale
     if retry_status:

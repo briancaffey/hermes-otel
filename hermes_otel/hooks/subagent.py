@@ -8,7 +8,7 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _session_identity_attributes, correlation_attributes
+from .attributes import _ID_MAX, _session_identity_attributes, correlation_attributes
 
 # child_status values hermes-agent reports on subagent_stop that indicate a
 # clean finish. Anything explicitly failure-like maps to an error span; unknown
@@ -98,19 +98,21 @@ def on_subagent_start(
 
     # No role reported → plain ``subagent`` span with no role attribute; a
     # placeholder role would be indistinguishable from a real one (#155).
-    role = truncate_string(child_role, 200) if child_role else ""
+    role = truncate_string(child_role, _ID_MAX) if child_role else ""
     span_name = f"subagent.{role}" if role else "subagent"
 
     attributes: Dict[str, Any] = {
         "gen_ai.operation.name": "invoke_agent",
-        "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+        "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
     }
     if role:
         attributes["gen_ai.agent.name"] = role
         attributes["hermes.subagent.role"] = role
     attributes.update(_session_identity_attributes(parent_session_id))
     if parent_session_id:
-        attributes["hermes.subagent.parent_session_id"] = truncate_string(parent_session_id, 200)
+        attributes["hermes.subagent.parent_session_id"] = truncate_string(
+            parent_session_id, _ID_MAX
+        )
     for src, dest in (
         ("parent_turn_id", "hermes.subagent.parent_turn_id"),
         ("child_subagent_id", "hermes.subagent.child_id"),
@@ -118,7 +120,7 @@ def on_subagent_start(
     ):
         value = kwargs.get(src)
         if value:
-            attributes[dest] = truncate_string(value, 200)
+            attributes[dest] = truncate_string(value, _ID_MAX)
     goal_preview = _preview_for(tracer, "tool_input", child_goal)
     if goal_preview is not None:
         attributes["hermes.subagent.goal"] = goal_preview
@@ -193,7 +195,7 @@ def on_subagent_stop(
     record = tracer.spans.pop_subagent(child_session_id)
     tracer.spans.end_delegation(child_session_id)
     role = (record.get("role") if record else None) or (
-        truncate_string(child_role, 200) if child_role else ""
+        truncate_string(child_role, _ID_MAX) if child_role else ""
     )
 
     status = subagent_status_to_span_status(child_status)
@@ -233,7 +235,7 @@ def on_subagent_stop(
         f"{attributes.get('hermes.subagent.status') or status}",
         {
             **{k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},
-            "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+            "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
         },
         severity="ERROR" if status == "error" else "INFO",
         session_id=kwargs.get("parent_session_id")

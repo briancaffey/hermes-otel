@@ -143,14 +143,6 @@ def _emit_event(
         debug_log(f"event {name} skipped: {type(exc).__name__}: {exc}")
 
 
-def _preview(value: Any, max_chars: int) -> Optional[str]:
-    """Apply the configured preview policy: capture toggle + clip_preview."""
-    tracer = get_tracer()
-    if not tracer.config.captures_content():
-        return None
-    return clip_preview(value, max_chars)
-
-
 def _preview_for(tracer, kind: Optional[str], value: Any) -> Optional[str]:
     """Clip ``value`` with the limit configured for ``kind`` (see ``_PREVIEW_LIMITS``).
 
