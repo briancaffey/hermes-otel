@@ -80,27 +80,38 @@ def _display_map(
 _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     s.type: {c.field: c.env for c in s.credentials} for s in SPECS if s.credentials
 }
-_ALL_CREDENTIAL_FIELDS = (
-    "public_key",
-    "secret_key",
-    "ingestion_key",
-    "dsn",
-    "user",
-    "password",
-    "api_key",
-    "entity",
-    "project",
+# Every credential field any resolver reads, and every other scalar an entry
+# may carry, both derived (#501): a hand list here drifted twice (mlflow's
+# ``experiment_id`` and opik's ``workspace`` were never reported; victoria's
+# ``metrics_endpoint`` / ``logs_endpoint`` were dropped from the effective
+# YAML, so pasting it back lost two of the three stores).
+_ALL_CREDENTIAL_FIELDS: Tuple[str, ...] = tuple(
+    f.name
+    for f in dataclasses.fields(BackendConfig)
+    if f.name in {c.field for s in SPECS for c in s.credentials}
 )
-
-_PLAIN_BACKEND_FIELDS = (
-    "endpoint",
-    "base_url",
-    "stream_name",
-    "traces_dataset",
-    "metrics_dataset",
-    "logs_dataset",
-    "dataset",
-    "region",
+# Fields the card reports under their own key rather than as a plain scalar.
+_STRUCTURED_BACKEND_FIELDS = frozenset(
+    {
+        "type",
+        "name",
+        "ui_url",
+        "headers",
+        "traces",
+        "metrics",
+        "logs",
+        "metrics_temporality",
+        "root_usage",
+        "log_overrides",
+        "extra",
+    }
+)
+_PLAIN_BACKEND_FIELDS: Tuple[str, ...] = tuple(
+    f.name
+    for f in dataclasses.fields(BackendConfig)
+    if f.name not in _STRUCTURED_BACKEND_FIELDS
+    and f.name not in _ALL_CREDENTIAL_FIELDS
+    and not f.name.endswith("_env")
 )
 
 

@@ -9,6 +9,8 @@ import dataclasses
 import pytest
 
 from hermes_otel import plugin_config as pc
+from hermes_otel import settings_report
+from hermes_otel.backend_specs import SPECS
 from hermes_otel.plugin_config import FIELD_DOCS, FIELD_GROUPS, HermesOtelConfig
 from hermes_otel.settings_report import (
     MASK,
@@ -413,6 +415,82 @@ class TestBackendCards:
         )
         (card,) = build_settings_report()["fields"][-1]["value"]
         assert card["metrics_temporality"] == {"value": "cumulative", "source": "SDK default"}
+
+    @pytest.mark.parametrize(
+        "entry, want_fields, want_credentials",
+        [
+            (
+                pc.BackendConfig(
+                    type="victoria",
+                    endpoint="http://localhost:10428",
+                    metrics_endpoint="http://localhost:8428",
+                    logs_endpoint="http://localhost:9428",
+                ),
+                {
+                    "endpoint": "http://localhost:10428",
+                    "metrics_endpoint": "http://localhost:8428",
+                    "logs_endpoint": "http://localhost:9428",
+                },
+                {},
+            ),
+            (
+                pc.BackendConfig(
+                    type="mlflow",
+                    endpoint="http://localhost:5000",
+                    experiment_id="7",
+                    workspace="ws",
+                ),
+                {"endpoint": "http://localhost:5000"},
+                {"experiment_id": "7", "workspace": "ws"},
+            ),
+            (
+                pc.BackendConfig(type="opik", workspace="acme", project="agents"),
+                {},
+                {"workspace": "acme", "project": "agents"},
+            ),
+            (
+                pc.BackendConfig(type="greptime", endpoint="http://localhost:4000", db="hermes"),
+                {"endpoint": "http://localhost:4000"},
+                {"db": "hermes"},
+            ),
+            (
+                pc.BackendConfig(
+                    type="elastic", endpoint="http://localhost:8200", dataset="d", namespace="n"
+                ),
+                {"endpoint": "http://localhost:8200", "dataset": "d", "namespace": "n"},
+                {},
+            ),
+        ],
+        ids=["victoria", "mlflow", "opik", "greptime", "elastic"],
+    )
+    def test_every_configured_field_reaches_the_card_and_the_yaml(
+        self, entry, want_fields, want_credentials
+    ):
+        """Regression for #501: the field lists are derived from the manifest and
+        ``BackendConfig``, so no configured scalar is dropped from the card or
+        from the effective YAML the tab offers to paste back."""
+        card = settings_report._backend_summary(entry, {}, reveal=False)
+        assert card["fields"] == want_fields
+        assert {c["field"]: c["value"] for c in card["credentials"]} == want_credentials
+        as_yaml = settings_report._backend_as_yaml(card)
+        for k, v in {**want_fields, **want_credentials}.items():
+            assert as_yaml[k] == v, k
+
+    def test_field_lists_cover_every_backend_config_scalar(self):
+        """Every ``BackendConfig`` field is either structured (reported under
+        its own key), a credential from the manifest, a ``*_env`` pointer, or
+        a plain scalar; nothing falls through."""
+        names = {f.name for f in dataclasses.fields(pc.BackendConfig)}
+        covered = (
+            set(settings_report._STRUCTURED_BACKEND_FIELDS)
+            | set(settings_report._ALL_CREDENTIAL_FIELDS)
+            | set(settings_report._PLAIN_BACKEND_FIELDS)
+            | {n for n in names if n.endswith("_env")}
+        )
+        assert covered == names
+        assert set(settings_report._ALL_CREDENTIAL_FIELDS) == {
+            c.field for s in SPECS for c in s.credentials
+        }
 
     def test_query_fields_and_effective_yaml_round_trip(self, cards, home):
         assert cards["jaeger-query"]["query_fields"] == {"query_port": 16686}

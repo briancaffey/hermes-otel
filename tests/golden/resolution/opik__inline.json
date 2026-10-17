@@ -49,6 +49,12 @@
     "value": "••••••"
    },
    {
+    "field": "workspace",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
     "field": "project",
     "set": true,
     "source": "file (inline)",

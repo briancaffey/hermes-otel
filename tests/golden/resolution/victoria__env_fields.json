@@ -76,7 +76,9 @@
   "display_type": "Victoria",
   "docs_path": "/backends/victoria",
   "fields": {
-   "endpoint": "http://localhost:4318/v1/traces"
+   "endpoint": "http://localhost:4318/v1/traces",
+   "logs_endpoint": "http://localhost:9428",
+   "metrics_endpoint": "http://localhost:8428"
   },
   "headers": null,
   "known_type": true,

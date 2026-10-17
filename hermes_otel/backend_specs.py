@@ -188,6 +188,7 @@ _SPECS = [
         credentials=(
             CredentialField("user", ("OTEL_GREPTIME_USER",)),
             CredentialField("password", ("OTEL_GREPTIME_PASSWORD",)),
+            CredentialField("db", ("OTEL_GREPTIME_DB",)),
         ),
         endpoint_env="OTEL_GREPTIME_ENDPOINT",
         default_query_port=4000,
