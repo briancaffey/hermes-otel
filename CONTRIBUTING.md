@@ -275,12 +275,13 @@ Every attribute name the plugin emits, the fallback chains readers use
 and the event names live in `hermes_otel/semconv.py` (#404). The live store,
 the query CLI, the OpenObserve column table and `dashboard-ui/src/lib.ts`
 read it; `scripts/gen_semconv.py` writes `dashboard-ui/src/semconv.generated.ts`
-and `--check` (run by `make ci-semconv` and CI) fails when that file is stale
-or when `website/docs/reference/span-attributes.md` lists more or fewer
-attributes than the registry. To add an attribute: emit it in a hook, add its
-`Attr` to the registry, document it on the reference page, run the generator,
-rebuild the dashboard bundle. `tests/unit/test_semconv.py` fails on a hook
-literal the registry does not know.
+and the tables of `website/docs/reference/span-attributes.md` (from the
+registry's `ROWS`, between marker comments; the page's prose is hand-written),
+and `--check` (run by `make ci-semconv` and CI) fails when either is stale. To
+add an attribute: emit it in a hook, add it to a `Row` in the registry, run the
+generator, commit the regenerated TypeScript and page, rebuild the dashboard
+bundle. `tests/unit/test_semconv.py` fails on a hook literal the registry does
+not know.
 
 ## Live before/after check (`make refactor-check`)
 

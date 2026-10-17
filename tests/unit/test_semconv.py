@@ -1,7 +1,7 @@
 """``hermes_otel.semconv`` is the one source of the telemetry vocabulary (#404):
 the registry is consistent, the readers derive from it, the hooks' literals
-are registered, the reference page lists exactly the registry, and the
-generated TypeScript is current."""
+are registered, and the generated TypeScript and reference-page tables are
+current (#523)."""
 
 from __future__ import annotations
 
@@ -43,6 +43,14 @@ class TestRegistry:
         assert semconv.attribute("tool.name").group == "tool"
         assert semconv.attribute("no.such") is None
         assert set(semconv.groups()) >= {"session", "usage", "tool", "kanban"}
+
+    def test_rows_are_placed_and_the_first_row_is_home(self, gen):
+        """Every row lands in a page table (typed) or is off-page; an attribute
+        listed in several rows takes its meaning from the first."""
+        assert gen.check_rows() == []
+        home = semconv.attribute("gen_ai.operation.name")
+        assert (home.where, home.doc) == ("agent / cron: start", "`invoke_agent`")
+        assert semconv.attribute("hermes.span_kind").where == "skill.*"
 
     def test_key_chains_are_registered(self):
         for chain in (
@@ -130,8 +138,16 @@ class TestDrift:
         names -= set(HOST_METRIC_NAMES) | {"gen_ai.token.type"}
         assert semconv.unknown_names(names) == []
 
-    def test_reference_page_lists_exactly_the_registry(self, gen):
-        assert gen.check_docs() == []
+    def test_reference_page_tables_are_current(self, gen):
+        text = gen.DOC.read_text(encoding="utf-8")
+        assert text == gen.render_docs(text), "run: python scripts/gen_semconv.py"
+
+    def test_reference_page_ticks_every_span_attribute(self, gen):
+        """Names off the page are only the event / log-record / backend-derived ones."""
+        text = gen.DOC.read_text(encoding="utf-8")
+        off_page = {a.name for a in semconv.ATTRIBUTES if a.where in gen.OFF_PAGE}
+        missing = [n for n in semconv.ATTRIBUTE_NAMES if n not in off_page and f"`{n}`" not in text]
+        assert missing == []
 
     def test_generated_typescript_is_current(self, gen):
         current = gen.TS_OUT.read_text(encoding="utf-8")

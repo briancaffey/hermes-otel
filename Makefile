@@ -87,8 +87,8 @@ ci-scan:
 	uv run --extra dev python scripts/scan_plugin_artifact.py
 
 # The telemetry vocabulary (hermes_otel/semconv.py) generates
-# dashboard-ui/src/semconv.generated.ts and is checked against the span
-# attribute reference page; a stale file or a drifted page fails here (#404).
+# dashboard-ui/src/semconv.generated.ts and the tables of the span attribute
+# reference page; a stale file or a drifted table fails here (#404, #523).
 ci-semconv:
 	uv run python scripts/gen_semconv.py --check
 
