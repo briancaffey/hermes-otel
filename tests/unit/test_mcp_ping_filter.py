@@ -160,7 +160,7 @@ class TestInitWiring:
             "OTEL_TEMPO_ENDPOINT",
         ):
             monkeypatch.delenv(var, raising=False)
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         if ls._LIVE_STORE is not None:
 

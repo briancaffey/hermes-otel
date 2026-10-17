@@ -170,7 +170,7 @@ class TestRecording:
         self, monkeypatch
     ):
         store = MagicMock()
-        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         p = _plugin(metric_name_compat="claude_code")
         p._live_active = True
         p.record_metric("token_usage", 3, {"token_type": "output"})
@@ -180,7 +180,7 @@ class TestRecording:
 
     def test_session_id_survives_only_on_compat_instruments_and_only_on_opt_in(self, monkeypatch):
         store = MagicMock()
-        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         p = _plugin(metric_name_compat="both")
         p._live_active = True
         p.record_metric("token_usage", 3, {"token_type": "output", "session.id": "s1"})

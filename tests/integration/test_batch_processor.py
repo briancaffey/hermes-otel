@@ -54,6 +54,7 @@ def real_init_plugin(tmp_path_factory):
     from _helpers import clear_backend_env
 
     import hermes_otel.live_store as live_store_mod
+    import hermes_otel.live_store_registry as registry
 
     # Module-scoped, so a MonkeyPatch context (not the function fixture) —
     # the developer's real OTEL_* vars come back when the module finishes.
@@ -84,10 +85,10 @@ def real_init_plugin(tmp_path_factory):
         plugin._span_processors[0].shutdown()
     except Exception:
         pass
-    store = live_store_mod._LIVE_STORE
+    store = registry._LIVE_STORE
     if store is not None:
         store.close()
-        live_store_mod._LIVE_STORE = None
+        registry._LIVE_STORE = None
     mp.undo()
 
 

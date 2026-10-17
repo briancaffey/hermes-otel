@@ -500,7 +500,7 @@ class TestApiLeftovers:
         assert rewrite_host_for_docker("phoenix.lan") == "10.0.0.5"
 
     def test_stale_live_store_readers_are_evicted(self, tmp_path, monkeypatch):
-        from hermes_otel import live_store as ls
+        from hermes_otel import live_store_registry as ls
 
         monkeypatch.setattr(ls, "_LIVE_STORE", None)
         monkeypatch.setattr(ls, "_STORES_BY_PATH", {})

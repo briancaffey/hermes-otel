@@ -9,10 +9,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from hermes_otel.buckets import bucketize
 from hermes_otel.dashboard import backends, plugin_api
 from hermes_otel.dashboard.backends import langfuse
 from hermes_otel.dashboard.backends.base import filter_support_of
-from hermes_otel.dashboard.backends.metrics_math import bucketize, counter_increases
+from hermes_otel.dashboard.backends.metrics_math import counter_increases
 
 CFG = [
     {"type": "phoenix", "name": "phx", "endpoint": "http://localhost:6006"},
@@ -252,6 +253,11 @@ class TestBucketHelpers:
         assert out["series"] == {"x": [1.0, 2.0, None], "y": [None, 4.0, None]}
         assert out["points"] == 3 and out["bucketS"] == 60
         assert bucketize([(s, 1, "x"), (s, 3, "x")], s, s, 60, agg="avg")["series"] == {"x": [2.0]}
+
+    def test_bucketize_counts_a_valueless_point_without_plotting_it(self):
+        s = 1_020_000_000_000
+        out = bucketize([(s, None, "x"), (s + 1e9, 2, "x"), (s - 61e9, 5, "x")], s, s, 60)
+        assert out["series"] == {"x": [2.0]} and out["points"] == 3
 
 
 class TestOpenObserveMetrics:

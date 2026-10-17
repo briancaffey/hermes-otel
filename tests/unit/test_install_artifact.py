@@ -72,6 +72,9 @@ class TestArtifactContents:
             "plugin_config.py",
             "backends.py",
             "live_store.py",
+            "live_store_registry.py",
+            "live_summary.py",
+            "buckets.py",
             "log_handler.py",
             "debug_utils.py",
             # Registered as the `hermes_otel:observability` skill by register().

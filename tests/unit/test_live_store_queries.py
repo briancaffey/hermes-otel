@@ -7,13 +7,8 @@ import sqlite3
 from helpers.live import NOW  # noqa: E402
 from helpers.live import span as _span  # noqa: E402
 
-from hermes_otel.live_store import (
-    SCHEMA_VERSION,
-    LiveStore,
-    span_kind,
-    summarize_trace,
-    trace_totals,
-)
+from hermes_otel.live_store import SCHEMA_VERSION, LiveStore
+from hermes_otel.live_summary import span_kind, summarize_trace, trace_totals
 
 
 class TestSchema:
@@ -146,6 +141,14 @@ class TestQueries:
         assert store.metric_names() == [
             {"name": "token_usage", "count": 4, "lastTs": base + 90_000_000_000}
         ]
+
+    def test_metric_buckets_count_every_stored_row(self, store):
+        base = NOW - NOW % 60_000_000_000
+        store.add_metric("m", 3, {}, base)
+        store.add_metric("m", "not a number", {}, base + 1_000_000_000)  # stored valueless
+        out = store.metric_buckets("m", base, base + 60_000_000_000, 60)
+        assert out["name"] == "m" and out["agg"] == "sum" and out["bucketS"] == 60
+        assert out["series"] == {"_": [3.0, None]} and out["points"] == 2
 
     def test_logs_and_loggers(self, store):
         store.add_log(

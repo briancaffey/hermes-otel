@@ -21,7 +21,8 @@ from typing import Any, Dict, List, Optional, Sequence
 
 from . import semconv as _sc
 from .coerce import optional_number
-from .live_store import LiveStore, _default_db_path, span_kind
+from .live_store import LiveStore, _default_db_path
+from .live_summary import span_kind
 from .severity import python_level
 
 

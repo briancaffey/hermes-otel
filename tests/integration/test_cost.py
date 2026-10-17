@@ -20,7 +20,7 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
-from hermes_otel.live_store import trace_totals
+from hermes_otel.live_summary import trace_totals
 from hermes_otel.session_state import PerSession
 
 pytestmark = pytest.mark.integration

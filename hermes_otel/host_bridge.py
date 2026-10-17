@@ -60,7 +60,7 @@ def mirror_host_sample(plugin, sample: Any) -> None:
     if not plugin._live_active:
         return
     try:
-        from .live_store import get_live_store
+        from .live_store_registry import get_live_store
 
         store = get_live_store()
         if store is None:

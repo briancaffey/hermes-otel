@@ -63,7 +63,7 @@ class TestInitPhoenix:
 
     def test_init_no_backend_live_only_succeeds(self, monkeypatch):
         _clear_backend_env(monkeypatch)
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         # Zero-config default: no backend, but the in-process live store keeps
         # the plugin enabled (the dashboard's Live mode). Patch the global
