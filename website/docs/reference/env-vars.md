@@ -120,7 +120,7 @@ Generated from `hermes_otel/backend_specs.py` by `scripts/gen_config_docs.py`; a
 
 ## `HERMES_OTEL_*` overrides
 
-Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`) and `backends` are yaml-only. An env var that cannot be parsed as the field's type logs a warning and is ignored.
+Every scalar or list field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). A list field takes a comma-separated value (`HERMES_OTEL_DISABLE_SPANS=tool,approval`); whitespace around each entry is stripped and empty entries are dropped. Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`) and `backends` are yaml-only. An env var that cannot be parsed as the field's type logs a warning and is ignored.
 
 [//]: # (generated:env-overrides:start)
 
@@ -154,6 +154,7 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_CAPTURE_LOGS` | `capture_logs` | bool | `false` |
 | `HERMES_OTEL_LOG_LEVEL` | `log_level` | string | `"INFO"` |
 | `HERMES_OTEL_LOG_ATTACH_LOGGER` | `log_attach_logger` | string | *(unset)* |
+| `HERMES_OTEL_LOG_EXCLUDE_LOGGERS` | `log_exclude_loggers` | comma-separated strings | `[opentelemetry, urllib3, httpx, httpcore, requests, openai, asyncio, hpack, grpc, websockets, charset_normalizer, markdown_it]` |
 | `HERMES_OTEL_LOG_ONLY_IN_TURN` | `log_only_in_turn` | bool | `false` |
 | `HERMES_OTEL_LOG_MAX_ATTRIBUTE_LENGTH` | `log_max_attribute_length` | int | `4096` |
 | `HERMES_OTEL_LOG_BATCH_SCHEDULE_DELAY_MS` | `log_batch_schedule_delay_ms` | int | `1000` |
@@ -169,6 +170,8 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_METRICS_LABEL_LIMIT` | `metrics_label_limit` | int | `100` |
 | `HERMES_OTEL_METRIC_NAME_COMPAT` | `metric_name_compat` | string | `"off"` |
 | `HERMES_OTEL_METRIC_NAME_COMPAT_SESSION_ID` | `metric_name_compat_session_id` | bool | `false` |
+| `HERMES_OTEL_DISABLE_METRICS` | `disable_metrics` | comma-separated strings | `[]` |
+| `HERMES_OTEL_DISABLE_SPANS` | `disable_spans` | comma-separated strings | `[]` |
 | `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | bool | `true` |
 | `HERMES_OTEL_REMOTE_PARENT` | `remote_parent` | bool | `true` |
 | `HERMES_OTEL_PROBE_BACKENDS` | `probe_backends` | bool | `true` |

@@ -135,6 +135,14 @@ class TestGeneratedDocs:
             "  uv run --extra dev python scripts/gen_config_docs.py --write\n" + proc.stdout
         )
 
+    @pytest.mark.parametrize("name,kind", _scalar_fields())
+    def test_every_env_overridable_field_is_in_the_reference(self, name, kind):
+        # List fields too (#587): the env table once skipped them.
+        ref = (REPO_ROOT / "website" / "docs" / "reference" / "env-vars.md").read_text(
+            encoding="utf-8"
+        )
+        assert f"| `HERMES_OTEL_{name.upper()}` | `{name}` |" in ref
+
     def test_every_backend_env_var_is_in_the_reference(self):
         src = "".join(
             (REPO_ROOT / "hermes_otel" / f).read_text(encoding="utf-8")
