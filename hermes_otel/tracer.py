@@ -47,7 +47,6 @@ from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .instruments import (  # noqa: F401 — re-exported
     _CAPPED_LABELS,
     _INSTRUMENTS,
-    CLAUDE_CODE_REPLACES,
     COMPAT_SESSION_LABEL,
     HOST_METRIC_NAMES,
     InstrumentSpec,
@@ -493,58 +492,45 @@ class HermesOTelPlugin:
     def record_metric(self, name: str, value: float, attributes: dict = None):
         """Record one point for the hook-side key ``name`` (see ``_INSTRUMENTS``).
 
-        The live store gets the point first, under the OTLP name, so the
-        dashboard and the backends agree; it works with no MeterProvider at
-        all (the zero-config path). GenAI-convention instruments are gated by
-        ``emit_genai_metrics`` here, once, rather than at every call site.
+        One pipeline: the spec decides whether the point is recorded at all
+        (``InstrumentSpec.recorded``: the GenAI gate and the compat family,
+        applied here once rather than at every call site), the labels are
+        built and capped, the live store gets the point under the OTLP name
+        (so the dashboard and the backends agree, with no MeterProvider at
+        all on the zero-config path), and the spec applies the value to the
+        instrument when it is exported (``exported``: the exclusive compat
+        mode keeps a replaced ``hermes.*`` instrument out of the OTLP export
+        while the live store still sees it). Compat points never reach the
+        live store. A key missing from the table is dropped with a debug line.
         """
         spec = _INSTRUMENTS.get(name)
-        if spec is not None and spec.genai and not self.config.emit_genai_metrics:
+        if spec is None:
+            debug_log(f"record_metric: unknown metric key {name!r} dropped")
             return
-        # Claude Code metric-name compatibility (#485): a compat instrument
-        # is recorded only when its family is switched on; in the exclusive
-        # mode the ``hermes.*`` twin it replaces is kept out of the OTLP
-        # export (the live store still gets it, so the plugin's own dashboard
-        # keeps working). Compat points never reach the live store.
-        compat_mode = self.config.metric_name_compat
-        is_compat = spec is not None and bool(spec.compat)
-        if is_compat and compat_mode not in (spec.compat, "both"):
+        if not spec.recorded(self.config):
             return
-        export = not (
-            spec is not None and compat_mode == "claude_code" and name in CLAUDE_CODE_REPLACES
-        )
-        otlp_name = spec.name if spec is not None else name
         # ``profile`` is a bounded label (one value per plugin instance), so
-        # a backend can split every series by agent (#70).
+        # a backend can split every series by agent (#70). A session id is
+        # Claude Code's standard metric attribute and nobody else's: it
+        # survives only on a compat instrument, and only when the user opted in.
         attributes = {"profile": self.profile_name, **(attributes or {})}
-        # A session id is Claude Code's standard metric attribute and nobody
-        # else's: it survives only on a compat instrument, and only when the
-        # user opted in.
         session_label = attributes.pop(COMPAT_SESSION_LABEL, None)
-        if is_compat and session_label and self.config.metric_name_compat_session_id:
+        if spec.compat and session_label and self.config.metric_name_compat_session_id:
             attributes[COMPAT_SESSION_LABEL] = str(session_label)
         attributes = self._bound_labels(attributes)
-        if self._live_active and not is_compat:
+        if self._live_active and not spec.compat:
             with contextlib.suppress(Exception):  # never break the hot path
                 from .live_store import get_live_store
 
                 store = get_live_store()
                 if store is not None:
-                    store.add_metric(otlp_name, value, attributes or {}, time.time_ns())
+                    store.add_metric(spec.name, value, attributes, time.time_ns())
 
         instrument = self._instruments.get(name) if self._meter else None
-        if instrument is None or spec is None or not export:
+        if instrument is None or not spec.exported(name, self.config):
             return
-        attrs = dict(attributes or {})
         with contextlib.suppress(Exception):  # never break the hot path
-            if spec.value == "record":
-                instrument.record(int(value) if spec.unit == "{token}" else value, attrs)
-            elif spec.value == "one":
-                instrument.add(1, attrs)
-            elif spec.value == "int":
-                instrument.add(int(value), attrs)
-            else:
-                instrument.add(value, attrs)
+            spec.apply(instrument, value, dict(attributes))
 
     # ── Spans ────────────────────────────────────────────────────────────
 

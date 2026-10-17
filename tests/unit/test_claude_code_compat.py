@@ -13,7 +13,6 @@ import pytest
 
 from hermes_otel.instruments import (
     _INSTRUMENTS,
-    CLAUDE_CODE_REPLACES,
     CLAUDE_CODE_TOKEN_TYPES,
     claude_code_token_types,
     metric_views,
@@ -22,6 +21,8 @@ from hermes_otel.plugin_config import HermesOtelConfig, load_config
 from hermes_otel.tracer import HermesOTelPlugin
 
 COMPAT = {k: s for k, s in _INSTRUMENTS.items() if s.compat == "claude_code"}
+# The ``hermes.*`` keys the exclusive mode replaces with their twins.
+REPLACED = {s.compat_of for s in COMPAT.values()}
 
 
 def _plugin(**cfg) -> HermesOTelPlugin:
@@ -42,7 +43,7 @@ class TestTable:
             "claude_code.cost.usage",
             "claude_code.active_time.total",
         }
-        assert CLAUDE_CODE_REPLACES == {"session_count", "token_usage", "cost_usage", "active_time"}
+        assert REPLACED == {"session_count", "token_usage", "cost_usage", "active_time"}
         for spec in COMPAT.values():
             assert spec.kind == "counter"
 
@@ -136,7 +137,7 @@ class TestRecording:
         p.record_metric("claude_code.cost.usage", 0.5, {"model": "m"})
         p.record_metric("active_time", 2.5, {"type": "cli", "platform": "cli"})
         p.record_metric("claude_code.active_time.total", 2.5, {"type": "cli"})
-        for key in CLAUDE_CODE_REPLACES:
+        for key in REPLACED:
             p._instruments[key].add.assert_not_called()
         p._instruments["claude_code.token.usage"].add.assert_called_once_with(
             5, {"profile": "default", "type": "input", "model": "m"}

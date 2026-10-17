@@ -9,6 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from hermes_otel.instruments import InstrumentSpec
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import _INSTRUMENTS, HermesOTelPlugin, metric_otlp_name
 
@@ -92,6 +93,64 @@ class TestTable:
         assert metric_otlp_name("something.custom") == "something.custom"
 
 
+class TestSpecPolicies:
+    """The routing decisions live on the spec (#507), so the compat and GenAI
+    semantics are checked here against the table, without a plugin."""
+
+    def test_recorded_gates_genai_instruments_on_emit_genai_metrics(self):
+        on, off = HermesOtelConfig(), HermesOtelConfig(emit_genai_metrics=False)
+        for key, spec in _INSTRUMENTS.items():
+            if spec.genai:
+                assert spec.recorded(on) and not spec.recorded(off), key
+            elif not spec.compat:
+                assert spec.recorded(on) and spec.recorded(off), key
+
+    @pytest.mark.parametrize(
+        "mode,compat_recorded", [("off", False), ("claude_code", True), ("both", True)]
+    )
+    def test_recorded_gates_compat_instruments_on_their_family(self, mode, compat_recorded):
+        cfg = HermesOtelConfig(metric_name_compat=mode)
+        for key, spec in _INSTRUMENTS.items():
+            if spec.compat:
+                assert spec.recorded(cfg) is compat_recorded, key
+            elif not spec.genai:
+                assert spec.recorded(cfg), key
+
+    @pytest.mark.parametrize("mode", ["off", "both"])
+    def test_exported_everywhere_unless_the_mode_is_exclusive(self, mode):
+        cfg = HermesOtelConfig(metric_name_compat=mode)
+        for key, spec in _INSTRUMENTS.items():
+            assert spec.exported(key, cfg), key
+
+    def test_exclusive_mode_exports_the_twin_instead_of_the_hermes_instrument(self):
+        cfg = HermesOtelConfig(metric_name_compat="claude_code")
+        replaced = {s.compat_of for s in _INSTRUMENTS.values() if s.compat == "claude_code"}
+        assert replaced == {"session_count", "token_usage", "cost_usage", "active_time"}
+        for key, spec in _INSTRUMENTS.items():
+            assert spec.exported(key, cfg) is (key not in replaced), key
+
+    def test_apply_dispatches_on_the_value_mode(self):
+        def spec(value, unit="x"):
+            return InstrumentSpec("n", "counter", unit, "d", value)
+
+        inst = MagicMock()
+        spec("one").apply(inst, 99, {"a": 1})
+        inst.add.assert_called_once_with(1, {"a": 1})
+        inst = MagicMock()
+        spec("int").apply(inst, 12.9, {})
+        inst.add.assert_called_once_with(12, {})
+        inst = MagicMock()
+        spec("float").apply(inst, 0.0042, {})
+        inst.add.assert_called_once_with(0.0042, {})
+        inst = MagicMock()
+        spec("record").apply(inst, 12.5, {})
+        inst.record.assert_called_once_with(12.5, {})
+        # Token histograms record whole tokens.
+        inst = MagicMock()
+        spec("record", unit="{token}").apply(inst, 10.7, {})
+        inst.record.assert_called_once_with(10, {})
+
+
 @pytest.fixture()
 def plugin():
     """A plugin with a fake meter so every instrument is a MagicMock."""
@@ -173,11 +232,18 @@ class TestRecording:
             },
         )
 
-    def test_unknown_key_is_ignored(self, plugin):
+    def test_unknown_key_is_dropped_with_a_debug_line(self, plugin, monkeypatch):
+        store = MagicMock()
+        monkeypatch.setattr("hermes_otel.live_store.get_live_store", lambda **kw: store)
+        plugin._live_active = True
+        lines = []
+        monkeypatch.setattr("hermes_otel.tracer.debug_log", lines.append)
         plugin.record_metric("not_a_metric", 1, {})
         for inst in plugin._instruments.values():
             inst.add.assert_not_called()
             inst.record.assert_not_called()
+        store.add_metric.assert_not_called()
+        assert lines == ["record_metric: unknown metric key 'not_a_metric' dropped"]
 
     def test_genai_gate_applies_once_in_record_metric(self, plugin):
         plugin.config = HermesOtelConfig(emit_genai_metrics=False)
