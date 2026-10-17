@@ -12,6 +12,7 @@ import pytest
 
 from hermes_otel.dashboard.backends import signoz as sz
 from hermes_otel.dashboard.backends.base import BackendError, LogFilter
+from hermes_otel.dashboard.backends.timeconv import ns_from_any
 
 CFG = {
     "type": "signoz",
@@ -290,7 +291,7 @@ class TestMetrics:
             rows[0]["timestamp"] == "2026-10-07T01:01:10.739546Z"
             and rows[0]["gen_ai.usage.total_tokens"] == 29070
         )
-        assert abs(sz._ns_from_row(rows[0]) - 1791334870739546000) < 1_000  # float µs
+        assert abs(ns_from_any(rows[0]["timestamp"]) - 1791334870739546000) < 1_000  # float µs
         cols = {c["key"]: c["dataType"] for c in sz._SIGNOZ_SELECT_COLUMNS}
         assert cols["gen_ai.usage.total_tokens"] == "float64" and cols["llm.model_name"] == "string"
 

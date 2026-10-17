@@ -23,7 +23,6 @@ plugin's default service name.
 from __future__ import annotations
 
 import copy
-import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 from . import default_service_name, register
@@ -45,7 +44,7 @@ from .paging import (
     widened_fetch,
 )
 from .shapes import SpanRow, flatten_dotted, otlp_kind, trace_detail
-from .victoria import rfc3339_to_ns
+from .timeconv import ns_from_s, ns_to_rfc3339, rfc3339_to_ns
 
 _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
 # A widened search returns spans, several per trace; fetch a few per requested row.
@@ -57,12 +56,6 @@ _MAX_TRACE_SPANS = 2000
 _FREE_TEXT_KEYS = ("input.value", "output.value")  # the roots' prompt and answer
 _DROP_PREFIXES = ("ag.data.", "ag.meta.")
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
-
-
-def iso(ns: int) -> str:
-    secs, rem = divmod(int(ns), 1_000_000_000)
-    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{rem // 1000:06d}Z"
 
 
 def _cond(
@@ -177,8 +170,8 @@ class AgentaAdapter(BackendAdapter):
         body: Dict[str, Any] = {
             "formatting": {"focus": "span", "format": "agenta"},
             "windowing": {
-                "oldest": iso(int(start_s) * 1_000_000_000),
-                "newest": iso(trace_end_bound(f, end_s, "ns")),
+                "oldest": ns_to_rfc3339(ns_from_s(start_s), digits=6),
+                "newest": ns_to_rfc3339(trace_end_bound(f, end_s, "ns"), digits=6),
                 "limit": int(limit),
                 "order": "descending",
             },

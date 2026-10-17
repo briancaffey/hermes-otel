@@ -52,6 +52,8 @@ from .severity import level_names_at_least
 from .shapes import (
     SpanRow,
     card_from_trace,
+    coerce_tag,
+    dedupe_spans,
     otlp_attrs_to_dict,
     otlp_event,
     otlp_kind,
@@ -59,8 +61,7 @@ from .shapes import (
     to_int,
     trace_detail,
 )
-from .tempo import TempoAdapter, _dedupe_spans
-from .zipkin import coerce_tag
+from .tempo import TempoAdapter
 
 _DEFAULT_PORT = 3100
 # Gigapipe serves PromQL from its 15 s rollup; a finer step repeats samples.
@@ -240,7 +241,7 @@ class GigapipeAdapter(TempoAdapter):
             if exc.kind == "not_found":
                 raise not_found(trace_id, "Gigapipe")
             raise
-        data = _dedupe_spans(normalize_trace(raw))
+        data = dedupe_spans(normalize_trace(raw))
         n = span_count_of(data["batches"])
         if n == 0:
             raise not_found(trace_id, "Gigapipe")

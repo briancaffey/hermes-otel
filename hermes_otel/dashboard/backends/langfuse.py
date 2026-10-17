@@ -27,7 +27,6 @@ attributes appear in the detail view.
 from __future__ import annotations
 
 import json
-from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
@@ -50,7 +49,7 @@ from .base import (
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import card_row, otlp_batches, otlp_span
-from .timeconv import iso_to_ns
+from .timeconv import iso_to_ns, ns_from_s, ns_to_rfc3339
 
 _DEFAULT_LANGFUSE_PORT = 3000
 # How far the client-side duration filter walks through the list.
@@ -100,10 +99,6 @@ _V4_FILTER_SUPPORT = {
     "raw": "server",  # ``k=v`` query parameters of the v2 list
     "roots_only": "server",  # the root is the AGENT observation (``isRootObservation``)
 }
-
-
-def _iso_utc(ts_s: int) -> str:
-    return datetime.fromtimestamp(ts_s, tz=timezone.utc).isoformat().replace("+00:00", "Z")
 
 
 def _span_name(obs: Dict[str, Any]) -> str:
@@ -293,8 +288,8 @@ class LangfuseAdapter(BackendAdapter):
         query = {
             "view": "observations",
             # children start after their root; give the window a margin
-            "fromTimestamp": _iso_utc(max(0, int(start_s) - 60)),
-            "toTimestamp": _iso_utc(int(end_s) + 3600),
+            "fromTimestamp": ns_to_rfc3339(ns_from_s(max(0, int(start_s) - 60)), digits=0),
+            "toTimestamp": ns_to_rfc3339(ns_from_s(int(end_s) + 3600), digits=0),
             "metrics": [
                 {"measure": "totalTokens", "aggregation": "sum"},
                 {"measure": "inputTokens", "aggregation": "sum"},
@@ -378,8 +373,8 @@ class LangfuseAdapter(BackendAdapter):
             params: Dict[str, Any] = {
                 "page": page,
                 "limit": _MAX_PAGE_SIZE,
-                "fromStartTime": _iso_utc(start_s),
-                "toStartTime": _iso_utc(end_s_eff),
+                "fromStartTime": ns_to_rfc3339(ns_from_s(start_s), digits=0),
+                "toStartTime": ns_to_rfc3339(ns_from_s(end_s_eff), digits=0),
             }
             if obs_type:
                 params["type"] = obs_type
@@ -539,10 +534,10 @@ class LangfuseAdapter(BackendAdapter):
         if f.before_ns:
             end_ns = min(end_ns, int(f.before_ns))
         params: Dict[str, Any] = {
-            "fromTimestamp": _iso_utc(start_s),
+            "fromTimestamp": ns_to_rfc3339(ns_from_s(start_s), digits=0),
             # Round up so the row the cursor was taken from is inside the
             # window; strictly_older_traces() then cuts exactly.
-            "toTimestamp": _iso_utc(-(-end_ns // 1_000_000_000)),
+            "toTimestamp": ns_to_rfc3339(ns_from_s(-(-end_ns // 1_000_000_000)), digits=0),
             "limit": int(limit),
             "page": int(page),
         }
@@ -628,8 +623,8 @@ class LangfuseAdapter(BackendAdapter):
             params: Dict[str, Any] = {
                 "page": page,
                 "limit": _MAX_PAGE_SIZE,
-                "fromStartTime": _iso_utc(start_s),
-                "toStartTime": _iso_utc(end_s_eff),
+                "fromStartTime": ns_to_rfc3339(ns_from_s(start_s), digits=0),
+                "toStartTime": ns_to_rfc3339(ns_from_s(end_s_eff), digits=0),
             }
             if obs_type:
                 params["type"] = obs_type

@@ -56,16 +56,13 @@ from hermes_otel.dashboard.backends import (  # noqa: E402  (after the import ch
     adapters,
     backend_label,
     candidate_config_paths,
-    find_adapter_class,
     resolve_adapter,
 )
 from hermes_otel.dashboard.backends.base import (  # noqa: E402
-    FILTER_LEVELS,
     BackendError,
     LogFilter,
     StructuredFilter,
     error_kind,
-    filter_support_of,
     split_applied_filters,
     validate_label_name,
     validate_metric_name,
@@ -146,6 +143,15 @@ def _backend_route(fn: Optional[Callable] = None, *, not_found_ok: bool = False)
     return decorate(fn) if fn is not None else decorate
 
 
+def _resolve(backend: str):
+    """``resolve_adapter`` for a request's ``backend=``; a name that is not
+    configured is a 400 listing the configured ones (#177)."""
+    try:
+        return resolve_adapter(backend.strip() or None)
+    except KeyError as e:
+        raise BackendError(400, f"Unknown backend {backend!r}; configured: {e.args[0]}", "request")
+
+
 def _adapter_for(backend: str, need: str = "traces"):
     """The adapter a request asked for (``backend=``), or the default one.
 
@@ -153,10 +159,7 @@ def _adapter_for(backend: str, need: str = "traces"):
     configured or the chosen backend lacks the capability (#177, #182), 503
     ``config`` when the entry cannot be set up (a bad ``project_id``).
     """
-    try:
-        adapter, backends, _, _ = resolve_adapter(backend.strip() or None)
-    except KeyError as e:
-        raise BackendError(400, f"Unknown backend {backend!r}; configured: {e.args[0]}", "request")
+    adapter, backends, _, _ = _resolve(backend)
     if adapter is None:
         if backend.strip():
             raise BackendError(
@@ -214,89 +217,56 @@ def status(
     ``available`` lists every entry with its capabilities so the UI builds
     its source selector from the server's view, not from the yaml (#177),
     including which search-bar fields the adapter honours (``filters``, #292).
+    Each row and the top level read the same ``BackendAdapter.status()``, so
+    the active backend's row and the top-level ``filters`` agree (#519).
     """
-    try:
-        adapter, backends, cfg_path, pin = resolve_adapter(backend.strip() or None)
-    except KeyError as e:
-        raise BackendError(400, f"Unknown backend {backend!r}; configured: {e.args[0]}", "request")
+    adapter, backends, cfg_path, pin = _resolve(backend)
     queryable_types = sorted({t for cls in adapters() for t in cls.handles})
 
     def _caps(b: Dict[str, Any]) -> Dict[str, Any]:
-        cls = find_adapter_class(b.get("type", ""))
         # What THIS entry serves comes from its (cached) adapter instance: a
         # ``tempo`` entry grows metrics and logs when it names a Prometheus
         # and a Loki, which the class alone cannot know.
-        inst = _instantiate(b, cfg_path) if cls is not None else None
-        out = {
+        inst = _instantiate(b, cfg_path)
+        st = inst.status() if inst is not None else {"metrics": False, "logs": False}
+        row = {
             "type": b.get("type"),
             "name": backend_label(b),
             "endpoint": _public_endpoint(b.get("endpoint")),
-            "supported": cls is not None,
-            "metrics": bool(
-                inst.supports_metrics
-                if inst is not None
-                else cls is not None and cls.supports_metrics
-            ),
-            "logs": bool(
-                inst.supports_logs if inst is not None else cls is not None and cls.supports_logs
-            ),
+            "supported": inst is not None,
+            "metrics": bool(st["metrics"]),
+            "logs": bool(st["logs"]),
         }
-        if cls is not None:
-            out["filters"] = filter_support_of(cls)
-            per_request = getattr(inst, "filter_support_for", None)
-            if callable(per_request):
-                # What this entry honours may depend on the server it talks
-                # to (Langfuse v4 vs v3): the instance knows, the class does
-                # not. Probing failures leave the declaration as is.
-                try:
-                    override = per_request(StructuredFilter()) or {}
-                except Exception:
-                    override = {}
-                out["filters"] = {
-                    k: (override.get(k) if override.get(k) in FILTER_LEVELS else v)
-                    for k, v in out["filters"].items()
-                }
-        return out
+        if inst is not None:
+            row["filters"] = st["filters"]
+        return row
 
     backend_list = [_caps(b) for b in backends]
-
-    if adapter is None:
-        if cfg_path is None:
-            reason = "No config.yaml found. Looked at: " + ", ".join(
-                str(p) for p in candidate_config_paths()
-            )
-        elif not backends:
-            reason = (
-                f"No backends: configured in {cfg_path}. Add at least one "
-                "backend entry under ``backends:``."
-            )
-        else:
-            reason = (
-                f"No queryable backend configured in {cfg_path}. Supported "
-                f"types: {', '.join(queryable_types)}."
-            )
-        return {
-            "configured": False,
-            "reason": reason,
-            "backends": backend_list,
-            "available": backend_list,
-            "active": None,
-            "queryable_types": queryable_types,
-            "config_path": str(cfg_path) if cfg_path else None,
-            "query_backend_pin": pin,
-        }
-
-    st = adapter.status()
-    return {
-        "configured": True,
+    out: Dict[str, Any] = {
+        "configured": adapter is not None,
         "backends": backend_list,
         "available": backend_list,
-        "active": backend_label(adapter.cfg),
+        "active": backend_label(adapter.cfg) if adapter is not None else None,
         "queryable_types": queryable_types,
         "config_path": str(cfg_path) if cfg_path else None,
         "query_backend_pin": pin,
-        **st,
     }
+    if adapter is not None:
+        return {**out, **adapter.status()}
+    if cfg_path is None:
+        looked = ", ".join(str(p) for p in candidate_config_paths())
+        out["reason"] = f"No config.yaml found. Looked at: {looked}"
+    elif not backends:
+        out["reason"] = (
+            f"No backends: configured in {cfg_path}. Add at least one "
+            "backend entry under ``backends:``."
+        )
+    else:
+        out["reason"] = (
+            f"No queryable backend configured in {cfg_path}. Supported "
+            f"types: {', '.join(queryable_types)}."
+        )
+    return out
 
 
 def _parse_filter(

@@ -145,14 +145,19 @@ class TestPluginPaths:
             override.reset(token)
         assert plugin_config.hermes_home() == root
 
-    def test_dashboard_adapters_config_path(self, fake_hermes):
+    def test_dashboard_adapters_config_path(self, fake_hermes, monkeypatch):
         dash = Path(hh.__file__).parent / "dashboard"
         if str(dash) not in sys.path:
             sys.path.insert(0, str(dash))
         import backends  # noqa: E402
 
+        from hermes_otel import plugin_config
+
         root, override = fake_hermes
         alpha = root / "profiles" / "alpha"
+        # Derive both locations from the home in force (the conftest pins them).
+        monkeypatch.setattr(plugin_config, "DURABLE_CONFIG_PATH", None)
+        monkeypatch.setattr(plugin_config, "DEFAULT_CONFIG_PATH", None)
         token = override.set(str(alpha))
         try:
             assert alpha / "hermes_otel.yaml" in backends.candidate_config_paths()

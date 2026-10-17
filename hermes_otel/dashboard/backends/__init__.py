@@ -13,6 +13,11 @@ import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
+from hermes_otel import plugin_config as _plugin_config
+from hermes_otel.coerce import coerce_bool
+from hermes_otel.helpers import named_profile
+from hermes_otel.hermes_home import resolve_profile_name
+
 from .base import BackendAdapter, ConfigError
 
 # ── Registry ───────────────────────────────────────────────────────────
@@ -49,78 +54,20 @@ def _canonical(backend_type: str) -> str:
 
 
 # ── Config loader ──────────────────────────────────────────────────────
-
-
-def _hermes_home() -> Path:
-    """The plugin's own resolver (``hermes_otel.hermes_home``: Hermes's
-    scope-aware home when Hermes is importable, else ``$HERMES_HOME`` /
-    ``~/.hermes``) when the package is importable; the same rule inline when
-    this package was loaded by file path as a top-level ``backends`` (#290)."""
-    try:
-        from hermes_otel.hermes_home import resolve_hermes_home
-
-        return resolve_hermes_home()
-    except Exception:
-        pass
-    try:
-        from hermes_constants import get_hermes_home  # type: ignore[import-not-found]
-
-        home = get_hermes_home()
-        if home:
-            return Path(home)
-    except Exception:
-        pass
-    env_home = os.environ.get("HERMES_HOME", "").strip()
-    return Path(env_home).expanduser() if env_home else Path.home() / ".hermes"
-
-
-def _candidate_config_paths() -> List[Path]:
-    """Where the plugin's config may live, most preferred first.
-
-    Mirrors ``hermes_otel.plugin_config.resolve_config_path`` — the tracer and
-    the dashboard must read the SAME file or the Traces tab silently sees no
-    backends: ``HERMES_OTEL_CONFIG`` > ``$HERMES_HOME/hermes_otel.yaml`` (the
-    documented, reinstall-safe location) > the legacy ``config.yaml`` inside
-    the plugin directory. (Not imported from ``plugin_config`` because this
-    package is loaded by file path as a top-level ``backends`` package.)
-    """
-    paths: List[Path] = []
-    override = os.environ.get("HERMES_OTEL_CONFIG", "").strip()
-    if override:
-        paths.append(Path(override).expanduser())
-    home = _hermes_home()
-    paths.append(home / "hermes_otel.yaml")
-    # The legacy copy inside the plugin directory, as the tracer resolves it.
-    # (A checkout elsewhere used to add its own ``config.yaml`` here, a file
-    # the tracer never reads, #413.)
-    paths.append(home / "plugins" / "hermes_otel" / "config.yaml")
-    seen: set = set()
-    return [p for p in paths if not (p in seen or seen.add(p))]
-
-
-_WARNED_TWO_FILES: set = set()
-
-
-def resolve_config_path() -> Optional[Path]:
-    candidates = _candidate_config_paths()
-    for p in candidates:
-        if p.exists():
-            # Same message the tracer logs when both the durable and the legacy
-            # file exist, once per pair so the dashboard's polling cannot spam it.
-            others = [o for o in candidates[candidates.index(p) + 1 :] if o.exists()]
-            if others and (str(p), str(others[0])) not in _WARNED_TWO_FILES:
-                _WARNED_TWO_FILES.add((str(p), str(others[0])))
-                logging.getLogger("hermes_otel").warning(
-                    f"[hermes-otel] dashboard using {p}; ignoring {others[0]}. "
-                    "Delete the latter to silence this."
-                )
-            return p
-    return None
+#
+# The dashboard reads the SAME file the tracer does, through the tracer's
+# resolver (``plugin_config.resolve_config_path_with_reason``: ``HERMES_OTEL_CONFIG``
+# > ``$HERMES_HOME/hermes_otel.yaml`` > the legacy ``config.yaml`` inside the
+# plugin directory), or the Traces tab silently sees no backends (#413, #519).
 
 
 def candidate_config_paths() -> List[Path]:
-    """Exposed so /status can report where we looked when nothing matches."""
-    return _candidate_config_paths()
+    """Where the tracer looks, most preferred first; ``/status`` reports them
+    when nothing matches."""
+    override = os.environ.get(_plugin_config.CONFIG_PATH_ENV, "").strip()
+    paths = [Path(override).expanduser()] if override else []
+    paths += [_plugin_config.durable_config_path(), _plugin_config.legacy_config_path()]
+    return list(dict.fromkeys(paths))
 
 
 # ── Caches (#290) ──────────────────────────────────────────────────────
@@ -151,29 +98,18 @@ def _file_identity(path: Path) -> Optional[Tuple[float, int]]:
 
 
 def _load_raw_config() -> Tuple[Optional[Path], Dict[str, Any]]:
-    """Parse config.yaml into a plain dict. Returns ``(path, data)``.
-
-    Returns ``(path, {})`` on any parse failure so callers never need
-    to handle exceptions. Cached per file identity.
+    """The config file the tracer resolves and its contents as a plain dict:
+    ``(path, data)``, ``{}`` for a missing or unparseable file (``load_yaml``
+    warns, the caller never handles an exception). Cached per file identity.
     """
-    cfg_path = resolve_config_path()
+    cfg_path, _reason = _plugin_config.resolve_config_path_with_reason()
     if cfg_path is None:
         return None, {}
     ident = _file_identity(cfg_path)
     cached = _CONFIG_CACHE.get(str(cfg_path))
     if cached is not None and ident is not None and cached[0] == ident:
         return cfg_path, cached[1]
-    try:
-        import yaml  # type: ignore
-    except ImportError:
-        return cfg_path, {}
-    try:
-        with cfg_path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
-    except Exception:
-        return cfg_path, {}
-    if not isinstance(data, dict):
-        data = {}
+    data = _plugin_config.load_yaml(cfg_path)
     if ident is not None:
         _CONFIG_CACHE[str(cfg_path)] = (ident, data)
     return cfg_path, data
@@ -192,25 +128,13 @@ def _profile_service_name(top: Dict[str, Any]) -> str:
     and a named profile is active, else ``""`` (#395).
 
     The dashboard resolves the home per request (``?profile=``), so this is the
-    profile being viewed, not the one the process started in. Imported lazily:
-    the adapters also load as a top-level ``backends`` package.
+    profile being viewed, not the one the process started in.
     """
-    import importlib
-
-    coerce_bool = importlib.import_module("hermes_otel.coerce").coerce_bool
     env = coerce_bool(os.environ.get("HERMES_OTEL_SERVICE_NAME_FROM_PROFILE"))
     enabled = env if env is not None else coerce_bool(top.get("service_name_from_profile"))
     if not enabled:
         return ""
-    named_profile = importlib.import_module("hermes_otel.helpers").named_profile
     return named_profile(resolve_profile_name())
-
-
-def resolve_profile_name() -> str:
-    """``hermes_otel.hermes_home.resolve_profile_name`` (a seam for tests)."""
-    import importlib
-
-    return importlib.import_module("hermes_otel.hermes_home").resolve_profile_name()
 
 
 def default_service_name(cfg: Dict[str, Any]) -> str:

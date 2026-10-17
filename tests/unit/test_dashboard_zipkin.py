@@ -154,15 +154,6 @@ class TestSetup:
 
 
 class TestTagHelpers:
-    def test_coerce_numbers_bools_and_ids(self):
-        assert zk.coerce_tag("gen_ai.usage.input_tokens", "25744") == 25744
-        assert zk.coerce_tag("llm.response.duration_ms", "1442.3") == 1442.3
-        assert zk.coerce_tag("hermes.session.completed", "true") is True
-        assert zk.coerce_tag("hermes.session.failed", "false") is False
-        assert zk.coerce_tag("hermes.session_id", "20261011") == "20261011"
-        assert zk.coerce_tag("service.instance.id", "1234") == "1234"
-        assert zk.coerce_tag("llm.model_name", "nvidia/x") == "nvidia/x"
-
     def test_parse_annotation(self):
         assert zk.parse_annotation("tool.finished") == ("tool.finished", {})
         assert zk.parse_annotation('"tool.started":{"command":"ls"}') == (

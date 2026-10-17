@@ -29,7 +29,6 @@ writes to) name the read side too; ``prometheus_url`` / ``logs_url`` override.
 
 from __future__ import annotations
 
-import datetime as _dt
 import json
 import re
 from typing import Any, Dict, List, Optional
@@ -54,7 +53,8 @@ from .base import (
 from .jaeger import JaegerAdapter
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
 from .severity import otel_severity_for
-from .zipkin import coerce_tag
+from .shapes import coerce_tag
+from .timeconv import ns_to_rfc3339, rfc3339_to_ns
 
 _DEFAULT_TRACES_PORT = 10428
 # ``/api/traces?limit=N``: whether VictoriaTraces keeps the newest N is not
@@ -80,25 +80,6 @@ def _origin(url: Optional[str]) -> Optional[str]:
     host = rewrite_host_for_docker(parsed.hostname)
     port = f":{parsed.port}" if parsed.port else ""
     return f"{parsed.scheme}://{host}{port}"
-
-
-def rfc3339_to_ns(text: Any) -> int:
-    """``2026-10-11T20:27:50.202258944Z`` → unix ns (fraction kept to 9 digits)."""
-    s = str(text or "").strip()
-    m = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$", s)
-    if not m:
-        return 0
-    base, frac, tz = m.groups()
-    dt = _dt.datetime.fromisoformat(base + ("+00:00" if tz == "Z" else tz))
-    secs = int(dt.timestamp())
-    nanos = int((frac or "0")[:9].ljust(9, "0"))
-    return secs * 1_000_000_000 + nanos
-
-
-def ns_to_rfc3339(ns: int) -> str:
-    secs, rem = divmod(int(ns), 1_000_000_000)
-    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{rem:09d}Z"
 
 
 def logsql_str(value: Any) -> str:

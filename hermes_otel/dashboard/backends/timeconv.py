@@ -1,10 +1,41 @@
 """Timestamp conversions shared by the adapters (#403): whatever a backend
-returns (ns, us, ms, s, ISO-8601) → unix nanoseconds."""
+returns (ns, us, ms, s, ISO-8601) → unix nanoseconds, and unix nanoseconds →
+the RFC 3339 string a backend's query API takes (#519)."""
 
 from __future__ import annotations
 
-from datetime import datetime
+import re
+from datetime import datetime, timezone
 from typing import Any, Optional
+
+_RFC3339_RE = re.compile(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$")
+
+
+def ns_from_s(seconds: int) -> int:
+    """Whole unix seconds → unix nanoseconds."""
+    return int(seconds) * 1_000_000_000
+
+
+def ns_to_rfc3339(ns: int, digits: int = 9) -> str:
+    """Unix nanoseconds → ``2026-10-11T20:27:50.202258944Z`` in UTC, the
+    fraction truncated to ``digits`` places (``6`` for a µs API, ``0`` for no
+    fraction at all)."""
+    secs, rem = divmod(int(ns), 1_000_000_000)
+    base = datetime.fromtimestamp(secs, tz=timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
+    frac = f".{rem // 10 ** (9 - digits):0{digits}d}" if digits else ""
+    return f"{base}{frac}Z"
+
+
+def rfc3339_to_ns(text: Any) -> int:
+    """``2026-10-11T20:27:50.202258944Z`` → unix ns (fraction kept to 9 digits,
+    which :func:`iso_to_ns` cannot: it goes through a float); ``0`` for anything
+    that is not an RFC 3339 timestamp."""
+    m = _RFC3339_RE.match(str(text or "").strip())
+    if not m:
+        return 0
+    base, frac, tz = m.groups()
+    dt = datetime.fromisoformat(base + ("+00:00" if tz == "Z" else tz))
+    return int(dt.timestamp()) * 1_000_000_000 + int((frac or "0")[:9].ljust(9, "0"))
 
 
 def ns_from_any(value: Any) -> Optional[int]:
@@ -32,20 +63,12 @@ def ns_from_any(value: Any) -> Optional[int]:
             pass
         # ISO-8601.
         try:
-            from datetime import datetime
-
             s_iso = s.replace("Z", "+00:00")
             dt = datetime.fromisoformat(s_iso)
             return int(dt.timestamp() * 1_000_000_000)
         except Exception:
             return None
     return None
-
-
-def ns_from_magnitude(n: float) -> int:
-    """Public spelling of :func:`_scale_to_ns` for adapters whose timestamps
-    come as ms or ns depending on the version (SigNoz)."""
-    return _scale_to_ns(n)
 
 
 def _scale_to_ns(n: float) -> int:
