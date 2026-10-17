@@ -50,7 +50,6 @@ from .base import (
     http_get_json,
     log_row,
     not_found,
-    otlp_status,
     query_origin,
     register_cache,
     require_credential,
@@ -65,7 +64,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
+from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, otlp_status, trace_detail
 
 # Entries that switch the service pin on log queries off.
 _NO_PIN = ("", "off", "none", "any", "*")

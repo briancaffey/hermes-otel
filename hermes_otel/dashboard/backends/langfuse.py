@@ -45,8 +45,6 @@ from .base import (
     basic_auth,
     http_get_json,
     not_found,
-    otlp_attrs_from_dict,
-    otlp_status,
     parse_kv_tokens,
     query_origin,
     register_cache,
@@ -54,7 +52,14 @@ from .base import (
     resolve_env_or_literal,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
-from .shapes import attach_root, card_row, otlp_batches, otlp_span
+from .shapes import (
+    attach_root,
+    card_row,
+    otlp_attrs_from_dict,
+    otlp_batches,
+    otlp_span,
+    otlp_status,
+)
 from .timeconv import iso_to_ns, ns_from_s, ns_to_rfc3339
 
 _DEFAULT_LANGFUSE_PORT = 3000

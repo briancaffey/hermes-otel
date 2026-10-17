@@ -145,14 +145,6 @@ class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
         except (TypeError, ValueError):
             self.search_fetch = _DEFAULT_SEARCH_FETCH
 
-    def status(self) -> Dict[str, Any]:
-        base = super().status()
-        if self.prometheus_url:
-            base["prometheus_url"] = self.prometheus_url
-        if self.loki_url:
-            base["loki_url"] = self.loki_url
-        return base
-
     def _predicates(self, f: StructuredFilter) -> List[str]:
         predicates: List[str] = []
         if f.roots_only:
@@ -278,7 +270,7 @@ class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
                 # Widened to every span (the kind filter): the card is the
                 # matched span, named like the other backends name it, not the
                 # trace's root. ``name`` is in the select list.
-                sets = t.get("spanSets") or ([t["spanSet"]] if t.get("spanSet") else [])
+                sets = t.get("spanSets") or []
                 spans = (sets[0].get("spans") or []) if sets else []
                 if spans:
                     # ``name`` is a top-level field of the span when selected,

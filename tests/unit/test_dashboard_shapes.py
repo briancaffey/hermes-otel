@@ -7,7 +7,7 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from hermes_otel.dashboard.backends.base import StructuredFilter, otlp_status
+from hermes_otel.dashboard.backends.base import StructuredFilter
 from hermes_otel.dashboard.backends.shapes import (
     SpanRow,
     attach_root,
@@ -16,6 +16,7 @@ from hermes_otel.dashboard.backends.shapes import (
     dedupe_spans,
     otlp_kind,
     otlp_span,
+    otlp_status,
     trace_detail,
 )
 

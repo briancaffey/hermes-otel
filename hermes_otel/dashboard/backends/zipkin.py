@@ -34,7 +34,6 @@ from .base import (
     bearer,
     http_get_json,
     not_found,
-    otlp_status,
     parse_kv_tokens,
     query_origin,
     resolve_env_or_literal,
@@ -46,6 +45,7 @@ from .shapes import (
     coerce_tag,
     otlp_event,
     otlp_kind,
+    otlp_status,
     to_int,
     trace_detail,
 )

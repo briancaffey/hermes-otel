@@ -179,8 +179,9 @@ class PrometheusMetrics:
     """The metrics half of an adapter whose store speaks the Prometheus API:
     the adapter calls :meth:`_use_prometheus` once it knows the read URL
     (``None`` when the entry has no metrics store), the reads above then run
-    with the adapter's own ``_headers()``. ``_counter_samples`` is how a
-    counter's raw samples are fetched; Gigapipe swaps it."""
+    with the adapter's own ``_headers()`` and ``/status`` names the URL.
+    ``_counter_samples`` is how a counter's raw samples are fetched; Gigapipe
+    swaps it."""
 
     prometheus_url: Optional[str] = None
     metrics_match: Optional[str] = None
@@ -195,6 +196,12 @@ class PrometheusMetrics:
         if not self.prometheus_url:
             raise ConfigError("This backend has no prometheus_url configured")
         return self.prometheus_url
+
+    def status(self) -> Dict[str, Any]:
+        out = super().status()
+        if self.prometheus_url:
+            out["prometheus_url"] = self.prometheus_url
+        return out
 
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         return metric_names(

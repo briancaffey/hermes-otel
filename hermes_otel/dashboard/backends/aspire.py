@@ -39,7 +39,6 @@ from .base import (
     http_get_json,
     log_row,
     not_found,
-    otlp_status,
     query_origin,
     resolve_env_or_literal,
 )
@@ -48,6 +47,7 @@ from .shapes import (
     SpanRow,
     card_from_trace,
     otlp_attrs_to_dict,
+    otlp_status,
     otlp_unwrap,
     span_count_of,
     to_int,

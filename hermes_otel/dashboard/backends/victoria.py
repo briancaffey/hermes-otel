@@ -110,8 +110,6 @@ class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_api"] = "jaeger-compatible"
-        if self.prometheus_url:
-            base["prometheus_url"] = self.prometheus_url
         if self.logs_url:
             base["logs_url"] = self.logs_url
         return base
@@ -128,7 +126,8 @@ class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
 
     # ── traces: typed-string tags ─────────────────────────────────────
 
-    def _span_tags_as_dict(self, span: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _span_tags_as_dict(span: Dict[str, Any]) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         for tag in span.get("tags") or []:
             if isinstance(tag, dict) and tag.get("key"):

@@ -30,7 +30,6 @@ from .base import (
     http_post_json,
     log_row,
     not_found,
-    otlp_status,
     query_origin,
     require_credential,
     resolve_env_or_literal,
@@ -43,7 +42,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
+from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, otlp_status, trace_detail
 
 _DEFAULT_OO_PORT = 5080
 # The trace detail asks for this many rows and says so when there are more.
