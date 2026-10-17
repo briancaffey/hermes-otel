@@ -425,6 +425,19 @@ class HermesOtelConfig:
     # process before further values are folded into ``other`` (the Python SDK
     # has no cardinality limit of its own). ``0`` disables the cap.
     metrics_label_limit: int = 100
+    # Metric-name compatibility (#485). ``claude_code`` exports the four
+    # instruments Claude Code's telemetry also has under Claude Code's names,
+    # units and labels (``claude_code.session.count``, ``claude_code.token.usage``,
+    # ``claude_code.cost.usage``, ``claude_code.active_time.total``) *instead of*
+    # their ``hermes.*`` twins, so a dashboard built for Claude Code reads
+    # Hermes unchanged; ``both`` keeps the ``hermes.*`` twins as well (two
+    # series per point for those four); ``off`` is the default. Every other
+    # ``hermes.*`` and ``gen_ai.*`` instrument is untouched either way.
+    metric_name_compat: str = "off"
+    # Claude Code puts ``session.id`` on every metric by default and its
+    # dashboards count sessions with it. The plugin never puts an id on a
+    # metric; this opt-in adds ``session.id`` to the compat instruments only.
+    metric_name_compat_session_id: bool = False
     # ── Skill execution-window spans ────────────────────────────────────
     # Emit a skill:<name> span when the agent loads a skill (via skill_view
     # or a /skills/ path), spanning from load to the turn boundary. Skills
@@ -1036,6 +1049,7 @@ def resolve_fields(
     for key, valid in (
         ("metrics_histogram", VALID_HISTOGRAMS),
         ("metrics_temporality", VALID_TEMPORALITIES),
+        ("metric_name_compat", VALID_METRIC_NAME_COMPAT),
     ):
         src = sources[key]
         if src.get("source", "default") == "default" or values.get(key) is None:
@@ -1096,6 +1110,7 @@ LEGACY_CONTENT_KEYS = ("capture_previews", "capture_full_prompts", "capture_full
 
 VALID_TEMPORALITIES = ("cumulative", "delta")
 VALID_HISTOGRAMS = ("explicit", "exponential")
+VALID_METRIC_NAME_COMPAT = ("off", "claude_code", "both")
 
 
 def normalize_temporality(
@@ -1131,6 +1146,18 @@ def reconcile_metrics_settings(values: Dict[str, Any], *, warn: bool = True) -> 
     if hist not in VALID_HISTOGRAMS:
         hist = "explicit"
     values["metrics_histogram"] = hist
+    if "metric_name_compat" in values:
+        compat = str(values.get("metric_name_compat") or "off").strip().lower()
+        if compat in ("false", "none", "no", ""):
+            compat = "off"
+        if compat not in VALID_METRIC_NAME_COMPAT:
+            if warn:
+                logger.warning(
+                    f"[hermes-otel] metric_name_compat={values.get('metric_name_compat')!r} is not "
+                    f"one of {'/'.join(VALID_METRIC_NAME_COMPAT)}; using off"
+                )
+            compat = "off"
+        values["metric_name_compat"] = compat
     try:
         values["metrics_label_limit"] = max(0, int(values.get("metrics_label_limit", 100)))
     except (TypeError, ValueError):
@@ -1274,6 +1301,8 @@ FIELD_DOCS = {
     "metrics_temporality": "Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins",
     "metrics_histogram": "Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it)",
     "metrics_label_limit": "Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap)",
+    "metric_name_compat": "`off` · `claude_code` · `both` — export session count, token usage, cost and active time under Claude Code's metric names, units and labels (`claude_code.*`) instead of (`claude_code`) or beside (`both`) the `hermes.*` twins, so dashboards built for Claude Code read Hermes; see [Claude Code dashboards](/guides/claude-code-dashboards)",
+    "metric_name_compat_session_id": "Also put `session.id` on the `claude_code.*` instruments, as Claude Code does by default (per-session panels need it; one series per session)",
     "skill_spans": "Open a `skill.<name>` span on each successful skill load, closed at turn end",
     "probe_backends": "At init, open one TCP connection to each backend endpoint on a background thread and log reachable / unreachable per backend; once, never periodic, no bytes sent, exports never wait for it",
     "remote_parent": "Parent the turn root under the span named by `HERMES_OTEL_TRACEPARENT` (+ `HERMES_OTEL_TRACESTATE`) when an outer process exported them; `false` ignores the variables. The kanban worker hand-off (`TRACEPARENT`) is separate",
@@ -1341,6 +1370,8 @@ FIELD_GROUPS: Tuple[Tuple[str, Tuple[str, ...]], ...] = (
             "metrics_temporality",
             "metrics_histogram",
             "metrics_label_limit",
+            "metric_name_compat",
+            "metric_name_compat_session_id",
             "skill_spans",
             "remote_parent",
             "probe_backends",

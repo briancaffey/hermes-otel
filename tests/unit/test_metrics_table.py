@@ -48,12 +48,22 @@ EXPECTED_KEYS = {
     "gen_ai.client.token.usage",
     "gen_ai.client.operation.duration",
     "gen_ai.agent.token.usage",
+    "active_time",
+}
+
+# Claude Code metric-name compatibility (#485): created only when
+# ``metric_name_compat`` switches the family on.
+COMPAT_KEYS = {
+    "claude_code.session.count",
+    "claude_code.token.usage",
+    "claude_code.cost.usage",
+    "claude_code.active_time.total",
 }
 
 
 class TestTable:
     def test_every_key_the_hooks_record_is_in_the_table(self):
-        assert set(_INSTRUMENTS) == EXPECTED_KEYS
+        assert set(_INSTRUMENTS) == EXPECTED_KEYS | COMPAT_KEYS
 
     def test_every_spec_is_complete(self):
         for key, spec in _INSTRUMENTS.items():
@@ -63,12 +73,18 @@ class TestTable:
             assert spec.description, key
             assert (spec.kind == "histogram") == (spec.value == "record"), key
             assert spec.genai == spec.name.startswith("gen_ai."), key
+            assert bool(spec.compat) == spec.name.startswith("claude_code."), key
+            if spec.compat:
+                # a compat instrument mirrors a hermes.* key that exists
+                assert spec.compat_of in _INSTRUMENTS, key
+                assert _INSTRUMENTS[spec.compat_of].name.startswith("hermes."), key
+                assert _INSTRUMENTS[spec.compat_of].kind == spec.kind, key
 
     def test_otlp_names_are_unique_and_conventional(self):
         names = [s.name for s in _INSTRUMENTS.values()]
         assert len(names) == len(set(names))
         for n in names:
-            assert n.startswith(("hermes.", "gen_ai.")), n
+            assert n.startswith(("hermes.", "gen_ai.", "claude_code.")), n
 
     def test_metric_otlp_name(self):
         assert metric_otlp_name("token_usage") == "hermes.token.usage"

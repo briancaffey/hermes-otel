@@ -77,6 +77,28 @@ see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 - **Port 4318** collides with jaeger and the HTTP side of signoz. Pick
   the one you want on 4318 or remap the others.
 
+## Provisioned Grafana dashboards
+
+`grafana-provisioning-dashboards.yaml` is mounted beside the image's own
+provisioning file and loads every JSON file in `grafana-dashboards/` into a
+Grafana folder named **hermes-otel** (rescanned every 10 s: drop a file in,
+no restart). Shipped today:
+
+| File | Dashboard | Notes |
+|---|---|---|
+| `claude-code-metrics-prometheus.json` | **Claude Code Metrics (Prometheus)** — [grafana.com 25255](https://grafana.com/grafana/dashboards/25255-claude-code-metrics-prometheus/), MIT (`LICENSE-claude-code-metrics-prometheus.txt`) | The only edits: the `${DS_PROMETHEUS}` input is bound to this stack's `prometheus` datasource and the datasource variable is dropped. Hermes populates it with `metric_name_compat: claude_code` (or `both`) in `hermes_otel.yaml`; add `metric_name_compat_session_id: true` for the per-session panels. Point Claude Code at the same collector (`CLAUDE_CODE_ENABLE_TELEMETRY=1 OTEL_METRICS_EXPORTER=otlp OTEL_EXPORTER_OTLP_PROTOCOL=http/protobuf OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318`) and both agents share the panels |
+
+Prometheus runs with `--enable-feature=created-timestamp-zero-ingestion`
+(`PROMETHEUS_EXTRA_ARGS` in the compose file): every cumulative series gets a
+zero sample at its OTLP start timestamp, so a counter that a one-shot
+`hermes -z` turn or a `claude -p` run exported exactly once still has an
+`increase()` / `rate()` for the dashboard's PromQL (a single sample reads as 0
+otherwise). Verified 2026-10-16 on otel-lgtm 0.34.0 / Prometheus 3.14.
+
+Your own dashboards go in the same folder with
+`"datasource": {"type": "prometheus", "uid": "prometheus"}` (Tempo is `tempo`,
+Loki is `loki`). The guide: https://briancaffey.github.io/hermes-otel/guides/claude-code-dashboards
+
 ## Collector customisation
 
 `otelcol-config.yaml` diverges from the image's default in one place: the

@@ -452,3 +452,152 @@ class TestModelUsageMetric:
 
         value = _get_metric_value(metric_reader, "hermes.model.usage")
         assert value == 1
+
+
+class TestClaudeCodeCompat:
+    """``metric_name_compat`` (#485): the reader sees the ``claude_code.*``
+    twins with Claude Code's labels, the twins replace (``claude_code``) or
+    accompany (``both``) their ``hermes.*`` originals, and nothing else moves.
+    """
+
+    @staticmethod
+    def _switch(plugin, mode, **more):
+        plugin.config = HermesOtelConfig(metric_name_compat=mode, **more)
+        plugin._instruments.clear()
+        plugin._create_metric_instruments()
+
+    @staticmethod
+    def _labels(metric_reader, name):
+        return [dict(dp.attributes) for dp in _points(_get_metric(metric_reader, name))]
+
+    @pytest.fixture
+    def priced(self, monkeypatch):
+        from hermes_otel.hooks import api_call
+
+        monkeypatch.setattr(
+            api_call,
+            "_estimate_cost",
+            lambda *a, **k: {"status": "estimated", "source": "test", "usd": 0.25},
+        )
+
+    def test_off_exports_no_claude_code_instrument(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        assert _get_metric(metric_reader, "claude_code.token.usage") is None
+        assert _get_metric(metric_reader, "claude_code.session.count") is None
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+
+    def test_claude_code_mode_replaces_the_four_twins(self, inmemory_otel_with_metrics, priced):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "claude_code")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call(
+            usage={
+                "prompt_tokens": 1000,
+                "output_tokens": 50,
+                "cache_read_tokens": 600,
+                "cache_write_tokens": 100,
+                "reasoning_tokens": 20,
+            }
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        # The hermes.* twins are not exported ...
+        for name in (
+            "hermes.session.count",
+            "hermes.token.usage",
+            "hermes.cost.usage",
+            "hermes.active_time.total",
+        ):
+            assert _get_metric(metric_reader, name) is None, name
+        # ... the claude_code.* instruments are, with Claude Code's labels ...
+        tokens = {
+            dp.attributes["type"]: dp.value
+            for dp in _points(_get_metric(metric_reader, "claude_code.token.usage"))
+        }
+        assert tokens == {"input": 300, "output": 50, "cacheRead": 600, "cacheCreation": 100}
+        for labels in self._labels(metric_reader, "claude_code.token.usage"):
+            assert labels["model"] == "gpt-4" and labels["query_source"] == "main"
+            assert "token_type" not in labels and "provider" not in labels
+            assert "session.id" not in labels  # opt-in only
+        assert self._labels(metric_reader, "claude_code.session.count") == [
+            {"profile": plugin.profile_name, "start_type": "fresh"}
+        ]
+        assert _get_metric_value(metric_reader, "claude_code.cost.usage") == 0.25
+        assert self._labels(metric_reader, "claude_code.cost.usage") == [
+            {"profile": plugin.profile_name, "model": "gpt-4", "query_source": "main"}
+        ]
+        active = _points(_get_metric(metric_reader, "claude_code.active_time.total"))
+        assert len(active) == 1 and active[0].value >= 0
+        assert dict(active[0].attributes) == {"profile": plugin.profile_name, "type": "cli"}
+        # ... and every other hermes.* / gen_ai.* instrument is untouched.
+        assert _get_metric_value(metric_reader, "hermes.model.usage") == 1
+        assert _get_metric(metric_reader, "gen_ai.client.token.usage") is not None
+
+    def test_both_mode_exports_both_families(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+        assert _get_metric_value(metric_reader, "claude_code.token.usage") == 150
+        assert _get_metric_value(metric_reader, "hermes.session.count") == 1
+        assert _get_metric_value(metric_reader, "claude_code.session.count") == 1
+
+    def test_claude_code_units(self, inmemory_otel_with_metrics, priced):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+        units = {
+            n: _get_metric(metric_reader, n).unit
+            for n in (
+                "claude_code.token.usage",
+                "claude_code.cost.usage",
+                "claude_code.active_time.total",
+                "claude_code.session.count",
+            )
+        }
+        assert units == {
+            "claude_code.token.usage": "tokens",
+            "claude_code.cost.usage": "USD",
+            "claude_code.active_time.total": "s",
+            "claude_code.session.count": "{session}",
+        }
+
+    def test_session_id_label_on_opt_in(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both", metric_name_compat_session_id=True)
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        for labels in self._labels(metric_reader, "claude_code.token.usage"):
+            assert labels["session.id"] == "s1"
+        assert self._labels(metric_reader, "claude_code.session.count")[0]["session.id"] == "s1"
+        # never on the hermes.* twin
+        for labels in self._labels(metric_reader, "hermes.token.usage"):
+            assert "session.id" not in labels
+
+    def test_resumed_session_counts_as_resume(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_pre_llm_call
+
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        # No on_session_start in this process: the root is synthesised on the
+        # first pre_llm_call (a resumed / gateway / cron turn).
+        on_pre_llm_call(
+            session_id="s9",
+            user_message="again",
+            conversation_history=[],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
+        )
+        assert self._labels(metric_reader, "claude_code.session.count") == [
+            {"profile": plugin.profile_name, "start_type": "resume"}
+        ]

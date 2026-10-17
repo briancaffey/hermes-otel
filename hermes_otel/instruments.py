@@ -44,6 +44,13 @@ class InstrumentSpec:
     labels: Tuple[str, ...] = ()
     # Superseded by a seconds instrument; documented as deprecated.
     deprecated: bool = False
+    # Metric-name compatibility family this instrument belongs to (#485):
+    # ``claude_code`` instruments are created and recorded only when
+    # ``metric_name_compat`` selects that family; ``compat_of`` names the
+    # hook-side key of the ``hermes.*`` instrument they mirror, which the
+    # exclusive mode stops exporting.
+    compat: str = ""
+    compat_of: str = ""
 
 
 # Bucket boundaries. The seconds/token lists are the ones the OTel GenAI
@@ -131,6 +138,14 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "record",
         boundaries=_B_HUMAN_SECONDS,
         labels=("platform", "reason"),
+    ),
+    "active_time": InstrumentSpec(
+        "hermes.active_time.total",
+        "counter",
+        "s",
+        "Seconds the agent loop spent working on turns (type=cli); Hermes has no signal for a person's typing time, so type=user is never recorded",
+        "float",
+        labels=("type", "platform"),
     ),
     "token_usage": InstrumentSpec(
         "hermes.token.usage",
@@ -394,7 +409,97 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         boundaries=_B_TOKENS,
         labels=("gen_ai.token.type",) + _GENAI_LABELS,
     ),
+    # Claude Code metric-name compatibility (#485): the instruments Claude
+    # Code's own telemetry exports (code.claude.com/docs/en/monitoring-usage),
+    # with Claude Code's units and label names, so a Grafana / Datadog
+    # dashboard built for Claude Code reads Hermes as one more agent. Created
+    # only when ``metric_name_compat`` is ``claude_code`` or ``both``; never
+    # written to the live store (the plugin's dashboard keeps reading the
+    # ``hermes.*`` twins). Units are Claude Code's literal ones (``tokens``,
+    # ``USD``, ``s``) because Prometheus-family stores put them in the series
+    # name: ``claude_code_token_usage_tokens_total``,
+    # ``claude_code_cost_usage_USD_total``, ``claude_code_active_time_seconds_total``.
+    # ``query_source`` is shared with Hermes as is (``main`` / ``subagent`` /
+    # ``auxiliary`` in both). ``type`` on token.usage is ``input`` (the
+    # uncached prompt) / ``output`` / ``cacheRead`` / ``cacheCreation``, never
+    # ``reasoning``, so summing every type gives the request's whole count.
+    "claude_code.session.count": InstrumentSpec(
+        "claude_code.session.count",
+        "counter",
+        "{session}",
+        "Sessions created, as Claude Code's telemetry names it (start_type: fresh, resume)",
+        "one",
+        labels=("start_type",),
+        compat="claude_code",
+        compat_of="session_count",
+    ),
+    "claude_code.token.usage": InstrumentSpec(
+        "claude_code.token.usage",
+        "counter",
+        "tokens",
+        "Tokens consumed by type (input, output, cacheRead, cacheCreation), model and query_source, as Claude Code's telemetry names it",
+        "int",
+        labels=("type", "model", "query_source"),
+        compat="claude_code",
+        compat_of="token_usage",
+    ),
+    "claude_code.cost.usage": InstrumentSpec(
+        "claude_code.cost.usage",
+        "counter",
+        "USD",
+        "USD cost per API call by model and query_source, as Claude Code's telemetry names it",
+        "float",
+        labels=("model", "query_source"),
+        compat="claude_code",
+        compat_of="cost_usage",
+    ),
+    "claude_code.active_time.total": InstrumentSpec(
+        "claude_code.active_time.total",
+        "counter",
+        "s",
+        "Seconds of agent activity by type (cli), as Claude Code's telemetry names it",
+        "float",
+        labels=("type",),
+        compat="claude_code",
+        compat_of="active_time",
+    ),
 }
+
+# Claude Code's standard per-session attribute (``session_id`` once a
+# Prometheus store has escaped it). Only the compat instruments may carry it,
+# and only with ``metric_name_compat_session_id: true``; every other
+# instrument keeps the plugin's rule that a metric never carries an id.
+COMPAT_SESSION_LABEL = "session.id"
+
+# The ``hermes.*`` hook-side keys that have a Claude Code twin; the exclusive
+# ``metric_name_compat: claude_code`` mode exports the twin instead of these.
+CLAUDE_CODE_REPLACES = frozenset(
+    spec.compat_of for spec in _INSTRUMENTS.values() if spec.compat == "claude_code"
+)
+
+# Claude Code's standard ``type`` values for ``claude_code.token.usage`` and
+# the canonical usage field each one is computed from. ``input`` is the
+# uncached part of the prompt (Claude Code reports the API's ``input_tokens``,
+# which excludes cache reads and writes), so it is derived in
+# ``claude_code_token_types``.
+CLAUDE_CODE_TOKEN_TYPES = ("input", "output", "cacheRead", "cacheCreation")
+
+
+def claude_code_token_types(totals: Dict[str, int]) -> Dict[str, int]:
+    """Claude Code's four token ``type`` values from Hermes's canonical
+    totals (``normalize_usage``): the uncached prompt as ``input``, the
+    completion as ``output``, cache reads and writes as themselves. The
+    ``reasoning`` subset of the output is left out so the four sum to the
+    request's whole token count, as they do in Claude Code."""
+    prompt = int(totals.get("prompt_tokens", 0) or 0)
+    cache_read = int(totals.get("cache_read_tokens", 0) or 0)
+    cache_write = int(totals.get("cache_write_tokens", 0) or 0)
+    return {
+        "input": max(prompt - cache_read - cache_write, 0),
+        "output": int(totals.get("completion_tokens", 0) or 0),
+        "cacheRead": cache_read,
+        "cacheCreation": cache_write,
+    }
 
 
 def metric_views(histogram: str = "explicit") -> List[Any]:
@@ -414,6 +519,11 @@ def metric_views(histogram: str = "explicit") -> List[Any]:
             "instrument_name": spec.name,
             "attribute_keys": set(spec.labels) | {"profile"},
         }
+        if spec.compat:
+            # Claude Code puts ``session.id`` on every metric by default; the
+            # compat instruments carry it when the user opts in
+            # (``metric_name_compat_session_id``), so the View lets it through.
+            kwargs["attribute_keys"] |= {COMPAT_SESSION_LABEL}
         if spec.kind == "histogram" and spec.boundaries and histogram != "exponential":
             kwargs["aggregation"] = ExplicitBucketHistogramAggregation(
                 boundaries=list(spec.boundaries)

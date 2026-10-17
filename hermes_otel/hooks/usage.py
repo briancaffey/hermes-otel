@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any, Dict, Optional
 
 from ..helpers import to_int, truncate_string
+from ..instruments import claude_code_token_types
 from ._common import as_dict
 
 # Canonical token-total field order. Used when iterating or copying.
@@ -98,11 +99,17 @@ _USAGE_METRIC_LABELS = (
 
 
 def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, Any]) -> None:
-    """Record one ``token_usage`` metric per non-zero canonical field."""
+    """Record one ``token_usage`` metric per non-zero canonical field, and
+    the Claude Code twin (#485) with Claude Code's ``type`` values: the
+    uncached prompt as ``input``, no ``reasoning`` subset. ``record_metric``
+    drops the twin unless ``metric_name_compat`` switches it on."""
     for key, label in _USAGE_METRIC_LABELS:
         v = totals.get(key, 0)
         if v:
             tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
+    for label, v in claude_code_token_types(totals).items():
+        if v:
+            tracer.record_metric("claude_code.token.usage", v, {**base_attrs, "type": label})
 
 
 # Cost statuses that carry a real dollar figure. Hermes's other two,

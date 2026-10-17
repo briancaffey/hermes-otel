@@ -44,6 +44,8 @@ from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .instruments import (  # noqa: F401 — re-exported
     _CAPPED_LABELS,
     _INSTRUMENTS,
+    CLAUDE_CODE_REPLACES,
+    COMPAT_SESSION_LABEL,
     HOST_METRIC_NAMES,
     InstrumentSpec,
     metric_otlp_name,
@@ -512,12 +514,30 @@ class HermesOTelPlugin:
         spec = _INSTRUMENTS.get(name)
         if spec is not None and spec.genai and not self.config.emit_genai_metrics:
             return
+        # Claude Code metric-name compatibility (#485): a compat instrument
+        # is recorded only when its family is switched on; in the exclusive
+        # mode the ``hermes.*`` twin it replaces is kept out of the OTLP
+        # export (the live store still gets it, so the plugin's own dashboard
+        # keeps working). Compat points never reach the live store.
+        compat_mode = self.config.metric_name_compat
+        is_compat = spec is not None and bool(spec.compat)
+        if is_compat and compat_mode not in (spec.compat, "both"):
+            return
+        export = not (
+            spec is not None and compat_mode == "claude_code" and name in CLAUDE_CODE_REPLACES
+        )
         otlp_name = spec.name if spec is not None else name
         # ``profile`` is a bounded label (one value per plugin instance), so
         # a backend can split every series by agent (#70).
         attributes = {"profile": self.profile_name, **(attributes or {})}
+        # A session id is Claude Code's standard metric attribute and nobody
+        # else's: it survives only on a compat instrument, and only when the
+        # user opted in.
+        session_label = attributes.pop(COMPAT_SESSION_LABEL, None)
+        if is_compat and session_label and self.config.metric_name_compat_session_id:
+            attributes[COMPAT_SESSION_LABEL] = str(session_label)
         attributes = self._bound_labels(attributes)
-        if self._live_active:
+        if self._live_active and not is_compat:
             try:
                 from .live_store import get_live_store
 
@@ -528,7 +548,7 @@ class HermesOTelPlugin:
                 pass
 
         instrument = self._instruments.get(name) if self._meter else None
-        if instrument is None or spec is None:
+        if instrument is None or spec is None or not export:
             return
         attrs = dict(attributes or {})
         try:

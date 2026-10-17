@@ -167,6 +167,8 @@ Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>`
 | `HERMES_OTEL_METRICS_TEMPORALITY` | `metrics_temporality` | string | *(unset)* |
 | `HERMES_OTEL_METRICS_HISTOGRAM` | `metrics_histogram` | string | `"explicit"` |
 | `HERMES_OTEL_METRICS_LABEL_LIMIT` | `metrics_label_limit` | int | `100` |
+| `HERMES_OTEL_METRIC_NAME_COMPAT` | `metric_name_compat` | string | `"off"` |
+| `HERMES_OTEL_METRIC_NAME_COMPAT_SESSION_ID` | `metric_name_compat_session_id` | bool | `false` |
 | `HERMES_OTEL_SKILL_SPANS` | `skill_spans` | bool | `true` |
 | `HERMES_OTEL_REMOTE_PARENT` | `remote_parent` | bool | `true` |
 | `HERMES_OTEL_PROBE_BACKENDS` | `probe_backends` | bool | `true` |

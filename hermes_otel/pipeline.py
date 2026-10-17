@@ -610,7 +610,10 @@ def create_metric_instruments(plugin) -> None:
     """
     if plugin._meter is None:
         return
+    compat_mode = plugin.config.metric_name_compat
     for key, spec in _INSTRUMENTS.items():
+        if spec.compat and compat_mode not in (spec.compat, "both"):
+            continue  # a compatibility family that is switched off (#485)
         try:
             factory = (
                 plugin._meter.create_histogram

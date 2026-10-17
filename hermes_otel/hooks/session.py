@@ -8,6 +8,7 @@ from typing import Any, Dict, Optional
 from .. import log_events as EV
 from ..debug_utils import debug_log, logger
 from ..helpers import cron_job_id_from_session, detect_session_kind, truncate_string
+from ..instruments import COMPAT_SESSION_LABEL
 from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
     _extract_correlation_id,
@@ -82,6 +83,14 @@ def _start_session_span(
     # on_session_start in this process and used to go uncounted.
     if tracer.sessions.first_root(session_id):
         tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
+        # Claude Code's twin (#485): its ``start_type`` is ``fresh`` for a new
+        # session and ``resume`` for one picked up again; a root this process
+        # had to synthesise is a session it did not start.
+        tracer.record_metric(
+            "claude_code.session.count",
+            1,
+            {"start_type": "resume" if synthesized else "fresh", COMPAT_SESSION_LABEL: session_id},
+        )
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
@@ -304,6 +313,19 @@ def on_session_end(
     root_span = tracer.spans.get_span(key)
     started_at = tracer.spans.turn_started_at(session_id)
     final = attributes.get("hermes.turn.final_status") or "incomplete"
+    if isinstance(started_at, (int, float)):
+        # The turn's wall-clock is the agent loop's active time: Claude
+        # Code's ``active_time.total{type=cli}``; ``user`` (typing time) has
+        # no Hermes signal and is never recorded (#485).
+        active_s = max(0.0, time.perf_counter() - started_at)
+        tracer.record_metric(
+            "active_time", active_s, {"type": "cli", "platform": platform or "unknown"}
+        )
+        tracer.record_metric(
+            "claude_code.active_time.total",
+            active_s,
+            {"type": "cli", COMPAT_SESSION_LABEL: session_id},
+        )
     _emit_event(
         tracer,
         EV.TURN_END,
