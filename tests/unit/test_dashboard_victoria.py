@@ -15,7 +15,7 @@ from urllib import request as _urlrequest
 import pytest
 
 from hermes_otel.dashboard import backends
-from hermes_otel.dashboard.backends import jaeger
+from hermes_otel.dashboard.backends import _prometheus, jaeger
 from hermes_otel.dashboard.backends import victoria as vt
 from hermes_otel.dashboard.backends.base import (
     BackendError,
@@ -211,16 +211,16 @@ class TestMetrics:
     def test_prometheus_reader_on_the_metrics_store(self, monkeypatch):
         seen: Dict[str, Any] = {}
         monkeypatch.setattr(
-            vt,
-            "_prom_metric_names",
+            _prometheus,
+            "metric_names",
             lambda base, s, e, match, headers=None: seen.update(names=(base, match, headers))
             or [{"name": "x"}],
         )
         monkeypatch.setattr(
-            vt,
-            "_prom_metrics_query",
-            lambda base, name, s, e, b, group_by=None, agg="sum", headers=None: seen.update(
-                query=(base, name, group_by, agg)
+            _prometheus,
+            "metrics_query",
+            lambda base, name, s, e, b, group_by=None, agg="sum", headers=None, **kw: seen.update(
+                query=(base, name, group_by, agg, kw["counter_samples"])
             )
             or {"name": name},
         )
@@ -237,11 +237,13 @@ class TestMetrics:
             )["name"]
             == "hermes_token_usage_total"
         )
+        # VictoriaMetrics answers range-vector instant queries: the reader's default fetch
         assert seen["query"] == (
             "http://localhost:8428",
             "hermes_token_usage_total",
             "token_type",
             "sum",
+            _prometheus._instant_range_vector,
         )
 
 

@@ -2,9 +2,9 @@
 
 Traces come from Tempo. For ``type: lgtm`` (and any Tempo entry that names
 them) metrics come from the stack's Prometheus and logs from its Loki, via
-the ``_prometheus`` / ``_loki`` helpers (#194): ``prometheus_url`` and
-``loki_url`` default to ports 9090 and 3100 on the Tempo host, which is the
-``grafana/otel-lgtm`` layout.
+the ``PrometheusMetrics`` / ``LokiLogs`` mixins (#194): ``prometheus_url``
+and ``loki_url`` default to ports 9090 and 3100 on the Tempo host, which is
+the ``grafana/otel-lgtm`` layout.
 
 Tempo is the reference backend — the card + detail response shapes the
 rest of the plugin consumes were copied from Tempo's search + trace
@@ -24,12 +24,12 @@ import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from . import _loki, _prometheus, register
+from . import register
+from ._loki import LokiLogs
+from ._prometheus import PrometheusMetrics
 from .base import (
     FILTER_KEYS,
     BackendAdapter,
-    ConfigError,
-    LogFilter,
     StructuredFilter,
     first_accepted,
     http_get_json,
@@ -90,7 +90,7 @@ def _sibling_url(explicit: Any, is_stack: bool, scheme: str, host: str, port: in
 
 
 @register
-class TempoAdapter(BackendAdapter):
+class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
     handles = frozenset({"lgtm", "tempo"})
     query_lang_label = "TraceQL"
     raw_placeholder = '{ .llm.provider = "openai" }'
@@ -128,14 +128,15 @@ class TempoAdapter(BackendAdapter):
         # Metrics and logs: on for ``lgtm`` (the stack ships Prometheus + Loki
         # next to Tempo) and for any entry that points at them explicitly.
         is_stack = cfg.get("type") == "lgtm"
-        self.prometheus_url = _sibling_url(
-            cfg.get("prometheus_url"), is_stack, scheme, host, _DEFAULT_PROMETHEUS_PORT
+        self._use_prometheus(
+            _sibling_url(
+                cfg.get("prometheus_url"), is_stack, scheme, host, _DEFAULT_PROMETHEUS_PORT
+            ),
+            cfg,
         )
-        self.loki_url = _sibling_url(
-            cfg.get("loki_url"), is_stack, scheme, host, _DEFAULT_LOKI_PORT
+        self._use_loki(
+            _sibling_url(cfg.get("loki_url"), is_stack, scheme, host, _DEFAULT_LOKI_PORT), cfg
         )
-        self.supports_metrics = self.prometheus_url is not None
-        self.supports_logs = self.loki_url is not None
         # How many traces to ask Tempo for per page (``search_fetch``); the
         # page is cut to ``limit`` after sorting newest-first. See
         # ``_search_params``.
@@ -143,8 +144,6 @@ class TempoAdapter(BackendAdapter):
             self.search_fetch = max(1, int(cfg.get("search_fetch") or _DEFAULT_SEARCH_FETCH))
         except (TypeError, ValueError):
             self.search_fetch = _DEFAULT_SEARCH_FETCH
-        self.metrics_match = cfg.get("metrics_match") or None
-        self.loki_selector = cfg.get("loki_selector") or _loki.DEFAULT_SELECTOR
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -153,44 +152,6 @@ class TempoAdapter(BackendAdapter):
         if self.loki_url:
             base["loki_url"] = self.loki_url
         return base
-
-    # ── metrics via Prometheus (#194) ─────────────────────────────────
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _prometheus.metric_names(self._prometheus(), start_s, end_s, self.metrics_match)
-
-    def metrics_query(
-        self,
-        name: str,
-        start_s: int,
-        end_s: int,
-        bucket_s: int,
-        group_by: Optional[str] = None,
-        agg: str = "sum",
-    ) -> Dict[str, Any]:
-        return _prometheus.metrics_query(
-            self._prometheus(), name, start_s, end_s, bucket_s, group_by=group_by, agg=agg
-        )
-
-    # ── logs via Loki (#194) ──────────────────────────────────────────
-
-    def logs_search(
-        self, f: LogFilter, start_s: int, end_s: int, limit: int
-    ) -> List[Dict[str, Any]]:
-        return _loki.logs_search(self._loki(), f, start_s, end_s, limit, self.loki_selector)
-
-    def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _loki.loggers(self._loki(), start_s, end_s, self.loki_selector)
-
-    def _prometheus(self) -> str:
-        if not self.prometheus_url:
-            raise ConfigError("This backend has no prometheus_url configured")
-        return self.prometheus_url
-
-    def _loki(self) -> str:
-        if not self.loki_url:
-            raise ConfigError("This backend has no loki_url configured")
-        return self.loki_url
 
     def _predicates(self, f: StructuredFilter) -> List[str]:
         predicates: List[str] = []

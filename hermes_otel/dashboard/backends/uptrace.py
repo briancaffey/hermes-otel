@@ -56,7 +56,7 @@ from .base import (
     require_credential,
     resolve_env_or_literal,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import bucketize, increases_per_process
 from .paging import (
     log_end_ns,
     strictly_older,
@@ -521,9 +521,10 @@ class UptraceAdapter(BackendAdapter):
             )
             return (data.get("timeseries") if isinstance(data, dict) else None) or []
 
-        def ident_of(attrs: Dict[str, Any]) -> str:
+        def ident_of(attrs: Dict[str, Any]) -> Tuple[str, str]:
+            """``(label, instance)``: the chart label and the exporting process."""
             label = str(attrs.get(label_key, "—")) if label_key else "_"
-            return f"{label}\x00{attrs.get(_INSTANCE_KEY, '')}" if cumulative else label
+            return label, str(attrs.get(_INSTANCE_KEY, ""))
 
         points = []
         if instrument == "histogram" and agg == "count":
@@ -543,22 +544,22 @@ class UptraceAdapter(BackendAdapter):
                 sum_series = sums.get(key)
                 if not sum_series:
                     continue
-                attrs = plain_attrs(avg_series.get("attrs"))
-                ident = ident_of(attrs)
+                label, instance = ident_of(plain_attrs(avg_series.get("attrs")))
                 sum_by_t = dict(zip(sum_series.get("time") or [], sum_series.get("value") or []))
                 for ts_ms, avg in zip(avg_series.get("time") or [], avg_series.get("value") or []):
                     total = sum_by_t.get(ts_ms)
                     if avg is None or total is None or not avg:
                         continue
-                    points.append((int(ts_ms) * 1_000_000, float(round(total / avg)), ident))
+                    points.append(
+                        (int(ts_ms) * 1_000_000, float(round(total / avg)), label, instance)
+                    )
         else:
             for series in fetch(expr):
-                attrs = plain_attrs(series.get("attrs"))
-                ident = ident_of(attrs)
+                label, instance = ident_of(plain_attrs(series.get("attrs")))
                 for ts_ms, value in zip(series.get("time") or [], series.get("value") or []):
                     if value is None:
                         continue
-                    points.append((int(ts_ms) * 1_000_000, float(value), ident))
+                    points.append((int(ts_ms) * 1_000_000, float(value), label, instance))
         # Uptrace picks its own interval and, for a counter's ``$m`` and a
         # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
         # at each interval end, forward-filled into later intervals (verified
@@ -567,12 +568,9 @@ class UptraceAdapter(BackendAdapter):
         # points are what the chart wants, and a series that starts inside the
         # window counts its first value, exactly as for the other stores (#298).
         if cumulative:
-            points = [
-                (ts, v, ident.split("\x00", 1)[0])
-                for ts, v, ident in counter_increases(
-                    points, window_start_ns=start_s * 1_000_000_000
-                )
-            ]
+            points = increases_per_process(points, window_start_ns=start_s * 1_000_000_000)
+        else:
+            points = [(ts, v, label) for ts, v, label, _instance in points]
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name

@@ -33,7 +33,7 @@ from .base import (
     require_credential,
     resolve_env_or_literal,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import fold_samples, series_ident
 from .paging import (
     strictly_older,
     strictly_older_traces,
@@ -436,6 +436,7 @@ class OpenObserveAdapter(BackendAdapter):
         # counter is per process, and two processes' samples folded into one
         # series would read the second one's first value as "no increase".
         samples = []
+        labels_of: Dict[str, str] = {}
         # ``start_time`` is the counter's own start (ns): a series that started
         # inside the window is a fresh process whose first sample counts in
         # full (one-shot runs export each counter once, #299).
@@ -445,34 +446,28 @@ class OpenObserveAdapter(BackendAdapter):
             v = _maybe_num(r.get("value"))
             if not isinstance(v, (int, float)):
                 continue
-            ident = "|".join(f"{k}={r[k]}" for k in sorted(r) if k not in skip)
+            ident = series_ident(r, drop=skip)
+            # The requested label, in either spelling (``gen_ai.request.model``
+            # arrives as ``gen_ai_request_model``).
+            labels_of[ident] = (
+                str(r.get(group_by, r.get(group_by.replace(".", "_"), "—"))) if group_by else "_"
+            )
             samples.append((int(r.get("_timestamp") or 0) * 1000, float(v), ident))
             st = _maybe_num(r.get("start_time"))
             if isinstance(st, (int, float)) and int(st) >= window_start_ns:
                 started.add(ident)
-        if cumulative:
-            samples = counter_increases(samples, started_in_window=started)
-
-        # Collapse the series identity to the requested group_by label.
-        def label_of(ident: str) -> str:
-            if not group_by:
-                return "_"
-            for part in ident.split("|"):
-                k, _, val = part.partition("=")
-                if k == group_by or k == group_by.replace(".", "_"):
-                    return val
-            return "—"
-
-        points = [(ts, v, label_of(ident)) for ts, v, ident in samples]
-        # ``last`` of a counter's increases has no per-bucket meaning: fold them
-        # with ``sum`` and say so, as the Prometheus-family adapters do.
-        fold = "sum" if (cumulative and agg == "last") else agg
-        out = bucketize(
-            points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, fold
+        out = fold_samples(
+            samples,
+            labels_of,
+            window_start_ns,
+            int(end_s) * 1_000_000_000,
+            bucket_s,
+            agg,
+            name=name,
+            cumulative=cumulative,
+            started_in_window=started,
         )
-        out["agg_requested"] = agg
-        out["name"] = name
-        out["cumulative"] = cumulative
+        out.setdefault("cumulative", False)  # a gauge says so here, as detected
         out["truncated"] = truncated
         return out
 

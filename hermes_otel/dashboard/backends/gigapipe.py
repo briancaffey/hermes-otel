@@ -17,7 +17,8 @@ own origin. Verified against ``ghcr.io/metrico/gigapipe`` v5.5.3 on
   ``scopeSpans`` the frontend consumes, values coerced back.
 * The Prometheus route answers a range-vector instant query
   (``name[3600s]``) with an empty result, so counters are read with
-  ``query_range`` at the 15 s rollup step and turned into increases here.
+  ``query_range`` at the 15 s rollup step (the reader's ``counter_samples``
+  hook) and turned into increases by the shared fold.
 * Loki streams carry every attribute as a label with dots turned into
   underscores, a ``level`` label instead of ``severity_text`` /
   ``severity_number``, and no scope (logger) label, so the LogQL stages and
@@ -35,7 +36,6 @@ from hermes_otel.severity import level_names_at_least
 from . import register
 from ._attrs import dotted as _dotted
 from ._loki import MAX_RANGE_S, _quote
-from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from .base import (
     BackendError,
     LogColumns,
@@ -45,10 +45,8 @@ from .base import (
     log_row,
     not_found,
     query_origin,
-    validate_label_name,
-    validate_metric_name,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import LOOKBEHIND_S
 from .paging import log_end_ns, strictly_older
 from .shapes import (
     SpanRow,
@@ -148,9 +146,27 @@ def _detail_rows(batches: List[Dict[str, Any]]) -> List[SpanRow]:
 _DETAIL_WORKERS = 8
 
 
+def _query_range_rollup(
+    base: str, name: str, start_s: int, end_s: int, bucket_s: int, headers: Optional[Dict[str, str]]
+) -> Any:
+    """A counter's raw samples as ``query_range`` at the 15 s rollup step, from
+    ``LOOKBEHIND_S`` before the window: Gigapipe answers the range-vector
+    instant query the Prometheus reader uses with an empty result."""
+    params = {
+        "query": name,
+        "start": int(start_s) - LOOKBEHIND_S,
+        "end": int(end_s),
+        "step": _ROLLUP_STEP_S,
+    }
+    url = f"{base}/api/v1/query_range?{_urlparse.urlencode(params)}"
+    return http_get_json(url, headers=headers, timeout=30.0)
+
+
 @register
 class GigapipeAdapter(TempoAdapter):
     handles = frozenset({"gigapipe", "qryn"})
+    # Counters via query_range on the 15 s rollup (see ``_query_range_rollup``).
+    _counter_samples = staticmethod(_query_range_rollup)
 
     def __init__(self, cfg: Dict[str, Any]):
         cfg = dict(cfg)
@@ -248,55 +264,6 @@ class GigapipeAdapter(TempoAdapter):
             raise not_found(trace_id, "Gigapipe")
         data["span_count"] = n  # after the dedupe
         return data
-
-    # ── metrics: counters via query_range on the 15 s rollup ──────────
-
-    def metrics_query(
-        self,
-        name: str,
-        start_s: int,
-        end_s: int,
-        bucket_s: int,
-        group_by: Optional[str] = None,
-        agg: str = "sum",
-    ) -> Dict[str, Any]:
-        if not is_counter(name):
-            return super().metrics_query(name, start_s, end_s, bucket_s, group_by=group_by, agg=agg)
-        validate_metric_name(name)
-        label = validate_label_name(group_by)
-        label = label.replace(".", "_") if label else None
-        start_ns, end_ns = int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000
-        params = {
-            "query": name,
-            "start": int(start_s) - LOOKBEHIND_S,
-            "end": int(end_s),
-            "step": _ROLLUP_STEP_S,
-        }
-        url = f"{self._prometheus()}/api/v1/query_range?{_urlparse.urlencode(params)}"
-        data = http_get_json(url, timeout=30.0)
-        samples: List[tuple] = []
-        labels_of: Dict[str, str] = {}
-        for series in ((data.get("data") or {}).get("result")) if isinstance(data, dict) else []:
-            metric = series.get("metric") or {}
-            ident = "|".join(f"{k}={v}" for k, v in sorted(metric.items()) if k != "__name__")
-            labels_of[ident] = str(metric.get(label, "—")) if label else "_"
-            for ts, value in series.get("values") or []:
-                try:
-                    samples.append((int(float(ts)) * 1_000_000_000, float(value), ident))
-                except (TypeError, ValueError):
-                    continue
-        increases = counter_increases(samples, window_start_ns=start_ns)
-        points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in increases]
-        out = bucketize(points, start_ns, end_ns, bucket_s, agg if agg != "last" else "sum")
-        out["agg"] = effective_agg(name, agg)
-        out["agg_requested"] = agg
-        out["name"] = name
-        out["cumulative"] = True
-        out["promql"] = name
-        out["series_start_rule"] = (
-            f"a series with no sample in the {LOOKBEHIND_S}s before the window counts its first value"
-        )
-        return out
 
     # ── logs: Gigapipe's label set ────────────────────────────────────
 
