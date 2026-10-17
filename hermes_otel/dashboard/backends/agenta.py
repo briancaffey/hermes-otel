@@ -44,7 +44,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import card_attrs, card_row, flatten_dotted, otlp_batches, otlp_span
+from .shapes import SpanRow, flatten_dotted, otlp_kind, trace_detail
 from .victoria import rfc3339_to_ns
 
 _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
@@ -56,13 +56,6 @@ _MAX_TRACE_SPANS = 2000
 # ``input.value`` / ``gen_ai.input.messages`` already carry them.
 _FREE_TEXT_KEYS = ("input.value", "output.value")  # the roots' prompt and answer
 _DROP_PREFIXES = ("ag.data.", "ag.meta.")
-_KIND = {
-    "SPAN_KIND_INTERNAL": 1,
-    "SPAN_KIND_SERVER": 2,
-    "SPAN_KIND_CLIENT": 3,
-    "SPAN_KIND_PRODUCER": 4,
-    "SPAN_KIND_CONSUMER": 5,
-}
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
 
 
@@ -204,11 +197,22 @@ class AgentaAdapter(BackendAdapter):
         flat = flatten_dotted(span.get("attributes") or {}, keep_empty=True)
         return {k: v for k, v in flat.items() if not k.startswith(_DROP_PREFIXES)}
 
-    @staticmethod
-    def _times(span: Dict[str, Any]) -> tuple:
+    def _row(self, span: Dict[str, Any], trace_id: Any = None) -> SpanRow:
+        """An Agenta span as a row. A missing end is the start; resource
+        attributes are not stored, so the plugin's service name stands in."""
         start = rfc3339_to_ns(span.get("start_time"))
-        end = rfc3339_to_ns(span.get("end_time")) or start
-        return start, end
+        return SpanRow(
+            str(span.get("trace_id") or trace_id or ""),
+            span.get("span_id"),
+            span.get("parent_id"),
+            str(span.get("span_name") or ""),
+            start_ns=start,
+            end_ns=rfc3339_to_ns(span.get("end_time")) or start,
+            attrs=self._attrs(span),
+            service=self.default_service,
+            kind=otlp_kind(span.get("span_kind")),
+            status={"code": _STATUS.get(str(span.get("status_code") or ""), 0), "message": ""},
+        )
 
     def _counts(self, trace_ids: List[str]) -> Dict[str, int]:
         if not trace_ids:
@@ -234,46 +238,27 @@ class AgentaAdapter(BackendAdapter):
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         fetch = widened_fetch(limit, f.roots_only, _ROWS_PER_TRACE, inclusive=True)
         seen: set = set()
-        spans: List[Dict[str, Any]] = []
+        spans: List[SpanRow] = []
         for body in self._bodies(f, start_s, end_s, fetch):
             for sp in self._query(body):
                 key = (sp.get("trace_id"), sp.get("span_id"))
                 if key in seen:
                     continue
                 seen.add(key)
-                spans.append(sp)
-        spans.sort(key=lambda sp: self._times(sp)[0], reverse=True)
+                spans.append(self._row(sp))
+        spans.sort(key=lambda r: r.start_ns, reverse=True)
         spans = spans[:fetch]
-        cards: Dict[str, Dict[str, Any]] = {}
-        for sp in spans:
-            tid = str(sp.get("trace_id") or "")
-            if not tid:
+        cards: Dict[str, SpanRow] = {}
+        for r in spans:
+            if not r.trace_id:
                 continue
-            start, end = self._times(sp)
-            if f.min_duration_ms and (end - start) < int(f.min_duration_ms) * 1_000_000:
+            if f.min_duration_ms and r.duration_ns < int(f.min_duration_ms) * 1_000_000:
                 continue
-            prev = cards.get(tid)
-            if prev is None or start < self._times(prev)[0]:
-                cards[tid] = sp
+            prev = cards.get(r.trace_id)
+            if prev is None or r.start_ns < prev.start_ns:
+                cards[r.trace_id] = r
         counts = self._counts(list(cards))
-        rows: List[Dict[str, Any]] = []
-        for tid, sp in cards.items():
-            start, end = self._times(sp)
-            name = sp.get("span_name") or ""
-            rows.append(
-                card_row(
-                    tid,
-                    span_id=sp.get("span_id"),
-                    name=name,
-                    attrs=card_attrs(
-                        self._attrs(sp), name, sp.get("status_code") == "STATUS_CODE_ERROR"
-                    ),
-                    start_ns=start,
-                    duration_ms=max(0, end - start) // 1_000_000,
-                    service=self.default_service,
-                    span_count=counts.get(tid, 1),
-                )
-            )
+        rows = [r.card(counts.get(tid, 1)) for tid, r in cards.items()]
         page = trace_page(strictly_older_traces(rows, f), limit)
         return mark_full_fetch(page, len(spans), fetch, widened=not f.roots_only)
 
@@ -292,28 +277,6 @@ class AgentaAdapter(BackendAdapter):
         )
         if not spans:
             raise not_found(trace_id, "Agenta")
-        otlp = []
-        for sp in spans:
-            start, end = self._times(sp)
-            otlp.append(
-                otlp_span(
-                    sp.get("trace_id") or trace_id,
-                    sp.get("span_id"),
-                    sp.get("parent_id"),
-                    sp.get("span_name"),
-                    start_ns=start,
-                    end_ns=end,
-                    attrs=self._attrs(sp),
-                    status={
-                        "code": _STATUS.get(str(sp.get("status_code") or ""), 0),
-                        "message": "",
-                    },
-                    kind=_KIND.get(str(sp.get("span_kind") or ""), 1),
-                )
-            )
-        return {
-            # Resource attributes are not stored: the plugin's service name stands in.
-            "batches": otlp_batches({self.default_service: otlp}),
-            "span_count": len(otlp),
-            "truncated": len(spans) >= _MAX_TRACE_SPANS,
-        }
+        return trace_detail(
+            [self._row(sp, trace_id) for sp in spans], truncated=len(spans) >= _MAX_TRACE_SPANS
+        )

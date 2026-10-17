@@ -843,5 +843,5 @@ class TestSigNozRowShape:
     def test_unknown_shapes_stay_empty(self):
         from hermes_otel.dashboard.backends.signoz import signoz_trace_to_otlp
 
-        assert signoz_trace_to_otlp("nope") == {"batches": []}
-        assert signoz_trace_to_otlp([{"nothing": 1}]) == {"batches": []}
+        assert signoz_trace_to_otlp("nope")["batches"] == []
+        assert signoz_trace_to_otlp([{"nothing": 1}])["batches"] == []

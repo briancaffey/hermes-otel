@@ -64,14 +64,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import (
-    CARD_ATTRIBUTE_KEYS,
-    card_row,
-    group_by_service,
-    otlp_batches,
-    otlp_span,
-    span_count_of,
-)
+from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
 
 # Entries that switch the service pin on log queries off.
 _NO_PIN = ("", "off", "none", "any", "*")
@@ -461,11 +454,8 @@ class UptraceAdapter(BackendAdapter):
         url = self._api_url(self._path("trace", trace_id=trace_id), [])
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         out = _trace_to_otlp(data)
-        n = span_count_of(out["batches"])
-        if n == 0:
+        if not out["span_count"]:
             raise not_found(trace_id, "Uptrace")
-        out["span_count"] = n
-        out["truncated"] = False
         return out
 
     # ── metrics (#194) ────────────────────────────────────────────────
@@ -690,41 +680,37 @@ def _search_hit(sp: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     )
 
 
+def _row(sp: Dict[str, Any]) -> SpanRow:
+    """One span row of a trace as a row: ms to ns, attribute keys dotted."""
+    start_ns = _ns_from_ms(sp.get("time"))
+    return SpanRow(
+        sp.get("traceId"),
+        sp.get("id"),
+        sp.get("parentId"),
+        str(sp.get("name") or sp.get("displayName") or ""),
+        start_ns=start_ns,
+        end_ns=start_ns + _ns_from_ms(sp.get("duration") or 0) if start_ns else 0,
+        attrs=_attrs_dotted(sp.get("attrs")),
+        service=str(plain_attrs(sp.get("attrs")).get("service_name") or ""),
+        kind=otlp_kind(sp.get("kind")),
+        status=otlp_status(sp.get("statusCode")),
+    )
+
+
 def _trace_to_otlp(data: Any) -> Dict[str, Any]:
-    """A trace's span rows → OTLP batches, one per service.
+    """A trace's span rows → the detail every adapter answers, one batch per
+    service (see :func:`trace_detail`).
 
     2.1's ``/traces/{p}/{id}`` nests a span's log records under ``logs``; the
     tree only needs the spans (the Logs sub-tab queries logs by trace id).
     """
-    spans_raw = [
-        sp
-        for sp in ((data.get("spans") if isinstance(data, dict) else None) or [])
-        if isinstance(sp, dict)
-    ]
-
-    def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-        start_ns = _ns_from_ms(sp.get("time"))
-        return otlp_span(
-            sp.get("traceId"),
-            sp.get("id"),
-            sp.get("parentId"),
-            sp.get("name") or sp.get("displayName"),
-            start_ns=start_ns,
-            end_ns=start_ns + _ns_from_ms(sp.get("duration") or 0) if start_ns else 0,
-            attrs=_attrs_dotted(sp.get("attrs")),
-            status=otlp_status(sp.get("statusCode")),
-            kind=_KIND.get(str(sp.get("kind") or "internal"), 1),
-        )
-
-    by_service = group_by_service(
-        spans_raw, lambda sp: plain_attrs(sp.get("attrs")).get("service_name")
+    return trace_detail(
+        [
+            _row(sp)
+            for sp in ((data.get("spans") if isinstance(data, dict) else None) or [])
+            if isinstance(sp, dict)
+        ]
     )
-    return {
-        "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-    }
-
-
-_KIND = {"internal": 1, "server": 2, "client": 3, "producer": 4, "consumer": 5}
 
 
 def _log_record(sp: Dict[str, Any]) -> Dict[str, Any]:

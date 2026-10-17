@@ -201,8 +201,8 @@ class TestNormalizeTrace:
         ]
 
     def test_empty_or_odd_input(self):
-        assert gp.normalize_trace({}) == {"batches": []}
-        assert gp.normalize_trace(None) == {"batches": []}
+        assert gp.normalize_trace({})["batches"] == []
+        assert gp.normalize_trace(None)["batches"] == []
 
 
 class TestTraces:

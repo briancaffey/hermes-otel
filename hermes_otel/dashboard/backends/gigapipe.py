@@ -42,8 +42,6 @@ from .base import (
     http_get_json,
     not_found,
     query_origin,
-    root_of,
-    span_matches,
     validate_label_name,
     validate_metric_name,
 )
@@ -51,15 +49,14 @@ from .metrics_math import bucketize, counter_increases
 from .paging import log_end_ns, strictly_older
 from .severity import severity_number_for
 from .shapes import (
-    card_attrs,
-    card_span_set,
-    group_by_service,
+    SpanRow,
+    card_from_trace,
     otlp_attrs_to_dict,
-    otlp_batches,
     otlp_event,
-    otlp_span,
+    otlp_kind,
     span_count_of,
     to_int,
+    trace_detail,
 )
 from .tempo import TempoAdapter, _dedupe_spans
 from .zipkin import coerce_tag
@@ -88,43 +85,64 @@ def _typed_attrs(items: Any) -> Dict[str, Any]:
     return {k: coerce_tag(str(k), v) for k, v in otlp_attrs_to_dict(items).items()}
 
 
-def normalize_trace(data: Any) -> Dict[str, Any]:
-    """Gigapipe's ``/api/traces/{id}`` JSON → the Tempo ``batches`` shape with
-    typed attributes, one batch per ``serviceName``."""
-    groups = (data or {}).get("resourceSpans") if isinstance(data, dict) else None
-    raw_spans: List[Dict[str, Any]] = [
-        sp
-        for rs in groups or []
-        if isinstance(rs, dict)
-        for scope in (rs.get("instrumentationLibrarySpans") or rs.get("scopeSpans") or [])
-        for sp in (scope or {}).get("spans") or []
-        if isinstance(sp, dict)
-    ]
+def _row(sp: Dict[str, Any]) -> SpanRow:
+    """A span of Gigapipe's pre-1.0 OTLP JSON as a row, values coerced back,
+    the service from the span's own ``serviceName``."""
+    return SpanRow(
+        str(sp.get("traceId") or sp.get("traceID") or "").lower(),
+        sp.get("spanId") or sp.get("spanID"),
+        sp.get("parentSpanId") or sp.get("parentSpanID"),
+        str(sp.get("name") or ""),
+        start_ns=to_int(sp.get("startTimeUnixNano")),
+        end_ns=to_int(sp.get("endTimeUnixNano")),
+        attrs=_typed_attrs(sp.get("attributes")),
+        service=str(sp.get("serviceName") or ""),
+        kind=otlp_kind(sp.get("kind")),
+        status=sp.get("status") or {},
+        events=[
+            otlp_event(ev.get("name"), ev.get("timeUnixNano"), _typed_attrs(ev.get("attributes")))
+            for ev in sp.get("events") or []
+            if isinstance(ev, dict)
+        ],
+    )
 
-    def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-        return otlp_span(
-            str(sp.get("traceId") or sp.get("traceID") or "").lower(),
-            sp.get("spanId") or sp.get("spanID"),
-            sp.get("parentSpanId") or sp.get("parentSpanID"),
-            sp.get("name"),
+
+def normalize_trace(data: Any) -> Dict[str, Any]:
+    """Gigapipe's ``/api/traces/{id}`` JSON → the detail every adapter answers
+    (see :func:`trace_detail`), typed attributes, one batch per ``serviceName``."""
+    groups = (data or {}).get("resourceSpans") if isinstance(data, dict) else None
+    return trace_detail(
+        [
+            _row(sp)
+            for rs in groups or []
+            if isinstance(rs, dict)
+            for scope in (rs.get("instrumentationLibrarySpans") or rs.get("scopeSpans") or [])
+            for sp in (scope or {}).get("spans") or []
+            if isinstance(sp, dict)
+        ]
+    )
+
+
+def _detail_rows(batches: List[Dict[str, Any]]) -> List[SpanRow]:
+    """A detail's spans (see :func:`normalize_trace`) back as rows, by start:
+    what a search card is picked from."""
+    rows = [
+        SpanRow(
+            sp.get("traceId"),
+            sp.get("spanId"),
+            sp.get("parentSpanId"),
+            str(sp.get("name") or ""),
             start_ns=to_int(sp.get("startTimeUnixNano")),
             end_ns=to_int(sp.get("endTimeUnixNano")),
-            attrs=_typed_attrs(sp.get("attributes")),
+            attrs=otlp_attrs_to_dict(sp.get("attributes")),
             status=sp.get("status") or {},
-            kind=int(sp.get("kind") or 1),
-            events=[
-                otlp_event(
-                    ev.get("name"), ev.get("timeUnixNano"), _typed_attrs(ev.get("attributes"))
-                )
-                for ev in sp.get("events") or []
-                if isinstance(ev, dict)
-            ],
         )
-
-    by_service = group_by_service(raw_spans, lambda sp: sp.get("serviceName"))
-    return {
-        "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-    }
+        for b in batches
+        for sc in b.get("scopeSpans") or []
+        for sp in sc["spans"]
+    ]
+    rows.sort(key=lambda r: r.start_ns)
+    return rows
 
 
 # Concurrent detail fetches per search page (one per card that needs one).
@@ -194,39 +212,20 @@ class GigapipeAdapter(TempoAdapter):
             detail = details.get(row["traceID"])
             if detail is None:
                 continue
-            all_spans = [
-                sp
-                for b in detail["batches"]
-                for sc in b.get("scopeSpans") or []
-                for sp in sc["spans"]
-            ]
-            all_spans.sort(key=lambda sp: int(sp.get("startTimeUnixNano") or 0))
-            if f.roots_only:
-                card = root_of(
-                    all_spans, lambda sp: sp.get("spanId"), lambda sp: sp.get("parentSpanId")
-                )
-            else:
-                # Widened (kind / tool filter): Gigapipe's one-span set names an
-                # arbitrary matching span; the card is the first matching span
-                # of the trace, as the other adapters show it.
-                card = next(
-                    (sp for sp in all_spans if self._span_matches(sp, f)),
-                    None,
-                )
-                if card is None:
-                    wanted = spans[0].get("spanID") if spans else None
-                    card = next((sp for sp in all_spans if sp.get("spanId") == wanted), None)
+            rows = _detail_rows(detail["batches"])
+            # Roots-only ran on the server (``nestedSetParent < 0`` with every
+            # predicate): the root is the card. Widened (kind / tool filter),
+            # Gigapipe's one-span set names an arbitrary matching span: the
+            # card is the first matching span of the trace, as the other
+            # adapters show it, else the span the set named.
+            card = card_from_trace(f, rows, check_all=True, server_roots=True)
+            if card is None:
+                wanted = spans[0].get("spanID") if spans else None
+                named = next((r for r in rows if r.span_id == wanted), None)
+                card = named.card(len(rows)) if named is not None else None
             if card is None:
                 continue
-            name = card.get("name") or row.get("rootTraceName") or ""
-            attrs = card_attrs(
-                otlp_attrs_to_dict(card.get("attributes")),
-                name,
-                (card.get("status") or {}).get("code") == 2,
-            )
-            row["spanSets"] = [card_span_set(card.get("spanId"), name, attrs, len(all_spans))]
-            row["spanCount"] = len(all_spans)
-            row["rootTraceName"] = name
+            row.update({k: card[k] for k in ("spanSets", "spanCount", "rootTraceName")})
             if not row.get("rootServiceName"):
                 for b in detail["batches"]:
                     service = otlp_attrs_to_dict((b.get("resource") or {}).get("attributes")).get(
@@ -235,16 +234,6 @@ class GigapipeAdapter(TempoAdapter):
                     if service:
                         row["rootServiceName"] = service
         return page
-
-    @staticmethod
-    def _span_matches(span: Dict[str, Any], f: StructuredFilter) -> bool:
-        """The widened search's structured predicates, re-applied to a detail span."""
-        return span_matches(
-            f,
-            name=str(span.get("name") or ""),
-            attrs=otlp_attrs_to_dict(span.get("attributes")),
-            error=(span.get("status") or {}).get("code") == 2,
-        )
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
@@ -258,8 +247,7 @@ class GigapipeAdapter(TempoAdapter):
         n = span_count_of(data["batches"])
         if n == 0:
             raise not_found(trace_id, "Gigapipe")
-        data["span_count"] = n
-        data["truncated"] = False
+        data["span_count"] = n  # after the dedupe
         return data
 
     # ── metrics: counters via query_range on the 15 s rollup ──────────
