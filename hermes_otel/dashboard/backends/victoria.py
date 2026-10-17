@@ -14,7 +14,7 @@ Three stores, three read paths, one entry:
   and ``error="false"`` is not an error. ``limit`` is over-fetched and the page
   cut here, as for GreptimeDB.
 * Metrics: VictoriaMetrics speaks the Prometheus API, including range-vector
-  instant queries, so the shared Prometheus reader is used as-is. It expects
+  instant queries, so the ``PrometheusMetrics`` mixin is used as-is. It expects
   the Prometheus spelling the bundled stack produces with
   ``-opentelemetry.usePrometheusNaming`` (``hermes_token_usage_total``).
 * Logs: VictoriaLogs' ``/select/logsql/query`` answers NDJSON rows with
@@ -36,8 +36,7 @@ from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
 from . import register
-from ._prometheus import metric_names as _prom_metric_names
-from ._prometheus import metrics_query as _prom_metrics_query
+from ._prometheus import PrometheusMetrics
 from .base import (
     BackendError,
     ConfigError,
@@ -88,7 +87,7 @@ def logsql_str(value: Any) -> str:
 
 
 @register
-class VictoriaAdapter(JaegerAdapter):
+class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
     handles = frozenset({"victoria", "victoriatraces"})
     query_lang_label = "Jaeger tags (key=value)"
     raw_placeholder = "tool.name=terminal error=true"
@@ -101,13 +100,11 @@ class VictoriaAdapter(JaegerAdapter):
         self.query_api = "v1"  # the Jaeger-compatible API has no v3
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
-        self.prometheus_url = _origin(cfg.get("prometheus_url")) or _origin(
-            cfg.get("metrics_endpoint")
+        self._use_prometheus(
+            _origin(cfg.get("prometheus_url")) or _origin(cfg.get("metrics_endpoint")), cfg
         )
         self.logs_url = _origin(cfg.get("logs_url")) or _origin(cfg.get("logs_endpoint"))
-        self.supports_metrics = self.prometheus_url is not None
         self.supports_logs = self.logs_url is not None
-        self.metrics_match = cfg.get("metrics_match") or None
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
@@ -136,38 +133,6 @@ class VictoriaAdapter(JaegerAdapter):
             if isinstance(tag, dict) and tag.get("key"):
                 out[tag["key"]] = coerce_tag(str(tag["key"]), tag.get("value"))
         return out
-
-    # ── metrics via the Prometheus reader ─────────────────────────────
-
-    def _prometheus(self) -> str:
-        if not self.prometheus_url:
-            raise ConfigError("This backend has no metrics_endpoint / prometheus_url configured")
-        return self.prometheus_url
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _prom_metric_names(
-            self._prometheus(), start_s, end_s, self.metrics_match, headers=self._headers()
-        )
-
-    def metrics_query(
-        self,
-        name: str,
-        start_s: int,
-        end_s: int,
-        bucket_s: int,
-        group_by: Optional[str] = None,
-        agg: str = "sum",
-    ) -> Dict[str, Any]:
-        return _prom_metrics_query(
-            self._prometheus(),
-            name,
-            start_s,
-            end_s,
-            bucket_s,
-            group_by=group_by,
-            agg=agg,
-            headers=self._headers(),
-        )
 
     # ── logs via LogsQL ───────────────────────────────────────────────
 

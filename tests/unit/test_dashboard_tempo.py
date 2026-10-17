@@ -31,6 +31,7 @@ from hermes_otel.dashboard.backends.base import (
     StructuredFilter,
     split_applied_filters,
 )
+from hermes_otel.dashboard.backends.metrics_math import fold_samples
 
 MODULES = {
     "phx": phoenix,
@@ -270,8 +271,29 @@ class TestTempo:
         }
 
     def test_prometheus_last_on_a_counter_is_an_honest_sum(self):
-        assert _prometheus.effective_agg("c_total", "last") == "sum"
-        assert _prometheus.effective_agg("g", "last") == "last"
+        # ``last`` of a counter's increases is folded and reported as ``sum``,
+        # the ask kept in ``agg_requested``; a gauge keeps ``last`` and carries
+        # no ``cumulative`` / ``series_start_rule`` key (#515).
+        samples = [(NS, 2.0, "s"), (2 * NS, 5.0, "s")]
+
+        def fold(cumulative):
+            return fold_samples(
+                samples, {"s": "x"}, 0, 3 * NS, 60, "last", name="n", cumulative=cumulative
+            )
+
+        counter, gauge = fold(True), fold(False)
+        assert (counter["agg"], counter["agg_requested"], counter["cumulative"]) == (
+            "sum",
+            "last",
+            True,
+        )
+        assert "300s before the window" in counter["series_start_rule"]
+        assert (gauge["agg"], gauge["agg_requested"], gauge["series"]) == (
+            "last",
+            "last",
+            {"x": [5.0]},
+        )
+        assert "cumulative" not in gauge and "series_start_rule" not in gauge
         with pytest.raises(BackendError) as exc:
             _prometheus.promql_for("up) or vector(1", 60, None, "sum")
         assert exc.value.kind == "request"

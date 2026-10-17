@@ -38,7 +38,7 @@ from .base import (
     require_credential,
     resolve_env_or_literal,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import bucketize, increases_per_process
 from .paging import (
     log_end_ns,
     strictly_older,
@@ -535,20 +535,18 @@ class SigNozAdapter(BackendAdapter):
         grid_start_s = int(start_s) - int(start_s) % step
         data = self._query_range(_composite(query, "graph", grid_start_s, end_s, bucket_s))
         if cumulative:
-            samples = [
+            points = increases_per_process(
                 (
-                    ts_ns,
-                    value,
-                    f"{labels.get(group_by, '—') if group_by else '_'}\x00{labels.get(_INSTANCE_KEY, '')}",
-                )
-                for labels, ts_ns, value in _iter_series_points(data)
-            ]
-            points = [
-                (ts_ns, value, ident.split("\x00", 1)[0])
-                for ts_ns, value, ident in counter_increases(
-                    samples, window_start_ns=grid_start_s * 1_000_000_000
-                )
-            ]
+                    (
+                        ts_ns,
+                        value,
+                        labels.get(group_by, "—") if group_by else "_",
+                        labels.get(_INSTANCE_KEY, ""),
+                    )
+                    for labels, ts_ns, value in _iter_series_points(data)
+                ),
+                window_start_ns=grid_start_s * 1_000_000_000,
+            )
         else:
             points = [
                 (ts_ns, value, labels.get(group_by, "_") if group_by else "_")

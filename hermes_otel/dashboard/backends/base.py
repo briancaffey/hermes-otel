@@ -537,6 +537,12 @@ class BackendAdapter:
         the route (#185). ``None`` means no link is offered; never a guess."""
         return None
 
+    def _headers(self) -> Dict[str, str]:
+        """The HTTP headers every read carries (auth, mostly): none by default.
+        An adapter with credentials overrides this; the shared readers
+        (``_prometheus``, ``_loki``) call it."""
+        return {}
+
     # ── metrics (same shapes as the live store's endpoints) ───────────
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
         """``[{name, count?, lastTs?}]`` for instruments with data in the window."""

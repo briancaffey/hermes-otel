@@ -5,6 +5,10 @@ attributes become stream labels or structured metadata depending on its
 ``otlp_config``. LogQL label-filter stages (``| key="value"``) match both,
 so every filter here is written as a pipeline stage on a broad stream
 selector rather than baked into the selector.
+
+:class:`LokiLogs` is the logs half of an adapter whose store speaks this API
+(Tempo / LGTM, Gigapipe): the adapter sets the read URL once, the mixin
+answers ``logs_search`` / ``loggers`` with the adapter's own ``_headers()``.
 """
 
 from __future__ import annotations
@@ -13,7 +17,7 @@ from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
 from ._attrs import dotted as _dotted
-from .base import LogColumns, LogFilter, http_get_json, log_row
+from .base import ConfigError, LogColumns, LogFilter, http_get_json, log_row
 from .paging import log_end_ns, strictly_older
 from .severity import otel_severity_for
 
@@ -130,3 +134,33 @@ def loggers(
             except (TypeError, ValueError):
                 continue
     return sorted(out, key=lambda r: -r["count"])
+
+
+class LokiLogs:
+    """The logs half of an adapter whose store speaks the Loki API: the
+    adapter calls :meth:`_use_loki` once it knows the read URL (``None`` when
+    the entry has no Loki), the reads above then run with the entry's
+    ``loki_selector`` and the adapter's own ``_headers()``."""
+
+    loki_url: Optional[str] = None
+    loki_selector: str = DEFAULT_SELECTOR
+
+    def _use_loki(self, url: Optional[str], cfg: Dict[str, Any]) -> None:
+        self.loki_url = url
+        self.loki_selector = cfg.get("loki_selector") or DEFAULT_SELECTOR
+        self.supports_logs = url is not None
+
+    def _loki(self) -> str:
+        if not self.loki_url:
+            raise ConfigError("This backend has no loki_url configured")
+        return self.loki_url
+
+    def logs_search(
+        self, f: LogFilter, start_s: int, end_s: int, limit: int
+    ) -> List[Dict[str, Any]]:
+        return logs_search(
+            self._loki(), f, start_s, end_s, limit, self.loki_selector, headers=self._headers()
+        )
+
+    def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
+        return loggers(self._loki(), start_s, end_s, self.loki_selector, headers=self._headers())

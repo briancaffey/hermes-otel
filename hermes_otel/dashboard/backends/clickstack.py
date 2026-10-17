@@ -50,7 +50,7 @@ from .base import (
     validate_label_name,
     validate_metric_name,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import LOOKBEHIND_S, fold_samples, series_ident
 from .paging import (
     LOG_PAGE_SLACK,
     log_end_ns,
@@ -67,9 +67,6 @@ from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, to_int, trace_de
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
 _DEFAULT_METRICS_MATCH = r"^(hermes|gen_ai|process|system|hw)[._]"
-# Counters need the samples just before the window to tell a new series (its
-# first value counts) from a running one (#296); same look-behind as Prometheus.
-LOOKBEHIND_S = 300
 # A widened search (kind / tool filter) is built from span rows; several spans
 # of one trace share a page, so fetch a few rows per requested trace.
 _ROWS_PER_TRACE = 4
@@ -411,8 +408,7 @@ class ClickstackAdapter(BackendAdapter):
             except (TypeError, ValueError):
                 continue
             attrs = row.get("Attributes") if isinstance(row.get("Attributes"), dict) else {}
-            ident = "|".join(f"{k}={v}" for k, v in sorted(attrs.items()))
-            ident = f"{ident}|instance={row.get('inst') or ''}"
+            ident = series_ident(attrs, instance=row.get("inst") or "")
             if label:
                 # The plugin's metric attributes use both spellings
                 # (``gen_ai.tool.name`` and ``tool_name``); the UI asks with dots.
@@ -421,23 +417,9 @@ class ClickstackAdapter(BackendAdapter):
             else:
                 labels_of[ident] = "_"
             samples.append((ts_ns, value, ident))
-        if cumulative:
-            increases = counter_increases(samples, window_start_ns=start_ns)
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in increases]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg if agg != "last" else "sum")
-            out["cumulative"] = True
-            out["agg"] = "sum" if agg == "last" else agg
-            out["series_start_rule"] = (
-                f"a series with no sample in the {LOOKBEHIND_S}s before the window "
-                "counts its first value"
-            )
-        else:
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in samples]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg)
-            out["agg"] = agg
-        out["agg_requested"] = agg
-        out["name"] = name
-        return out
+        return fold_samples(
+            samples, labels_of, start_ns, end_ns, bucket_s, agg, name=name, cumulative=cumulative
+        )
 
     # ── logs (#268 shapes) ────────────────────────────────────────────
 
