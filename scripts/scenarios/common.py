@@ -9,13 +9,15 @@ from __future__ import annotations
 
 import copy
 import datetime as dt
-import os
 import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path.insert(0, str(REPO / "scripts"))
+from _common import profile_home  # noqa: E402
+
 DEFAULT_SCENARIOS = HERE / "scenarios.yaml"
 DEFAULT_PROFILE = "scenarios"
 MODES = ("cli", "resume", "gateway", "cron", "kanban")
@@ -31,17 +33,6 @@ def yaml_mod():
 
 
 # ── Profiles ─────────────────────────────────────────────────────────────
-
-
-def hermes_root() -> Path:
-    """The Hermes root that holds ``profiles/`` (``$HERMES_HOME`` or ``~/.hermes``)."""
-    env = os.environ.get("HERMES_HOME")
-    return Path(env).expanduser() if env else Path.home() / ".hermes"
-
-
-def profile_home(profile: str) -> Path:
-    root = hermes_root()
-    return root if profile in ("", "default") else root / "profiles" / profile
 
 
 def runs_dir(profile: str, token: str) -> Path:

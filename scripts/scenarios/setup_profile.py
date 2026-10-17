@@ -39,9 +39,9 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
-from common import DEFAULT_PROFILE, REPO, merge, profile_home, yaml_mod  # noqa: E402
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[1])]
+from _common import profile_home  # noqa: E402
+from common import DEFAULT_PROFILE, REPO, merge, yaml_mod  # noqa: E402
 
 DISABLED_TOOLSETS = [
     "browser",

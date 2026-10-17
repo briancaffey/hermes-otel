@@ -35,13 +35,18 @@ import sqlite3
 import subprocess
 import sys
 import time
-import urllib.parse
-import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+sys.path[:0] = [str(REPO), str(REPO / "scripts")]
+from _common import profile_home  # noqa: E402
+
+from hermes_otel.dashboard.backends.base import StructuredFilter  # noqa: E402
+from hermes_otel.dashboard.backends.jaeger import JaegerAdapter  # noqa: E402
+from hermes_otel.query_sources import spans_from_otlp  # noqa: E402
+
 TERMINAL = {"done", "blocked", "archived"}
 DEFAULT_MODELS = {
     "fleet-worker": "nvidia/nemotron-3.5-lightning-30b-a3b",
@@ -51,14 +56,6 @@ DEFAULT_MODELS = {
 
 def log(msg: str) -> None:
     print(f"[{dt.datetime.now().strftime('%H:%M:%S')}] {msg}", flush=True)
-
-
-def hermes_root() -> Path:
-    return Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
-
-
-def profile_home(name: str) -> Path:
-    return hermes_root() if name in ("", "default") else hermes_root() / "profiles" / name
 
 
 def hermes(
@@ -155,51 +152,42 @@ def tasks(db: Path) -> List[Dict[str, Any]]:
 # --- jaeger -----------------------------------------------------------------
 
 
-def jaeger_get(base: str, path: str, **params: Any) -> Any:
-    url = f"{base.rstrip('/')}{path}" + (f"?{urllib.parse.urlencode(params)}" if params else "")
-    with urllib.request.urlopen(url, timeout=30) as r:
-        return json.load(r)
-
-
 def runs_from_jaeger(base: str, task_ids: List[str]) -> Dict[str, List[Dict[str, Any]]]:
-    """Per task id: each trace that holds its kanban.claim, summarised."""
+    """Per task id: each trace that holds its kanban.claim, summarised.
+
+    Read through the dashboard's Jaeger adapter and decoded by the package
+    (``spans_from_otlp``), so this report sees the traces exactly as the
+    dashboard and ``hermes-otel query`` do.
+    """
+    jaeger = JaegerAdapter({"endpoint": base, "service_name": "hermes-agent"})
+    now = int(time.time())
     out: Dict[str, List[Dict[str, Any]]] = {}
     for tid in task_ids:
-        data = (
-            jaeger_get(
-                base,
-                "/api/traces",
-                service="hermes-agent",
-                lookback="2h",
-                limit=20,
-                tags=json.dumps({"hermes.kanban.task_id": tid}),
-            ).get("data")
-            or []
-        )
+        f = StructuredFilter(attr_equals={"hermes.kanban.task_id": tid}, roots_only=False)
+        cards = jaeger.search(f, now - 2 * 3600, now, 20).get("traces") or []
         rows = []
-        for t in data:
-            spans = t["spans"]
-            ids = {s["spanID"] for s in spans}
-            names = [s["operationName"] for s in spans]
-            if "kanban.claim" not in names:
+        for card in cards:
+            trace_id = card.get("traceID")
+            spans = spans_from_otlp(jaeger.get_trace(trace_id))
+            if "kanban.claim" not in {s["name"] for s in spans}:
                 continue
-            tags = {s["spanID"]: {x["key"]: x["value"] for x in s["tags"]} for s in spans}
-            agents = [s for s in spans if s["operationName"] == "agent"]
+            ids = {s["span_id"] for s in spans}
             worker = next(
-                (s for s in agents if tags[s["spanID"]].get("hermes.kanban.task_id") == tid), None
+                (
+                    s
+                    for s in spans
+                    if s["name"] == "agent" and s["attributes"].get("hermes.kanban.task_id") == tid
+                ),
+                None,
             )
-            wt = tags[worker["spanID"]] if worker else {}
-            proc = t["processes"][worker["processID"]] if worker else {}
-            rtags = {x["key"]: x["value"] for x in proc.get("tags", [])}
+            wt = worker["attributes"] if worker else {}
             rows.append(
                 {
-                    "trace": t["traceID"],
+                    "trace": trace_id,
                     "spans": len(spans),
                     "has_worker": worker is not None,
-                    "worker_parented": bool(
-                        worker and any(r["spanID"] in ids for r in worker.get("references", []))
-                    ),
-                    "profile": wt.get("hermes.profile") or rtags.get("hermes.profile"),
+                    "worker_parented": bool(worker and worker["parent_span_id"] in ids),
+                    "profile": wt.get("hermes.profile"),
                     "model": wt.get("gen_ai.request.model"),
                     "trigger": wt.get("hermes.turn.trigger"),
                     "input_tokens": wt.get("gen_ai.usage.input_tokens"),

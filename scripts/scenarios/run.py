@@ -54,15 +54,14 @@ import urllib.request
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
-
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[1])]
+from _common import profile_home  # noqa: E402
 from common import (  # noqa: E402
     DEFAULT_PROFILE,
     DEFAULT_SCENARIOS,
     Overlay,
     default_token,
     load_scenarios,
-    profile_home,
     render,
     runs_dir,
     select,
