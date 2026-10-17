@@ -5,6 +5,7 @@ VictoriaMetrics + VictoriaLogs) and the per-signal endpoints it introduced on
 import pytest
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import spec_for
 from hermes_otel.plugin_config import BackendConfig
 
 VT, VM, VL = "http://localhost:10428", "http://localhost:8428", "http://localhost:9428"
@@ -110,7 +111,7 @@ class TestVictoriaBackendType:
         assert rb.logs_endpoint == "http://vl:9428/insert/opentelemetry/v1/logs"
 
     def test_no_temporality_preset_and_signal_table(self):
-        assert backends.preset_temporality("victoria") is None
+        assert spec_for("victoria").temporality is None
         assert backends.signal_support("victoria") == {
             "traces": True,
             "metrics": True,

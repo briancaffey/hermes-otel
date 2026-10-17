@@ -146,7 +146,7 @@ def rewrite_host_for_docker(host: str) -> str:
 def resolve_env_or_literal(cfg: Dict[str, Any], literal_key: str, env_key: str) -> Optional[str]:
     """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]`` names.
 
-    The same precedence as the exporter's ``backends._resolve_secret`` (inline
+    The same precedence as the exporter's ``backends.choose_secret`` (inline
     > named env), so an entry that sets both queries with the key it exports
     with (#413). ``*_env`` keeps secrets out of yaml; inline stays for
     convenience.

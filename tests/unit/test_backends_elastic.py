@@ -8,6 +8,7 @@ is verified manually in the Elastic UI rather than here.
 import pytest
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import spec_for
 from hermes_otel.plugin_config import BackendConfig
 
 
@@ -42,8 +43,7 @@ class TestElasticBackendType:
     def test_no_key_omits_authorization_header(self):
         # A self-hosted EDOT Collector on a trusted network runs without auth.
         rb = backends.resolve(BackendConfig(type="elastic", endpoint="http://localhost:4318"))
-        assert "Authorization" not in rb.headers
-        assert rb.headers == {}
+        assert rb.headers is None
 
     def test_missing_endpoint_raises(self):
         with pytest.raises(ValueError, match="endpoint"):
@@ -176,7 +176,7 @@ class TestElasticBackendType:
 
     def test_delta_temporality_preset(self):
         # ES does not handle cumulative histograms; elastic defaults to delta.
-        assert backends.preset_temporality("elastic") == "delta"
+        assert spec_for("elastic").temporality == "delta"
         rb = backends.resolve(BackendConfig(type="elastic", endpoint="http://localhost:4318"))
         assert rb.metrics_temporality == "delta"
 

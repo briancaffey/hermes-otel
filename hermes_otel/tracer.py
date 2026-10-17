@@ -32,7 +32,8 @@ from . import backends as _backends
 from . import flush as _flush
 from . import host_bridge as _host
 from . import pipeline as _pipeline
-from .backends import _TRACES_ONLY, _ResolvedBackend
+from .backend_specs import ENV_PRIORITY
+from .backends import _ResolvedBackend
 from .debug_utils import (
     close_debug_log,
     debug_log,
@@ -63,7 +64,7 @@ from .pipeline import (  # noqa: F401 — re-exported
     is_mcp_keepalive_ping,
     strip_root_usage,
 )
-from .plugin_config import HermesOtelConfig, load_config
+from .plugin_config import BackendConfig, HermesOtelConfig, load_config
 from .session_state import SessionState
 from .span_tracker import SpanTracker, sweep_attributes
 
@@ -272,7 +273,7 @@ class HermesOTelPlugin:
              ``_init_otlp_pipeline``.
           2. Explicit ``endpoint`` arg → single Phoenix backend.
           3. Legacy env-var detection (single backend, first match wins, in
-             the order of ``backends._ENV_PRIORITY``).
+             the order of ``backend_specs.ENV_PRIORITY``).
 
         Returns True if at least one backend was initialized.
         """
@@ -302,12 +303,7 @@ class HermesOTelPlugin:
 
         # 2. Explicit endpoint arg → single Phoenix backend.
         if endpoint:
-            backend = _ResolvedBackend(
-                type="phoenix",
-                endpoint=endpoint,
-                display_name="Phoenix",
-                supports_metrics="phoenix" not in _TRACES_ONLY,
-            )
+            backend = _backends.resolve(BackendConfig(type="phoenix", endpoint=endpoint))
             return self._init_otlp_pipeline([backend])
 
         # 3. Legacy env-var detection (single backend).
@@ -338,7 +334,7 @@ class HermesOTelPlugin:
                     "live-only mode (in-process dashboard store)."
                 )
                 return self._init_otlp_pipeline([])
-            types = ", ".join(_backends._ENV_PRIORITY)
+            types = ", ".join(ENV_PRIORITY)
             logger.warning(
                 "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
                 f"type's credentials for one of: {types}; or define 'backends:' in "
