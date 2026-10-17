@@ -230,13 +230,13 @@ class TestOnPreToolCall:
 
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
-        assert mock_tracer.sessions.has_tool_start("bash:t1")
+        assert mock_tracer.spans.has_started("bash:t1")
 
     def test_uses_tool_call_id_for_key_and_attribute(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="task-1", tool_call_id="call-1")
         assert mock_tracer.start_span.call_args[1]["key"] == "bash:call-1"
         assert mock_tracer.start_span.call_args[1]["attributes"]["gen_ai.tool.call.id"] == "call-1"
-        assert mock_tracer.sessions.has_tool_start("bash:call-1")
+        assert mock_tracer.spans.has_started("bash:call-1")
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
@@ -245,13 +245,13 @@ class TestOnPreToolCall:
 
 class TestOnPostToolCall:
     def test_ends_tool_span(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="output", task_id="t1")
         mock_tracer.end_span.assert_called_once()
         assert mock_tracer.end_span.call_args[0][0] == "bash:t1"
 
     def test_sets_output_attribute(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="file.txt", task_id="t1")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == "file.txt"
@@ -263,7 +263,7 @@ class TestOnPostToolCall:
             capture_previews=False,
             capture_full_responses=True,
         )
-        mock_tracer.sessions.record_tool_start("mcp_honeycomb_run_query:t1", 1000.0)
+        mock_tracer.spans.mark_started("mcp_honeycomb_run_query:t1", 1000.0)
         on_post_tool_call(
             tool_name="mcp_honeycomb_run_query",
             args={},
@@ -275,20 +275,20 @@ class TestOnPostToolCall:
         assert "gen_ai.tool.call.result" not in attrs
 
     def test_status_ok_on_success(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "ok"
 
     def test_status_error_on_error_result(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result='{"error": "boom"}', task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "error"
         assert "boom" in (kw.get("error_message") or "")
 
     def test_records_tool_duration_metric(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         # The deprecated ms histogram and its seconds successor (#233).
         calls = {c.args[0]: c.args for c in mock_tracer.record_metric.call_args_list}
@@ -298,9 +298,9 @@ class TestOnPostToolCall:
         assert calls["tool_duration_s"][1] == pytest.approx(calls["tool_duration"][1] / 1000.0)
 
     def test_cleans_up_start_time(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
-        assert not mock_tracer.sessions.has_tool_start("bash:t1")
+        assert not mock_tracer.spans.has_started("bash:t1")
 
     @pytest.mark.parametrize(
         "hook_status, expected",
@@ -464,7 +464,7 @@ class TestOnPostToolCall:
         assert attrs["hermes.tool.outcome"] == "timeout"
 
     def test_uses_tool_call_id_to_end_matching_span(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:call-1", 1000.0)
+        mock_tracer.spans.mark_started("bash:call-1", 1000.0)
         on_post_tool_call(
             tool_name="bash",
             args={},
@@ -735,7 +735,7 @@ class TestPerCategoryPreviewCaps:
         from hermes_otel.plugin_config import HermesOtelConfig
 
         mock_tracer.config = HermesOtelConfig(tool_output_preview_max_chars=15)
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="y" * 200, task_id="t1")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert len(attrs["output.value"]) <= 15
@@ -785,7 +785,7 @@ class TestPerCategoryPreviewCaps:
         mock_tracer.config = HermesOtelConfig(
             preview_max_chars=50, tool_output_preview_max_chars=5000
         )
-        mock_tracer.sessions.record_tool_start("bash:t3", 1000.0)
+        mock_tracer.spans.mark_started("bash:t3", 1000.0)
         long_result = "w" * 200
         on_post_tool_call(tool_name="bash", args={}, result=long_result, task_id="t3")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]

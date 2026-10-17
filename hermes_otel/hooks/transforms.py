@@ -88,7 +88,7 @@ def on_transform_terminal_output(
     set_attributes(span, attributes)
     if raw_chars is not None:
         # on_post_tool_call reads this back to measure the output limit.
-        tracer.sessions.record_tool_output_chars(key, raw_chars)
+        tracer.spans.record_tool_output_chars(key, raw_chars)
     return None
 
 

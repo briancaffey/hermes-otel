@@ -326,7 +326,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
 
     tool_call_id = _tool_call_id(task_id, kwargs)
     key = f"{tool_name}:{tool_call_id}"
-    tracer.sessions.record_tool_start(key, time.perf_counter())
+    tracer.spans.mark_started(key)
 
     # OpenInference attributes — Phoenix Info panel
     attributes: Dict[str, Any] = {
@@ -394,7 +394,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     key = f"{tool_name}:{tool_call_id}"
     debug_log(f"  ending span: key={key}")
 
-    start_time = tracer.sessions.pop_tool_start(key)
+    start_time = tracer.spans.pop_started(key)
     ended_at = time.perf_counter()
     duration_ms: Optional[float] = None
     if start_time:
@@ -422,7 +422,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     result_chars = char_count(result)
     if result_chars is not None:
         attributes["hermes.tool.result.chars"] = result_chars
-    raw_chars = tracer.sessions.pop_tool_output_chars(key)
+    raw_chars = tracer.spans.pop_tool_output_chars(key)
     truncated, dropped = terminal_truncation(result_json)
     if raw_chars is not None or truncated:
         # Only Hermes' own record of its limits counts: whitespace stripping,

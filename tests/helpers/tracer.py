@@ -13,10 +13,13 @@ def build_mock_tracer(enabled: bool = True) -> MagicMock:
     span registry so hooks that look spans up behave as in production.
 
     ``spans._active_spans`` is the registry; ``spans._roots`` the session roots
-    tests may seed for ``get_session_root``. Everything else on ``spans`` is a
-    MagicMock method (push/pop_parent, register_skill_span, ...)."""
+    tests may seed for ``get_session_root``; the pending-start and tool-output
+    tables are a real :class:`SpanTracker`'s, so ``has_started`` / ``pop_started``
+    answer truthfully. Everything else on ``spans`` is a MagicMock method
+    (push/pop_parent, register_skill_span, ...)."""
     from hermes_otel.plugin_config import HermesOtelConfig
     from hermes_otel.session_state import SessionState
+    from hermes_otel.span_tracker import SpanTracker
 
     tracer = MagicMock()
     tracer.is_enabled = enabled
@@ -30,6 +33,16 @@ def build_mock_tracer(enabled: bool = True) -> MagicMock:
     tracer.spans.single_active_session = lambda: None
     tracer.spans.get_subagent = lambda sid: None
     tracer.spans.pop_subagent = lambda sid: None
+    timing = SpanTracker()
+    for name in (
+        "mark_started",
+        "has_started",
+        "pop_started",
+        "pop_elapsed",
+        "record_tool_output_chars",
+        "pop_tool_output_chars",
+    ):
+        setattr(tracer.spans, name, getattr(timing, name))
     tracer.sessions = SessionState()
     tracer.config = HermesOtelConfig()
     return tracer

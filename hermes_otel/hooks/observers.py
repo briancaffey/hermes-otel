@@ -10,7 +10,6 @@ prompt; a human-input prompt only as a preview, under ``content_capture``.
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict
 
 from ..debug_utils import debug_log
@@ -22,7 +21,6 @@ _LABEL_MAX = 64
 # hooks); a human_input span would duplicate them, so they are only counted.
 # Every other kind (a clarify question, a password prompt) gets a span.
 _COUNT_ONLY_KINDS = frozenset({"approval"})
-_waits: Dict[str, float] = {}
 
 
 def _label(value: Any, default: str = "unknown") -> str:
@@ -61,10 +59,10 @@ def on_human_input_request(
     if not tracer.is_enabled or not request_id:
         return None
     k = _label(kind)
-    _waits[str(request_id)] = time.perf_counter()
     if k in _COUNT_ONLY_KINDS:
         return None
     sid = str(session_id or "") or None
+    tracer.spans.mark_started(f"human_input:{request_id}")
     attributes: Dict[str, Any] = {"hermes.span_kind": "human_input", "hermes.human_input.kind": k}
     preview = _preview_for(tracer, None, prompt)
     if preview is not None:
@@ -89,12 +87,11 @@ def on_human_input_resolved(
     if not tracer.is_enabled or not request_id:
         return None
     k, result = _label(kind), _label(outcome, "error")
-    started = _waits.pop(str(request_id), None)
-    wait_s = round(time.perf_counter() - started, 3) if started is not None else None
     if k not in _COUNT_ONLY_KINDS:
         attrs: Dict[str, Any] = {"hermes.human_input.outcome": result}
-        if wait_s is not None:
-            attrs["hermes.human_input.wait_s"] = wait_s
+        elapsed = tracer.spans.pop_elapsed(f"human_input:{request_id}")
+        if elapsed is not None:
+            attrs["hermes.human_input.wait_s"] = round(elapsed, 3)
         # Waiting on a person is never itself an error; the outcome says how it ended.
         tracer.end_span(f"human_input:{request_id}", attributes=attrs, status="ok")
     tracer.record_metric("human_input_count", 1, {"kind": k, "outcome": result})

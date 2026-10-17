@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict
 
 from .. import log_events as EV
@@ -101,7 +100,7 @@ def on_pre_approval_request(
             attributes["hermes.approval.description"] = desc
     attributes.update(_gen_ai_attributes(session_id, "approval"))
 
-    tracer.spans.record_approval_start(key, time.perf_counter())
+    tracer.spans.mark_started(key)
     tracer.start_span(
         name=f"approval.{pk}" if pk else "approval",
         key=key,
@@ -147,10 +146,10 @@ def on_post_approval_response(
         # Provenance: human answer vs. smart-guardian (aux LLM) verdict.
         attributes["hermes.approval.decided_by"] = verdict["decided_by"]
 
-    start = tracer.spans.pop_approval_start(key)
+    elapsed = tracer.spans.pop_elapsed(key)
     duration_ms = None
-    if start is not None:
-        duration_ms = (time.perf_counter() - start) * 1000
+    if elapsed is not None:
+        duration_ms = elapsed * 1000
         attributes["hermes.approval.duration_ms"] = round(duration_ms, 1)
 
     approval_span = tracer.spans.get_span(key)
