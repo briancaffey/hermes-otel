@@ -368,10 +368,6 @@ class SessionState:
     Hermes dispatches hooks across threads, so every check-then-insert here
     (``get_or_create``, ``next_turn``'s counter bookkeeping) runs under one
     re-entrant lock.
-
-    Tool timings are keyed by ``f"{tool_name}:{tool_call_id}"`` (with the
-    legacy task id as fallback), not session-scoped, so they live in their own
-    dict alongside the session aggregators.
     """
 
     # Upper bound on remembered turn counters for sessions whose aggregator has
@@ -382,17 +378,15 @@ class SessionState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._sessions: Dict[str, PerSession] = {}
-        self._tool_times: Dict[str, float] = {}
-        # Raw terminal output size per tool key, recorded by the
-        # transform_terminal_output observer and read back in post_tool_call.
-        self._tool_output_chars: Dict[str, int] = {}
         # Turn counters outlive the per-turn PerSession (which on_session_end
         # pops), so continuation turns keep counting: session_id -> last turn.
         self._turn_counters: "OrderedDict[str, int]" = OrderedDict()
         # Session-level bookkeeping for on_session_finalize / on_session_reset
         # (#29): when the session's first turn started (wall clock), the span
         # context of its most recently closed root (so the next session can
-        # link to it), and which session a new one replaced.
+        # link to it; a kanban run's claim span is remembered the same way, so
+        # the run's later transitions join its trace), and which session a new
+        # one replaced.
         self._first_seen: "OrderedDict[str, float]" = OrderedDict()
         self._last_root_context: "OrderedDict[str, Any]" = OrderedDict()
         self._previous_session: "OrderedDict[str, str]" = OrderedDict()
@@ -524,14 +518,18 @@ class SessionState:
             return self._first_seen.get(session_id)
 
     def remember_root_context(self, session_id: str, context: Any) -> None:
-        """Keep the span context of the session's latest closed root span."""
+        """Keep the span context of the session's (or kanban run's) latest
+        closed root span. Bounded like every table here."""
         if not session_id or context is None:
             return
         with self._lock:
             self._remember(self._last_root_context, session_id, context)
 
-    def root_context(self, session_id: str) -> Any:
+    def root_context(self, session_id: str, *, forget: bool = False) -> Any:
+        """The remembered root context, or None; ``forget`` drops it too."""
         with self._lock:
+            if forget:
+                return self._last_root_context.pop(session_id, None)
             return self._last_root_context.get(session_id)
 
     def set_previous(self, new_session_id: str, old_session_id: str) -> None:
@@ -572,34 +570,11 @@ class SessionState:
                 return ps.turn_number
             return self._turn_counters.get(session_id, 0)
 
-    # ── Tool timings ─────────────────────────────────────────────────────
-
-    def record_tool_start(self, key: str, started_at: float) -> None:
-        with self._lock:
-            self._tool_times[key] = started_at
-
-    def pop_tool_start(self, key: str) -> Optional[float]:
-        with self._lock:
-            return self._tool_times.pop(key, None)
-
-    def has_tool_start(self, key: str) -> bool:
-        with self._lock:
-            return key in self._tool_times
-
-    def record_tool_output_chars(self, key: str, chars: int) -> None:
-        with self._lock:
-            self._tool_output_chars[key] = chars
-
-    def pop_tool_output_chars(self, key: str) -> Optional[int]:
-        with self._lock:
-            return self._tool_output_chars.pop(key, None)
-
     # ── Bulk reset (used by tests via singleton re-creation) ─────────────
 
     def clear(self) -> None:
         with self._lock:
             self._sessions.clear()
-            self._tool_times.clear()
             self._turn_counters.clear()
             self._first_seen.clear()
             self._last_root_context.clear()

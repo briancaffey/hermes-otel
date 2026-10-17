@@ -6,10 +6,14 @@ The package is split by hook family; this module re-exports every callback
 Helpers live in their family module and are imported from there (#411).
 
 Per-session buffering (token totals, first input / last output, per-turn
-summary, tool start times) lives on ``tracer.sessions`` — see
-``session_state.py``. Nothing in this package holds state; everything is
-routed through the tracer singleton so test reset is just
-``get_tracer()`` re-creation.
+summary) lives on ``tracer.sessions`` — see ``session_state.py``; when a
+tool call, approval or human-input wait started lives on ``tracer.spans``
+(``mark_started`` / ``pop_elapsed``, keyed like the span). Nothing in this
+package holds telemetry state; everything is routed through the tracer
+singleton so test reset is just ``get_tracer()`` re-creation. What the
+modules keep at module level is not telemetry: warn-once markers, the
+kanban span-key counter, and the ``TRACEPARENT`` kanban put in ``os.environ``
+so that cleanup removes exactly that one.
 
 Modules:
 

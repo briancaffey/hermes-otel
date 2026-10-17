@@ -39,8 +39,6 @@ from __future__ import annotations
 
 import itertools
 import os
-import threading
-from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple
 
 from .. import log_events as EV
@@ -59,34 +57,20 @@ _seq = itertools.count(1)
 _FAILED_EXIT_KINDS = frozenset({"nonzero_exit", "signaled"})
 
 
-# The trace context of each run's claim span, by (task_id, run_id), so the
-# dispatcher's later transitions of that run join its trace. Bounded: a
-# long-lived gateway dispatcher claims cards for days.
-_RUN_CONTEXTS: "OrderedDict[Tuple[str, str], Any]" = OrderedDict()
-_RUN_CONTEXTS_MAX = 512
-_RUN_LOCK = threading.Lock()
 # The TRACEPARENT value this process put in os.environ for the next worker,
 # so cleanup never removes one the user (or another tool) set.
 _injected_traceparent: Optional[str] = None
 
 
-def _run_key(task_id: Any, run_id: Any) -> Tuple[str, str]:
-    return (str(task_id or ""), str(run_id if run_id is not None else ""))
+def _run_key(task_id: Any, run_id: Any) -> str:
+    """The run's key in the tracer's root-context table: the claim span is the
+    run's root, remembered so the dispatcher's later transitions join its trace."""
+    return f"kanban:{task_id or ''}:{run_id if run_id is not None else ''}"
 
 
-def _remember_run(task_id: Any, run_id: Any, context: Any) -> None:
-    with _RUN_LOCK:
-        _RUN_CONTEXTS[_run_key(task_id, run_id)] = context
-        _RUN_CONTEXTS.move_to_end(_run_key(task_id, run_id))
-        while len(_RUN_CONTEXTS) > _RUN_CONTEXTS_MAX:
-            _RUN_CONTEXTS.popitem(last=False)
-
-
-def _run_parent(task_id: Any, run_id: Any, *, forget: bool = False):
+def _run_parent(tracer, task_id: Any, run_id: Any, *, forget: bool = False):
     """The claim span of this run as a parent, else a new trace."""
-    with _RUN_LOCK:
-        key = _run_key(task_id, run_id)
-        ctx = _RUN_CONTEXTS.pop(key, None) if forget else _RUN_CONTEXTS.get(key)
+    ctx = tracer.sessions.root_context(_run_key(task_id, run_id), forget=forget)
     if ctx is None:
         return _own_root()
     try:
@@ -255,7 +239,7 @@ def on_kanban_task_claimed(
         outcome="claimed",
     )
     if span is not None and hasattr(span, "get_span_context"):
-        _remember_run(task_id, run_id, span.get_span_context())
+        tracer.sessions.remember_root_context(_run_key(task_id, run_id), span.get_span_context())
         _inject_traceparent(span)
 
 
@@ -286,7 +270,7 @@ def on_kanban_worker_spawned(
         "kanban.spawn",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id),
+        parent=_run_parent(tracer, task_id, run_id),
         status="ok",
         outcome="spawned",
     )
@@ -327,7 +311,7 @@ def on_kanban_worker_exited(
         "kanban.worker_exit",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id, forget=True),
+        parent=_run_parent(tracer, task_id, run_id, forget=True),
         status="error" if failed else "ok",
         outcome="worker_exited",
         severity="ERROR" if failed else "INFO",
@@ -362,7 +346,7 @@ def on_kanban_worker_stale_claim(
         "kanban.stale_claim",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id, forget=True),
+        parent=_run_parent(tracer, task_id, run_id, forget=True),
         status="ok",
         outcome="stale_claim",
         severity="WARN",
