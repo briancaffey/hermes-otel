@@ -179,33 +179,38 @@ class TestCacheAndRefresh:
         )
         return script(tmp_path, body)
 
+    def _helper(self, tmp_path: Path) -> HeadersHelper:
+        # A real interpreter start can take seconds on a loaded runner; the
+        # default 5000 ms would turn these into timeout failures.
+        return HeadersHelper(self._counting_script(tmp_path), timeout_ms=60_000)
+
     def test_headers_runs_once_and_caches(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         assert helper.headers()["Authorization"] == "Bearer first"
         (tmp_path / "token").write_text("second", encoding="utf-8")
         assert helper.headers()["Authorization"] == "Bearer first"  # cached
         assert helper.runs == 1
 
-    def test_refresh_reruns_and_replaces(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+    def test_refresh_after_reruns_and_replaces(self, tmp_path):
+        helper = self._helper(tmp_path)
         helper.headers()
         (tmp_path / "token").write_text("second", encoding="utf-8")
-        assert helper.refresh() == {"Authorization": "Bearer second"}
+        minted = helper.refresh_after(1)
+        assert minted.headers == {"Authorization": "Bearer second"} and minted.ran
         assert helper.headers() == {"Authorization": "Bearer second"}
         assert helper.runs == 2
 
     def test_failed_refresh_keeps_the_old_set(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         helper.headers()
-        (tmp_path / "token").write_text("", encoding="utf-8")  # prints "Authorization=Bearer "
-        # Still a valid line; make it fail outright instead.
-        (tmp_path / "helper.py").write_text("import sys\nsys.exit(9)\n", encoding="utf-8")
+        # Injected failure: a real failing interpreter is timing-dependent.
+        helper._runner = lambda argv, **kw: subprocess.CompletedProcess(argv, 9, "", "")
         with pytest.raises(HeadersHelperError, match="exited 9"):
-            helper.refresh()
+            helper.refresh_after(1)
         assert helper.headers() == {"Authorization": "Bearer first"}
 
     def test_returns_copies(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         first = helper.headers()
         first["Authorization"] = "tampered"
         assert helper.headers()["Authorization"] == "Bearer first"
@@ -245,7 +250,7 @@ class TestGenerations:
         assert helper.current() is None and runner.calls == 0
         assert helper.snapshot()[0] == 1
         assert helper.current()[0] == 1
-        helper.refresh()
+        helper.refresh_after(1)
         assert helper.current() == (2, {"Authorization": "Bearer t2", "x-old": "1"})
 
     def test_refresh_after_a_stale_generation_takes_the_newer_set(self):
@@ -295,7 +300,7 @@ class TestGenerations:
         helper.headers()
         runner.hold = threading.Event()
         runner.entered.clear()
-        t = threading.Thread(target=helper.refresh)
+        t = threading.Thread(target=helper.refresh_after, args=(1,))
         t.start()
         try:
             assert runner.entered.wait(5)

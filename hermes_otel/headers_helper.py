@@ -131,7 +131,7 @@ def describe_headers(headers: Dict[str, str]) -> str:
 
 class HeadersHelper:
     """One backend entry's ``headers_helper``: the command, its cached output,
-    and :meth:`refresh` to run it again.
+    and :meth:`refresh_after` to run it again.
 
     ``command`` is split with :mod:`shlex` (POSIX rules, so a quoted argument
     stays one argument) and run with ``shell=False``; an empty or unbalanced
@@ -189,12 +189,6 @@ class HeadersHelper:
             return None
         return state[0], dict(state[1])
 
-    def refresh(self) -> Dict[str, str]:
-        """Run the helper again and replace the cached set. Raises
-        :class:`HeadersHelperError` and keeps the old set when the run fails."""
-        with self._lock:
-            return self._rerun()[1]
-
     def refresh_after(self, generation: int) -> Minted:
         """A set newer than ``generation``, the one a request was refused with.
 
@@ -209,15 +203,10 @@ class HeadersHelper:
             state = self._state
             if state is not None and state[0] != generation:
                 return Minted(state[0], dict(state[1]), False)
-            new_generation, headers = self._rerun()
-            return Minted(new_generation, headers, True)
-
-    def _rerun(self) -> Tuple[int, Dict[str, str]]:
-        # The caller holds the lock.
-        headers = self._run()
-        generation = (self._state[0] if self._state is not None else 0) + 1
-        self._state = (generation, headers)
-        return generation, dict(headers)
+            headers = self._run()
+            new_generation = (state[0] if state is not None else 0) + 1
+            self._state = (new_generation, headers)
+            return Minted(new_generation, dict(headers), True)
 
     def _run(self) -> Dict[str, str]:
         started = time.monotonic()
