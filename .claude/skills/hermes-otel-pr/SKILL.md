@@ -77,7 +77,7 @@ git checkout -b feat/<short-slug>     # or fix/<slug>, docs/<slug>
 - **Attributes:** emit **dual convention** where applicable — OpenInference
   (`llm.*`, `openinference.*`, `input.value`/`output.value`) for Phoenix *and*
   `gen_ai.*` for Langfuse/OTel GenAI. Clip strings with `truncate_string` /
-  `clip_preview`; gate previews through `_preview` (respects `capture_previews`
+  `clip_preview`; gate previews through `_preview_for` (respects `content_capture`
   and the per-category `*_preview_max_chars` config).
 - **Metrics:** add the instrument in `tracer._create_metric_instruments`, a
   branch in `tracer.record_metric`, then call `tracer.record_metric(name, value, attrs)`.

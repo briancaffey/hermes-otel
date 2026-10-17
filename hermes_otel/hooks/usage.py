@@ -9,6 +9,7 @@ from ..helpers import truncate_string
 from ..instruments import claude_code_token_types
 from ..session_state import PRICED_COST_STATUSES
 from ._common import as_dict
+from .attributes import _ID_MAX
 
 
 def normalize_usage(usage: dict) -> Dict[str, int]:
@@ -201,9 +202,9 @@ def genai_metric_dims(
     if prov:
         dims["gen_ai.provider.name"] = prov
     if model:
-        dims["gen_ai.request.model"] = truncate_string(model, 200)
+        dims["gen_ai.request.model"] = truncate_string(model, _ID_MAX)
     if response_model:
-        dims["gen_ai.response.model"] = truncate_string(response_model, 200)
+        dims["gen_ai.response.model"] = truncate_string(response_model, _ID_MAX)
     return dims
 
 

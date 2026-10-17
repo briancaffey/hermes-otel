@@ -19,6 +19,7 @@ from ._common import (
     get_tracer,
 )
 from .attributes import (
+    _ID_MAX,
     _gen_ai_attributes,
     _session_context_attributes,
     _session_identity_attributes,
@@ -300,6 +301,42 @@ def _tool_call_id(task_id: str, kwargs: dict) -> str:
     return str(kwargs.get("tool_call_id") or task_id)
 
 
+def _tool_session_attributes(tracer, session_id: str, kwargs: dict) -> Dict[str, Any]:
+    """What both tool spans carry for their session: its identity, the
+    ``execute_tool`` GenAI operation and the session context."""
+    return {
+        **_session_identity_attributes(session_id),
+        **_gen_ai_attributes(session_id, "execute_tool"),
+        **_session_context_attributes(tracer, session_id, kwargs),
+    }
+
+
+def _record_skill_load(
+    tracer, session_id: str, summary, tool_name: str, args: Any, outcome: str, result_json: dict
+) -> None:
+    """A skill loaded by this tool call joins the turn summary and (opt-in)
+    opens its execution-window span, once the load is known to have succeeded.
+
+    ``skill_view`` reports success explicitly; a file read instead succeeds
+    unless Hermes reports a terminal failure through the hook/result.
+    """
+    skill, skill_source = detect_skill(tool_name, args)
+    if not skill or not skill_source:
+        return
+    succeeded = (
+        result_json.get("success") is True
+        if skill_source == "skill_view"
+        else outcome not in FAILURE_OUTCOMES
+    )
+    if not succeeded:
+        return
+    summary.add_skill(skill)
+    if tracer.config.skill_spans:
+        _open_skill_span(
+            tracer, session_id, skill, skill_source, _skill_dir_for(skill_source, args, result_json)
+        )
+
+
 def _parse_result(result: Any) -> Dict[str, Any]:
     """The tool result as a dict (``{}`` for scalars, lists and unparsable text)."""
     if isinstance(result, dict):
@@ -332,7 +369,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     attributes: Dict[str, Any] = {
         "tool.name": tool_name,
         "gen_ai.tool.name": tool_name,
-        "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
+        "gen_ai.tool.call.id": truncate_string(tool_call_id, _ID_MAX),
     }
     preview, original = _preview_marked(tracer, "tool_input", serialize_full(args) or "{}")
     if preview is not None:
@@ -359,9 +396,7 @@ def on_pre_tool_call(tool_name: str, args: dict, task_id: str, **kwargs):
     # Summary roll-up (requires session_id to bucket into the right turn).
     session_id = _resolve_session_id(kwargs)
     if session_id:
-        attributes.update(_session_identity_attributes(session_id))
-        attributes.update(_gen_ai_attributes(session_id, "execute_tool"))
-        attributes.update(_session_context_attributes(tracer, session_id, kwargs))
+        attributes.update(_tool_session_attributes(tracer, session_id, kwargs))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_tool(tool_name)
         summary.add_target(target)
@@ -409,7 +444,7 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Build final attributes — OpenInference conventions for Phoenix Info
     attributes: Dict[str, Any] = {
         "gen_ai.tool.name": tool_name,
-        "gen_ai.tool.call.id": truncate_string(tool_call_id, 200),
+        "gen_ai.tool.call.id": truncate_string(tool_call_id, _ID_MAX),
     }
     if start_time:
         attributes.update(_tool_host_utilization_attributes(tracer, start_time, ended_at))
@@ -476,30 +511,10 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
     # Summary roll-up
     session_id = _resolve_session_id(kwargs)
     if session_id:
-        attributes.update(_session_identity_attributes(session_id))
-        attributes.update(_gen_ai_attributes(session_id, "execute_tool"))
-        attributes.update(_session_context_attributes(tracer, session_id, kwargs))
+        attributes.update(_tool_session_attributes(tracer, session_id, kwargs))
         summary = tracer.sessions.get_or_create(session_id).turn_summary
         summary.add_outcome(outcome)
-        skill, skill_source = detect_skill(tool_name, args)
-        if skill and skill_source:
-            # skill_view reports success explicitly; file reads instead succeed
-            # unless Hermes reports a terminal failure through the hook/result.
-            succeeded = (
-                result_json.get("success") is True
-                if skill_source == "skill_view"
-                else outcome not in FAILURE_OUTCOMES
-            )
-            if succeeded:
-                summary.add_skill(skill)
-                if tracer.config.skill_spans:
-                    _open_skill_span(
-                        tracer,
-                        session_id,
-                        skill,
-                        skill_source,
-                        _skill_dir_for(skill_source, args, result_json),
-                    )
+        _record_skill_load(tracer, session_id, summary, tool_name, args, outcome, result_json)
 
     # Map outcome to span status. Only "error" is ERROR; other non-ok outcomes
     # (timeout, blocked, ...) are OK to avoid polluting error rates.

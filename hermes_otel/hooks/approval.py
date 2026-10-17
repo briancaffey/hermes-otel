@@ -8,7 +8,7 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import clip_joined, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, _resolve_session_id, get_tracer
-from .attributes import _gen_ai_attributes
+from .attributes import _ID_MAX, _gen_ai_attributes
 
 _APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
 # Smart-guardian verdicts arrive as ``smart_<verdict>`` choices with
@@ -75,7 +75,7 @@ def on_pre_approval_request(
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
     # No pattern key reported → plain ``approval`` span without the attribute;
     # a placeholder key would read like a real rule (#155).
-    pk = truncate_string(pattern_key, 200) if pattern_key else ""
+    pk = truncate_string(pattern_key, _ID_MAX) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
     attributes: Dict[str, Any] = {"hermes.span_kind": "approval"}
@@ -83,7 +83,7 @@ def on_pre_approval_request(
         attributes["hermes.approval.pattern_key"] = pk
     if tool_call_id:
         # Correlates the approval to the tool span / call it gates.
-        attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, 200)
+        attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, _ID_MAX)
     if surface:
         attributes["hermes.approval.surface"] = truncate_string(surface, 60)
     if pattern_keys:
@@ -132,7 +132,7 @@ def on_post_approval_response(
         return
 
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
-    pk = truncate_string(pattern_key, 200) if pattern_key else ""
+    pk = truncate_string(pattern_key, _ID_MAX) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
     verdict = classify_approval_choice(choice, kwargs.get("decided_by"))
