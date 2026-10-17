@@ -108,8 +108,9 @@ markers = [
     "phoenix: requires Phoenix container",
     "langfuse: requires Langfuse containers",
     "smoke: full-stack tests requiring hermes-agent + observability backend running",
+    "e2e_ci: credential-free end-to-end tier: the real hermes binary against a scripted provider and an in-process OTLP receiver (make ci-e2e)",
 ]
-addopts = "-m 'not e2e and not smoke' -v"
+addopts = "-m 'not e2e and not smoke and not e2e_ci' -v"
 
 [tool.coverage.run]
 source = ["hermes_otel"]
