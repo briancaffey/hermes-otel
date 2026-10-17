@@ -32,6 +32,7 @@ from . import backends as _backends
 from . import flush as _flush
 from . import host_bridge as _host
 from . import pipeline as _pipeline
+from .backend_config import BackendConfig
 from .backend_specs import ENV_PRIORITY
 from .backends import _ResolvedBackend
 from .debug_utils import (
@@ -64,7 +65,7 @@ from .pipeline import (  # noqa: F401 — re-exported
     is_mcp_keepalive_ping,
     strip_root_usage,
 )
-from .plugin_config import BackendConfig, HermesOtelConfig, load_config
+from .plugin_config import HermesOtelConfig, load_config
 from .session_state import PerSession, SessionState
 from .span_tracker import SpanTracker, sweep_attributes
 

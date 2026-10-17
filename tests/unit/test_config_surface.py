@@ -6,7 +6,6 @@ dataclass — so a new knob cannot be half-wired or undocumented.
 
 from __future__ import annotations
 
-import dataclasses
 import logging
 import re
 import subprocess
@@ -120,12 +119,6 @@ class TestGeneratedDocs:
             "config-schema.md / env-vars.md drifted from HermesOtelConfig — run\n"
             "  uv run --extra dev python scripts/gen_config_docs.py --write\n" + proc.stdout
         )
-
-    def test_every_field_has_a_description(self):
-        sys.path.insert(0, str(REPO_ROOT / "scripts"))
-        from gen_config_docs import FIELD_DOCS
-
-        assert set(FIELD_DOCS) == {f.name for f in dataclasses.fields(HermesOtelConfig)}
 
     def test_every_backend_env_var_is_in_the_reference(self):
         src = "".join(

@@ -24,11 +24,11 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
 from . import plugin_config as pc
+from .backend_config import BackendConfig
 from .backend_specs import BY_TYPE, SPECS, spec_for
 from .plugin_config import (
     FIELD_DOCS,
     FIELD_GROUPS,
-    BackendConfig,
     HermesOtelConfig,
     content_mode,
     field_kinds,

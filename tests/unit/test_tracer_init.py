@@ -5,7 +5,8 @@ from unittest.mock import patch
 
 from _helpers import clear_backend_env as _clear_backend_env
 
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 

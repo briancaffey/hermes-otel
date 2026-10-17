@@ -289,7 +289,7 @@ class TestLgtmBackendType:
 
     def test_lgtm_resolves_as_logs_capable(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(type="lgtm", endpoint="http://localhost:4318/v1/traces")
@@ -301,14 +301,14 @@ class TestLgtmBackendType:
 
     def test_lgtm_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="lgtm"))
 
     def test_lgtm_allows_name_override(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -322,7 +322,7 @@ class TestLgtmBackendType:
     def test_tempo_remains_traces_only(self):
         """Sanity: don't let LGTM's addition change tempo's behavior."""
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(type="tempo", endpoint="http://localhost:4318/v1/traces")
@@ -336,7 +336,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_resolves_with_dsn(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -356,14 +356,14 @@ class TestUptraceBackendType:
 
     def test_uptrace_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="uptrace", dsn="http://t@h:14318"))
 
     def test_uptrace_requires_dsn(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="dsn"):
             backends.resolve(
@@ -375,7 +375,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_dsn_from_env(self, monkeypatch):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         monkeypatch.setenv("UPTRACE_DSN", "http://token@host:14318?grpc=14317")
         rb = backends.resolve(
@@ -388,7 +388,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_user_headers_merge_on_top(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -409,7 +409,7 @@ class TestOpenObserveBackendType:
         import base64
 
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -429,14 +429,14 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="openobserve", user="u", password="p"))
 
     def test_openobserve_requires_credentials(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="user and password"):
             backends.resolve(
@@ -448,7 +448,7 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_credentials_from_env(self, monkeypatch):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         monkeypatch.setenv("OPENOBSERVE_USER", "root@example.com")
         monkeypatch.setenv("OPENOBSERVE_PASSWORD", "Complexpass#123")
@@ -462,7 +462,7 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_custom_stream_name(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -481,7 +481,7 @@ class TestParseableBackendType:
 
     def test_parseable_resolves_all_signal_headers(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -507,7 +507,7 @@ class TestParseableBackendType:
 
     def test_parseable_custom_datasets_and_headers(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -528,7 +528,7 @@ class TestParseableBackendType:
 
     def test_parseable_requires_endpoint_and_api_key(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="parseable", api_key="p-key"))

@@ -25,7 +25,14 @@ from typing import Any, Dict, List, Optional, Tuple
 import pytest
 from _helpers import clear_backend_env
 
-from hermes_otel import backends, log_handler, mcp_config, query_cli, settings_report
+from hermes_otel import (
+    backend_config,
+    backends,
+    log_handler,
+    mcp_config,
+    query_cli,
+    settings_report,
+)
 from hermes_otel import plugin_config as pc
 from hermes_otel.backend_specs import BY_TYPE, ENV_PRIORITY, spec_for
 from hermes_otel.dashboard import backends as dash
@@ -102,7 +109,9 @@ PATHS = (
     "metric_overrides",
     "logs_block",
 )
-_ENV_FIELDS = {f.name for f in dataclasses.fields(pc.BackendConfig) if f.name.endswith("_env")}
+_ENV_FIELDS = {
+    f.name for f in dataclasses.fields(backend_config.BackendConfig) if f.name.endswith("_env")
+}
 
 
 def _alias_types() -> Dict[str, str]:
@@ -306,7 +315,7 @@ def snapshot(backend_type: str, path: str, home: Path, monkeypatch) -> Dict[str,
 
     entry = entry_for(backend_type, path, monkeypatch)
     out["entry"] = dict(entry)
-    coerced = pc.coerce_backends([entry]) or ()
+    coerced = backend_config.coerce_backends([entry]) or ()
     if not coerced:
         out["error"] = "entry rejected by the loader"
         return normalise(out, home)

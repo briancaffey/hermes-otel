@@ -25,7 +25,9 @@ from opentelemetry.sdk.metrics.export import (
 from opentelemetry.sdk.metrics.view import ExponentialBucketHistogramAggregation
 
 from hermes_otel import pipeline as pipeline_mod
+from hermes_otel import plugin_config as pc
 from hermes_otel import tracer as tracer_mod
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backends import resolve
 from hermes_otel.instruments import (
     _B_OP_SECONDS,
@@ -36,11 +38,7 @@ from hermes_otel.instruments import (
     metric_temporality_map,
     metric_views,
 )
-from hermes_otel.plugin_config import (
-    BackendConfig,
-    normalize_temporality,
-    reconcile_metrics_settings,
-)
+from hermes_otel.plugin_config import normalize_temporality
 
 
 def _points(reader, name):
@@ -202,21 +200,23 @@ class TestTemporality:
         assert normalize_temporality(None) is None
         assert normalize_temporality("bogus") is None
 
-    def test_config_reconcile(self):
-        values = {
-            "metrics_temporality": "DELTA",
-            "metrics_histogram": "nope",
-            "metrics_label_limit": "many",
-        }
-        reconcile_metrics_settings(values)
-        assert values == {
-            "metrics_temporality": "delta",
-            "metrics_histogram": "explicit",
-            "metrics_label_limit": 100,
-        }
-        values = {"metrics_histogram": "Exponential", "metrics_label_limit": -5}
-        reconcile_metrics_settings(values)
-        assert values["metrics_histogram"] == "exponential" and values["metrics_label_limit"] == 0
+    def test_loader_normalises_the_metrics_fields(self):
+        """Case-folded enums, an unknown value keeps the default, a negative label limit is 0."""
+        cfg, sources = pc.resolve_fields(
+            {
+                "metrics_temporality": "DELTA",
+                "metrics_histogram": "nope",
+                "metrics_label_limit": "many",
+            },
+            warn=False,
+        )
+        assert cfg.metrics_temporality == "delta"
+        assert cfg.metrics_histogram == "explicit" and sources["metrics_histogram"].file_invalid
+        assert cfg.metrics_label_limit == 100 and sources["metrics_label_limit"].file_invalid
+        cfg, _ = pc.resolve_fields(
+            {"metrics_histogram": "Exponential", "metrics_label_limit": -5}, warn=False
+        )
+        assert cfg.metrics_histogram == "exponential" and cfg.metrics_label_limit == 0
 
     @pytest.mark.parametrize(
         "backend_type, expected",

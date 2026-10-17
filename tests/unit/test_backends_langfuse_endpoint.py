@@ -2,8 +2,8 @@
 
 import pytest
 
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backends import langfuse_traces_url, resolve
-from hermes_otel.plugin_config import BackendConfig
 
 FULL = "https://cloud.langfuse.com/api/public/otel/v1/traces"
 

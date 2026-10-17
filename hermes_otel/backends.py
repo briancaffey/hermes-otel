@@ -1,6 +1,6 @@
 """Backend resolution for hermes-otel.
 
-Converts declarative :class:`~hermes_otel.plugin_config.BackendConfig`
+Converts declarative :class:`~hermes_otel.backend_config.BackendConfig`
 objects (from ``config.yaml``) **or** environment variables into
 ready-to-wire :class:`_ResolvedBackend` instances. Each
 ``_ResolvedBackend`` carries exactly what the OTLP pipeline needs:
@@ -32,10 +32,11 @@ import urllib.parse
 from dataclasses import dataclass
 from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
+from .backend_config import BackendConfig
 from .backend_specs import BY_TYPE, ENV_PRIORITY, SPECS, BackendSpec, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
 from .pipeline_env import derive_signal_endpoint
-from .plugin_config import BackendConfig, normalize_temporality
+from .plugin_config import normalize_temporality
 
 
 def traces_url(endpoint: str) -> str:

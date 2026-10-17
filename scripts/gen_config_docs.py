@@ -22,12 +22,7 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from hermes_otel import log_events as EV  # noqa: E402
 from hermes_otel.backend_specs import SPECS  # noqa: E402
-from hermes_otel.plugin_config import (  # noqa: E402
-    FIELD_DOCS,
-    NUMERIC_BOUNDS,
-    HermesOtelConfig,
-    field_kinds,
-)
+from hermes_otel.plugin_config import HermesOtelConfig, field_kinds  # noqa: E402
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
 
@@ -61,14 +56,14 @@ def render_fields_table() -> str:
         typ = _TYPE_LABEL[kind]
         if kind in ("float", "int", "str") and str(f.type).startswith("Optional"):
             typ += " \\| null"
-        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {_describe(f.name)} |")
+        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {_describe(f)} |")
     return "\n".join(rows)
 
 
-def _describe(name: str) -> str:
-    """The field's description plus its numeric bounds (``NUMERIC_BOUNDS``, #487)."""
-    desc = FIELD_DOCS[name]
-    bounds = NUMERIC_BOUNDS.get(name)
+def _describe(field: dataclasses.Field) -> str:
+    """The field's ``doc`` plus its numeric ``bounds`` (#487), from its metadata."""
+    desc = field.metadata["doc"]
+    bounds = field.metadata.get("bounds")
     if bounds is None:
         return desc
     lo, hi = bounds
@@ -177,10 +172,6 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="update the docs in place")
     args = ap.parse_args(argv)
-    missing = [f.name for f in dataclasses.fields(HermesOtelConfig) if f.name not in FIELD_DOCS]
-    if missing:
-        print(f"FIELD_DOCS is missing: {missing}")
-        return 1
     drift = 0
     for (path, name), render in BLOCKS.items():
         current = path.read_text(encoding="utf-8")

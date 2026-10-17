@@ -11,8 +11,8 @@ import pytest
 
 from hermes_otel import backend_specs as specs
 from hermes_otel import backends, mcp_config, settings_report
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.dashboard import backends as dash
-from hermes_otel.plugin_config import BackendConfig
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 DOCS = REPO_ROOT / "website" / "docs" / "backends"
@@ -141,7 +141,7 @@ class TestEnvVarsAreDeclared:
 
 
 def test_query_keys_survive_the_loader_and_unknown_keys_warn(caplog):
-    from hermes_otel.plugin_config import coerce_backends
+    from hermes_otel.backend_config import coerce_backends
 
     (bc,) = coerce_backends(
         [{"type": "lgtm", "endpoint": "http://l:4318/v1/traces", "prometheus_url": "http://l:9090"}]
