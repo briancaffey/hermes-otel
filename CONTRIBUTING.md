@@ -158,9 +158,11 @@ Before opening a PR:
       job (lockfile check, ruff, black, plugin scan, tests with the 85%
       coverage gate and the per-module floors in `coverage-floors.json`,
       dashboard bundle up to date + vitest, docs build, wheel build), so a
-      green `make ci` is a green pipeline, with three exceptions it names in
+      green `make ci` is a green pipeline, with four exceptions it names in
       its header: the Python version matrix, `make ci-floor` (the suite on
-      the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
+      the OpenTelemetry 1.35 floor), `make ci-e2e` (the real `hermes`
+      binary through the plugin; needs `hermes` on PATH, no keys) and the
+      catalog-admission workflow.
       A module may not drop more than one point under its floor; after a
       change that deliberately adds or removes coverage, re-record with
       `python scripts/coverage_floor.py --update` and commit the file; a new

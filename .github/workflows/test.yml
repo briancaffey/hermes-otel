@@ -127,6 +127,49 @@ jobs:
       - name: Run unit and integration tests on the floor
         run: .venv-floor/bin/python -m pytest --tb=short -q
 
+  e2e-hermes:
+    # The real `hermes` binary, at the version the maintainer runs, driven
+    # through this checkout's plugin: a one-shot turn, a tool-call turn and a
+    # resumed turn against a scripted OpenAI-compatible provider and an
+    # in-process OTLP receiver, both on the loopback interface. No model, no
+    # secret, no backend (#482; tests/e2e_ci). Bump HERMES_VERSION with
+    # `hermes --version`. e2e-hermes-main.yml runs the same tier weekly
+    # against hermes-agent main and files an issue when it breaks.
+    name: End-to-end with a pinned Hermes
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    env:
+      HERMES_VERSION: v0.22.2
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          # hermes-agent's core pins carry `python_version >= '3.14'` markers
+          # (see catalog-admission.yml): older interpreters install a CLI
+          # that fails at import.
+          python-version: "3.14"
+      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
+        with:
+          path: ~/.cache/pip
+          key: hermes-e2e-pip-${{ runner.os }}-${{ env.HERMES_VERSION }}
+      - name: Install Hermes Agent ${{ env.HERMES_VERSION }}
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch "$HERMES_VERSION" https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          echo "hermes-agent $HERMES_VERSION @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
+          # A pip-installed Hermes manages no plugin venv, so the plugin's own
+          # dependencies go into the same interpreter (hermes_otel/requirements.txt).
+          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt
+          hermes --version
+      - name: Run the e2e tier (make ci-e2e)
+        # The `runner` context is a step-level thing; a job-level env cannot use it.
+        env:
+          HERMES_E2E_HOME: ${{ runner.temp }}/hermes-e2e-home
+        run: make ci-e2e
+
   dashboard-dist:
     # hermes_otel/dashboard/dist/ is committed build output of dashboard-ui/src.
     # Rebuild it and fail if a PR changed the TSX without rebuilding (#100).
