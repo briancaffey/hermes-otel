@@ -175,6 +175,49 @@ class TestSpanShape:
         assert "session.id" not in aux.attributes
         assert aux.attributes["hermes.auxiliary.task"] == "kanban_decomposer"
 
+    def test_call_after_the_turn_links_to_the_ended_root(self, inmemory_otel_setup):
+        """#588: title generation can start after on_session_end closed the root."""
+        exporter, _ = inmemory_otel_setup
+        _open_turn()
+        _close_turn()
+        base = _pre(request_id="req-title")
+        _post(base)
+
+        spans = exporter.get_finished_spans()
+        aux = _span_by_name(spans, "api.gpt-4o-mini")
+        root = _span_by_name(spans, "agent")
+        assert _parent_span_id(aux) is None
+        assert aux.context.trace_id != root.context.trace_id
+        assert aux.attributes["hermes.span.after_turn"] is True
+        assert aux.attributes["hermes.query_source"] == "auxiliary"
+        assert aux.attributes["hermes.auxiliary.task"] == "title_generation"
+        assert aux.attributes["gen_ai.usage.input_tokens"] == 12
+        assert [(ln.context.trace_id, ln.context.span_id) for ln in aux.links] == [
+            (root.context.trace_id, root.context.span_id)
+        ]
+        assert aux.links[0].attributes["hermes.link"] == "turn_root"
+
+    def test_in_turn_call_has_no_after_turn_link(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_turn()
+        _close_turn()
+        # The next turn of the same session: its auxiliary call nests normally.
+        _open_turn()
+        _post(_pre(request_id="req-2"))
+        _close_turn()
+        aux = _span_by_name(exporter.get_finished_spans(), "api.gpt-4o-mini")
+        assert _parent_span_id(aux) is not None
+        assert "hermes.span.after_turn" not in aux.attributes
+        assert not aux.links
+
+    def test_session_without_a_closed_root_gets_no_link(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _post(_pre(session_id="s-never-rooted", request_id="req-3"))
+        aux = _span_by_name(exporter.get_finished_spans(), "api.gpt-4o-mini")
+        assert _parent_span_id(aux) is None
+        assert "hermes.span.after_turn" not in aux.attributes
+        assert not aux.links
+
     def test_full_prompt_and_response_capture(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         _open_turn()

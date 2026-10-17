@@ -323,7 +323,7 @@ ROWS: Tuple[Row, ...] = (
         "agent / cron: start",
         "session",
         "string",
-        "On the span **link** from a replacing session's first root to the old session's last root: `previous_session`",
+        "On a span **link**: `previous_session` on the link from a replacing session's first root to the old session's last root; `turn_root` on the link from an auxiliary `api.*` span that started after its turn's root ended to that root",
     ),
     Row(
         (
@@ -557,6 +557,13 @@ ROWS: Tuple[Row, ...] = (
         "model",
         "string",
         "The auxiliary task, as Hermes names it (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …); `unknown` when it sent none. Auxiliary spans only",
+    ),
+    Row(
+        ("hermes.span.after_turn",),
+        "api.*: start",
+        "turn",
+        "bool",
+        "`true` on an auxiliary span that started after its session's turn root had ended (title generation can fire after `on_session_end`): the span is its own root, with a span link (`hermes.link=turn_root`) to the root it followed rather than a parent that ended first (optional; auxiliary spans only)",
     ),
     Row(
         ("llm.api_mode",),

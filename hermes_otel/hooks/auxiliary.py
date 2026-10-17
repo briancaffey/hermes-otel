@@ -15,6 +15,12 @@ has in flight (or its own root when there is no turn), with the same token,
 cost and duration attributes as a main-loop API call (``api_call.py`` builds
 them for both). Usage is accounted on the turn separately from the main-loop
 totals (see ``PerSession.add_auxiliary``).
+
+An attempt that starts after its session's turn root has ended (Hermes's
+title generation can fire after ``on_session_end``) is not parented under the
+ended root, which would show a child outliving its parent: it stays its own
+root, tagged ``hermes.span.after_turn=true``, with a span link
+(``hermes.link=turn_root``) to the root it followed (#588).
 """
 
 from __future__ import annotations
@@ -49,6 +55,11 @@ from .attributes import (
 )
 from .usage import genai_metric_dims
 
+try:
+    from opentelemetry.trace import Link
+except ImportError:  # pragma: no cover - opentelemetry is a hard dependency
+    Link = None  # type: ignore[assignment]
+
 
 def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
     """Build the span-tracking key for one auxiliary provider attempt.
@@ -80,6 +91,21 @@ def _owning_session(session_id: Any) -> Optional[str]:
 
 def _span_name(model: Any) -> str:
     return f"api.{model}" if model else "api.auxiliary"
+
+
+def after_turn_links(tracer, owner: Optional[str]) -> Optional[list]:
+    """A link to the session's last root when no turn of it is in flight.
+
+    ``None`` while the owning turn is open (the attempt nests under it), for
+    a turn-less caller, and for a session whose root this process never
+    closed (nothing to link to).
+    """
+    if not owner or Link is None or tracer.spans.get_session_root(owner) is not None:
+        return None
+    root_ctx = tracer.sessions.root_context(owner)
+    if root_ctx is None:
+        return None
+    return [Link(root_ctx, attributes={"hermes.link": "turn_root"})]
 
 
 @_fail_open
@@ -128,6 +154,9 @@ def on_pre_auxiliary_call(
         attributes["llm.request.tool_count"] = tool_count
     if streaming:
         attributes["gen_ai.request.stream"] = True
+    links = after_turn_links(tracer, owner)
+    if links:
+        attributes["hermes.span.after_turn"] = True
 
     # Not pushed as a parent: nothing runs *inside* an auxiliary attempt. The
     # MoA aggregator's tool calls belong to the main loop's api span. Named
@@ -139,6 +168,7 @@ def on_pre_auxiliary_call(
         kind="llm",
         attributes=attributes,
         session_id=owner,
+        links=links,
         family="auxiliary",
     )
     debug_log(f"  auxiliary span started: key={key}")
