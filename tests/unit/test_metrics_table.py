@@ -9,10 +9,11 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from hermes_otel.instruments import InstrumentSpec
+from hermes_otel.instruments import _INSTRUMENTS, InstrumentSpec
+from hermes_otel.pipeline import create_instruments
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.testing import attach_pipeline
-from hermes_otel.tracer import _INSTRUMENTS, HermesOTelPlugin, metric_otlp_name
+from hermes_otel.tracer import HermesOTelPlugin
 
 EXPECTED_KEYS = {
     "span_swept",
@@ -88,15 +89,38 @@ class TestTable:
         for n in names:
             assert n.startswith(("hermes.", "gen_ai.", "claude_code.")), n
 
-    def test_metric_otlp_name(self):
-        assert metric_otlp_name("token_usage") == "hermes.token.usage"
-        assert metric_otlp_name("gen_ai.agent.token.usage") == "gen_ai.agent.token.usage"
-        assert metric_otlp_name("something.custom") == "something.custom"
-
 
 class TestSpecPolicies:
     """The routing decisions live on the spec (#507), so the compat and GenAI
     semantics are checked here against the table, without a plugin."""
+
+    @pytest.mark.parametrize("mode", ["off", "claude_code", "both"])
+    def test_enabled_pins_every_key_per_compat_mode(self, mode):
+        cfg = HermesOtelConfig(metric_name_compat=mode)
+        compat_on = mode in ("claude_code", "both")
+        for key, spec in _INSTRUMENTS.items():
+            assert spec.enabled(cfg) is ((key not in COMPAT_KEYS) or compat_on), key
+        # the GenAI gate is not part of ``enabled``: creation ignores it
+        assert all(
+            spec.enabled(HermesOtelConfig(metric_name_compat=mode, emit_genai_metrics=False))
+            for key, spec in _INSTRUMENTS.items()
+            if key not in COMPAT_KEYS
+        )
+
+    @pytest.mark.parametrize("mode", ["off", "claude_code", "both"])
+    def test_create_instruments_creates_exactly_the_enabled_specs(self, mode):
+        cfg = HermesOtelConfig(metric_name_compat=mode, emit_genai_metrics=False)
+        meter = MagicMock()
+        created = create_instruments(meter, cfg)
+        assert set(created) == {k for k, s in _INSTRUMENTS.items() if s.enabled(cfg)}
+
+    def test_recorded_is_enabled_plus_the_genai_gate(self):
+        for mode in ("off", "claude_code", "both"):
+            for genai in (True, False):
+                cfg = HermesOtelConfig(metric_name_compat=mode, emit_genai_metrics=genai)
+                for key, spec in _INSTRUMENTS.items():
+                    expected = spec.enabled(cfg) and (genai or not spec.genai)
+                    assert spec.recorded(cfg) is expected, (key, mode, genai)
 
     def test_recorded_gates_genai_instruments_on_emit_genai_metrics(self):
         on, off = HermesOtelConfig(), HermesOtelConfig(emit_genai_metrics=False)

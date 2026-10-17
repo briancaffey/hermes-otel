@@ -50,7 +50,6 @@ from .instruments import (
     _CAPPED_LABELS,
     _INSTRUMENTS,
     COMPAT_SESSION_LABEL,
-    metric_otlp_name,  # noqa: F401 — re-exported for tests/unit/test_metrics_table.py until #562
 )
 from .pipeline import _OTEL_AVAILABLE, Pipeline, build_pipeline
 from .plugin_config import HermesOtelConfig, load_config
