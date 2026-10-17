@@ -1,5 +1,28 @@
 # Changelog
 
+## [1.32.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.31.0...hermes-otel-v1.32.0) (2026-10-17)
+
+
+### Features
+
+* **backends:** headers_helper mints OTLP headers per backend and refreshes them once on 401/403 ([#483](https://github.com/briancaffey/hermes-otel/issues/483)) ([43e4c4e](https://github.com/briancaffey/hermes-otel/commit/43e4c4e22bf57263c77e4aa5076f174f1d252b7d))
+* **config:** common_attributes stamped on every span, log record and metric point ([#480](https://github.com/briancaffey/hermes-otel/issues/480)) ([4531c55](https://github.com/briancaffey/hermes-otel/commit/4531c55a953422100d3121cff2f32c302e4cbfda))
+* **config:** disable_metrics and disable_spans switch off individual instruments and span families ([#479](https://github.com/briancaffey/hermes-otel/issues/479)) ([8ea922e](https://github.com/briancaffey/hermes-otel/commit/8ea922ed25a1edf42700b1c5c10dbdc9a2b05aff))
+* **metrics:** hermes.commit.count and a commit event when the terminal tool runs git commit ([#478](https://github.com/briancaffey/hermes-otel/issues/478)) ([63ff796](https://github.com/briancaffey/hermes-otel/commit/63ff796ed826406ae61c9a5284ae529a4df4e3b5))
+
+
+### Bug Fixes
+
+* **config:** host_metrics_gpu: off in yaml switches GPU probing off ([#563](https://github.com/briancaffey/hermes-otel/issues/563)) ([c655882](https://github.com/briancaffey/hermes-otel/commit/c65588240a18d1288d29a5fab1f4e8a80431970b))
+* **dashboard:** one level-text list for the OpenObserve min_level filter ([#555](https://github.com/briancaffey/hermes-otel/issues/555)) ([86356bf](https://github.com/briancaffey/hermes-otel/commit/86356bf5c49bf7859a1faf7fab819d31e558144d))
+* **semconv:** human_input spans classify as human_input, not other ([#556](https://github.com/briancaffey/hermes-otel/issues/556)) ([7f55634](https://github.com/briancaffey/hermes-otel/commit/7f5563454e5b5d4b08bd5df89756a58ce35f5089))
+* **tracer:** config fingerprint on re-init, an unchanged config keeps the pipeline and a changed one rebuilds it ([#484](https://github.com/briancaffey/hermes-otel/issues/484)) ([7dc8bb2](https://github.com/briancaffey/hermes-otel/commit/7dc8bb25b4d4391480ef3f8fd831c6e8d87b94d0))
+
+
+### Documentation
+
+* **architecture:** module list after the milestone-16 split ([#565](https://github.com/briancaffey/hermes-otel/issues/565)) ([cc05a63](https://github.com/briancaffey/hermes-otel/commit/cc05a63663e7850f1c52b630b42fda4f3668446f))
+
 ## [1.31.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.30.0...hermes-otel-v1.31.0) (2026-10-17)
 
 
