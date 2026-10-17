@@ -1,44 +1,80 @@
 #!/usr/bin/env python3
-"""Generate what derives from ``hermes_otel/semconv.py`` (#404).
+"""Generate what derives from ``hermes_otel/semconv.py`` (#404, #523).
 
-    python scripts/gen_semconv.py            # write dashboard-ui/src/semconv.generated.ts
-    python scripts/gen_semconv.py --check    # exit 1 when the generated file or the docs page drifted
+    python scripts/gen_semconv.py            # write the TypeScript and the reference tables
+    python scripts/gen_semconv.py --check    # exit 1 when either drifted
 
-The TypeScript file carries the fallback key chains, the span-kind table and
-the answers Python's ``span_kind`` gives for ``KIND_EXAMPLES``, so ``lib.ts``
-reads the same data and its vitest proves the two classifiers agree.
+The TypeScript file ``dashboard-ui/src/semconv.generated.ts`` carries the
+fallback key chains, the span-kind table and the answers Python's ``span_kind``
+gives for ``KIND_EXAMPLES``, so ``lib.ts`` reads the same data and its vitest
+proves the two classifiers agree.
 
-The reference page ``website/docs/reference/span-attributes.md`` stays
-hand-written (it groups attributes by span and explains them); ``--check``
-proves it lists every registered attribute and nothing the registry does not
-know. ``tests/unit/test_semconv.py`` runs the same checks under pytest.
+The reference page ``website/docs/reference/span-attributes.md`` keeps its
+prose; its tables are rendered from ``semconv.ROWS`` between
+``[//]: # (generated:<table>:start)`` / ``:end`` marker lines, one pair per
+``TABLES`` entry, the way ``gen_config_docs.py`` fills the config pages.
+``tests/unit/test_semconv.py`` runs the same checks under pytest.
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
 import sys
 from pathlib import Path
-from typing import List, Set
+from typing import List, Tuple
 
 ROOT = Path(__file__).resolve().parent.parent
-sys.path.insert(0, str(ROOT))
+sys.path[:0] = [str(ROOT), str(ROOT / "scripts")]
+
+from gen_config_docs import _splice  # noqa: E402
 
 from hermes_otel import semconv  # noqa: E402
 
 TS_OUT = ROOT / "dashboard-ui" / "src" / "semconv.generated.ts"
 DOC = ROOT / "website" / "docs" / "reference" / "span-attributes.md"
 
-# Names documented in prose (wildcards), not as literal attributes.
-PROSE_ONLY = {"telemetry.sdk.*", "resource_attributes.*", "global_tags.*"}
-_NAME = (
-    r"(?:gen_ai|llm|hermes|openinference|traceloop|session|user|error|input|output|tool|"
-    r"correlation|http|service|process|wandb|weave|exception|host|os|code|telemetry)"
-    r"\.[a-z_][a-z0-9_.]*|session_id"
+# The page's tables in page order: marker name, the ``Row.where`` it lists.
+TABLES: Tuple[Tuple[str, str], ...] = (
+    ("resource", "Resource"),
+    ("every-span", "Every span"),
+    ("root-start", "agent / cron: start"),
+    ("root-end", "agent / cron: end"),
+    ("llm", "llm.*"),
+    ("api-start", "api.*: start"),
+    ("api-end", "api.*: end"),
+    ("api-failure", "api.* on failure"),
+    ("tool", "tool.*"),
+    ("skill", "skill.*"),
+    ("approval", "approval.*"),
+    ("human-input", "human_input.*"),
+    ("kanban", "kanban.*"),
+    ("subagent", "subagent.*"),
 )
-TICKED = re.compile(r"`(" + _NAME + r")`")
+# Rows the page does not render: event-only names and OTel log-record keys
+# are documented on log-events.md / logs.md; a few names exist only because
+# a backend derives them from what the plugin sends.
+OFF_PAGE = ("event", "log record", "backend")
+
+# Whose vocabulary a name belongs to, for the Convention column: the first
+# matching prefix wins; anything else is a standard OTel name.
+_CONVENTIONS: Tuple[Tuple[str, str], ...] = (
+    ("gen_ai.", "gen_ai"),
+    ("llm.request.", "hermes"),
+    ("llm.response.", "hermes"),
+    ("llm.api_mode", "hermes"),
+    ("llm.", "OpenInference"),
+    ("input.", "OpenInference"),
+    ("output.", "OpenInference"),
+    ("openinference.", "OpenInference"),
+    ("tool.name", "OpenInference"),
+    ("traceloop.", "Traceloop"),
+    ("wandb.", "Weave"),
+    ("weave.", "Weave"),
+    ("hermes.", "hermes"),
+    ("session_id", "hermes"),
+    ("correlation.", "hermes"),
+)
 
 
 def _ts_list(name: str, values, type_: str = "string") -> str:
@@ -77,30 +113,51 @@ def render_ts() -> str:
     return "".join(parts)
 
 
-def documented_names() -> Set[str]:
-    return set(TICKED.findall(DOC.read_text(encoding="utf-8")))
+def convention(name: str) -> str:
+    for prefix, owner in _CONVENTIONS:
+        if name.startswith(prefix):
+            return owner
+    return "OTel"
 
 
-def check_docs() -> List[str]:
-    """Problems between the reference page and the registry; empty when aligned."""
-    registered = set(semconv.ATTRIBUTE_NAMES)
-    text = DOC.read_text(encoding="utf-8")
-    documented = set(TICKED.findall(text))
-    # ``telemetry.sdk.*`` and friends: documented as a family, one row.
-    wildcards = tuple(m + "." for m in re.findall(r"`([a-z_]+(?:\.[a-z_]+)*)\.\*`", text))
+def _row_convention(row: semconv.Row) -> str:
+    owners = list(dict.fromkeys(convention(n) for n in row.names))
+    if set(owners) == {"OpenInference", "gen_ai"}:
+        return "both"  # one value, spelled for Phoenix and for the GenAI readers
+    return " / ".join(owners)
+
+
+def _cell(text: str) -> str:
+    return text.replace("|", "\\|")
+
+
+def render_table(where: str) -> str:
+    lines = ["| Attribute | Convention | Type | Meaning |", "|---|---|---|---|"]
+    for row in semconv.ROWS:
+        if row.where != where:
+            continue
+        names = ", ".join(f"`{n}`" for n in row.names)
+        lines.append(f"| {names} | {_row_convention(row)} | {row.type} | {_cell(row.doc)} |")
+    return "\n".join(lines)
+
+
+def render_docs(text: str) -> str:
+    """``text`` (the reference page) with every table re-rendered from the registry."""
+    for marker, where in TABLES:
+        text = _splice(text, marker, render_table(where))
+    return text
+
+
+def check_rows() -> List[str]:
+    """Rows the page cannot place, or page rows missing a type; empty when sound."""
+    tables = {where for _m, where in TABLES}
     problems = []
-    # Event-only names and OTel standard log-record keys are documented on
-    # their own pages (log-events.md, logs.md); a few names exist only because
-    # a backend derives them from what the plugin sends ("backend").
-    span_page_exempt = {
-        a.name for a in semconv.ATTRIBUTES if a.where in ("event", "log record", "backend")
-    }
-    for n in sorted(registered - documented - span_page_exempt):
-        if n.startswith(wildcards):
-            continue  # covered by a documented ``prefix.*`` row
-        problems.append(f"registered but not on span-attributes.md: {n}")
-    for n in sorted(documented - registered - PROSE_ONLY):
-        problems.append(f"on span-attributes.md but not registered: {n}")
+    for row in semconv.ROWS:
+        if row.where in tables:
+            if not row.type:
+                problems.append(f"row {row.names[0]} ({row.where!r}) has no type")
+        elif row.where not in OFF_PAGE:
+            problems.append(f"row {row.names[0]} names an unknown table {row.where!r}")
     return problems
 
 
@@ -110,24 +167,33 @@ def main(argv=None) -> int:
     )
     ap.add_argument("--check", action="store_true", help="verify instead of write")
     args = ap.parse_args(argv)
+    problems = check_rows()
     ts = render_ts()
-    problems = check_docs()
+    doc_current = DOC.read_text(encoding="utf-8")
+    doc = render_docs(doc_current)
     if args.check:
         current = TS_OUT.read_text(encoding="utf-8") if TS_OUT.exists() else ""
         if current != ts:
             problems.append(
                 f"{TS_OUT.relative_to(ROOT)} is stale; run python scripts/gen_semconv.py"
             )
+        if doc != doc_current:
+            problems.append(
+                f"{DOC.relative_to(ROOT)} tables are stale; run python scripts/gen_semconv.py"
+            )
         for p in problems:
             print(f"semconv: {p}")
         if problems:
             return 1
         print(
-            f"semconv: ✓ {len(semconv.ATTRIBUTE_NAMES)} attributes, generated TypeScript current, docs aligned"
+            f"semconv: ✓ {len(semconv.ATTRIBUTE_NAMES)} attributes, generated TypeScript and reference tables current"
         )
         return 0
     TS_OUT.write_text(ts, encoding="utf-8")
     print(f"wrote {TS_OUT.relative_to(ROOT)}")
+    if doc != doc_current:
+        DOC.write_text(doc, encoding="utf-8")
+        print(f"wrote {DOC.relative_to(ROOT)}")
     for p in problems:
         print(f"semconv: {p}")
     return 1 if problems else 0
