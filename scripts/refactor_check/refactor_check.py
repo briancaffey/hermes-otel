@@ -255,8 +255,24 @@ def normalise_span(span: Dict[str, Any], by_id: Dict[str, Dict[str, Any]], ignor
     }
 
 
-def dump_live(profile: str, token: str, ignore: Iterable[str]) -> Dict[str, Any]:
-    """Every trace the batch produced, as shapes keyed by prompt id."""
+def batch_started_ns(manifest: Path) -> int:
+    """When the batch started (``started_unix`` in ``runs.json``), in ns; 0 when unknown."""
+    try:
+        started = json.loads(manifest.read_text(encoding="utf-8")).get("started_unix")
+    except (OSError, ValueError):
+        return 0
+    return int(float(started) * 1_000_000_000) if started else 0
+
+
+def dump_live(profile: str, token: str, ignore: Iterable[str], since_ns: int = 0) -> Dict[str, Any]:
+    """Every trace the batch produced, as shapes keyed by prompt id, and the
+    metric names recorded since ``since_ns`` (the batch start).
+
+    The live store keeps the last ``dashboard_live_max_spans`` rows of each
+    kind for the whole profile, so a DB-wide metric-name list flaps as earlier
+    sessions' points are evicted between the two sides (#532); only names whose
+    newest point falls inside the batch count.
+    """
     sys.path.insert(0, str(REPO))
     from hermes_otel.live_store import LIVE_DB_FILENAME, LiveStore
 
@@ -277,7 +293,9 @@ def dump_live(profile: str, token: str, ignore: Iterable[str]) -> Dict[str, Any]
             logs = store.query_logs(trace_id=tid, limit=500)
             levels = sorted({str(r.get("severity_text") or r.get("level") or "?") for r in logs})
             out["logs"][pid] = {"levels": levels, "attributed": bool(logs)}
-        out["metrics"] = sorted(m["name"] for m in store.metric_names())
+        out["metrics"] = sorted(
+            m["name"] for m in store.metric_names() if int(m.get("lastTs") or 0) >= since_ns
+        )
         return out
     finally:
         store.close()
@@ -425,7 +443,7 @@ def run_side(
     manifest = run_batch(profile, token, prompts, hermes_args, side_dir / "run_batch.log")
     print(f"[{label}] checking every source …", flush=True)
     report = check_batch(manifest, wait, side_dir / "check_batch.log")
-    live = dump_live(profile, token, ignore)
+    live = dump_live(profile, token, ignore, since_ns=batch_started_ns(manifest))
     result = {
         "label": desc,
         "token": token,

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import time
 from pathlib import Path
 
 import pytest
@@ -146,6 +147,40 @@ class TestPackageInstall:
         label = rc.materialise(None, tmp_path)
         assert label.startswith("working tree @")
         assert (tmp_path / "hermes_otel" / "tracer.py").exists()
+
+
+class TestBatchMetricNames:
+    """#532: metric names are compared for the batch, not for the whole live store."""
+
+    def test_batch_started_ns_reads_the_manifest(self, rc, tmp_path):
+        manifest = tmp_path / "runs.json"
+        manifest.write_text(json.dumps({"started_unix": 1792238308.5}))
+        assert rc.batch_started_ns(manifest) == 1792238308500000000
+        manifest.write_text("{}")
+        assert rc.batch_started_ns(manifest) == 0
+        assert rc.batch_started_ns(tmp_path / "missing.json") == 0
+
+    def test_dump_live_keeps_only_names_recorded_since_the_batch_start(
+        self, rc, tmp_path, monkeypatch
+    ):
+        from hermes_otel.live_store import LIVE_DB_FILENAME, LiveStore
+
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(rc, "profile_home", lambda profile: home)
+        store = LiveStore(db_path=str(home / LIVE_DB_FILENAME))
+        # Recent timestamps: the store's retention sweep drops old rows on flush.
+        old_ns = time.time_ns() - 120 * 1_000_000_000
+        store.add_metric("hermes.skill.inferred", 1, {}, ts_ns=old_ns)
+        store.add_metric("hermes.token.usage", 7, {}, ts_ns=old_ns + 60 * 1_000_000_000)
+        store.flush()
+        store.close()
+        batch_start = old_ns + 30 * 1_000_000_000
+        assert rc.dump_live("p", "T", (), since_ns=batch_start)["metrics"] == ["hermes.token.usage"]
+        assert rc.dump_live("p", "T", ())["metrics"] == [
+            "hermes.skill.inferred",
+            "hermes.token.usage",
+        ]
 
 
 def test_allowlist_loads_with_reasons(rc):
