@@ -141,7 +141,8 @@ class LokiLogs:
     """The logs half of an adapter whose store speaks the Loki API: the
     adapter calls :meth:`_use_loki` once it knows the read URL (``None`` when
     the entry has no Loki), the reads above then run with the entry's
-    ``loki_selector`` and the adapter's own ``_headers()``."""
+    ``loki_selector`` and the adapter's own ``_headers()``, and ``/status``
+    names the URL."""
 
     loki_url: Optional[str] = None
     loki_selector: str = DEFAULT_SELECTOR
@@ -155,6 +156,12 @@ class LokiLogs:
         if not self.loki_url:
             raise ConfigError("This backend has no loki_url configured")
         return self.loki_url
+
+    def status(self) -> Dict[str, Any]:
+        out = super().status()
+        if self.loki_url:
+            out["loki_url"] = self.loki_url
+        return out
 
     def logs_search(
         self, f: LogFilter, start_s: int, end_s: int, limit: int

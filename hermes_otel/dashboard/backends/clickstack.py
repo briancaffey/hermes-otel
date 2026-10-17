@@ -46,7 +46,6 @@ from .base import (
     basic_auth,
     log_row,
     not_found,
-    otlp_status,
     query_origin,
     resolve_env_or_literal,
     validate_label_name,
@@ -63,7 +62,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, to_int, trace_detail
+from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, otlp_status, to_int, trace_detail
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"

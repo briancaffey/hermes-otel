@@ -36,11 +36,9 @@ from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
-# The OTLP attribute / status builders live in ``shapes`` (#403) and are
-# re-exported here because every adapter imports them from ``base``.
 from hermes_otel.severity import severity_number
 
-from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status, to_int  # noqa: F401
+from .shapes import to_int
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
     from fastapi import HTTPException

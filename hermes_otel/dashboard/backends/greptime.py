@@ -135,7 +135,6 @@ class GreptimeAdapter(PrometheusMetrics, JaegerAdapter):
         base = super().status()
         base["query_api"] = "jaeger-compatible"
         base["sql_url"] = self.sql_url
-        base["prometheus_url"] = self.prometheus_url
         base["db"] = self.db
         return base
 

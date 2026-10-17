@@ -24,13 +24,19 @@ from .base import (
     bearer,
     http_post_json,
     not_found,
-    otlp_status,
     query_origin,
     register_cache,
     resolve_env_or_literal,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page, widened_fetch
-from .shapes import CARD_ATTRIBUTE_SET, card_row, flatten_dotted, otlp_batches, otlp_span
+from .shapes import (
+    CARD_ATTRIBUTE_SET,
+    card_row,
+    flatten_dotted,
+    otlp_batches,
+    otlp_span,
+    otlp_status,
+)
 from .timeconv import iso_to_ns
 
 _DEFAULT_PHOENIX_PORT = 6006

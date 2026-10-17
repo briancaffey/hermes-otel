@@ -35,7 +35,6 @@ from .base import (
     bearer,
     http_get_json,
     not_found,
-    otlp_status,
     parse_kv_tokens,
     query_origin,
     register_cache,
@@ -46,6 +45,7 @@ from .shapes import (
     SpanRow,
     card_from_trace,
     otlp_attrs_to_dict,
+    otlp_status,
     span_count_of,
     to_int,
     trace_detail,
@@ -86,6 +86,16 @@ def _parent_of(span: Dict[str, Any]) -> Optional[str]:
         if isinstance(r, dict) and r.get("refType") == "CHILD_OF" and r.get("spanID"):
             return r["spanID"]
     return None
+
+
+def _service_name_for_span(span: Dict[str, Any], processes: Dict[str, Any]) -> str:
+    """The service of a classic (v1) span: its process's ``serviceName``."""
+    pid = span.get("processID")
+    if pid and isinstance(processes, dict):
+        proc = processes.get(pid)
+        if isinstance(proc, dict):
+            return proc.get("serviceName") or ""
+    return ""
 
 
 def _status_of(attrs: Dict[str, Any]) -> Dict[str, Any]:
@@ -375,20 +385,16 @@ class JaegerAdapter(BackendAdapter):
 
     # ── Shape translation ────────────────────────────────────────────
 
-    def _span_tags_as_dict(self, span: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _span_tags_as_dict(span: Dict[str, Any]) -> Dict[str, Any]:
+        """A classic (v1) span's typed tags as a dict. The one hook of the v1
+        decoding: a store with its own tag encoding overrides it (Victoria's
+        every-tag-is-a-string API)."""
         out: Dict[str, Any] = {}
         for tag in span.get("tags") or []:
             if isinstance(tag, dict) and tag.get("key"):
                 out[tag["key"]] = _tag_value(tag)
         return out
-
-    def _service_name_for_span(self, span: Dict[str, Any], processes: Dict[str, Any]) -> str:
-        pid = span.get("processID")
-        if pid and isinstance(processes, dict):
-            proc = processes.get(pid)
-            if isinstance(proc, dict):
-                return proc.get("serviceName") or ""
-        return ""
 
     def _row(self, span: Dict[str, Any], trace_id: Any, processes: Dict[str, Any]) -> SpanRow:
         """A classic (v1) span as a row: tags as a dict, µs to ns, the
@@ -403,7 +409,7 @@ class JaegerAdapter(BackendAdapter):
             start_ns=start_us * 1000,
             end_ns=(start_us + to_int(span.get("duration"))) * 1000,
             attrs=attrs,
-            service=self._service_name_for_span(span, processes),
+            service=_service_name_for_span(span, processes),
             status=_status_of(attrs),
         )
 
