@@ -396,6 +396,20 @@ class TestBackendCards:
         assert cards["honeycomb"]["ui"]["url"] == "https://ui.eu1.honeycomb.io"
         assert cards["weave"]["ui"]["url"] == "https://wandb.ai/acme/agents/weave"
 
+    @pytest.mark.parametrize(
+        "alias, canonical",
+        [(a, s.type) for s in SPECS for a in s.aliases],
+    )
+    @pytest.mark.parametrize(
+        "endpoint", ["http://localhost:4318/v1/traces", "https://otel.example.com/v1/traces"]
+    )
+    def test_alias_entry_gets_its_canonical_types_ui_link(self, alias, canonical, endpoint):
+        """An alias is another spelling of the same backend (#557)."""
+        got = settings_report._ui_link(BackendConfig(type=alias, endpoint=endpoint), {})
+        want = settings_report._ui_link(BackendConfig(type=canonical, endpoint=endpoint), {})
+        assert got == want
+        assert "generic OTLP collector" not in got["note"]
+
     def test_temporality_names_the_rule_that_set_it(self, cards):
         assert cards["signoz"]["metrics_temporality"] == {"value": "delta", "source": "type preset"}
         assert cards["openobserve"]["metrics_temporality"] == {

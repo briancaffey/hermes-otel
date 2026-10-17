@@ -107,7 +107,7 @@
   },
   "type": "hyperdx",
   "ui": {
-   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
+   "note": "the ClickStack UI is on a different port than OTLP ingest; set ui_url on this entry to link the card to the UI",
    "source": null,
    "url": null
   }
