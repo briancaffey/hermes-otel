@@ -51,7 +51,7 @@ from .attributes import (
     correlation_attributes,
 )
 from .session import _start_session_span
-from .usage import _USAGE_FIELDS, genai_metric_dims
+from .usage import genai_metric_dims
 
 
 def _llm_input_attributes(tracer, user_message: Any) -> Dict[str, Any]:
@@ -123,20 +123,18 @@ def on_pre_llm_call(
             content=False,
         )
 
-    # Capture first LLM input for top-level session span
-    if session_id:
-        ps = tracer.sessions.get_or_create(session_id)
-        if not ps.io_captured:
-            ps.io["input"] = _preview_for(tracer, "llm_input", user_message) or ""
-            ps.io_captured = True
+    # The turn's aggregator: the first LLM input for the top-level session
+    # span, the sender, and the provider its earlier API calls reported.
+    ps = tracer.sessions.get_or_create(session_id) if session_id else None
+    if ps is not None:
+        ps.capture_input(_preview_for(tracer, "llm_input", user_message))
 
     # OpenInference attributes — Phoenix Info panel. The provider is only
     # known once an API call has reported it (continuation turns); the
     # platform is not a provider (#153).
-    known = tracer.sessions.peek(session_id) if session_id else None
     attributes: Dict[str, Any] = {}
     attributes.update(_session_identity_attributes(session_id))
-    attributes.update(_model_attributes(model, known.provider if known else None))
+    attributes.update(_model_attributes(model, ps.provider if ps is not None else None))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_turn_attributes(tracer, session_id))
@@ -146,10 +144,8 @@ def on_pre_llm_call(
         if sender_id:
             sender_attrs = _sender_attributes(sender_id, truncate_string(platform, 120))
             attributes.update(sender_attrs)
-            if session_id:
-                ps = tracer.sessions.get_or_create(session_id)
-                ps.sender_id = sender_id
-                ps.user_id = sender_attrs["user.id"]
+            if ps is not None:
+                ps.set_sender(sender_id, sender_attrs["user.id"])
 
     # Opt-in: put the entire conversation the model is about to see on
     # input.value. Falls back to just the latest user_message otherwise —
@@ -203,12 +199,10 @@ def on_post_llm_call(
 
     preview, original = _preview_marked(tracer, "llm_output", assistant_response)
 
-    # Capture last LLM output for top-level session span. Only if the
-    # session already has I/O buffered (i.e. pre_llm_call ran) — mirrors
-    # prior behaviour where we never wrote output without a matching input.
+    # Capture last LLM output for the top-level session span.
     ps = tracer.sessions.peek(session_id) if session_id else None
-    if ps is not None and ps.io_captured:
-        ps.io["output"] = preview or ""
+    if ps is not None:
+        ps.capture_output(preview)
 
     # Provider / response model: what this turn's API calls reported, never
     # the platform or the request model (#153, #155).
@@ -395,23 +389,13 @@ def on_post_api_request(
         cache_labels={**model_labels, "api_mode": api_mode},
     )
     if session_id:
-        # A success after a failed attempt (a retry that worked) clears #467's flag.
+        # An aggregator is minted only when the call reported usage; a bare
+        # success still clears #467's flag on an existing one.
         ps = tracer.sessions.peek(session_id)
+        if ps is None and totals is not None:
+            ps = tracer.sessions.get_or_create(session_id)
         if ps is not None:
-            ps.last_api_failed = False
-    if totals is not None and session_id:
-        ps = tracer.sessions.get_or_create(session_id)
-        for field in _USAGE_FIELDS:
-            ps.usage[field] += totals[field]
-        ps.usage_updated = True
-        # Remember the real LLM provider and the reported response model —
-        # on_session_end only sees the platform and the request model.
-        if provider:
-            ps.provider = provider
-        if response_model:
-            ps.response_model = truncate_string(response_model, 200)
-        if cost is not None:
-            ps.add_cost(cost["status"], cost["usd"])
+            ps.record_attempt(totals, cost, provider=provider, response_model=response_model)
 
     attributes.update(
         response_attributes(
@@ -522,12 +506,9 @@ def on_api_request_error(
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     # Remember why this turn failed so on_session_end can surface it on the root.
-    if session_id:
-        ps = tracer.sessions.peek(session_id)
-        if ps is not None:
-            ps.last_api_failed = True
-            if error_type:
-                ps.last_error_type = error_type
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    if ps is not None:
+        ps.record_api_failure(error_type)
 
     _emit_event(
         tracer,

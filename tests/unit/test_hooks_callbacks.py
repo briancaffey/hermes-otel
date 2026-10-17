@@ -495,8 +495,9 @@ class TestOnPreLlmCall:
         assert attrs["correlation.id"] == "corr-123"
 
     def test_session_state_uses_full_session_id_for_correlation(self, mock_tracer):
+        # No root yet, so pre_llm_call synthesizes one: _start_session_span is
+        # the one writer of correlation_id, keyed by the full session id.
         long_session_id = "s" * 250
-        mock_tracer.spans._active_spans[f"session:{long_session_id}"] = MagicMock()
 
         on_pre_llm_call(
             session_id=long_session_id,

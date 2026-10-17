@@ -127,7 +127,7 @@ def _start_session_span(
     record = tracer.spans.get_subagent(session_id)
     if record:
         attributes["hermes.session.is_subagent"] = True
-        tracer.sessions.get_or_create(session_id).is_subagent = True
+        ps.is_subagent = True
         if record.get("role"):
             attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
         if record.get("parent_session_id"):
@@ -557,7 +557,7 @@ def on_agent_loop_stopped(
     text = truncate_string(str(reason or invalidation_reason or "stopped"), 120)
     ps = tracer.sessions.peek(session_id)
     if ps is not None:
-        ps.stop_reason = text
+        ps.note_stop(text)
     root = tracer.spans.get_span(f"session:{session_id}")
     if root is not None and hasattr(root, "set_attribute"):
         try:
@@ -580,5 +580,5 @@ def on_pre_verify(session_id: Any = None, **kwargs: Any) -> None:
         return None
     ps = tracer.sessions.peek(str(session_id))
     if ps is not None:
-        ps.verify_nudges += 1
+        ps.note_verify()
     return None

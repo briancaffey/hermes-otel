@@ -6,17 +6,8 @@ from typing import Any, Dict, Optional
 
 from ..helpers import to_int, truncate_string
 from ..instruments import claude_code_token_types
+from ..session_state import PRICED_COST_STATUSES
 from ._common import as_dict
-
-# Canonical token-total field order. Used when iterating or copying.
-_USAGE_FIELDS = (
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-    "cache_read_tokens",
-    "cache_write_tokens",
-    "reasoning_tokens",
-)
 
 
 def normalize_usage(usage: dict) -> Dict[str, int]:
@@ -112,12 +103,6 @@ def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, 
             tracer.record_metric("claude_code.token.usage", v, {**base_attrs, "type": label})
 
 
-# Cost statuses that carry a real dollar figure. Hermes's other two,
-# ``included`` (subscription route: an API-equivalent estimate is not a charge)
-# and ``unknown`` (no price for the model), have no amount to report.
-_PRICED_COST_STATUSES = ("actual", "estimated")
-
-
 def _estimate_cost(
     model: str, provider: str, base_url: str, usage: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
@@ -146,7 +131,7 @@ def _estimate_cost(
         )
         status = str(getattr(result, "status", "") or "unknown")
         amount = getattr(result, "amount_usd", None)
-        usd = float(amount) if amount is not None and status in _PRICED_COST_STATUSES else None
+        usd = float(amount) if amount is not None and status in PRICED_COST_STATUSES else None
         return {"status": status, "source": str(getattr(result, "source", "") or ""), "usd": usd}
     except Exception:
         return None

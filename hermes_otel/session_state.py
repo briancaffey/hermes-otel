@@ -20,7 +20,9 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set
+
+from .helpers import truncate_string
 
 
 @dataclass
@@ -67,15 +69,45 @@ class TurnSummary:
             self.skill_names.add(skill)
 
 
+# Canonical token-total field order: the usage buckets a turn accumulates.
+USAGE_FIELDS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
+)
+
+# Cost statuses that carry a real dollar figure (#252). Hermes's other two,
+# ``included`` (subscription route: an API-equivalent estimate is not a charge)
+# and ``unknown`` (no price for the model), have no amount to report.
+PRICED_COST_STATUSES = frozenset({"actual", "estimated"})
+
+
 def _empty_usage() -> Dict[str, int]:
-    return {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0,
-        "reasoning_tokens": 0,
-    }
+    return dict.fromkeys(USAGE_FIELDS, 0)
+
+
+def cost_status_attributes(
+    statuses: Iterable[str], usd: float, status_key: str, usage_key: str
+) -> Dict[str, Any]:
+    """``status_key`` always, plus ``usage_key`` only when every call was priced.
+
+    The one pricing rule for a turn, its auxiliary calls and a delegation
+    subtree: ``partial`` with no amount when only some calls were priced, so a
+    subtotal is never read as the whole; empty when no call reported a status.
+    Callers spell both keys out in full so the semconv drift check sees them.
+    """
+    seen = set(statuses)
+    if not seen:
+        return {}
+    if seen <= PRICED_COST_STATUSES:
+        status = "actual" if seen == {"actual"} else "estimated"
+        return {status_key: status, usage_key: usd}
+    if seen & PRICED_COST_STATUSES:
+        return {status_key: "partial"}
+    return {status_key: "included" if seen == {"included"} else "unknown"}
 
 
 @dataclass
@@ -86,8 +118,9 @@ class PerSession:
     ``on_session_end`` can skip emitting zero-valued token attributes
     when no LLM traffic actually occurred.
 
-    ``io_captured`` is set by ``on_pre_llm_call`` when the first input is
-    captured, so continuation turns don't overwrite the first user message.
+    ``io_captured`` is set by :meth:`capture_input` with the first input, so
+    continuation turns don't overwrite the first user message. The hooks
+    mutate a session through the intent methods below, never field by field.
     """
 
     usage: Dict[str, int] = field(default_factory=_empty_usage)
@@ -147,6 +180,60 @@ class PerSession:
     aux_cost_statuses: List[str] = field(default_factory=list)
     aux_cost_usd: float = 0.0
 
+    def capture_input(self, preview: Optional[str]) -> None:
+        """Keep the session's first LLM input; later turns do not overwrite it."""
+        if not self.io_captured:
+            self.io["input"] = preview or ""
+            self.io_captured = True
+
+    def capture_output(self, preview: Optional[str]) -> None:
+        """Keep the latest LLM output; never buffered without a captured input."""
+        if self.io_captured:
+            self.io["output"] = preview or ""
+
+    def set_sender(self, sender_id: str, user_id: str) -> None:
+        self.sender_id = sender_id
+        self.user_id = user_id
+
+    def note_stop(self, reason: str) -> None:
+        self.stop_reason = reason
+
+    def note_verify(self) -> None:
+        self.verify_nudges += 1
+
+    def record_attempt(
+        self,
+        totals: Optional[Dict[str, int]],
+        cost: Optional[Dict[str, Any]],
+        *,
+        provider: str,
+        response_model: str,
+    ) -> None:
+        """Account one completed main-loop API attempt.
+
+        A success clears ``last_api_failed`` (a retry that worked, #467) even
+        without usage; with usage, the totals, the real provider and the
+        reported response model roll onto the turn for ``on_session_end``.
+        """
+        self.last_api_failed = False
+        if totals is None:
+            return
+        for key in USAGE_FIELDS:
+            self.usage[key] += totals[key]
+        self.usage_updated = True
+        if provider:
+            self.provider = provider
+        if response_model:
+            self.response_model = truncate_string(response_model, 200)
+        if cost is not None:
+            self.add_cost(cost["status"], cost["usd"])
+
+    def record_api_failure(self, error_type: str) -> None:
+        """Remember why the last main-loop attempt failed (#467)."""
+        self.last_api_failed = True
+        if error_type:
+            self.last_error_type = error_type
+
     def add_cost(self, status: str, usd: Optional[float]) -> None:
         self.cost_statuses.append(status)
         if usd is not None:
@@ -182,18 +269,14 @@ class PerSession:
         if self.aux_usage["prompt_tokens"] or self.aux_usage["completion_tokens"]:
             attrs["hermes.turn.auxiliary.input_tokens"] = self.aux_usage["prompt_tokens"]
             attrs["hermes.turn.auxiliary.output_tokens"] = self.aux_usage["completion_tokens"]
-        statuses = set(self.aux_cost_statuses)
-        if statuses and statuses <= {"actual", "estimated"}:
-            attrs["hermes.turn.auxiliary.cost.status"] = (
-                "actual" if statuses == {"actual"} else "estimated"
+        attrs.update(
+            cost_status_attributes(
+                self.aux_cost_statuses,
+                self.aux_cost_usd,
+                "hermes.turn.auxiliary.cost.status",
+                "hermes.turn.auxiliary.cost.usage",
             )
-            attrs["hermes.turn.auxiliary.cost.usage"] = self.aux_cost_usd
-        elif statuses & {"actual", "estimated"}:
-            attrs["hermes.turn.auxiliary.cost.status"] = "partial"
-        elif statuses:
-            attrs["hermes.turn.auxiliary.cost.status"] = (
-                "included" if statuses == {"included"} else "unknown"
-            )
+        )
         return attrs
 
     def api_failure_close(self) -> Optional[Dict[str, Any]]:
@@ -214,21 +297,10 @@ class PerSession:
         return attrs
 
     def cost_rollup(self) -> Dict[str, Any]:
-        """The turn's cost attributes for the root span (empty when no call was priced).
-
-        ``hermes.cost.usage`` is set only when every API call had a price;
-        a turn mixing priced and unpriced calls reports ``partial`` with no
-        amount, so a subtotal is never read as the turn's cost.
-        """
-        statuses = set(self.cost_statuses)
-        if not statuses:
-            return {}
-        if statuses <= {"actual", "estimated"}:
-            status = "actual" if statuses == {"actual"} else "estimated"
-            return {"hermes.cost.status": status, "hermes.cost.usage": self.cost_usd}
-        if statuses & {"actual", "estimated"}:
-            return {"hermes.cost.status": "partial"}
-        return {"hermes.cost.status": "included" if statuses == {"included"} else "unknown"}
+        """The turn's ``hermes.cost.*`` for the root span (empty when no call was priced)."""
+        return cost_status_attributes(
+            self.cost_statuses, self.cost_usd, "hermes.cost.status", "hermes.cost.usage"
+        )
 
 
 @dataclass
@@ -241,21 +313,22 @@ class DelegationTotals:
     cost_usd: float = 0.0
     api_call_count: int = 0
 
+    def _fold(
+        self, usage: Dict[str, int], cost_statuses: List[str], cost_usd: float, api_calls: int
+    ) -> None:
+        for k, v in usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(cost_statuses)
+        self.cost_usd += cost_usd
+        self.api_call_count += api_calls
+
     def add_turn(self, ps: "PerSession") -> None:
         """Fold one finished turn of the child in."""
-        for k, v in ps.usage.items():
-            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
-        self.cost_statuses.extend(ps.cost_statuses)
-        self.cost_usd += ps.cost_usd
-        self.api_call_count += ps.turn_summary.api_call_count
+        self._fold(ps.usage, ps.cost_statuses, ps.cost_usd, ps.turn_summary.api_call_count)
 
     def add(self, other: "DelegationTotals") -> None:
         """Fold a grandchild's subtree in (a nested orchestrator)."""
-        for k, v in other.usage.items():
-            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
-        self.cost_statuses.extend(other.cost_statuses)
-        self.cost_usd += other.cost_usd
-        self.api_call_count += other.api_call_count
+        self._fold(other.usage, other.cost_statuses, other.cost_usd, other.api_call_count)
 
     def attributes(self) -> Dict[str, Any]:
         """``hermes.subagent.*`` rollup attributes for the delegation span.
@@ -272,18 +345,14 @@ class DelegationTotals:
             "hermes.subagent.usage.total_tokens": u.get("total_tokens", 0),
             "hermes.subagent.api_call_count": self.api_call_count,
         }
-        statuses = set(self.cost_statuses)
-        if statuses and statuses <= {"actual", "estimated"}:
-            attrs["hermes.subagent.cost.status"] = (
-                "actual" if statuses == {"actual"} else "estimated"
+        attrs.update(
+            cost_status_attributes(
+                self.cost_statuses,
+                self.cost_usd,
+                "hermes.subagent.cost.status",
+                "hermes.subagent.cost.usage",
             )
-            attrs["hermes.subagent.cost.usage"] = self.cost_usd
-        elif statuses & {"actual", "estimated"}:
-            attrs["hermes.subagent.cost.status"] = "partial"
-        elif statuses:
-            attrs["hermes.subagent.cost.status"] = (
-                "included" if statuses == {"included"} else "unknown"
-            )
+        )
         return attrs
 
 
