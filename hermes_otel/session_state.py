@@ -20,7 +20,7 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, Iterable, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
 
 from .helpers import truncate_string
 
@@ -279,22 +279,25 @@ class PerSession:
         )
         return attrs
 
-    def api_failure_close(self) -> Optional[Dict[str, Any]]:
-        """Root attributes for a turn closed by finalize or the sweep whose
-        last main-loop API attempt failed (#467), or None when it did not.
+    def api_failure_close(self, otherwise: str) -> Tuple[Dict[str, Any], str, Optional[str]]:
+        """How finalize or the sweep closes a root that never got its
+        ``on_session_end``: the ``(attributes, status, error_message)`` for
+        ``end_span``.
 
-        Hermes returns from that path without post_llm_call or on_session_end,
-        so this is the only place the turn can be recorded as failed.
+        Hermes returns from a turn whose every main-loop API attempt failed
+        without post_llm_call or on_session_end (#467), so this is the only
+        place such a turn can be recorded as failed: an error naming the last
+        error type. Any other turn closes OK with ``otherwise`` as its status.
         """
         if not self.last_api_failed:
-            return None
+            return {"hermes.turn.final_status": otherwise}, "ok", None
         attrs: Dict[str, Any] = {
             "hermes.turn.final_status": "failed",
             "hermes.session.failed": True,
         }
         if self.last_error_type:
             attrs["error.type"] = self.last_error_type
-        return attrs
+        return attrs, "error", f"turn failed: {self.last_error_type or 'API request failed'}"
 
     def cost_rollup(self) -> Dict[str, Any]:
         """The turn's ``hermes.cost.*`` for the root span (empty when no call was priced)."""
