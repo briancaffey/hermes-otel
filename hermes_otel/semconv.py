@@ -1377,11 +1377,12 @@ def first(attrs: Mapping[str, Any], keys: Sequence[str]) -> Any:
 # The dashboard's icon and colour per span, the live store's ``kind=`` filter
 # and the query CLI agree on this table. A kind is recognised by the span
 # name's prefix (``exact`` names match whole), except where the span carries
-# ``hermes.span_kind`` (skill and approval spans, whose names vary). Order
-# matters: the first rule that matches wins, and ``other`` is none of them.
+# ``hermes.span_kind`` (skill, approval and human_input spans, whose names
+# vary). Order matters: the first rule that matches wins, and ``other`` is
+# none of them.
 
 KIND_OVERRIDE_ATTR = "hermes.span_kind"
-KIND_OVERRIDES: Tuple[str, ...] = ("skill", "approval")
+KIND_OVERRIDES: Tuple[str, ...] = ("skill", "approval", "human_input")
 
 
 @dataclass(frozen=True)
@@ -1397,6 +1398,7 @@ SPAN_KINDS: Tuple[KindRule, ...] = (
     KindRule("session", prefixes=("session",)),
     KindRule("skill", prefixes=("skill.",)),
     KindRule("approval", prefixes=("approval",)),
+    KindRule("human_input", prefixes=("human_input.",)),
     KindRule("subagent", prefixes=("subagent",)),
     KindRule("llm", prefixes=("llm.",)),
     KindRule("api", prefixes=("api.",)),
@@ -1437,6 +1439,8 @@ KIND_EXAMPLES: Tuple[Tuple[str, Dict[str, str]], ...] = (
     ("approval", {}),
     ("approval.rm_rf", {}),
     ("tool.terminal", {KIND_OVERRIDE_ATTR: "approval"}),
+    ("human_input.clarify", {}),
+    ("human_input.approval", {KIND_OVERRIDE_ATTR: "human_input"}),
     ("subagent", {}),
     ("subagent.researcher", {}),
     ("llm.gpt-4", {}),

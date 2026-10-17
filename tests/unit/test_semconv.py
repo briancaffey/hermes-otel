@@ -92,6 +92,9 @@ class TestSpanKinds:
             ("tool.terminal", {"hermes.span_kind": "approval"}, "approval"),
             ("tool.terminal", {"hermes.span_kind": "bogus"}, "tool"),
             ("approval.rm", {}, "approval"),
+            ("human_input.clarify", {}, "human_input"),
+            ("human_input.approval", {"hermes.span_kind": "human_input"}, "human_input"),
+            ("ask", {"hermes.span_kind": "human_input"}, "human_input"),
             ("subagent.r", {}, "subagent"),
             ("llm.m", {}, "llm"),
             ("api.m", {}, "api"),
@@ -114,6 +117,12 @@ class TestSpanKinds:
     def test_every_kind_has_a_prefix_table(self):
         assert set(semconv.KIND_PREFIXES) == set(semconv.KINDS) - {"other"}
         assert semconv.KIND_PREFIXES["agent"] == ("agent", "agent.")
+
+    def test_every_override_the_hooks_set_is_a_kind(self):
+        """``hermes.span_kind`` values the hooks write (skill, approval,
+        human_input) must be kinds the table knows, or they classify as other (#556)."""
+        assert set(semconv.KIND_OVERRIDES) == {"skill", "approval", "human_input"}
+        assert set(semconv.KIND_OVERRIDES) <= set(semconv.KIND_PREFIXES)
 
 
 class TestDrift:
