@@ -347,7 +347,8 @@ per-type facts are declared once and derived everywhere else.
      `query_origin`, `basic_auth`/`bearer`/`require_credential`, the HTTP
      core and `register_cache` for any probe cache.
    - `paging`: trace and log pages, cursor bounds.
-   - `metrics_math`, `severity` and `timeconv`.
+   - `metrics_math` and `timeconv`, and the package's `hermes_otel/severity.py`
+     for level spellings.
    Declare `filter_support` honestly: `server`, `client` or `none` per key.
 6. Tests: `tests/unit/test_dashboard_<type>.py`, plus adapter goldens.
    Add `tests/golden/adapters/<type>/config.json` and `routes.json`, then

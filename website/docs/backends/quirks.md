@@ -499,7 +499,7 @@ Format: **quirk** → treatment (issue).
 - Ingest is gated by the **team's ingestion key** as a bare `authorization` header (`bearertokenauth` accepts `Bearer` too) → `api_key` / `api_key_env` with `OTEL_CLICKSTACK_API_KEY` / `HYPERDX_API_KEY` fallbacks; a missing key skips the entry, because every batch would be a 401.
 - The Collector's OTLP receivers do not exist until a team does (config arrives over OpAMP) → `mint-api-key.sh` registers the first account through `POST /api/register/password`, reads `db.teams.findOne().apiKey` from the all-in-one's MongoDB and waits for 4318 to answer.
 - All three signals in the standard OTel ClickHouse tables; metric names stay **dotted**, histograms are one table with `Count` and `Sum` → the adapter lists `<name>.sum` / `<name>.count` and reads raw cumulative samples with the five-minute look-behind (#296).
-- Every map value is a string → coerced back on read except on id-like keys (`coerce_tag`, shared with Zipkin).
+- Every map value is a string → coerced back on read except on id-like keys (`coerce_tag` in `dashboard/backends/shapes.py`, which the Zipkin, Victoria and Gigapipe adapters use too).
 - The bundled `default` ClickHouse user answers only from inside the container → `user: api`, `password: api` (defined with open networks by the image) on the entry; ClickHouse answers a bad query with 400/404 and text, mapped to a `backend` error.
 - The Collector lower-cases `SeverityText` → upper-cased again on read; `otelcol_*` self-metrics land in `otel_metrics_gauge` → `metrics_match` keeps the plugin's namespaces.
 - Ports remapped to 3050 / 4407 / 4408 / 8124 (upstream 8080 / 4317 / 4318 / 8123 collide with hn.fm, LGTM, Jaeger and Uptrace); 3-day TTL; 2.6 GB image, about 1.1 GB resident.

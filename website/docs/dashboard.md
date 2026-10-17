@@ -141,7 +141,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 
 ## Troubleshooting
 
-**The Live tab says "Live mode is off".** The dashboard could not import the plugin's `live_store` module, or the file could not be opened (corrupt, or not readable by the dashboard's user); `GET /live/status` names the reason and the path. An empty Live tab with `live: true` and zero rows means nothing is being written: `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files (compare `path` with the gateway's home).
+**The Live tab says "Live mode is off".** The dashboard could not import the plugin's `live_store_registry` module, or the file could not be opened (corrupt, or not readable by the dashboard's user); `GET /live/status` names the reason and the path. An empty Live tab with `live: true` and zero rows means nothing is being written: `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files (compare `path` with the gateway's home).
 
 **Backend source says "Not configured".** No entry under `backends:` has a type with an adapter. The message lists the types that do.
 
