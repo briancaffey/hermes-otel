@@ -147,12 +147,8 @@ class TestPluginPaths:
         assert plugin_config.hermes_home() == root
 
     def test_dashboard_adapters_config_path(self, fake_hermes, monkeypatch):
-        dash = Path(hh.__file__).parent / "dashboard"
-        if str(dash) not in sys.path:
-            sys.path.insert(0, str(dash))
-        import backends  # noqa: E402
-
         from hermes_otel import plugin_config
+        from hermes_otel.dashboard import backends
 
         root, override = fake_hermes
         alpha = root / "profiles" / "alpha"
