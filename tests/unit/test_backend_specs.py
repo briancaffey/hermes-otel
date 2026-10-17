@@ -1,5 +1,5 @@
-"""The backend manifest (#402): every per-type table is a view over it, and the
-pieces that reference a type (resolvers, adapters, env vars, docs) agree with it."""
+"""The backend manifest (#402): the one per-type table, and the pieces that
+reference a type (resolvers, adapters, env vars, docs) agree with it."""
 
 from __future__ import annotations
 
@@ -26,8 +26,13 @@ class TestManifestShape:
         assert specs.spec_for("HyperDX") is specs.BY_TYPE["clickstack"]
         assert specs.canonical_type("qryn") == "gigapipe" and specs.canonical_type("nope") == "nope"
 
-    def test_every_canonical_type_has_a_resolver_and_vice_versa(self):
-        assert set(specs.BY_TYPE) == set(backends._RESOLVERS)
+    def test_every_bespoke_resolver_is_a_canonical_type(self):
+        # The other types resolve from the spec alone (``_resolve_plain``), so a
+        # plain type must declare where its endpoint comes from.
+        assert set(backends._RESOLVERS) < set(specs.BY_TYPE)
+        for t in set(specs.BY_TYPE) - set(backends._RESOLVERS):
+            spec = specs.BY_TYPE[t]
+            assert spec.endpoint_env or spec.default_endpoint or t in ("otlp", "lgtm"), t
         assert backends.KNOWN_TYPES == specs.KNOWN_TYPES
 
     def test_env_priority_names_only_known_types_once(self):
@@ -44,7 +49,9 @@ class TestManifestShape:
 
 
 class TestViews:
-    def test_signal_tables_are_views(self):
+    def test_settings_helpers_read_the_manifest(self):
+        """``display_name`` / ``signal_support`` (the Settings tab's two lookups)
+        answer from the spec, for aliases too."""
         for spec in specs.SPECS:
             assert backends.signal_support(spec.type) == {
                 "traces": True,
@@ -52,13 +59,9 @@ class TestViews:
                 "logs": spec.logs,
             }
             assert backends.display_name(spec.type) == spec.display_name
-            assert backends.preset_temporality(spec.type) == spec.temporality
             for alias in spec.aliases:
                 assert backends.signal_support(alias) == backends.signal_support(spec.type)
                 assert backends.display_name(alias) == spec.display_name
-        assert backends._TRACES_ONLY == {s.type for s in specs.SPECS if s.traces_only}
-        assert backends._LOGS_CAPABLE == {s.type for s in specs.SPECS if s.logs}
-        assert backends._ENV_PRIORITY == list(specs.ENV_PRIORITY)
 
     def test_settings_tables_are_views(self):
         assert settings_report._UI_RULES == {s.type: s.ui_rule for s in specs.SPECS}
@@ -73,10 +76,30 @@ class TestViews:
                 assert set(c.env) <= inventory, (spec.type, c.field)
             assert set(spec.env_opt_in) <= inventory, spec.type
             assert all(set(g) <= inventory for g in spec.vendor_credentials), spec.type
+            endpoint_vars = {
+                spec.endpoint_env,
+                *spec.endpoint_env_fallbacks,
+                spec.metrics_endpoint_env,
+                spec.logs_endpoint_env,
+            } - {None}
+            assert endpoint_vars <= inventory, spec.type
 
-    def test_mcp_ports_are_the_spec_ports(self):
-        for t, port in mcp_config._DEFAULT_QUERY_PORT.items():
-            assert port == specs.BY_TYPE[t].default_query_port
+    def test_auth_header_names_a_declared_credential(self):
+        for spec in specs.SPECS:
+            if spec.auth is None:
+                continue
+            fields = {c.field for c in spec.credentials}
+            want = {"user", "password"} if spec.auth.scheme == "Basic" else {spec.auth.field}
+            assert want <= fields, spec.type
+
+    def test_mcp_query_api_names_a_server_backend_type(self):
+        for spec in specs.SPECS:
+            if spec.query_api is not None:
+                assert spec.query_api.server in ("jaeger", "tempo"), spec.type
+                if not spec.query_api.unverified:
+                    assert spec.default_query_port is not None, spec.type
+        target = mcp_config.query_target({"type": "lgtm", "endpoint": "http://l:4318/v1/traces"})
+        assert (target.server_backend_type, target.backend_url) == ("tempo", "http://l:3200")
 
     def test_adapter_modules_import_and_handle_their_types(self):
         for spec in specs.SPECS:

@@ -27,6 +27,7 @@ from _helpers import clear_backend_env
 
 from hermes_otel import backends, log_handler, mcp_config, query_cli, settings_report
 from hermes_otel import plugin_config as pc
+from hermes_otel.backend_specs import BY_TYPE, ENV_PRIORITY, spec_for
 from hermes_otel.dashboard import backends as dash
 from hermes_otel.dashboard.backends.base import resolve_env_or_literal
 
@@ -159,7 +160,7 @@ def env_only_vars(backend_type: str) -> Dict[str, str]:
         if fallbacks:
             out[fallbacks[0]] = value
     out.update(_ENV_ONLY_EXTRA.get(canonical, {}))
-    opt_in = backends._ENV_OPT_IN.get(canonical, ())
+    opt_in = spec_for(canonical).env_opt_in
     if opt_in and not any(name in out for name in opt_in):
         out[opt_in[0]] = "opt-in-test"
     return out
@@ -290,7 +291,7 @@ def snapshot(backend_type: str, path: str, home: Path, monkeypatch) -> Dict[str,
     out: Dict[str, Any] = {"type": backend_type, "path": path}
     canonical = _alias_types().get(backend_type, backend_type)
     if path == "env_only":
-        if canonical not in backends._ENV_PRIORITY or backend_type != canonical:
+        if canonical not in ENV_PRIORITY or backend_type != canonical:
             out["env_selectable"] = False
             return out
         env = env_only_vars(backend_type)
@@ -320,7 +321,7 @@ def snapshot(backend_type: str, path: str, home: Path, monkeypatch) -> Dict[str,
         out["log_targets"] = _log_targets(rb)
     out["display_name"] = backends.display_name(backend_type)
     out["signal_support"] = backends.signal_support(backend_type)
-    out["preset_temporality"] = backends.preset_temporality(backend_type)
+    out["preset_temporality"] = spec_for(backend_type).temporality
     _write_config(home, [entry])
     out["settings_card"] = _settings_card()
     out["mcp"] = dataclasses.asdict(mcp_config.query_target(entry))
@@ -430,9 +431,10 @@ class TestRegistriesAgree:
     def test_default_query_ports_agree_with_mcp_config(self):
         from hermes_otel.dashboard.backends import jaeger, tempo
 
-        assert mcp_config._DEFAULT_QUERY_PORT["jaeger"] == jaeger._DEFAULT_JAEGER_QUERY_PORT
-        assert mcp_config._DEFAULT_QUERY_PORT["tempo"] == tempo._DEFAULT_TEMPO_QUERY_PORT
-        assert mcp_config._DEFAULT_QUERY_PORT["lgtm"] == tempo._DEFAULT_TEMPO_QUERY_PORT
+        # ``mcp_config`` takes the port from the spec; the adapters keep their own.
+        assert BY_TYPE["jaeger"].default_query_port == jaeger._DEFAULT_JAEGER_QUERY_PORT
+        assert BY_TYPE["tempo"].default_query_port == tempo._DEFAULT_TEMPO_QUERY_PORT
+        assert BY_TYPE["lgtm"].default_query_port == tempo._DEFAULT_TEMPO_QUERY_PORT
 
     def test_config_candidates_agree(self, scratch_home):
         home = pc.hermes_home()
@@ -444,8 +446,8 @@ class TestRegistriesAgree:
     def test_secret_precedence_agrees(self, monkeypatch):
         monkeypatch.setenv("HO_TEST_K", "from-env")
         both = {"api_key": "inline", "api_key_env": "HO_TEST_K"}
-        assert backends._resolve_secret("inline", "HO_TEST_K", []) == "inline"
+        assert backends.choose_secret("inline", "HO_TEST_K", []).value == "inline"
         assert resolve_env_or_literal(both, "api_key", "api_key_env") == "inline"
-        assert backends._resolve_secret(None, "HO_TEST_K", []) == "from-env"
+        assert backends.choose_secret(None, "HO_TEST_K", []).value == "from-env"
         only_env = {"api_key_env": "HO_TEST_K"}
         assert resolve_env_or_literal(only_env, "api_key", "api_key_env") == "from-env"

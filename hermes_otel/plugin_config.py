@@ -15,7 +15,7 @@ Two ways to pick backends:
   * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
     or Langfuse / LangSmith credentials. When ``backends:`` is empty, env-var
     detection is used and at most one backend is selected: LangSmith first,
-    then the order of ``backends._ENV_PRIORITY``.
+    then the order of ``backend_specs.ENV_PRIORITY``.
 """
 
 from __future__ import annotations

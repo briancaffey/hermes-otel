@@ -7,6 +7,7 @@ import pytest
 from _helpers import clear_backend_env
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import spec_for
 from hermes_otel.plugin_config import BackendConfig
 
 US = "https://api.smith.langchain.com/otel/v1/traces"
@@ -69,7 +70,7 @@ class TestResolver:
             "metrics": False,
             "logs": False,
         }
-        assert "langsmith" in backends.KNOWN_TYPES and "langsmith" in backends._TRACES_ONLY
+        assert "langsmith" in backends.KNOWN_TYPES and spec_for("langsmith").traces_only
 
 
 class TestEnvMode:

@@ -33,20 +33,6 @@ DEFAULT_SERVER_NAME = "otel"
 #: timeout is too short for that.
 CONNECT_TIMEOUT_S = 60
 
-# Query ports of the stacks the server was verified against (2026-10-11, the
-# repo's docker-compose folders): Jaeger's UI port and Tempo's HTTP port. The
-# ``grafana/otel-lgtm`` image serves Tempo on the same 3200.
-_DEFAULT_QUERY_PORT = {t: BY_TYPE[t].default_query_port for t in ("jaeger", "tempo", "lgtm")}
-_SERVER_BACKEND_TYPE = {"jaeger": "jaeger", "tempo": "tempo", "lgtm": "tempo"}
-
-# Types whose read API is Jaeger- or Tempo-compatible but were not run against
-# the server; listed with the reason instead of a config block.
-_COMPATIBLE_UNVERIFIED = {
-    "gigapipe": "serves the Tempo API on its OTLP port, not verified with the server",
-    "victoria": "serves the Jaeger API under /select/jaeger, not verified with the server",
-    "greptime": "serves the Jaeger API under /v1/jaeger, not verified with the server",
-}
-
 
 @dataclass(frozen=True)
 class QueryTarget:
@@ -75,18 +61,22 @@ def _label(entry: Dict[str, Any]) -> str:
 def query_target(entry: Dict[str, Any]) -> Any:
     """:class:`QueryTarget` for a Jaeger / Tempo / LGTM entry, else :class:`NotQueryable`.
 
-    The host and scheme come from the entry's OTLP ``endpoint``; the port is
-    the entry's ``query_port`` (the same key the dashboard adapters read) or
-    the stack default. No credentials are ever copied into the result: the
+    Which types qualify is the manifest's ``query_api`` (a type whose API is
+    compatible but unverified is listed with that reason). The host and scheme
+    come from the entry's OTLP ``endpoint``; the port is the entry's
+    ``query_port`` (the same key the dashboard adapters read) or the spec's
+    ``default_query_port``. No credentials are ever copied into the result: the
     server's env gets ``BACKEND_TYPE`` and ``BACKEND_URL`` only.
     """
     btype = str(entry.get("type") or "").strip().lower()
     name = _label(entry)
-    if btype not in _DEFAULT_QUERY_PORT:
-        reason = _COMPATIBLE_UNVERIFIED.get(
-            btype, "traces are not served over a Jaeger or Tempo query API"
-        )
+    spec = BY_TYPE.get(btype)
+    api = spec.query_api if spec is not None else None
+    if api is None:
+        reason = "traces are not served over a Jaeger or Tempo query API"
         return NotQueryable(name=name, backend_type=btype, reason=reason)
+    if api.unverified:
+        return NotQueryable(name=name, backend_type=btype, reason=api.unverified)
     if btype == "jaeger" and str(entry.get("query_api") or "").strip().lower() == "v3":
         return NotQueryable(
             name=name,
@@ -96,15 +86,15 @@ def query_target(entry: Dict[str, Any]) -> Any:
     parsed = urlparse(str(entry.get("endpoint") or ""))
     scheme = parsed.scheme or "http"
     host = parsed.hostname or "localhost"
-    port = entry.get("query_port") or _DEFAULT_QUERY_PORT[btype]
+    port = entry.get("query_port") or spec.default_query_port
     try:
         port = int(port)
     except (TypeError, ValueError):
-        port = _DEFAULT_QUERY_PORT[btype]
+        port = spec.default_query_port
     return QueryTarget(
         name=name,
         backend_type=btype,
-        server_backend_type=_SERVER_BACKEND_TYPE[btype],
+        server_backend_type=api.server,
         backend_url=f"{scheme}://{host}:{port}",
     )
 

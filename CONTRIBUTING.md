@@ -314,11 +314,19 @@ per-type facts are declared once and derived everywhere else.
 1. Add one `BackendSpec` to `SPECS` in `hermes_otel/backend_specs.py`:
    display name, the OTLP signals it accepts, temporality and root-usage
    presets, how env-var mode selects it, its credential fields and the env
-   vars each falls back to. The exporter, the Settings tab, the MCP config
-   and the dashboard registry all read their tables from here.
-2. Add `_resolve_<type>(bc)` in `hermes_otel/backends.py` and register it in
-   `_RESOLVERS`. It turns a `BackendConfig` into endpoints and headers. Use
-   `_resolve_secret` for credentials, so precedence matches every other type.
+   vars each falls back to, its endpoint variable and default host, and the
+   one auth header it sends (`auth=AuthHeader(...)`). The exporter, the
+   Settings tab, the MCP config and the dashboard registry all read their
+   tables from here. A plain OTLP/HTTP type (an endpoint, at most one auth
+   header, `/v1/traces` normalisation) is complete at this step:
+   `backends._resolve_plain` serves it from the spec.
+2. Only when the type has bespoke URL or header rules (a vendor ingest path,
+   per-signal header sets, Resource attributes): add
+   `_resolve_<type>(bc, spec)` in `hermes_otel/backends.py` and register it
+   in `_RESOLVERS`. It returns a `_Wire` (endpoint and headers); `resolve()`
+   adds everything the spec knows. Use `_endpoint(bc, spec)` and
+   `_secret(bc, spec, "<field>")`, so env fallbacks come from the spec and
+   precedence matches every other type.
 3. Run `uv run --extra dev python scripts/gen_config_docs.py --write` to
    regenerate the type list and the env-var reference.
 4. Tests: `tests/unit/test_backends_<type>.py` for env-var precedence and

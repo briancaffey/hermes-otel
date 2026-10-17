@@ -7,6 +7,7 @@ The live path is verified against the compose stack in docker-compose/zipkin.
 import pytest
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import spec_for
 from hermes_otel.plugin_config import BackendConfig
 
 
@@ -64,7 +65,7 @@ class TestZipkinBackendType:
         assert rb.supports_logs is True
 
     def test_no_temporality_preset(self):
-        assert backends.preset_temporality("zipkin") is None
+        assert spec_for("zipkin").temporality is None
 
     def test_root_usage_kept(self):
         rb = backends.resolve(BackendConfig(type="zipkin", endpoint="http://localhost:9411"))

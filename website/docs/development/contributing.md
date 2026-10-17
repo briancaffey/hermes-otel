@@ -112,7 +112,7 @@ GitHub Actions runs the unit + integration suite + ruff + black on every PR. E2E
 
 ## Adding a new backend
 
-1. Add the resolver in `backends.py`.
+1. Add a `BackendSpec` in `backend_specs.py`; a plain OTLP type needs no code beyond it. Add a `_resolve_<type>(bc, spec)` in `backends.py` only for bespoke URL or header rules (see CONTRIBUTING.md).
 2. Add a `docker-compose/<backend>/` folder (compose file + README, see `docker-compose/README.md`) if the backend runs locally.
 3. Add a `docs/backends/<name>.md` page — follow the structure of `phoenix.md` / `signoz.md` (setup, multi-backend config, what you'll see, attribute convention, metrics note, troubleshooting).
 4. Add an entry under `backends:` in `config.yaml.example`.

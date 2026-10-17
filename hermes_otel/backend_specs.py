@@ -11,17 +11,21 @@ port) and where the documented exceptions are. ``backends.py``,
 their tables from :data:`SPECS`; ``scripts/gen_config_docs.py`` renders the
 type list and the backend env-var reference from it.
 
-Adding a backend: one :class:`BackendSpec` here, a ``_resolve_<type>`` in
-``backends.py`` (registered in ``_RESOLVERS``), optionally an adapter module
-under ``dashboard/backends/`` named in ``adapter_module``, and a docs page.
-``tests/unit/test_backend_specs.py`` checks the pieces agree.
+Adding a backend: one :class:`BackendSpec` here. A plain OTLP/HTTP type (an
+endpoint, at most one auth header) needs nothing else: ``backends.py`` resolves
+it from the spec (``endpoint_env``, ``default_endpoint``, ``normalize_endpoint``,
+``auth``). A type with its own URL or header rules also gets a
+``_resolve_<type>(bc, spec)`` in ``backends.py`` (registered in ``_RESOLVERS``);
+optionally an adapter module under ``dashboard/backends/`` named in
+``adapter_module``, and a docs page. ``tests/unit/test_backend_specs.py``
+checks the pieces agree.
 
 No OTel imports here: the dashboard package and the scripts import this.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Dict, Optional, Tuple
 
 #: The metric temporality a type's docs ask for; ``None`` is the SDK default.
@@ -35,6 +39,32 @@ class CredentialField:
 
     field: str
     env: Tuple[str, ...]
+
+
+@dataclass(frozen=True)
+class AuthHeader:
+    """How a plain OTLP type authenticates: one request header built from a
+    credential. ``scheme`` ``Basic`` encodes ``user`` + ``password``; another
+    scheme (``Bearer``, ``ApiKey``) prefixes the value of ``field``; ``None``
+    sends the bare value. The header is omitted when nothing resolves, unless
+    ``required`` (then the entry is skipped at startup)."""
+
+    name: str = "Authorization"
+    scheme: Optional[str] = None
+    field: str = "api_key"
+    required: bool = False
+
+
+@dataclass(frozen=True)
+class QueryApi:
+    """The trace query API a type serves, as ``opentelemetry-mcp`` names it
+    (``jaeger`` | ``tempo``, #304). ``unverified`` is set when the API is
+    compatible but the type was not run against the server (the repo's
+    docker-compose stacks were, 2026-10-11); ``mcp-config`` then prints the
+    reason instead of a server block."""
+
+    server: str
+    unverified: Optional[str] = None
 
 
 @dataclass(frozen=True)
@@ -69,6 +99,23 @@ class BackendSpec:
     credentials: Tuple[CredentialField, ...] = ()
     #: ``OTEL_<TYPE>_ENDPOINT`` when the resolver reads one.
     endpoint_env: Optional[str] = None
+    #: Vendor SDK variables that also name the endpoint, read after ``endpoint_env``.
+    endpoint_env_fallbacks: Tuple[str, ...] = ()
+    #: Where the type ingests when nothing names an endpoint (SaaS hosts);
+    #: ``None`` = the endpoint is required. With ``region_endpoints`` it is the
+    #: host for an unknown ``region`` (``None`` makes that an error).
+    default_endpoint: Optional[str] = None
+    #: ``region`` -> ingest URL for SaaS types with several hosts (``us`` default).
+    region_endpoints: Dict[str, str] = field(default_factory=dict)
+    #: ``True``: the endpoint is normalised to ``<base>/v1/traces`` (``backends.traces_url``).
+    normalize_endpoint: bool = False
+    #: The one auth header a plain type sends; bespoke resolvers build their own.
+    auth: Optional[AuthHeader] = None
+    #: Victoria: the sibling stores' endpoint variables (one OTLP route per store).
+    metrics_endpoint_env: Optional[str] = None
+    logs_endpoint_env: Optional[str] = None
+    #: The trace query API ``opentelemetry-mcp`` can read; ``None`` = not queryable.
+    query_api: Optional[QueryApi] = None
     #: The port the read API / UI listens on in the repo's compose stacks.
     default_query_port: Optional[int] = None
     #: Where the web UI lives relative to the OTLP endpoint (settings card):
@@ -145,6 +192,7 @@ _SPECS = [
         temporality="delta",
         credentials=(CredentialField("ingestion_key", ("OTEL_SIGNOZ_INGESTION_KEY",)),),
         endpoint_env="OTEL_SIGNOZ_ENDPOINT",
+        auth=AuthHeader("signoz-ingestion-key", field="ingestion_key"),
         default_query_port=3301,
         ui_rule="proxied",
         adapter_module="signoz",
@@ -160,6 +208,7 @@ _SPECS = [
         metrics=False,
         logs=False,
         endpoint_env="OTEL_JAEGER_ENDPOINT",
+        query_api=QueryApi("jaeger"),
         default_query_port=16686,
         ui_rule="proxied",
         adapter_module="jaeger",
@@ -172,6 +221,7 @@ _SPECS = [
         metrics=False,
         logs=False,
         endpoint_env="OTEL_ZIPKIN_ENDPOINT",
+        normalize_endpoint=True,
         default_query_port=9411,
         ui_rule="origin",
         adapter_module="zipkin",
@@ -191,6 +241,10 @@ _SPECS = [
             CredentialField("db", ("OTEL_GREPTIME_DB",)),
         ),
         endpoint_env="OTEL_GREPTIME_ENDPOINT",
+        query_api=QueryApi(
+            "jaeger",
+            unverified="serves the Jaeger API under /v1/jaeger, not verified with the server",
+        ),
         default_query_port=4000,
         ui_rule="origin",
         adapter_module="greptime",
@@ -218,6 +272,8 @@ _SPECS = [
         vendor_credentials=(("HYPERDX_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY")),),
         endpoint_env="OTEL_CLICKSTACK_ENDPOINT",
+        normalize_endpoint=True,
+        auth=AuthHeader("authorization", required=True),
         default_query_port=8123,
         ui_rule="proxied",
         adapter_module="clickstack",
@@ -255,6 +311,12 @@ _SPECS = [
             CredentialField("password", ("OTEL_VICTORIA_PASSWORD",)),
         ),
         endpoint_env="OTEL_VICTORIA_ENDPOINT",
+        metrics_endpoint_env="OTEL_VICTORIA_METRICS_ENDPOINT",
+        logs_endpoint_env="OTEL_VICTORIA_LOGS_ENDPOINT",
+        query_api=QueryApi(
+            "jaeger",
+            unverified="serves the Jaeger API under /select/jaeger, not verified with the server",
+        ),
         default_query_port=10428,
         ui_rule="origin",
         adapter_module="victoria",
@@ -292,6 +354,8 @@ _SPECS = [
         logs=True,
         credentials=(CredentialField("api_key", ("OTEL_ASPIRE_API_KEY",)),),
         endpoint_env="OTEL_ASPIRE_ENDPOINT",
+        normalize_endpoint=True,
+        auth=AuthHeader("x-otlp-api-key"),
         default_query_port=18888,
         ui_rule="proxied",
         adapter_module="aspire",
@@ -320,6 +384,12 @@ _SPECS = [
             CredentialField("password", ("OTEL_GIGAPIPE_PASSWORD",)),
         ),
         endpoint_env="OTEL_GIGAPIPE_ENDPOINT",
+        normalize_endpoint=True,
+        auth=AuthHeader(scheme="Basic"),
+        query_api=QueryApi(
+            "tempo",
+            unverified="serves the Tempo API on its OTLP port, not verified with the server",
+        ),
         default_query_port=3100,
         ui_rule="origin",
         adapter_module="gigapipe",
@@ -342,6 +412,12 @@ _SPECS = [
         vendor_credentials=(("AGENTA_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_AGENTA_API_KEY", "AGENTA_API_KEY")),),
         endpoint_env="OTEL_AGENTA_ENDPOINT",
+        endpoint_env_fallbacks=("AGENTA_HOST",),
+        default_endpoint="https://us.cloud.agenta.ai/api/otlp/v1/traces",
+        region_endpoints={
+            "us": "https://us.cloud.agenta.ai/api/otlp/v1/traces",
+            "eu": "https://eu.cloud.agenta.ai/api/otlp/v1/traces",
+        },
         ui_rule="origin",
         adapter_module="agenta",
         query_keys=("region", "ui_url"),
@@ -361,6 +437,7 @@ _SPECS = [
         metrics=False,
         logs=False,
         endpoint_env="OTEL_TEMPO_ENDPOINT",
+        query_api=QueryApi("tempo"),
         default_query_port=3200,
         ui_rule="proxied",
         adapter_module="tempo",
@@ -389,6 +466,7 @@ _SPECS = [
         temporality="delta",
         credentials=(CredentialField("dsn", ("OTEL_UPTRACE_DSN", "UPTRACE_DSN")),),
         endpoint_env="OTEL_UPTRACE_ENDPOINT",
+        auth=AuthHeader("uptrace-dsn", field="dsn", required=True),
         default_query_port=14318,
         ui_rule="origin",
         adapter_module="uptrace",
@@ -453,6 +531,10 @@ _SPECS = [
         vendor_credentials=(("HONEYCOMB_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY")),),
         endpoint_env="OTEL_HONEYCOMB_ENDPOINT",
+        region_endpoints={
+            "us": "https://api.honeycomb.io/v1/traces",
+            "eu": "https://api.eu1.honeycomb.io/v1/traces",
+        },
         ui_rule="fixed",
         env_vars=(
             ("OTEL_HONEYCOMB_ENDPOINT", "Single-backend mode: Honeycomb OTLP URL"),
@@ -470,6 +552,8 @@ _SPECS = [
         vendor_credentials=(("ELASTIC_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY")),),
         endpoint_env="OTEL_ELASTIC_ENDPOINT",
+        normalize_endpoint=True,
+        auth=AuthHeader(scheme="ApiKey"),
         ui_rule=None,
         env_vars=(
             (
@@ -489,6 +573,8 @@ _SPECS = [
         vendor_credentials=(("OPENLIT_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY")),),
         endpoint_env="OTEL_OPENLIT_ENDPOINT",
+        normalize_endpoint=True,
+        auth=AuthHeader(scheme="Bearer"),
         ui_rule="proxied",
         env_vars=(
             ("OTEL_OPENLIT_ENDPOINT", "Single-backend mode: OpenLIT OTLP/HTTP URL"),
@@ -537,6 +623,8 @@ _SPECS = [
             CredentialField("project", ("OPIK_PROJECT_NAME",)),
         ),
         endpoint_env="OTEL_OPIK_ENDPOINT",
+        endpoint_env_fallbacks=("OPIK_URL_OVERRIDE",),
+        default_endpoint="https://www.comet.com/opik",
         ui_rule="origin",
         env_vars=(
             ("OTEL_OPIK_ENDPOINT", "Single-backend mode: Opik base URL (default: Comet cloud)"),
@@ -556,6 +644,10 @@ _SPECS = [
         vendor_credentials=(("LMNR_PROJECT_API_KEY",),),
         credentials=(CredentialField("api_key", ("OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY")),),
         endpoint_env="OTEL_LAMINAR_ENDPOINT",
+        endpoint_env_fallbacks=("LMNR_BASE_URL",),
+        default_endpoint="https://api.lmnr.ai",
+        normalize_endpoint=True,
+        auth=AuthHeader(scheme="Bearer", required=True),
         ui_rule="proxied",
         env_vars=(
             (
@@ -583,6 +675,8 @@ _SPECS = [
             CredentialField("project", ("LANGWATCH_PROJECT_ID",)),
         ),
         endpoint_env="OTEL_LANGWATCH_ENDPOINT",
+        endpoint_env_fallbacks=("LANGWATCH_ENDPOINT",),
+        default_endpoint="https://app.langwatch.ai",
         ui_rule="origin",
         env_vars=(
             (
@@ -613,6 +707,8 @@ _SPECS = [
             CredentialField("project", ("LATITUDE_PROJECT",)),
         ),
         endpoint_env="OTEL_LATITUDE_ENDPOINT",
+        endpoint_env_fallbacks=("LATITUDE_INGEST_URL",),
+        default_endpoint="https://ingest.latitude.so",
         ui_rule="proxied",
         env_vars=(
             (
@@ -648,6 +744,7 @@ _SPECS = [
             CredentialField("project", ("WANDB_PROJECT", "DEFAULT_WANDB_PROJECT")),
         ),
         endpoint_env="OTEL_WEAVE_ENDPOINT",
+        endpoint_env_fallbacks=("WANDB_OTLP_ENDPOINT",),
         ui_rule="fixed",
         env_vars=(
             ("OTEL_WEAVE_ENDPOINT", "Single-backend mode: W&B Weave OTLP URL"),
@@ -674,6 +771,11 @@ _SPECS = [
             CredentialField("project", ("OTEL_LANGSMITH_PROJECT", "LANGSMITH_PROJECT")),
         ),
         endpoint_env="OTEL_LANGSMITH_ENDPOINT",
+        endpoint_env_fallbacks=("LANGSMITH_ENDPOINT",),
+        region_endpoints={
+            "us": "https://api.smith.langchain.com/otel/v1/traces",
+            "eu": "https://eu.api.smith.langchain.com/otel/v1/traces",
+        },
         ui_rule="fixed",
         env_vars=(
             ("OTEL_LANGSMITH_API_KEY", "LangSmith API key (preferred name; the env opt-in)"),
@@ -692,6 +794,7 @@ _SPECS = [
         display_name="LGTM",
         metrics=True,
         logs=True,
+        query_api=QueryApi("tempo"),
         default_query_port=3200,
         ui_rule="proxied",
         adapter_module="tempo",

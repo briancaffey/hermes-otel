@@ -3,6 +3,7 @@
 import pytest
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import spec_for
 from hermes_otel.plugin_config import BackendConfig
 
 EP = "http://localhost:3110"
@@ -46,7 +47,7 @@ class TestGigapipeBackendType:
             )
         )
         assert rb.headers == {"X-Scope-Meta": "t"} and rb.supports_metrics is False
-        assert backends.preset_temporality("gigapipe") is None
+        assert spec_for("gigapipe").temporality is None
         assert backends.signal_support("gigapipe") == {
             "traces": True,
             "metrics": True,
