@@ -64,7 +64,6 @@ class TestViews:
                 assert backends.display_name(alias) == spec.display_name
 
     def test_settings_tables_are_views(self):
-        assert settings_report._UI_RULES == {s.type: s.ui_rule for s in specs.SPECS}
         for spec in specs.SPECS:
             want = {c.field: c.env for c in spec.credentials}
             assert settings_report._TYPE_CREDENTIALS.get(spec.type, {}) == want, spec.type
@@ -91,6 +90,24 @@ class TestViews:
             fields = {c.field for c in spec.credentials}
             want = {"user", "password"} if spec.auth.scheme == "Basic" else {spec.auth.field}
             assert want <= fields, spec.type
+
+    def test_ui_facts_match_the_ui_rule(self):
+        """The Settings card derives a link from ``ui_*`` with no type literal
+        (#504), so each fact must sit on a type whose rule reads it."""
+        for spec in specs.SPECS:
+            if spec.ui_by_region:
+                assert spec.ui_rule == "fixed" and "us" in spec.ui_by_region, spec.type
+            if spec.ui_project_page is not None:
+                assert spec.ui_rule == "fixed" and spec.ui_url, spec.type
+            if spec.ui_rule == "fixed":
+                assert spec.ui_by_region or spec.ui_url, spec.type
+            if spec.ui_on_query_port:
+                assert spec.ui_rule == "proxied", spec.type
+            if spec.ui_url:
+                assert spec.ui_rule in ("fixed", "origin"), spec.type
+            for key in spec.required_resource_attributes:
+                # the resolver can supply them from a credential field
+                assert key.split(".")[-1] in {c.field for c in spec.credentials}, (spec.type, key)
 
     def test_mcp_query_api_names_a_server_backend_type(self):
         for spec in specs.SPECS:

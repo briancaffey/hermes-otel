@@ -1061,11 +1061,10 @@ def resolve_from_env() -> Optional[_ResolvedBackend]:
             continue
         try:
             rb = resolve(BackendConfig(type=backend_type))
-            if backend_type == "weave":
-                attrs = rb.resource_attributes or {}
-                if not (attrs.get("wandb.entity") and attrs.get("wandb.project")):
-                    continue
-            return rb
         except ValueError:
             continue
+        # No ``resource_attributes`` overlay in env-var mode: a type that routes
+        # by resource attributes must find them in the environment too.
+        if not spec.missing_resource_attributes(rb.resource_attributes or {}):
+            return rb
     return None

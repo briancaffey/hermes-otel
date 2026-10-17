@@ -24,7 +24,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
 from . import plugin_config as pc
-from .backend_specs import SPECS, spec_for
+from .backend_specs import BY_TYPE, SPECS, spec_for
 from .plugin_config import (
     FIELD_DOCS,
     FIELD_GROUPS,
@@ -156,25 +156,6 @@ _QUERY_FIELDS: Tuple[str, ...] = tuple(
     )
 )
 
-# Where each type's web UI lives relative to its OTLP endpoint, for the card's
-# link when the entry sets no ``ui_url``:
-#   origin   the UI is served on the OTLP endpoint's scheme://host:port
-#            (Phoenix :6006, Langfuse :3000, OpenObserve :5080, Uptrace :14318,
-#            Parseable :8000 all serve UI and ingest on one port)
-#   proxied  the UI normally sits on another port (Jaeger :16686, SigNoz :8080,
-#            Grafana :3000 vs OTLP :4318), so the origin is used only when the
-#            endpoint names no port, i.e. a reverse-proxied hostname such as
-#            https://jaeger.example.com; ``query_port`` is honoured for the
-#            types whose query API and UI share a port (Jaeger, SigNoz)
-#   fixed    a SaaS UI at a known address (Honeycomb, W&B Weave)
-#   None     nothing to derive (a generic OTLP collector has no UI)
-_UI_RULES: Dict[str, Optional[str]] = {s.type: s.ui_rule for s in SPECS}
-_UI_QUERY_PORT_TYPES = {"jaeger", "signoz"}
-_HONEYCOMB_UI = {"us": "https://ui.honeycomb.io", "eu": "https://ui.eu1.honeycomb.io"}
-_LANGSMITH_UI = {"us": "https://smith.langchain.com", "eu": "https://eu.smith.langchain.com"}
-_WEAVE_UI = "https://wandb.ai"
-_LANGFUSE_CLOUD = "https://cloud.langfuse.com"
-
 
 def _origin(url: Optional[str]) -> Optional[str]:
     """``scheme://host[:port]`` of a URL, or ``None`` when it has no host."""
@@ -192,80 +173,59 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
     ``{"url": str|None, "source": "file"|"derived"|None, "note": str}``; the note
     explains the derivation (or why there is no link) and is shown as the
     link's tooltip. Never a guess: when the UI's port cannot be known from the
-    endpoint the link is omitted and the note says to set ``ui_url``.
+    endpoint the link is omitted and the note says to set ``ui_url``. The
+    per-type facts are the spec's ``ui_*`` fields (``BackendSpec.ui_rule``
+    documents the rules); an alias entry (``hyperdx``) derives nothing.
     """
     t = (bc.type or "").strip().lower()
     human = _backends.display_name(t)
     if bc.ui_url and bc.ui_url.strip():
         return {"url": bc.ui_url.strip(), "source": "file", "note": "ui_url from the config file"}
     hint = "set ui_url on this entry to link the card to the UI"
-    rule = _UI_RULES.get(t)
+    spec = BY_TYPE.get(t)
+    rule = spec.ui_rule if spec is not None else None
+
+    def derived(url: str, note: str) -> Dict[str, Any]:
+        return {"url": url, "source": "derived", "note": note}
+
+    def none(note: str) -> Dict[str, Any]:
+        return {"url": None, "source": None, "note": f"{note}; {hint}"}
+
     if rule == "origin":
-        src = bc.endpoint or (bc.base_url if t == "langfuse" else None)
-        origin = _origin(src) or (_LANGFUSE_CLOUD if t == "langfuse" and not src else None)
+        src = bc.endpoint or bc.base_url
+        origin = _origin(src) or (spec.ui_url if not src else None)
         if origin:
-            return {
-                "url": origin,
-                "source": "derived",
-                "note": f"derived from the endpoint: {human} serves its UI on the OTLP origin",
-            }
-        return {
-            "url": None,
-            "source": None,
-            "note": f"no endpoint to derive a UI link from; {hint}",
-        }
+            return derived(
+                origin, f"derived from the endpoint: {human} serves its UI on the OTLP origin"
+            )
+        return none("no endpoint to derive a UI link from")
     if rule == "proxied":
         parts = urllib.parse.urlsplit((bc.endpoint or "").strip())
-        query_port = raw.get("query_port") if t in _UI_QUERY_PORT_TYPES else None
+        query_port = raw.get("query_port") if spec.ui_on_query_port else None
         if parts.scheme and parts.hostname and query_port:
-            return {
-                "url": f"{parts.scheme}://{parts.hostname}:{query_port}",
-                "source": "derived",
-                "note": f"derived from query_port: the {human} UI is served on its query port",
-            }
+            return derived(
+                f"{parts.scheme}://{parts.hostname}:{query_port}",
+                f"derived from query_port: the {human} UI is served on its query port",
+            )
         if parts.scheme and parts.netloc and parts.port is None:
-            return {
-                "url": f"{parts.scheme}://{parts.netloc}",
-                "source": "derived",
-                "note": "derived from the endpoint host (no port, so a reverse proxy is assumed "
+            return derived(
+                f"{parts.scheme}://{parts.netloc}",
+                "derived from the endpoint host (no port, so a reverse proxy is assumed "
                 "to serve the UI there)",
-            }
-        return {
-            "url": None,
-            "source": None,
-            "note": f"the {human} UI is on a different port than OTLP ingest; {hint}",
-        }
+            )
+        return none(f"the {human} UI is on a different port than OTLP ingest")
     if rule == "fixed":
-        if t == "langsmith":
+        if spec.ui_by_region:
             region = (bc.region or "us").strip().lower()
-            return {
-                "url": _LANGSMITH_UI.get(region, _LANGSMITH_UI["us"]),
-                "source": "derived",
-                "note": f"the LangSmith UI for region {region}",
-            }
-        if t == "honeycomb":
-            region = (bc.region or "us").strip().lower()
-            url = _HONEYCOMB_UI.get(region, _HONEYCOMB_UI["us"])
-            return {
-                "url": url,
-                "source": "derived",
-                "note": f"the Honeycomb UI for region {region}",
-            }
-        base = _origin(bc.base_url) or _WEAVE_UI
-        entity = getattr(bc, "entity", None) or ""
-        project = getattr(bc, "project", None) or ""
-        if entity and project:
-            return {
-                "url": f"{base}/{entity}/{project}/weave",
-                "source": "derived",
-                "note": "the Weave page of the entry's entity and project",
-            }
-        return {
-            "url": base,
-            "source": "derived",
-            "note": "the W&B home; set entity and project to link the Weave page",
-        }
-    return {"url": None, "source": None, "note": f"a generic OTLP collector has no UI; {hint}"}
+            url = spec.ui_by_region.get(region, spec.ui_by_region["us"])
+            return derived(url, f"the {human} UI for region {region}")
+        base = _origin(bc.base_url) or spec.ui_url
+        page = spec.ui_project_page
+        entity, project = getattr(bc, "entity", None) or "", getattr(bc, "project", None) or ""
+        if page is not None and entity and project:
+            return derived(base + page.path.format(entity=entity, project=project), page.note)
+        return derived(base, page.home_note if page is not None else f"the {human} UI")
+    return none("a generic OTLP collector has no UI")
 
 
 def _signal_report(bc: BackendConfig) -> Dict[str, Dict[str, Any]]:
