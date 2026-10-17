@@ -442,7 +442,8 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
        ``hermes.log.attribution``.
     3. **Adds the session attributes**: ``hermes.session_id`` and
        ``gen_ai.conversation.id`` (the session), and ``hermes.platform``
-       from the session's root span when it is known.
+       from the session's root span when it is known; then the config's
+       ``common_attributes`` (#480), under keys the record does not have.
     4. **Redacts secrets** from the body and every string attribute, after
        enrichment so the added attributes are covered, with Hermes's own
        redactor when the plugin runs inside Hermes, else the plugin's
@@ -460,11 +461,13 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
         tracker: Any = None,
         redact: bool = True,
         max_attribute_length: Optional[int] = None,
+        common_attributes: Optional[Dict[str, Any]] = None,
     ) -> None:
         self._resolve = resolve
         self._tracker = tracker
         self._redact = redact
         self._max_len = int(max_attribute_length) if max_attribute_length else 0
+        self._common = dict(common_attributes or {})
 
     # ── helpers ────────────────────────────────────────────────────────────
     def _span_for_session(self, session_id: str):
@@ -514,6 +517,8 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
                     attrs.setdefault(PLATFORM_ATTRIBUTE, platform)
             if tier:
                 attrs[ATTRIBUTION_ATTRIBUTE] = tier
+            for key, value in self._common.items():
+                attrs.setdefault(key, value)
             # 4. redaction, after enrichment so the added attributes are covered.
             if self._redact:
                 if isinstance(view.body, str) and view.body:
@@ -702,6 +707,7 @@ def install_handler(
     live_rules: Optional[LogRules] = None,
     max_attribute_length: Optional[int] = None,
     attach_handler: bool = True,
+    common_attributes: Optional[Dict[str, Any]] = None,
 ) -> Optional["LoggerProvider"]:
     """Wire a :class:`LoggerProvider` + :class:`LoggingHandler` onto Python logging.
 
@@ -735,6 +741,8 @@ def install_handler(
         attach_handler: Attach the stdlib ``LoggingHandler`` (``logs.capture``).
             ``False`` builds the provider for the plugin's own events only
             (``logs.events.enabled`` with ``logs.capture: false``, #267).
+        common_attributes: The config's ``common_attributes``, stamped on
+            every record by :class:`HermesLogProcessor` (#480).
 
     Returns the ``LoggerProvider`` so the tracer can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are
@@ -750,6 +758,7 @@ def install_handler(
             tracker=tracker,
             redact=redact,
             max_attribute_length=max_attribute_length,
+            common_attributes=common_attributes,
         )
     )
     if live_store is not None:

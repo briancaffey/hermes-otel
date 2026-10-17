@@ -24,7 +24,7 @@ from typing import Any, List, Optional, Sequence
 from unittest.mock import patch
 
 from .instruments import metric_views
-from .pipeline import Pipeline, create_instruments, init_logs_pipeline
+from .pipeline import CommonAttributesProcessor, Pipeline, create_instruments, init_logs_pipeline
 from .plugin_config import HermesOtelConfig
 from .tracer import HermesOTelPlugin
 
@@ -173,6 +173,9 @@ def build_inmemory_plugin(
     resource = Resource.create({"service.name": service_name})
     span_exporters = [InMemorySpanExporter() for _ in range(exporters)]
     provider = TracerProvider(resource=resource)
+    common = (config.common_attributes if config is not None else None) or {}
+    if common:  # ahead of the exporters, as build_pipeline attaches it (#480)
+        provider.add_span_processor(CommonAttributesProcessor(common))
     processors = []
     for exp in span_exporters:
         proc = SimpleSpanProcessor(exp)
@@ -201,7 +204,7 @@ def build_inmemory_plugin(
         meter_provider = MeterProvider(
             resource=resource,
             metric_readers=[reader],
-            views=metric_views(plugin.config.metrics_histogram),
+            views=metric_views(plugin.config.metrics_histogram, common=common),
         )
         plugin.pipeline.meter_provider = meter_provider
         plugin.pipeline.meter = meter_provider.get_meter(service_name)

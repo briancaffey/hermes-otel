@@ -45,6 +45,15 @@
 # global_tags:
 #   team: platform
 
+# Stamped on every span, log record and metric point as a plain attribute
+# (not on the Resource), for backends that do not index resource attributes
+# per signal (Loki labels, Mimir series, OpenObserve columns). Scalars only;
+# keys up to 64 characters; hermes. / gen_ai. / service. keys are reserved and
+# dropped with a warning. Changing a value starts new metric series.
+# common_attributes:
+#   team: platform
+#   cost_center: research
+
 # Extra HTTP headers added to every OTLP exporter call across ALL backends.
 # Per-backend headers (under `backends:` below) are merged on top and win on conflict.
 # headers:

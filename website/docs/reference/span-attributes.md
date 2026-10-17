@@ -35,6 +35,8 @@ The tables are generated from the registry in `hermes_otel/semconv.py` by `scrip
 
 Any `resource_attributes.*` / `global_tags.*` key from the config file is added too; `resource_attributes` wins on key conflict.
 
+Every `common_attributes.*` key is set on every span as a plain span attribute (not on the Resource) by a `SpanProcessor` at span start, under keys the span does not already carry; see [Which attributes reach which signal](/configuration/yaml#which-attributes-reach-which-signal).
+
 ## Every span
 
 [//]: # (generated:every-span:start)

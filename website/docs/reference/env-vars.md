@@ -120,7 +120,7 @@ Generated from `hermes_otel/backend_specs.py` by `scripts/gen_config_docs.py`; a
 
 ## `HERMES_OTEL_*` overrides
 
-Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). Maps (`headers`, `global_tags`, `resource_attributes`) and `backends` are yaml-only. An env var that cannot be parsed as the field's type logs a warning and is ignored.
+Every scalar field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`) and `backends` are yaml-only. An env var that cannot be parsed as the field's type logs a warning and is ignored.
 
 [//]: # (generated:env-overrides:start)
 

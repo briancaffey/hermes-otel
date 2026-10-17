@@ -430,10 +430,16 @@ class HermesOTelPlugin:
         if pipeline is None or not spec.recorded(self.config):
             return
         # ``profile`` is a bounded label (one value per plugin instance), so
-        # a backend can split every series by agent (#70). A session id is
-        # Claude Code's standard metric attribute and nobody else's: it
-        # survives only on a compat instrument, and only when the user opted in.
-        attributes = {"profile": self.profile_name, **(attributes or {})}
+        # a backend can split every series by agent (#70), and the config's
+        # ``common_attributes`` are constant per process too (#480); the
+        # hook's own labels win over both. A session id is Claude Code's
+        # standard metric attribute and nobody else's: it survives only on a
+        # compat instrument, and only when the user opted in.
+        attributes = {
+            "profile": self.profile_name,
+            **(self.config.common_attributes or {}),
+            **(attributes or {}),
+        }
         session_label = attributes.pop(COMPAT_SESSION_LABEL, None)
         if spec.compat and session_label and self.config.metric_name_compat_session_id:
             attributes[COMPAT_SESSION_LABEL] = str(session_label)

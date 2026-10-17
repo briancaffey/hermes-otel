@@ -30,6 +30,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
 | `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
+| `common_attributes` | map | *(unset)* | Stamped on every span, log record and metric point (not the Resource), for backends that do not index resource attributes per signal; scalar values, keys of at most 64 chars outside `hermes.` / `gen_ai.` / `service.`. A plugin attribute of the same name wins; changing a value starts new metric series |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `service_name_from_profile` | bool | `false` | A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops. Bounds: ≥ 1 |
