@@ -11,6 +11,7 @@ from __future__ import annotations
 import logging
 import threading
 import time
+from dataclasses import replace
 
 import pytest
 
@@ -85,7 +86,13 @@ class TestShutdownAndReinit:
         assert first_provider is not None and first_logger_provider is not None
         assert len(ours()) == 1  # live-only: the log provider exists for the live sink
 
-        assert plugin.init() is True  # reload / reconfigure
+        assert plugin.init() is True  # a reload with the same config: a no-op (#484)
+        assert plugin.pipeline.tracer_provider is first_provider
+        assert plugin.pipeline.logger_provider is first_logger_provider
+        assert len(ours()) == 1
+
+        plugin.config = replace(plugin.config, project_name="other")
+        assert plugin.init() is True  # a reconfigure: rebuilt
         assert plugin.is_enabled
         assert plugin.pipeline.tracer_provider is not first_provider
         # The first logging handler is gone; exactly one of ours is attached.

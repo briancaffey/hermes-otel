@@ -52,7 +52,7 @@ from .instruments import (
     COMPAT_SESSION_LABEL,
 )
 from .pipeline import _OTEL_AVAILABLE, Pipeline, build_pipeline
-from .plugin_config import HermesOtelConfig, load_config
+from .plugin_config import SHORT_FINGERPRINT_CHARS, HermesOtelConfig, load_config
 from .session_state import PerSession, SessionState
 from .severity import severity_number
 from .span_tracker import SpanTracker, sweep_attributes
@@ -71,10 +71,12 @@ class HermesOTelPlugin:
     Holds the :class:`Pipeline` that owns its ``TracerProvider`` /
     ``MeterProvider`` / ``LoggerProvider`` (installed as the OTel globals the
     first time: the SDK allows setting each global exactly once per process).
-    ``init()`` is idempotent: a second call shuts the previous pipeline down
-    first, so a plugin reload or a reconfigure never leaves orphaned exporter
-    threads behind. All hooks share this instance via the module-level
-    ``get_tracer()``.
+    ``init()`` is idempotent by configuration fingerprint (#484): a second
+    call with the same effective config keeps the live pipeline, one with a
+    different config flushes and shuts the previous pipeline down first, so a
+    plugin reload or a reconfigure never leaves orphaned exporter threads
+    behind nor loses buffered spans. All hooks share this instance via the
+    module-level ``get_tracer()``.
     """
 
     _instance: Optional["HermesOTelPlugin"] = None
@@ -115,8 +117,10 @@ class HermesOTelPlugin:
         self.host_metrics: Optional[HostMetrics] = None
         # The background turn-end flush's worker and pending flag.
         self.flusher = Flusher()
-        # Config
+        # Config, and the fingerprint of the config the live pipeline was
+        # built from (``HermesOtelConfig.fingerprint``; None without one).
         self.config: HermesOtelConfig = config if config is not None else load_config()
+        self.config_fingerprint: Optional[str] = None
         # The home and profile this instance serves. Captured here, while the
         # profile's scope is active (Hermes imports the plugin once per
         # profile, inside that profile's home override), so a multiplexed
@@ -137,11 +141,26 @@ class HermesOTelPlugin:
         """Build the pipeline for the configured backends, then start the
         host-metrics sampler if enabled.
 
-        Idempotent: when a pipeline is already up (plugin reload, reconfigure,
-        tests) it is shut down and flushed first, so exporter threads and log
-        handlers never stack up.
+        Idempotent by fingerprint (#484): when a pipeline is already up
+        (plugin reload, reconfigure, tests) and ``config`` (plus the explicit
+        ``endpoint``) fingerprints the same as the one it was built from, the
+        call is a no-op that returns ``is_enabled``; a different fingerprint
+        flushes and shuts the old pipeline down (``shutdown()``: open spans
+        ended, every processor flushed) and builds the new one, logging both
+        short fingerprints. Exporter threads and log handlers never stack up,
+        and an unchanged reload never loses a buffered span to a rebuild.
         """
+        fingerprint = self.config.fingerprint(endpoint=endpoint)
         if self.pipeline is not None:
+            short = fingerprint[:SHORT_FINGERPRINT_CHARS]
+            if fingerprint == self.config_fingerprint:
+                debug_log(f"init: config unchanged ({short}); keeping the live pipeline")
+                return self.is_enabled
+            previous = (self.config_fingerprint or "")[:SHORT_FINGERPRINT_CHARS] or "?"
+            logger.info(
+                f"[hermes-otel] config changed ({previous} → {short}): flushing and "
+                "rebuilding the pipeline"
+            )
             self.shutdown()
         self._label_values = {}
         self._label_cap_logged = set()
@@ -172,6 +191,7 @@ class HermesOTelPlugin:
         if pipeline is None:
             return False
         self.pipeline = pipeline
+        self.config_fingerprint = fingerprint
         self._register_atexit_flush()
         if self.config.host_metrics:
             self.host_metrics = HostMetrics(
@@ -210,6 +230,7 @@ class HermesOTelPlugin:
         self.spans.clear_turns()
         self.sessions.clear()
         self.pipeline = None
+        self.config_fingerprint = None
         remove_sdk_log_forwarding()
         close_debug_log()
 

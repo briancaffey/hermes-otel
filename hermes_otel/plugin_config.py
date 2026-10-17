@@ -21,6 +21,8 @@ Two ways to pick backends:
 from __future__ import annotations
 
 import dataclasses
+import hashlib
+import json
 import os
 import re
 from dataclasses import dataclass, field, fields, replace
@@ -28,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 from .debug_utils import logger
+from .redaction import is_header_secret_name, is_secret_name, is_secret_value
 
 if TYPE_CHECKING:  # the ``backends:`` list has its own loader (backend_config.py)
     from .backend_config import BackendConfig
@@ -660,6 +663,80 @@ class HermesOtelConfig:
     def captures_full_responses(self) -> bool:
         """Whether api spans carry the complete response instead of a preview."""
         return self.captures_content() and self.capture_full_responses
+
+    def fingerprint(self, **extra: Any) -> str:
+        """sha256 (hex) of the normalised, secret-hashed configuration (#484).
+
+        The same resolved configuration always gives the same fingerprint,
+        whatever the order of a mapping's keys or whether a list field was
+        given as a tuple or a list; any effective change (a knob, a backend
+        header, endpoint or project, a backend added or removed) gives a
+        different one. Secret values (credential fields, auth headers, bearer
+        strings) enter as a stable hash of their own, so a rotated key changes
+        the fingerprint without the key itself ever being part of the hashed
+        text; ``*_env`` variable names are not secrets and enter as written.
+        ``extra`` adds init-time inputs that are not fields (the explicit
+        ``endpoint`` of ``HermesOTelPlugin.init``); ``None`` values are
+        dropped, so ``fingerprint(endpoint=None) == fingerprint()``. The
+        plugin keeps the fingerprint of the configuration its live pipeline
+        was built from, and the Settings tab shows the first
+        ``SHORT_FINGERPRINT_CHARS`` characters so a user can match the two.
+        """
+        return hashlib.sha256(fingerprint_source(self, **extra).encode("utf-8")).hexdigest()
+
+
+# ── Fingerprint (#484) ────────────────────────────────────────────────────
+# What ``HermesOTelPlugin.init`` compares to decide whether a re-init may keep
+# the live pipeline, and what the Settings tab shows (shortened) so a user can
+# tell which configuration is live.
+SHORT_FINGERPRINT_CHARS = 12
+
+
+def _hashed_secret(value: str) -> str:
+    """A stable stand-in for a secret value: changes with the value, never reveals it."""
+    return "sha256:" + hashlib.sha256(value.encode("utf-8")).hexdigest()[:16]
+
+
+def _fingerprint_value(value: Any, key: str = "", *, header: bool = False) -> Any:
+    """``value`` normalised for the fingerprint: a dataclass becomes a mapping
+    of its fields, a tuple a list, a ``BackendConfig.extra`` pair tuple a
+    mapping (so query-key order does not count), and a string that is a
+    secret by its key (``header`` widens the test to header names) or by its
+    shape (bearer / basic) becomes :func:`_hashed_secret`."""
+    if dataclasses.is_dataclass(value) and not isinstance(value, type):
+        out: Dict[str, Any] = {}
+        for f in fields(value):
+            v = getattr(value, f.name)
+            if f.name == "extra" and isinstance(v, tuple):
+                v = dict(v)
+            out[f.name] = _fingerprint_value(v, f.name)
+        return out
+    if isinstance(value, dict):
+        return {
+            str(k): _fingerprint_value(v, str(k), header=(key == "headers"))
+            for k, v in value.items()
+        }
+    if isinstance(value, (list, tuple)):
+        return [_fingerprint_value(v, key) for v in value]
+    if isinstance(value, str) and value:
+        secret_key = (
+            is_header_secret_name(key) if header else is_secret_name(key)
+        ) and not key.lower().endswith("_env")
+        if secret_key or is_secret_value(value):
+            return _hashed_secret(value)
+    return value
+
+
+def fingerprint_source(cfg: HermesOtelConfig, **extra: Any) -> str:
+    """The canonical text :meth:`HermesOtelConfig.fingerprint` hashes: the
+    normalised configuration as compact JSON with sorted keys, plus the
+    non-``None`` ``extra`` inputs under ``init``. Exposed so a test can check
+    what the fingerprint does and does not contain."""
+    doc = _fingerprint_value(cfg)
+    inputs = {k: _fingerprint_value(v, k) for k, v in extra.items() if v is not None}
+    if inputs:
+        doc["init"] = inputs
+    return json.dumps(doc, sort_keys=True, separators=(",", ":"), default=str)
 
 
 # ── Views over the field metadata ───────────────────────────────────────

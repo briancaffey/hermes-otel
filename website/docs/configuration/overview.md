@@ -78,6 +78,14 @@ Set `backends:` in `config.yaml` with one or more entries. Env-var detection is 
 | See every knob | [Full config schema](/reference/config-schema) |
 | Use env vars instead of YAML | [Env vars reference](/reference/env-vars) |
 
+## When a change takes effect
+
+The plugin reads its configuration when Hermes loads it: at the start of every `hermes` process, and again when Hermes reloads its plugins (a profile switch, `hermes update`). A gateway started before an edit keeps its old values until it restarts or reloads.
+
+Inside one process, the plugin decides what a re-initialisation means by **fingerprint**: a SHA-256 over the resolved configuration (file, `HERMES_OTEL_*` overrides and defaults, the `backends:` list included), normalised so that key order and tuple-versus-list spellings do not count, with every secret value replaced by a stable hash of itself. The same fingerprint as the live pipeline makes the re-initialisation a no-op: the exporters keep running and nothing buffered is touched. A different fingerprint (a knob changed, a backend added, a project renamed, a key rotated) flushes the live pipeline, shuts it down and builds a new one from the new configuration; the transition is logged with both short fingerprints (`config changed (0a1b2c3d4e5f → 9f8e7d6c5b4a)`). Spans still open at that moment are ended with `hermes.span.ended_by=sweep` and exported by the old pipeline before it stops.
+
+The **Settings** tab of the dashboard shows the short fingerprint of the configuration it resolves next to the plugin version, so you can tell whether the gateway runs the configuration you are looking at. Credentials named by a `<field>_env` variable are read when the pipeline is built and are not part of the fingerprint; the variable's *name* is.
+
 ## Disabling the plugin without uninstalling
 
 Two options:
