@@ -61,9 +61,12 @@ class InstrumentSpec:
         """Whether this instrument exists at all under ``config``.
 
         A compat instrument needs its family switched on (``metric_name_compat``
-        is the family's name or ``both``); every other instrument always exists.
-        ``create_instruments`` creates exactly the enabled ones.
+        is the family's name or ``both``); an instrument named in
+        ``disable_metrics`` (#479) never exists; every other instrument always
+        does. ``create_instruments`` creates exactly the enabled ones.
         """
+        if self.name in disabled_names(config.disable_metrics):
+            return False
         return not self.compat or config.metric_name_compat in (self.compat, "both")
 
     def recorded(self, config: Any) -> bool:
@@ -537,6 +540,55 @@ COMPAT_SESSION_LABEL = "session.id"
 CLAUDE_CODE_TOKEN_TYPES = ("input", "output", "cacheRead", "cacheCreation")
 
 
+# ``disable_metrics`` (#479). A spelling is the hook-side key (``tool_duration``),
+# the key with dots (``tool.duration``), the OTLP name (``hermes.tool.duration``)
+# or the OTLP name without its ``hermes.`` prefix; the config stores the OTLP
+# name, the one a backend and the metrics reference show. ``all`` is every
+# instrument.
+DISABLE_ALL = "all"
+
+
+@lru_cache(maxsize=None)
+def _spellings() -> Dict[str, str]:
+    """Every accepted spelling, lower-cased, to the OTLP name it means."""
+    table: Dict[str, str] = {}
+    for key, spec in _INSTRUMENTS.items():
+        spellings = {key, spec.name}
+        if "." not in key:
+            spellings.add(key.replace("_", "."))
+        if spec.name.startswith("hermes."):
+            spellings.add(spec.name[len("hermes.") :])
+        for spelling in spellings:
+            table[spelling.lower()] = spec.name
+    return table
+
+
+def instrument_name(spelling: str) -> Optional[str]:
+    """The OTLP name a ``disable_metrics`` entry means, or ``None`` for an
+    unknown spelling (``all`` is returned as is)."""
+    text = str(spelling).strip().lower()
+    return DISABLE_ALL if text == DISABLE_ALL else _spellings().get(text)
+
+
+def metric_spellings() -> Dict[str, Tuple[str, ...]]:
+    """Per OTLP name, the other ``disable_metrics`` spellings that mean it, in
+    instrument order (the config reference lists these)."""
+    out: Dict[str, List[str]] = {spec.name: [] for spec in _INSTRUMENTS.values()}
+    for spelling, name in _spellings().items():
+        if spelling != name:
+            out[name].append(spelling)
+    return {name: tuple(sorted(spellings)) for name, spellings in out.items()}
+
+
+@lru_cache(maxsize=None)
+def disabled_names(disable_metrics: Tuple[str, ...]) -> FrozenSet[str]:
+    """The OTLP names a normalised ``disable_metrics`` tuple switches off:
+    every instrument when it holds ``all``."""
+    if DISABLE_ALL in disable_metrics:
+        return frozenset(s.name for s in _INSTRUMENTS.values())
+    return frozenset(disable_metrics)
+
+
 def claude_code_token_types(totals: Dict[str, int]) -> Dict[str, int]:
     """Claude Code's four token ``type`` values from Hermes's canonical
     totals (``normalize_usage``): the uncached prompt as ``input``, the
@@ -554,22 +606,35 @@ def claude_code_token_types(totals: Dict[str, int]) -> Dict[str, int]:
     }
 
 
-def metric_views(histogram: str = "explicit", common: Iterable[str] = ()) -> List[Any]:
+def metric_views(
+    histogram: str = "explicit", common: Iterable[str] = (), disabled: Iterable[str] = ()
+) -> List[Any]:
     """One ``View`` per instrument: the label allow-list and, for histograms
     with ``histogram="explicit"``, the bucket boundaries (#233).
 
     With ``exponential`` the boundaries are left to the readers' preferred
     aggregation (a View's aggregation would override every reader's).
     ``common`` are the ``common_attributes`` keys (#480): ``record_metric``
-    puts them on every point, so every allow-list admits them.
+    puts them on every point, so every allow-list admits them. ``disabled``
+    is the config's ``disable_metrics`` (#479): a disabled instrument gets a
+    ``DropAggregation`` View instead, so nothing recorded under its name is
+    ever exported, whoever records it.
     """
     if not _OTEL_AVAILABLE:
         return []
-    from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
+    from opentelemetry.sdk.metrics.view import (
+        DropAggregation,
+        ExplicitBucketHistogramAggregation,
+        View,
+    )
 
     always = {"profile", *common}
+    dropped = disabled_names(tuple(disabled))
     views: List[Any] = []
     for spec in _INSTRUMENTS.values():
+        if spec.name in dropped:
+            views.append(View(instrument_name=spec.name, aggregation=DropAggregation()))
+            continue
         kwargs: Dict[str, Any] = {
             "instrument_name": spec.name,
             "attribute_keys": set(spec.labels) | always,

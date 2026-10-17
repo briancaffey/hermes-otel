@@ -130,13 +130,16 @@ def on_pre_auxiliary_call(
         attributes["gen_ai.request.stream"] = True
 
     # Not pushed as a parent: nothing runs *inside* an auxiliary attempt. The
-    # MoA aggregator's tool calls belong to the main loop's api span.
+    # MoA aggregator's tool calls belong to the main loop's api span. Named
+    # ``api.*`` like the main loop's, so its ``disable_spans`` family is
+    # explicit (#479).
     tracer.start_span(
         name=_span_name(model),
         key=key,
         kind="llm",
         attributes=attributes,
         session_id=owner,
+        family="auxiliary",
     )
     debug_log(f"  auxiliary span started: key={key}")
 

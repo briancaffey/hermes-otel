@@ -34,6 +34,8 @@ agent / cron                                  [AGENT]
 - **`approval.*`** — one per dangerous-command approval prompt. Spans the time the agent blocks waiting for a human to approve/deny, correlated to the gated tool via `gen_ai.tool.call.id`. See [`approval.*`](#approval) below.
 - **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
+Every family but the root can be switched off with [`disable_spans`](/configuration/yaml#disable) (#479). A disabled span is a non-recording stand-in carrying its parent's context, so the tree closes over it: with `llm` disabled the `api.*` spans parent to `agent`, with `api` disabled the `tool.*` spans parent to `llm.*`. The hooks still run and still record the family's metrics.
+
 ## `agent` / `cron`
 
 The root span of every turn. It is named `agent`, or `cron` when the Hermes session kind is a cron job; the kind itself (`cli`, `telegram`, `discord`, …) is on `hermes.session.kind`.

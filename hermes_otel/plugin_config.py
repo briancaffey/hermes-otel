@@ -30,6 +30,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, Callable, Dict, Optional, Tuple, Union
 
 from .debug_utils import logger
+from .instruments import _INSTRUMENTS, DISABLE_ALL, instrument_name
 from .redaction import is_header_secret_name, is_secret_name, is_secret_value
 
 if TYPE_CHECKING:  # the ``backends:`` list has its own loader (backend_config.py)
@@ -214,6 +215,79 @@ def validate_common_attributes(mapping: Any) -> Optional[Dict[str, Scalar]]:
             continue
         kept[key] = value
     return kept or None
+
+
+# ``disable_spans`` (#479): the span families a config may switch off, by the
+# first segment of the span name (``tool.*``, ``api.*``, ...). ``approval``
+# covers the bare ``approval`` span too; ``auxiliary`` is the auxiliary
+# ``api.*`` span (titling, compression, MoA), which its hook names explicitly
+# so ``api`` leaves it alone. The turn roots (``agent`` / ``cron``) cannot be
+# disabled: a backend's ``traces: false`` is the switch for whole traces.
+SPAN_FAMILIES: Tuple[str, ...] = (
+    "tool",
+    "api",
+    "llm",
+    "approval",
+    "skill",
+    "subagent",
+    "kanban",
+    "auxiliary",
+    "human_input",
+)
+
+
+def _names(values: Any) -> Tuple[str, ...]:
+    """The non-empty entries of a list field as given (a yaml list, a tuple or
+    one comma-separated string), stripped."""
+    if isinstance(values, str):
+        values = values.split(",")
+    return tuple(str(v).strip() for v in (values or ()) if v is not None and str(v).strip())
+
+
+def validate_disable_metrics(values: Any) -> Tuple[str, ...]:
+    """The ``disable_metrics`` entries as OTLP names, deduplicated in order;
+    each unknown spelling is dropped with a warning that lists the valid ones.
+
+    A spelling is the hook-side key (``tool_duration``), the key with dots
+    (``tool.duration``), the OTLP name (``hermes.tool.duration``) or that name
+    without ``hermes.``; ``all`` disables every instrument.
+    """
+    kept: Dict[str, None] = {}
+    for raw in _names(values):
+        name = instrument_name(raw)
+        if name is None:
+            valid = ", ".join(sorted(s.name for s in _INSTRUMENTS.values()))
+            logger.warning(
+                f"[hermes-otel] disable_metrics: {raw!r} is not an instrument; ignored. "
+                f"Valid: {DISABLE_ALL}, {valid}"
+            )
+            continue
+        kept[name] = None
+    return tuple(kept)
+
+
+def validate_disable_spans(values: Any) -> Tuple[str, ...]:
+    """The ``disable_spans`` families, lower-cased and deduplicated in order;
+    an unknown family is dropped with a warning that lists the valid ones, and
+    ``all`` is refused (the turn root stays; ``traces: false`` on a backend
+    switches whole traces off)."""
+    kept: Dict[str, None] = {}
+    for raw in _names(values):
+        family = raw.lower()
+        if family == DISABLE_ALL:
+            logger.warning(
+                "[hermes-otel] disable_spans: 'all' is not allowed (the turn root always "
+                "records); set traces: false on the backend instead. Ignored"
+            )
+            continue
+        if family not in SPAN_FAMILIES:
+            logger.warning(
+                f"[hermes-otel] disable_spans: {raw!r} is not a span family; ignored. "
+                f"Valid: {', '.join(SPAN_FAMILIES)}"
+            )
+            continue
+        kept[family] = None
+    return tuple(kept)
 
 
 # ``max_export_batch_size`` may not exceed ``max_queue_size`` (the SDK raises):
@@ -554,6 +628,16 @@ class HermesOtelConfig:
         "Also put `session.id` on the `claude_code.*` instruments, as Claude Code does by default (per-session panels need it; one series per session)",
         "Spans and metrics",
     )
+    disable_metrics: Tuple[str, ...] = _field(
+        (),
+        "Instruments never created, recorded or exported: hook keys (`tool_duration`), dotted (`tool.duration`) or OTLP names (`hermes.tool.duration`), or `all`; an unknown name warns at load. See [Disabling metrics and span families](/configuration/yaml#disable)",
+        "Spans and metrics",
+    )
+    disable_spans: Tuple[str, ...] = _field(
+        (),
+        "Span families never recorded (`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`); a child of a disabled span parents to the nearest recording ancestor. `all` is refused (use a backend's `traces: false`)",
+        "Spans and metrics",
+    )
     skill_spans: bool = _field(
         True,
         "Open a `skill.<name>` span on each successful skill load, closed at turn end",
@@ -637,6 +721,8 @@ class HermesOtelConfig:
             object.__setattr__(
                 self, "common_attributes", validate_common_attributes(self.common_attributes)
             )
+        object.__setattr__(self, "disable_metrics", validate_disable_metrics(self.disable_metrics))
+        object.__setattr__(self, "disable_spans", validate_disable_spans(self.disable_spans))
         _validate_numeric_bounds(self)
 
     # ── What content the hooks record (``content_capture``) ──────────────
