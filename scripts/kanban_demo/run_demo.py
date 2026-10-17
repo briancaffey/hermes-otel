@@ -42,9 +42,12 @@ import time
 import urllib.parse
 import urllib.request
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent))
+from _common import profile_home  # noqa: E402
+
 TERMINAL = {"done", "blocked", "archived"}
 
 
@@ -53,13 +56,6 @@ def log(msg: str) -> None:
 
 
 # --- hermes ---------------------------------------------------------------
-
-
-def profile_home(profile: str, override: Optional[str]) -> Path:
-    if override:
-        return Path(override).expanduser()
-    root = Path(os.environ.get("HERMES_HOME", "~/.hermes")).expanduser()
-    return root if profile in ("", "default") else root / "profiles" / profile
 
 
 def hermes(
@@ -633,7 +629,7 @@ def main() -> int:
     env["HERMES_KANBAN_WORKSPACES_ROOT"] = str(board_dir / "ws")
     for k in ("HERMES_KANBAN_TASK", "HERMES_KANBAN_BOARD", "HERMES_KANBAN_RUN_ID"):
         env.pop(k, None)
-    home = profile_home(args.profile, args.hermes_home)
+    home = Path(args.hermes_home).expanduser() if args.hermes_home else profile_home(args.profile)
     store = home / "hermes_otel_live.db"
     log(f"token {token}; board {db}; live store {store}")
     started_ns = time.time_ns()

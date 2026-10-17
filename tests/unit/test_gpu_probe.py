@@ -309,6 +309,15 @@ class TestDetectGpuVendor:
         monkeypatch.setattr(poller, "_nvidia_init", lambda: None)
         assert poller._detect_gpu_vendor() == (None, None)
 
+    def test_off_skips_detection(self, monkeypatch):
+        monkeypatch.setattr(
+            poller, "_amd_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
+        )
+        monkeypatch.setattr(
+            poller, "_nvidia_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
+        )
+        assert poller._detect_gpu_vendor("off") == (None, None)
+
 
 class TestQueryAndShutdownDispatch:
     def test_query_gpus_dispatches_amd(self, monkeypatch):
@@ -339,51 +348,6 @@ class TestQueryAndShutdownDispatch:
 
     def test_shutdown_unknown_vendor_is_noop(self):
         poller._shutdown_gpu_vendor(None, None)  # must not raise
-
-
-# --------------------------------------------------------------------------- #
-# _aggregate_gpu
-# --------------------------------------------------------------------------- #
-class TestAggregateGpu:
-    def test_empty_list(self):
-        assert poller._aggregate_gpu([]) == (0.0, 0.0, 0.0)
-
-    def test_averages_busy_sums_power_and_vram(self):
-        per_gpu = [
-            {"busy_pct": 10.0, "power_w": 100.0, "vram_used_mb": 1000.0},
-            {"busy_pct": 30.0, "power_w": 200.0, "vram_used_mb": 2000.0},
-        ]
-        gfx, power, vram = poller._aggregate_gpu(per_gpu)
-        assert gfx == 20.0
-        assert power == 300.0
-        assert vram == 3000.0
-
-    def test_none_fields_excluded_from_aggregate(self):
-        per_gpu = [
-            {"busy_pct": None, "power_w": 100.0, "vram_used_mb": None},
-            {"busy_pct": 40.0, "power_w": None, "vram_used_mb": 500.0},
-        ]
-        gfx, power, vram = poller._aggregate_gpu(per_gpu)
-        assert gfx == 40.0  # only one non-None busy_pct
-        assert power == 100.0
-        assert vram == 500.0
-
-    def test_all_none_yields_zero(self):
-        per_gpu = [{"busy_pct": None, "power_w": None, "vram_used_mb": None}]
-        assert poller._aggregate_gpu(per_gpu) == (0.0, 0.0, 0.0)
-
-    # --------------------------------------------------------------------------- #
-    # _cpu_seconds / _clamp_pct
-    # --------------------------------------------------------------------------- #
-
-    def test_off_skips_detection(self, monkeypatch):
-        monkeypatch.setattr(
-            poller, "_amd_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
-        )
-        monkeypatch.setattr(
-            poller, "_nvidia_init", lambda: (_ for _ in ()).throw(AssertionError("should not run"))
-        )
-        assert poller._detect_gpu_vendor("off") == (None, None)
 
 
 # --------------------------------------------------------------------------- #

@@ -33,9 +33,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[1])]
 
-from common import profile_home, render_expect  # noqa: E402
+from _common import profile_home  # noqa: E402
+from common import render_expect  # noqa: E402
 
 Finding = Tuple[str, str]  # (FAIL | WARN | INFO, message)
 TURN_ROOT_NAMES = ("agent", "cron")

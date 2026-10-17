@@ -30,7 +30,6 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import shutil
 import subprocess
@@ -42,6 +41,9 @@ from typing import Any, Dict, Iterable, List, Optional, Sequence
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 SCENARIOS = REPO / "scripts" / "scenarios"
+sys.path.insert(0, str(REPO / "scripts"))
+from _common import profile_home  # noqa: E402
+
 DEFAULT_PROMPTS = "shell-echo,no-tools,missing-file,multi-tool"
 
 # Attribute values that do not depend on what the model said or how long it
@@ -88,15 +90,6 @@ PRESERVE_IN_PLUGIN_DIR = (".install-metadata.json", "config.yaml", ".env", "debu
 
 
 # ── profile plumbing (same rules as scripts/scenarios) ─────────────────
-
-
-def profile_home(profile: str) -> Path:
-    base = (
-        Path(os.environ["HERMES_HOME"]).expanduser()
-        if os.environ.get("HERMES_HOME")
-        else Path.home() / ".hermes"
-    )
-    return base if profile in ("", "default") else base / "profiles" / profile
 
 
 def batches_root(profile: str) -> Path:

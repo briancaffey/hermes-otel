@@ -6,15 +6,11 @@ sampling tick. Nothing here imports OpenTelemetry, and both vendor SDKs are
 imported lazily so the plugin loads fine on hosts without a GPU or SDK.
 
 Each per-GPU reading is a dict ``{"busy_pct", "power_w", "vram_used_mb"}`` where
-a ``None`` field means that reading could not be obtained on this tick;
-:func:`_aggregate_gpu` excludes ``None`` from the corresponding aggregate rather
-than treating it as zero. The units are the vendor SDKs' natural ones; the
-sampler converts to OTel semantic-convention units (utilization as a 0..1
-ratio, memory in bytes, power in watts) at the metrics boundary.
-
-Multi-GPU hosts: busy% is averaged (a ratio) while power and VRAM are summed
-(physical totals), matching how a host's real load and memory pressure are
-commonly reported.
+a ``None`` field means that reading could not be obtained on this tick; the
+sampler leaves ``None`` out (an unknown, never a zero). The units are the vendor
+SDKs' natural ones; the sampler converts to OTel semantic-convention units
+(utilization as a 0..1 ratio, memory in bytes, power in watts) at the metrics
+boundary and reports every device as its own ``hw.id`` series.
 
 Vendor auto-detection tries AMD first, then NVIDIA, and uses the first SDK that
 returns a working handle. A ``rocm-smi`` CLI fallback covers SR-IOV VF GPU
@@ -70,8 +66,7 @@ class GpuProbe:
 # GPU vendor backends. Each returns a list of one dict per GPU:
 #   {"busy_pct": float|None, "power_w": float|None, "vram_used_mb": float|None}
 # A None field means that reading could not be obtained for that GPU on this
-# tick; _aggregate_gpu excludes it from the corresponding aggregate rather than
-# treating it as zero.
+# tick; the sampler leaves it out rather than treating it as zero.
 # --------------------------------------------------------------------------- #
 
 
@@ -151,6 +146,12 @@ def _amd_cli_snapshot():
     return snapshot
 
 
+def _field(obj, name):
+    """One field of an amdsmi answer, which is a dict on some SDK versions and
+    an object with attributes on others."""
+    return obj.get(name) if isinstance(obj, dict) else getattr(obj, name, None)
+
+
 def _amd_gpu_stats(handles):
     """Return one stats dict per AMD GPU via amdsmi, falling back to a single
     `rocm-smi` CLI call (see _amd_cli_snapshot) for busy%/power/VRAM on hosts
@@ -175,36 +176,21 @@ def _amd_gpu_stats(handles):
         busy_pct = power_w = vram_used_mb = None
 
         try:
-            activity = amdsmi.amdsmi_get_gpu_activity(handle)
-            raw = (
-                activity.get("gfx_activity")
-                if isinstance(activity, dict)
-                else getattr(activity, "gfx_activity", None)
-            )
+            raw = _field(amdsmi.amdsmi_get_gpu_activity(handle), "gfx_activity")
             if raw is not None:
                 busy_pct = float(raw)
         except Exception:
             pass
 
         try:
-            vram_info = amdsmi.amdsmi_get_gpu_vram_usage(handle)
-            raw = (
-                vram_info.get("vram_used")
-                if isinstance(vram_info, dict)
-                else getattr(vram_info, "vram_used", None)
-            )
+            raw = _field(amdsmi.amdsmi_get_gpu_vram_usage(handle), "vram_used")
             if raw is not None:
                 vram_used_mb = float(raw)
         except Exception:
             pass
 
         try:
-            metrics = amdsmi.amdsmi_get_gpu_metrics_info(handle)
-            raw = (
-                metrics.get("current_socket_power")
-                if isinstance(metrics, dict)
-                else getattr(metrics, "current_socket_power", None)
-            )
+            raw = _field(amdsmi.amdsmi_get_gpu_metrics_info(handle), "current_socket_power")
             if raw not in (None, "N/A"):
                 power_w = float(raw)
         except Exception:
@@ -326,25 +312,3 @@ def _shutdown_gpu_vendor(vendor, handles):
         _amd_shutdown(handles)
     elif vendor == "nvidia":
         _nvidia_shutdown(handles)
-
-
-def _aggregate_gpu(per_gpu):
-    """Combine every GPU's reading into the one row gpu_system_wide.csv carries.
-
-    busy_pct is a utilization ratio, so multiple GPUs are averaged. power_w and
-    vram_used_mb are physical quantities (total draw, total memory in use), so
-    they are summed — the host's real load and memory pressure, not a per-GPU
-    average of them. Returns (gfx, power, vram): the same tuple shape the CSV
-    writer has always expected, so no downstream reader needs to change.
-    Per-GPU None readings are excluded from their aggregate; if every GPU is
-    missing a metric, that aggregate is 0.0.
-    """
-    if not per_gpu:
-        return 0.0, 0.0, 0.0
-    busy_vals = [g["busy_pct"] for g in per_gpu if g.get("busy_pct") is not None]
-    power_vals = [g["power_w"] for g in per_gpu if g.get("power_w") is not None]
-    vram_vals = [g["vram_used_mb"] for g in per_gpu if g.get("vram_used_mb") is not None]
-    gfx = sum(busy_vals) / len(busy_vals) if busy_vals else 0.0
-    power = sum(power_vals) if power_vals else 0.0
-    vram = sum(vram_vals) if vram_vals else 0.0
-    return gfx, power, vram
