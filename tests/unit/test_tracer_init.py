@@ -34,6 +34,24 @@ class TestInitPhoenix:
             assert plugin.init() is True
             _assert_env_backend(mock_otlp, "http://localhost:6006/v1/traces", None, "Phoenix")
 
+    def test_unexpected_pipeline_error_disables_the_plugin_with_a_traceback(
+        self, monkeypatch, caplog
+    ):
+        """The plugin fails open (#505): a bug in pipeline init is logged with
+        its traceback and leaves telemetry off; it never raises into Hermes'
+        register()."""
+        _clear_backend_env(monkeypatch)
+        monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
+
+        plugin = HermesOTelPlugin()
+        with patch.object(plugin, "_init_otlp_pipeline", side_effect=RuntimeError("boom")):
+            with caplog.at_level("ERROR", logger="hermes_otel"):
+                assert plugin.init() is False
+        assert plugin.is_enabled is False
+        failed = [r for r in caplog.records if "pipeline init failed" in r.getMessage()]
+        assert len(failed) == 1 and failed[0].exc_info is not None
+        assert "boom" in (failed[0].exc_text or str(failed[0].exc_info[1]))
+
     def test_init_no_endpoint_returns_false(self, monkeypatch):
         _clear_backend_env(monkeypatch)
 

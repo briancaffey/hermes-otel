@@ -174,7 +174,16 @@ class HermesOTelPlugin:
         self.profile_name = resolve_profile_name()
         # Debug mode also captures what the SDK's exporters log (#167).
         install_sdk_log_forwarding()
-        ok = self._init_backends(endpoint)
+        try:
+            ok = self._init_backends(endpoint)
+        except Exception:
+            # The plugin fails open: a bug in pipeline init disables telemetry
+            # for this process, with its traceback in the log, and Hermes keeps
+            # running. Configuration errors are reported (and return False)
+            # before this point; only unexpected exceptions land here.
+            logger.error("[hermes-otel] ✗ pipeline init failed", exc_info=True)
+            self._reset_pipeline_state()
+            return False
         if ok:
             self._start_host_metrics()
         return ok
