@@ -14,6 +14,11 @@ the filter against the root span of every returned trace (#295).
 
 Every query names a service: ``service_name`` on the entry, else the
 plugin's own ``resource_attributes.service.name``, else ``hermes-agent``.
+
+The two APIs ask for the same five facts under two spellings and answer in
+two shapes; :data:`_JAEGER_DIALECTS` holds both spellings and the decoder
+of each shape, and the adapter speaks whichever the probe (or the entry's
+``query_api`` pin) selects.
 """
 
 from __future__ import annotations
@@ -93,6 +98,36 @@ def _status_of(attrs: Dict[str, Any]) -> Dict[str, Any]:
     return otlp_status("error" if attrs.get("error") else "ok", message)
 
 
+# ── the classic (v1) answer ─────────────────────────────────────────────
+
+
+def _v1_rows(a: "JaegerAdapter", data: Any) -> Dict[str, List[SpanRow]]:
+    """A classic search answer (``data: [{traceID, spans, processes}]``) as
+    rows per trace id, through ``a._row`` (a store with its own tag encoding
+    overrides the tag decoding, Victoria's typed strings)."""
+    items = data.get("data") if isinstance(data, dict) else None
+    by_trace: Dict[str, List[SpanRow]] = {}
+    for t in items if isinstance(items, list) else []:
+        if not isinstance(t, dict):
+            continue
+        trace_id = t.get("traceID")
+        spans = [sp for sp in t.get("spans") or [] if isinstance(sp, dict)]
+        if trace_id and spans:
+            processes = t.get("processes") or {}
+            by_trace[trace_id] = [a._row(sp, trace_id, processes) for sp in spans]
+    return by_trace
+
+
+def _v1_detail(a: "JaegerAdapter", data: Any, trace_id: str) -> Optional[Dict[str, Any]]:
+    """A classic trace answer (one trace in ``data``) as the detail; ``None``
+    when ``data`` is empty, how classic Jaeger says "no such trace"."""
+    rows = _v1_rows(a, data)
+    return trace_detail(next(iter(rows.values()))) if rows else None
+
+
+# ── the v3 (OTLP JSON) answer ───────────────────────────────────────────
+
+
 def _v3_attrs(span: Dict[str, Any]) -> Dict[str, Any]:
     """A v3 (OTLP JSON) span's attributes as the tag dict the v1 path yields:
     the attributes plus ``otel.status_code`` / ``error`` /
@@ -128,14 +163,17 @@ def _v3_row(span: Dict[str, Any], service: str) -> SpanRow:
     )
 
 
-def _v3_spans_by_trace(data: Any) -> Dict[str, List[SpanRow]]:
-    """A v3 search answer (``result.resourceSpans``) as rows per trace id."""
+def _v3_resource_spans(data: Any) -> List[Dict[str, Any]]:
+    """The ``result.resourceSpans`` batches of a v3 answer."""
     result = data.get("result") if isinstance(data, dict) else None
-    resource_spans = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
+    batches = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
+    return [b for b in (batches or []) if isinstance(b, dict)]
+
+
+def _v3_rows(a: "JaegerAdapter", data: Any) -> Dict[str, List[SpanRow]]:
+    """A v3 search answer as rows per trace id."""
     by_trace: Dict[str, List[SpanRow]] = {}
-    for rs in resource_spans or []:
-        if not isinstance(rs, dict):
-            continue
+    for rs in _v3_resource_spans(data):
         resource = otlp_attrs_to_dict((rs.get("resource") or {}).get("attributes"))
         service = str(resource.get("service.name") or "")
         for scope in rs.get("scopeSpans") or []:
@@ -143,6 +181,58 @@ def _v3_spans_by_trace(data: Any) -> Dict[str, List[SpanRow]]:
                 if isinstance(sp, dict) and sp.get("traceId"):
                     by_trace.setdefault(str(sp["traceId"]), []).append(_v3_row(sp, service))
     return by_trace
+
+
+def _v3_detail(a: "JaegerAdapter", data: Any, trace_id: str) -> Optional[Dict[str, Any]]:
+    """A v3 trace answer is OTLP JSON with hex ids, the detail's own shape:
+    its batches pass through. ``None`` when there are no spans."""
+    batches = _v3_resource_spans(data)
+    n = span_count_of(batches)
+    if n == 0:
+        return None
+    return {"batches": batches, "span_count": n, "truncated": False}
+
+
+# The facts a search sends, in the order they are sent; ``params`` below
+# spells each one per API (the last three only when the filter has them).
+_SEARCH_FACTS = ("service", "limit", "start", "end", "operation", "min_duration", "tags")
+
+# How each query API spells the same search (the model Uptrace uses, #517):
+# the routes, the parameter names, a time bound (v1: µs; v3: RFC 3339, verified
+# on Jaeger 2.21.0), whether a 404 means "nothing there" (Jaeger v2 answers an
+# empty search and an unknown trace with 404; classic Jaeger answers both with
+# an empty ``data``, so its 404 is a wrong URL, reported as it came), and the
+# decoders of a search answer (rows per trace id) and of a trace answer (the
+# detail). v3 takes the tag map JSON-encoded in ``query.attributes``
+# (``attributes[k]=v`` is silently ignored) and ``searchDepth`` for the limit.
+_JAEGER_DIALECTS: Dict[str, Dict[str, Any]] = {
+    "v1": {
+        "search": "/api/traces",
+        "trace": "/api/traces/{trace_id}",
+        "params": ("service", "limit", "start", "end", "operation", "minDuration", "tags"),
+        "time": lambda ns: ns // 1000,
+        "not_found_is_empty": False,
+        "rows_of": _v1_rows,
+        "detail": _v1_detail,
+    },
+    "v3": {
+        "search": "/api/v3/traces",
+        "trace": "/api/v3/traces/{trace_id}",
+        "params": (
+            "query.serviceName",
+            "query.searchDepth",
+            "query.startTimeMin",
+            "query.startTimeMax",
+            "query.operationName",
+            "query.durationMin",
+            "query.attributes",
+        ),
+        "time": ns_to_rfc3339,
+        "not_found_is_empty": True,
+        "rows_of": _v3_rows,
+        "detail": _v3_detail,
+    },
+}
 
 
 @register
@@ -205,18 +295,19 @@ class JaegerAdapter(BackendAdapter):
         )
         return base
 
-    def _api(self) -> str:
-        """``v1`` or ``v3``: the entry's pin, else probed once per query URL.
-        The classic ``/api/services`` wins when it answers (Jaeger 1.x, whose
-        ``all-in-one`` also exposes a ``/api/v3`` gateway with snake_case
-        parameters, verified 2026-10-09); only a server without it (Jaeger
-        v2, where the classic routes are 404) is spoken to as v3. An
-        unreachable or unauthenticated server is reported, not guessed."""
+    def _dialect(self) -> Dict[str, Any]:
+        """The :data:`_JAEGER_DIALECTS` entry this server speaks: the entry's
+        pin, else probed once per query URL. The classic ``/api/services``
+        wins when it answers (Jaeger 1.x, whose ``all-in-one`` also exposes a
+        ``/api/v3`` gateway with snake_case parameters, verified 2026-10-09);
+        only a server without it (Jaeger v2, where the classic routes are 404)
+        is spoken to as v3. An unreachable or unauthenticated server is
+        reported, not guessed."""
         if self.query_api != "auto":
-            return self.query_api
+            return _JAEGER_DIALECTS[self.query_api]
         cached = _API_PROBE_CACHE.get(self.api_base)
         if cached:
-            return cached
+            return _JAEGER_DIALECTS[cached]
         api = "v1"
         try:
             data = http_get_json(
@@ -238,29 +329,7 @@ class JaegerAdapter(BackendAdapter):
                 if exc.kind != "not_found":
                     raise
         _API_PROBE_CACHE[self.api_base] = api
-        return api
-
-    def _build_query_v3(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> List[Tuple[str, str]]:
-        """The v3 grammar (verified on Jaeger 2.21.0): camelCase keys,
-        RFC 3339 bounds, ``searchDepth`` for the limit, ``durationMin`` as
-        ``<n>ms`` and the tag map JSON-encoded in ``query.attributes``
-        (``attributes[k]=v`` and ``attributes.k=v`` are silently ignored)."""
-        params: List[Tuple[str, str]] = [
-            ("query.serviceName", f.service or self.default_service),
-            ("query.startTimeMin", ns_to_rfc3339(ns_from_s(start_s))),
-            ("query.startTimeMax", ns_to_rfc3339(trace_end_bound(f, end_s, "ns"))),
-            ("query.searchDepth", str(self._fetch_limit(limit))),
-        ]
-        if f.name_regex:
-            params.append(("query.operationName", f.name_regex))
-        if f.min_duration_ms and f.min_duration_ms > 0:
-            params.append(("query.durationMin", f"{int(f.min_duration_ms)}ms"))
-        tags = self._tags(f)
-        if tags:
-            params.append(("query.attributes", json.dumps(tags)))
-        return params
+        return _JAEGER_DIALECTS[api]
 
     def _headers(self) -> Dict[str, str]:
         return bearer(self.api_key)
@@ -283,22 +352,26 @@ class JaegerAdapter(BackendAdapter):
 
     def _build_query(
         self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> Dict[str, Any]:
-        params: Dict[str, Any] = {
+    ) -> List[Tuple[str, Any]]:
+        """The search's parameters in the dialect's spelling and order."""
+        d = self._dialect()
+        facts: Dict[str, Any] = {
             "service": f.service or self.default_service,
             # One beyond the page so has_more is exact (or the over-fetch size).
             "limit": self._fetch_limit(limit),
-            "start": int(start_s) * 1_000_000,
-            "end": trace_end_bound(f, end_s, "us"),
+            "start": d["time"](ns_from_s(start_s)),
+            "end": d["time"](trace_end_bound(f, end_s, "ns")),
         }
         if f.name_regex:
-            params["operation"] = f.name_regex
+            facts["operation"] = f.name_regex
         if f.min_duration_ms and f.min_duration_ms > 0:
-            params["minDuration"] = f"{int(f.min_duration_ms)}ms"
+            facts["min_duration"] = f"{int(f.min_duration_ms)}ms"
         tags = self._tags(f)
         if tags:
-            params["tags"] = json.dumps(tags)
-        return params
+            facts["tags"] = json.dumps(tags)
+        return [
+            (key, facts[fact]) for fact, key in zip(_SEARCH_FACTS, d["params"]) if fact in facts
+        ]
 
     # ── Shape translation ────────────────────────────────────────────
 
@@ -337,82 +410,34 @@ class JaegerAdapter(BackendAdapter):
     # ── Public API ───────────────────────────────────────────────────
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        rows = self._search_v3(f, start_s, end_s, limit) if self._api() == "v3" else None
-        if rows is None:
-            rows = self._search_v1(f, start_s, end_s, limit)
-        return trace_page(strictly_older_traces(rows, f), limit)
-
-    def _search_v1(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> List[Dict[str, Any]]:
+        d = self._dialect()
         params = self._build_query(f, start_s, end_s, limit)
-        url = f"{self.api_base}/api/traces?{_urlparse.urlencode(params)}"
-        data = http_get_json(url, headers=self._headers(), timeout=15.0)
-        items = data.get("data") if isinstance(data, dict) else None
-        equals = self._tags(f)
-        rows: List[Dict[str, Any]] = []
-        for t in items if isinstance(items, list) else []:
-            if not isinstance(t, dict):
-                continue
-            trace_id = t.get("traceID")
-            spans = [sp for sp in t.get("spans") or [] if isinstance(sp, dict)]
-            if not trace_id or not spans:
-                continue
-            processes = t.get("processes") or {}
-            card = card_from_trace(
-                f, [self._row(sp, trace_id, processes) for sp in spans], equals=equals
-            )
-            if card is not None:
-                rows.append(card)
-        return rows
-
-    def _search_v3(
-        self, f: StructuredFilter, start_s: int, end_s: int, limit: int
-    ) -> List[Dict[str, Any]]:
-        """The v3 answer is OTLP JSON: its spans go straight to cards."""
-        params = self._build_query_v3(f, start_s, end_s, limit)
-        url = f"{self.api_base}/api/v3/traces?{_urlparse.urlencode(params)}"
+        url = f"{self.api_base}{d['search']}?{_urlparse.urlencode(params)}"
         try:
             data = http_get_json(url, headers=self._headers(), timeout=15.0)
         except BackendError as exc:
-            # Jaeger v2 answers an empty search with 404 "No traces found".
-            if exc.kind != "not_found":
+            if exc.kind != "not_found" or not d["not_found_is_empty"]:
                 raise
             data = {}
         equals = self._tags(f)
-        rows: List[Dict[str, Any]] = []
-        for spans in _v3_spans_by_trace(data).values():
-            card = card_from_trace(f, spans, equals=equals)
-            if card is not None:
-                rows.append(card)
-        return rows
+        cards = [
+            card_from_trace(f, rows, equals=equals) for rows in d["rows_of"](self, data).values()
+        ]
+        return trace_page(strictly_older_traces([c for c in cards if c is not None], f), limit)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         return f"{self.query_url}/trace/{trace_id}"
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
-        if self._api() == "v3":
-            # OTLP JSON with hex ids: the detail's own shape, passed through.
-            url = f"{self.api_base}/api/v3/traces/{trace_id}"
-            try:
-                data = http_get_json(url, headers=self._headers(), timeout=20.0)
-            except BackendError as exc:
-                if exc.kind == "not_found":
-                    raise not_found(trace_id, "Jaeger")
-                raise
-            result = data.get("result") if isinstance(data, dict) else None
-            batches = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
-            batches = [b for b in (batches or []) if isinstance(b, dict)]
-            n = span_count_of(batches)
-            if n == 0:
+        d = self._dialect()
+        url = f"{self.api_base}{d['trace'].format(trace_id=trace_id)}"
+        try:
+            data = http_get_json(url, headers=self._headers(), timeout=20.0)
+        except BackendError as exc:
+            if exc.kind == "not_found" and d["not_found_is_empty"]:
                 raise not_found(trace_id, "Jaeger")
-            return {"batches": batches, "span_count": n, "truncated": False}
-        url = f"{self.api_base}/api/traces/{trace_id}"
-        data = http_get_json(url, headers=self._headers(), timeout=20.0)
-        items = data.get("data") if isinstance(data, dict) else None
-        if not items:
+            raise
+        detail = d["detail"](self, data, trace_id)
+        if detail is None:
             raise not_found(trace_id, "Jaeger")
-        trace = items[0] if isinstance(items, list) else items
-        processes = trace.get("processes") or {}
-        spans = [sp for sp in trace.get("spans") or [] if isinstance(sp, dict)]
-        return trace_detail([self._row(sp, trace_id, processes) for sp in spans])
+        return detail

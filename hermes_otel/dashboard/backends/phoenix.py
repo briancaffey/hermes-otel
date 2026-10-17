@@ -14,7 +14,7 @@ from __future__ import annotations
 
 import json
 from datetime import datetime, timezone
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from . import register
 from .base import (
@@ -66,6 +66,65 @@ def _ns_to_iso(ns: int) -> str:
 _ROOT_ARGS_CACHE: Dict[str, bool] = register_cache({})
 
 _SPANS_ARGS_QUERY = '{ __type(name: "Project") { fields { name args { name } } } }'
+
+# The search document; ``root_vars`` / ``root_args`` are the roots clause of
+# the schema in use (see :func:`_root_clause`), empty on current Phoenix.
+_SEARCH_QUERY = """
+        query SearchSpans(
+          $projectId: ID!,
+          $first: Int!,
+          $timeRange: TimeRange!,
+          $filterCondition: String,
+          {root_vars}
+          $sort: SpanSort
+        ) {{
+          node(id: $projectId) {{
+            ... on Project {{
+              name
+              spans(
+                first: $first,
+                {root_args}
+                timeRange: $timeRange,
+                filterCondition: $filterCondition,
+                sort: $sort
+              ) {{
+                edges {{ node {{
+                  spanId name latencyMs statusCode startTime endTime
+                  parentId spanKind attributes
+                  context {{ traceId spanId }}
+                  input {{ value mimeType }}
+                  output {{ value mimeType }}
+                  tokenCountTotal tokenCountPrompt tokenCountCompletion
+                  numChildSpans
+                  trace {{ numSpans }}
+                }} }}
+              }}
+            }}
+          }}
+        }}
+        """
+
+
+def _root_clause(legacy: bool, roots_only: bool) -> Tuple[str, str, Dict[str, Any], Optional[str]]:
+    """How the search asks for roots, per schema: the declarations and
+    ``spans(...)`` arguments spliced into :data:`_SEARCH_QUERY`, the variables
+    they take, and the predicate the filter condition starts with.
+
+    Legacy ``rootSpansOnly`` honours the companion ``orphanSpanAsRootSpan``
+    flag (default True), which treats a span whose parent is not in the result
+    set as a root and so leaks ``api.*`` / ``tool.*`` spans into the roots-only
+    view when their parent is paginated out: on only when the user wants any
+    span (orphans kept), off for strict roots. Current Phoenix has neither
+    argument: roots are the ``parent_id is None`` predicate.
+    """
+    if legacy:
+        return (
+            "$rootsOnly: Boolean!, $orphanAsRoot: Boolean!,",
+            "rootSpansOnly: $rootsOnly, orphanSpanAsRootSpan: $orphanAsRoot,",
+            {"rootsOnly": roots_only, "orphanAsRoot": not roots_only},
+            None,
+        )
+    return "", "", {}, ("parent_id is None" if roots_only else None)
 
 
 @register
@@ -293,10 +352,11 @@ class PhoenixAdapter(BackendAdapter):
             return trace_page([], limit)
 
         fc = self._build_filter_condition(f)
-        legacy_root_args = self._supports_root_args()
-        if f.roots_only and not legacy_root_args:
-            # Current Phoenix: roots are a filter-condition predicate.
-            fc = "parent_id is None" + (f" and {fc}" if fc else "")
+        root_vars, root_args, root_variables, root_predicate = _root_clause(
+            self._supports_root_args(), bool(f.roots_only)
+        )
+        if root_predicate:
+            fc = root_predicate + (f" and {fc}" if fc else "")
         time_range = {
             "start": _ns_to_iso(start_s * 1_000_000_000),
             "end": _ns_to_iso(trace_end_bound(f, end_s, "ns")),
@@ -304,71 +364,14 @@ class PhoenixAdapter(BackendAdapter):
         # Widened (the kind filter) the rows are spans and several of one
         # trace share a page, so ask for more and dedupe below.
         fetch = widened_fetch(limit, f.roots_only)
-
-        # Phoenix's ``rootSpansOnly`` honours the companion
-        # ``orphanSpanAsRootSpan`` flag, which defaults to True and
-        # causes spans whose parent isn't in the current result set to
-        # be treated as "root". That leaks non-root spans
-        # (``api.*`` / ``tool.*``) into the roots-only view when their
-        # actual parent is paginated out. Force it off for "root only".
-        root_vars = "$rootsOnly: Boolean!, $orphanAsRoot: Boolean!," if legacy_root_args else ""
-        root_args = (
-            "rootSpansOnly: $rootsOnly, orphanSpanAsRootSpan: $orphanAsRoot,"
-            if legacy_root_args
-            else ""
-        )
-        query = f"""
-        query SearchSpans(
-          $projectId: ID!,
-          $first: Int!,
-          $timeRange: TimeRange!,
-          $filterCondition: String,
-          {root_vars}
-          $sort: SpanSort
-        ) {{
-          node(id: $projectId) {{
-            ... on Project {{
-              name
-              spans(
-                first: $first,
-                {root_args}
-                timeRange: $timeRange,
-                filterCondition: $filterCondition,
-                sort: $sort
-              ) {{
-                edges {{ node {{
-                  spanId name latencyMs statusCode startTime endTime
-                  parentId spanKind attributes
-                  context {{ traceId spanId }}
-                  input {{ value mimeType }}
-                  output {{ value mimeType }}
-                  tokenCountTotal tokenCountPrompt tokenCountCompletion
-                  numChildSpans
-                  trace {{ numSpans }}
-                }} }}
-              }}
-            }}
-          }}
-        }}
-        """
         data = self._gql(
-            query,
+            _SEARCH_QUERY.format(root_vars=root_vars, root_args=root_args),
             {
                 "projectId": project_id,
                 "first": fetch,
                 "timeRange": time_range,
                 "filterCondition": fc,
-                **(
-                    {
-                        "rootsOnly": bool(f.roots_only),
-                        # ``orphan-as-root`` is on when the user wants "any
-                        # span" (so orphans aren't dropped), off when they
-                        # want strict roots.
-                        "orphanAsRoot": not bool(f.roots_only),
-                    }
-                    if legacy_root_args
-                    else {}
-                ),
+                **root_variables,
                 # Newest first — matches what the trace list UI wants
                 # (latest activity at top) and lines up with the other
                 # adapters.

@@ -731,17 +731,18 @@ def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:
 _REF_SPAN = re.compile(r"SpanId=([0-9a-fA-F]*)")
 
 
-def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """Rows of the columns/events trace shape as the older ``spans`` dicts.
+def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[SpanRow]:
+    """The rows of one ``{columns, events}`` entry of the current trace shape.
 
     Columns seen: ``__time`` (ms), ``SpanId``, ``TraceId``, ``ServiceName``,
     ``Name``, ``Kind``, ``DurationNano``, ``TagsKeys`` / ``TagsValues``,
     ``References`` (``"{TraceId=…, SpanId=<parent>, RefType=CHILD_OF}"``
     strings; an empty SpanId marks the root), ``HasError``,
-    ``StatusMessage``, ``StatusCodeString``, ``SpanKind``.
+    ``StatusMessage``, ``StatusCodeString``, ``SpanKind``. SigNoz always
+    has a status: ``ok`` is said, not only ``error``.
     """
     cols = [str(c) for c in entry.get("columns") or []]
-    out: List[Dict[str, Any]] = []
+    out: List[SpanRow] = []
     for row in entry.get("events") or []:
         if not isinstance(row, list):
             continue
@@ -756,34 +757,31 @@ def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
         tags = (
             dict(zip(keys, values)) if isinstance(keys, list) and isinstance(values, list) else {}
         )
+        start_ns = ns_from_any(r.get("__time")) or 0
         out.append(
-            {
-                "spanID": r.get("SpanId"),
-                "traceID": r.get("TraceId"),
-                "parentSpanID": parent,
-                "name": r.get("Name"),
-                "serviceName": r.get("ServiceName"),
-                "timestamp": r.get("__time"),
-                "durationNano": r.get("DurationNano"),
-                "kind": r.get("Kind"),
-                "hasError": bool(r.get("HasError")),
-                "statusMessage": r.get("StatusMessage") or "",
-                "tagMap": tags,
-            }
+            SpanRow(
+                r.get("TraceId"),
+                r.get("SpanId"),
+                parent,
+                str(r.get("Name") or ""),
+                start_ns=start_ns,
+                end_ns=(start_ns + int(r.get("DurationNano") or 0)) if start_ns else 0,
+                attrs=tags,
+                service=str(r.get("ServiceName") or ""),
+                kind=otlp_kind(r.get("Kind")),
+                status=otlp_status(
+                    "error" if r.get("HasError") else "ok", str(r.get("StatusMessage") or "")
+                ),
+            )
         )
     return out
 
 
-def _row(sp: Dict[str, Any]) -> SpanRow:
-    """One SigNoz span (either known shape) as a row."""
-    attrs: Dict[str, Any] = {}
-    tagmap = sp.get("tagMap") or sp.get("tagsMap") or sp.get("tags") or {}
-    if isinstance(tagmap, dict):
-        attrs.update(tagmap)
-    elif isinstance(tagmap, list):
-        for t in tagmap:
-            if isinstance(t, dict) and "key" in t:
-                attrs[t["key"]] = t.get("value")
+def _span_dict_row(sp: Dict[str, Any]) -> SpanRow:
+    """One span of the older ``{spans: [...]}`` trace shape (what the POST
+    form of the detail route answers; ids in either case) as a row, its tags
+    from ``tagMap``."""
+    tags = sp.get("tagMap")
     start_ns = ns_from_any(sp.get("timestamp")) or 0
     return SpanRow(
         sp.get("traceID") or sp.get("traceId"),
@@ -792,7 +790,7 @@ def _row(sp: Dict[str, Any]) -> SpanRow:
         str(sp.get("name") or ""),
         start_ns=start_ns,
         end_ns=(start_ns + int(sp.get("durationNano") or 0)) if start_ns else 0,
-        attrs=attrs,
+        attrs=dict(tags) if isinstance(tags, dict) else {},
         service=str(sp.get("serviceName") or ""),
         kind=otlp_kind(sp.get("kind")),
         status=otlp_status(
@@ -805,27 +803,20 @@ def signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
     """Translate SigNoz's trace response shape into the detail every adapter
     answers (see :func:`trace_detail`; truncated at ``_DETAIL_SPAN_CAP``).
 
-    SigNoz's shape varies by version; we handle the two known forms:
-
-    * ``{spans: [{spanID, parentSpanID, name, serviceName,
-      timestamp, durationNano, tagMap/tagsMap: {...}}]}``
-    * ``{data: {spans: [...]}}``
+    Two shapes, by build: the current ``[{columns: [...], events: [[...],
+    ...]}]`` (v0.90+, one row per span with the columns named apart) and the
+    older ``{spans: [{spanID, parentSpanID, name, serviceName, timestamp,
+    durationNano, tagMap: {...}}]}``. Anything else has no spans.
     """
+    rows: List[SpanRow]
     if isinstance(data, list):
-        # Current SigNoz (v0.90+): ``[{columns: [...], events: [[...], ...]}]``,
-        # one row per span with the columns named in ``columns``.
-        data = {
-            "spans": [
-                sp
-                for entry in data
-                if isinstance(entry, dict) and entry.get("columns")
-                for sp in _signoz_rows_to_spans(entry)
-            ]
-        }
-    spans_raw = data.get("spans") if isinstance(data, dict) else None
-    if spans_raw is None and isinstance(data, dict):
-        spans_raw = (data.get("data") or {}).get("spans")
-    if not isinstance(spans_raw, list):
-        spans_raw = []
-    rows = [_row(sp) for sp in spans_raw if isinstance(sp, dict)]
+        rows = [
+            row
+            for entry in data
+            if isinstance(entry, dict) and entry.get("columns")
+            for row in _signoz_rows_to_spans(entry)
+        ]
+    else:
+        spans = data.get("spans") if isinstance(data, dict) else None
+        rows = [_span_dict_row(sp) for sp in spans or [] if isinstance(sp, dict)]
     return trace_detail(rows, truncated=len(rows) >= _DETAIL_SPAN_CAP)
