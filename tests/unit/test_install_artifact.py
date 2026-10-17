@@ -79,6 +79,8 @@ class TestArtifactContents:
             # The skill's terminal query tool (#215) and the module it launches.
             "skills/observability/scripts/otel.py",
             "query_cli.py",
+            "query_sources.py",
+            "query_render.py",
             # Dashboard tab, loaded by the separate `hermes dashboard` process.
             "dashboard/manifest.json",
             "dashboard/plugin_api.py",

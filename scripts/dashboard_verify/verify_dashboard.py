@@ -38,7 +38,7 @@ ROOT = HERE.parent.parent
 SCENARIOS = ROOT / "scripts" / "scenarios"
 sys.path.insert(0, str(ROOT))
 from hermes_otel import semconv  # noqa: E402
-from hermes_otel.query_cli import otlp_attrs_to_dict  # noqa: E402
+from hermes_otel.dashboard.backends.shapes import otlp_attrs_to_dict  # noqa: E402
 
 DEFAULT_PROMPTS = ["shell-echo", "no-tools", "missing-file", "multi-tool"]
 SETTLE_S = 120
@@ -189,7 +189,7 @@ def norm_tid(tid: Any) -> str:
 
 
 def attrs_of(span: Dict[str, Any]) -> Dict[str, Any]:
-    """OTLP attribute list (or a plain dict) → dict, the query CLI's decoder."""
+    """OTLP attribute list → dict, the package's decoder."""
     return otlp_attrs_to_dict(span.get("attributes"))
 
 

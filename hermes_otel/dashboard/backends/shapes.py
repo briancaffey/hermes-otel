@@ -90,9 +90,12 @@ def to_int(value: Any) -> int:
 
 def otlp_unwrap(value: Any) -> Any:
     """An OTLP JSON ``AnyValue`` (``{"stringValue": ...}``) → the Python value;
-    ``intValue`` arrives as a digit string and comes back as an int."""
+    ``intValue`` arrives as a digit string and comes back as an int, and the
+    empty ``{}`` that :func:`otlp_attr` writes for ``None`` comes back as ``None``."""
     if not isinstance(value, dict):
         return value
+    if not value:
+        return None
     for key in ("stringValue", "boolValue", "doubleValue"):
         if key in value:
             return value[key]
