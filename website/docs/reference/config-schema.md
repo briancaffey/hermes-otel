@@ -299,10 +299,11 @@ All three signals on by default. See [Uptrace](/backends/uptrace).
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | **Required.** `http://<host>:5080/api/<org>/v1/traces`. Also via `OTEL_OPENOBSERVE_ENDPOINT` |
+| `endpoint` | string | **Required.** `http://<host>:5080/api/<org>/v1/traces`, or the bare origin `http://<host>:5080`, which the plugin completes with `org`. Also via `OTEL_OPENOBSERVE_ENDPOINT` |
 | `user` / `user_env` | string | Basic-auth user (falls back to `OTEL_OPENOBSERVE_USER` / `OPENOBSERVE_USER`) |
 | `password` / `password_env` | string | Basic-auth password (falls back to `OTEL_OPENOBSERVE_PASSWORD` / `OPENOBSERVE_PASSWORD`) |
 | `stream_name` | string | Optional stream name (`OTEL_OPENOBSERVE_STREAM`) |
+| `org` | string | Org that completes a bare-origin `endpoint` (`OTEL_OPENOBSERVE_ORG`, default `default`); ignored when `endpoint` has a path. The dashboard also reads it |
 
 All three signals on by default. See [OpenObserve](/backends/openobserve).
 

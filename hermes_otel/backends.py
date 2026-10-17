@@ -527,6 +527,20 @@ def _resolve_agenta(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     return _Wire(ep, headers)
 
 
+def openobserve_traces_url(endpoint: str, org: str) -> str:
+    """The OpenObserve traces URL for ``endpoint``: a bare origin (empty or
+    ``/`` path) becomes ``<origin>/api/<org>/v1/traces``, since the exporter
+    posts to exactly the URL it is given and the origin answers 405 (#582);
+    any URL with a path is kept as given."""
+    ep = endpoint.strip()
+    parts = urllib.parse.urlsplit(ep)
+    if parts.path.strip("/"):
+        return ep
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, f"/api/{org}/v1/traces", parts.query, "")
+    )
+
+
 def _resolve_openobserve(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve OpenObserve (all-in-one traces/metrics/logs backend).
 
@@ -534,9 +548,11 @@ def _resolve_openobserve(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     created in the UI), plus an optional ``stream-name`` header that
     routes ingested data into a named stream (defaults to ``default``).
     The endpoint URL embeds the org in its path, e.g.
-    ``http://localhost:5080/api/default/v1/traces``.
+    ``http://localhost:5080/api/default/v1/traces``; a bare origin is
+    completed with ``org`` (``OTEL_OPENOBSERVE_ORG``, default ``default``).
     """
-    ep = _required_endpoint(bc, spec)
+    org = (bc.org or os.getenv("OTEL_OPENOBSERVE_ORG", "") or "default").strip()
+    ep = openobserve_traces_url(_required_endpoint(bc, spec), org)
     basic = _basic_auth(bc, spec)
     if not basic:
         raise ValueError("openobserve requires user and password")

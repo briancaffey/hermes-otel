@@ -10,6 +10,7 @@ same keys it does on Tempo.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
@@ -112,8 +113,14 @@ class OpenObserveAdapter(BackendAdapter):
         endpoint = cfg.get("endpoint") or ""
         self.query_url = query_origin(cfg, _DEFAULT_OO_PORT)
         # Org is the first path segment in the endpoint, e.g.
-        # ``/api/default/v1/traces`` → ``default``.
-        self.org = cfg.get("org") or _extract_org(endpoint) or "default"
+        # ``/api/default/v1/traces`` → ``default``; for a bare-origin
+        # endpoint, the org the exporter completed it with (#582).
+        self.org = (
+            cfg.get("org")
+            or _extract_org(endpoint)
+            or os.getenv("OTEL_OPENOBSERVE_ORG", "").strip()
+            or "default"
+        )
         self.stream = cfg.get("stream_name") or cfg.get("stream") or "default"
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")

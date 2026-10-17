@@ -101,6 +101,13 @@ _ENV_ONLY_EXTRA: Dict[str, Dict[str, str]] = {
     "mlflow": {"OTEL_MLFLOW_EXPERIMENT_ID": "exp-test"},
 }
 
+# Single-type cases beyond PATHS, ``(type, case) -> entry overrides`` on top
+# of the inline entry; recorded as ``<type>__<case>.json``.
+CASES: Dict[Tuple[str, str], Dict[str, Any]] = {
+    # A bare origin is completed to /api/<org>/v1/traces (#582).
+    ("openobserve", "origin"): {"endpoint": "http://localhost:5080"},
+}
+
 PATHS = (
     "inline",
     "env_fields",
@@ -155,6 +162,7 @@ def entry_for(backend_type: str, path: str, monkeypatch) -> Dict[str, Any]:
         entry.update({"metrics_temporality": "delta", "root_usage": False})
     elif path == "logs_block":
         entry["logs"] = {"level": "ERROR", "exclude_loggers": ["noisy"]}
+    entry.update(CASES.get((canonical, path), {}))
     return entry
 
 
@@ -366,6 +374,11 @@ def _compare(name: str, actual: Any) -> None:
 @pytest.mark.parametrize("backend_type", all_types())
 def test_resolution_snapshot(backend_type, path, scratch_home, monkeypatch):
     _compare(f"{backend_type}__{path}", snapshot(backend_type, path, scratch_home, monkeypatch))
+
+
+@pytest.mark.parametrize("backend_type,case", sorted(CASES))
+def test_resolution_case(backend_type, case, scratch_home, monkeypatch):
+    _compare(f"{backend_type}__{case}", snapshot(backend_type, case, scratch_home, monkeypatch))
 
 
 def test_config_example_report(scratch_home):
