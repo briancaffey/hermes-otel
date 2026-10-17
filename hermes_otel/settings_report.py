@@ -145,7 +145,7 @@ def _credential_report(
 # manifest), shown on the card so a query-side setting is never invisible.
 _QUERY_FIELDS: Tuple[str, ...] = tuple(
     dict.fromkeys(
-        ("query_port", "project_name", "service_name", "project_id", "org", "logs_stream")
+        ("query_port", "project_name", "service_name", "project_id", "logs_stream")
         + tuple(
             k
             for s in SPECS

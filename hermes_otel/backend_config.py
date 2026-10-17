@@ -70,12 +70,14 @@ class BackendConfig:
     # Uptrace DSN (sent as the ``uptrace-dsn`` header on every OTLP export)
     dsn: Optional[str] = None
     dsn_env: Optional[str] = None
-    # OpenObserve Basic-auth credentials + optional stream name
+    # OpenObserve Basic-auth credentials + optional stream name and org (the org
+    # completes an endpoint given as a bare origin; default ``default``)
     user: Optional[str] = None
     user_env: Optional[str] = None
     password: Optional[str] = None
     password_env: Optional[str] = None
     stream_name: Optional[str] = None
+    org: Optional[str] = None
     # Parseable dataset routing (one dataset per OTLP signal)
     traces_dataset: Optional[str] = None
     metrics_dataset: Optional[str] = None

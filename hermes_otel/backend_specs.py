@@ -534,10 +534,15 @@ _SPECS = [
         default_query_port=5080,
         ui_rule="origin",
         adapter_module="openobserve",
-        query_keys=("logs_stream", "org", "query_port", "stream", "trace_window_days", "ui_url"),
+        query_keys=("logs_stream", "query_port", "stream", "trace_window_days", "ui_url"),
         env_vars=(
             ("OTEL_OPENOBSERVE_ENDPOINT", "Single-backend mode: OpenObserve OTLP URL"),
             ("OTEL_OPENOBSERVE_STREAM", "OpenObserve stream name (default `default`)"),
+            (
+                "OTEL_OPENOBSERVE_ORG",
+                "OpenObserve org that completes an endpoint given as a bare origin "
+                "(default `default`)",
+            ),
             ("OTEL_OPENOBSERVE_USER", "OpenObserve user (preferred name)"),
             ("OTEL_OPENOBSERVE_PASSWORD", "OpenObserve password (preferred name)"),
             ("OPENOBSERVE_USER", "OpenObserve user fallback"),

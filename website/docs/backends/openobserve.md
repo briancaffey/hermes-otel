@@ -55,6 +55,8 @@ OpenObserve's OTLP endpoint is **per-organization, per-signal**:
 
 Configure `endpoint:` with the **traces** URL; the plugin derives the other two by swapping the final path segment. The default organization is `default` — if you create additional orgs in the UI, use their name in the URL.
 
+A bare origin (`endpoint: http://localhost:5080`, no path) is completed to `http://localhost:5080/api/<org>/v1/traces`, with `<org>` from the entry's `org:` (or `OTEL_OPENOBSERVE_ORG`), default `default`. A URL with any path is used exactly as given, so a reverse-proxy prefix keeps working.
+
 ## Why a dedicated `type: openobserve`
 
 OpenObserve uses HTTP Basic auth plus a `stream-name` request header that `type: otlp` can't produce for you. Declaring `type: openobserve` asks the plugin to:

@@ -55,6 +55,7 @@ Generated from `hermes_otel/backend_specs.py` by `scripts/gen_config_docs.py`; a
 | `UPTRACE_USER_TOKEN` | Uptrace | Uptrace user token fallback for the dashboard's query API |
 | `OTEL_OPENOBSERVE_ENDPOINT` | OpenObserve | Single-backend mode: OpenObserve OTLP URL |
 | `OTEL_OPENOBSERVE_STREAM` | OpenObserve | OpenObserve stream name (default `default`) |
+| `OTEL_OPENOBSERVE_ORG` | OpenObserve | OpenObserve org that completes an endpoint given as a bare origin (default `default`) |
 | `OTEL_OPENOBSERVE_USER` | OpenObserve | OpenObserve user (preferred name) |
 | `OTEL_OPENOBSERVE_PASSWORD` | OpenObserve | OpenObserve password (preferred name) |
 | `OPENOBSERVE_USER` | OpenObserve | OpenObserve user fallback |
