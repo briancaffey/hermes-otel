@@ -165,6 +165,54 @@ def _field(default: Any, doc: str, group: str, **rule: Any) -> Any:
     return field(default=default, metadata=dict(doc=doc, group=group, **rule))
 
 
+# ``common_attributes`` (#480): what every span, log record and metric point
+# is stamped with. The plugin's own vocabularies are off limits so a config
+# can never shadow (or be shadowed by) a ``hermes.*`` / ``gen_ai.*`` attribute
+# or the service identity; the key cap is Prometheus-friendly (a label name
+# is the key with its dots replaced), the value rule is OTel's attribute rule.
+COMMON_ATTRIBUTE_RESERVED_PREFIXES: Tuple[str, ...] = ("hermes.", "gen_ai.", "service.")
+COMMON_ATTRIBUTE_KEY_MAX_LENGTH = 64
+
+
+def validate_common_attributes(mapping: Any) -> Optional[Dict[str, Scalar]]:
+    """The usable ``common_attributes`` entries, each rejected one warned about.
+
+    Keeps a key that is a non-empty string of at most
+    ``COMMON_ATTRIBUTE_KEY_MAX_LENGTH`` characters outside the reserved
+    prefixes, with a scalar value (``str`` / ``int`` / ``float`` / ``bool``;
+    ``None`` is not an attribute). Lists, mappings and reserved keys are
+    dropped with a warning naming the key, so one bad entry never costs the
+    others. ``None`` when nothing is left (the field's unset spelling).
+    """
+    if not isinstance(mapping, dict):
+        if mapping is not None:
+            logger.warning("[hermes-otel] common_attributes must be a mapping; ignoring")
+        return None
+    kept: Dict[str, Scalar] = {}
+    for raw_key, value in mapping.items():
+        key = str(raw_key).strip()
+        if not key or len(key) > COMMON_ATTRIBUTE_KEY_MAX_LENGTH:
+            logger.warning(
+                f"[hermes-otel] common_attributes: key {raw_key!r} must be 1 to "
+                f"{COMMON_ATTRIBUTE_KEY_MAX_LENGTH} characters; dropped"
+            )
+            continue
+        if key.startswith(COMMON_ATTRIBUTE_RESERVED_PREFIXES):
+            logger.warning(
+                f"[hermes-otel] common_attributes: key {key!r} is reserved "
+                f"({', '.join(COMMON_ATTRIBUTE_RESERVED_PREFIXES)} belong to the plugin); dropped"
+            )
+            continue
+        if value is None or not isinstance(value, (str, int, float, bool)):
+            logger.warning(
+                f"[hermes-otel] common_attributes: {key!r} must be a string, number or "
+                f"bool, not {type(value).__name__}; dropped"
+            )
+            continue
+        kept[key] = value
+    return kept or None
+
+
 # ``max_export_batch_size`` may not exceed ``max_queue_size`` (the SDK raises):
 # (batch field, queue field).
 _BATCH_PAIRS: Tuple[Tuple[str, str], ...] = (
@@ -297,6 +345,11 @@ class HermesOtelConfig:
     resource_attributes: Optional[Dict[str, Scalar]] = _field(
         None,
         "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
+        "General",
+    )
+    common_attributes: Optional[Dict[str, Scalar]] = _field(
+        None,
+        "Stamped on every span, log record and metric point (not the Resource), for backends that do not index resource attributes per signal; scalar values, keys of at most 64 chars outside `hermes.` / `gen_ai.` / `service.`. A plugin attribute of the same name wins; changing a value starts new metric series",
         "General",
     )
     project_name: Optional[str] = _field(
@@ -577,6 +630,10 @@ class HermesOtelConfig:
             merged = {**self.global_tags, **(self.resource_attributes or {})}
             object.__setattr__(self, "resource_attributes", merged)
             object.__setattr__(self, "global_tags", None)
+        if self.common_attributes is not None:
+            object.__setattr__(
+                self, "common_attributes", validate_common_attributes(self.common_attributes)
+            )
         _validate_numeric_bounds(self)
 
     # ── What content the hooks record (``content_capture``) ──────────────

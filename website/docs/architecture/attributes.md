@@ -91,6 +91,8 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 
 The full list with every source is in the [span attributes reference](/reference/span-attributes#resource-on-every-span).
 
+`common_attributes:` is the per-signal counterpart: its keys are set on every span, every log record and every metric point as plain attributes (never on the Resource), for backends that do not index resource attributes per signal. See [Which attributes reach which signal](/configuration/yaml#which-attributes-reach-which-signal).
+
 ## Why dual-convention rather than pick one?
 
 Every backend supports a different set. Emitting both is cheap (same span, a few extra key-value pairs) and saves every user from writing their own mapping adapter. When the GenAI spec stabilises and Phoenix/Langfuse converge, this will simplify.

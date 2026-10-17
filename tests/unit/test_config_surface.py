@@ -59,6 +59,7 @@ class TestEnvOverrides:
             "headers",
             "global_tags",
             "resource_attributes",
+            "common_attributes",
             "log_logger_levels",
             "backends",
         }

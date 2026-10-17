@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from functools import lru_cache
-from typing import Any, Dict, FrozenSet, List, Optional, Tuple
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 try:
     import opentelemetry.sdk.metrics  # noqa: F401
@@ -546,22 +546,25 @@ def claude_code_token_types(totals: Dict[str, int]) -> Dict[str, int]:
     }
 
 
-def metric_views(histogram: str = "explicit") -> List[Any]:
+def metric_views(histogram: str = "explicit", common: Iterable[str] = ()) -> List[Any]:
     """One ``View`` per instrument: the label allow-list and, for histograms
     with ``histogram="explicit"``, the bucket boundaries (#233).
 
     With ``exponential`` the boundaries are left to the readers' preferred
     aggregation (a View's aggregation would override every reader's).
+    ``common`` are the ``common_attributes`` keys (#480): ``record_metric``
+    puts them on every point, so every allow-list admits them.
     """
     if not _OTEL_AVAILABLE:
         return []
     from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
 
+    always = {"profile", *common}
     views: List[Any] = []
     for spec in _INSTRUMENTS.values():
         kwargs: Dict[str, Any] = {
             "instrument_name": spec.name,
-            "attribute_keys": set(spec.labels) | {"profile"},
+            "attribute_keys": set(spec.labels) | always,
         }
         if spec.compat:
             # Claude Code puts ``session.id`` on every metric by default; the

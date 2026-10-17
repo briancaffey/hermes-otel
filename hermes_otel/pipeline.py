@@ -1,5 +1,5 @@
 """The export pipeline: the Resource, one ``BatchSpanProcessor`` per backend
-behind the live-store and MCP-ping-filter processors, one metric reader per
+behind the common-attributes, live-store and MCP-ping-filter processors, one metric reader per
 backend that takes metrics, and the logs pipeline.
 
 :func:`build_pipeline` wires it all from the config and the resolved backends
@@ -311,9 +311,40 @@ if _OTEL_AVAILABLE:
         def force_flush(self, timeout_millis: int = 30000) -> bool:
             return self._inner.force_flush(timeout_millis)
 
+    class CommonAttributesProcessor(SpanProcessor):
+        """SpanProcessor that stamps ``common_attributes`` on every span (#480).
+
+        One ``on_start`` for the whole process, so the hooks never carry the
+        keys and third-party spans on the plugin's provider (MCP, httpx) get
+        them too. A key the span already has is left alone: the plugin's own
+        attributes always win, as they do on log records and metric points.
+        """
+
+        def __init__(self, attributes: Dict[str, Any]) -> None:
+            self._attributes = dict(attributes)
+
+        def on_start(self, span: Any, parent_context: Any = None) -> None:
+            try:
+                present = span.attributes or {}
+                for key, value in self._attributes.items():
+                    if key not in present:
+                        span.set_attribute(key, value)
+            except Exception:  # pragma: no cover — never break span creation
+                pass
+
+        def on_end(self, span: Any) -> None:
+            pass
+
+        def shutdown(self) -> None:
+            pass
+
+        def force_flush(self, timeout_millis: int = 30000) -> bool:
+            return True
+
 else:  # pragma: no cover — plugin is unusable without OTel
     _LiveSpanProcessor = None  # type: ignore[assignment, misc]
     _MCPPingFilterProcessor = None  # type: ignore[assignment, misc]
+    CommonAttributesProcessor = None  # type: ignore[assignment, misc]
 
 
 # ── the Resource ───────────────────────────────────────────────────────
@@ -611,6 +642,11 @@ def build_pipeline(
             processor = _MCPPingFilterProcessor(processor)
         provider.add_span_processor(processor)
 
+    # ``common_attributes`` go on before any processor sees a span, so the
+    # live store and every backend read the same stamped span (#480).
+    if config.common_attributes:
+        provider.add_span_processor(CommonAttributesProcessor(config.common_attributes))
+
     # In-process live store for the zero-config dashboard. Added FIRST so
     # the dashboard renders the agent's activity even with no OTLP
     # backend configured — install the plugin, open the tab, see traces.
@@ -667,7 +703,7 @@ def build_pipeline(
         pipeline.meter_provider = MeterProvider(
             resource=resource,
             metric_readers=pipeline.metric_readers,
-            views=metric_views(config.metrics_histogram),
+            views=metric_views(config.metrics_histogram, common=config.common_attributes or ()),
         )
         _set_global_once(metrics, "meter", pipeline.meter_provider)
         pipeline.meter = pipeline.meter_provider.get_meter("hermes-otel-plugin")
@@ -824,6 +860,7 @@ def init_logs_pipeline(
         rules=rules,
         max_attribute_length=config.log_max_attribute_length,
         attach_handler=capture,
+        common_attributes=config.common_attributes,
     )
     if pipeline.logger_provider is None:
         return

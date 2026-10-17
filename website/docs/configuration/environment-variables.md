@@ -14,7 +14,7 @@ Every variable, grouped by purpose, is in the [env var reference](/reference/env
 
 ## Precedence
 
-For every field: `HERMES_OTEL_<FIELD>` env var → value in `~/.hermes/hermes_otel.yaml` → built-in default. Maps (`headers`, `global_tags`, `resource_attributes`) and `backends` are yaml-only. Booleans accept `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off` (case-insensitive); anything else logs a warning and is ignored.
+For every field: `HERMES_OTEL_<FIELD>` env var → value in `~/.hermes/hermes_otel.yaml` → built-in default. Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`) and `backends` are yaml-only. Booleans accept `true`/`1`/`yes`/`on` and `false`/`0`/`no`/`off` (case-insensitive); anything else logs a warning and is ignored.
 
 ## Where to set them
 

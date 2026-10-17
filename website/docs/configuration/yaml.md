@@ -29,6 +29,15 @@ resource_attributes:
 # global_tags:
 #   team: platform
 
+# Stamped on every span, every log record and every metric point as a plain
+# attribute, for backends that do not index resource attributes per signal
+# (Loki labels, Mimir series, OpenObserve columns). Scalars only; keys of at
+# most 64 characters; `hermes.`, `gen_ai.` and `service.` are reserved and
+# dropped with a warning. See "Which attributes reach which signal" below.
+common_attributes:
+  team: otel
+  cost_center: research
+
 # Extra HTTP headers added to every OTLP request across ALL backends.
 # Per-backend `headers:` are merged on top (per-backend wins on conflict).
 # This file is the only source of headers: the SDK's OTEL_EXPORTER_OTLP_*HEADERS
@@ -36,6 +45,20 @@ resource_attributes:
 headers:
   X-Scope-OrgID: tenant-a
 ```
+
+### Which attributes reach which signal {#which-attributes-reach-which-signal}
+
+`resource_attributes` describe the *process* and travel on the OTLP Resource, which every signal shares but which not every backend indexes per signal: Loki keeps a fixed set of resource attributes as labels, Mimir's OTLP write promotes only the standard ones to series labels, OpenObserve stores them in columns that differ per stream type. `common_attributes` (#480) are stamped on the *data points themselves*, so `team=otel` filters traces, logs and metrics alike on any backend.
+
+| Key | Spans | Log records and events | Metric points | Resource |
+|---|---|---|---|---|
+| `resource_attributes` (and `global_tags`) | via the Resource | via the Resource | via the Resource | yes |
+| `common_attributes` | every span on the plugin's provider, third-party (MCP, httpx) spans included | every record and event, before redaction and the length cap | every point of the plugin's instruments (the Views admit the keys); not the host/GPU observables or the SDK's own `otel.sdk.*` series | no |
+| `project_name` | via the Resource (`openinference.project.name`) | via the Resource | via the Resource | yes |
+| profile | `hermes.profile` on the root span | — | `profile` label on every point | `hermes.profile` |
+| session id | `session.id` / `hermes.session.id` on the root | `hermes.session_id` / `gen_ai.conversation.id` | never (compat instruments only, with `metric_name_compat_session_id`) | no |
+
+Rules: values are scalars (string, number, bool); a key is at most 64 characters and never under `hermes.`, `gen_ai.` or `service.` (the plugin's vocabularies and the service identity); a rejected entry is dropped with a warning at load and the rest apply. A key the plugin already sets on a span, record or point is left alone: the plugin's attribute wins. `${VAR}` references expand like everywhere else in the file. Because the values are constant for the process they do not fan metric series out, but they are part of each series' identity: changing `team: otel` to `team: platform` and restarting starts new series (the old ones go stale), exactly as a change to `service.instance.id` would.
 
 ## Master switch
 
@@ -211,6 +234,9 @@ resource_attributes:
   team: platform
   env: prod
   region: us-east-1
+
+common_attributes:
+  team: platform
 
 headers:
   X-Scope-OrgID: tenant-a
