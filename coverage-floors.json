@@ -51,5 +51,6 @@
   "hermes_otel/skills/observability/scripts/otel.py": 77,
   "hermes_otel/span_tracker.py": 94,
   "hermes_otel/testing.py": 92,
-  "hermes_otel/tracer.py": 91
+  "hermes_otel/tracer.py": 91,
+  "hermes_otel/headers_helper.py": 97
 }

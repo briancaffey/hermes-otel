@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from . import log_events as _ev
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
-from .pipeline import _LoggingExporter
+from .pipeline import _LoggingExporter, exporter_kwargs
 from .pipeline_env import without_otlp_header_env
 from .plugin_config import DEFAULT_LOG_EXCLUDE_LOGGERS, HermesOtelConfig
 from .redaction import redact_attributes, redact_text
@@ -649,7 +649,7 @@ def build_log_processors(
         target = b.target("logs", extra_headers)
         try:
             with without_otlp_header_env():
-                log_exporter = OTLPLogExporter(endpoint=target.endpoint, headers=target.headers)
+                log_exporter = OTLPLogExporter(**exporter_kwargs(target, f"{b.display_name} logs"))
             # One debug.log line per batch, as for spans (#167).
             exporter = _LoggingExporter(
                 log_exporter,

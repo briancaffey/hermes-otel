@@ -251,7 +251,13 @@ def _write_config(home: Path, entries: List[Dict[str, Any]]) -> Path:
 
 
 def _resolved_dict(rb: Any) -> Dict[str, Any]:
-    d = dataclasses.asdict(rb)
+    helper = rb.headers_helper
+    d = dataclasses.asdict(dataclasses.replace(rb, headers_helper=None))
+    # A process handle, not resolution data: recorded as its command when an
+    # entry names one (#483), absent otherwise.
+    d.pop("headers_helper", None)
+    if helper is not None:
+        d["headers_helper"] = helper.command
     for key in ("headers", "metrics_headers", "logs_headers"):
         if d.get(key):
             d[key] = {k: _mask_text(str(v)) for k, v in d[key].items()}

@@ -35,6 +35,7 @@ from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tu
 from .backend_config import BackendConfig
 from .backend_specs import BY_TYPE, ENV_PRIORITY, SPECS, BackendSpec, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
+from .headers_helper import HeadersHelper, headers_helper_for
 from .pipeline_env import derive_signal_endpoint
 from .plugin_config import normalize_temporality
 
@@ -88,10 +89,13 @@ def env_opt_in_hints() -> List[str]:
 
 
 class SignalTarget(NamedTuple):
-    """Where one signal's exporter sends and what it sends it with."""
+    """Where one signal's exporter sends and what it sends it with. ``headers``
+    already include what ``headers_helper`` minted; the helper itself rides
+    along so the exporter's session can re-mint them on a 401/403 (#483)."""
 
     endpoint: str
     headers: Optional[Dict[str, str]]
+    headers_helper: Optional[HeadersHelper] = None
 
 
 # The OTLP signals in pipeline order; ``supports_<signal>`` /
@@ -131,6 +135,9 @@ class _ResolvedBackend:
     # Whether the ``agent`` / ``cron`` root keeps its token roll-up on the way
     # to this backend; ``False`` strips it for this exporter only (#327).
     root_usage: bool = True
+    # The entry's ``headers_helper`` (#483), shared by the three signals'
+    # exporters so one process mints for all and one cache serves them.
+    headers_helper: Optional[HeadersHelper] = None
 
     def target(self, signal: str, global_headers: Optional[Dict[str, str]] = None) -> SignalTarget:
         """The endpoint and headers to build ``signal``'s exporter with.
@@ -138,12 +145,15 @@ class _ResolvedBackend:
         Headers: the global ``headers:`` first, this backend's own on top, so
         on a conflict the backend wins (its headers carry resolver-built auth
         such as Langfuse's ``Authorization`` or ``x-honeycomb-team``, which a
-        global header must never clobber). ``metrics_headers`` /
-        ``logs_headers`` set, even empty, replace ``headers`` for that
-        signal: GreptimeDB's trace pipeline header must not reach the other
-        signals (#363). ``None`` when nothing is configured; the pipeline
-        then builds the exporter inside :func:`pipeline_env.without_otlp_header_env`
-        so the SDK cannot fill the gap from the shell (#472).
+        global header must never clobber), then what ``headers_helper``
+        minted on top of both: the helper is the live credential (#483); its
+        first run happens here, so a helper that fails skips the entry at
+        init. ``metrics_headers`` / ``logs_headers`` set, even empty, replace
+        ``headers`` for that signal: GreptimeDB's trace pipeline header must
+        not reach the other signals (#363). ``None`` when nothing is
+        configured; the pipeline then builds the exporter inside
+        :func:`pipeline_env.without_otlp_header_env` so the SDK cannot fill
+        the gap from the shell (#472).
 
         Endpoint: the per-signal URL when the backend names one (#366), else
         ``/v1/<signal>`` next to the traces URL.
@@ -158,7 +168,9 @@ class _ResolvedBackend:
             )
         merged: Dict[str, str] = dict(global_headers or {})
         merged.update(own or {})
-        return SignalTarget(endpoint, merged or None)
+        if self.headers_helper is not None:
+            merged.update(self.headers_helper.headers())
+        return SignalTarget(endpoint, merged or None, self.headers_helper)
 
     def enabled_signals(self) -> Tuple[str, ...]:
         """The signals this backend receives, in :data:`SIGNALS` order."""
@@ -1047,6 +1059,7 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
         log_overrides=dict(bc.log_overrides) if bc.log_overrides else None,
         metrics_temporality=_entry_temporality(bc)[0],
         root_usage=bc.root_usage if bc.root_usage is not None else spec.root_usage,
+        headers_helper=headers_helper_for(bc),
     )
 
 

@@ -21,8 +21,9 @@ from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .backend_specs import spec_for
-from .backends import _ResolvedBackend
+from .backends import SignalTarget, _ResolvedBackend
 from .debug_utils import debug_log, logger
+from .headers_helper import RefreshingSession
 from .helpers import DEFAULT_SERVICE_NAME, named_profile, package_version
 from .instruments import (
     _INSTRUMENTS,
@@ -529,6 +530,17 @@ class Pipeline:
 # ── traces + metrics ───────────────────────────────────────────────────
 
 
+def exporter_kwargs(target: SignalTarget, label: str) -> Dict[str, Any]:
+    """``endpoint`` and ``headers`` for one OTLP/HTTP exporter and, when the
+    backend mints its headers with a ``headers_helper``, the ``session`` that
+    re-mints them and retries the batch once on a 401/403 (#483). Without a
+    helper the call is exactly ``(endpoint=, headers=)``, as before."""
+    kwargs: Dict[str, Any] = {"endpoint": target.endpoint, "headers": target.headers}
+    if target.headers_helper is not None:
+        kwargs["session"] = RefreshingSession(target.headers_helper, label)
+    return kwargs
+
+
 def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     """``b``'s exporter for ``signal``, wrapped the way the pipeline attaches
     it: a ``BatchSpanProcessor`` for traces, a ``PeriodicExportingMetricReader``
@@ -540,7 +552,7 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     target = b.target(signal, config.headers)
     if signal == "traces":
         with without_otlp_header_env():
-            inner: Any = OTLPSpanExporter(endpoint=target.endpoint, headers=target.headers)
+            inner: Any = OTLPSpanExporter(**exporter_kwargs(target, b.display_name))
         if not b.root_usage:
             # This backend sums usage over every span (#327).
             inner = _RootUsageStrippingExporter(inner)
@@ -555,8 +567,7 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     temporality = b.metrics_temporality or config.metrics_temporality
     with without_otlp_header_env():
         exporter = OTLPMetricExporter(
-            endpoint=target.endpoint,
-            headers=target.headers,
+            **exporter_kwargs(target, f"{b.display_name} metrics"),
             preferred_temporality=metric_temporality_map(temporality),
             preferred_aggregation=metric_preferred_aggregation(config.metrics_histogram),
         )

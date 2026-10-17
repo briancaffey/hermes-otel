@@ -70,6 +70,7 @@ const sidebars: SidebarsConfig = {
         'configuration/overview',
         'configuration/yaml',
         'configuration/environment-variables',
+        'configuration/short-lived-credentials',
         'configuration/sampling',
         'configuration/privacy',
         'configuration/conversation-capture',
