@@ -1,6 +1,6 @@
 """Integration tests: per-tool CPU/GPU utilization attributes on tool spans.
 
-The host-metrics sampler is replaced by a fake whose ``window()`` returns
+The plugin's ``host_metrics`` is replaced by a fake whose ``window()`` returns
 canned stats, so the tests assert the hook wiring (window bounds, rounding,
 absence when off) without a sampler thread.
 """
@@ -12,8 +12,6 @@ from hermes_otel.host_metrics import WindowStats
 
 
 class _FakeSampler:
-    running = True
-
     def __init__(self, stats):
         self.stats = stats
         self.calls = []
@@ -49,7 +47,7 @@ class TestToolUtilizationAttributes:
         fake = _FakeSampler(
             WindowStats(samples=3, cpu_avg=0.123456, cpu_peak=0.5, gpu_avg=0.25, gpu_peak=0.75)
         )
-        plugin._host_metrics = fake
+        plugin.host_metrics = fake
         before = time.perf_counter()
         _tool_call()
         after = time.perf_counter()
@@ -63,7 +61,7 @@ class TestToolUtilizationAttributes:
 
     def test_gpu_attributes_omitted_without_gpu(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
-        plugin._host_metrics = _FakeSampler(WindowStats(1, 0.2, 0.2, None, None))
+        plugin.host_metrics = _FakeSampler(WindowStats(1, 0.2, 0.2, None, None))
         _tool_call()
         (span,) = exporter.get_finished_spans()
         assert span.attributes["hermes.tool.cpu.utilization.avg"] == 0.2
@@ -71,7 +69,7 @@ class TestToolUtilizationAttributes:
 
     def test_no_samples_in_window_means_no_attributes(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
-        plugin._host_metrics = _FakeSampler(None)
+        plugin.host_metrics = _FakeSampler(None)
         _tool_call()
         (span,) = exporter.get_finished_spans()
         assert "hermes.tool.cpu.utilization.avg" not in span.attributes
@@ -83,7 +81,7 @@ class TestToolUtilizationAttributes:
             def window(self, start, end):
                 raise RuntimeError("boom")
 
-        plugin._host_metrics = _Broken(None)
+        plugin.host_metrics = _Broken(None)
         _tool_call()
         (span,) = exporter.get_finished_spans()
         assert span.name == "tool.terminal"
@@ -91,7 +89,7 @@ class TestToolUtilizationAttributes:
     def test_post_without_pre_has_no_window(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup
         fake = _FakeSampler(WindowStats(1, 0.2, 0.2, None, None))
-        plugin._host_metrics = fake
+        plugin.host_metrics = fake
         on_post_tool_call(
             tool_name="terminal", args={}, result="ok", task_id="orphan", session_id="s1"
         )

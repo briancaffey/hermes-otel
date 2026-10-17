@@ -49,7 +49,7 @@ class TestInMemoryPipeline:
             assert names == ["agent"]
             assert [s.name for s in p.span_exporters[1].get_finished_spans()] == ["agent"]
             assert p.metric_reader is None and p.log_exporter is None
-            assert p.plugin._span_processors and p.plugin.is_enabled
+            assert p.plugin.pipeline.span_processors and p.plugin.is_enabled
         finally:
             p.shutdown()
 
@@ -59,8 +59,8 @@ class TestInMemoryPipeline:
         try:
             testing.install_singleton(p.plugin)
             assert p.plugin.profile_name == "seam"
-            assert p.plugin._instruments and p.plugin._meter is not None
-            assert p.plugin._logger_provider is not None
+            assert p.plugin.pipeline.instruments and p.plugin.pipeline.meter is not None
+            assert p.plugin.pipeline.logger_provider is not None
             on_session_start(session_id="s", model="m", platform="cli")
             on_session_end(
                 session_id="s", completed=True, interrupted=False, model="m", platform="cli"

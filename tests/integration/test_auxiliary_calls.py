@@ -520,6 +520,7 @@ class TestMetricsAndEvents:
         from hermes_otel import log_handler as lh
         from hermes_otel import redaction
         from hermes_otel.plugin_config import HermesOtelConfig
+        from hermes_otel.testing import attach_logs
 
         monkeypatch.setattr(redaction, "_hermes_resolved", True)
         monkeypatch.setattr(redaction, "_hermes_redactor", None)
@@ -531,7 +532,7 @@ class TestMetricsAndEvents:
             "build_log_processors",
             return_value=[(SimpleLogRecordProcessor(log_exporter), object())],
         ):
-            plugin._init_logs_pipeline(Resource.create({"service.name": "t"}), [])
+            attach_logs(plugin, [], resource=Resource.create({"service.name": "t"}))
         try:
             _open_turn()
             base = _pre(request_id="ev-ok")

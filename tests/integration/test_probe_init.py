@@ -51,9 +51,9 @@ class TestProbeAtInit:
         monkeypatch.setattr(probe, "connect", fake)
         with caplog.at_level(logging.INFO, logger="hermes_otel"):
             plugin = _init(monkeypatch)
-            assert plugin._probe_thread is not None
-            plugin._probe_thread.join(5.0)
-        assert [(r.backend, r.ok) for r in plugin.probe_results] == [
+            assert plugin.pipeline.probe_thread is not None
+            plugin.pipeline.probe_thread.join(5.0)
+        assert [(r.backend, r.ok) for r in plugin.pipeline.probe_results] == [
             ("Jaeger", True),
             ("dead", False),
         ]
@@ -76,16 +76,20 @@ class TestProbeAtInit:
 
         monkeypatch.setattr(probe, "connect", blocked)
         plugin = _init(monkeypatch)  # returns while the probe is still blocked
-        assert plugin.probe_results == []
+        assert plugin.pipeline.probe_results == []
         gate.set()
-        plugin._probe_thread.join(5.0)
-        assert len(plugin.probe_results) == 2
+        plugin.pipeline.probe_thread.join(5.0)
+        assert len(plugin.pipeline.probe_results) == 2
 
     def test_off_by_config(self, monkeypatch, real_backend_probe):
         called = []
         monkeypatch.setattr(probe, "resolve", lambda h, p: called.append(h) or (None, "x"))
         plugin = _init(monkeypatch, probe_backends=False)
-        assert plugin._probe_thread is None and plugin.probe_results == [] and not called
+        assert (
+            plugin.pipeline.probe_thread is None
+            and plugin.pipeline.probe_results == []
+            and not called
+        )
 
     def test_unresolvable_backend_is_reported_from_the_init_thread(
         self, monkeypatch, caplog, real_backend_probe
@@ -94,8 +98,8 @@ class TestProbeAtInit:
         monkeypatch.setattr(probe, "connect", lambda *a, **k: (True, 1.0, ""))
         with caplog.at_level(logging.WARNING, logger="hermes_otel"):
             plugin = _init(monkeypatch)
-            plugin._probe_thread.join(5.0)
-        assert [(r.backend, r.ok, r.error) for r in plugin.probe_results] == [
+            plugin.pipeline.probe_thread.join(5.0)
+        assert [(r.backend, r.ok, r.error) for r in plugin.pipeline.probe_results] == [
             ("Jaeger", True, ""),
             ("dead", False, "name does not resolve"),
         ]
@@ -104,7 +108,7 @@ class TestProbeAtInit:
         _fake_resolve(monkeypatch)
         monkeypatch.setattr(probe, "connect", lambda *a, **k: (True, 1.0, ""))
         plugin = _init(monkeypatch)
-        plugin._probe_thread.join(5.0)
-        assert plugin.probe_results
+        plugin.pipeline.probe_thread.join(5.0)
+        assert plugin.pipeline.probe_results
         plugin.shutdown()
-        assert plugin.probe_results == []
+        assert plugin.pipeline is None

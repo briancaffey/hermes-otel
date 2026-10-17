@@ -19,6 +19,7 @@ from unittest.mock import patch
 import pytest
 
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import attach_pipeline
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -82,7 +83,7 @@ def real_init_plugin(tmp_path_factory):
     yield plugin
 
     try:
-        plugin._span_processors[0].shutdown()
+        plugin.pipeline.span_processors[0].shutdown()
     except Exception:
         pass
     store = registry._LIVE_STORE
@@ -96,7 +97,7 @@ class TestBatchProcessorInstalled:
     def test_processor_is_batch_instance(self, real_init_plugin):
         from opentelemetry.sdk.trace.export import BatchSpanProcessor
 
-        assert isinstance(real_init_plugin._span_processors[0], BatchSpanProcessor)
+        assert isinstance(real_init_plugin.pipeline.span_processors[0], BatchSpanProcessor)
 
     def test_config_plumbed_through(self, real_init_plugin):
         assert real_init_plugin.config.span_batch_schedule_delay_ms == 50
@@ -140,9 +141,9 @@ def _build_batch_plugin(schedule_delay_ms: int = 50):
         force_flush_on_session_end=True,
     )
     plugin = HermesOTelPlugin(config=cfg)
-    plugin.tracer = provider.get_tracer("hermes-otel-test")
-    plugin._initialized = True
-    plugin._span_processors = [processor]
+    attach_pipeline(
+        plugin, tracer=provider.get_tracer("hermes-otel-test"), span_processors=[processor]
+    )
 
     return exporter, plugin, provider
 
@@ -159,7 +160,7 @@ def batch_pipeline():
     yield exporter, plugin
 
     try:
-        plugin._span_processors[0].shutdown()
+        plugin.pipeline.span_processors[0].shutdown()
     except Exception:
         pass
     provider.shutdown()
@@ -189,7 +190,7 @@ class TestBatchingBehavior:
             plugin.end_span(f"k{i}", status="ok")
 
         assert exporter.export_count == 0
-        plugin._force_flush()
+        plugin.pipeline.force_flush()
         assert len(exporter.exported) == 5
         assert exporter.export_count >= 1
 
@@ -319,7 +320,7 @@ class TestConcurrentSessions:
         for t in threads:
             t.join()
 
-        plugin._force_flush()
+        plugin.pipeline.force_flush()
 
         # Each session emitted: agent + api + tool = 3 spans.
         assert len(exporter.exported) == 6, [s.name for s in exporter.exported]

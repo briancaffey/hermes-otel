@@ -222,15 +222,16 @@ def main() -> int:
 
     project = tracer.config.project_name or os.getenv("OTEL_PROJECT_NAME", "default")
     print(f"\n→ project: {project}")
-    print(f"→ trace processors: {len(tracer._span_processors)}")
-    print(f"→ metric readers:   {len(tracer._metric_readers)}")
+    pipeline = tracer.pipeline
+    print(f"→ trace processors: {len(pipeline.span_processors)}")
+    print(f"→ metric readers:   {len(pipeline.metric_readers)}")
     # The logs signal (#265): one provider carries the live store and every
     # log-capable backend; a line logged during the session below is exported
     # with that session's trace id. Reported, not queried (each backend's log
     # query API differs; the smoke tests cover OpenObserve).
-    logs_on = tracer._logger_provider is not None
+    logs_on = pipeline.logger_provider is not None
     print(
-        f"→ log processors:   {len(tracer._log_processors)}"
+        f"→ log processors:   {len(pipeline.log_processors)}"
         f" ({'logs pipeline on' if logs_on else 'capture_logs off or no sink'})"
     )
 
@@ -241,7 +242,7 @@ def main() -> int:
         import logging
 
         logging.getLogger("agent.verify").info("verify_multi_backend line for %s", session_id)
-    tracer._force_flush()
+    pipeline.force_flush()
     print("→ flushed; querying backends (up to 60s each)")
 
     # Per-backend deadlines so a fast backend doesn't burn the budget for

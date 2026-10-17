@@ -9,6 +9,7 @@ import pytest
 from hermes_otel import hooks
 from hermes_otel.dashboard import backends
 from hermes_otel.helpers import named_profile
+from hermes_otel.pipeline import build_resource
 from hermes_otel.plugin_config import HermesOtelConfig, load_config
 
 
@@ -40,7 +41,7 @@ class TestResource:
     def test_default_unchanged(self, inmemory_otel_setup):
         _, plugin = inmemory_otel_setup
         plugin.profile_name = "coder"
-        attrs = plugin._build_resource().attributes
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
         assert attrs["service.name"] == "hermes-agent"
         assert "service.namespace" not in attrs
         assert attrs["hermes.profile"] == "coder"
@@ -49,7 +50,7 @@ class TestResource:
         _, plugin = inmemory_otel_setup
         plugin.config = HermesOtelConfig(service_name_from_profile=True)
         plugin.profile_name = "coder"
-        attrs = plugin._build_resource().attributes
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
         assert attrs["service.name"] == "coder"
         assert attrs["service.namespace"] == "hermes-agent"
         assert attrs["service.instance.id"]  # still one per process
@@ -58,7 +59,7 @@ class TestResource:
         _, plugin = inmemory_otel_setup
         plugin.config = HermesOtelConfig(service_name_from_profile=True)
         plugin.profile_name = "default"
-        attrs = plugin._build_resource().attributes
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
         assert attrs["service.name"] == "hermes-agent"
         assert "service.namespace" not in attrs
 
@@ -69,7 +70,7 @@ class TestResource:
             resource_attributes={"service.name": "bot", "service.namespace": "team"},
         )
         plugin.profile_name = "coder"
-        attrs = plugin._build_resource().attributes
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
         assert attrs["service.name"] == "bot"
         assert attrs["service.namespace"] == "team"
 

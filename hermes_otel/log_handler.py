@@ -17,9 +17,9 @@ enriched record into the live store for the dashboard, and one
 live store and every backend therefore see the same record.
 
 Module-level state is deliberately minimal — a single installed handler per
-process, tracked on the :class:`~hermes_otel.tracer.HermesOTelPlugin`
-singleton — so test fixtures that reset the tracer transitively reset the
-log pipeline too. The only thing that persists across tracer rebuilds is
+process, whose provider the plugin's :class:`~hermes_otel.pipeline.Pipeline`
+holds — so test fixtures that reset the tracer transitively reset the log
+pipeline too. The only thing that persists across tracer rebuilds is
 Python's global logger hierarchy, which :func:`install_handler` guards
 against double-attachment by removing prior instances keyed on a marker
 attribute before adding a new one.

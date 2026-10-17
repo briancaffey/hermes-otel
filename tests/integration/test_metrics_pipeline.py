@@ -13,6 +13,7 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
+from hermes_otel.pipeline import create_instruments
 from hermes_otel.plugin_config import HermesOtelConfig
 
 
@@ -463,8 +464,7 @@ class TestClaudeCodeCompat:
     @staticmethod
     def _switch(plugin, mode, **more):
         plugin.config = HermesOtelConfig(metric_name_compat=mode, **more)
-        plugin._instruments.clear()
-        plugin._create_metric_instruments()
+        plugin.pipeline.instruments = create_instruments(plugin.pipeline.meter, plugin.config)
 
     @staticmethod
     def _labels(metric_reader, name):

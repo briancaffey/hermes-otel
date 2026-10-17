@@ -13,6 +13,7 @@ from hermes_otel import hooks
 from hermes_otel import log_events as EV
 from hermes_otel import log_handler as lh
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import attach_logs
 
 
 def _api_kwargs(session_id, task, **extra):
@@ -78,8 +79,8 @@ def events(inmemory_otel_setup, monkeypatch):
             "build_log_processors",
             return_value=[(SimpleLogRecordProcessor(log_exporter), object())],
         ):
-            plugin._init_logs_pipeline(Resource.create({"service.name": "t"}), [])
-        assert plugin._logger_provider is not None
+            attach_logs(plugin, [], resource=Resource.create({"service.name": "t"}))
+        assert plugin.pipeline.logger_provider is not None
         return log_exporter
 
     try:
@@ -149,14 +150,14 @@ class TestSwitchAndScope:
     def test_emit_is_a_no_op_without_a_pipeline_and_never_raises(self, inmemory_otel_setup):
         _exporter, plugin = inmemory_otel_setup
         plugin.config = HermesOtelConfig(log_events=True)
-        plugin._logger_provider = None
+        plugin.pipeline.logger_provider = None
         assert plugin.emit_event("x", "y", {}) is False
 
         class Broken:
             def get_logger(self, *a, **k):
                 raise RuntimeError("boom")
 
-        plugin._logger_provider = Broken()
+        plugin.pipeline.logger_provider = Broken()
         assert plugin.emit_event("x", "y", {"a": None}) is False
 
 

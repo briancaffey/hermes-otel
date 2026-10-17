@@ -147,7 +147,7 @@ def test_two_profiles_in_one_process(fake_hermes):
         for profile, mod in copies.items():
             with scope(profile):
                 _turn(mod, f"s-{profile}")
-            mod.tracer.get_tracer()._force_flush()
+            mod.tracer.get_tracer().pipeline.force_flush()
 
         for profile in ("alpha", "beta"):
             home = root / "profiles" / profile

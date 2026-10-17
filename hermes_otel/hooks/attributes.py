@@ -439,11 +439,11 @@ def _tool_host_utilization_attributes(tracer, started_at: float, ended_at: float
     unless the tool itself drives the GPU. Empty when host metrics are off or
     the tool finished between two samples.
     """
-    sampler = tracer.host_metrics
-    if sampler is None:
+    host = tracer.host_metrics
+    if host is None:
         return {}
     try:
-        stats = sampler.window(started_at, ended_at)
+        stats = host.window(started_at, ended_at)
     except Exception:  # pragma: no cover — never break the hook
         return {}
     if stats is None:

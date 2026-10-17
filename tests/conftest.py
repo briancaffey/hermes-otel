@@ -93,32 +93,14 @@ def inmemory_otel_with_metrics():
 
     Returns ``(span_exporter, metric_reader, plugin)``.
     """
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-    from opentelemetry.sdk.resources import Resource
+    from hermes_otel.testing import build_inmemory_plugin
 
-    exporters, plugin, trace_provider = _build_inmemory_plugin(n_exporters=1)
-
-    metric_reader = InMemoryMetricReader()
-    from hermes_otel.tracer import metric_views
-
-    meter_provider = MeterProvider(
-        resource=Resource.create({"service.name": "hermes-otel-test"}),
-        metric_readers=[metric_reader],
-        views=metric_views(),
-    )
-    plugin._meter = meter_provider.get_meter("hermes-otel-test")
-    plugin._meter_provider = meter_provider
-    plugin._metric_readers = [metric_reader]
-    plugin._create_metric_instruments()
-
-    _install_as_singleton(plugin)
+    pipeline = build_inmemory_plugin(metrics=True)
+    _install_as_singleton(pipeline.plugin)
     try:
-        yield exporters[0], metric_reader, plugin
+        yield pipeline.span_exporter, pipeline.metric_reader, pipeline.plugin
     finally:
-        exporters[0].clear()
-        trace_provider.shutdown()
-        meter_provider.shutdown()
+        pipeline.shutdown()
 
 
 @pytest.fixture(autouse=True)

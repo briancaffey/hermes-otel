@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import time
 
-from hermes_otel.tracer import HermesOTelPlugin
+from hermes_otel.pipeline import Pipeline
 
 
 class _Reader:
@@ -33,14 +33,11 @@ class _Provider:
 
 
 def test_each_metric_reader_flushes_on_its_own_thread():
-    plugin = HermesOTelPlugin.__new__(HermesOTelPlugin)
     calls: list = []
     slow, fast = _Reader(1.5, calls), _Reader(0.0, calls)
-    plugin._metric_readers = [slow, fast]
-    plugin._meter_provider = _Provider()
-    plugin._logger_provider = None
+    pipeline = Pipeline(metric_readers=[slow, fast], meter_provider=_Provider())
     t0 = time.monotonic()
-    plugin._force_flush_providers(timeout_millis=300)
+    pipeline.force_flush_providers(timeout_millis=300)
     elapsed = time.monotonic() - t0
     # both readers were asked to flush right away, the slow one did not hold the fast one back
     assert sorted(d for d, _ in calls) == [0.0, 1.5]
@@ -49,23 +46,17 @@ def test_each_metric_reader_flushes_on_its_own_thread():
     # and the caller waited for the budget, not for the slow backend
     assert elapsed < 1.0
     assert (
-        plugin._meter_provider.flushed is False
+        pipeline.meter_provider.flushed is False
     )  # per-reader path, not the sequential provider walk
 
 
 def test_a_single_reader_still_uses_the_provider_flush():
-    plugin = HermesOTelPlugin.__new__(HermesOTelPlugin)
-    plugin._metric_readers = [_Reader(0.0, [])]
-    plugin._meter_provider = _Provider()
-    plugin._logger_provider = None
-    plugin._force_flush_providers(timeout_millis=100)
-    assert plugin._meter_provider.flushed is True
+    pipeline = Pipeline(metric_readers=[_Reader(0.0, [])], meter_provider=_Provider())
+    pipeline.force_flush_providers(timeout_millis=100)
+    assert pipeline.meter_provider.flushed is True
 
 
 def test_logger_provider_is_flushed_too():
-    plugin = HermesOTelPlugin.__new__(HermesOTelPlugin)
-    plugin._metric_readers = []
-    plugin._meter_provider = None
-    plugin._logger_provider = _Provider()
-    plugin._force_flush_providers(timeout_millis=100)
-    assert plugin._logger_provider.flushed is True
+    pipeline = Pipeline(logger_provider=_Provider())
+    pipeline.force_flush_providers(timeout_millis=100)
+    assert pipeline.logger_provider.flushed is True

@@ -25,6 +25,7 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
+from hermes_otel.pipeline import build_pipeline
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -66,8 +67,14 @@ def _init_langfuse_plugin(otel_endpoint, public_key, secret_key):
         headers=headers,
         supports_metrics=False,
     )
-    result = plugin._init_otlp_pipeline([backend])
-    assert result, f"Failed to initialize Langfuse plugin at {otel_endpoint}"
+    plugin.pipeline = build_pipeline(
+        plugin.config,
+        [backend],
+        plugin.profile_name,
+        tracker=plugin.spans,
+        context_resolver=plugin.active_span_for_logs,
+    )
+    assert plugin.pipeline, f"Failed to initialize Langfuse plugin at {otel_endpoint}"
     tracer_mod._tracer = plugin
     return plugin
 
@@ -170,7 +177,7 @@ class TestLangfuseTraceExport:
             )
 
             # Force flush spans
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
 
             # Poll Langfuse API for our observations
             observations = _wait_for_observations(
@@ -270,7 +277,7 @@ class TestLangfuseTraceExport:
                 platform="e2e-test",
             )
 
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
 
             observations = _wait_for_observations(
                 info["base_url"],
@@ -339,7 +346,7 @@ class TestLangfuseTraceExport:
                 assistant_tool_call_count=0,
             )
 
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
 
             observations = _wait_for_observations(
                 info["base_url"],

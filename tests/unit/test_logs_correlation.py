@@ -11,6 +11,7 @@ import pytest
 from hermes_otel import hooks
 from hermes_otel import log_handler as lh
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import attach_logs
 
 
 def _fake(prefix: str, body: str) -> str:
@@ -55,8 +56,8 @@ def turn(inmemory_otel_setup, monkeypatch):
         "build_log_processors",
         return_value=[(SimpleLogRecordProcessor(log_exporter), fake_backend)],
     ):
-        plugin._init_logs_pipeline(Resource.create({"service.name": "t"}), [])
-    assert plugin._logger_provider is not None
+        attach_logs(plugin, [], resource=Resource.create({"service.name": "t"}))
+    assert plugin.pipeline.logger_provider is not None
     lg = logging.getLogger("test.correlation.agent")
     lg.propagate = True
     try:

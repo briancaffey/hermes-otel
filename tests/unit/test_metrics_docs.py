@@ -43,16 +43,15 @@ def test_host_metric_names_are_what_the_tracer_registers():
     """``HOST_METRIC_NAMES`` is read by the docs tests instead of the source."""
     from unittest.mock import MagicMock
 
+    from hermes_otel.host_bridge import HostMetrics
     from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.tracer import HOST_METRIC_NAMES, HermesOTelPlugin
+    from hermes_otel.tracer import HOST_METRIC_NAMES
 
-    plugin = HermesOTelPlugin(config=HermesOtelConfig(host_metrics=True))
-    plugin._meter = MagicMock()
-    plugin._host_metrics = MagicMock()
-    plugin._create_host_metric_instruments()
+    meter = MagicMock()
+    HostMetrics(HermesOtelConfig(host_metrics=True, host_metrics_gpu="off"), meter=meter)
     created = {
         call.args[0]
         for method in ("create_observable_gauge", "create_observable_up_down_counter")
-        for call in getattr(plugin._meter, method).call_args_list
+        for call in getattr(meter, method).call_args_list
     }
     assert created == set(HOST_METRIC_NAMES)

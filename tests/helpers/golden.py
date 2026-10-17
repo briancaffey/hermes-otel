@@ -20,7 +20,7 @@ from hermes_otel import log_handler as lh
 from hermes_otel import plugin_config as pc
 from hermes_otel import redaction
 from hermes_otel.plugin_config import HermesOtelConfig
-from hermes_otel.testing import install_singleton
+from hermes_otel.testing import attach_logs, attach_pipeline, install_singleton
 from hermes_otel.tracer import HermesOTelPlugin, metric_views
 
 GOLDEN_ROOT = Path(__file__).resolve().parent.parent / "golden"
@@ -88,19 +88,20 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
     provider.add_span_processor(SimpleSpanProcessor(span_exporter))
     plugin = HermesOTelPlugin(config=config)
     plugin.profile_name = "golden"
-    plugin.tracer = provider.get_tracer("hermes-otel-plugin")
-    plugin._tracer_provider = provider
-    plugin._initialized = True
-
     metric_reader = InMemoryMetricReader()
     meter_provider = MeterProvider(
         resource=resource,
         metric_readers=[metric_reader],
         views=metric_views(config.metrics_histogram),
     )
-    plugin._meter_provider = meter_provider
-    plugin._meter = meter_provider.get_meter("hermes-otel-plugin")
-    plugin._create_metric_instruments()
+    attach_pipeline(
+        plugin,
+        resource=resource,
+        tracer_provider=provider,
+        tracer=provider.get_tracer("hermes-otel-plugin"),
+        meter_provider=meter_provider,
+        meter=meter_provider.get_meter("hermes-otel-plugin"),
+    )
 
     # The 1.35 floor spells it InMemoryLogExporter; newer SDKs deprecate that name.
     exporter_cls = getattr(_log_export, "InMemoryLogRecordExporter", None) or getattr(
@@ -114,7 +115,7 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
         "build_log_processors",
         return_value=[(SimpleLogRecordProcessor(log_exporter), object())],
     ):
-        plugin._init_logs_pipeline(resource, [])
+        attach_logs(plugin, [])
 
     previous = install_singleton(plugin)
     try:

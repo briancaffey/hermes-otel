@@ -11,28 +11,28 @@ out via one ``PeriodicExportingMetricReader`` per backend that supports them.
 
 This module owns :class:`HermesOTelPlugin` (init / shutdown, span start / end,
 ``record_metric``, ``emit_event``, the session facade) and the singleton. The
-pieces it used to carry live next door since #405 and are re-exported here:
+plugin holds three objects and delegates nothing (#506):
 
-- :mod:`.pipeline` — the Resource, the span processors and metric readers,
-  the exporter wrappers, the logs pipeline;
-- :mod:`.instruments` — the metric instrument table, Views and temporality;
-- :mod:`.host_bridge` — the host-metrics sampler wiring;
-- :mod:`.flush` — the shutdown flush and the background turn-end flush.
+- ``pipeline`` — the :class:`.pipeline.Pipeline` ``build_pipeline`` wired
+  (providers, processors, readers, meter, instruments, logger provider),
+  ``None`` until ``init()`` succeeds; ``is_enabled`` is its presence;
+- ``host_metrics`` — the :class:`.host_bridge.HostMetrics` sampler wiring,
+  when ``config.host_metrics`` is on;
+- ``flusher`` — the :class:`.flush.Flusher` behind the turn-end flush.
+
+:mod:`.instruments` (the metric table, Views and temporality) and the
+pipeline's processor classes are re-exported here.
 """
 
 from __future__ import annotations
 
 import atexit
 import contextlib
-import threading
 import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
 from . import backends as _backends
-from . import flush as _flush
-from . import host_bridge as _host
-from . import pipeline as _pipeline
 from .backend_config import BackendConfig
 from .backend_specs import ENV_PRIORITY
 from .backends import _ResolvedBackend
@@ -43,7 +43,9 @@ from .debug_utils import (
     logger,
     remove_sdk_log_forwarding,
 )
+from .flush import Flusher
 from .hermes_home import resolve_hermes_home, resolve_profile_name
+from .host_bridge import HostMetrics
 from .instruments import (  # noqa: F401 — re-exported
     _CAPPED_LABELS,
     _INSTRUMENTS,
@@ -58,9 +60,11 @@ from .instruments import (  # noqa: F401 — re-exported
 from .pipeline import (  # noqa: F401 — re-exported
     _OTEL_AVAILABLE,
     _SERVICE_INSTANCE_ID,
+    Pipeline,
     _LiveSpanProcessor,
     _MCPPingFilterProcessor,
     _RootUsageStrippingExporter,
+    build_pipeline,
     is_mcp_keepalive_ping,
     strip_root_usage,
 )
@@ -80,12 +84,13 @@ except ImportError:  # pragma: no cover — plugin is unusable without OTel
 class HermesOTelPlugin:
     """OpenTelemetry tracer manager for the Hermes plugin.
 
-    Owns its ``TracerProvider`` / ``MeterProvider`` / ``LoggerProvider`` and
-    installs them as the OTel globals the first time (the SDK allows setting
-    each global exactly once per process). ``init()`` is idempotent: a second
-    call shuts the previous pipeline down first, so a plugin reload or a
-    reconfigure never leaves orphaned exporter threads behind. All hooks
-    share this instance via the module-level ``get_tracer()``.
+    Holds the :class:`Pipeline` that owns its ``TracerProvider`` /
+    ``MeterProvider`` / ``LoggerProvider`` (installed as the OTel globals the
+    first time: the SDK allows setting each global exactly once per process).
+    ``init()`` is idempotent: a second call shuts the previous pipeline down
+    first, so a plugin reload or a reconfigure never leaves orphaned exporter
+    threads behind. All hooks share this instance via the module-level
+    ``get_tracer()``.
     """
 
     _instance: Optional["HermesOTelPlugin"] = None
@@ -110,7 +115,6 @@ class HermesOTelPlugin:
     }
 
     def __init__(self, config: Optional[HermesOtelConfig] = None):
-        self.tracer = None
         # Span registry: active spans, the per-session parent stacks, the
         # skill / approval / sub-agent records and the turn registry the
         # orphan sweep reads.
@@ -119,27 +123,14 @@ class HermesOTelPlugin:
         # turn summary, tool start times). Owned here so tests that
         # re-create the tracer singleton automatically get a fresh set.
         self.sessions = SessionState()
-        self._initialized = False
-        # True when the in-process live store (zero-config dashboard) is wired.
-        self._live_active = False
-        # Our own provider objects (independent of the OTel globals, which can
-        # only be set once per process — see pipeline.init_otlp_pipeline).
-        self._tracer_provider: Optional[Any] = None
-        # OTLP fan-out: one BatchSpanProcessor + one PeriodicExportingMetricReader
-        # per backend.
-        self._span_processors: List[Any] = []
-        self._metric_readers: List[Any] = []
-        self._log_processors: List[Any] = []
-        # LoggerProvider created when capture_logs is on and at least one
-        # log-capable backend is wired up. None otherwise.
-        self._logger_provider: Optional[Any] = None
-        # Metrics
-        self._meter = None
-        self._meter_provider = None
-        self._instruments: Dict[str, Any] = {}
-        # Host metrics sampler (CPU / GPU), created when config.host_metrics is
-        # on. One per process; started after backend init, stopped at exit.
-        self._host_metrics: Optional[Any] = None
+        # The export pipeline (providers, processors, readers, meter,
+        # instruments, logger provider): None until init() succeeds.
+        self.pipeline: Optional[Pipeline] = None
+        # Host metrics sampler (CPU / GPU) wiring, when config.host_metrics is
+        # on: started after the pipeline is up, stopped at shutdown.
+        self.host_metrics: Optional[HostMetrics] = None
+        # The background turn-end flush's worker and pending flag.
+        self.flusher = Flusher()
         # Config
         self.config: HermesOtelConfig = config if config is not None else load_config()
         # The home and profile this instance serves. Captured here, while the
@@ -155,21 +146,19 @@ class HermesOTelPlugin:
         # Guards against double-registering the atexit flush handler when
         # init() is called multiple times (e.g. in tests / plugin reload).
         self._atexit_registered: bool = False
-        self._flush_executor: Any = None
-        self._flush_pending = threading.Event()
 
     # ── Initialization entry point ───────────────────────────────────────
 
     def init(self, endpoint: str = None) -> bool:
-        """Initialize the backends, then start the host-metrics sampler if enabled.
+        """Build the pipeline for the configured backends, then start the
+        host-metrics sampler if enabled.
 
         Idempotent: when a pipeline is already up (plugin reload, reconfigure,
         tests) it is shut down and flushed first, so exporter threads and log
         handlers never stack up.
         """
-        if self._initialized:
+        if self.pipeline is not None:
             self.shutdown()
-        self._reset_pipeline_state()
         self._label_values = {}
         self._label_cap_logged = set()
         self.hermes_home = resolve_hermes_home()
@@ -177,102 +166,87 @@ class HermesOTelPlugin:
         # Debug mode also captures what the SDK's exporters log (#167).
         install_sdk_log_forwarding()
         try:
-            ok = self._init_backends(endpoint)
+            backends = self._resolve_backends(endpoint)
+            pipeline = (
+                None
+                if backends is None
+                else build_pipeline(
+                    self.config,
+                    backends,
+                    self.profile_name,
+                    tracker=self.spans,
+                    context_resolver=self.active_span_for_logs,
+                )
+            )
         except Exception:
             # The plugin fails open: a bug in pipeline init disables telemetry
             # for this process, with its traceback in the log, and Hermes keeps
             # running. Configuration errors are reported (and return False)
             # before this point; only unexpected exceptions land here.
             logger.error("[hermes-otel] ✗ pipeline init failed", exc_info=True)
-            self._reset_pipeline_state()
             return False
-        if ok:
-            self._start_host_metrics()
-        return ok
-
-    def _reset_pipeline_state(self) -> None:
-        """Forget every pipeline object from a previous init (not the config)."""
-        # Reachability probe results (#481): filled by a background thread
-        # shortly after init; [] until then or when the probe is off.
-        self.probe_results = []
-        self._probe_thread = None
-        self.tracer = None
-        self._tracer_provider = None
-        self._span_processors = []
-        self._metric_readers = []
-        self._log_processors = []
-        self._logger_provider = None
-        self._meter = None
-        self._meter_provider = None
-        self._live_active = False
+        if pipeline is None:
+            return False
+        self.pipeline = pipeline
+        self._register_atexit_flush()
+        if self.config.host_metrics:
+            self.host_metrics = HostMetrics(
+                self.config, meter=pipeline.meter, live_active=pipeline.live_active
+            )
+            self.host_metrics.start()
+        return True
 
     def shutdown(self) -> None:
         """Flush and tear the pipeline down. Idempotent; never raises.
 
-        Force-flushes every processor, shuts down the span processors, metric
-        readers and logger provider (their worker threads exit), stops the
-        host-metrics sampler, detaches both log handlers (restoring the logger
-        level they lowered), ends any still-open spans, drops all per-session
-        state and marks the plugin uninitialized. ``init()`` may be called
-        again afterwards. Registered with ``atexit`` on first init.
+        Ends any still-open spans, force-flushes every processor, stops the
+        host-metrics sampler, shuts the pipeline down (its worker threads
+        exit, the log handler is detached and the logger level it lowered
+        restored), drops all per-session state and forgets the pipeline.
+        ``init()`` may be called again afterwards. Registered with ``atexit``
+        on first init.
         """
         # End whatever is still open first so it reaches the exporters, then
         # flush, then stop the workers.
-        debug_log(f"shutdown: begin (flush pending={self._flush_pending.is_set()})")
+        debug_log(f"shutdown: begin (flush pending={self.flusher.pending.is_set()})")
+        pipeline = self.pipeline
         with contextlib.suppress(Exception):
             self.spans.end_all(attributes=sweep_attributes("shutdown"))
         with contextlib.suppress(Exception):
-            self.flush_wait(timeout_s=2.0)
-            self._force_flush()
-        executor, self._flush_executor = self._flush_executor, None
-        if executor is not None:
-            with contextlib.suppress(Exception):
-                executor.shutdown(wait=False)
-        self.stop_host_metrics()
-        self._host_metrics = None
-        # Shutting the provider down shuts every attached processor down (the
-        # live store's, the MCP filter wrappers', the OTLP batchers').
-        for obj in (self._tracer_provider, self._meter_provider, self._logger_provider):
-            if obj is not None:
-                with contextlib.suppress(Exception):
-                    obj.shutdown()
-        if self._tracer_provider is None:
-            # Test fixtures wire processors without a provider of ours.
-            for obj in list(self._span_processors) + list(self._metric_readers):
-                with contextlib.suppress(Exception):
-                    obj.shutdown()
-        if self._logger_provider is not None:
-            with contextlib.suppress(Exception):
-                from . import log_handler
-
-                log_handler.uninstall_handler(self.config.log_attach_logger)
+            self.flusher.wait(timeout_s=2.0)
+            if pipeline is not None:
+                pipeline.force_flush()
+        self.flusher.shutdown()
+        if self.host_metrics is not None:
+            self.host_metrics.stop()
+            self.host_metrics = None
+        if pipeline is not None:
+            pipeline.shutdown(self.config.log_attach_logger)
         self.spans.end_all()
         self.spans.clear_turns()
         self.sessions.clear()
-        self._reset_pipeline_state()
-        self._initialized = False
+        self.pipeline = None
         remove_sdk_log_forwarding()
         close_debug_log()
 
-    def _init_backends(self, endpoint: str = None) -> bool:
-        """Initialize one or more backends.
+    def _resolve_backends(self, endpoint: str = None) -> Optional[List[_ResolvedBackend]]:
+        """The backends to build the pipeline for, or ``None`` when there is
+        nothing to do (OTel missing, disabled, no valid backend and no live store).
 
         Resolution order:
-          1. ``config.backends`` non-empty → fan out to every entry via
-             ``_init_otlp_pipeline``.
+          1. ``config.backends`` non-empty → every valid entry (fan-out).
           2. Explicit ``endpoint`` arg → single Phoenix backend.
           3. Legacy env-var detection (single backend, first match wins, in
-             the order of ``backend_specs.ENV_PRIORITY``).
-
-        Returns True if at least one backend was initialized.
+             the order of ``backend_specs.ENV_PRIORITY``); with none set and
+             the live store on, ``[]`` (live-only).
         """
         if not _OTEL_AVAILABLE:
             logger.error("[hermes-otel] ✗ OpenTelemetry packages not available")
-            return False
+            return None
 
         if not self.config.enabled:
             logger.info("[hermes-otel] Disabled via config (enabled=false)")
-            return False
+            return None
 
         # 1. Multi-backend fan-out from yaml config.
         if self.config.backends:
@@ -287,26 +261,23 @@ class HermesOTelPlugin:
                     backends.append(rb)
             if not backends:
                 logger.warning("[hermes-otel] ✗ config.backends had no valid entries")
-                return False
-            return self._init_otlp_pipeline(backends)
+                return None
+            return backends
 
         # 2. Explicit endpoint arg → single Phoenix backend.
         if endpoint:
-            backend = _backends.resolve(BackendConfig(type="phoenix", endpoint=endpoint))
-            return self._init_otlp_pipeline([backend])
+            return [_backends.resolve(BackendConfig(type="phoenix", endpoint=endpoint))]
 
         # 3. Legacy env-var detection (single backend).
-        return self._init_otlp_from_env()
+        return self._backends_from_env()
 
-    # ── Backend resolution ───────────────────────────────────────────────
-
-    def _init_otlp_from_env(self) -> bool:
-        """First-match-wins single-backend init from environment variables.
+    def _backends_from_env(self) -> Optional[List[_ResolvedBackend]]:
+        """First-match-wins single-backend resolution from environment variables.
 
         Delegates to :mod:`backends` for resolution and hands the fully
-        resolved backend to ``_init_otlp_pipeline`` intact, so env-configured
-        backends keep their logs support, per-signal headers and resource
-        attributes exactly like ``backends:`` entries do (#90).
+        resolved backend on intact, so env-configured backends keep their
+        logs support, per-signal headers and resource attributes exactly
+        like ``backends:`` entries do (#90).
         """
         rb = _backends.resolve_from_env()
         if rb is None:
@@ -322,52 +293,15 @@ class HermesOTelPlugin:
                     "[hermes-otel] No OTLP backend configured — running in "
                     "live-only mode (in-process dashboard store)."
                 )
-                return self._init_otlp_pipeline([])
+                return []
             types = ", ".join(ENV_PRIORITY)
             logger.warning(
                 "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
                 f"type's credentials for one of: {types}; or define 'backends:' in "
                 "hermes_otel.yaml)"
             )
-            return False
-        return self._init_otlp_pipeline([rb])
-
-    # ── Pipeline (delegates to .pipeline) ────────────────────────────────
-
-    def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> Any:
-        return _pipeline.build_resource(self, backends)
-
-    def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
-        return _pipeline.init_otlp_pipeline(self, backends)
-
-    def _create_metric_instruments(self) -> None:
-        _pipeline.create_metric_instruments(self)
-
-    def _init_logs_pipeline(self, resource: Any, backends: List[_ResolvedBackend]) -> None:
-        _pipeline.init_logs_pipeline(self, resource, backends)
-
-    # ── Host metrics (delegates to .host_bridge) ─────────────────────────
-
-    def _ensure_host_sampler(self) -> Optional[Any]:
-        return _host.ensure_host_sampler(self)
-
-    def _start_host_metrics(self) -> None:
-        _host.start_host_metrics(self)
-
-    def stop_host_metrics(self) -> None:
-        _host.stop_host_metrics(self)
-
-    def _mirror_host_sample(self, sample: Any) -> None:
-        _host.mirror_host_sample(self, sample)
-
-    def _create_host_metric_instruments(self) -> None:
-        _host.create_host_metric_instruments(self)
-
-    @property
-    def host_metrics(self) -> Optional[Any]:
-        """The running sampler, or None when host metrics are off / unavailable."""
-        sampler = self._host_metrics
-        return sampler if sampler is not None and sampler.running else None
+            return None
+        return [rb]
 
     # ── Events ───────────────────────────────────────────────────────────
 
@@ -389,7 +323,8 @@ class HermesOTelPlugin:
         plus the session attributes; it is then redacted like any record.
         Never raises.
         """
-        if not self.config.log_events or self._logger_provider is None:
+        provider = self.pipeline.logger_provider if self.pipeline is not None else None
+        if not self.config.log_events or provider is None:
             return False
         try:
             from . import log_events as _ev
@@ -407,7 +342,7 @@ class HermesOTelPlugin:
                         str(session_id)
                     ) or self.spans.get_session_root(str(session_id))
             context = set_span_in_context(span) if span is not None else None
-            otel_logger = self._logger_provider.get_logger(_ev.SCOPE_NAME, self.plugin_version)
+            otel_logger = provider.get_logger(_ev.SCOPE_NAME, self.plugin_version)
             from opentelemetry._logs import LogRecord, SeverityNumber
 
             # ``Logger.emit(record)`` is the form every supported SDK has; the
@@ -507,7 +442,8 @@ class HermesOTelPlugin:
         if spec is None:
             debug_log(f"record_metric: unknown metric key {name!r} dropped")
             return
-        if not spec.recorded(self.config):
+        pipeline = self.pipeline
+        if pipeline is None or not spec.recorded(self.config):
             return
         # ``profile`` is a bounded label (one value per plugin instance), so
         # a backend can split every series by agent (#70). A session id is
@@ -518,7 +454,7 @@ class HermesOTelPlugin:
         if spec.compat and session_label and self.config.metric_name_compat_session_id:
             attributes[COMPAT_SESSION_LABEL] = str(session_label)
         attributes = self._bound_labels(attributes)
-        if self._live_active and not spec.compat:
+        if pipeline.live_active and not spec.compat:
             with contextlib.suppress(Exception):  # never break the hot path
                 from .live_store_registry import get_live_store
 
@@ -526,7 +462,7 @@ class HermesOTelPlugin:
                 if store is not None:
                     store.add_metric(spec.name, value, attributes, time.time_ns())
 
-        instrument = self._instruments.get(name) if self._meter else None
+        instrument = pipeline.instruments.get(name) if pipeline.meter else None
         if instrument is None or not spec.exported(name, self.config):
             return
         with contextlib.suppress(Exception):  # never break the hot path
@@ -564,13 +500,14 @@ class HermesOTelPlugin:
                    as the cross-process fallback for sub-agent correlation when
                    a live parent span isn't available to nest under.
         """
-        if not self._initialized:
+        pipeline = self.pipeline
+        if pipeline is None:
             return INVALID_SPAN
 
         if session_id and sweep_with_turn:
             self.spans.link_key(session_id, key)
 
-        if not self.tracer:
+        if not pipeline.tracer:
             return INVALID_SPAN
 
         try:
@@ -591,7 +528,7 @@ class HermesOTelPlugin:
             if effective_parent is not None and hasattr(effective_parent, "get_span_context"):
                 span_ctx = set_span_in_context(effective_parent)
 
-            span = self.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
+            span = pipeline.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
             self.spans.start_span(key, span)
             debug_log(f"start_span: {name} (key={key}, kind={kind})")
             return span
@@ -737,21 +674,7 @@ class HermesOTelPlugin:
         self.spans.drop_session(session_id)
         self.sessions.pop(session_id)
 
-    # ── Flushing (delegates to .flush) ───────────────────────────────────
-
-    def _force_flush(self, timeout_millis: int = 2000, providers: bool = True) -> None:
-        _flush.force_flush(self, timeout_millis, providers)
-
-    def _force_flush_providers(self, timeout_millis: int = 2000) -> None:
-        _flush.force_flush_providers(self, timeout_millis)
-
-    def flush_async(self, timeout_millis: int = 500) -> bool:
-        """Queue a background flush of spans, metrics and logs (#91); see :mod:`.flush`."""
-        return _flush.flush_async(self, timeout_millis)
-
-    def flush_wait(self, timeout_s: float = 5.0) -> None:
-        """Wait for a queued background flush to finish (tests, shutdown)."""
-        _flush.flush_wait(self, timeout_s)
+    # ── Lifecycle ────────────────────────────────────────────────────────
 
     def _register_atexit_flush(self) -> None:
         """Register a single atexit hook that flushes and shuts the pipeline down.
@@ -766,7 +689,7 @@ class HermesOTelPlugin:
 
     @property
     def is_enabled(self) -> bool:
-        return self._initialized
+        return self.pipeline is not None
 
 
 # Module-level singleton

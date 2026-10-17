@@ -11,6 +11,7 @@ import pytest
 
 from hermes_otel.instruments import InstrumentSpec
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import attach_pipeline
 from hermes_otel.tracer import _INSTRUMENTS, HermesOTelPlugin, metric_otlp_name
 
 EXPECTED_KEYS = {
@@ -156,20 +157,20 @@ def plugin():
     """A plugin with a fake meter so every instrument is a MagicMock."""
     p = HermesOTelPlugin()
     p.config = HermesOtelConfig()
-    p._meter = MagicMock()
-    p._meter.create_counter.side_effect = lambda name, **kw: MagicMock(name=name)
-    p._meter.create_histogram.side_effect = lambda name, **kw: MagicMock(name=name)
-    p._create_metric_instruments()
+    meter = MagicMock()
+    meter.create_counter.side_effect = lambda name, **kw: MagicMock(name=name)
+    meter.create_histogram.side_effect = lambda name, **kw: MagicMock(name=name)
+    attach_pipeline(p, meter=meter)
     return p
 
 
 class TestCreation:
     def test_creates_one_instrument_per_key_with_unit_and_description(self, plugin):
-        assert set(plugin._instruments) == EXPECTED_KEYS
+        assert set(plugin.pipeline.instruments) == EXPECTED_KEYS
         calls = {
             c.args[0]: c.kwargs
-            for c in plugin._meter.create_counter.call_args_list
-            + plugin._meter.create_histogram.call_args_list
+            for c in plugin.pipeline.meter.create_counter.call_args_list
+            + plugin.pipeline.meter.create_histogram.call_args_list
         }
         assert calls["hermes.token.usage"] == {
             "unit": "{token}",
@@ -182,21 +183,21 @@ class TestCreation:
     def test_a_failing_instrument_does_not_take_the_others_down(self):
         p = HermesOTelPlugin()
         p.config = HermesOtelConfig()
-        p._meter = MagicMock()
+        meter = MagicMock()
 
         def counter(name, **kw):
             if name == "hermes.cost.usage":
                 raise RuntimeError("boom")
             return MagicMock()
 
-        p._meter.create_counter.side_effect = counter
-        p._meter.create_histogram.side_effect = lambda name, **kw: MagicMock()
-        p._create_metric_instruments()
-        assert "cost_usage" not in p._instruments
-        assert "token_usage" in p._instruments
+        meter.create_counter.side_effect = counter
+        meter.create_histogram.side_effect = lambda name, **kw: MagicMock()
+        attach_pipeline(p, meter=meter)
+        assert "cost_usage" not in p.pipeline.instruments
+        assert "token_usage" in p.pipeline.instruments
         p.record_metric("cost_usage", 1.5, {})  # no AttributeError
         p.record_metric("token_usage", 7, {"token_type": "input"})
-        p._instruments["token_usage"].add.assert_called_once_with(
+        p.pipeline.instruments["token_usage"].add.assert_called_once_with(
             7, {"profile": "default", "token_type": "input"}
         )
 
@@ -204,28 +205,30 @@ class TestCreation:
 class TestRecording:
     def test_value_modes(self, plugin):
         plugin.record_metric("session_count", 99, {"platform": "cli"})
-        plugin._instruments["session_count"].add.assert_called_once_with(
+        plugin.pipeline.instruments["session_count"].add.assert_called_once_with(
             1, {"profile": "default", "platform": "cli"}
         )
         plugin.record_metric("token_usage", 12.9, {"token_type": "input"})
-        plugin._instruments["token_usage"].add.assert_called_once_with(
+        plugin.pipeline.instruments["token_usage"].add.assert_called_once_with(
             12, {"profile": "default", "token_type": "input"}
         )
         plugin.record_metric("cost_usage", 0.0042, {"model": "m"})
-        plugin._instruments["cost_usage"].add.assert_called_once_with(
+        plugin.pipeline.instruments["cost_usage"].add.assert_called_once_with(
             0.0042, {"profile": "default", "model": "m"}
         )
         plugin.record_metric("tool_duration", 12.5, {"tool_name": "terminal"})
-        plugin._instruments["tool_duration"].record.assert_called_once_with(
+        plugin.pipeline.instruments["tool_duration"].record.assert_called_once_with(
             12.5, {"profile": "default", "tool_name": "terminal"}
         )
         # Token histograms record whole tokens; other histograms keep the float.
         plugin.record_metric("gen_ai.client.token.usage", 10.7, {"gen_ai.token.type": "input"})
-        plugin._instruments["gen_ai.client.token.usage"].record.assert_called_once_with(
+        plugin.pipeline.instruments["gen_ai.client.token.usage"].record.assert_called_once_with(
             10, {"profile": "default", "gen_ai.token.type": "input"}
         )
         plugin.record_metric("gen_ai.client.operation.duration", 0.25, {})
-        plugin._instruments["gen_ai.client.operation.duration"].record.assert_called_once_with(
+        plugin.pipeline.instruments[
+            "gen_ai.client.operation.duration"
+        ].record.assert_called_once_with(
             0.25,
             {
                 "profile": "default",
@@ -235,11 +238,11 @@ class TestRecording:
     def test_unknown_key_is_dropped_with_a_debug_line(self, plugin, monkeypatch):
         store = MagicMock()
         monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
-        plugin._live_active = True
+        plugin.pipeline.live_active = True
         lines = []
         monkeypatch.setattr("hermes_otel.tracer.debug_log", lines.append)
         plugin.record_metric("not_a_metric", 1, {})
-        for inst in plugin._instruments.values():
+        for inst in plugin.pipeline.instruments.values():
             inst.add.assert_not_called()
             inst.record.assert_not_called()
         store.add_metric.assert_not_called()
@@ -251,9 +254,9 @@ class TestRecording:
         plugin.record_metric("gen_ai.agent.token.usage", 5, {})
         plugin.record_metric("gen_ai.client.operation.duration", 0.5, {})
         for key in ("gen_ai.client.token.usage", "gen_ai.agent.token.usage"):
-            plugin._instruments[key].record.assert_not_called()
+            plugin.pipeline.instruments[key].record.assert_not_called()
         plugin.record_metric("token_usage", 5, {})  # hermes.* unaffected
-        plugin._instruments["token_usage"].add.assert_called_once()
+        plugin.pipeline.instruments["token_usage"].add.assert_called_once()
 
     def test_no_meter_is_fine(self):
         p = HermesOTelPlugin()
@@ -263,7 +266,7 @@ class TestRecording:
     def test_live_store_gets_the_otlp_name(self, plugin, monkeypatch):
         store = MagicMock()
         monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
-        plugin._live_active = True
+        plugin.pipeline.live_active = True
         plugin.record_metric("token_usage", 3, {"token_type": "output"})
         name, value, attrs, ts = store.add_metric.call_args.args
         assert name == "hermes.token.usage" and value == 3
@@ -273,7 +276,7 @@ class TestRecording:
     def test_live_store_respects_the_genai_gate(self, plugin, monkeypatch):
         store = MagicMock()
         monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
-        plugin._live_active = True
+        plugin.pipeline.live_active = True
         plugin.config = HermesOtelConfig(emit_genai_metrics=False)
         plugin.record_metric("gen_ai.client.token.usage", 3, {})
         store.add_metric.assert_not_called()
