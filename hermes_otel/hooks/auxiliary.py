@@ -23,16 +23,11 @@ from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import (
-    QUERY_SOURCE_AUXILIARY,
-    auxiliary_span_key,
-    auxiliary_task_name,
-    serialize_full,
-    truncate_string,
-)
+from ..helpers import serialize_full, truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .api_call import (
+    QUERY_SOURCE_AUXILIARY,
     HookPayload,
     add_exception_event,
     apply_usage,
@@ -51,6 +46,28 @@ from .attributes import (
     _response_model_attributes,
 )
 from .usage import genai_metric_dims
+
+
+def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
+    """Build the span-tracking key for one auxiliary provider attempt.
+
+    ``pre_auxiliary_call`` and ``post_auxiliary_call`` share one base payload
+    (``agent/auxiliary_hooks.py`` builds it once per attempt), so the
+    ``api_request_id`` Hermes assigns is the natural key. Hermes leaves it
+    empty for callers that pass no request metadata; then the task name plus
+    the attempt's ``started_at`` (identical on both hooks) still pairs them.
+    """
+    request_id = str(api_request_id or "").strip()
+    if request_id:
+        return f"aux:{request_id}"
+    task = str(aux_task or "").strip() or "unknown"
+    return f"aux:{task}:{started_at if started_at is not None else ''}"
+
+
+def auxiliary_task_name(aux_task: Any) -> str:
+    """The auxiliary task as a bounded label (``unknown`` when Hermes sent none)."""
+    text = str(aux_task or "").strip().lower()
+    return truncate_string(text, 80) if text else "unknown"
 
 
 def _owning_session(session_id: Any) -> Optional[str]:

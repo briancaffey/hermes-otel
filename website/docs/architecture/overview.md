@@ -106,7 +106,9 @@ Every path below is relative to `hermes_otel/` — the package directory that `h
 | `span_tracker.py` | Per-session parent stack, orphan sweep, end_all |
 | `session_state.py` | Per-session aggregation for turn summary |
 | `plugin_config.py` | Config file + env-var parsing with precedence |
-| `helpers.py` | Pure functions, no OTel import: string clipping, tool identity, skill detection, outcome and approval classification, `to_int` / `detect_session_kind` / `serialize_full` |
+| `helpers.py` | Shared text helpers, no OTel import: `truncate_string` / `clip_preview` / `clip_joined` / `serialize_full`, `package_version`, `named_profile`, `traceparent` parsing. Each hook family keeps its own classifiers (`hooks/skills.py` holds skill inference) |
+| `coerce.py` | Scalar coercion (`to_int`, `to_optional_int`, `optional_number`, `coerce_bool`) shared by the hooks, the live store and the query CLI |
+| `pipeline_env.py` | Leaf module: the OTLP header-env guard, `/v1/<signal>` endpoint derivation, `os.type` / `host.arch`, and the usage-attribute filter the pipeline, `backends.py` and `log_handler.py` share |
 | `debug_utils.py` | Optional debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log` |
 
 ## Next

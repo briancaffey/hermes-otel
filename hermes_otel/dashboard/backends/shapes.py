@@ -69,7 +69,12 @@ def card_attrs(attrs: Dict[str, Any], name: str = "", error: bool = False) -> Di
 
 
 def to_int(value: Any) -> int:
-    """A numeric field (``startTime``, ``duration``), 0 when malformed."""
+    """A numeric field (``startTime``, ``duration``), 0 when malformed.
+
+    Not :func:`hermes_otel.coerce.to_int`: OTLP JSON carries nanosecond
+    timestamps as 19-digit strings, which ``int(text)`` keeps exact and a
+    round trip through ``float`` would not (#522).
+    """
     try:
         return int(value or 0)
     except (TypeError, ValueError):

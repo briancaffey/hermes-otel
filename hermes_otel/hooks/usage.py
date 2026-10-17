@@ -4,7 +4,8 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ..helpers import to_int, truncate_string
+from ..coerce import to_int
+from ..helpers import truncate_string
 from ..instruments import claude_code_token_types
 from ..session_state import PRICED_COST_STATUSES
 from ._common import as_dict

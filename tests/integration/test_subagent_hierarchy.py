@@ -615,7 +615,7 @@ class TestChildStatusMapping:
         ],
     )
     def test_status(self, status, error):
-        from hermes_otel.helpers import subagent_status_to_span_status
+        from hermes_otel.hooks.subagent import subagent_status_to_span_status
 
         assert subagent_status_to_span_status(status) == ("error" if error else "ok")
 

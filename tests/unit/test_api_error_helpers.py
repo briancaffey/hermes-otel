@@ -2,41 +2,7 @@
 
 import pytest
 
-from hermes_otel.helpers import coerce_bool, http_status_class, to_optional_int
-
-
-class TestToOptionalInt:
-    @pytest.mark.parametrize(
-        "value,expected",
-        [
-            (429, 429),
-            (500.0, 500),
-            ("503", 503),
-            ("  408 ", 408),
-            (None, None),
-            ("", None),
-            ("   ", None),
-            ("nope", None),
-            (True, None),  # bools are not status codes
-            (False, None),
-        ],
-    )
-    def test_parsing(self, value, expected):
-        assert to_optional_int(value) == expected
-
-
-class TestCoerceBool:
-    @pytest.mark.parametrize("value", [True, 1, "true", "True", "1", "yes", "on"])
-    def test_truthy(self, value):
-        assert coerce_bool(value) is True
-
-    @pytest.mark.parametrize("value", [False, 0, "false", "0", "no", "off"])
-    def test_falsey(self, value):
-        assert coerce_bool(value) is False
-
-    @pytest.mark.parametrize("value", [None, "maybe", "x"])
-    def test_undecidable_is_none(self, value):
-        assert coerce_bool(value) is None
+from hermes_otel.hooks.llm import http_status_class
 
 
 class TestHttpStatusClass:

@@ -34,7 +34,7 @@ from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tu
 
 from .backend_specs import BY_TYPE, ENV_PRIORITY, SPECS, BackendSpec, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
-from .helpers import derive_signal_endpoint
+from .pipeline_env import derive_signal_endpoint
 from .plugin_config import BackendConfig, normalize_temporality
 
 
@@ -141,7 +141,7 @@ class _ResolvedBackend:
         ``logs_headers`` set, even empty, replace ``headers`` for that
         signal: GreptimeDB's trace pipeline header must not reach the other
         signals (#363). ``None`` when nothing is configured; the pipeline
-        then builds the exporter inside :func:`helpers.without_otlp_header_env`
+        then builds the exporter inside :func:`pipeline_env.without_otlp_header_env`
         so the SDK cannot fill the gap from the shell (#472).
 
         Endpoint: the per-signal URL when the backend names one (#366), else

@@ -33,8 +33,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
-from .helpers import without_otlp_header_env
 from .pipeline import _LoggingExporter
+from .pipeline_env import without_otlp_header_env
 from .plugin_config import DEFAULT_LOG_EXCLUDE_LOGGERS, HermesOtelConfig
 from .redaction import redact_attributes, redact_text
 

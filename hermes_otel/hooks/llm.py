@@ -6,16 +6,9 @@ import json
 from typing import Any, Dict, Optional
 
 from .. import log_events as EV
+from ..coerce import coerce_bool, to_optional_int
 from ..debug_utils import debug_log
-from ..helpers import (
-    coerce_bool,
-    count_user_turns,
-    http_status_class,
-    query_source_for,
-    serialize_full,
-    to_optional_int,
-    truncate_string,
-)
+from ..helpers import serialize_full, truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import (
     _emit_event,
@@ -31,6 +24,7 @@ from .api_call import (
     add_exception_event,
     apply_usage,
     ensure_span,
+    query_source_for,
     record_first_chunk,
     record_operation_duration,
     request_attributes,
@@ -52,6 +46,33 @@ from .attributes import (
 )
 from .session import _start_session_span
 from .usage import genai_metric_dims
+
+
+def count_user_turns(conversation: Any) -> int:
+    """User prompts in a conversation (``role == "user"`` messages), or 0 when
+    it is not a list. Hermes passes the turn's whole conversation, current
+    prompt included, to ``pre_llm_call``; after a context compaction it holds
+    fewer, so callers treat the count as a floor."""
+    if not isinstance(conversation, (list, tuple)):
+        return 0
+    return sum(1 for m in conversation if isinstance(m, dict) and m.get("role") == "user")
+
+
+def http_status_class(status_code: Any) -> str:
+    """Bucket an HTTP status code into a low-cardinality metric label.
+
+    Returns ``"2xx"``/``"3xx"``/``"4xx"``/``"5xx"`` for a valid HTTP code,
+    ``"network"`` when there is no code (None / 0 / unparseable — i.e. the
+    request never got an HTTP response: timeout, connection error), and
+    ``"other"`` for an out-of-range number. Keeps error-metric cardinality
+    bounded regardless of provider quirks.
+    """
+    code = to_optional_int(status_code)
+    if code is None or code <= 0:
+        return "network"
+    if 100 <= code < 600:
+        return f"{code // 100}xx"
+    return "other"
 
 
 def _llm_input_attributes(tracer, user_message: Any) -> Dict[str, Any]:

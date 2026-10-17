@@ -26,7 +26,9 @@ merged PR. It's written down in two places that stay in sync:
    - Handlers in the `hooks/` package accept `**kwargs` and **fail open** (guard on
      `tracer.is_enabled`, never raise into the agent loop).
    - Emit **dual-convention** attributes (OpenInference for Phoenix + `gen_ai.*`
-     for Langfuse). Put pure logic in `helpers.py` so it's testable without OTel.
+     for Langfuse). Keep pure logic in plain functions beside the hook that
+     uses them (or `helpers.py` when several modules share them) so it's
+     testable without a tracer.
    - Real failures → `ERROR`; benign/unknown outcomes stay `OK`.
 3. **Test** with the in-memory fixtures (`inmemory_otel_setup`,
    `two_exporter_pipeline`, `inmemory_otel_with_metrics`). Keep tests

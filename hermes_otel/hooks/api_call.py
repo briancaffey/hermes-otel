@@ -31,6 +31,16 @@ from .usage import (
     usage_attributes,
 )
 
+# ``hermes.query_source`` values: which loop an ``api.*`` span belongs to.
+QUERY_SOURCE_MAIN = "main"
+QUERY_SOURCE_SUBAGENT = "subagent"
+QUERY_SOURCE_AUXILIARY = "auxiliary"
+
+
+def query_source_for(is_subagent: Any) -> str:
+    """``main`` or ``subagent`` for a main-loop API call."""
+    return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN
+
 
 class HookPayload:
     """The ``**kwargs`` of an api hook with every alternate spelling read in one place.

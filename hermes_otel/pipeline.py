@@ -17,21 +17,19 @@ from typing import Any, Dict, List, Optional
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
-from .helpers import (
-    DEFAULT_SERVICE_NAME,
-    host_arch,
-    is_usage_key,
-    named_profile,
-    os_type,
-    package_version,
-    without_otlp_header_env,
-    without_usage_keys,
-)
+from .helpers import DEFAULT_SERVICE_NAME, named_profile, package_version
 from .instruments import (
     _INSTRUMENTS,
     metric_preferred_aggregation,
     metric_temporality_map,
     metric_views,
+)
+from .pipeline_env import (
+    host_arch,
+    is_usage_key,
+    os_type,
+    without_otlp_header_env,
+    without_usage_keys,
 )
 from .plugin_config import content_mode, effective_export_batch_size
 

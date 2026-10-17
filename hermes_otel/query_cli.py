@@ -35,6 +35,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
 
 from . import semconv as _sc
+from .coerce import optional_number
 from .live_store import (
     LiveStore,
     _default_db_path,
@@ -169,15 +170,6 @@ def _first(attrs: Dict[str, Any], keys: Sequence[str]) -> Any:
     return None
 
 
-def _num(v: Any) -> Optional[float]:
-    try:
-        if v is None or isinstance(v, bool):
-            return None
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
 def _listish(v: Any) -> Any:
     """``["stop"]`` stored as a JSON string comes back as a list."""
     if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
@@ -297,7 +289,7 @@ def trace_row_from_card(card: Dict[str, Any]) -> Dict[str, Any]:
         for sp in ss.get("spans") or []:
             attrs.update(otlp_attrs_to_dict(sp.get("attributes")))
     start = int(card.get("startTimeUnixNano") or 0)
-    dur = _num(card.get("durationMs")) or 0.0
+    dur = optional_number(card.get("durationMs")) or 0.0
     return {
         "traceId": card.get("traceID") or card.get("traceId"),
         "rootName": card.get("rootTraceName") or "",
@@ -308,11 +300,11 @@ def trace_row_from_card(card: Dict[str, Any]) -> Dict[str, Any]:
         "durationMs": dur,
         "spanCount": card.get("spanCount"),
         "model": _first(attrs, _MODEL_KEYS),
-        "tokens": _num(_first(attrs, _TOTAL_TOK_KEYS)),
-        "cost": _num(attrs.get(_COST_KEY)),
+        "tokens": optional_number(_first(attrs, _TOTAL_TOK_KEYS)),
+        "cost": optional_number(attrs.get(_COST_KEY)),
         "error": str(attrs.get("status") or "").lower() == "error" or bool(attrs.get("error")),
         "session": _first(attrs, _SESSION_KEYS),
-        "turn": _num(attrs.get("hermes.turn.number")),
+        "turn": optional_number(attrs.get("hermes.turn.number")),
         "platform": attrs.get("hermes.platform"),
     }
 
@@ -561,16 +553,16 @@ def span_summary(span: Dict[str, Any], totals: Optional[Dict[str, Optional[float
         if mc is not None:
             parts.append(f"{fmt_num(mc)} msgs")
     elif kind == "api":
-        i, o = _num(_first(a, _IN_TOK_KEYS)), _num(_first(a, _OUT_TOK_KEYS))
+        i, o = optional_number(_first(a, _IN_TOK_KEYS)), optional_number(_first(a, _OUT_TOK_KEYS))
         if i is not None or o is not None:
             parts.append(f"{fmt_num(i)} → {fmt_num(o)} tok")
-        r = _num(_first(a, _REASON_TOK_KEYS))
+        r = optional_number(_first(a, _REASON_TOK_KEYS))
         if r:
             parts.append(f"{fmt_num(r)} reasoning")
-        cr = _num(_first(a, _CACHE_READ_KEYS))
+        cr = optional_number(_first(a, _CACHE_READ_KEYS))
         if cr:
             parts.append(f"{fmt_num(cr)} cached")
-        c = _num(a.get(_COST_KEY))
+        c = optional_number(a.get(_COST_KEY))
         if c is not None:
             parts.append(fmt_cost(c))
         fin = _listish(_first(a, _FINISH_KEYS))
@@ -578,10 +570,10 @@ def span_summary(span: Dict[str, Any], totals: Optional[Dict[str, Optional[float
             fin = ",".join(str(x) for x in fin)
         if fin:
             parts.append(str(fin))
-        tc = _num(a.get("llm.response.tool_calls"))
+        tc = optional_number(a.get("llm.response.tool_calls"))
         if tc:
             parts.append(f"{fmt_num(tc)} tool calls")
-        rc = _num(a.get("hermes.retry.count"))
+        rc = optional_number(a.get("hermes.retry.count"))
         if rc:
             parts.append(f"retry {fmt_num(rc)}")
     elif kind == "tool":
@@ -1106,17 +1098,17 @@ def compute_stats(by_trace: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
                     row["completed"] += 1
                 if sp.get("status") == "ERROR" or oc in ("error", "timeout"):
                     row["errors"] += 1
-                row["ms"] += _num(sp.get("duration_ms")) or 0.0
+                row["ms"] += optional_number(sp.get("duration_ms")) or 0.0
             elif kind == "api":
                 model = str(_first(a, _MODEL_KEYS) or name[4:] or "?")
                 row = models.setdefault(
                     model, {"calls": 0, "in": 0.0, "out": 0.0, "cost": 0.0, "errors": 0, "ms": 0.0}
                 )
                 row["calls"] += 1
-                row["in"] += _num(_first(a, _IN_TOK_KEYS)) or 0.0
-                row["out"] += _num(_first(a, _OUT_TOK_KEYS)) or 0.0
-                row["cost"] += _num(a.get(_COST_KEY)) or 0.0
-                row["ms"] += _num(sp.get("duration_ms")) or 0.0
+                row["in"] += optional_number(_first(a, _IN_TOK_KEYS)) or 0.0
+                row["out"] += optional_number(_first(a, _OUT_TOK_KEYS)) or 0.0
+                row["cost"] += optional_number(a.get(_COST_KEY)) or 0.0
+                row["ms"] += optional_number(sp.get("duration_ms")) or 0.0
                 if sp.get("status") == "ERROR":
                     row["errors"] += 1
             elif kind == "skill":

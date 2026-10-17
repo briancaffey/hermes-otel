@@ -47,7 +47,7 @@ CI fails if coverage falls below 85%.
 
 Cover:
 
-- Helper functions (`helpers.py`): `truncate_string`, `clip_preview`, `to_int`, `detect_session_kind`, tool identity, skill and outcome classification
+- Pure functions: the text helpers (`helpers.py`), scalar coercion (`coerce.py`), and each hook family's classifiers (`detect_session_kind`, tool identity, skill and outcome classification) in its own module
 - `SpanTracker` class: span lifecycle, parent stack, `end_all`
 - `HermesOTelPlugin.init()`: environment detection, backend priority
 - `NoopSpan` graceful degradation when OTel is unavailable
