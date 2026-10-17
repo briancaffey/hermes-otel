@@ -294,7 +294,13 @@ live store, then does the same with the working tree and diffs the *shape*
 of the telemetry (span names, parentage, status, attribute keys, the
 run-stable values) plus the check matrices. Model output, durations, tokens
 and cost are never compared; `scripts/refactor_check/allowlist.yaml` lists
-the keys that legitimately come and go, each with a reason. The report lands
+the keys that legitimately come and go, each with a reason. One difference
+is recognised rather than allowlisted: the auxiliary API call at the end of
+a cli turn races `on_session_end` (#552), so when a prompt's only difference
+is that auxiliary `api.*` span swept on one side and answered on the other
+(plus the root's `hermes.turn.auxiliary.*` and `hermes.span.swept.count`),
+the verdict reports an "auxiliary race" line and the run does not fail on
+it. The report lands
 under `scripts/refactor_check/out/<branch>-vs-<base>-<stamp>/report.md`; the
 profile's plugin directory is restored afterwards.
 
