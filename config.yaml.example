@@ -191,6 +191,16 @@
 # Distinct values a label such as `model` or `tool_name` may take per process
 # before the rest fold into `other` (the Python SDK has no cardinality limit).
 # metrics_label_limit: 100
+#
+# Claude Code metric-name compatibility (#485). `claude_code` exports the
+# session count, token usage, cost and active time under Claude Code's names,
+# units and labels (claude_code.session.count, claude_code.token.usage,
+# claude_code.cost.usage, claude_code.active_time.total) instead of their
+# hermes.* twins, so a Grafana dashboard built for Claude Code shows Hermes
+# as one more agent; `both` keeps the hermes.* twins too. Claude Code's
+# dashboards count sessions by `session.id`; opt in to that label below.
+# metric_name_compat: off
+# metric_name_compat_session_id: false
 
 # ── Skill execution-window spans ──────────────────────────────────────────────
 #

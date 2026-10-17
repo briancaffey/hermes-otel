@@ -19,7 +19,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Guides',
       collapsed: false,
-      items: ['guides/observing-a-fleet'],
+      items: ['guides/observing-a-fleet', 'guides/claude-code-dashboards'],
     },
     {
       type: 'category',

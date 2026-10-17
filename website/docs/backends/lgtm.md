@@ -80,10 +80,20 @@ Add more in the YAML under `connectors.spanmetrics.dimensions` if you want to sl
 Explore → Tempo. Search by `service.name=hermes-agent` or span name (`agent`, `tool.*`, `api.*`). Every span carries the OpenInference + GenAI attribute set and the plugin's `hermes.*` extensions.
 
 **Metrics (Prometheus):**
-Explore → Prometheus. Query any `hermes_*` metric (`hermes_session_count_total`, `hermes_token_usage_total`, `hermes_tool_duration_bucket`, ...) or any `traces_spanmetrics_*` derived metric.
+Explore → Prometheus. Query any `hermes_*` metric (`hermes_session_count_total`, `hermes_token_usage_total`, `hermes_tool_duration_bucket`, ...) or any `traces_spanmetrics_*` derived metric. With `metric_name_compat: claude_code` the session, token, cost and active-time counters arrive as `claude_code_session_count_total`, `claude_code_token_usage_tokens_total`, `claude_code_cost_usage_USD_total` and `claude_code_active_time_seconds_total` instead ([metrics reference](/reference/metrics#claude-code-metric-name-compatibility)).
 
 **Logs (Loki):**
 Explore → Loki. Query `{service_name="hermes-agent"}`. Every `logger.info(...)` call from hermes or the plugin lands here with the active span's `trace_id` / `span_id` automatically attached — clicking a `trace_id` in a log line jumps straight into the Tempo trace. See [OTel logs](/configuration/logs) for the full story.
+
+## Grafana dashboards shipped with the stack
+
+The compose file mounts `docker-compose/lgtm/grafana-dashboards/` into Grafana as a provisioned folder named **hermes-otel** (`grafana-provisioning-dashboards.yaml`; Grafana rescans it every 10 s, so a JSON file dropped there appears without a restart). It ships with:
+
+| Dashboard | Source | Needs |
+|---|---|---|
+| **Claude Code Metrics (Prometheus)** | [grafana.com 25255](https://grafana.com/grafana/dashboards/25255-claude-code-metrics-prometheus/) by Rock Martel-Langlois, MIT (licence file beside the JSON), bound to the stack's `prometheus` datasource | `metric_name_compat: claude_code` (or `both`) in the plugin config, so Hermes exports `claude_code.*` names; `metric_name_compat_session_id: true` for the per-session panels. Claude Code itself pointed at the same collector shows up on the same panels |
+
+The walkthrough, with what each panel shows for Hermes, is [Claude Code dashboards](/guides/claude-code-dashboards). The stack also starts Prometheus with `--enable-feature=created-timestamp-zero-ingestion` (`PROMETHEUS_EXTRA_ARGS` in the compose file): a zero sample at every cumulative series' OTLP start timestamp, so a counter a one-shot `hermes -z` run exported once still has an `increase()` for PromQL panels (the first-sample gap the bundled dashboard's adapter works around in code, #296). To add your own, drop a dashboard JSON into the folder with `"datasource": {"type": "prometheus", "uid": "prometheus"}` (the Tempo and Loki datasources are `tempo` and `loki`).
 
 ## Dashboard
 

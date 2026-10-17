@@ -41,7 +41,7 @@ IDENTITY_KEYS = frozenset(
 # and names the reader object, so it is left out of every recording.
 _SDK_OWN_METRIC = "otel.sdk."
 # A measured duration, a clock reading, or a count of real time.
-_TIME_KEY = re.compile(r"(duration|_at$|timestamp|\.time$|\.started$|\.ended$)")
+_TIME_KEY = re.compile(r"(duration|active_time|_at$|timestamp|\.time$|\.started$|\.ended$)")
 _OVER_SECONDS = re.compile(r"over \d+(\.\d+)?s")
 
 
@@ -233,6 +233,9 @@ def normalize(spans: List[Any], metrics_data: Any, logs: List[Any]) -> Dict[str,
                             else:
                                 row["sum"] = dp.sum
                                 row["bucket_counts"] = [int(c) for c in dp.bucket_counts]
+                        elif _TIME_KEY.search(metric.name):
+                            # A measured-time counter (active_time) varies per run.
+                            row["value"] = "<num>"
                         else:
                             row["value"] = dp.value
                         points.append(row)

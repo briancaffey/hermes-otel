@@ -113,6 +113,16 @@
   },
   {
    "attributes": {
+    "platform": "telegram",
+    "profile": "golden",
+    "type": "cli"
+   },
+   "name": "hermes.active_time.total",
+   "unit": "s",
+   "value": "<num>"
+  },
+  {
+   "attributes": {
     "choice": "deny",
     "profile": "golden"
    },

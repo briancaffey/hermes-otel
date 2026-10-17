@@ -203,6 +203,9 @@ def apply_usage(
             tracer.record_metric(
                 "cost_usage", cost["usd"], {**model_labels, "cost_status": cost["status"]}
             )
+            # Claude Code's name for the same figure (#485); dropped unless
+            # metric_name_compat switches it on.
+            tracer.record_metric("claude_code.cost.usage", cost["usd"], model_labels)
     tracer.record_metric("model_usage", 1, model_labels)
     return totals, cost
 

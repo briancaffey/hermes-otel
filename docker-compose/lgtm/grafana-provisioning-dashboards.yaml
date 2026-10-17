@@ -1,0 +1,19 @@
+# Grafana dashboard provisioning for the hermes-otel LGTM stack.
+#
+# Mounted next to the image's own provisioning file
+# (/otel-lgtm/grafana/conf/provisioning/dashboards/grafana-dashboards.yaml),
+# so the image's RED / JVM dashboards stay and every JSON file under
+# grafana-dashboards/ is loaded as well. Grafana rescans the folder every
+# `updateIntervalSeconds`, so a dashboard dropped into the folder appears
+# without a container restart.
+apiVersion: 1
+
+providers:
+  - name: "hermes-otel"
+    type: file
+    folder: "hermes-otel"
+    allowUiUpdates: true
+    updateIntervalSeconds: 10
+    options:
+      path: /otel-lgtm/hermes-otel-dashboards
+      foldersFromFilesStructure: false

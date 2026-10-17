@@ -39,7 +39,13 @@ class TestOnSessionStart:
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"platform": "cli"})
+        mock_tracer.record_metric.assert_any_call("session_count", 1, {"platform": "cli"})
+        # The Claude Code twin (#485) rides on the same decision; record_metric
+        # drops it unless metric_name_compat is on.
+        mock_tracer.record_metric.assert_any_call(
+            "claude_code.session.count", 1, {"start_type": "fresh", "session.id": "s1"}
+        )
+        assert mock_tracer.record_metric.call_count == 2
 
     def test_includes_session_attributes(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")

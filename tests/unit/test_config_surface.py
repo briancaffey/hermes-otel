@@ -43,6 +43,8 @@ class TestEnvOverrides:
             raw, expected = "delta", "delta"
         if name == "metrics_histogram":
             raw, expected = "exponential", "exponential"
+        if name == "metric_name_compat":
+            raw, expected = "claude_code", "claude_code"
         if name == "content_capture":
             raw, expected = "preview", "preview"
         if name == "log_live_min_level":
@@ -93,6 +95,8 @@ class TestYamlCoercion:
             raw, expected = "delta", "delta"
         if name == "metrics_histogram":
             raw, expected = "exponential", "exponential"
+        if name == "metric_name_compat":
+            raw, expected = "claude_code", "claude_code"
         if name == "content_capture":
             raw, expected = "preview", "preview"
         if name == "log_live_min_level":

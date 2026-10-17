@@ -30,6 +30,7 @@ from ..helpers import (
     serialize_full,
     truncate_string,
 )
+from ..instruments import COMPAT_SESSION_LABEL
 from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .api_call import (
     HookPayload,
@@ -165,7 +166,11 @@ def on_post_auxiliary_call(
     if err_type:
         attributes["error.type"] = err_type
 
-    model_labels = {**_metric_model_labels(model, provider), "query_source": QUERY_SOURCE_AUXILIARY}
+    model_labels = {
+        **_metric_model_labels(model, provider),
+        "query_source": QUERY_SOURCE_AUXILIARY,
+        COMPAT_SESSION_LABEL: owner,  # kept only on the opt-in claude_code.* instruments (#485)
+    }
     totals, cost = apply_usage(
         tracer,
         as_dict(usage),

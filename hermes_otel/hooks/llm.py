@@ -16,6 +16,7 @@ from ..helpers import (
     to_optional_int,
     truncate_string,
 )
+from ..instruments import COMPAT_SESSION_LABEL
 from ._common import (
     _emit_event,
     _fail_open,
@@ -375,6 +376,9 @@ def on_post_api_request(
 
     model_labels = _metric_model_labels(model, provider)
     model_labels["query_source"] = _query_source(tracer, session_id)
+    # Only the opt-in claude_code.* instruments keep this (record_metric
+    # strips it for everything else, #485).
+    model_labels[COMPAT_SESSION_LABEL] = session_id
 
     # Token usage (dual convention), the usage/cache/GenAI metrics and the
     # cost estimate; then the turn's roll-up on the session.
