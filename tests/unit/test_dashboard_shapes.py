@@ -10,10 +10,12 @@ from typing import Any, Dict, Optional
 from hermes_otel.dashboard.backends.base import StructuredFilter, otlp_status
 from hermes_otel.dashboard.backends.shapes import (
     SpanRow,
+    attach_root,
     card_from_trace,
     coerce_tag,
     dedupe_spans,
     otlp_kind,
+    otlp_span,
     trace_detail,
 )
 
@@ -156,6 +158,87 @@ class TestTraceDetail:
             "key": "pid",
             "value": {"intValue": "1"},
         }
+
+
+class TestAttachRoot:
+    """One root per detail tree (#516): the real one is kept and gains the
+    trace record's facts, several or none get a marked synthetic root."""
+
+    @staticmethod
+    def _span(span_id, parent=None, **attrs):
+        return otlp_span(
+            "t1", span_id, parent, span_id, start_ns=NS, end_ns=2 * NS, attrs=attrs, status={}
+        )
+
+    def test_a_single_root_is_kept_and_gains_only_the_facts_it_lacks(self):
+        spans = [self._span("r", "gone", name="agent"), self._span("c", "r")]
+        calls = []
+
+        def facts():
+            calls.append(1)
+            return {"name": "trace", "langfuse.sessionId": "s1"}
+
+        attach_root(
+            spans,
+            "t1",
+            extra_root_attrs=facts,
+            synthetic_name="x",
+            start_ns=0,
+            end_ns=0,
+            reason="r",
+        )
+        assert [sp["spanId"] for sp in spans] == ["r", "c"] and calls == [1]
+        root = spans[0]
+        assert root["parentSpanId"] is None
+        assert root["attributes"] == [
+            {"key": "name", "value": {"stringValue": "agent"}},
+            {"key": "langfuse.sessionId", "value": {"stringValue": "s1"}},
+        ]
+
+    def test_several_roots_hang_off_a_marked_synthetic_root_without_consulting_the_facts(self):
+        spans = [self._span("a"), self._span("b", "missing"), self._span("c", "a")]
+
+        def never():
+            raise AssertionError("the facts lookup is only paid for a real root")
+
+        attach_root(
+            spans,
+            "0123456789abcdef0123456789abcdef",
+            extra_root_attrs=never,
+            synthetic_name="trace",
+            start_ns=NS,
+            end_ns=3 * NS,
+            reason="no single root",
+            synthetic_attrs={"backend.trace_id": "t"},
+        )
+        root = spans[0]
+        assert root["spanId"] == "synthetic-0123456789abcdef" and root["name"] == "trace"
+        assert (root["startTimeUnixNano"], root["endTimeUnixNano"]) == (str(NS), str(3 * NS))
+        assert root["attributes"] == [
+            {"key": "backend.trace_id", "value": {"stringValue": "t"}},
+            {"key": "synthetic", "value": {"boolValue": True}},
+            {"key": "synthetic.reason", "value": {"stringValue": "no single root"}},
+        ]
+        assert root["status"] == {"code": 1, "message": ""}
+        assert [sp["parentSpanId"] for sp in spans[1:]] == [root["spanId"], root["spanId"], "a"]
+
+    def test_no_spans_at_all_still_get_a_root_carrying_the_dict_facts(self):
+        spans: list = []
+        attach_root(
+            spans,
+            "t1",
+            extra_root_attrs={"langfuse.trace_id": "t1"},
+            synthetic_name="trace",
+            start_ns=0,
+            end_ns=0,
+            reason="empty",
+        )
+        assert len(spans) == 1 and spans[0]["startTimeUnixNano"] == "0"
+        assert [a["key"] for a in spans[0]["attributes"]] == [
+            "langfuse.trace_id",
+            "synthetic",
+            "synthetic.reason",
+        ]
 
 
 class TestTagDecoders:

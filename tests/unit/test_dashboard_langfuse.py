@@ -415,7 +415,7 @@ class TestLangfuse:
         assert attrs["input.value"] == {"stringValue": '{"command": "echo hi"}'}
 
     def test_raw_page_and_limit_cannot_override_the_route(self):
-        p = self._adapter()._list_params(
+        p = langfuse._LangfuseTracesApi(self._adapter())._list_params(
             StructuredFilter(raw="page=9 limit=5000 userId=u"), 0, 10, 7
         )
         assert (p["page"], p["limit"], p["userId"]) == (1, 7, "u")

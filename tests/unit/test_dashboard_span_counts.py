@@ -7,7 +7,7 @@ from typing import Any, Dict
 from unittest.mock import patch
 
 from hermes_otel.dashboard.backends.base import StructuredFilter
-from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter
+from hermes_otel.dashboard.backends.langfuse import LangfuseAdapter, _LangfuseTracesApi
 from hermes_otel.dashboard.backends.openobserve import OpenObserveAdapter
 from hermes_otel.dashboard.backends.phoenix import PhoenixAdapter
 
@@ -156,7 +156,7 @@ def test_langfuse_maps_the_generic_session_key():
         }
     )
     f = StructuredFilter(attr_equals={"hermes.session_id": "s-9"})
-    assert a._list_params(f, 0, 10, 5)["sessionId"] == "s-9"
+    assert _LangfuseTracesApi(a)._list_params(f, 0, 10, 5)["sessionId"] == "s-9"
 
 
 def test_backend_cards_carry_the_session_id():
