@@ -290,18 +290,11 @@ def correlation_attributes(tracer, session_id: Optional[str], extra_kwargs: dict
     must not create aggregators (#105). ``_start_session_span`` is the one
     writer of ``correlation_id``.
     """
-    incoming = _extract_correlation_id(extra_kwargs)
-    session_key = str(session_id) if session_id else ""
-    correlation_id = incoming
-
-    if session_key:
-        ps = tracer.sessions.peek(session_key)
-        if incoming:
-            if ps is not None:
-                ps.correlation_id = incoming
-        elif ps is not None and ps.correlation_id:
+    correlation_id = _extract_correlation_id(extra_kwargs)
+    if not correlation_id and session_id:
+        ps = tracer.sessions.peek(str(session_id))
+        if ps is not None and ps.correlation_id:
             correlation_id = ps.correlation_id
-
     if not correlation_id:
         return {}
     return {"correlation.id": truncate_string(correlation_id, _ID_MAX)}
