@@ -201,10 +201,12 @@ class TestHelpers:
         assert asp.level_for(None, None) == "INFO"
 
     def test_otlp_value_and_attrs(self):
-        from hermes_otel.dashboard.backends.shapes import otlp_attrs_to_dict, otlp_unwrap
+        from hermes_otel.dashboard.backends.shapes import otlp_attr, otlp_attrs_to_dict, otlp_unwrap
 
         assert otlp_unwrap({"intValue": "7"}) == 7
         assert otlp_unwrap({"boolValue": True}) is True
+        # the inverse of ``otlp_attr(key, None)``, which writes an empty value
+        assert otlp_unwrap(otlp_attr("k", None)["value"]) is None
         assert otlp_attrs_to_dict([_attr("a", 1), _attr("b", "x"), {"nope": 1}]) == {
             "a": 1,
             "b": "x",

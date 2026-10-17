@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_otel import live_store, log_events, query_cli, semconv
+from hermes_otel import live_store, log_events, semconv
 from hermes_otel.dashboard.backends import _attrs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -109,8 +109,6 @@ class TestSpanKinds:
         assert live_store._SESSION_KEYS == semconv.SESSION_KEYS
         assert live_store._MODEL_KEYS == semconv.MODEL_KEYS
         assert live_store._TOKEN_KEYS == semconv.TOTAL_TOKEN_KEYS
-        assert query_cli._MODEL_KEYS == semconv.MODEL_KEYS
-        assert query_cli._COST_KEY == semconv.COST_KEY
         assert set(_attrs.KNOWN_ATTRIBUTES) == set(semconv.ATTRIBUTE_NAMES)
 
     def test_every_kind_has_a_prefix_table(self):

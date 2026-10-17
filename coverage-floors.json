@@ -36,6 +36,8 @@
   "hermes_otel/pipeline_env.py": 100,
   "hermes_otel/plugin_config.py": 93,
   "hermes_otel/query_cli.py": 89,
+  "hermes_otel/query_render.py": 93,
+  "hermes_otel/query_sources.py": 98,
   "hermes_otel/redaction.py": 95,
   "hermes_otel/semconv.py": 100,
   "hermes_otel/session_state.py": 96,

@@ -16,8 +16,8 @@ What derives from this module:
   span-kind table for ``lib.ts``, written by ``scripts/gen_semconv.py``.
 * ``hermes_otel/dashboard/backends/_attrs.KNOWN_ATTRIBUTES`` is
   :data:`ATTRIBUTE_NAMES`.
-* ``live_store.span_kind`` / ``_kind_sql`` and ``query_cli`` read the key
-  chains and :data:`SPAN_KINDS` from here.
+* ``live_store.span_kind`` / ``_kind_sql`` and the query CLI (``query_render``,
+  ``query_sources``) read the key chains and :data:`SPAN_KINDS` from here.
 
 Adding an attribute: emit it in a hook, add it to a :class:`Row` here (its own,
 or an existing row it shares a meaning with), run ``python scripts/gen_semconv.py``
