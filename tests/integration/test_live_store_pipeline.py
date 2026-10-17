@@ -20,6 +20,7 @@ def live_plugin(tmp_path):
 
     import hermes_otel.live_store_registry as ls
     import hermes_otel.tracer as tracer_mod
+    from hermes_otel.testing import attach_pipeline
     from hermes_otel.tracer import HermesOTelPlugin, _LiveSpanProcessor
 
     ls._LIVE_STORE = LiveStore(db_path=str(tmp_path / "live.db"))  # fresh tmp store
@@ -29,9 +30,7 @@ def live_plugin(tmp_path):
     provider.add_span_processor(_LiveSpanProcessor(store))
 
     plugin = HermesOTelPlugin()
-    plugin.tracer = provider.get_tracer("live-test")
-    plugin._initialized = True
-    plugin._live_active = True
+    attach_pipeline(plugin, tracer=provider.get_tracer("live-test"), live_active=True)
     plugin.config = HermesOtelConfig(dashboard_live=True)
 
     prev = tracer_mod._tracer
@@ -77,7 +76,7 @@ class TestLivePipeline:
         # No MeterProvider is wired (live-only), yet record_metric still feeds
         # the live store because the tap runs before the meter guard.
         store, plugin = live_plugin
-        assert plugin._meter is None
+        assert plugin.pipeline.meter is None
         hooks.on_session_start(session_id="s2", model="gpt-4", platform="cli")
         names = [m["name"] for m in store.metrics()]
         assert "hermes.session.count" in names  # the OTLP name, as the backends see it (#95)

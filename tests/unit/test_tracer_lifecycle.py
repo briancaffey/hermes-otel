@@ -62,7 +62,7 @@ class TestShutdownAndReinit:
         assert plugin.is_enabled is False
         assert plugin.spans.active_count() == 0
         assert plugin.sessions.active_count() == 0
-        assert plugin._span_processors == [] and plugin._metric_readers == []
+        assert plugin.pipeline is None
         # Open spans were ended, not dropped.
         assert sorted(s.name for s in exporter.get_finished_spans()) == ["agent", "tool.bash"]
         plugin.shutdown()  # second call is a no-op, never raises
@@ -75,23 +75,23 @@ class TestShutdownAndReinit:
         root = logging.getLogger()
         level_before = root.level
         assert plugin.init() is True
-        first_provider = plugin._tracer_provider
+        first_provider = plugin.pipeline.tracer_provider
         from hermes_otel import log_handler as lh
 
         def ours():
             return [h for h in root.handlers if getattr(h, lh._HANDLER_MARKER, False)]
 
-        first_logger_provider = plugin._logger_provider
+        first_logger_provider = plugin.pipeline.logger_provider
         assert first_provider is not None and first_logger_provider is not None
         assert len(ours()) == 1  # live-only: the log provider exists for the live sink
 
         assert plugin.init() is True  # reload / reconfigure
         assert plugin.is_enabled
-        assert plugin._tracer_provider is not first_provider
+        assert plugin.pipeline.tracer_provider is not first_provider
         # The first logging handler is gone; exactly one of ours is attached.
-        assert len(ours()) == 1 and plugin._logger_provider is not first_logger_provider
+        assert len(ours()) == 1 and plugin.pipeline.logger_provider is not first_logger_provider
         # The tracer in use belongs to the new provider, not the once-only global.
-        assert plugin.tracer is not None
+        assert plugin.pipeline.tracer is not None
         span = plugin.start_span("probe", "probe", session_id="s")
         assert span.is_recording()
         plugin.end_span("probe")

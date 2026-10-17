@@ -132,7 +132,7 @@ class TestNoBackendMessage:
         monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
         plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
         with caplog.at_level(logging.WARNING, logger="hermes_otel"):
-            assert plugin._init_otlp_from_env() is False
+            assert plugin._backends_from_env() is None
         text = " ".join(r.getMessage() for r in caplog.records)
         assert "No backend configured" in text
         for backend_type in ENV_PRIORITY:

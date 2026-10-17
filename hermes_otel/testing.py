@@ -12,23 +12,27 @@ project's tests can use it too.
 * :func:`build_inmemory_plugin` — a ``HermesOTelPlugin`` exporting to in-memory
   span exporters, and optionally an in-memory metric reader and log exporter,
   without touching the OTel globals.
+* :func:`attach_pipeline` / :func:`attach_logs` — give a plugin a
+  :class:`~hermes_otel.pipeline.Pipeline` built from a test's stand-ins
+  (fake processors, a ``MagicMock`` meter), and wire the logs pipeline onto it.
 """
 
 from __future__ import annotations
 
-import logging
 from dataclasses import dataclass, field
-from typing import Any, List, Optional
+from typing import Any, List, Optional, Sequence
 from unittest.mock import patch
 
+from .pipeline import Pipeline, create_instruments, init_logs_pipeline
 from .plugin_config import HermesOtelConfig
 from .tracer import HermesOTelPlugin, metric_views
 
 
 def reset_state() -> None:
     """Forget the plugin singleton, the parent-stack ContextVar, the live-store
-    singleton and the redaction cache. Shuts down a previous plugin's exporter
-    threads and host sampler so nothing retries against a dead endpoint."""
+    singleton and the redaction cache. Shuts down a previous plugin's pipeline
+    (exporter threads, log handler) and host sampler so nothing retries
+    against a dead endpoint."""
     from . import live_store_registry as _ls
     from . import redaction as _red
     from . import span_tracker as _st
@@ -36,23 +40,18 @@ def reset_state() -> None:
 
     current = _tr._tracer
     if current is not None:
-        try:
-            current.stop_host_metrics()
-        except Exception:
-            pass
-        for obj in (
-            list(getattr(current, "_metric_readers", []))
-            + list(getattr(current, "_span_processors", []))
-            + [getattr(current, "_logger_provider", None)]
-        ):
+        host = getattr(current, "host_metrics", None)
+        if host is not None:
             try:
-                if obj is not None:
-                    obj.shutdown()
+                host.stop()
             except Exception:
                 pass
-        handler = getattr(current, "_live_log_handler", None)
-        if handler is not None:
-            logging.getLogger().removeHandler(handler)
+        pipeline = getattr(current, "pipeline", None)
+        if pipeline is not None:
+            try:
+                pipeline.shutdown(current.config.log_attach_logger)
+            except Exception:
+                pass
     _tr._tracer = None
     _st._PARENT_STACK.set(None)
     store = _ls._LIVE_STORE
@@ -79,6 +78,42 @@ def install_singleton(plugin: Optional[HermesOTelPlugin]) -> Optional[HermesOTel
     _tr._tracer = plugin
     _st._PARENT_STACK.set(None)
     return previous
+
+
+def attach_pipeline(plugin: HermesOTelPlugin, **fields: Any) -> Pipeline:
+    """Give ``plugin`` a bare :class:`Pipeline` built from ``fields`` (a test's
+    stand-ins: fake span processors, a ``MagicMock`` meter or provider, a
+    ``tracer``, ``live_active``), so ``is_enabled`` is true without ``init()``.
+    With a ``meter`` the instrument table is created on it, as
+    ``build_pipeline`` does. Returns the pipeline."""
+    pipeline = Pipeline(**fields)
+    if pipeline.meter is not None and not pipeline.instruments:
+        pipeline.instruments = create_instruments(pipeline.meter, plugin.config)
+    plugin.pipeline = pipeline
+    return pipeline
+
+
+def attach_logs(
+    plugin: HermesOTelPlugin, backends: Sequence[Any] = (), *, resource: Any = None
+) -> Pipeline:
+    """Wire the logs pipeline onto ``plugin``'s pipeline the way ``build_pipeline``
+    does (``init_logs_pipeline`` with the plugin's config, span tracker and
+    active-span resolver), attaching a bare pipeline with ``resource`` first
+    when the plugin has none. Returns the pipeline; its ``logger_provider``
+    is ``None`` when logs are off or nothing takes them."""
+    pipeline = plugin.pipeline
+    if pipeline is None:
+        pipeline = attach_pipeline(plugin, resource=resource)
+    elif resource is not None:
+        pipeline.resource = resource
+    init_logs_pipeline(
+        pipeline,
+        plugin.config,
+        list(backends),
+        tracker=plugin.spans,
+        context_resolver=plugin.active_span_for_logs,
+    )
+    return pipeline
 
 
 @dataclass
@@ -151,10 +186,13 @@ def build_inmemory_plugin(
     plugin = HermesOTelPlugin(config=config)
     if profile_name is not None:
         plugin.profile_name = profile_name
-    plugin.tracer = provider.get_tracer(service_name)
-    plugin._tracer_provider = provider
-    plugin._initialized = True
-    plugin._span_processors = processors
+    attach_pipeline(
+        plugin,
+        resource=resource,
+        tracer_provider=provider,
+        tracer=provider.get_tracer(service_name),
+        span_processors=processors,
+    )
     pipeline = InMemoryPipeline(
         plugin=plugin, span_exporters=span_exporters, tracer_provider=provider
     )
@@ -169,10 +207,10 @@ def build_inmemory_plugin(
             metric_readers=[reader],
             views=metric_views(plugin.config.metrics_histogram),
         )
-        plugin._meter_provider = meter_provider
-        plugin._meter = meter_provider.get_meter(service_name)
-        plugin._metric_readers = [reader]
-        plugin._create_metric_instruments()
+        plugin.pipeline.meter_provider = meter_provider
+        plugin.pipeline.meter = meter_provider.get_meter(service_name)
+        plugin.pipeline.metric_readers = [reader]
+        plugin.pipeline.instruments = create_instruments(plugin.pipeline.meter, plugin.config)
         pipeline.metric_reader = reader
         pipeline.meter_provider = meter_provider
 
@@ -198,7 +236,7 @@ def build_inmemory_plugin(
             "build_log_processors",
             return_value=[(SimpleLogRecordProcessor(log_exporter), object())],
         ):
-            plugin._init_logs_pipeline(resource, [])
+            attach_logs(plugin, [])
         pipeline.log_exporter = log_exporter
 
     return pipeline

@@ -6,13 +6,18 @@ from unittest.mock import patch
 from _helpers import clear_backend_env as _clear_backend_env
 
 from hermes_otel.backend_config import BackendConfig
+from hermes_otel.pipeline import Pipeline
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
+# init() hands the resolved backends to build_pipeline (its second argument);
+# these tests stub it with a bare Pipeline so no exporter is built.
+_BUILD = "hermes_otel.tracer.build_pipeline"
+
 
 def _env_backend(mock_pipeline):
-    """The single resolved backend init() handed to _init_otlp_pipeline."""
-    backends = mock_pipeline.call_args[0][0]
+    """The single resolved backend init() handed to build_pipeline."""
+    backends = mock_pipeline.call_args[0][1]
     assert len(backends) == 1, backends
     return backends[0]
 
@@ -31,7 +36,7 @@ class TestInitPhoenix:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             _assert_env_backend(mock_otlp, "http://localhost:6006/v1/traces", None, "Phoenix")
 
@@ -45,7 +50,7 @@ class TestInitPhoenix:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", side_effect=RuntimeError("boom")):
+        with patch(_BUILD, side_effect=RuntimeError("boom")):
             with caplog.at_level("ERROR", logger="hermes_otel"):
                 assert plugin.init() is False
         assert plugin.is_enabled is False
@@ -73,7 +78,7 @@ class TestInitPhoenix:
             try:
                 assert plugin.init() is True
                 assert plugin.is_enabled is True
-                assert plugin._live_active is True
+                assert plugin.pipeline.live_active is True
             finally:
                 if ls._LIVE_STORE is not None:
                     ls._LIVE_STORE.close()
@@ -83,7 +88,7 @@ class TestInitPhoenix:
         _clear_backend_env(monkeypatch)
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init(endpoint="http://custom:8080/v1/traces") is True
             _assert_env_backend(mock_otlp, "http://custom:8080/v1/traces", None, "Phoenix")
 
@@ -96,7 +101,7 @@ class TestInitLangfuse:
         monkeypatch.setenv("OTEL_LANGFUSE_ENDPOINT", "https://langfuse.example.com/api/public/otel")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             mock_otlp.assert_called_once()
             rb = _env_backend(mock_otlp)
@@ -116,13 +121,13 @@ class TestInitLangfuse:
         monkeypatch.setenv("LANGFUSE_BASE_URL", "https://cloud.langfuse.com")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
-            assert mock_otlp.call_args[0][0] == []
+            assert mock_otlp.call_args[0][1] == []
 
         monkeypatch.setenv("OTEL_LANGFUSE_ENDPOINT", "https://cloud.langfuse.com")
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             endpoint = _env_backend(mock_otlp).endpoint
             assert endpoint == "https://cloud.langfuse.com/api/public/otel/v1/traces"
@@ -133,7 +138,7 @@ class TestInitLangfuse:
         monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             endpoint = _env_backend(mock_otlp).endpoint
             assert endpoint == "https://cloud.langfuse.com/api/public/otel/v1/traces"
@@ -148,7 +153,7 @@ class TestInitLangSmith:
         monkeypatch.setenv("LANGSMITH_PROJECT", "hermes")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
+        with patch(_BUILD, return_value=Pipeline()) as mock_pipeline:
             assert plugin.init() is True
         _assert_env_backend(
             mock_pipeline,
@@ -166,7 +171,7 @@ class TestInitLangSmith:
         monkeypatch.setenv("OTEL_LANGFUSE_SECRET_API_KEY", "sk-lf")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
+        with patch(_BUILD, return_value=Pipeline()) as mock_pipeline:
             assert plugin.init() is True
         assert _env_backend(mock_pipeline).type == "langsmith"
 
@@ -189,7 +194,7 @@ class TestInitSigNoz:
         monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "http://localhost:4328/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             _assert_env_backend(mock_otlp, "http://localhost:4328/v1/traces", None, "SigNoz")
 
@@ -199,7 +204,7 @@ class TestInitSigNoz:
         monkeypatch.setenv("OTEL_SIGNOZ_INGESTION_KEY", "sz-key-abc123")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             rb = _env_backend(mock_otlp)
             assert rb.headers == {"signoz-ingestion-key": "sz-key-abc123"}
@@ -212,7 +217,7 @@ class TestInitSigNoz:
         monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "http://localhost:4328/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             assert _env_backend(mock_otlp).display_name == "Langfuse"
 
@@ -223,7 +228,7 @@ class TestInitJaeger:
         monkeypatch.setenv("OTEL_JAEGER_ENDPOINT", "http://localhost:4318/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             _assert_env_backend(mock_otlp, "http://localhost:4318/v1/traces", None, "Jaeger")
 
@@ -233,7 +238,7 @@ class TestInitJaeger:
         monkeypatch.setenv("OTEL_JAEGER_ENDPOINT", "http://localhost:4318/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             assert _env_backend(mock_otlp).display_name == "SigNoz"
 
@@ -243,7 +248,7 @@ class TestInitJaeger:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             assert _env_backend(mock_otlp).display_name == "Jaeger"
             assert _env_backend(mock_otlp).endpoint == "http://localhost:4318/v1/traces"
@@ -261,8 +266,8 @@ class TestInitJaeger:
         with patch("hermes_otel.pipeline.TracerProvider", side_effect=lambda **k: real_tp(**k)):
             plugin.init()
         # No meter provider should have been created for a traces-only backend.
-        assert plugin._meter is None
-        assert plugin._meter_provider is None
+        assert plugin.pipeline.meter is None
+        assert plugin.pipeline.meter_provider is None
 
 
 class TestInitTempo:
@@ -271,7 +276,7 @@ class TestInitTempo:
         monkeypatch.setenv("OTEL_TEMPO_ENDPOINT", "http://localhost:4318/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             _assert_env_backend(mock_otlp, "http://localhost:4318/v1/traces", None, "Tempo")
 
@@ -281,7 +286,7 @@ class TestInitTempo:
         monkeypatch.setenv("OTEL_TEMPO_ENDPOINT", "http://localhost:4318/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             assert _env_backend(mock_otlp).display_name == "Jaeger"
 
@@ -291,7 +296,7 @@ class TestInitTempo:
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             assert _env_backend(mock_otlp).display_name == "Tempo"
 
@@ -306,8 +311,8 @@ class TestInitTempo:
         real_tp = TracerProvider
         with patch("hermes_otel.pipeline.TracerProvider", side_effect=lambda **k: real_tp(**k)):
             plugin.init()
-        assert plugin._meter is None
-        assert plugin._meter_provider is None
+        assert plugin.pipeline.meter is None
+        assert plugin.pipeline.meter_provider is None
 
 
 class TestInitWeave:
@@ -318,9 +323,9 @@ class TestInitWeave:
         monkeypatch.setenv("WANDB_PROJECT", "proj")
 
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_pipeline:
+        with patch(_BUILD, return_value=Pipeline()) as mock_pipeline:
             assert plugin.init() is True
-            backends_arg = mock_pipeline.call_args[0][0]
+            backends_arg = mock_pipeline.call_args[0][1]
             assert len(backends_arg) == 1
             assert backends_arg[0].type == "weave"
             assert backends_arg[0].resource_attributes == {
@@ -360,7 +365,7 @@ class TestInitWeave:
         attrs = dict(captured["resource"].attributes)
         assert attrs["wandb.entity"] == "team"
         assert attrs["wandb.project"] == "proj"
-        assert plugin._meter is None
+        assert plugin.pipeline.meter is None
 
     def test_weave_can_use_top_level_resource_attrs(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -373,10 +378,10 @@ class TestInitWeave:
             },
             backends=(rb_config,),
         )
-        plugin = HermesOTelPlugin(config=cfg)
         from hermes_otel import backends as _backends
+        from hermes_otel.pipeline import build_resource
 
-        resource = plugin._build_resource([_backends.resolve(rb_config)])
+        resource = build_resource(cfg, "default", [_backends.resolve(rb_config)])
         attrs = dict(resource.attributes)
         assert attrs["wandb.entity"] == "team"
         assert attrs["wandb.project"] == "proj"
@@ -421,7 +426,7 @@ class TestConfigDisabled:
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(enabled=False))
         # The pipeline should NOT be wired because we short-circuit on disabled.
-        with patch.object(plugin, "_init_otlp_pipeline") as mock_otlp:
+        with patch(_BUILD) as mock_otlp:
             assert plugin.init() is False
             mock_otlp.assert_not_called()
 
@@ -600,7 +605,7 @@ class TestEnvBackendKeepsCapabilities:
         monkeypatch.setenv("OTEL_SIGNOZ_ENDPOINT", "https://ingest.us.signoz.cloud:443/v1/traces")
         monkeypatch.setenv("OTEL_SIGNOZ_INGESTION_KEY", "sz-key")
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             rb = _env_backend(mock_otlp)
             assert rb.type == "signoz"
@@ -612,7 +617,7 @@ class TestEnvBackendKeepsCapabilities:
         monkeypatch.setenv("OTEL_PARSEABLE_ENDPOINT", "http://localhost:8000/v1/traces")
         monkeypatch.setenv("OTEL_PARSEABLE_API_KEY", "pk")
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             rb = _env_backend(mock_otlp)
             assert rb.type == "parseable"
@@ -623,7 +628,7 @@ class TestEnvBackendKeepsCapabilities:
         _clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_PHOENIX_ENDPOINT", "http://localhost:6006/v1/traces")
         plugin = HermesOTelPlugin()
-        with patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp:
+        with patch(_BUILD, return_value=Pipeline()) as mock_otlp:
             assert plugin.init() is True
             rb = _env_backend(mock_otlp)
             assert rb.supports_logs is False

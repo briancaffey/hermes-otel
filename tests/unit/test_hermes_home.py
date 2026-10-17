@@ -17,6 +17,7 @@ import pytest
 
 from hermes_otel import hermes_home as hh
 from hermes_otel.hooks.attributes import profile_attributes
+from hermes_otel.pipeline import build_resource
 
 
 @pytest.fixture()
@@ -177,7 +178,10 @@ class TestProfileOnTelemetry:
     def test_resource_and_metric_label(self, inmemory_otel_with_metrics):
         exporter, reader, plugin = inmemory_otel_with_metrics
         plugin.profile_name = "alpha"
-        assert plugin._build_resource().attributes["hermes.profile"] == "alpha"
+        assert (
+            build_resource(plugin.config, plugin.profile_name).attributes["hermes.profile"]
+            == "alpha"
+        )
         plugin.record_metric("session_count", 1, {"platform": "cli"})
         data = reader.get_metrics_data()
         points = [

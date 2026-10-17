@@ -2,17 +2,22 @@
 behind the live-store and MCP-ping-filter processors, one metric reader per
 backend that takes metrics, and the logs pipeline.
 
-Split out of ``tracer.py`` in #405. The functions take the plugin instance;
-``HermesOTelPlugin`` keeps thin methods that delegate here, so the plugin's
-public surface and the test seams (``plugin._init_logs_pipeline(...)``,
-``plugin._build_resource(...)``) are unchanged. The OTLP exporter classes are
-imported here: tests that stub them patch ``hermes_otel.pipeline``.
+:func:`build_pipeline` wires it all from the config and the resolved backends
+and returns one :class:`Pipeline` (providers, processors, readers, meter,
+instruments, logger provider) with ``force_flush()`` and ``shutdown()``;
+``HermesOTelPlugin`` holds that object and nothing else of the pipeline
+(#506). The OTLP exporter classes are imported here: tests that stub them
+patch ``hermes_otel.pipeline``.
 """
 
 from __future__ import annotations
 
+import contextlib
 import os
+import threading
+import time
 import uuid
+from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
 from .backend_specs import spec_for
@@ -314,7 +319,7 @@ else:  # pragma: no cover — plugin is unusable without OTel
 # ── the Resource ───────────────────────────────────────────────────────
 
 
-def _service_identity(plugin) -> Dict[str, Any]:
+def _service_identity(config: Any, profile_name: str) -> Dict[str, Any]:
     """Process identity (OTel semconv) and the Hermes profile (#70).
 
     ``service.instance.id`` is what keeps two Hermes processes on one host
@@ -326,8 +331,7 @@ def _service_identity(plugin) -> Dict[str, Any]:
     folds it into ``job`` (``hermes-agent/hermes-agent``), which would rename
     every metric series of a plain install.
     """
-    config = plugin.config
-    profile_service = named_profile(plugin.profile_name) if config.service_name_from_profile else ""
+    profile_service = named_profile(profile_name) if config.service_name_from_profile else ""
     attrs: Dict[str, Any] = {
         "service.name": profile_service or DEFAULT_SERVICE_NAME,
         "service.instance.id": _SERVICE_INSTANCE_ID,
@@ -338,16 +342,16 @@ def _service_identity(plugin) -> Dict[str, Any]:
     pkg_version = package_version()
     if pkg_version:
         attrs["service.version"] = pkg_version
-    attrs["hermes.profile"] = plugin.profile_name
+    attrs["hermes.profile"] = profile_name
     return attrs
 
 
-def _platform(plugin) -> Dict[str, Any]:
+def _platform(config: Any, profile_name: str) -> Dict[str, Any]:
     """The platform, so a fleet can split by OS and CPU architecture (#476)."""
     return {k: v for k, v in (("os.type", os_type()), ("host.arch", host_arch())) if v}
 
 
-def _kanban_identity(plugin) -> Dict[str, Any]:
+def _kanban_identity(config: Any, profile_name: str) -> Dict[str, Any]:
     """Kanban worker identity: the dispatcher exports these into a worker's
     environment, so everything a card's run emits can be joined back to the
     card and to the attempt. Keyed on the task: Hermes pins the current board
@@ -359,16 +363,16 @@ def _kanban_identity(plugin) -> Dict[str, Any]:
     return {attr: value for attr, value in values if value}
 
 
-def _project(plugin) -> Dict[str, Any]:
+def _project(config: Any, profile_name: str) -> Dict[str, Any]:
     """The OpenInference project (Phoenix et al.), from the config or ``OTEL_PROJECT_NAME``."""
-    name = plugin.config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
+    name = config.project_name or os.getenv("OTEL_PROJECT_NAME", "").strip()
     return {"openinference.project.name": name} if name else {}
 
 
-def _host_name(plugin) -> Dict[str, Any]:
+def _host_name(config: Any, profile_name: str) -> Dict[str, Any]:
     """``host.name`` lets the host/GPU series join the traces they were sampled
     alongside (and a Collector's hostmetrics series, if one runs too)."""
-    if not plugin.config.host_metrics:
+    if not config.host_metrics:
         return {}
     try:
         import socket
@@ -382,7 +386,9 @@ def _host_name(plugin) -> Dict[str, Any]:
 _RESOURCE_CONTRIBUTORS = (_service_identity, _platform, _kanban_identity)
 
 
-def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) -> "Resource":
+def build_resource(
+    config: Any, profile_name: str, backends: Optional[List[_ResolvedBackend]] = None
+) -> "Resource":
     """The process's Resource, lowest precedence first: the contributors, the
     config's ``resource_attributes`` (which may override any of them), each
     backend's own attributes (a value that disagrees with a configured one
@@ -391,8 +397,8 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
     present by then, from either overlay."""
     attrs: Dict[str, Any] = {}
     for contribute in _RESOURCE_CONTRIBUTORS:
-        attrs.update(contribute(plugin))
-    attrs.update(plugin.config.resource_attributes or {})
+        attrs.update(contribute(config, profile_name))
+    attrs.update(config.resource_attributes or {})
     for b in backends or []:
         for key, value in (b.resource_attributes or {}).items():
             existing = attrs.get(key)
@@ -410,10 +416,114 @@ def build_resource(plugin, backends: Optional[List[_ResolvedBackend]] = None) ->
                 f"{b.display_name} requires {', '.join(missing)} as resource attributes "
                 f"(set them under resource_attributes or on the {b.type} backend entry)"
             )
-    attrs.update(_project(plugin))
+    attrs.update(_project(config, profile_name))
     if not attrs.get("host.name"):
-        attrs.update(_host_name(plugin))
+        attrs.update(_host_name(config, profile_name))
     return Resource.create(attrs)
+
+
+# ── the pipeline object ────────────────────────────────────────────────
+
+
+@dataclass
+class Pipeline:
+    """Everything one ``init()`` wires, as one object the plugin holds.
+
+    The providers are the plugin's own (independent of the OTel globals,
+    which can only be set once per process; see :func:`build_pipeline`).
+    ``span_processors`` and ``metric_readers`` are the OTLP fan-out, one per
+    backend; ``instruments`` the metric table on ``meter``; ``live_active``
+    whether the in-process live store is attached. A test may build one
+    from stand-ins (``hermes_otel.testing.attach_pipeline``): with no
+    ``tracer_provider`` the processors and readers are shut down one by one.
+    """
+
+    resource: Any = None
+    tracer_provider: Any = None
+    tracer: Any = None
+    span_processors: List[Any] = field(default_factory=list)
+    metric_readers: List[Any] = field(default_factory=list)
+    meter_provider: Any = None
+    meter: Any = None
+    instruments: Dict[str, Any] = field(default_factory=dict)
+    logger_provider: Any = None
+    log_processors: List[Any] = field(default_factory=list)
+    live_active: bool = False
+    # Reachability probe (#481): the thread and its results, filled shortly
+    # after init; [] until then or when the probe is off.
+    probe_thread: Any = None
+    probe_results: List[Any] = field(default_factory=list)
+
+    def force_flush(self, timeout_millis: int = 2000, providers: bool = True) -> None:
+        """Force export of buffered spans (and, with ``providers``, metrics and logs).
+
+        Synchronous. Called on process shutdown via atexit so a graceful exit
+        loses nothing; the turn-end flush goes through :class:`flush.Flusher`
+        instead. Per-span flushing is deliberately NOT done — it would defeat
+        the whole purpose of the BatchSpanProcessor queue.
+        """
+        for processor in list(self.span_processors):
+            with contextlib.suppress(Exception):
+                processor.force_flush(timeout_millis=timeout_millis)
+        if providers:
+            self.force_flush_providers(timeout_millis)
+
+    def force_flush_providers(self, timeout_millis: int = 2000) -> None:
+        """Flush the metric and log providers (their readers export synchronously).
+
+        One thread per metric reader: ``MeterProvider.force_flush`` walks the
+        readers in order and each export blocks for up to the exporter's
+        deadline (10 s) when its backend is down, so with several backends
+        configured and one of them unreachable a one-shot ``hermes -z`` exits
+        before the reachable backends get their only export. Verified on
+        2026-10-06 with an 11-backend config, four of them down: traces and
+        logs landed on the local stacks, no metric point ever did.
+        """
+        readers = list(self.metric_readers)
+        if self.meter_provider and len(readers) > 1:
+            threads = []
+            for reader in readers:
+
+                def flush_one(r=reader) -> None:
+                    with contextlib.suppress(Exception):
+                        r.force_flush(timeout_millis=timeout_millis)
+
+                t = threading.Thread(
+                    target=flush_one, name="hermes-otel-flush-metrics", daemon=True
+                )
+                t.start()
+                threads.append(t)
+            deadline = time.monotonic() + max(0.05, timeout_millis / 1000.0)
+            for t in threads:
+                t.join(timeout=max(0.0, deadline - time.monotonic()))
+        elif self.meter_provider:
+            with contextlib.suppress(Exception):
+                self.meter_provider.force_flush(timeout_millis=timeout_millis)
+        if self.logger_provider:
+            with contextlib.suppress(Exception):
+                self.logger_provider.force_flush(timeout_millis=timeout_millis)
+
+    def shutdown(self, attach_logger: Optional[str] = None) -> None:
+        """Stop every worker thread and detach the log handler. Never raises.
+
+        Shutting a provider down shuts every attached processor down (the
+        live store's, the MCP filter wrappers', the OTLP batchers'); the
+        handler ``attach_logger`` names (``config.log_attach_logger``) is
+        uninstalled, restoring the logger level it lowered.
+        """
+        for obj in (self.tracer_provider, self.meter_provider, self.logger_provider):
+            if obj is not None:
+                with contextlib.suppress(Exception):
+                    obj.shutdown()
+        if self.tracer_provider is None:
+            for obj in list(self.span_processors) + list(self.metric_readers):
+                with contextlib.suppress(Exception):
+                    obj.shutdown()
+        if self.logger_provider is not None:
+            with contextlib.suppress(Exception):
+                from . import log_handler
+
+                log_handler.uninstall_handler(attach_logger)
 
 
 # ── traces + metrics ───────────────────────────────────────────────────
@@ -455,7 +565,14 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     return PeriodicExportingMetricReader(exporter, export_interval_millis=config.flush_interval_ms)
 
 
-def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
+def build_pipeline(
+    config: Any,
+    backends: List[_ResolvedBackend],
+    profile_name: str,
+    *,
+    tracker: Any = None,
+    context_resolver: Any = None,
+) -> Optional[Pipeline]:
     """Wire one TracerProvider to all backends + a shared MeterProvider.
 
     Each backend gets its own ``BatchSpanProcessor`` (independent worker
@@ -464,15 +581,20 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
     way: one ``PeriodicExportingMetricReader`` per backend that supports
     metrics, attached to a single shared ``MeterProvider``. One backend
     whose exporter fails to build is logged and skipped; the others proceed.
+    ``tracker`` and ``context_resolver`` are the span registry and the
+    single-active-session resolver the log records are correlated with.
+
+    Returns ``None`` when nothing could be wired: a configuration error in
+    the Resource, or neither an OTLP backend nor the live store active.
     """
-    config = plugin.config
     try:
-        resource = plugin._build_resource(backends)
+        resource = build_resource(config, profile_name, backends)
     except ValueError as e:
         # Conflicting or missing resource attributes (build_resource says
         # which): a configuration error the pipeline cannot start without.
         logger.error(f"[hermes-otel] ✗ pipeline init failed: {e}")
-        return False
+        return None
+    pipeline = Pipeline(resource=resource)
 
     provider_kwargs: Dict[str, Any] = {"resource": resource}
     if config.sample_rate is not None:
@@ -492,7 +614,6 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
     # In-process live store for the zero-config dashboard. Added FIRST so
     # the dashboard renders the agent's activity even with no OTLP
     # backend configured — install the plugin, open the tab, see traces.
-    plugin._live_active = False
     if config.dashboard_live and _LiveSpanProcessor is not None:
         from .live_store_registry import get_live_store
 
@@ -503,7 +624,7 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
         )
         if store is not None:
             _attach(_LiveSpanProcessor(store))
-            plugin._live_active = True
+            pipeline.live_active = True
             # The live Logs tab is wired in init_logs_pipeline (same provider
             # as the OTLP exporters, #265).
 
@@ -521,16 +642,16 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
                 continue
             if signal == "traces":
                 _attach(built)
-                plugin._span_processors.append(built)
+                pipeline.span_processors.append(built)
             else:
-                plugin._metric_readers.append(built)
+                pipeline.metric_readers.append(built)
         else:
             logger.info(f"[hermes-otel] ✓ {b.display_name} at {b.endpoint}{b.describe_signals()}")
 
     # Proceed when *either* an OTLP backend or the live store is active.
     # (Live-only = the zero-config dashboard with no external collector.)
-    if not plugin._span_processors and not plugin._live_active:
-        return False
+    if not pipeline.span_processors and not pipeline.live_active:
+        return None
 
     # The OTel globals can be set once per process: on a re-init the
     # SDK keeps the old (now shut down) provider and logs "Overriding of
@@ -538,25 +659,24 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
     # use always come from OUR provider objects; the globals are set
     # only while still unset, for third-party code that instruments
     # through them.
-    plugin._tracer_provider = provider
+    pipeline.tracer_provider = provider
     _set_global_once(trace, "tracer", provider)
-    plugin.tracer = provider.get_tracer("hermes-otel-plugin")
+    pipeline.tracer = provider.get_tracer("hermes-otel-plugin")
 
-    if plugin._metric_readers:
-        plugin._meter_provider = MeterProvider(
+    if pipeline.metric_readers:
+        pipeline.meter_provider = MeterProvider(
             resource=resource,
-            metric_readers=plugin._metric_readers,
+            metric_readers=pipeline.metric_readers,
             views=metric_views(config.metrics_histogram),
         )
-        _set_global_once(metrics, "meter", plugin._meter_provider)
-        plugin._meter = plugin._meter_provider.get_meter("hermes-otel-plugin")
-        plugin._create_metric_instruments()
-        debug_log(f"Metrics initialized for {len(plugin._metric_readers)} backend(s)")
+        _set_global_once(metrics, "meter", pipeline.meter_provider)
+        pipeline.meter = pipeline.meter_provider.get_meter("hermes-otel-plugin")
+        pipeline.instruments = create_instruments(pipeline.meter, config)
+        debug_log(f"Metrics initialized for {len(pipeline.metric_readers)} backend(s)")
 
-    plugin._init_logs_pipeline(resource, backends)
-
-    plugin._initialized = True
-    plugin._register_atexit_flush()
+    init_logs_pipeline(
+        pipeline, config, backends, tracker=tracker, context_resolver=context_resolver
+    )
 
     mode = content_mode(config)
     if mode == "off":
@@ -568,16 +688,16 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
             "[hermes-otel] ✓ content_capture=full — complete prompts and responses on every "
             "api.* span (set content_capture: preview or off to reduce)"
         )
-    if len(plugin._span_processors) > 1:
+    if len(pipeline.span_processors) > 1:
         logger.info(
             f"[hermes-otel] ✓ Multi-backend fan-out active "
-            f"({len(plugin._span_processors)} collectors, "
-            f"{len(plugin._metric_readers)} with metrics)"
+            f"({len(pipeline.span_processors)} collectors, "
+            f"{len(pipeline.metric_readers)} with metrics)"
         )
-    if plugin._live_active:
+    if pipeline.live_active:
         logger.info(
             "[hermes-otel] ✓ Live dashboard store active"
-            + ("" if plugin._span_processors else " (no OTLP backend — live-only)")
+            + ("" if pipeline.span_processors else " (no OTLP backend — live-only)")
         )
     if config.probe_backends and backends:
         # One TCP connect per endpoint on a background thread (#481): a
@@ -586,55 +706,55 @@ def init_otlp_pipeline(plugin, backends: List[_ResolvedBackend]) -> bool:
         from .probe import start_probe
 
         def _report(results):
-            plugin.probe_results = results
+            pipeline.probe_results = results
             for r in results:
                 (logger.info if r.ok else logger.warning)(r.line())
                 debug_log(r.line())
 
-        plugin._probe_thread = start_probe(backends, _report)
-    return True
+        pipeline.probe_thread = start_probe(backends, _report)
+    return pipeline
 
 
-def create_metric_instruments(plugin) -> None:
-    """Create every instrument in ``_INSTRUMENTS`` on ``plugin._meter``.
+def create_instruments(meter: Any, config: Any) -> Dict[str, Any]:
+    """Every instrument in ``_INSTRUMENTS``, created on ``meter``, by hook-side key.
 
     One that fails to create is left out rather than aborting the rest;
-    ``record_metric`` skips keys without an instrument.
+    ``record_metric`` skips keys without an instrument. A compatibility
+    family that is switched off (``metric_name_compat``, #485) is left out.
     """
-    if plugin._meter is None:
-        return
-    compat_mode = plugin.config.metric_name_compat
+    instruments: Dict[str, Any] = {}
+    compat_mode = config.metric_name_compat
     for key, spec in _INSTRUMENTS.items():
         if spec.compat and compat_mode not in (spec.compat, "both"):
-            continue  # a compatibility family that is switched off (#485)
+            continue
         try:
-            factory = (
-                plugin._meter.create_histogram
-                if spec.kind == "histogram"
-                else plugin._meter.create_counter
-            )
-            plugin._instruments[key] = factory(
-                spec.name, unit=spec.unit, description=spec.description
-            )
+            factory = meter.create_histogram if spec.kind == "histogram" else meter.create_counter
+            instruments[key] = factory(spec.name, unit=spec.unit, description=spec.description)
         except Exception as e:  # pragma: no cover — defensive
             logger.warning(f"[hermes-otel] could not create metric {spec.name}: {e}")
-    plugin._create_host_metric_instruments()
+    return instruments
 
 
 # ── logs ───────────────────────────────────────────────────────────────
 
 
-def init_logs_pipeline(plugin, resource: "Resource", backends: List[_ResolvedBackend]) -> None:
-    """Wire a :class:`LoggerProvider` + handler when ``capture_logs`` is on.
+def init_logs_pipeline(
+    pipeline: Pipeline,
+    config: Any,
+    backends: List[_ResolvedBackend],
+    *,
+    tracker: Any = None,
+    context_resolver: Any = None,
+) -> None:
+    """Wire a :class:`LoggerProvider` + handler onto ``pipeline`` when ``capture_logs`` is on.
 
     One provider carries the enrichment processor, the live store sink
-    (when ``dashboard_live`` is on) and one exporter per log-capable
+    (when ``pipeline.live_active``) and one exporter per log-capable
     backend (#265). Skipped silently when ``capture_logs=false`` or the
     SDK logs module is unavailable; with no log-capable backend the live
     store alone still gets the records. Failures in individual backend
     exporters are logged but do not block pipeline init.
     """
-    config = plugin.config
     capture = bool(config.capture_logs)
     events = bool(config.log_events)
     if not (capture or events):
@@ -665,7 +785,7 @@ def init_logs_pipeline(plugin, resource: "Resource", backends: List[_ResolvedBac
         preview_chars=config.preview_max_chars,
     )
     live_store = None
-    if plugin._live_active:
+    if pipeline.live_active:
         try:
             from .live_store_registry import get_live_store
 
@@ -692,23 +812,23 @@ def init_logs_pipeline(plugin, resource: "Resource", backends: List[_ResolvedBac
     # default) so Hermes's DEBUG firehose cannot evict useful lines from
     # the bounded buffer; OTLP keeps ``log_level``.
     live_level = max(level, python_level(config.log_live_min_level))
-    plugin._logger_provider = log_handler.install_handler(
-        resource=resource,
+    pipeline.logger_provider = log_handler.install_handler(
+        resource=pipeline.resource,
         processors=processors,
         level=level,
         attach_logger=config.log_attach_logger,
-        context_resolver=plugin.active_span_for_logs,
-        tracker=plugin.spans,
+        context_resolver=context_resolver,
+        tracker=tracker,
         live_store=live_store,
         live_min_level=live_level,
         rules=rules,
         max_attribute_length=config.log_max_attribute_length,
         attach_handler=capture,
     )
-    if plugin._logger_provider is None:
+    if pipeline.logger_provider is None:
         return
 
-    plugin._log_processors = [p for p, _b in processors]
+    pipeline.log_processors = [p for p, _b in processors]
     if processors:
         sinks = f"{len(processors)} backend(s){', live store' if live_store is not None else ''}"
         if capture:

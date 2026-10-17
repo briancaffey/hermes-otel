@@ -18,6 +18,7 @@ from hermes_otel.instruments import (
     metric_views,
 )
 from hermes_otel.plugin_config import HermesOtelConfig, load_config
+from hermes_otel.testing import attach_pipeline
 from hermes_otel.tracer import HermesOTelPlugin
 
 COMPAT = {k: s for k, s in _INSTRUMENTS.items() if s.compat == "claude_code"}
@@ -28,10 +29,10 @@ REPLACED = {s.compat_of for s in COMPAT.values()}
 def _plugin(**cfg) -> HermesOTelPlugin:
     p = HermesOTelPlugin()
     p.config = HermesOtelConfig(**cfg)
-    p._meter = MagicMock()
-    p._meter.create_counter.side_effect = lambda name, **kw: MagicMock(name=name)
-    p._meter.create_histogram.side_effect = lambda name, **kw: MagicMock(name=name)
-    p._create_metric_instruments()
+    meter = MagicMock()
+    meter.create_counter.side_effect = lambda name, **kw: MagicMock(name=name)
+    meter.create_histogram.side_effect = lambda name, **kw: MagicMock(name=name)
+    attach_pipeline(p, meter=meter)
     return p
 
 
@@ -105,14 +106,14 @@ class TestTokenTypes:
 class TestCreation:
     def test_off_creates_no_compat_instrument(self):
         p = _plugin()
-        assert not (set(p._instruments) & set(COMPAT))
-        assert "token_usage" in p._instruments
+        assert not (set(p.pipeline.instruments) & set(COMPAT))
+        assert "token_usage" in p.pipeline.instruments
 
     @pytest.mark.parametrize("mode", ["claude_code", "both"])
     def test_on_creates_them_with_claude_code_units(self, mode):
         p = _plugin(metric_name_compat=mode)
-        assert set(COMPAT) <= set(p._instruments)
-        calls = {c.args[0]: c.kwargs for c in p._meter.create_counter.call_args_list}
+        assert set(COMPAT) <= set(p.pipeline.instruments)
+        calls = {c.args[0]: c.kwargs for c in p.pipeline.meter.create_counter.call_args_list}
         assert calls["claude_code.token.usage"]["unit"] == "tokens"
         assert calls["claude_code.cost.usage"]["unit"] == "USD"
         assert calls["claude_code.active_time.total"]["unit"] == "s"
@@ -123,7 +124,7 @@ class TestRecording:
         p = _plugin()
         p.record_metric("claude_code.token.usage", 5, {"type": "input"})  # no instrument, no error
         p.record_metric("token_usage", 5, {"token_type": "input"})
-        p._instruments["token_usage"].add.assert_called_once_with(
+        p.pipeline.instruments["token_usage"].add.assert_called_once_with(
             5, {"profile": "default", "token_type": "input"}
         )
 
@@ -138,17 +139,17 @@ class TestRecording:
         p.record_metric("active_time", 2.5, {"type": "cli", "platform": "cli"})
         p.record_metric("claude_code.active_time.total", 2.5, {"type": "cli"})
         for key in REPLACED:
-            p._instruments[key].add.assert_not_called()
-        p._instruments["claude_code.token.usage"].add.assert_called_once_with(
+            p.pipeline.instruments[key].add.assert_not_called()
+        p.pipeline.instruments["claude_code.token.usage"].add.assert_called_once_with(
             5, {"profile": "default", "type": "input", "model": "m"}
         )
-        p._instruments["claude_code.session.count"].add.assert_called_once_with(
+        p.pipeline.instruments["claude_code.session.count"].add.assert_called_once_with(
             1, {"profile": "default", "start_type": "fresh"}
         )
-        p._instruments["claude_code.cost.usage"].add.assert_called_once_with(
+        p.pipeline.instruments["claude_code.cost.usage"].add.assert_called_once_with(
             0.5, {"profile": "default", "model": "m"}
         )
-        p._instruments["claude_code.active_time.total"].add.assert_called_once_with(
+        p.pipeline.instruments["claude_code.active_time.total"].add.assert_called_once_with(
             2.5, {"profile": "default", "type": "cli"}
         )
 
@@ -156,15 +157,15 @@ class TestRecording:
         p = _plugin(metric_name_compat="claude_code")
         p.record_metric("message_count", 1, {"model": "m"})
         p.record_metric("prompt_cache_tokens", 7, {"cache_result": "hit"})
-        p._instruments["message_count"].add.assert_called_once()
-        p._instruments["prompt_cache_tokens"].add.assert_called_once()
+        p.pipeline.instruments["message_count"].add.assert_called_once()
+        p.pipeline.instruments["prompt_cache_tokens"].add.assert_called_once()
 
     def test_both_mode_exports_both(self):
         p = _plugin(metric_name_compat="both")
         p.record_metric("token_usage", 5, {"token_type": "input"})
         p.record_metric("claude_code.token.usage", 5, {"type": "input"})
-        p._instruments["token_usage"].add.assert_called_once()
-        p._instruments["claude_code.token.usage"].add.assert_called_once()
+        p.pipeline.instruments["token_usage"].add.assert_called_once()
+        p.pipeline.instruments["claude_code.token.usage"].add.assert_called_once()
 
     def test_live_store_keeps_the_hermes_point_in_exclusive_mode_and_never_sees_a_compat_point(
         self, monkeypatch
@@ -172,7 +173,7 @@ class TestRecording:
         store = MagicMock()
         monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         p = _plugin(metric_name_compat="claude_code")
-        p._live_active = True
+        p.pipeline.live_active = True
         p.record_metric("token_usage", 3, {"token_type": "output"})
         p.record_metric("claude_code.token.usage", 3, {"type": "output"})
         assert store.add_metric.call_count == 1
@@ -182,24 +183,24 @@ class TestRecording:
         store = MagicMock()
         monkeypatch.setattr("hermes_otel.live_store_registry.get_live_store", lambda **kw: store)
         p = _plugin(metric_name_compat="both")
-        p._live_active = True
+        p.pipeline.live_active = True
         p.record_metric("token_usage", 3, {"token_type": "output", "session.id": "s1"})
         p.record_metric("claude_code.token.usage", 3, {"type": "output", "session.id": "s1"})
-        p._instruments["token_usage"].add.assert_called_once_with(
+        p.pipeline.instruments["token_usage"].add.assert_called_once_with(
             3, {"profile": "default", "token_type": "output"}
         )
         assert "session.id" not in store.add_metric.call_args.args[2]
-        p._instruments["claude_code.token.usage"].add.assert_called_once_with(
+        p.pipeline.instruments["claude_code.token.usage"].add.assert_called_once_with(
             3, {"profile": "default", "type": "output"}
         )
 
         p = _plugin(metric_name_compat="both", metric_name_compat_session_id=True)
         p.record_metric("token_usage", 3, {"token_type": "output", "session.id": "s1"})
         p.record_metric("claude_code.token.usage", 3, {"type": "output", "session.id": "s1"})
-        p._instruments["token_usage"].add.assert_called_once_with(
+        p.pipeline.instruments["token_usage"].add.assert_called_once_with(
             3, {"profile": "default", "token_type": "output"}
         )
-        p._instruments["claude_code.token.usage"].add.assert_called_once_with(
+        p.pipeline.instruments["claude_code.token.usage"].add.assert_called_once_with(
             3, {"profile": "default", "type": "output", "session.id": "s1"}
         )
 

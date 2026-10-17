@@ -353,7 +353,7 @@ class TestTemporality:
 class TestExemplarsAndExport:
     def test_histogram_recorded_inside_a_span_carries_an_exemplar(self, inmemory_otel_with_metrics):
         _, reader, plugin = inmemory_otel_with_metrics
-        with plugin.tracer.start_as_current_span("api.test") as span:
+        with plugin.pipeline.tracer.start_as_current_span("api.test") as span:
             plugin.record_metric(
                 "gen_ai.client.operation.duration", 1.5, {"gen_ai.operation.name": "chat"}
             )
@@ -403,17 +403,18 @@ class TestTurnEndFlush:
         """The turn-end flush is the only export a one-shot run gets (#233)."""
         from unittest.mock import MagicMock
 
-        plugin = tracer_mod.HermesOTelPlugin()
-        plugin._span_processors = [MagicMock()]
-        plugin._meter_provider = MagicMock()
-        plugin._logger_provider = MagicMock()
+        from hermes_otel.flush import Flusher
+        from hermes_otel.pipeline import Pipeline
+
+        pipeline = Pipeline(
+            span_processors=[MagicMock()], meter_provider=MagicMock(), logger_provider=MagicMock()
+        )
+        flusher = Flusher()
         try:
-            assert plugin.flush_async(timeout_millis=200) is True
-            plugin.flush_wait(timeout_s=5)
-            plugin._span_processors[0].force_flush.assert_called_once()
-            plugin._meter_provider.force_flush.assert_called_once_with(timeout_millis=200)
-            plugin._logger_provider.force_flush.assert_called_once_with(timeout_millis=200)
+            assert flusher.flush_async(pipeline, timeout_millis=200) is True
+            flusher.wait(timeout_s=5)
+            pipeline.span_processors[0].force_flush.assert_called_once()
+            pipeline.meter_provider.force_flush.assert_called_once_with(timeout_millis=200)
+            pipeline.logger_provider.force_flush.assert_called_once_with(timeout_millis=200)
         finally:
-            executor, plugin._flush_executor = plugin._flush_executor, None
-            if executor is not None:
-                executor.shutdown(wait=True)
+            flusher.shutdown()

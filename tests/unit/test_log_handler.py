@@ -20,6 +20,7 @@ import pytest
 from hermes_otel import log_handler
 from hermes_otel.backends import _ResolvedBackend
 from hermes_otel.severity import otel_severity, python_level
+from hermes_otel.testing import attach_logs, attach_pipeline
 
 # ── python_level ───────────────────────────────────────────────────────────
 
@@ -621,10 +622,10 @@ class TestTracerLogsPipelineWiring:
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=False))
         with patch.object(log_handler, "build_log_processors") as mock_build:
-            plugin._init_logs_pipeline(Resource.create({}), [self._capable_backend()])
+            pipeline = attach_logs(plugin, [self._capable_backend()], resource=Resource.create({}))
         mock_build.assert_not_called()
-        assert plugin._logger_provider is None
-        assert plugin._log_processors == []
+        assert pipeline.logger_provider is None
+        assert pipeline.log_processors == []
 
     def test_installs_handler_when_capture_logs_true(self, clean_root_logger):
         from opentelemetry.sdk.resources import Resource
@@ -636,12 +637,12 @@ class TestTracerLogsPipelineWiring:
         plugin = HermesOTelPlugin(config=cfg)
 
         with patch.object(log_handler, "OTLPLogExporter", new=MagicMock()):
-            plugin._init_logs_pipeline(
-                Resource.create({"service.name": "t"}), [self._capable_backend()]
+            pipeline = attach_logs(
+                plugin, [self._capable_backend()], resource=Resource.create({"service.name": "t"})
             )
 
-        assert plugin._logger_provider is not None
-        assert len(plugin._log_processors) == 1
+        assert pipeline.logger_provider is not None
+        assert len(pipeline.log_processors) == 1
         # Handler reached the root logger with our marker.
         markers = [
             h for h in clean_root_logger.handlers if getattr(h, log_handler._HANDLER_MARKER, False)
@@ -659,9 +660,9 @@ class TestTracerLogsPipelineWiring:
         traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
 
         with caplog.at_level("WARNING", logger="hermes_otel"):
-            plugin._init_logs_pipeline(Resource.create({}), [traces_only])
+            pipeline = attach_logs(plugin, [traces_only], resource=Resource.create({}))
 
-        assert plugin._logger_provider is None
+        assert pipeline.logger_provider is None
         assert any("no configured backend accepts OTLP logs" in r.message for r in caplog.records)
 
     def test_live_store_alone_gets_a_provider(self, clean_root_logger, caplog, tmp_path):
@@ -674,16 +675,16 @@ class TestTracerLogsPipelineWiring:
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=True, dashboard_live=True))
         store = LiveStore(db_path=str(tmp_path / "live.db"))
-        plugin._live_active = True
+        pipeline = attach_pipeline(plugin, resource=Resource.create({}), live_active=True)
         traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
         with (
             patch.object(reg, "get_live_store", return_value=store),
             caplog.at_level("INFO", logger="hermes_otel"),
         ):
-            plugin._init_logs_pipeline(Resource.create({}), [traces_only])
+            attach_logs(plugin, [traces_only])
         try:
-            assert plugin._logger_provider is not None
-            assert plugin._log_processors == []
+            assert pipeline.logger_provider is not None
+            assert pipeline.log_processors == []
             assert any("live store only" in r.message for r in caplog.records)
             # Only the plugin's own warnings count: an earlier test's shut-down
             # global MeterProvider makes the OTel SDK log one of its own here.
@@ -696,12 +697,11 @@ class TestTracerLogsPipelineWiring:
             store.close()
 
     def test_force_flush_drains_logger_provider(self):
-        from hermes_otel.tracer import HermesOTelPlugin
+        from hermes_otel.pipeline import Pipeline
 
-        plugin = HermesOTelPlugin()
-        plugin._logger_provider = MagicMock()
-        plugin._force_flush()
-        plugin._logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
+        pipeline = Pipeline(logger_provider=MagicMock())
+        pipeline.force_flush()
+        pipeline.logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
 
 
 def _fake(prefix: str, body: str) -> str:

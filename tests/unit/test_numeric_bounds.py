@@ -148,4 +148,4 @@ class TestLoadPaths:
             patch("hermes_otel.pipeline.metrics.set_meter_provider"),
         ):
             assert plugin.init() is True
-        assert len(plugin._span_processors) == 1
+        assert len(plugin.pipeline.span_processors) == 1
