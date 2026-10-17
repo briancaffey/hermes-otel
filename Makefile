@@ -103,7 +103,8 @@ ci-floor:
 	uv venv --quiet --python 3.11 .venv-floor
 	uv pip install --quiet --python .venv-floor/bin/python -e ".[dev]" \
 	  "opentelemetry-api==$(OTEL_FLOOR)" "opentelemetry-sdk==$(OTEL_FLOOR)" \
-	  "opentelemetry-exporter-otlp-proto-http==$(OTEL_FLOOR)"
+	  "opentelemetry-exporter-otlp-proto-http==$(OTEL_FLOOR)" \
+	  "opentelemetry-exporter-otlp-proto-grpc==$(OTEL_FLOOR)"
 	.venv-floor/bin/python -c 'import sys, opentelemetry.sdk.version as v; assert v.__version__ == sys.argv[1], v.__version__; print("opentelemetry-sdk", v.__version__)' "$(OTEL_FLOOR)"
 	.venv-floor/bin/python -m pytest --tb=short -q
 

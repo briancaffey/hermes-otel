@@ -53,6 +53,7 @@ dependencies = [
     "opentelemetry-api>=1.35,<2",
     "opentelemetry-sdk>=1.35,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.35,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.35,<2",
     # Reads hermes_otel.yaml. Hermes's own runtime ships ruamel.yaml, not
     # PyYAML, so the plugin must declare it (#251).
     "PyYAML>=6,<7",

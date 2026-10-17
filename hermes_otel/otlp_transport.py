@@ -1,0 +1,127 @@
+"""OTLP transport selection and TLS credentials shared by all three signals.
+
+HTTP exporters remain the default. Import gRPC only for a gRPC destination,
+so an HTTP-only installation does not depend on importing grpcio at startup.
+"""
+
+from __future__ import annotations
+
+import os
+from pathlib import Path
+from typing import Any, Optional
+from urllib.parse import urlparse
+
+from .backends import _ResolvedBackend
+from .helpers import derive_signal_endpoint
+
+
+def signal_endpoint(backend: _ResolvedBackend, signal: str) -> str:
+    """gRPC shares one target; HTTP derives /v1/metrics and /v1/logs."""
+    override = getattr(backend, f"{signal}_endpoint", None)
+    if override:
+        return override
+    if signal == "traces" or backend.protocol == "grpc":
+        return backend.endpoint
+    return derive_signal_endpoint(backend.endpoint, signal)
+
+
+def _file_option(
+    backend: _ResolvedBackend, field: str, env_suffix: str, signal: str
+) -> Optional[str]:
+    value = getattr(backend, field)
+    if value is None:
+        value = os.getenv(f"OTEL_EXPORTER_OTLP_{signal.upper()}_{env_suffix}")
+    if value is None:
+        value = os.getenv(f"OTEL_EXPORTER_OTLP_{env_suffix}")
+    if value is None:
+        return None
+    if not value.strip():
+        raise ValueError(f"{field} must name a PEM file")
+    path = Path(value).expanduser()
+    # Fail before creating any exporter/channel. In particular, never let an
+    # unreadable CA file fall back to system trust in the SDK's env loader.
+    if not path.read_bytes():
+        raise ValueError(f"{field} must not be empty")
+    return str(path)
+
+
+def create_exporter(
+    backend: _ResolvedBackend, signal: str, http_exporter: Any, **kwargs: Any
+) -> Any:
+    """Build the selected SDK exporter, retaining existing HTTP constructor seams.
+
+    Explicit per-backend TLS files take precedence over signal-specific SDK
+    environment variables, which take precedence over the global SDK variables.
+    Supplying TLS files for a plaintext destination is an error, not a downgrade.
+    """
+    if backend.protocol not in ("http/protobuf", "grpc"):
+        raise ValueError(f"unsupported OTLP protocol {backend.protocol!r}")
+    endpoint = kwargs["endpoint"]
+    parsed = urlparse(endpoint if "://" in endpoint else "//" + endpoint)
+    certificate = _file_option(backend, "certificate_file", "CERTIFICATE", signal)
+    key = _file_option(backend, "client_key_file", "CLIENT_KEY", signal)
+    client = _file_option(backend, "client_certificate_file", "CLIENT_CERTIFICATE", signal)
+    if (key and not client) or (backend.protocol == "grpc" and bool(key) != bool(client)):
+        raise ValueError("client_key_file and client_certificate_file must be supplied together")
+    has_tls_files = bool(certificate or key or client)
+
+    if backend.protocol == "http/protobuf":
+        if backend.insecure is not None:
+            raise ValueError("insecure is a gRPC-only option; HTTP always verifies TLS")
+        if has_tls_files and parsed.scheme != "https":
+            raise ValueError("TLS files require an HTTPS endpoint")
+        if certificate:
+            kwargs["certificate_file"] = certificate
+        if key:
+            kwargs["client_key_file"] = key
+        if client:
+            # The HTTP SDK also accepts a combined certificate + key PEM.
+            kwargs["client_certificate_file"] = client
+        return http_exporter(**kwargs)
+
+    if parsed.scheme not in ("", "http", "https") or not parsed.netloc:
+        raise ValueError("gRPC endpoint must be host:port or an http(s) origin")
+    if parsed.path not in ("", "/") or parsed.query or parsed.fragment or parsed.username:
+        raise ValueError("gRPC endpoint must not contain a path, query, fragment or user info")
+    insecure = backend.insecure
+    if insecure is not None and not isinstance(insecure, bool):
+        raise ValueError("insecure must be a boolean")
+    if insecure is None:
+        raw = os.getenv(f"OTEL_EXPORTER_OTLP_{signal.upper()}_INSECURE")
+        if raw is None:
+            raw = os.getenv("OTEL_EXPORTER_OTLP_INSECURE")
+        if raw is not None:
+            if raw.lower() not in ("true", "false"):
+                raise ValueError("OTLP INSECURE must be true or false")
+            insecure = raw.lower() == "true"
+        else:
+            insecure = parsed.scheme == "http"
+    if parsed.scheme == "https" and insecure:
+        raise ValueError("insecure: true conflicts with an HTTPS endpoint")
+    if insecure and has_tls_files:
+        raise ValueError("TLS files cannot be used with an insecure gRPC connection")
+
+    import grpc
+    from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
+    from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter
+    from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
+
+    exporter = {
+        "traces": OTLPSpanExporter,
+        "metrics": OTLPMetricExporter,
+        "logs": OTLPLogExporter,
+    }[signal]
+    # Pass the bare target with an explicit mode, so the SDK cannot override
+    # that mode based on a URL scheme or silently discard an HTTP path.
+    kwargs["endpoint"] = parsed.netloc
+    kwargs["insecure"] = insecure
+    if kwargs.get("headers"):
+        # HTTP header names are case-insensitive; gRPC metadata requires lowercase.
+        kwargs["headers"] = {k.lower(): v for k, v in kwargs["headers"].items()}
+    if has_tls_files:
+        kwargs["credentials"] = grpc.ssl_channel_credentials(
+            root_certificates=Path(certificate).read_bytes() if certificate else None,
+            private_key=Path(key).read_bytes() if key else None,
+            certificate_chain=Path(client).read_bytes() if client else None,
+        )
+    return exporter(**kwargs)

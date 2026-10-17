@@ -6,18 +6,23 @@
  "env_notices": [],
  "path": "env_only",
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "LangWatch",
   "endpoint": "https://app.langwatch.ai/api/otel/v1/traces",
   "headers": {
    "Authorization": "Bearer <secret>",
    "X-Project-Id": "<secret>"
   },
+  "insecure": null,
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": null,
   "metrics_endpoint": null,
   "metrics_headers": null,
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": false,
   "supports_logs": true,

@@ -35,12 +35,16 @@
  "path": "logs_block",
  "preset_temporality": null,
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "mlflow-entry",
   "endpoint": "http://localhost:4318/v1/traces",
   "headers": {
    "Authorization": "Bearer <secret>",
    "x-mlflow-experiment-id": "<secret>"
   },
+  "insecure": null,
   "log_overrides": {
    "exclude_loggers": [
     "noisy"
@@ -52,6 +56,7 @@
   "metrics_endpoint": null,
   "metrics_headers": null,
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": true,
   "supports_logs": true,
