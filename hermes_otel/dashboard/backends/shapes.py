@@ -9,7 +9,13 @@
 
 Plus the small decoders every adapter needs on the way: an OTLP ``AnyValue``
 unwrapped, an attribute list as a dict, a nested attribute object flattened
-to dotted keys, a tolerant integer.
+to dotted keys, a tolerant integer, a span kind in any spelling.
+
+Between the two sits :class:`SpanRow` (#513): the facts an adapter decodes
+its native span into. :func:`card_from_trace` turns a trace's rows into its
+list row (the root or the matched span, the orphan and predicate re-checks),
+:func:`trace_detail` turns them into the batches; an adapter writes only the
+decoder.
 
 Thirteen adapters used to carry their own copy of the card-key table and of
 the row literal, and they had drifted (``spanCount`` missing here, ``matched``
@@ -28,7 +34,8 @@ meaning two things there). The rules are now these:
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
+from dataclasses import dataclass, field
+from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
 # The attributes a trace-list card carries, in the order the adapters ask a
 # backend for them (the TraceQL ``select()``, SigNoz's ``selectColumns``).
@@ -222,17 +229,6 @@ def otlp_batches(by_service: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, 
     ]
 
 
-def group_by_service(
-    spans: Iterable[Dict[str, Any]], service_of: Callable[[Dict[str, Any]], Any]
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Spans grouped by the service ``service_of`` names for each (``""`` when
-    unknown), first-seen order."""
-    out: Dict[str, List[Dict[str, Any]]] = {}
-    for sp in spans:
-        out.setdefault(str(service_of(sp) or ""), []).append(sp)
-    return out
-
-
 def span_count_of(batches: Sequence[Dict[str, Any]]) -> int:
     """The spans in an OTLP ``batches`` list."""
     return sum(
@@ -290,3 +286,168 @@ def card_row(
         }
     )
     return row
+
+
+# ── one typed span: what every adapter decodes its native span into ─────
+
+_SPAN_KINDS = {"internal": 1, "server": 2, "client": 3, "producer": 4, "consumer": 5}
+
+
+def otlp_kind(value: Any) -> int:
+    """A span kind in any backend's spelling → the OTLP ``SpanKind`` number:
+    ``2``, ``"2"``, ``"SERVER"``, ``"Server"``, ``"server"`` and
+    ``"SPAN_KIND_SERVER"`` are all 2. Unknown or missing is 1 (INTERNAL)."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value or 1
+    text = str(value or "").strip().lower()
+    if text.isdigit():
+        return int(text) or 1
+    if text.startswith("span_kind_"):
+        text = text[len("span_kind_") :]
+    return _SPAN_KINDS.get(text, 1)
+
+
+@dataclass(frozen=True)
+class SpanRow:
+    """The facts a card or a detail span is built from, whatever the backend
+    called them (#513). An adapter's ``_row(sp)`` decodes its native span
+    into one; :func:`card_from_trace` and :func:`trace_detail` do the rest.
+
+    ``status`` is the OTLP status (see :func:`otlp_status`) and ``error``
+    reads it: one spelling of "this span failed". ``kind`` is the OTLP
+    transport kind (see :func:`otlp_kind`; 1 for a backend whose kinds are
+    semantic). ``resource`` is the batch the detail puts the span in; ``None``
+    means ``{"service.name": service}`` (nothing when the service is unknown).
+    """
+
+    trace_id: Any
+    span_id: Any
+    parent_id: Any
+    name: str
+    start_ns: int
+    end_ns: int
+    attrs: Dict[str, Any]
+    service: str = ""
+    kind: int = 1
+    status: Dict[str, Any] = field(default_factory=dict)
+    events: Optional[List[Dict[str, Any]]] = None
+    resource: Optional[Dict[str, Any]] = None
+
+    @property
+    def error(self) -> bool:
+        return self.status.get("code") == 2
+
+    @property
+    def duration_ns(self) -> int:
+        return max(0, self.end_ns - self.start_ns)
+
+    def card(self, span_count: Optional[int] = None) -> Dict[str, Any]:
+        """This span as its trace's list row (see :func:`card_row`)."""
+        return card_row(
+            self.trace_id,
+            span_id=self.span_id,
+            name=self.name,
+            attrs=card_attrs(self.attrs, self.name, self.error),
+            start_ns=self.start_ns,
+            duration_ms=self.duration_ns // 1_000_000,
+            service=self.service,
+            span_count=span_count,
+        )
+
+
+def card_from_trace(
+    f: Any,
+    rows: Sequence[SpanRow],
+    *,
+    equals: Optional[Dict[str, Any]] = None,
+    check_all: bool = False,
+    server_roots: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """One trace's list row, built from the span the filter ``f`` (a
+    ``StructuredFilter``) picks among ``rows``, the trace's spans; ``None``
+    when the trace has no card under the filter.
+
+    Roots-only: the card is the root (the first row whose parent is absent or
+    not among the rows). The backend may have matched ANY span of the trace
+    (Jaeger's ``tags=``, Zipkin's ``annotationQuery``, #295), so the root
+    must itself satisfy the predicates, and an orphan (its real root outside
+    the window) is no root. ``server_roots`` says the backend answered
+    roots-only itself (Tempo's ``nestedSetParent < 0`` with every predicate
+    on the root): the root is the card as the detail shows it, orphan or not,
+    nothing re-checked.
+
+    Widened by the kind filter: the card is the first span by start carrying
+    the name prefix, as the other backends show it (the root without one).
+
+    ``equals`` replaces ``f.attr_equals`` (an adapter that folded its raw
+    tags into one dict). ``check_all`` is for a backend that applied no
+    predicate (Aspire's API has no filters) or matched a span its answer does
+    not name (Gigapipe's span set): every predicate is checked here, status
+    and free text included, on the root (roots-only) or on every span by
+    start (widened) until one satisfies them all.
+    """
+    from .base import root_of, span_matches  # base imports this module's emitters
+
+    if not rows:
+        return None
+    root = root_of(rows, lambda r: r.span_id, lambda r: r.parent_id)  # type: ignore[arg-type]
+
+    def ok(r: SpanRow) -> bool:
+        text = f"{r.attrs.get('input.value', '')}\n{r.attrs.get('output.value', '')}"
+        return span_matches(
+            f,
+            name=r.name,
+            attrs=r.attrs,
+            duration_ns=r.duration_ns,
+            error=r.error if check_all else None,
+            text=text if check_all else None,
+            equals=equals,
+        )
+
+    by_start = sorted(rows, key=lambda r: r.start_ns)
+    if f.roots_only:
+        if server_roots:
+            card = root
+        elif root.parent_id:
+            return None
+        else:
+            card = root if ok(root) else None
+    elif check_all:
+        card = next((r for r in by_start if ok(r)), None)
+    elif f.name_prefix:
+        card = next((r for r in by_start if r.name.startswith(f.name_prefix)), None)
+    else:
+        card = root
+    return card.card(len(rows)) if card is not None else None
+
+
+def trace_detail(rows: Sequence[SpanRow], *, truncated: bool = False) -> Dict[str, Any]:
+    """What ``get_trace()`` answers: the rows as OTLP batches, one per
+    resource in first-seen order (see :attr:`SpanRow.resource`),
+    ``span_count`` their number and ``truncated`` as the caller says."""
+    groups: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
+    for r in rows:
+        if r.resource is not None:
+            resource = r.resource
+        else:
+            resource = {"service.name": r.service} if r.service else {}
+        key = json.dumps(resource, sort_keys=True, default=str)
+        groups.setdefault(key, (resource, []))[1].append(
+            otlp_span(
+                r.trace_id,
+                r.span_id,
+                r.parent_id,
+                r.name,
+                start_ns=r.start_ns,
+                end_ns=r.end_ns,
+                attrs=r.attrs,
+                status=r.status,
+                kind=r.kind,
+                events=r.events,
+            )
+        )
+    return {
+        "batches": [otlp_batch(resource, spans) for resource, spans in groups.values()],
+        "span_count": len(rows),
+        "truncated": truncated,
+    }

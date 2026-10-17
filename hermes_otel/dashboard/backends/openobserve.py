@@ -41,7 +41,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, card_row, group_by_service, otlp_batches, otlp_span
+from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
 
 _DEFAULT_OO_PORT = 5080
 # The trace detail asks for this many rows and says so when there are more.
@@ -649,10 +649,7 @@ class OpenObserveAdapter(BackendAdapter):
                 f"Trace {trace_id} not found in OpenObserve stream {self.stream!r} "
                 f"(last {self.trace_window_days} days)",
             )
-        out = _rows_to_otlp(rows)
-        out["span_count"] = len(rows)
-        out["truncated"] = len(rows) >= _DETAIL_SPAN_CAP
-        return out
+        return _rows_to_otlp(rows)
 
 
 def _extract_org(endpoint: str) -> Optional[str]:
@@ -723,34 +720,39 @@ _SKIP_OTLP_COLS = frozenset(
 )
 
 
-def _rows_to_otlp(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    def one(row: Dict[str, Any]) -> Dict[str, Any]:
-        attrs = {
-            dotted(k): _maybe_num(v)
-            for k, v in row.items()
-            if k not in _SKIP_OTLP_COLS and v is not None and v != ""
-        }
-        parent = (
-            row.get("reference_parent_span_id")
-            or _extract_parent_from_reference(row.get("reference"))
-            or row.get("parent_span_id")
-        )
-        return otlp_span(
-            row.get("trace_id"),
-            row.get("span_id"),
-            parent,
-            row.get("operation_name") or row.get("name"),
-            start_ns=int(row.get("start_time") or 0),
-            end_ns=int(row.get("end_time") or 0),
-            attrs=attrs,
-            status=otlp_status(row.get("status_code"), row.get("status_message") or ""),
-            kind=int(row.get("span_kind") or 1),
-        )
-
-    by_service = group_by_service(
-        [r for r in rows if isinstance(r, dict)], lambda r: r.get("service_name")
+def _row(row: Dict[str, Any]) -> SpanRow:
+    """One stream row as a row: columns dotted back, the parent from
+    whichever of the three places OpenObserve put it."""
+    attrs = {
+        dotted(k): _maybe_num(v)
+        for k, v in row.items()
+        if k not in _SKIP_OTLP_COLS and v is not None and v != ""
+    }
+    parent = (
+        row.get("reference_parent_span_id")
+        or _extract_parent_from_reference(row.get("reference"))
+        or row.get("parent_span_id")
     )
-    return {"batches": otlp_batches({svc: [one(r) for r in rs] for svc, rs in by_service.items()})}
+    return SpanRow(
+        row.get("trace_id"),
+        row.get("span_id"),
+        parent,
+        str(row.get("operation_name") or row.get("name") or ""),
+        start_ns=int(row.get("start_time") or 0),
+        end_ns=int(row.get("end_time") or 0),
+        attrs=attrs,
+        service=str(row.get("service_name") or ""),
+        kind=otlp_kind(row.get("span_kind")),
+        status=otlp_status(row.get("status_code"), row.get("status_message") or ""),
+    )
+
+
+def _rows_to_otlp(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The detail every adapter answers (see :func:`trace_detail`), truncated
+    when the rows fill ``_DETAIL_SPAN_CAP``."""
+    return trace_detail(
+        [_row(r) for r in rows if isinstance(r, dict)], truncated=len(rows) >= _DETAIL_SPAN_CAP
+    )
 
 
 def _extract_parent_from_reference(ref: Any) -> Optional[str]:

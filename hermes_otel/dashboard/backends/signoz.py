@@ -47,14 +47,7 @@ from .paging import (
     widened_fetch,
 )
 from .severity import otel_severity_for
-from .shapes import (
-    CARD_ATTRIBUTE_KEYS,
-    card_row,
-    group_by_service,
-    otlp_batches,
-    otlp_span,
-    span_count_of,
-)
+from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
 from .timeconv import ns_from_any, ns_from_magnitude
 
 _DEFAULT_SIGNOZ_PORT = 3301
@@ -424,11 +417,8 @@ class SigNozAdapter(BackendAdapter):
                 timeout=20.0,
             )
         out = signoz_trace_to_otlp(data)
-        n = span_count_of(out.get("batches") or [])
-        if n == 0:
+        if not out["span_count"]:
             raise not_found(trace_id, "SigNoz")
-        out["span_count"] = n
-        out["truncated"] = n >= _DETAIL_SPAN_CAP
         return out
 
     # ── metrics (#194) ────────────────────────────────────────────────
@@ -794,8 +784,36 @@ def _signoz_rows_to_spans(entry: Dict[str, Any]) -> List[Dict[str, Any]]:
     return out
 
 
+def _row(sp: Dict[str, Any]) -> SpanRow:
+    """One SigNoz span (either known shape) as a row."""
+    attrs: Dict[str, Any] = {}
+    tagmap = sp.get("tagMap") or sp.get("tagsMap") or sp.get("tags") or {}
+    if isinstance(tagmap, dict):
+        attrs.update(tagmap)
+    elif isinstance(tagmap, list):
+        for t in tagmap:
+            if isinstance(t, dict) and "key" in t:
+                attrs[t["key"]] = t.get("value")
+    start_ns = _ns_from_row(sp) or 0
+    return SpanRow(
+        sp.get("traceID") or sp.get("traceId"),
+        sp.get("spanID") or sp.get("spanId"),
+        sp.get("parentSpanID") or sp.get("parentSpanId"),
+        str(sp.get("name") or ""),
+        start_ns=start_ns,
+        end_ns=(start_ns + int(sp.get("durationNano") or 0)) if start_ns else 0,
+        attrs=attrs,
+        service=str(sp.get("serviceName") or ""),
+        kind=otlp_kind(sp.get("kind")),
+        status=otlp_status(
+            "error" if sp.get("hasError") else "ok", str(sp.get("statusMessage") or "")
+        ),
+    )
+
+
 def signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
-    """Translate SigNoz's trace response shape into OTLP batches.
+    """Translate SigNoz's trace response shape into the detail every adapter
+    answers (see :func:`trace_detail`; truncated at ``_DETAIL_SPAN_CAP``).
 
     SigNoz's shape varies by version; we handle the two known forms:
 
@@ -814,41 +832,10 @@ def signoz_trace_to_otlp(data: Any) -> Dict[str, Any]:
                 for sp in _signoz_rows_to_spans(entry)
             ]
         }
-    if not isinstance(data, dict):
-        return {"batches": []}
-    spans_raw = data.get("spans")
-    if spans_raw is None:
+    spans_raw = data.get("spans") if isinstance(data, dict) else None
+    if spans_raw is None and isinstance(data, dict):
         spans_raw = (data.get("data") or {}).get("spans")
     if not isinstance(spans_raw, list):
-        return {"batches": []}
-
-    def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-        attrs: Dict[str, Any] = {}
-        tagmap = sp.get("tagMap") or sp.get("tagsMap") or sp.get("tags") or {}
-        if isinstance(tagmap, dict):
-            attrs.update(tagmap)
-        elif isinstance(tagmap, list):
-            for t in tagmap:
-                if isinstance(t, dict) and "key" in t:
-                    attrs[t["key"]] = t.get("value")
-        start_ns = _ns_from_row(sp) or 0
-        return otlp_span(
-            sp.get("traceID") or sp.get("traceId"),
-            sp.get("spanID") or sp.get("spanId"),
-            sp.get("parentSpanID") or sp.get("parentSpanId"),
-            sp.get("name"),
-            start_ns=start_ns,
-            end_ns=(start_ns + int(sp.get("durationNano") or 0)) if start_ns else 0,
-            attrs=attrs,
-            status=otlp_status(
-                "error" if sp.get("hasError") else "ok", str(sp.get("statusMessage") or "")
-            ),
-            kind=int(sp.get("kind") or 1),
-        )
-
-    by_service = group_by_service(
-        [sp for sp in spans_raw if isinstance(sp, dict)], lambda sp: sp.get("serviceName")
-    )
-    return {
-        "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-    }
+        spans_raw = []
+    rows = [_row(sp) for sp in spans_raw if isinstance(sp, dict)]
+    return trace_detail(rows, truncated=len(rows) >= _DETAIL_SPAN_CAP)

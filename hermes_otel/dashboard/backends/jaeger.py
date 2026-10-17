@@ -20,7 +20,7 @@ from __future__ import annotations
 
 import datetime as _dt
 import json
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
 from . import default_service_name, register
@@ -36,19 +36,15 @@ from .base import (
     query_origin,
     register_cache,
     resolve_env_or_literal,
-    root_of,
-    span_matches,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import (
-    card_attrs,
-    card_row,
-    group_by_service,
+    SpanRow,
+    card_from_trace,
     otlp_attrs_to_dict,
-    otlp_batches,
-    otlp_span,
     span_count_of,
     to_int,
+    trace_detail,
 )
 
 _DEFAULT_JAEGER_QUERY_PORT = 16686
@@ -94,6 +90,16 @@ def _parent_of(span: Dict[str, Any]) -> Optional[str]:
     return None
 
 
+def _status_of(attrs: Dict[str, Any]) -> Dict[str, Any]:
+    """OTLP status from the ``otel.status_code`` / ``otel.status_description``
+    tags Jaeger keeps for OTLP spans, else the ``error`` tag."""
+    code = attrs.get("otel.status_code")
+    message = str(attrs.get("otel.status_description") or "")
+    if isinstance(code, str) and code:
+        return otlp_status(code, message)
+    return otlp_status("error" if attrs.get("error") else "ok", message)
+
+
 def _v3_attrs(span: Dict[str, Any]) -> Dict[str, Any]:
     """A v3 (OTLP JSON) span's attributes as the tag dict the v1 path yields:
     the attributes plus ``otel.status_code`` / ``error`` /
@@ -113,12 +119,27 @@ def _v3_attrs(span: Dict[str, Any]) -> Dict[str, Any]:
     return attrs
 
 
-def _v3_spans_by_trace(data: Any) -> Dict[str, List[Dict[str, Any]]]:
-    """A v3 search answer (``result.resourceSpans``) as spans per trace id,
-    each span carrying its resource's service under ``_service``."""
+def _v3_row(span: Dict[str, Any], service: str) -> SpanRow:
+    """A v3 (OTLP JSON) span as a row, its service from the resource."""
+    attrs = _v3_attrs(span)
+    return SpanRow(
+        str(span["traceId"]),
+        span.get("spanId"),
+        span.get("parentSpanId"),
+        str(span.get("name") or ""),
+        start_ns=to_int(span.get("startTimeUnixNano")),
+        end_ns=to_int(span.get("endTimeUnixNano")),
+        attrs=attrs,
+        service=service,
+        status=_status_of(attrs),
+    )
+
+
+def _v3_spans_by_trace(data: Any) -> Dict[str, List[SpanRow]]:
+    """A v3 search answer (``result.resourceSpans``) as rows per trace id."""
     result = data.get("result") if isinstance(data, dict) else None
     resource_spans = (result or {}).get("resourceSpans") if isinstance(result, dict) else None
-    by_trace: Dict[str, List[Dict[str, Any]]] = {}
+    by_trace: Dict[str, List[SpanRow]] = {}
     for rs in resource_spans or []:
         if not isinstance(rs, dict):
             continue
@@ -127,48 +148,8 @@ def _v3_spans_by_trace(data: Any) -> Dict[str, List[Dict[str, Any]]]:
         for scope in rs.get("scopeSpans") or []:
             for sp in (scope or {}).get("spans") or []:
                 if isinstance(sp, dict) and sp.get("traceId"):
-                    by_trace.setdefault(str(sp["traceId"]), []).append({**sp, "_service": service})
+                    by_trace.setdefault(str(sp["traceId"]), []).append(_v3_row(sp, service))
     return by_trace
-
-
-def _pick_card(
-    f: StructuredFilter,
-    spans: List[Dict[str, Any]],
-    *,
-    span_id: Callable[[Dict[str, Any]], Any],
-    parent_id: Callable[[Dict[str, Any]], Any],
-    name: Callable[[Dict[str, Any]], str],
-    start: Callable[[Dict[str, Any]], int],
-    duration_ns: Callable[[Dict[str, Any]], int],
-    attrs_of: Callable[[Dict[str, Any]], Dict[str, Any]],
-    equals: Dict[str, Any],
-) -> Optional[Tuple[Dict[str, Any], Dict[str, Any]]]:
-    """The span a trace's card is built from, with its attributes, or ``None``
-    when the trace has no card under the filter.
-
-    Jaeger's ``tags=`` and ``operation=`` match ANY span of a trace, so with
-    roots-only the ROOT itself must satisfy the predicates (#295), and an
-    orphan (its real root outside the window) is no root. Widened by the
-    kind filter, the card is the first span carrying the prefix, as the other
-    backends show it, with that span's own attributes, start and duration.
-    """
-    root = root_of(spans, span_id, parent_id)
-    if root is None:
-        return None
-    if f.roots_only:
-        if parent_id(root):
-            return None
-        attrs = attrs_of(root)
-        ok = span_matches(
-            f, name=name(root), attrs=attrs, duration_ns=duration_ns(root), equals=equals
-        )
-        return (root, attrs) if ok else None
-    if f.name_prefix:
-        card = next(
-            (sp for sp in sorted(spans, key=start) if name(sp).startswith(f.name_prefix)), None
-        )
-        return (card, attrs_of(card)) if card is not None else None
-    return root, attrs_of(root)
 
 
 @register
@@ -343,15 +324,22 @@ class JaegerAdapter(BackendAdapter):
                 return proc.get("serviceName") or ""
         return ""
 
-    @staticmethod
-    def _status_of(attrs: Dict[str, Any]) -> Dict[str, Any]:
-        """OTLP status from the ``otel.status_code`` / ``otel.status_description``
-        tags Jaeger keeps for OTLP spans, else the ``error`` tag."""
-        code = attrs.get("otel.status_code")
-        message = str(attrs.get("otel.status_description") or "")
-        if isinstance(code, str) and code:
-            return otlp_status(code, message)
-        return otlp_status("error" if attrs.get("error") else "ok", message)
+    def _row(self, span: Dict[str, Any], trace_id: Any, processes: Dict[str, Any]) -> SpanRow:
+        """A classic (v1) span as a row: tags as a dict, µs to ns, the
+        service from the trace's ``processes``."""
+        attrs = self._span_tags_as_dict(span)
+        start_us = to_int(span.get("startTime"))
+        return SpanRow(
+            trace_id,
+            span.get("spanID"),
+            _parent_of(span),
+            str(span.get("operationName") or ""),
+            start_ns=start_us * 1000,
+            end_ns=(start_us + to_int(span.get("duration"))) * 1000,
+            attrs=attrs,
+            service=self._service_name_for_span(span, processes),
+            status=_status_of(attrs),
+        )
 
     # ── Public API ───────────────────────────────────────────────────
 
@@ -377,33 +365,12 @@ class JaegerAdapter(BackendAdapter):
             spans = [sp for sp in t.get("spans") or [] if isinstance(sp, dict)]
             if not trace_id or not spans:
                 continue
-            picked = _pick_card(
-                f,
-                spans,
-                span_id=lambda sp: sp.get("spanID"),
-                parent_id=_parent_of,
-                name=lambda sp: str(sp.get("operationName") or ""),
-                start=lambda sp: to_int(sp.get("startTime")),
-                duration_ns=lambda sp: to_int(sp.get("duration")) * 1000,
-                attrs_of=self._span_tags_as_dict,
-                equals=equals,
+            processes = t.get("processes") or {}
+            card = card_from_trace(
+                f, [self._row(sp, trace_id, processes) for sp in spans], equals=equals
             )
-            if picked is None:
-                continue
-            card, attrs = picked
-            name = card.get("operationName") or ""
-            rows.append(
-                card_row(
-                    trace_id,
-                    span_id=card.get("spanID"),
-                    name=name,
-                    attrs=card_attrs(attrs, name, self._status_of(attrs).get("code") == 2),
-                    start_ns=to_int(card.get("startTime")) * 1000,
-                    duration_ms=to_int(card.get("duration")) // 1000,
-                    service=self._service_name_for_span(card, t.get("processes") or {}),
-                    span_count=len(spans),
-                )
-            )
+            if card is not None:
+                rows.append(card)
         return rows
 
     def _search_v3(
@@ -419,42 +386,12 @@ class JaegerAdapter(BackendAdapter):
             if exc.kind != "not_found":
                 raise
             data = {}
-
-        def span_ns(sp: Dict[str, Any]) -> Tuple[int, int]:
-            start = to_int(sp.get("startTimeUnixNano"))
-            return start, max(0, to_int(sp.get("endTimeUnixNano")) - start)
-
         equals = self._tags(f)
         rows: List[Dict[str, Any]] = []
-        for trace_id, spans in _v3_spans_by_trace(data).items():
-            picked = _pick_card(
-                f,
-                spans,
-                span_id=lambda sp: sp.get("spanId"),
-                parent_id=lambda sp: sp.get("parentSpanId"),
-                name=lambda sp: str(sp.get("name") or ""),
-                start=lambda sp: span_ns(sp)[0],
-                duration_ns=lambda sp: span_ns(sp)[1],
-                attrs_of=_v3_attrs,
-                equals=equals,
-            )
-            if picked is None:
-                continue
-            card, attrs = picked
-            name = card.get("name") or ""
-            start_ns, dur_ns = span_ns(card)
-            rows.append(
-                card_row(
-                    trace_id,
-                    span_id=card.get("spanId"),
-                    name=name,
-                    attrs=card_attrs(attrs, name, self._status_of(attrs).get("code") == 2),
-                    start_ns=start_ns,
-                    duration_ms=dur_ns // 1_000_000,
-                    service=card.get("_service") or "",
-                    span_count=len(spans),
-                )
-            )
+        for spans in _v3_spans_by_trace(data).values():
+            card = card_from_trace(f, spans, equals=equals)
+            if card is not None:
+                rows.append(card)
         return rows
 
     def trace_url(self, trace_id: str) -> Optional[str]:
@@ -485,21 +422,4 @@ class JaegerAdapter(BackendAdapter):
         trace = items[0] if isinstance(items, list) else items
         processes = trace.get("processes") or {}
         spans = [sp for sp in trace.get("spans") or [] if isinstance(sp, dict)]
-
-        def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-            attrs = self._span_tags_as_dict(sp)
-            start_us = to_int(sp.get("startTime"))
-            return otlp_span(
-                trace_id,
-                sp.get("spanID"),
-                _parent_of(sp),
-                sp.get("operationName"),
-                start_ns=start_us * 1000,
-                end_ns=(start_us + to_int(sp.get("duration"))) * 1000,
-                attrs=attrs,
-                status=self._status_of(attrs),
-            )
-
-        by_service = group_by_service(spans, lambda sp: self._service_name_for_span(sp, processes))
-        batches = otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-        return {"batches": batches, "span_count": len(spans), "truncated": False}
+        return trace_detail([self._row(sp, trace_id, processes) for sp in spans])
