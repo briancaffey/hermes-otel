@@ -1,0 +1,104 @@
+name: E2E against hermes-agent main
+
+# The credential-free end-to-end tier (tests/e2e_ci, `make ci-e2e`) against
+# hermes-agent *main* instead of the pinned version test.yml uses: a Hermes
+# change to a hook signature or to how the CLI resumes a session shows up
+# here the week it lands, not when someone runs the scenario harness (#482).
+#
+# Allowed to fail: upstream main is unpinned, so this never gates a PR. A
+# failure opens one issue (or adds a comment to the open one) with the run
+# link and the tail of the log; a green run closes it.
+
+on:
+  schedule:
+    - cron: "17 7 * * 1" # Mondays, 07:17 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+jobs:
+  e2e-hermes-main:
+    name: End-to-end with hermes-agent main (allowed to fail)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    continue-on-error: true
+    env:
+      ISSUE_TITLE: "e2e: hermes-agent main breaks the credential-free e2e tier"
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        with:
+          enable-cache: true
+      - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
+        with:
+          python-version: "3.14"
+      - name: Install Hermes Agent from main
+        id: hermes
+        run: |
+          set -euo pipefail
+          git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
+          sha=$(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)
+          echo "hermes-agent main @ $sha"
+          echo "sha=$sha" >> "$GITHUB_OUTPUT"
+          # A pip-installed Hermes manages no plugin venv, so the plugin's own
+          # dependencies go into the same interpreter (hermes_otel/requirements.txt).
+          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt
+          hermes --version
+      - name: Run the e2e tier (make ci-e2e)
+        id: e2e
+        continue-on-error: true
+        env:
+          HERMES_E2E_HOME: ${{ runner.temp }}/hermes-e2e-home
+        run: |
+          set -o pipefail
+          make ci-e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
+      - name: Open or update the tracking issue
+        if: steps.e2e.outcome == 'failure'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HERMES_SHA: ${{ steps.hermes.outputs.sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo "\`make ci-e2e\` (tests/e2e_ci) failed against hermes-agent main @ \`$HERMES_SHA\`."
+            echo
+            echo "Run: $RUN_URL"
+            echo
+            echo "<details><summary>Log tail</summary>"
+            echo
+            echo '```'
+            tail -n 80 "$RUNNER_TEMP/e2e.log"
+            echo '```'
+            echo
+            echo "</details>"
+            echo
+            echo "Filed by .github/workflows/e2e-hermes-main.yml; the pinned job in test.yml is unaffected."
+          } > "$RUNNER_TEMP/issue.md"
+          number=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -z "$number" ]; then
+            gh issue create --title "$ISSUE_TITLE" --label bug --label "blocked: upstream" --body-file "$RUNNER_TEMP/issue.md"
+          else
+            gh issue comment "$number" --body-file "$RUNNER_TEMP/issue.md"
+          fi
+      - name: Close the tracking issue when green again
+        if: steps.e2e.outcome == 'success'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          HERMES_SHA: ${{ steps.hermes.outputs.sha }}
+        run: |
+          set -euo pipefail
+          number=$(gh issue list --state open --search "\"$ISSUE_TITLE\" in:title" --json number --jq '.[0].number // empty')
+          if [ -n "$number" ]; then
+            gh issue close "$number" --comment "Green again against hermes-agent main @ \`$HERMES_SHA\`: $RUN_URL"
+          fi
+      - name: Report the verdict
+        if: steps.e2e.outcome == 'failure'
+        run: |
+          echo "the e2e tier failed against hermes-agent main; see the tracking issue"
+          exit 1
