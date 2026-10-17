@@ -11,7 +11,7 @@ describe("semconv.generated.ts (from hermes_otel/semconv.py)", () => {
 
   it("the kind table covers every kind the UI knows", () => {
     const kinds = new Set(KIND_RULES.map((r) => r.kind));
-    for (const k of ["agent", "cron", "session", "skill", "approval", "subagent", "llm", "api", "tool"]) {
+    for (const k of ["agent", "cron", "session", "skill", "approval", "human_input", "subagent", "llm", "api", "tool"]) {
       expect(kinds.has(k), k).toBe(true);
     }
   });

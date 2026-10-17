@@ -90,7 +90,8 @@
   var KIND_OVERRIDE_ATTR = "hermes.span_kind";
   var KIND_OVERRIDES = [
     "skill",
-    "approval"
+    "approval",
+    "human_input"
   ];
   var KIND_RULES = [
     {
@@ -127,6 +128,13 @@
       "kind": "approval",
       "prefixes": [
         "approval"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "human_input",
+      "prefixes": [
+        "human_input."
       ],
       "exact": []
     },
@@ -271,6 +279,8 @@
     tool: "var(--otel-kind-tool)",
     skill: "var(--otel-kind-skill)",
     approval: "var(--otel-kind-approval)",
+    human_input: "var(--otel-kind-approval)",
+    // a wait on the person, like an approval
     subagent: "var(--otel-kind-subagent)",
     session: "var(--otel-kind-agent)",
     cron: "var(--otel-kind-cron)",
@@ -1817,7 +1827,7 @@
     if (hours % 24 === 0) return `${hours / 24}d`;
     return `${hours}h`;
   }
-  var KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "skill", "session", "other"];
+  var KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "human_input", "skill", "session", "other"];
   var KIND_PREFIX = {
     agent: "agent",
     cron: "cron",
@@ -1826,6 +1836,7 @@
     llm: "llm.",
     api: "api.",
     approval: "approval",
+    human_input: "human_input.",
     skill: "skill.",
     session: "session"
   };

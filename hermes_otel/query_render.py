@@ -289,6 +289,11 @@ SUMMARY_FIELDS: Dict[str, Tuple[Field, ...]] = {
         Field(("hermes.approval.decided_by",), _text("by {}")),
         Field(("hermes.approval.timed_out",), _flag("timed out")),
     ),
+    "human_input": (
+        Field(("hermes.human_input.kind",), _text()),
+        Field(("hermes.human_input.outcome",), _text()),
+        Field(("hermes.human_input.wait_s",), _num("waited {} s")),
+    ),
     "subagent": (
         Field(("hermes.subagent.role",), _text()),
         Field(("hermes.subagent.status",), _text()),

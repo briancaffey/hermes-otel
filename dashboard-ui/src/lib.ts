@@ -117,7 +117,7 @@ export function clip(s: any, max: number): string | null {
 }
 
 // ── span-kind classification (drives icon + accent) ──────────────────────
-export type Kind = "agent" | "llm" | "api" | "tool" | "skill" | "approval" | "subagent" | "session" | "cron" | "other";
+export type Kind = "agent" | "llm" | "api" | "tool" | "skill" | "approval" | "human_input" | "subagent" | "session" | "cron" | "other";
 
 // The table is generated from hermes_otel/semconv.py (#404); the vitest in
 // test/semconv.test.ts replays Python's answers through this function.
@@ -142,6 +142,7 @@ export const KIND_COLOR: Record<Kind, string> = {
   tool: "var(--otel-kind-tool)",
   skill: "var(--otel-kind-skill)",
   approval: "var(--otel-kind-approval)",
+  human_input: "var(--otel-kind-approval)", // a wait on the person, like an approval
   subagent: "var(--otel-kind-subagent)",
   session: "var(--otel-kind-agent)",
   cron: "var(--otel-kind-cron)",

@@ -387,6 +387,16 @@ class TestTree:
             "attributes": {"hermes.turn.number": 7, "hermes.platform": "x"},
         }
         assert span_summary(root, {"tokens": 300, "cost": 0.03}) == "turn 7 · 300 tok · $0.03 · x"
+        human = {
+            "name": "human_input.clarify",
+            "attributes": {
+                "hermes.span_kind": "human_input",
+                "hermes.human_input.kind": "clarify",
+                "hermes.human_input.outcome": "answered",
+                "hermes.human_input.wait_s": 4.2,
+            },
+        }
+        assert span_summary(human) == "clarify · answered · waited 4.20 s"
 
 
 # ── commands against the live store ───────────────────────────────────────

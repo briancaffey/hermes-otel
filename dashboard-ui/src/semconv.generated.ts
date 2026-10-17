@@ -39,6 +39,7 @@ export const KIND_OVERRIDE_ATTR = "hermes.span_kind";
 export const KIND_OVERRIDES: readonly string[] = [
   "skill",
   "approval",
+  "human_input",
 ] as const;
 export type KindRule = { kind: string; prefixes: readonly string[]; exact: readonly string[] };
 export const KIND_RULES: readonly KindRule[] = [
@@ -76,6 +77,13 @@ export const KIND_RULES: readonly KindRule[] = [
     "kind": "approval",
     "prefixes": [
       "approval"
+    ],
+    "exact": []
+  },
+  {
+    "kind": "human_input",
+    "prefixes": [
+      "human_input."
     ],
     "exact": []
   },
@@ -172,6 +180,18 @@ export const KIND_EXAMPLES: readonly { name: string; attrs: Record<string, strin
       "hermes.span_kind": "approval"
     },
     "kind": "approval"
+  },
+  {
+    "name": "human_input.clarify",
+    "attrs": {},
+    "kind": "human_input"
+  },
+  {
+    "name": "human_input.approval",
+    "attrs": {
+      "hermes.span_kind": "human_input"
+    },
+    "kind": "human_input"
   },
   {
     "name": "subagent",

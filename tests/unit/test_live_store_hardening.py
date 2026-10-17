@@ -79,10 +79,14 @@ class TestFilters:
         store.add_span(_span("b", "x", "r2", None, {"hermes.span_kind": "skill"}))
         store.add_span(_span("c", "approval.rm", "r3", None))
         store.add_span(_span("d", "tool.x", "r4", None))
+        store.add_span(
+            _span("e", "human_input.clarify", "r5", None, {"hermes.span_kind": "human_input"})
+        )
         assert [t["traceId"] for t in store.query_traces(kind="other")["traces"]] == ["a"]
         assert [t["traceId"] for t in store.query_traces(kind="skill")["traces"]] == ["b"]
         assert [t["traceId"] for t in store.query_traces(kind="approval")["traces"]] == ["c"]
         assert store.query_traces(kind="tool")["total"] == 1
+        assert [t["traceId"] for t in store.query_traces(kind="human_input")["traces"]] == ["e"]
 
     def test_offset_past_the_end_and_has_more(self, store):
         for i in range(3):
