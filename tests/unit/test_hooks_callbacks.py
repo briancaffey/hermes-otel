@@ -167,6 +167,28 @@ class TestOnSessionEnd:
         assert attrs["output.value"] == "world"
         assert mock_tracer.sessions.peek("s1") is None
 
+    def test_a_never_buffered_session_ends_like_an_empty_one(self, mock_tracer):
+        """First no hook buffered anything for ``s1``, then it holds an untouched
+        PerSession. Both roots get the same attributes (#509): the empty
+        aggregator is the null object the end drains when none exists."""
+        for _ in range(2):
+            on_session_end(
+                session_id="s1",
+                completed=False,
+                interrupted=False,
+                model="gpt-4",
+                platform="cli",
+                failed=True,
+                turn_exit_reason="error",
+            )
+            mock_tracer.sessions.get_or_create("s1")
+        first, second = (c[1]["attributes"] for c in mock_tracer.end_span.call_args_list)
+        assert first == second
+        assert first["hermes.turn.final_status"] == "failed"
+        assert first["hermes.session.failed"] is True
+        assert first["hermes.turn.exit_reason"] == "error"
+        assert not {k for k in first if k.startswith(("gen_ai.usage.", "hermes.cost."))}
+
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_end(
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"

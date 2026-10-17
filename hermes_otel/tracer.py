@@ -65,7 +65,7 @@ from .pipeline import (  # noqa: F401 — re-exported
     strip_root_usage,
 )
 from .plugin_config import BackendConfig, HermesOtelConfig, load_config
-from .session_state import SessionState
+from .session_state import PerSession, SessionState
 from .span_tracker import SpanTracker, sweep_attributes
 
 try:
@@ -719,6 +719,21 @@ class HermesOTelPlugin:
             debug_log(f"swept {swept} leftover span(s) of session={session_id}: {reason}")
         return swept
 
+    def end_skill_spans(self, session_id: str, result_status: str) -> None:
+        """Close the ``skill.<name>`` windows opened this turn (``skill_spans``).
+
+        Called before the root is ended so they close as its children;
+        overlapping skills each get their own close. Status is OK: a skill
+        being active is never itself an error; the turn's outcome rides on
+        ``hermes.skill.result_status``.
+        """
+        if not self.config.skill_spans:
+            return
+        for _name, key in self.spans.pop_skill_spans(session_id).items():
+            self.end_span(
+                key, attributes={"hermes.skill.result_status": result_status}, status="ok"
+            )
+
     def _finalize_orphan(self, session_id: str, reason: str = "ttl") -> None:
         """End any still-active spans for a timed-out session.
 
@@ -732,26 +747,17 @@ class HermesOTelPlugin:
 
         if self.spans.has_span(session_key):
             # A turn the gateway stopped (agent_loop_stopped) whose end never
-            # arrived is interrupted, not timed out (#396).
-            ps = self.sessions.peek(session_id)
-            stopped = ps is not None and bool(ps.stop_reason)
-            failure = ps.api_failure_close() if ps is not None and not stopped else None
-            if failure:
-                # Every API attempt failed and on_session_end never came (#467).
-                self.end_span(
-                    session_key,
-                    attributes=failure,
-                    status="error",
-                    error_message=f"turn failed: {failure.get('error.type') or 'API request failed'}",
-                )
-            else:
-                self.end_span(
-                    session_key,
-                    attributes={
-                        "hermes.turn.final_status": "interrupted" if stopped else "timed_out"
-                    },
-                    status="ok",
-                )
+            # arrived is interrupted, not timed out (#396); one whose every
+            # API attempt failed and whose end never came is failed (#467).
+            ps = self.sessions.peek(session_id) or PerSession()
+            attributes, status, error_message = (
+                ({"hermes.turn.final_status": "interrupted"}, "ok", None)
+                if ps.stop_reason
+                else ps.api_failure_close("timed_out")
+            )
+            self.end_span(
+                session_key, attributes=attributes, status=status, error_message=error_message
+            )
         # Drop the expired session's parent stack, skill spans, delegation
         # record and aggregator — the sweep is a safety net and later hooks
         # rebuild state. The ContextVar stack is deliberately untouched: it

@@ -127,3 +127,18 @@ def flush_wait(plugin, timeout_s: float = 5.0) -> None:
     deadline = time.perf_counter() + timeout_s
     while plugin._flush_pending.is_set() and time.perf_counter() < deadline:
         time.sleep(0.005)
+
+
+def flush_turn_end(plugin) -> None:
+    """The flush at a turn's or a session's end: queue :func:`flush_async` and
+    wait for it at most ``config.force_flush_wait_ms``.
+
+    From a background thread, waited on for a bounded time: a healthy
+    collector gets the turn before the hook returns (a one-shot run may exit
+    right after), a stuck one costs at most the wait (#91). ``0`` returns at
+    once and leaves the flush to its thread.
+    """
+    flush_async(plugin)
+    wait_ms = plugin.config.force_flush_wait_ms
+    if wait_ms and wait_ms > 0:
+        flush_wait(plugin, timeout_s=wait_ms / 1000.0)
