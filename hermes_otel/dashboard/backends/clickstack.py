@@ -62,8 +62,7 @@ from .paging import (
     widened_fetch,
 )
 from .severity import otel_severity_for
-from .shapes import SpanRow, otlp_event, otlp_kind, to_int, trace_detail
-from .zipkin import coerce_tag
+from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, to_int, trace_detail
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"

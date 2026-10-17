@@ -18,7 +18,6 @@ plugin's own ``resource_attributes.service.name``, else ``hermes-agent``.
 
 from __future__ import annotations
 
-import datetime as _dt
 import json
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
@@ -46,6 +45,7 @@ from .shapes import (
     to_int,
     trace_detail,
 )
+from .timeconv import ns_from_s, ns_to_rfc3339
 
 _DEFAULT_JAEGER_QUERY_PORT = 16686
 
@@ -73,13 +73,6 @@ def _tag_value(tag: Dict[str, Any]) -> Any:
 # are 404, #245). The API is probed once per query URL; ``query_api: v1|v3``
 # on the entry pins it.
 _API_PROBE_CACHE: Dict[str, str] = register_cache({})
-
-
-def _rfc3339(ns: int) -> str:
-    """``query.startTimeMin`` / ``Max`` take RFC 3339 timestamps."""
-    secs, rem = divmod(int(ns), 1_000_000_000)
-    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{rem:09d}Z"
 
 
 def _parent_of(span: Dict[str, Any]) -> Optional[str]:
@@ -256,8 +249,8 @@ class JaegerAdapter(BackendAdapter):
         (``attributes[k]=v`` and ``attributes.k=v`` are silently ignored)."""
         params: List[Tuple[str, str]] = [
             ("query.serviceName", f.service or self.default_service),
-            ("query.startTimeMin", _rfc3339(int(start_s) * 1_000_000_000)),
-            ("query.startTimeMax", _rfc3339(trace_end_bound(f, end_s, "ns"))),
+            ("query.startTimeMin", ns_to_rfc3339(ns_from_s(start_s))),
+            ("query.startTimeMax", ns_to_rfc3339(trace_end_bound(f, end_s, "ns"))),
             ("query.searchDepth", str(self._fetch_limit(limit))),
         ]
         if f.name_regex:

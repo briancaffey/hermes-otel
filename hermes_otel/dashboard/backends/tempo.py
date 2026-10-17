@@ -28,17 +28,16 @@ from . import _loki, _prometheus, register
 from .base import (
     FILTER_KEYS,
     BackendAdapter,
-    BackendError,
     ConfigError,
     LogFilter,
     StructuredFilter,
+    first_accepted,
     http_get_json,
     not_found,
     query_origin,
-    rejected_request,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
-from .shapes import CARD_ATTRIBUTE_KEYS, span_count_of
+from .shapes import CARD_ATTRIBUTE_KEYS, dedupe_spans, span_count_of
 
 _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")
 
@@ -55,31 +54,6 @@ _DEFAULT_SEARCH_FETCH = 500
 # The ``| select()`` list: the card attributes as span attributes, plus the
 # intrinsics the card reads.
 _CARD_SELECT_ATTRS = tuple(f".{k}" for k in CARD_ATTRIBUTE_KEYS) + ("status", "name")
-
-
-def _dedupe_spans(data: Any) -> Any:
-    """Drop repeated spans (same span id) from an OTLP-JSON trace.
-
-    Two entries that both end in one Tempo (a ``tempo`` entry next to an
-    ``lgtm`` gateway that forwards to the same Tempo) store every span twice
-    until compaction merges them, and the waterfall would show each span
-    doubled. The first copy wins.
-    """
-    if not isinstance(data, dict):
-        return data
-    seen: set = set()
-    for batch in data.get("batches") or []:
-        for scope in batch.get("scopeSpans") or []:
-            kept = []
-            for sp in scope.get("spans") or []:
-                sid = sp.get("spanId")
-                if sid and sid in seen:
-                    continue
-                if sid:
-                    seen.add(sid)
-                kept.append(sp)
-            scope["spans"] = kept
-    return data
 
 
 def _re_esc(text: str) -> str:
@@ -315,21 +289,14 @@ class TempoAdapter(BackendAdapter):
         return params
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        params = self._search_params(f, start_s, end_s, limit, self._build_traceql(f))
-        url = f"{self.query_url}/api/search?{_urlparse.urlencode(params)}"
-        try:
-            data = http_get_json(url)
-        except BackendError as exc:
-            # Older Tempo builds reject the ``| select()`` pipeline with a 4xx;
-            # retry the same predicates without it. Anything else (unreachable,
-            # auth, 5xx) is reported as is (#296).
-            if not rejected_request(exc):
-                raise
-            params = self._search_params(
-                f, start_s, end_s, limit, self._build_traceql(f, with_select=False)
-            )
-            url = f"{self.query_url}/api/search?{_urlparse.urlencode(params)}"
-            data = http_get_json(url)
+        def fetch(with_select: bool) -> Any:
+            q = self._build_traceql(f, with_select=with_select)
+            params = self._search_params(f, start_s, end_s, limit, q)
+            return http_get_json(f"{self.query_url}/api/search?{_urlparse.urlencode(params)}")
+
+        # Older Tempo builds reject the ``| select()`` pipeline with a 4xx; the
+        # same predicates are retried without it (#296).
+        data = first_accepted(lambda: fetch(True), lambda: fetch(False))
 
         result: Dict[str, Any] = data if isinstance(data, dict) else {"traces": []}
         traces = [t for t in (result.get("traces") or []) if isinstance(t, dict)]
@@ -419,7 +386,7 @@ class TempoAdapter(BackendAdapter):
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
-        data = _dedupe_spans(http_get_json(url, timeout=20.0))
+        data = dedupe_spans(http_get_json(url, timeout=20.0))
         if not isinstance(data, dict):
             raise not_found(trace_id, "Tempo")
         n = span_count_of(data.get("batches") or [])

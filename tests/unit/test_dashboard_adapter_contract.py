@@ -96,6 +96,69 @@ class TestDeclarations:
         assert applied == ["name", "session", "min_duration"]
         assert ignored == ["model", "free_text", "roots_only"]
 
+    def test_effective_filter_support_is_the_declaration_plus_the_instance_override(self):
+        class Narrow(base.BackendAdapter):
+            handles = ("narrow",)
+            filter_support = {k: "server" for k in FILTER_KEYS}
+
+            def filter_support_for(self, f):
+                # a raw query replaces the predicates (#296); a bogus level is ignored
+                return {"model": "none", "session": "bogus"} if f.raw else {}
+
+        support = base.effective_filter_support(Narrow({"type": "narrow"}), StructuredFilter())
+        assert support == {k: "server" for k in FILTER_KEYS}
+        narrowed = base.effective_filter_support(
+            Narrow({"type": "narrow"}), StructuredFilter(raw="x")
+        )
+        assert narrowed["model"] == "none" and narrowed["session"] == "server"
+        # a class declares only
+        assert base.effective_filter_support(Narrow, StructuredFilter(raw="x"))["model"] == "server"
+        assert Narrow({"type": "narrow"}).status()["filters"] == support
+
+
+class TestFirstAccepted:
+    """One rule for "the backend refused this request shape, try the next one"
+    (Tempo's ``select()``, SigNoz's GET, OpenObserve's parent column)."""
+
+    @staticmethod
+    def _refused(status: int):
+        def attempt():
+            raise BackendError(502, f"refused {status}", "backend", http_status=status)
+
+        return attempt
+
+    def test_the_first_accepted_answer_wins(self):
+        seen = []
+
+        def ok():
+            seen.append("ok")
+            return {"hits": 1}
+
+        assert base.first_accepted(self._refused(400), ok, self._refused(422)) == {"hits": 1}
+        assert seen == ["ok"]  # later spellings are never sent
+
+    def test_every_spelling_refused_raises_the_last_refusal(self):
+        with pytest.raises(BackendError) as e:
+            base.first_accepted(self._refused(400), self._refused(422))
+        assert e.value.http_status == 422
+
+    def test_anything_but_a_refusal_is_raised_at_once(self):
+        never = []
+        for exc in (
+            BackendError(502, "Backend unreachable"),  # no http status
+            BackendError(502, "boom", "backend", http_status=500),
+            BackendError(503, "key", "auth", http_status=401),
+            BackendError(404, "gone", "not_found", http_status=404),
+        ):
+
+            def first(exc=exc):
+                raise exc
+
+            with pytest.raises(BackendError) as e:
+                base.first_accepted(first, lambda: never.append(1))
+            assert e.value is exc
+        assert never == []
+
     def test_trace_page_and_cursor(self):
         rows = [_row("c", 10 * NS), _row("a", 30 * NS), _row("b", 20 * NS), _row("d", 5 * NS)]
         page = trace_page(rows, 2)
@@ -381,7 +444,7 @@ class TestCaches:
     def test_adapter_instances_are_reused_until_the_config_changes(self, tmp_path, monkeypatch):
         cfg = tmp_path / "hermes_otel.yaml"
         cfg.write_text("backends:\n  - type: jaeger\n    name: jg\n", encoding="utf-8")
-        monkeypatch.setattr(backends, "resolve_config_path", lambda: cfg)
+        monkeypatch.setenv("HERMES_OTEL_CONFIG", str(cfg))
         a, *_ = backends.resolve_adapter("jg")
         b, *_ = backends.resolve_adapter("jg")
         assert a is b
@@ -399,7 +462,7 @@ class TestCaches:
     def test_config_is_parsed_once_per_file_identity(self, tmp_path, monkeypatch):
         cfg = tmp_path / "hermes_otel.yaml"
         cfg.write_text("project_name: p1\nbackends: []\n", encoding="utf-8")
-        monkeypatch.setattr(backends, "resolve_config_path", lambda: cfg)
+        monkeypatch.setenv("HERMES_OTEL_CONFIG", str(cfg))
         import yaml
 
         calls = []
@@ -459,12 +522,6 @@ class TestApiLeftovers:
         monkeypatch.setenv("HERMES_OTEL_LIVE_DB", paths[3])
         ls.get_live_store_for_home(create=True)
         assert paths[1] not in ls._STORES_BY_PATH and paths[3] in ls._STORES_BY_PATH
-
-    def test_dashboard_home_follows_the_plugin_resolver(self, tmp_path, monkeypatch):
-        monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-        from hermes_otel.hermes_home import resolve_hermes_home
-
-        assert backends._hermes_home() == resolve_hermes_home()
 
     def test_status_reports_the_resolved_phoenix_project_after_a_search(self, client, monkeypatch):
         def fake(url, body, headers=None, timeout=None):

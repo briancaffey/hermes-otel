@@ -28,13 +28,13 @@ from .base import (
     LogFilter,
     StructuredFilter,
     bearer,
+    first_accepted,
     http_get_json,
     http_post_json,
     log_row,
     not_found,
     otlp_status,
     query_origin,
-    rejected_request,
     require_credential,
     resolve_env_or_literal,
 )
@@ -49,7 +49,7 @@ from .paging import (
 )
 from .severity import otel_severity_for
 from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
-from .timeconv import ns_from_any, ns_from_magnitude
+from .timeconv import ns_from_any
 
 _DEFAULT_SIGNOZ_PORT = 3301
 # The trace detail asks for this many spans and says so when there are more.
@@ -381,7 +381,7 @@ class SigNozAdapter(BackendAdapter):
                     span_id=row.get("spanID") or row.get("spanId"),
                     name=row.get("name"),
                     attrs=attrs_map,
-                    start_ns=_ns_from_row(row) or 0,
+                    start_ns=ns_from_any(row.get("timestamp")) or 0,
                     duration_ms=int(row.get("durationNano") or 0) // 1_000_000,
                     service=row.get("serviceName") or "",
                     # The list is one row per trace; the trace's span count is
@@ -405,18 +405,19 @@ class SigNozAdapter(BackendAdapter):
         headers = self._headers()
         url = f"{self.query_url}/api/v1/traces/{trace_id}"
         try:
-            data = http_get_json(url, headers=headers, timeout=20.0)
+            data = first_accepted(
+                lambda: http_get_json(url, headers=headers, timeout=20.0),
+                lambda: http_post_json(
+                    url,
+                    {"spansRenderLimit": _DETAIL_SPAN_CAP, "uncollapsedSpans": []},
+                    headers=headers,
+                    timeout=20.0,
+                ),
+            )
         except BackendError as exc:
             if exc.kind == "not_found":
                 raise not_found(trace_id, "SigNoz")
-            if not rejected_request(exc):
-                raise
-            data = http_post_json(
-                url,
-                {"spansRenderLimit": _DETAIL_SPAN_CAP, "uncollapsedSpans": []},
-                headers=headers,
-                timeout=20.0,
-            )
+            raise
         out = signoz_trace_to_otlp(data)
         if not out["span_count"]:
             raise not_found(trace_id, "SigNoz")
@@ -728,22 +729,6 @@ def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:
     return rows
 
 
-def _ns_from_row(row: Dict[str, Any]) -> Optional[int]:
-    ts = row.get("timestamp")
-    if isinstance(ts, str) and ts:
-        try:
-            from datetime import datetime
-
-            dt = datetime.fromisoformat(ts.replace("Z", "+00:00"))
-            return int(dt.timestamp() * 1_000_000_000)
-        except Exception:
-            return None
-    if isinstance(ts, (int, float)):
-        # SigNoz sometimes returns ns directly; sometimes ms. Scale by magnitude.
-        return ns_from_magnitude(ts)
-    return None
-
-
 _REF_SPAN = re.compile(r"SpanId=([0-9a-fA-F]*)")
 
 
@@ -800,7 +785,7 @@ def _row(sp: Dict[str, Any]) -> SpanRow:
         for t in tagmap:
             if isinstance(t, dict) and "key" in t:
                 attrs[t["key"]] = t.get("value")
-    start_ns = _ns_from_row(sp) or 0
+    start_ns = ns_from_any(sp.get("timestamp")) or 0
     return SpanRow(
         sp.get("traceID") or sp.get("traceId"),
         sp.get("spanID") or sp.get("spanId"),

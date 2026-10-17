@@ -100,6 +100,24 @@ def rejected_request(exc: BaseException) -> bool:
     return 400 <= status < 500
 
 
+def first_accepted(*attempts: Callable[[], Any]) -> Any:
+    """Run ``attempts`` in order and answer with the first that the backend
+    accepts. A refused request shape (:func:`rejected_request`) moves on to
+    the next spelling; any other failure (unreachable, auth, not found, 5xx)
+    is raised at once, and when every spelling was refused the last refusal
+    is (#519)."""
+    last: Optional[BackendError] = None
+    for attempt in attempts:
+        try:
+            return attempt()
+        except BackendError as exc:
+            if not rejected_request(exc):
+                raise
+            last = exc
+    assert last is not None  # at least one attempt was given
+    raise last
+
+
 class ConfigError(BackendError):
     """The backend entry is incomplete (a missing credential, no URL): a 503 the
     user fixes in ``hermes_otel.yaml``, not a backend failure."""
@@ -328,19 +346,26 @@ def filter_support_of(adapter: Any) -> Dict[str, str]:
     }
 
 
+def effective_filter_support(adapter: Any, f: StructuredFilter) -> Dict[str, str]:
+    """The declaration, with an instance's per-request override on top: an
+    adapter may honour fewer fields for this particular filter (a raw query
+    that replaces the structured predicates, #296) or more for the server it
+    talks to (Langfuse v4 vs v3). A class declares only; ``/status`` and the
+    search agree because both read this (#519)."""
+    support = filter_support_of(adapter)
+    per_request = getattr(adapter, "filter_support_for", None)
+    if not callable(per_request) or isinstance(adapter, type):
+        return support
+    override = per_request(f) or {}
+    return {
+        k: (override.get(k) if override.get(k) in FILTER_LEVELS else support[k]) for k in support
+    }
+
+
 def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str], List[str]]:
     """``(applied, ignored)``: which of the filter's set fields the adapter honours
     (server- or client-side) and which it drops."""
-    support = filter_support_of(adapter)
-    per_request = getattr(adapter, "filter_support_for", None)
-    if callable(per_request) and not isinstance(adapter, type):
-        # An adapter may honour fewer fields for this particular filter (a
-        # raw query that replaces the structured predicates, #296).
-        override = per_request(f) or {}
-        support = {
-            k: (override.get(k) if override.get(k) in FILTER_LEVELS else support[k])
-            for k in support
-        }
+    support = effective_filter_support(adapter, f)
     used = f.set_fields()
     applied = [k for k in used if support.get(k) != "none"]
     ignored = [k for k in used if support.get(k) == "none"]
@@ -490,7 +515,7 @@ class BackendAdapter:
             "raw_placeholder": self.raw_placeholder,
             "metrics": self.supports_metrics,
             "logs": self.supports_logs,
-            "filters": filter_support_of(self),
+            "filters": effective_filter_support(self, StructuredFilter()),
         }
         if self.query_url:
             out["query_url"] = self.query_url

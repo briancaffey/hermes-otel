@@ -73,13 +73,19 @@ def legacy_config_path() -> Path:
     return DEFAULT_CONFIG_PATH or hermes_home() / "plugins" / "hermes_otel" / "config.yaml"
 
 
+# The (durable, legacy) pairs already warned about: the dashboard resolves the
+# path on every poll and must not repeat the warning (#519).
+_WARNED_SHADOWED: set = set()
+
+
 def resolve_config_path_with_reason() -> Tuple[Optional[Path], str]:
     """The config file to read and the rule that picked it.
 
     Order: ``HERMES_OTEL_CONFIG`` (``env``; even if missing, since an explicit
     path that does not exist is worth surfacing), then the durable location
     (``durable``), then the legacy plugin-directory copy (``legacy``);
-    ``(None, "none")`` when there is no file.
+    ``(None, "none")`` when there is no file. Both files present is warned
+    about once per pair.
     """
     override = os.environ.get(CONFIG_PATH_ENV, "").strip()
     if override:
@@ -87,7 +93,8 @@ def resolve_config_path_with_reason() -> Tuple[Optional[Path], str]:
 
     durable, legacy = durable_config_path(), legacy_config_path()
     if durable.exists():
-        if legacy.exists():
+        if legacy.exists() and (str(durable), str(legacy)) not in _WARNED_SHADOWED:
+            _WARNED_SHADOWED.add((str(durable), str(legacy)))
             logger.warning(
                 f"[hermes-otel] using {durable}; ignoring the copy in the plugin "
                 f"directory ({legacy}). Delete the latter to silence this."

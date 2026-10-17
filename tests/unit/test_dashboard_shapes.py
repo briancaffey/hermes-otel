@@ -11,6 +11,8 @@ from hermes_otel.dashboard.backends.base import StructuredFilter, otlp_status
 from hermes_otel.dashboard.backends.shapes import (
     SpanRow,
     card_from_trace,
+    coerce_tag,
+    dedupe_spans,
     otlp_kind,
     trace_detail,
 )
@@ -154,3 +156,37 @@ class TestTraceDetail:
             "key": "pid",
             "value": {"intValue": "1"},
         }
+
+
+class TestTagDecoders:
+    """Shared by the adapters whose backend stringifies every tag (Zipkin,
+    VictoriaTraces, ClickStack, Gigapipe) or stores a span twice (Tempo,
+    Gigapipe); none imports another adapter for them (#519)."""
+
+    def test_coerce_numbers_bools_and_ids(self):
+        assert coerce_tag("gen_ai.usage.input_tokens", "25744") == 25744
+        assert coerce_tag("llm.response.duration_ms", "1442.3") == 1442.3
+        assert coerce_tag("hermes.session.completed", "true") is True
+        assert coerce_tag("hermes.session.failed", "false") is False
+        assert coerce_tag("hermes.session_id", "20261011") == "20261011"
+        assert coerce_tag("service.instance.id", "1234") == "1234"
+        assert coerce_tag("llm.model_name", "nvidia/x") == "nvidia/x"
+        assert coerce_tag("n", 7) == 7
+
+    def test_dedupe_spans_keeps_the_first_copy(self):
+        data = {
+            "batches": [
+                {"scopeSpans": [{"spans": [{"spanId": "a", "n": 1}, {"spanId": "b"}]}]},
+                {"scopeSpans": [{"spans": [{"spanId": "a", "n": 2}, {"name": "no id"}]}]},
+            ]
+        }
+        out = dedupe_spans(data)
+        assert [
+            s.get("spanId") for b in out["batches"] for sc in b["scopeSpans"] for s in sc["spans"]
+        ] == [
+            "a",
+            "b",
+            None,
+        ]
+        assert out["batches"][0]["scopeSpans"][0]["spans"][0]["n"] == 1
+        assert dedupe_spans("not a trace") == "not a trace"

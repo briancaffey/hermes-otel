@@ -34,6 +34,7 @@ meaning two things there). The rules are now these:
 from __future__ import annotations
 
 import json
+import re
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
 
@@ -310,6 +311,63 @@ def otlp_kind(value: Any) -> int:
     if text.startswith("span_kind_"):
         text = text[len("span_kind_") :]
     return _SPAN_KINDS.get(text, 1)
+
+
+_INT_RE = re.compile(r"^-?\d+$")
+_FLOAT_RE = re.compile(r"^-?\d+\.\d+(e[+-]?\d+)?$", re.IGNORECASE)
+# Keys whose digit-only values are identifiers, never numbers.
+_ID_KEY_SUFFIXES = (".id", "_id", "id")
+
+
+def coerce_tag(key: str, value: Any) -> Any:
+    """Undo a backend's stringification of a tag where it is safe (Zipkin,
+    VictoriaTraces, ClickStack, Gigapipe): ``"7589"`` → 7589, ``"1442.3"`` →
+    1442.3, ``"true"`` → True. A digit-only value on an id-like key
+    (``session_id``, ``service.instance.id``) stays a string."""
+    if not isinstance(value, str):
+        return value
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    if key.endswith(_ID_KEY_SUFFIXES):
+        return value
+    if _INT_RE.match(value):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    if _FLOAT_RE.match(value):
+        try:
+            return float(value)
+        except ValueError:
+            return value
+    return value
+
+
+def dedupe_spans(data: Any) -> Any:
+    """Drop repeated spans (same span id) from an OTLP-JSON trace.
+
+    Two entries that both end in one Tempo (a ``tempo`` entry next to an
+    ``lgtm`` gateway that forwards to the same Tempo) store every span twice
+    until compaction merges them, and the waterfall would show each span
+    doubled. The first copy wins.
+    """
+    if not isinstance(data, dict):
+        return data
+    seen: set = set()
+    for batch in data.get("batches") or []:
+        for scope in batch.get("scopeSpans") or []:
+            kept = []
+            for sp in scope.get("spans") or []:
+                sid = sp.get("spanId")
+                if sid and sid in seen:
+                    continue
+                if sid:
+                    seen.add(sid)
+                kept.append(sp)
+            scope["spans"] = kept
+    return data
 
 
 @dataclass(frozen=True)

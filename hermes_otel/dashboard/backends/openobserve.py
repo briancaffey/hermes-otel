@@ -18,19 +18,18 @@ from . import register
 from ._attrs import dotted, oo_col
 from .base import (
     BackendAdapter,
-    BackendError,
     HTTPException,
     LogColumns,
     LogFilter,
     StructuredFilter,
     basic_auth,
+    first_accepted,
     http_get_json,
     http_post_json,
     log_row,
     not_found,
     otlp_status,
     query_origin,
-    rejected_request,
     require_credential,
     resolve_env_or_literal,
 )
@@ -243,72 +242,42 @@ class OpenObserveAdapter(BackendAdapter):
         # for more and dedupe.
         want = widened_fetch(limit, True)
         wide = widened_fetch(limit, False)
+
+        def rows_for(predicate: str, size: int) -> List[Dict[str, Any]]:
+            body = {
+                "query": {
+                    "sql": f"SELECT * FROM {self.stream} WHERE {where}{predicate} "
+                    f"ORDER BY _timestamp DESC LIMIT {size}",
+                    "start_time": int(start_s) * 1_000_000,  # µs
+                    "end_time": end_us,
+                    "size": size,
+                }
+            }
+            data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
+            hits = data.get("hits") if isinstance(data, dict) else None
+            return [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+
         # Roots only: the stream names the parent in one of two columns
         # depending on the OpenObserve version. Each spelling is tried in
         # turn; a later attempt runs ONLY when the earlier one was rejected
         # (an unknown column is a 400), never when it matched nothing: an
         # empty answer is the answer (#299). The last attempt has no root
         # predicate and is filtered here from each row's parent fields.
-        if f.roots_only:
-            attempts = [
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} AND "
-                    f"(reference_parent_span_id IS NULL OR reference_parent_span_id = '') "
-                    f"ORDER BY _timestamp DESC LIMIT {want}",
-                    want,
-                    False,
-                ),
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} AND "
-                    f"(reference IS NULL OR reference = '') "
-                    f"ORDER BY _timestamp DESC LIMIT {want}",
-                    want,
-                    False,
-                ),
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} "
-                    f"ORDER BY _timestamp DESC LIMIT {wide}",
-                    wide,
-                    True,
-                ),
-            ]
-        else:
-            attempts = [
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} "
-                    f"ORDER BY _timestamp DESC LIMIT {wide}",
-                    wide,
-                    False,
-                )
-            ]
-
-        rows: List[Dict[str, Any]] = []
         client_roots = False
-        last_err: Optional[Exception] = None
-        for sql, size, filter_roots_here in attempts:
-            body = {
-                "query": {
-                    "sql": sql,
-                    "start_time": int(start_s) * 1_000_000,  # µs
-                    "end_time": end_us,
-                    "size": size,
-                }
-            }
-            try:
-                data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
-            except BackendError as e:
-                if not rejected_request(e):
-                    raise  # unreachable, auth, config: no other spelling will help
-                last_err = e
-                continue
-            hits = data.get("hits") if isinstance(data, dict) else None
-            rows = [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
-            client_roots = filter_roots_here
-            last_err = None
-            break
-
-        if last_err is not None:
-            raise last_err
+        if f.roots_only:
+            rows, client_roots = first_accepted(
+                lambda: (
+                    rows_for(
+                        " AND (reference_parent_span_id IS NULL OR reference_parent_span_id = '')",
+                        want,
+                    ),
+                    False,
+                ),
+                lambda: (rows_for(" AND (reference IS NULL OR reference = '')", want), False),
+                lambda: (rows_for("", wide), True),
+            )
+        else:
+            rows = rows_for("", wide)
 
         traces: Dict[str, Dict[str, Any]] = {}
         for row in rows:

@@ -23,7 +23,6 @@ Self-hosted Zipkin runs unauthenticated; a bearer token (``api_key`` /
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
@@ -41,39 +40,17 @@ from .base import (
     resolve_env_or_literal,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
-from .shapes import SpanRow, card_from_trace, otlp_event, otlp_kind, to_int, trace_detail
+from .shapes import (
+    SpanRow,
+    card_from_trace,
+    coerce_tag,
+    otlp_event,
+    otlp_kind,
+    to_int,
+    trace_detail,
+)
 
 _DEFAULT_ZIPKIN_PORT = 9411
-
-_INT_RE = re.compile(r"^-?\d+$")
-_FLOAT_RE = re.compile(r"^-?\d+\.\d+(e[+-]?\d+)?$", re.IGNORECASE)
-# Keys whose digit-only values are identifiers, never numbers.
-_ID_KEY_SUFFIXES = (".id", "_id", "id")
-
-
-def coerce_tag(key: str, value: Any) -> Any:
-    """Undo Zipkin's stringification where it is safe: ``"7589"`` → 7589,
-    ``"1442.3"`` → 1442.3, ``"true"`` → True. A digit-only value on an id-like
-    key (``session_id``, ``service.instance.id``) stays a string."""
-    if not isinstance(value, str):
-        return value
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    if key.endswith(_ID_KEY_SUFFIXES):
-        return value
-    if _INT_RE.match(value):
-        try:
-            return int(value)
-        except ValueError:
-            return value
-    if _FLOAT_RE.match(value):
-        try:
-            return float(value)
-        except ValueError:
-            return value
-    return value
 
 
 def parse_annotation(value: Any) -> Tuple[str, Dict[str, Any]]:
