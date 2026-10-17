@@ -43,11 +43,12 @@ from .base import (
     BackendAdapter,
     BackendError,
     HTTPException,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     bearer,
-    finish_log_row,
     http_get_json,
+    log_row,
     not_found,
     otlp_status,
     query_origin,
@@ -713,36 +714,35 @@ def _trace_to_otlp(data: Any) -> Dict[str, Any]:
     )
 
 
+_LOG_COLUMNS = LogColumns(
+    level="log_severity",
+    severity_number="log_severity_number",
+    logger="otel_library_name",
+    session_id="hermes_session_id",
+    event_name=("event_name", "log_event_name"),
+    drop=("service_name",),
+    attr_key=_dotted,
+)
+
+
 def _log_record(sp: Dict[str, Any]) -> Dict[str, Any]:
-    """One ``log:*`` row → the live store's record shape.
+    """One ``log:*`` row → the live store's record shape: the attributes plus
+    the body and the ids the row carries beside them (see :func:`log_row`).
 
     Standalone log rows carry a synthetic trace id of their own; only a log
     written inside a span keeps the real one (its ``parentId`` is that span).
+    Without a ``log_severity`` attribute the level is the row's ``system``.
     """
     raw = plain_attrs(sp.get("attrs"))
-    known = {
-        "log_severity",
-        "log_severity_number",
-        "otel_library_name",
-        "hermes_session_id",
-        "event_name",
-        "log_event_name",
-        "service_name",
-    }
-    row = {
-        "level": str(
-            raw.get("log_severity") or str(sp.get("system") or "log:info").split(":")[-1]
-        ).upper(),
-        "severity_number": raw.get("log_severity_number"),
-        "logger": str(raw.get("otel_library_name") or ""),
-        "body": str(sp.get("displayName") or sp.get("name") or ""),
-        "time_unix_nano": _ns_from_ms(sp.get("time")),
-        "trace_id": None if sp.get("standalone") else (sp.get("traceId") or None),
-        "span_id": None if sp.get("standalone") else (sp.get("parentId") or None),
-        "session_id": raw.get("hermes_session_id") or None,
-        "event_name": raw.get("event_name") or raw.get("log_event_name") or None,
-    }
-    return finish_log_row(row, {_dotted(k): v for k, v in raw.items() if k not in known})
+    standalone = sp.get("standalone")
+    raw.update(
+        body=str(sp.get("displayName") or sp.get("name") or ""),
+        trace_id=None if standalone else sp.get("traceId"),
+        span_id=None if standalone else sp.get("parentId"),
+    )
+    if not raw.get("log_severity"):
+        raw["log_severity"] = str(sp.get("system") or "log:info").split(":")[-1]
+    return log_row(raw, _LOG_COLUMNS, time_ns=_ns_from_ms(sp.get("time")))
 
 
 def _raise_query_errors(data: Any) -> None:

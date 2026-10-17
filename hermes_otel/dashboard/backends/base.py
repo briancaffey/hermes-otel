@@ -28,9 +28,9 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
@@ -38,7 +38,7 @@ from urllib import request as _urlrequest
 # The OTLP attribute / status builders live in ``shapes`` (#403) and are
 # re-exported here because every adapter imports them from ``base``.
 from .severity import severity_number_for  # noqa: F401  (finish_log_row; re-exported)
-from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status  # noqa: F401
+from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status, to_int  # noqa: F401
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
     from fastapi import HTTPException
@@ -598,6 +598,71 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     row["attributes"] = attrs
     row.setdefault("span_id", None)
     return row
+
+
+# One column name, or the names tried in order (Loki's ``severity_text``,
+# then its ``detected_level``); ``""`` when the backend has no such column.
+Column = Union[str, Tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class LogColumns:
+    """Which columns of a backend's raw log row fill the record's fields (#514).
+
+    A column defaults to the record key it fills: that is where a caller puts
+    a value the backend hands over beside its row (Loki's line, Uptrace's
+    ids). ``time`` only names the column (the caller converts it and passes
+    ``time_ns``). The named columns plus ``drop`` (the backend's bookkeeping,
+    ``flags``) are the row; the rest of a raw row lands under ``attributes``,
+    each key through ``attr_key`` (``_attrs.dotted`` where names were
+    flattened).
+    """
+
+    body: Column = "body"
+    time: Column = ""
+    level: Column = "level"
+    severity_number: Column = "severity_number"
+    logger: Column = "logger"
+    trace_id: Column = "trace_id"
+    span_id: Column = "span_id"
+    session_id: Column = "session_id"
+    event_name: Column = "event_name"
+    drop: Tuple[str, ...] = ()
+    attr_key: Callable[[str], str] = str
+    known: FrozenSet[str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        columns = [getattr(self, f.name) for f in fields(self) if f.type == "Column"]
+        names = {n for c in columns for n in ((c,) if isinstance(c, str) else c) if n}
+        object.__setattr__(self, "known", frozenset(names | set(self.drop)))
+
+
+def log_row(raw: Dict[str, Any], cols: LogColumns, *, time_ns: int) -> Dict[str, Any]:
+    """One raw backend log row → the live store's record shape (#514): the
+    fields from the columns ``cols`` names (the first non-empty of a fallback
+    tuple), ``time_ns`` as the time, and every other key of ``raw`` through
+    :func:`finish_log_row`, which spells the level the OTel way, fills a
+    missing severity number and keeps the leftovers under ``attributes``."""
+
+    def col(column: Column) -> Any:
+        for name in (column,) if isinstance(column, str) else column:
+            value = raw.get(name) if name else None
+            if value:
+                return value
+        return None
+
+    row = {
+        "level": col(cols.level),
+        "severity_number": to_int(col(cols.severity_number)) or None,
+        "logger": col(cols.logger) or "",
+        "body": col(cols.body) or "",
+        "time_unix_nano": time_ns,
+        "trace_id": col(cols.trace_id) or None,
+        "span_id": col(cols.span_id) or None,
+        "session_id": col(cols.session_id) or None,
+        "event_name": col(cols.event_name) or None,
+    }
+    return finish_log_row(row, {cols.attr_key(k): v for k, v in raw.items() if k not in cols.known})
 
 
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──

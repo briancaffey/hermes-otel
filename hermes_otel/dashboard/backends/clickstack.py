@@ -37,11 +37,12 @@ from . import default_service_name, register
 from .base import (
     BackendAdapter,
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     _execute,
     basic_auth,
-    finish_log_row,
+    log_row,
     not_found,
     otlp_status,
     query_origin,
@@ -93,6 +94,22 @@ def sql_ident(name: str) -> str:
     if not _IDENT_RE.match(name or ""):
         raise BackendError(400, f"Invalid identifier {name!r}", "request")
     return f"`{name}`"
+
+
+# The ``otel_logs`` columns the search selects; session and event live in
+# the ``LogAttributes`` map, which is merged into the row before it is read.
+_LOG_COLUMNS = LogColumns(
+    body="Body",
+    time="ts_ns",
+    level="SeverityText",
+    severity_number="SeverityNumber",
+    logger="ScopeName",
+    trace_id="TraceId",
+    span_id="SpanId",
+    session_id="hermes.session_id",
+    event_name="event.name",
+    drop=("LogAttributes",),
+)
 
 
 def _coerce_map(attrs: Any) -> Dict[str, Any]:
@@ -461,19 +478,8 @@ class ClickstackAdapter(BackendAdapter):
         )
         records: List[Dict[str, Any]] = []
         for row in self._sql(sql):
-            attrs = _coerce_map(row.get("LogAttributes"))
-            record = {
-                "level": str(row.get("SeverityText") or "INFO").upper(),
-                "severity_number": to_int(row.get("SeverityNumber")) or None,
-                "logger": row.get("ScopeName") or "",
-                "body": row.get("Body") or "",
-                "time_unix_nano": to_int(row.get("ts_ns")),
-                "trace_id": row.get("TraceId") or None,
-                "span_id": row.get("SpanId") or None,
-                "session_id": attrs.pop("hermes.session_id", None),
-                "event_name": attrs.pop("event.name", None),
-            }
-            records.append(finish_log_row(record, attrs))
+            raw = {**_coerce_map(row.get("LogAttributes")), **row}
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=to_int(row.get("ts_ns"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
