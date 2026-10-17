@@ -13,7 +13,8 @@ to dotted keys, a tolerant integer, a span kind in any spelling.
 
 Between the two sits :class:`SpanRow` (#513): the facts an adapter decodes
 its native span into. :func:`card_from_trace` turns a trace's rows into its
-list row (the root or the matched span, the orphan and predicate re-checks),
+list row (the root, or the matched span of a kind filter, with the orphan
+and predicate re-checks),
 :func:`trace_detail` turns them into the batches; an adapter writes only the
 decoder.
 
@@ -331,13 +332,16 @@ def card_row(
     duration_ms: int,
     service: Any = "",
     span_count: Optional[int] = None,
+    span_name: Any = None,
 ) -> Dict[str, Any]:
     """One trace-list row from its card span.
 
     ``attrs`` is the card's attribute dict (see :func:`card_attrs`: the known
     keys plus ``name`` and ``status``); ``span_count`` the whole trace's span
     count when the backend told it, else ``None`` (the key is then absent and
-    ``matched`` is 1).
+    ``matched`` is 1). ``span_name`` names the span-set span when it is not
+    the card span (``span_id`` and ``attrs`` are then that span's, see
+    :meth:`SpanRow.card`); ``None`` means ``name``.
     """
     row: Dict[str, Any] = {"traceID": trace_id}
     if span_count is not None:
@@ -348,7 +352,9 @@ def card_row(
             "rootTraceName": name or "",
             "startTimeUnixNano": str(start_ns) if start_ns else "0",
             "durationMs": int(duration_ms),
-            "spanSets": [card_span_set(span_id, name, attrs, span_count)],
+            "spanSets": [
+                card_span_set(span_id, name if span_name is None else span_name, attrs, span_count)
+            ],
         }
     )
     return row
@@ -464,13 +470,22 @@ class SpanRow:
     def duration_ns(self) -> int:
         return max(0, self.end_ns - self.start_ns)
 
-    def card(self, span_count: Optional[int] = None) -> Dict[str, Any]:
-        """This span as its trace's list row (see :func:`card_row`)."""
+    def card(
+        self, span_count: Optional[int] = None, matched: Optional["SpanRow"] = None
+    ) -> Dict[str, Any]:
+        """This span as its trace's list row (see :func:`card_row`).
+
+        ``matched`` is the span the filter matched when it is not this one
+        (the root carded for a matching child, #558): the row's name, start,
+        duration and service stay this span's, its span set names ``matched``,
+        the reason the row is in the list."""
+        shown = matched if matched is not None else self
         return card_row(
             self.trace_id,
-            span_id=self.span_id,
+            span_id=shown.span_id,
             name=self.name,
-            attrs=card_attrs(self.attrs, self.name, self.error),
+            span_name=shown.name,
+            attrs=card_attrs(shown.attrs, shown.name, shown.error),
             start_ns=self.start_ns,
             duration_ms=self.duration_ns // 1_000_000,
             service=self.service,
@@ -499,15 +514,18 @@ def card_from_trace(
     on the root): the root is the card as the detail shows it, orphan or not,
     nothing re-checked.
 
-    Widened by the kind filter: the card is the first span by start carrying
-    the name prefix, as the other backends show it (the root without one).
+    Widened (a kind or tool filter matches non-root spans): the matched span
+    is the first by start satisfying the predicates; none, no card. With a
+    name prefix (a kind) the card is that span. Without one (a tool filter,
+    the kind "other") the card is the trace's ROOT, since a list row stands
+    for the whole trace, and the matched span is its span set: the reason the
+    row matched (#558).
 
     ``equals`` replaces ``f.attr_equals`` (an adapter that folded its raw
     tags into one dict). ``check_all`` is for a backend that applied no
     predicate (Aspire's API has no filters) or matched a span its answer does
-    not name (Gigapipe's span set): every predicate is checked here, status
-    and free text included, on the root (roots-only) or on every span by
-    start (widened) until one satisfies them all.
+    not name (Gigapipe's span set): status and free text are checked here
+    too, on the root (roots-only) or on every span by start (widened).
     """
     from .base import root_of, span_matches  # base imports this module's emitters
 
@@ -527,7 +545,6 @@ def card_from_trace(
             equals=equals,
         )
 
-    by_start = sorted(rows, key=lambda r: r.start_ns)
     if f.roots_only:
         if server_roots:
             card = root
@@ -535,13 +552,33 @@ def card_from_trace(
             return None
         else:
             card = root if ok(root) else None
-    elif check_all:
-        card = next((r for r in by_start if ok(r)), None)
-    elif f.name_prefix:
-        card = next((r for r in by_start if r.name.startswith(f.name_prefix)), None)
-    else:
-        card = root
-    return card.card(len(rows)) if card is not None else None
+        return card.card(len(rows)) if card is not None else None
+    matched = next((r for r in sorted(rows, key=lambda r: r.start_ns) if ok(r)), None)
+    if matched is None:
+        return None
+    if f.name_prefix:
+        return matched.card(len(rows))
+    return root.card(len(rows), matched=matched)
+
+
+def recard_roots(
+    page: Dict[str, Any], matched: Dict[str, SpanRow], roots: Dict[str, SpanRow]
+) -> Dict[str, Any]:
+    """A widened page of a span-level search (each row the trace's earliest
+    matched span) re-carded as the traces' roots, for a filter without a
+    kind (see :func:`card_from_trace`, #558): the root's row, the matched
+    span its span set. ``matched`` and ``roots`` are by trace id; a trace
+    without a known root keeps its matched card. The page was cut and its
+    cursor taken on the matched spans, which is what the next query bounds,
+    so only the rows change; they are re-sorted newest root first."""
+    rows = []
+    for t in page.get("traces") or []:
+        tid = str(t.get("traceID") or "")
+        root, hit = roots.get(tid), matched.get(tid)
+        rows.append(t if root is None or hit is None else root.card(t.get("spanCount"), hit))
+    rows.sort(key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
+    page["traces"] = rows
+    return page
 
 
 def trace_detail(rows: Sequence[SpanRow], *, truncated: bool = False) -> Dict[str, Any]:

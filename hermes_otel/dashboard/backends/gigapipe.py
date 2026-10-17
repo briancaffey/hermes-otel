@@ -45,6 +45,7 @@ from .base import (
     log_row,
     not_found,
     query_origin,
+    root_of,
 )
 from .metrics_math import LOOKBEHIND_S
 from .paging import log_end_ns, strictly_older
@@ -142,6 +143,11 @@ def _detail_rows(batches: List[Dict[str, Any]]) -> List[SpanRow]:
     return rows
 
 
+def _root(rows: List[SpanRow]) -> SpanRow:
+    """The trace's root among a detail's rows (an orphan when the root is missing)."""
+    return root_of(rows, lambda r: r.span_id, lambda r: r.parent_id)  # type: ignore[arg-type]
+
+
 # Concurrent detail fetches per search page (one per card that needs one).
 _DETAIL_WORKERS = 8
 
@@ -229,15 +235,19 @@ class GigapipeAdapter(TempoAdapter):
                 continue
             rows = _detail_rows(detail["batches"])
             # Roots-only ran on the server (``nestedSetParent < 0`` with every
-            # predicate): the root is the card. Widened (kind / tool filter),
-            # Gigapipe's one-span set names an arbitrary matching span: the
-            # card is the first matching span of the trace, as the other
-            # adapters show it, else the span the set named.
+            # predicate): the trace's root is the card, as everywhere (#558),
+            # read from the whole-trace detail without second-guessing the
+            # query. Widened (kind / tool filter), Gigapipe's one-span set
+            # names an arbitrary matching span: the matched span is the first
+            # of the trace satisfying the filter, else the span the set named;
+            # the card is that span for a kind, the root for a tool filter.
             card = card_from_trace(f, rows, check_all=True, server_roots=True)
             if card is None:
                 wanted = spans[0].get("spanID") if spans else None
                 named = next((r for r in rows if r.span_id == wanted), None)
-                card = named.card(len(rows)) if named is not None else None
+                if named is not None:
+                    shown = named if f.name_prefix else _root(rows)
+                    card = shown.card(len(rows), matched=named)
             if card is None:
                 continue
             row.update({k: card[k] for k in ("spanSets", "spanCount", "rootTraceName")})
@@ -248,6 +258,7 @@ class GigapipeAdapter(TempoAdapter):
                     )
                     if service:
                         row["rootServiceName"] = service
+                        break  # the first batch's service, not the last one's
         return page
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:

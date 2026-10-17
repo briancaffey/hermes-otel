@@ -99,6 +99,10 @@ def _scenarios(cfg: Dict[str, Any]) -> Dict[str, Scenario]:
         "search_min_duration": _search(StructuredFilter(min_duration_ms=1000)),
         "search_cursor": _search(StructuredFilter(before_ns=t0 * NS + 1), limit=1),
         "search_widened_tools": _search(StructuredFilter(name_prefix="tool.", roots_only=False)),
+        # A tool filter widens without a kind: the row is the root (#558).
+        "search_widened_tool_name": _search(
+            StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        ),
         "search_free_text": _search(StructuredFilter(free_text="hello")),
         "get_trace_found": lambda a, c: a.get_trace(trace),
         "get_trace_missing": lambda a, c: a.get_trace(MISSING),

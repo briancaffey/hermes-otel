@@ -62,7 +62,16 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, otlp_status, to_int, trace_detail
+from .shapes import (
+    SpanRow,
+    coerce_tag,
+    otlp_event,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    to_int,
+    trace_detail,
+)
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
@@ -299,7 +308,28 @@ class ClickstackAdapter(BackendAdapter):
                 counts[str(r.get("TraceId"))] = to_int(r.get("n"))
         traces = [r.card(counts.get(tid, 1)) for tid, r in cards.items()]
         page = trace_page(strictly_older_traces(traces, f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            recard_roots(page, cards, self._roots([t["traceID"] for t in page["traces"]]))
         return mark_full_fetch(page, len(rows), fetch, widened=not f.roots_only)
+
+    def _roots(self, trace_ids: List[str]) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id (one query)."""
+        if not trace_ids:
+            return {}
+        in_list = ", ".join(sql_str(t) for t in trace_ids)
+        sql = (
+            "SELECT TraceId, SpanId, SpanName, ServiceName, StatusCode, Duration, SpanAttributes, "
+            "toUnixTimestamp64Nano(Timestamp) AS ts_ns "
+            f"FROM {self._table(self.traces_table)} "
+            f"WHERE TraceId IN ({in_list}) AND ParentSpanId = ''"
+        )
+        out: Dict[str, SpanRow] = {}
+        for row in self._sql(sql):
+            r = _row(row)
+            out.setdefault(str(r.trace_id or ""), r)
+        return out
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # HyperDX's search page takes a trace id in its query; only offered

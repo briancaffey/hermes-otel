@@ -203,6 +203,29 @@ class TestSearch:
         assert [r["rootTraceName"] for r in page["traces"]] == ["tool.terminal"]
         assert page["traces"][0]["spanCount"] == 7
 
+    def test_widened_without_a_kind_cards_the_root_and_keeps_the_match(self, monkeypatch):
+        # #558: a tool filter widens to any span, but the row is the trace's root.
+        a = _adapter()
+        sql = _SQL([FAILED, TOOL], [{"TraceId": TRACE, "n": 7}], [ROOT])
+        monkeypatch.setattr(a, "_sql", sql)
+        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = a.search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert f"WHERE TraceId IN ('{TRACE}') AND ParentSpanId = ''" in sql.calls[2]
+        assert row["rootTraceName"] == "agent" and row["startTimeUnixNano"] == str(T0 * NS)
+        assert row["durationMs"] == 4228 and row["spanCount"] == 7
+        shown = row["spanSets"][0]["spans"][0]
+        assert shown["name"] == "tool.terminal" and shown["spanID"] == TOOL["SpanId"]
+        # No root in the store: the matched span stays the card.
+        sql = _SQL([TOOL], [{"TraceId": TRACE, "n": 7}], [])
+        monkeypatch.setattr(a, "_sql", sql)
+        row = a.search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
+        # A kind asks for no roots.
+        sql = _SQL([TOOL], [{"TraceId": TRACE, "n": 7}])
+        monkeypatch.setattr(a, "_sql", sql)
+        a.search(StructuredFilter(name_prefix="tool.", roots_only=False), T0 - 60, T0 + 60, 10)
+        assert len(sql.calls) == 2
+
     def test_error_root_is_flagged(self, monkeypatch):
         a = _adapter()
         bad = dict(ROOT, StatusCode="Error")

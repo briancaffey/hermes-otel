@@ -43,7 +43,7 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import SpanRow, flatten_dotted, otlp_kind, trace_detail
+from .shapes import SpanRow, flatten_dotted, otlp_kind, recard_roots, trace_detail
 from .timeconv import ns_from_s, ns_to_rfc3339, rfc3339_to_ns
 
 _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
@@ -207,7 +207,9 @@ class AgentaAdapter(BackendAdapter):
             status={"code": _STATUS.get(str(span.get("status_code") or ""), 0), "message": ""},
         )
 
-    def _counts(self, trace_ids: List[str]) -> Dict[str, int]:
+    def _trace_rows(self, trace_ids: List[str]) -> Dict[str, List[SpanRow]]:
+        """Every span of the page's traces (up to ``_MAX_TRACE_SPANS``), by
+        trace: the span counts, and the root a tool-filter card shows."""
         if not trace_ids:
             return {}
         spans = self._query(
@@ -220,11 +222,11 @@ class AgentaAdapter(BackendAdapter):
                 },
             }
         )
-        counts: Dict[str, int] = {}
+        out: Dict[str, List[SpanRow]] = {}
         for sp in spans:
-            tid = str(sp.get("trace_id") or "")
-            counts[tid] = counts.get(tid, 0) + 1
-        return counts
+            r = self._row(sp)
+            out.setdefault(r.trace_id, []).append(r)
+        return out
 
     # ── public API ───────────────────────────────────────────────────
 
@@ -250,9 +252,14 @@ class AgentaAdapter(BackendAdapter):
             prev = cards.get(r.trace_id)
             if prev is None or r.start_ns < prev.start_ns:
                 cards[r.trace_id] = r
-        counts = self._counts(list(cards))
-        rows = [r.card(counts.get(tid, 1)) for tid, r in cards.items()]
+        by_trace = self._trace_rows(list(cards))
+        rows = [r.card(len(by_trace.get(tid) or []) or 1) for tid, r in cards.items()]
         page = trace_page(strictly_older_traces(rows, f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            roots = {r.trace_id: r for spans in by_trace.values() for r in spans if not r.parent_id}
+            recard_roots(page, cards, roots)
         return mark_full_fetch(page, len(spans), fetch, widened=not f.roots_only)
 
     def trace_url(self, trace_id: str) -> Optional[str]:

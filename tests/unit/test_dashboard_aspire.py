@@ -256,7 +256,7 @@ class TestSearch:
         assert a.search(StructuredFilter(min_duration_ms=5000), *w)["traces"] == []
         assert len(a.search(StructuredFilter(name_regex="agent"), *w)["traces"]) == 1
 
-    def test_widened_search_cards_the_first_matching_span(self, monkeypatch):
+    def test_widened_search_cards_the_kind_match_else_the_root(self, monkeypatch):
         _capture(monkeypatch, {"/api/telemetry/traces": _traces_doc(FAILED, TOOL, ROOT)})
         rows = _adapter().search(
             StructuredFilter(name_prefix="tool.", roots_only=False), T0 - 60, T0 + 60, 10
@@ -265,8 +265,12 @@ class TestSearch:
         rows = _adapter().search(
             StructuredFilter(status="error", roots_only=False), T0 - 60, T0 + 60, 10
         )["traces"]
-        assert [r["rootTraceName"] for r in rows] == ["tool.read_file"]
-        attrs = {x["key"]: x["value"] for x in rows[0]["spanSets"][0]["spans"][0]["attributes"]}
+        # No kind: the row is the root, the failed span the reason it matched (#558).
+        assert [r["rootTraceName"] for r in rows] == ["agent"]
+        assert rows[0]["startTimeUnixNano"] == str(T0 * NS)
+        shown = rows[0]["spanSets"][0]["spans"][0]
+        assert shown["name"] == "tool.read_file"
+        attrs = {x["key"]: x["value"] for x in shown["attributes"]}
         assert attrs["status"] == {"stringValue": "error"}
 
     def test_orphans_are_skipped_when_roots_only(self, monkeypatch):

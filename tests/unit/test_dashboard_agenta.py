@@ -289,6 +289,28 @@ class TestRows:
         attrs = {x["key"]: x["value"] for x in rows[0]["spanSets"][0]["spans"][0]["attributes"]}
         assert attrs["tool.name"] == {"stringValue": "terminal"}
 
+    def test_widened_without_a_kind_cards_the_root_and_keeps_the_match(self, monkeypatch):
+        # #558: a tool filter widens to any span, but the row is the trace's root.
+        _capture(
+            monkeypatch,
+            [{"count": 2, "spans": [FAILED, TOOL]}, {"count": 3, "spans": [ROOT, TOOL, FAILED]}],
+        )
+        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "agent" and row["startTimeUnixNano"] == str(T0 * NS)
+        assert row["durationMs"] == 3884 and row["spanCount"] == 3
+        shown = row["spanSets"][0]["spans"][0]
+        assert shown["name"] == "tool.terminal"
+        attrs = {x["key"]: x["value"] for x in shown["attributes"]}
+        assert attrs["tool.name"] == {"stringValue": "terminal"}
+        # The root missing from the trace's spans: the matched span stays the card.
+        _capture(
+            monkeypatch,
+            [{"count": 1, "spans": [TOOL]}, {"count": 2, "spans": [TOOL, FAILED]}],
+        )
+        row = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
+
     def test_error_card_and_min_duration_client_side(self, monkeypatch):
         _capture(monkeypatch, [{"count": 1, "spans": [FAILED]}, {"count": 1, "spans": [FAILED]}])
         rows = _adapter().search(
