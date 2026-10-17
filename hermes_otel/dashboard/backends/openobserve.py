@@ -20,12 +20,13 @@ from .base import (
     BackendAdapter,
     BackendError,
     HTTPException,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     basic_auth,
-    finish_log_row,
     http_get_json,
     http_post_json,
+    log_row,
     not_found,
     otlp_status,
     query_origin,
@@ -68,6 +69,20 @@ def _severity_names_at_least(min_level: int) -> List[str]:
         if lvl >= int(min_level):
             names.extend(_LEVEL_NAMES[lvl])
     return names
+
+
+# A ``SELECT *`` row: the OTLP logs exporter records the Python logger name
+# as the instrumentation scope, which is the column OpenObserve keeps; the
+# flattened attribute names (``hermes_log_attribution``) get their dotted
+# name back (#268). ``_p`` / ``_o2_id`` are OpenObserve's bookkeeping.
+_LOG_COLUMNS = LogColumns(
+    time="_timestamp",
+    level=("severity", "severity_text", "level"),
+    logger=("instrumentation_library_name", "logger_name"),
+    session_id=("session_id", "hermes_session_id"),
+    drop=("_p", "_o2_id"),
+    attr_key=dotted,
+)
 
 
 def _like_escape(v: Any) -> str:
@@ -499,11 +514,6 @@ class OpenObserveAdapter(BackendAdapter):
     def _log_stream(self) -> str:
         return str(self.cfg.get("logs_stream") or self._LOG_STREAM_DEFAULT)
 
-    @staticmethod
-    def _level_name(row: Dict[str, Any]) -> str:
-        sev = row.get("severity") or row.get("severity_text") or row.get("level") or "INFO"
-        return str(sev).upper()
-
     def logs_search(
         self, f: LogFilter, start_s: int, end_s: int, limit: int
     ) -> List[Dict[str, Any]]:
@@ -548,42 +558,10 @@ class OpenObserveAdapter(BackendAdapter):
             if wants_events and _is_missing_event_column(exc):
                 return []
             raise
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            level = self._level_name(r)
-            known = {
-                "_timestamp",
-                "body",
-                "trace_id",
-                "span_id",
-                "session_id",
-                "hermes_session_id",
-                "severity",
-                "severity_text",
-                "severity_number",
-                "level",
-                "instrumentation_library_name",
-                "logger_name",
-                "event_name",
-                "_p",
-                "_o2_id",
-            }
-            row = {
-                "level": level,
-                "severity_number": r.get("severity_number"),
-                # The OTLP logs exporter records the Python logger name as
-                # the instrumentation scope; that is the column OpenObserve keeps.
-                "logger": r.get("instrumentation_library_name") or r.get("logger_name") or "",
-                "body": r.get("body") or "",
-                "time_unix_nano": int(r.get("_timestamp") or 0) * 1000,
-                "trace_id": r.get("trace_id"),
-                "span_id": r.get("span_id"),
-                "session_id": r.get("session_id") or r.get("hermes_session_id"),
-                "event_name": r.get("event_name"),
-            }
-            # OpenObserve flattens attribute names (``hermes_log_attribution``);
-            # give the documented ones their dotted name back (#268).
-            out.append(finish_log_row(row, {dotted(k): v for k, v in r.items() if k not in known}))
+        out = [
+            log_row(r, _LOG_COLUMNS, time_ns=int(r.get("_timestamp") or 0) * 1000)  # µs column
+            for r in rows
+        ]
         return strictly_older(out, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

@@ -24,12 +24,13 @@ from . import register
 from .base import (
     BackendAdapter,
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     bearer,
-    finish_log_row,
     http_get_json,
     http_post_json,
+    log_row,
     not_found,
     otlp_status,
     query_origin,
@@ -671,9 +672,25 @@ def _iter_series_points(data: Any):
                 yield labels, int(point.get("timestamp") or 0) * 1_000_000, value
 
 
+# The typed attribute buckets of a ``panelType: list`` log entry.
+# The entry's own columns, read off it and put beside the attributes; the
+# session id stays among the attributes too (``session_id`` is not a column).
+_LOG_COLUMNS = LogColumns(level="severity_text", logger="scope_name")
+_ENTRY_COLUMNS = (
+    "severity_text",
+    "severity_number",
+    "scope_name",
+    "body",
+    "trace_id",
+    "span_id",
+    "event_name",
+)
+
+
 def _log_record(entry: Dict[str, Any]) -> Dict[str, Any]:
     """One SigNoz log entry → the live store's record shape (#268: with span id,
-    severity number, event name and every attribute)."""
+    severity number, event name and every attribute, the resource's under
+    ``resource.``)."""
     row = entry.get("data") or {}
     attrs: Dict[str, Any] = {}
     for bucket in (
@@ -686,23 +703,12 @@ def _log_record(entry: Dict[str, Any]) -> Dict[str, Any]:
         values = row.get(bucket)
         if isinstance(values, dict):
             attrs.update(values)
-    resources = row.get("resources_string") or {}
-    # ``finish_log_row`` lifts ``event_name`` / ``event.name`` out of the attributes.
-    base = {
-        "level": str(row.get("severity_text") or "INFO").upper(),
-        "severity_number": row.get("severity_number"),
-        "logger": row.get("scope_name") or "",
-        "body": row.get("body") or "",
-        "time_unix_nano": ns_from_any(entry.get("timestamp")) or 0,
-        "trace_id": row.get("trace_id") or None,
-        "span_id": row.get("span_id") or None,
-        "session_id": attrs.get("hermes.session_id") or None,
-        "event_name": row.get("event_name") or None,
-        "attributes": attrs,
-    }
-    if isinstance(resources, dict) and resources:
-        base["attributes"] = {**attrs, **{f"resource.{k}": v for k, v in resources.items()}}
-    return finish_log_row(base)
+    resources = row.get("resources_string")
+    if isinstance(resources, dict):
+        attrs.update({f"resource.{k}": v for k, v in resources.items()})
+    raw = {**attrs, **{k: row.get(k) for k in _ENTRY_COLUMNS}}
+    raw["session_id"] = attrs.get("hermes.session_id")
+    return log_row(raw, _LOG_COLUMNS, time_ns=ns_from_any(entry.get("timestamp")) or 0)
 
 
 def _extract_v4_list_rows(data: Any) -> List[Dict[str, Any]]:

@@ -42,11 +42,12 @@ from ._prometheus import metrics_query as _prom_metrics_query
 from .base import (
     BackendError,
     ConfigError,
+    LogColumns,
     LogFilter,
     _execute,
     basic_auth,
     bearer,
-    finish_log_row,
+    log_row,
     resolve_env_or_literal,
     rewrite_host_for_docker,
 )
@@ -60,21 +61,13 @@ _DEFAULT_TRACES_PORT = 10428
 # documented; fetch wide and cut the page here, as for GreptimeDB.
 _DEFAULT_SEARCH_FETCH = 500
 
-# VictoriaLogs fields that are the row, not attributes.
-_LOG_ROW_FIELDS = frozenset(
-    {
-        "_msg",
-        "_time",
-        "_stream",
-        "_stream_id",
-        "trace_id",
-        "span_id",
-        "severity_number",
-        "severity_text",
-        "scope.name",
-        "hermes.session_id",
-        "event.name",
-    }
+# VictoriaLogs' columns; its own ``_``-prefixed fields (``_msg``, ``_time``,
+# ``_stream``) are filtered out before the row is built.
+_LOG_COLUMNS = LogColumns(
+    level="severity_text",
+    logger="scope.name",
+    session_id="hermes.session_id",
+    event_name="event.name",
 )
 
 
@@ -264,27 +257,10 @@ class VictoriaAdapter(JaegerAdapter):
         )
         records: List[Dict[str, Any]] = []
         for row in self._logsql(query, limit=n):
-            attrs = {
-                k: coerce_tag(k, v)
-                for k, v in row.items()
-                if k not in _LOG_ROW_FIELDS and not k.startswith("_")
-            }
-            try:
-                severity = int(row.get("severity_number") or 0) or None
-            except (TypeError, ValueError):
-                severity = None
-            record = {
-                "level": str(row.get("severity_text") or "INFO").upper(),
-                "severity_number": severity,
-                "logger": row.get("scope.name") or "",
-                "body": row.get("_msg") or "",
-                "time_unix_nano": rfc3339_to_ns(row.get("_time")),
-                "trace_id": row.get("trace_id") or None,
-                "span_id": row.get("span_id") or None,
-                "session_id": row.get("hermes.session_id") or None,
-                "event_name": row.get("event.name") or None,
-            }
-            records.append(finish_log_row(record, attrs))
+            # Every field is a string; give the attributes their types back.
+            raw = {k: coerce_tag(k, v) for k, v in row.items() if not k.startswith("_")}
+            raw["body"] = row.get("_msg")
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=rfc3339_to_ns(row.get("_time"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

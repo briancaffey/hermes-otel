@@ -33,10 +33,11 @@ from . import default_service_name, register
 from .base import (
     BackendAdapter,
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
-    finish_log_row,
     http_get_json,
+    log_row,
     not_found,
     otlp_status,
     query_origin,
@@ -71,6 +72,11 @@ _DOTNET_LEVELS = {
     "critical": "FATAL",
     "fatal": "FATAL",
 }
+
+
+# The record's own fields are read off the OTLP JSON record and put beside
+# the attributes under their record key; session and event are attributes.
+_LOG_COLUMNS = LogColumns(session_id="hermes.session_id", event_name="event.name")
 
 
 def level_for(severity_number: Any, severity_text: Any) -> str:
@@ -283,26 +289,23 @@ class AspireAdapter(BackendAdapter):
                 continue
             attrs = otlp_attrs_to_dict(rec.get("attributes"))
             attrs.pop("aspire.log_id", None)
-            session = attrs.pop("hermes.session_id", None)
-            event_name = attrs.pop("event.name", None)
-            if f.session and str(session) != f.session:
+            event_name = attrs.get("event.name")
+            if f.session and str(attrs.get("hermes.session_id")) != f.session:
                 continue
             if f.event_name and event_name != f.event_name:
                 continue
             if f.events_only and not event_name:
                 continue
-            record = {
+            raw = {
+                **attrs,
                 "level": level_for(rec.get("severityNumber"), rec.get("severityText")),
-                "severity_number": severity or None,
-                "logger": rec.get("_scope") or "",
-                "body": otlp_unwrap(rec.get("body")) if rec.get("body") is not None else "",
-                "time_unix_nano": ts,
-                "trace_id": rec.get("traceId") or None,
-                "span_id": rec.get("spanId") or None,
-                "session_id": session,
-                "event_name": event_name,
+                "severity_number": severity,
+                "logger": rec.get("_scope"),
+                "body": otlp_unwrap(rec.get("body")),
+                "trace_id": rec.get("traceId"),
+                "span_id": rec.get("spanId"),
             }
-            records.append(finish_log_row(record, attrs))
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=ts))
         records.sort(key=lambda r: int(r.get("time_unix_nano") or 0), reverse=True)
         return strictly_older(records, f)[: int(limit) + LOG_PAGE_SLACK]
 

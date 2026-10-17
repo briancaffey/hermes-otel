@@ -36,10 +36,11 @@ from ._loki import MAX_RANGE_S, _quote
 from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from .base import (
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
-    finish_log_row,
     http_get_json,
+    log_row,
     not_found,
     query_origin,
     validate_label_name,
@@ -47,7 +48,7 @@ from .base import (
 )
 from .metrics_math import bucketize, counter_increases
 from .paging import log_end_ns, strictly_older
-from .severity import severity_number_for
+from .severity import level_names_at_least
 from .shapes import (
     SpanRow,
     card_from_trace,
@@ -65,17 +66,13 @@ _DEFAULT_PORT = 3100
 # Gigapipe serves PromQL from its 15 s rollup; a finer step repeats samples.
 _ROLLUP_STEP_S = 15
 
-# Level names at or above each Python logging floor, for the ``level`` label.
-_LEVELS_AT_LEAST = {
-    10: ("DEBUG", "INFO", "WARN", "WARNING", "ERROR", "CRITICAL", "FATAL"),
-    20: ("INFO", "WARN", "WARNING", "ERROR", "CRITICAL", "FATAL"),
-    30: ("WARN", "WARNING", "ERROR", "CRITICAL", "FATAL"),
-    40: ("ERROR", "CRITICAL", "FATAL"),
-    50: ("CRITICAL", "FATAL"),
-}
-
-_ROW_LABELS = frozenset(
-    {"level", "trace_id", "span_id", "hermes_session_id", "event_name", "service_name", "flags"}
+# Gigapipe's label set: a ``level`` label, no scope and no severity number.
+_LOG_COLUMNS = LogColumns(
+    logger="",
+    severity_number="",
+    session_id="hermes_session_id",
+    drop=("service_name", "flags"),
+    attr_key=_dotted,
 )
 
 
@@ -314,29 +311,14 @@ class GigapipeAdapter(TempoAdapter):
         if f.session:
             stages.append(f"| hermes_session_id={_quote(f.session)}")
         if f.min_level:
-            band = max((lvl for lvl in _LEVELS_AT_LEAST if lvl <= int(f.min_level)), default=10)
-            stages.append('| level=~"' + "|".join(_LEVELS_AT_LEAST[band]) + '"')
+            stages.append('| level=~"' + "|".join(level_names_at_least(f.min_level)) + '"')
         if f.text:
             stages.append(f"|= {_quote(f.text)}")
         return " ".join([self.loki_selector, *stages])
 
     @staticmethod
     def _record(labels: Dict[str, Any], ts_ns: Any, line: str) -> Dict[str, Any]:
-        level = str(labels.get("level") or "INFO").upper()
-        row = {
-            "level": level,
-            "severity_number": severity_number_for(level),
-            "logger": "",  # Gigapipe keeps no scope label
-            "body": line or "",
-            "time_unix_nano": int(ts_ns or 0),
-            "trace_id": labels.get("trace_id") or None,
-            "span_id": labels.get("span_id") or None,
-            "session_id": labels.get("hermes_session_id") or None,
-            "event_name": labels.get("event_name") or None,
-        }
-        return finish_log_row(
-            row, {_dotted(k): v for k, v in labels.items() if k not in _ROW_LABELS}
-        )
+        return log_row({**labels, "body": line}, _LOG_COLUMNS, time_ns=int(ts_ns or 0))
 
     def logs_search(
         self, f: LogFilter, start_s: int, end_s: int, limit: int

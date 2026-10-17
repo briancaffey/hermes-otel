@@ -11,7 +11,8 @@ from fastapi.testclient import TestClient
 
 from hermes_otel.dashboard import live_api, plugin_api
 from hermes_otel.dashboard.backends import _loki, base
-from hermes_otel.dashboard.backends.base import LogFilter, finish_log_row
+from hermes_otel.dashboard.backends.base import LogColumns, LogFilter, finish_log_row, log_row
+from hermes_otel.dashboard.backends.severity import level_names_at_least
 from hermes_otel.live_store import LiveStore
 
 
@@ -41,6 +42,77 @@ class TestRowShape:
         assert base.severity_number_for("CRITICAL") == 21 == base.severity_number_for("FATAL")
         assert base.severity_number_for("30") == 13 and base.severity_number_for("13") == 13
         assert base.severity_number_for("nope") is None
+
+    def test_log_row_reads_fallback_columns_and_drops_the_backend_bookkeeping(self):
+        cols = LogColumns(
+            time="ts",
+            level=("severity_text", "detected_level"),
+            logger="scope_name",
+            session_id="hermes_session_id",
+            drop=("flags",),
+            attr_key=lambda k: k.replace("_", "."),
+        )
+        # The named columns, the defaults for the rest and ``drop`` are the row.
+        assert cols.known == {
+            "ts",
+            "severity_text",
+            "detected_level",
+            "scope_name",
+            "hermes_session_id",
+            "flags",
+            "body",
+            "severity_number",
+            "trace_id",
+            "span_id",
+            "event_name",
+        }
+        row = log_row(
+            {
+                "ts": "ignored",
+                "detected_level": "warning",
+                "severity_number": "13",
+                "scope_name": "cli",
+                "body": "b",
+                "trace_id": "",
+                "flags": 1,
+                "code_function_name": "f",
+                "empty": "",
+            },
+            cols,
+            time_ns=7,
+        )
+        assert row == {
+            "level": "WARN",
+            "severity_number": 13,
+            "logger": "cli",
+            "body": "b",
+            "time_unix_nano": 7,
+            "trace_id": None,
+            "span_id": None,
+            "session_id": None,
+            "event_name": None,
+            "attributes": {"code.function.name": "f"},
+        }
+
+    def test_log_row_defaults_are_the_record_keys_and_fill_a_missing_severity(self):
+        # A value put into the raw row under its record key (Loki's line) is
+        # the field, and record keys never reach ``attributes``.
+        row = log_row({"body": "line", "level": "error", "trace_id": "t"}, LogColumns(), time_ns=1)
+        assert (row["body"], row["level"], row["severity_number"], row["trace_id"]) == (
+            "line",
+            "ERROR",
+            17,
+            "t",
+        )
+        assert row["attributes"] == {}
+        # A fallback tuple takes the first non-empty column; "" names no column.
+        no_scope = LogColumns(logger="", level=("missing", "lvl"))
+        assert log_row({"lvl": "info", "logger": "x"}, no_scope, time_ns=0)["logger"] == ""
+
+    def test_level_names_at_least_spells_both_names_of_a_band(self):
+        assert level_names_at_least(30) == ("WARN", "WARNING", "ERROR", "CRITICAL", "FATAL")
+        assert level_names_at_least(40) == ("ERROR", "CRITICAL", "FATAL")
+        assert level_names_at_least(10)[0] == "DEBUG"  # TRACE sits below Python's DEBUG
 
     def test_loki_record_keeps_structured_metadata_as_attributes(self):
         row = _loki._record(

@@ -1,9 +1,10 @@
 """Log severity spellings shared by the adapters (#403): OTel severity
-numbers for a level name, and the severity floor of a Python logging level."""
+numbers for a level name, the severity floor of a Python logging level and
+the level names at or above one."""
 
 from __future__ import annotations
 
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 
 _SEVERITY_NUMBERS = {
     "TRACE": 1,
@@ -36,3 +37,11 @@ _OTEL_SEVERITY_FLOOR = {10: 5, 20: 9, 30: 13, 40: 17, 50: 21}
 def otel_severity_for(min_level: int) -> int:
     band = max((lvl for lvl in _OTEL_SEVERITY_FLOOR if lvl <= int(min_level)), default=0)
     return _OTEL_SEVERITY_FLOOR.get(band, 1)
+
+
+def level_names_at_least(min_level: int) -> Tuple[str, ...]:
+    """Every level spelling at or above a Python logging level (both of each
+    pair, ``WARN`` and ``WARNING``), for a backend that filters on the level's
+    text rather than its number (#514)."""
+    floor = otel_severity_for(min_level)
+    return tuple(name for name, number in _SEVERITY_NUMBERS.items() if number >= floor)

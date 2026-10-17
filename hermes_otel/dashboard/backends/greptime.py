@@ -38,11 +38,12 @@ from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
 from ._prometheus import metric_names as _prom_metric_names
 from .base import (
     BackendError,
+    LogColumns,
     LogFilter,
     _execute,
     basic_auth,
     bearer,
-    finish_log_row,
+    log_row,
     register_cache,
     resolve_env_or_literal,
     validate_label_name,
@@ -52,6 +53,16 @@ from .jaeger import JaegerAdapter
 from .metrics_math import bucketize, counter_increases
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
 from .severity import otel_severity_for
+from .shapes import to_int
+
+# The logs table's columns; session and event live in ``log_attributes``.
+_LOG_COLUMNS = LogColumns(
+    time="timestamp",
+    level="severity_text",
+    logger="scope_name",
+    session_id="hermes.session_id",
+    event_name="event.name",
+)
 
 _DEFAULT_GREPTIME_PORT = 4000
 # ``/api/traces?limit=N`` keeps N arbitrary traces, not the newest (verified on
@@ -290,37 +301,17 @@ class GreptimeAdapter(JaegerAdapter):
             + f' ORDER BY "timestamp" DESC LIMIT {n}'
         )
         cols, rows = self._sql(sql)
-        idx = {c: i for i, c in enumerate(cols)}
-
-        def col(row: List[Any], name: str) -> Any:
-            i = idx.get(name)
-            return row[i] if i is not None and i < len(row) else None
-
         records: List[Dict[str, Any]] = []
         for row in rows:
-            attrs = col(row, "log_attributes")
+            rec = dict(zip(cols, row))
+            attrs = rec.pop("log_attributes", None)
             if isinstance(attrs, str):
                 try:
                     attrs = json.loads(attrs)
                 except (TypeError, ValueError):
                     attrs = {"raw": attrs}
-            attrs = dict(attrs) if isinstance(attrs, dict) else {}
-            try:
-                ts_ns = int(col(row, "timestamp") or 0)
-            except (TypeError, ValueError):
-                ts_ns = 0
-            record = {
-                "level": col(row, "severity_text") or "INFO",
-                "severity_number": col(row, "severity_number"),
-                "logger": col(row, "scope_name") or "",
-                "body": col(row, "body") or "",
-                "time_unix_nano": ts_ns,
-                "trace_id": col(row, "trace_id") or None,
-                "span_id": col(row, "span_id") or None,
-                "session_id": attrs.pop("hermes.session_id", None),
-                "event_name": attrs.pop("event.name", None),
-            }
-            records.append(finish_log_row(record, attrs))
+            raw = {**(attrs if isinstance(attrs, dict) else {}), **rec}
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=to_int(rec.get("timestamp"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
