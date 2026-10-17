@@ -719,13 +719,13 @@ def create_instruments(meter: Any, config: Any) -> Dict[str, Any]:
     """Every instrument in ``_INSTRUMENTS``, created on ``meter``, by hook-side key.
 
     One that fails to create is left out rather than aborting the rest;
-    ``record_metric`` skips keys without an instrument. A compatibility
-    family that is switched off (``metric_name_compat``, #485) is left out.
+    ``record_metric`` skips keys without an instrument. Only the specs
+    ``InstrumentSpec.enabled`` admits are created: a compatibility family
+    that is switched off (``metric_name_compat``, #485) is left out.
     """
     instruments: Dict[str, Any] = {}
-    compat_mode = config.metric_name_compat
     for key, spec in _INSTRUMENTS.items():
-        if spec.compat and compat_mode not in (spec.compat, "both"):
+        if not spec.enabled(config):
             continue
         try:
             factory = meter.create_histogram if spec.kind == "histogram" else meter.create_counter

@@ -24,9 +24,10 @@ except ImportError:  # pragma: no cover — plugin is unusable without OTel
 # instrument kind, the unit, the description, how the value is applied, and
 # whether the instrument is part of the OTel GenAI conventions (gated by
 # ``emit_genai_metrics``). The routing decisions that read these fields are
-# the spec's own methods (#507): ``recorded`` (the GenAI and compat-family
-# gates), ``exported`` (the exclusive compat mode) and ``apply`` (the value
-# mode). ``value`` modes: ``one`` adds 1 per call, ``int`` adds
+# the spec's own methods (#507): ``enabled`` (the compat-family gate, which
+# decides whether the instrument is created at all), ``recorded`` (``enabled``
+# plus the GenAI gate), ``exported`` (the exclusive compat mode) and ``apply``
+# (the value mode). ``value`` modes: ``one`` adds 1 per call, ``int`` adds
 # ``int(value)``, ``float`` adds ``value``, ``record`` records a histogram
 # point (as an int when the unit is ``{token}``).
 
@@ -56,18 +57,22 @@ class InstrumentSpec:
     compat: str = ""
     compat_of: str = ""
 
-    def recorded(self, config: Any) -> bool:
-        """Whether a point for this instrument is recorded at all under ``config``.
+    def enabled(self, config: Any) -> bool:
+        """Whether this instrument exists at all under ``config``.
 
-        GenAI-convention instruments need ``emit_genai_metrics``; a compat
-        instrument needs its family switched on (``metric_name_compat`` is
-        the family's name or ``both``).
+        A compat instrument needs its family switched on (``metric_name_compat``
+        is the family's name or ``both``); every other instrument always exists.
+        ``create_instruments`` creates exactly the enabled ones.
         """
+        return not self.compat or config.metric_name_compat in (self.compat, "both")
+
+    def recorded(self, config: Any) -> bool:
+        """Whether a point for this instrument is recorded at all under ``config``:
+        it is ``enabled`` and, for a GenAI-convention instrument,
+        ``emit_genai_metrics`` is on."""
         if self.genai and not config.emit_genai_metrics:
             return False
-        if self.compat and config.metric_name_compat not in (self.compat, "both"):
-            return False
-        return True
+        return self.enabled(config)
 
     def exported(self, key: str, config: Any) -> bool:
         """Whether the point reaches the OTLP instrument (the live store is
@@ -640,12 +645,6 @@ _CAPPED_LABELS = frozenset(
         "error_type",
     }
 )
-
-
-def metric_otlp_name(key: str) -> str:
-    """The OTLP instrument name for a hook-side metric key (the key itself when unknown)."""
-    spec = _INSTRUMENTS.get(key)
-    return spec.name if spec else key
 
 
 # The observable instruments ``host_bridge.create_host_metric_instruments``
