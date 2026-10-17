@@ -552,6 +552,7 @@ class HermesOtelConfig:
         "Host metrics",
         choices=GPU_VENDORS,
         normalize=_lower,
+        bool_as=("off", "auto"),
     )
     host_metrics_interval_ms: int = _field(
         1000, "Host sampling cadence (floor 50 ms)", "Host metrics", bounds=(1, None)
