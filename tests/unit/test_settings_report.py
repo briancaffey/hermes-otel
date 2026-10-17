@@ -239,6 +239,14 @@ class TestRenderings:
         assert cfg["exists"] is True and cfg["parse_ok"] is True
         assert cfg["mtime"] is not None
 
+    def test_config_block_carries_the_short_fingerprint(self, home):
+        # The same value the plugin logs when it builds its pipeline (#484):
+        # what the loader resolves from this file and environment.
+        cfg = build_settings_report()["config"]
+        assert cfg["fingerprint"] == pc.load_config().fingerprint()[: pc.SHORT_FINGERPRINT_CHARS]
+        assert len(cfg["fingerprint"]) == pc.SHORT_FINGERPRINT_CHARS
+        assert build_settings_report(reveal=True)["config"]["fingerprint"] == cfg["fingerprint"]
+
     def test_missing_file_is_reported_not_an_error(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)

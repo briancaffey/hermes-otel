@@ -737,6 +737,10 @@ def build_settings_report(reveal: bool = False) -> Dict[str, Any]:
             "legacy_path": str(pc.legacy_config_path()),
             "unknown_keys": unknown,
             "deprecated_keys": deprecated,
+            # The short fingerprint of the resolved configuration (#484): the
+            # plugin logs the same value when it builds its pipeline, so a
+            # match says this is the configuration the gateway runs.
+            "fingerprint": effective.fingerprint()[: pc.SHORT_FINGERPRINT_CHARS],
         },
         "counts": counts,
         "groups": [g for g, _ in FIELD_GROUPS],

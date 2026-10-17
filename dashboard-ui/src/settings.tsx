@@ -367,7 +367,20 @@ export function SettingsPage() {
         <span className="text-base font-semibold tracking-tight">Settings</span>
         {report ? (
           <span className="text-xs text-muted-foreground">
-            hermes-otel {report.process.plugin_version || "?"} · resolved {fmtTimeAgo(report.resolved_at * 1e9)}
+            hermes-otel {report.process.plugin_version || "?"}
+            {report.config.fingerprint ? (
+              <>
+                {" · config "}
+                <span
+                  className="font-mono"
+                  title="Fingerprint of the resolved configuration (secrets hashed). The plugin logs the same value when it builds its pipeline; a match means this is the configuration the gateway runs."
+                >
+                  {report.config.fingerprint}
+                </span>
+              </>
+            ) : null}
+            {" · resolved "}
+            {fmtTimeAgo(report.resolved_at * 1e9)}
           </span>
         ) : null}
         <div className="ml-auto flex flex-wrap items-center gap-2">
