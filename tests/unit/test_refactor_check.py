@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import importlib.util
 import json
+import sys
 import time
 from pathlib import Path
 
@@ -18,6 +19,7 @@ def rc():
         "refactor_check", REPO_ROOT / "scripts" / "refactor_check" / "refactor_check.py"
     )
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod  # dataclasses resolve their module through sys.modules
     spec.loader.exec_module(mod)
     return mod
 

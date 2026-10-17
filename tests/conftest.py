@@ -38,6 +38,32 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     reset_state()
 
 
+@pytest.fixture(autouse=True)
+def _shutdown_initialised_plugins(monkeypatch):
+    """Shut down every plugin a test ``init()``-ed itself, singleton or not.
+
+    ``init()`` registers the plugin's ``shutdown`` with ``atexit``, so a plugin
+    a test built and dropped kept its exporter threads until interpreter exit,
+    where that hook and the SDK's own ``MeterProvider`` exit hook shut the same
+    provider ("shutdown can only be called once", printed after the summary).
+    ``shutdown()`` is idempotent, so a test that already shut its plugin down
+    (or ``reset_state`` above) costs nothing here."""
+    from hermes_otel.tracer import HermesOTelPlugin
+
+    plugins = []
+    real_init = HermesOTelPlugin.init
+
+    def init(self, *args, **kwargs):
+        if self not in plugins:
+            plugins.append(self)
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(HermesOTelPlugin, "init", init)
+    yield
+    for plugin in plugins:
+        plugin.shutdown()
+
+
 def _build_inmemory_plugin(n_exporters: int = 1):
     """``(exporters, plugin, provider)`` from :func:`hermes_otel.testing.build_inmemory_plugin`
     (kept for the fixtures below)."""

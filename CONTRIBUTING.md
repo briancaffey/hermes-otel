@@ -163,7 +163,8 @@ Before opening a PR:
       the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
       A module may not drop more than one point under its floor; after a
       change that deliberately adds or removes coverage, re-record with
-      `python scripts/coverage_floor.py --update` and commit the file.
+      `python scripts/coverage_floor.py --update` and commit the file; a new
+      module gets its floor from `--add-missing`, which leaves the others alone.
       The pull request template carries this list. `make ci-fast` skips the
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.

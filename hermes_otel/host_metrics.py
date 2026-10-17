@@ -60,7 +60,8 @@ except ImportError:  # pragma: no cover — exercised via monkeypatch in tests
     psutil = None  # type: ignore[assignment]
 
 # What the CPU readers answer before they can measure (no psutil, no process,
-# the first tick): a Sample stores it and host_bridge reads it, nobody writes.
+# the first tick). Returned as a copy, ``dict(_ZERO_CPU)``, so no Sample holds
+# the shared template.
 _ZERO_CPU: Dict[str, float] = {"user": 0.0, "system": 0.0}
 
 
@@ -242,13 +243,13 @@ class HostMetricsSampler:
     def _process_cpu(self) -> Dict[str, float]:
         """Process-tree CPU utilization split by mode, as fractions of all cores."""
         if psutil is None or self._root is None:
-            return _ZERO_CPU
+            return dict(_ZERO_CPU)
         now = time.perf_counter()
         snapshot: Dict[int, Any] = {}
         try:
             procs = [self._root] + list(self._root.children(recursive=True))
         except psutil.NoSuchProcess:
-            return _ZERO_CPU
+            return dict(_ZERO_CPU)
         for proc in procs:
             try:
                 t = proc.cpu_times()
@@ -260,7 +261,7 @@ class HostMetricsSampler:
         prev, prev_at = self._prev_proc, self._prev_at
         self._prev_proc, self._prev_at = snapshot, now
         if prev is None or prev_at is None:
-            return _ZERO_CPU
+            return dict(_ZERO_CPU)
         elapsed = max(now - prev_at, 1e-6)
         user = system = 0.0
         for pid, (u, s) in snapshot.items():
@@ -275,7 +276,7 @@ class HostMetricsSampler:
     def _system_cpu(self) -> Dict[str, float]:
         """Whole-host CPU utilization split by mode (psutil keeps the baseline)."""
         if psutil is None:
-            return _ZERO_CPU
+            return dict(_ZERO_CPU)
         try:
             pct = psutil.cpu_times_percent(interval=None)
             return {
@@ -283,7 +284,7 @@ class HostMetricsSampler:
                 "system": _clamp(float(getattr(pct, "system", 0.0)) / 100.0),
             }
         except Exception:
-            return _ZERO_CPU
+            return dict(_ZERO_CPU)
 
     # ── Reads ────────────────────────────────────────────────────────────
 

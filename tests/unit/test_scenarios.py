@@ -21,6 +21,7 @@ def _load(name: str):
         sys.path.insert(0, str(SCRIPTS))
     spec = importlib.util.spec_from_file_location(f"scenarios_{name}", SCRIPTS / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod  # dataclasses resolve their module through sys.modules
     spec.loader.exec_module(mod)
     return mod
 

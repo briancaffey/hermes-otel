@@ -48,6 +48,7 @@ def reset_state() -> None:
                 pass
         pipeline = getattr(current, "pipeline", None)
         if pipeline is not None:
+            current.pipeline = None  # shut down once; a later InMemoryPipeline.shutdown is a no-op
             try:
                 pipeline.shutdown(current.config.log_attach_logger)
             except Exception:
@@ -133,24 +134,18 @@ class InMemoryPipeline:
         return self.span_exporters[0]
 
     def shutdown(self) -> None:
+        """Clear the sinks and shut the plugin's pipeline down, once: the
+        pipeline is forgotten on the plugin so :func:`reset_state` (the
+        autouse fixture) does not shut the same providers again, which the
+        SDK's ``MeterProvider`` logs as "shutdown can only be called once"."""
         for exp in self.span_exporters:
             try:
                 exp.clear()
             except Exception:
                 pass
-        for provider in (self.meter_provider, self.tracer_provider):
-            if provider is not None:
-                try:
-                    provider.shutdown()
-                except Exception:
-                    pass
-        if self.log_exporter is not None:
-            from . import log_handler as _lh
-
-            try:
-                _lh.uninstall_handler(None)
-            except Exception:
-                pass
+        pipeline, self.plugin.pipeline = self.plugin.pipeline, None
+        if pipeline is not None:
+            pipeline.shutdown(self.plugin.config.log_attach_logger)
         for fn in self._restore:
             fn()
 
