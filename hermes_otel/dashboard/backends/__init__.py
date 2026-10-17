@@ -197,12 +197,13 @@ def _profile_service_name(top: Dict[str, Any]) -> str:
     """
     import importlib
 
-    helpers = importlib.import_module("hermes_otel.helpers")
-    env = helpers.coerce_bool(os.environ.get("HERMES_OTEL_SERVICE_NAME_FROM_PROFILE"))
-    enabled = env if env is not None else helpers.coerce_bool(top.get("service_name_from_profile"))
+    coerce_bool = importlib.import_module("hermes_otel.coerce").coerce_bool
+    env = coerce_bool(os.environ.get("HERMES_OTEL_SERVICE_NAME_FROM_PROFILE"))
+    enabled = env if env is not None else coerce_bool(top.get("service_name_from_profile"))
     if not enabled:
         return ""
-    return helpers.named_profile(resolve_profile_name())
+    named_profile = importlib.import_module("hermes_otel.helpers").named_profile
+    return named_profile(resolve_profile_name())
 
 
 def resolve_profile_name() -> str:

@@ -8,16 +8,15 @@ identity keys) cannot drift between hooks (#104).
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
+from ..coerce import optional_number
 from ..helpers import (
     DEFAULT_SERVICE_NAME,
     clip_joined,
     named_profile,
-    optional_number,
     package_version,
     truncate_string,
-    turn_trigger,
 )
 from ..session_state import TurnSummary
 
@@ -144,9 +143,61 @@ def session_env(name: str) -> str:
         return os.environ.get(name, "")
 
 
+# ``hermes.turn.trigger`` (#394): what started a turn, from what Hermes makes
+# observable at turn start (the hook's ``platform``, the session-context vars
+# and the process environment). A closed set, so a backend can group by it.
+TURN_TRIGGERS = (
+    "user",  # a person: CLI / TUI / desktop / a gateway platform / ACP
+    "cron",  # a scheduled cron job
+    "kanban",  # a kanban worker run (HERMES_KANBAN_TASK)
+    "subagent",  # a delegated child agent
+    "a2a",  # an inbound agent-to-agent call
+    "api",  # the API server (/v1/runs, /v1/chat/completions)
+    "oneshot",  # a single-query run (hermes -z, chat -q) not covered above
+    "curator",  # Hermes's background curator
+    "batch",  # the batch runner
+    "system",  # other host housekeeping (gateway hygiene)
+)
+_PLATFORM_TRIGGERS = {
+    "subagent": "subagent",
+    "cron": "cron",
+    "a2a": "a2a",
+    "api_server": "api",
+    "curator": "curator",
+    "batch": "batch",
+    "gateway_hygiene": "system",
+}
+
+
+def turn_trigger(
+    platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
+) -> str:
+    """Classify what started a turn into one of :data:`TURN_TRIGGERS`.
+
+    ``env(name)`` reads a Hermes session variable (context var first, then the
+    process environment). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
+    and bot-to-bot DMs are not observable as such at turn start (only as a
+    message prefix), so they classify as the turn they ride on.
+    """
+    p = str(platform or "").strip().lower()
+    if is_subagent or p == "subagent":
+        return "subagent"
+    if p == "cron" or env("HERMES_CRON_SESSION").strip() in ("1", "true"):
+        return "cron"
+    if env("HERMES_KANBAN_TASK").strip():
+        return "kanban"
+    if p in _PLATFORM_TRIGGERS:
+        return _PLATFORM_TRIGGERS[p]
+    if env("HERMES_SESSION_SOURCE").strip().lower() == "a2a":
+        return "a2a"
+    if env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
+        return "oneshot"
+    return "user"
+
+
 def turn_trigger_attributes(platform: Any, is_subagent: bool = False) -> Dict[str, str]:
     """``hermes.turn.trigger``: what started the turn (#394), see
-    :func:`hermes_otel.helpers.turn_trigger`."""
+    :func:`turn_trigger`."""
     return {"hermes.turn.trigger": turn_trigger(platform, is_subagent=is_subagent, env=session_env)}
 
 

@@ -2,12 +2,13 @@
 
 from __future__ import annotations
 
+import re
 import time
 from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log, logger
-from ..helpers import cron_job_id_from_session, detect_session_kind, truncate_string
+from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import _emit_event, _fail_open, get_tracer
 from .attributes import (
@@ -34,6 +35,36 @@ try:
     from opentelemetry.trace import Link
 except ImportError:  # pragma: no cover — plugin is unusable without OTel
     Link = None  # type: ignore[assignment]
+
+
+def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
+    """Classify a run as ``session``, ``cron`` or a host-supplied kind.
+
+    First non-empty of ``session_type`` / ``origin`` / ``run_type`` wins;
+    otherwise ``cron`` when the platform, source or trigger mentions cron or a
+    cron job id is present; else ``session``.
+    """
+    for key in ("session_type", "origin", "run_type"):
+        value = kwargs.get(key)
+        if value:
+            return str(value)
+    for candidate in (platform, kwargs.get("source"), kwargs.get("trigger")):
+        if candidate and "cron" in str(candidate).lower():
+            return "cron"
+    if kwargs.get("job_id") or kwargs.get("cron_job_id"):
+        return "cron"
+    return "session"
+
+
+# Hermes's scheduler names a cron run's session ``cron_<job id>_<YYYYmmdd>_<HHMMSS>``
+# (cron/scheduler.py) and passes no job id on on_session_start.
+_CRON_SESSION_RE = re.compile(r"^cron_(?P<job>.+)_\d{8}_\d{6}$")
+
+
+def cron_job_id_from_session(session_id: Any) -> str:
+    """The cron job id embedded in a cron run's session id, or ``""``."""
+    m = _CRON_SESSION_RE.match(str(session_id or ""))
+    return m.group("job") if m else ""
 
 
 def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None:

@@ -2,13 +2,66 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import subagent_span_key, subagent_status_to_span_status, truncate_string
+from ..helpers import truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, get_tracer
 from .attributes import _session_identity_attributes, correlation_attributes
+
+# child_status values hermes-agent reports on subagent_stop that indicate a
+# clean finish. Anything explicitly failure-like maps to an error span; unknown
+# / empty values default to OK so a missing status never inflates error rates
+# (mirrors the tool-outcome policy in on_post_tool_call).
+_SUBAGENT_ERROR_STATUSES = frozenset(
+    # ``stalled``: Hermes's stall monitor gave up on a silent child and
+    # reports it as a crash (async_delegation._stalled_result), #392.
+    {
+        "error",
+        "errored",
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "timeout",
+        "timed_out",
+        "stalled",
+    }
+)
+
+
+def subagent_span_key(child_session_id: Any) -> Optional[str]:
+    """Build the span-tracking key for a delegated child agent.
+
+    Keyed on ``child_session_id`` because that is the value the child's own
+    ``on_session_start`` carries, so the child root span can rejoin the
+    delegation span started in the parent. Returns None when there is no
+    usable id (handler then no-ops, fail-open).
+    """
+    if child_session_id is None:
+        return None
+    text = str(child_session_id).strip()
+    if not text:
+        return None
+    return f"subagent:{text}"
+
+
+def subagent_status_to_span_status(child_status: Any) -> str:
+    """Map a hermes ``child_status`` to ``"ok"`` / ``"error"``.
+
+    Explicit failure-like statuses become ``"error"``; everything else
+    (including unknown / empty) is ``"ok"`` so an absent status never
+    pollutes error rates.
+    """
+    if child_status is None:
+        return "ok"
+    text = str(child_status).strip().lower()
+    if not text:
+        return "ok"
+    if text in _SUBAGENT_ERROR_STATUSES:
+        return "error"
+    return "ok"
 
 
 @_fail_open

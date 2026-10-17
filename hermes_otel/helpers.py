@@ -1,17 +1,20 @@
-"""Pure-function helpers shared across hermes-otel modules.
+"""Text helpers shared across hermes-otel modules: clipping, serialising,
+the plugin's version, the fleet profile name and W3C ``traceparent``.
 
 Kept separate from the hooks package so unit tests can import without pulling in
-the OpenTelemetry SDK dependency tree.
+the OpenTelemetry SDK dependency tree. Anything one module owns lives with that
+module: skill inference in ``hooks/skills.py``, the approval / tool / sub-agent /
+auxiliary classifiers in their hook module, scalar coercion in ``coerce.py``,
+the exporter-environment and host facts in ``pipeline_env.py`` (#522).
 """
 
 from __future__ import annotations
 
-import contextlib
 import functools
 import json
 import os
 import re
-from typing import Any, Callable, Dict, Iterator, List, Mapping, Optional, Tuple
+from typing import Any, List, Optional, Tuple
 
 # Matches:
 #   ESC [ ... letter             → CSI sequences (colors, cursor)
@@ -69,446 +72,50 @@ def clip_preview(text: Any, max_chars: int) -> Optional[str]:
     return f"{s[: max_chars - 3]}..."
 
 
-# ── Tool identity ──────────────────────────────────────────────────────────
+def clip_joined(items: List[str], sep: str, limit: int = 500) -> str:
+    """Join ``items`` with ``sep``, capped to ``limit`` chars with a ``...`` tail.
 
-_TARGET_KEYS = ("path", "file_path", "target", "url", "uri")
-_COMMAND_KEYS = ("command", "cmd")
-
-
-def resolve_tool_identity(args: Optional[Dict[str, Any]]) -> Tuple[Optional[str], Optional[str]]:
-    """Extract (target, command) from tool arguments.
-
-    target: first non-empty value under path/file_path/target/url/uri.
-    command: first non-empty value under command/cmd.
+    Unlike :func:`clip_preview` this keeps whitespace as-is (turn summaries
+    list raw commands) and returns ``""`` rather than None for no items.
     """
-    if not isinstance(args, dict):
-        return None, None
-
-    target: Optional[str] = None
-    for k in _TARGET_KEYS:
-        v = args.get(k)
-        if isinstance(v, str) and v.strip():
-            target = v.strip()
-            break
-
-    command: Optional[str] = None
-    for k in _COMMAND_KEYS:
-        v = args.get(k)
-        if isinstance(v, str) and v.strip():
-            command = v.strip()
-            break
-
-    return target, command
-
-
-# ── Tool outcome ───────────────────────────────────────────────────────────
-
-
-def extract_tool_result_status(result: Any) -> Optional[str]:
-    """Derive an outcome label from a tool-call result.
-
-    Preference order, first match wins:
-      1. result["status"] (string, lowercased)
-      2. result["error"] is non-empty → "error"
-      3. result["timeout"] truthy → "timeout"
-      4. result["blocked"] truthy → "blocked"
-
-    Returns None when nothing is derivable; caller then emits "completed".
-    """
-    if not isinstance(result, dict):
-        return None
-
-    status = result.get("status")
-    if isinstance(status, str) and status.strip():
-        return status.strip().lower()
-
-    err = result.get("error")
-    if err and str(err).strip():
-        return "error"
-
-    if result.get("timeout"):
-        return "timeout"
-    if result.get("blocked"):
-        return "blocked"
-
-    return None
-
-
-# ── Skill name inference ───────────────────────────────────────────────────
-
-# Matches /skills/<rest...> and captures everything after the skills/ segment.
-# Deliberately does NOT match /optional-skills/<name>/references/ or similar
-# overlapping directory layouts ("skills" must be a whole path segment).
-_SKILL_PATH_RE = re.compile(r"(?:^|/)skills/([A-Za-z0-9_./-]+)(?:/|$)")
-
-# Hermes lays skills out either flat (``skills/<name>/SKILL.md``) or under a
-# category (``skills/<category>/<name>/SKILL.md``). Hermes identifies a skill by
-# its bare ``<name>`` — that is what ``skill_view`` takes and what the
-# ``<available_skills>`` catalog lists — so every inference path below resolves
-# to that bare name, never the category.
-_SKILL_MANIFEST = "skill.md"
-
-
-def infer_skill_name(args: Optional[Dict[str, Any]]) -> Optional[str]:
-    """Infer a skill name from tool arguments (path-based).
-
-    Matches ``/skills/…`` anywhere in the ``path`` / ``file_path`` / ``target``
-    argument and returns the bare skill name (the directory that holds the
-    skill's ``SKILL.md``). Returns None if no path present or no match.
-    """
-    if not isinstance(args, dict):
-        return None
-    for key in ("path", "file_path", "target"):
-        v = args.get(key)
-        if not isinstance(v, str) or not v.strip():
-            continue
-        name = infer_skill_name_from_text(v)
-        if name:
-            return name
-    return None
-
-
-def _skill_dir_on_disk(text: str, parts: List[str]) -> Optional[str]:
-    """Walk up from the referenced file to the nearest directory holding SKILL.md.
-
-    Only consulted for files *inside* a skill that are not the manifest itself
-    (``references/x.md``, ``scripts/run.sh``…), where the path alone cannot say
-    whether the layout is flat or categorized. Bounded to the ``/skills/``
-    subtree, so at most ``len(parts)`` ``stat`` calls, and only on tool calls
-    that reference a skills path at all. Returns the directory as written in
-    the argument (absolute when the argument was), or None.
-    """
-    idx = text.lower().rfind("/skills/")
-    if idx < 0:
-        return None
-    root = text[: idx + len("/skills/")]
-    # Candidate directories from deepest (the path itself, in case it names the
-    # skill directory) to shallowest.
-    for depth in range(len(parts), 0, -1):
-        candidate = root + "/".join(parts[:depth])
-        try:
-            if os.path.isfile(os.path.join(candidate, "SKILL.md")):
-                return candidate
-        except OSError:  # pragma: no cover — permission oddities: fall through
-            continue
-    return None
-
-
-def _skill_dir_from_filesystem(text: str, parts: List[str]) -> Optional[str]:
-    """Bare skill name of the on-disk skill directory containing ``text``, or None."""
-    directory = _skill_dir_on_disk(text, parts)
-    return os.path.basename(directory.rstrip("/")) if directory else None
-
-
-def resolve_skill_dir(args: Optional[Dict[str, Any]]) -> Optional[str]:
-    """The directory holding the ``SKILL.md`` a tool call touched, or None.
-
-    Evidence only, never built from the skill name (#147): the parent directory
-    when the argument names the manifest itself, or the nearest ancestor of the
-    referenced file that holds a ``SKILL.md`` on disk. Categorized skills
-    (``skills/<category>/<name>/``), plugin-bundled skills and skills outside
-    ``HERMES_HOME`` all resolve to their real directory; anything that cannot be
-    verified returns None so the caller omits the attribute.
-    """
-    if not isinstance(args, dict):
-        return None
-    for key in ("path", "file_path", "target"):
-        v = args.get(key)
-        if not isinstance(v, str) or not v.strip():
-            continue
-        normalized = v.replace("\\", "/")
-        match = _SKILL_PATH_RE.search(normalized)
-        if not match:
-            continue
-        parts = [p for p in match.group(1).strip("/").split("/") if p]
-        if not parts:
-            continue
-        if parts[-1].lower() == _SKILL_MANIFEST and len(parts) > 1:
-            return normalized[: normalized.lower().rfind("/" + _SKILL_MANIFEST)]
-        directory = _skill_dir_on_disk(normalized, parts)
-        if directory:
-            return directory
-    return None
-
-
-def infer_skill_name_from_text(text: str) -> Optional[str]:
-    """Extract the bare skill name from a free-form string containing a /skills/ path."""
-    if not isinstance(text, str):
-        return None
-    normalized = text.replace("\\", "/")
-    match = _SKILL_PATH_RE.search(normalized)
-    if not match:
-        return None
-    parts = [p for p in match.group(1).strip("/").split("/") if p]
-    if not parts:
-        return None
-    # Canonical case: the manifest itself — its parent directory is the skill.
-    lowered = [p.lower() for p in parts]
-    if _SKILL_MANIFEST in lowered:
-        i = lowered.index(_SKILL_MANIFEST)
-        return parts[i - 1] if i > 0 else None
-    if len(parts) == 1:
-        return parts[0]
-    # Anything else (``<cat>/<name>``, ``<name>/references/x.md``, …) is
-    # ambiguous from the text alone: only the filesystem can say which
-    # directory holds SKILL.md. When it cannot, there is no name to report —
-    # the first segment used to be emitted, which named the *category* for
-    # categorized skills (#157).
-    return _skill_dir_from_filesystem(normalized, parts)
-
-
-# Argument keys the ``skill_view`` tool may carry the skill name under.
-_SKILL_VIEW_ARG_KEYS = ("name", "skill", "skill_name")
-
-
-def detect_skill(tool_name: Optional[str], args: Optional[Dict[str, Any]]):
-    """Detect an activated skill from a tool call.
-
-    Two sources, in priority order:
-
-    * ``skill_view`` — the canonical way Hermes loads a skill. The skill name
-      arrives as an *argument* (e.g. ``{"name": "axolotl"}``), which the
-      path-based :func:`infer_skill_name` heuristic does not catch. A
-      plugin-namespaced name (``"plugin:axolotl"``) is reduced to the bare
-      skill name.
-    * path match — any tool whose ``path`` / ``file_path`` / ``target`` points
-      into ``/skills/<name>/`` (e.g. ``read`` of a SKILL.md).
-
-    Returns ``(skill_name, source)`` where ``source`` is ``"skill_view"`` or
-    ``"path_match"``, or ``(None, None)`` when no skill is involved.
-    """
-    if not isinstance(args, dict):
-        return None, None
-    if tool_name == "skill_view":
-        for key in _SKILL_VIEW_ARG_KEYS:
-            v = args.get(key)
-            if not isinstance(v, str) or not v.strip():
-                continue
-            # The value may be a bare name, a namespaced ``plugin:name`` /
-            # ``category:name``, or a ``category/name`` form — Hermes' own
-            # qualified-name syntax, whose last segment is the skill name. A
-            # ``/skills/`` path is only accepted when it resolves to a manifest
-            # (on disk or by naming SKILL.md); a path that does not is not
-            # guessed at (#157).
-            if "/skills/" in v.replace("\\", "/").lower():
-                name = infer_skill_name_from_text(v)
-            else:
-                name = v.split(":")[-1].strip("/").split("/")[-1].strip()
-            if name:
-                return name, "skill_view"
-    name = infer_skill_name(args)
-    if name:
-        return name, "path_match"
-    return None, None
-
-
-def session_id_from_turn_id(turn_id: Any) -> str:
-    """Recover the plugin ``session_id`` from a hook ``turn_id``.
-
-    Hermes builds ``turn_id`` as ``"<session_id>:<task_id>:<hex>"``
-    (``agent/turn_context.py``). Hooks that only carry ``turn_id`` (e.g. the
-    approval hooks) can therefore recover the session the plugin keys its spans
-    on by taking the first segment. Returns ``""`` when unavailable.
-    """
-    if not isinstance(turn_id, str) or ":" not in turn_id:
+    if not items:
         return ""
-    head = turn_id.split(":", 1)[0].strip()
-    # ``agent/turn_context.py`` uses the literal "session" placeholder when the
-    # agent has no session_id yet — that's not a real id to correlate on.
-    return "" if head == "session" else head
+    joined = sep.join(items)
+    if len(joined) <= limit:
+        return joined
+    if limit <= 3:
+        return "." * limit
+    return joined[: limit - 3] + "..."
 
 
-_APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
-# Smart-guardian verdicts arrive as ``smart_<verdict>`` choices with
-# decided_by="aux_llm" (tools/approval_smart.py). smart_approve IS a grant
-# (the tool ran); smart_deny/smart_escalate are not.
-_SMART_GRANT_CHOICES = frozenset({"smart_approve"})
-_SMART_CHOICES = frozenset({"smart_approve", "smart_deny", "smart_escalate"})
+def _json_default(obj: Any) -> Any:
+    """Fallback for :func:`json.dumps` on objects handed through the api hook.
 
-
-def classify_approval_choice(choice: Any, decided_by: Any = None) -> Dict[str, Any]:
-    """Normalize an approval ``choice`` into telemetry fields.
-
-    ``choice`` is one of ``once`` / ``session`` / ``always`` / ``deny`` /
-    ``timeout``, or a smart-guardian verdict ``smart_approve`` /
-    ``smart_deny`` / ``smart_escalate`` fired with decided_by="aux_llm".
-    Grants (incl. smart_approve) set ``granted``; ``timeout`` is flagged
-    distinctly. A denied or timed-out approval is a legitimate human
-    outcome, not an error.
+    Hermes-agent emits ``tool_calls`` as ``SimpleNamespace`` (nested, with a
+    ``.function`` sub-namespace). json.dumps calls this recursively for any
+    non-serialisable object, so returning ``__dict__`` flattens each layer.
     """
-    c = (choice or "").strip().lower() if isinstance(choice, str) else ""
-    by = (decided_by or "").strip().lower() if isinstance(decided_by, str) else ""
-    granted = c in _APPROVAL_GRANT_CHOICES or c in _SMART_GRANT_CHOICES
-    return {
-        "choice": c,
-        "granted": granted,
-        "timed_out": c == "timeout",
-        # Who decided: "aux_llm" (smart guardian) vs. the default human
-        # answer. Empty when the caller didn't say.
-        "decided_by": by or ("aux_llm" if c in _SMART_CHOICES else ""),
-    }
+    if hasattr(obj, "__dict__") and obj.__dict__:
+        return obj.__dict__
+    return str(obj)
 
 
-# Governance floors (approvals.deny globs, the hardline list, the stdin
-# password guard) never fire the approval hooks — Hermes' terminal tool
-# collapses the block into a ``{"error": "BLOCKED: ...", "status":
-# "blocked"}`` envelope before post_tool_call sees it, so the message text
-# is the only provenance surface. Matching is deliberately conservative:
-# only messages we can POSITIVELY classify yield a floor, everything else
-# returns None (no attributes). Hermes prefixes many non-floor outcomes
-# with ``BLOCKED:`` too (human denials, approval timeouts, notify
-# failures, gateway refusals) — guessing those into floors would corrupt
-# governance dashboards with false attribution.
-_BLOCK_PROVENANCE_SIGNATURES = (
-    ("user-defined deny rule", "deny_rule"),
-    ("hardline", "hardline"),
-    ("Do not pipe passwords", "stdin_password_guard"),
-)
+def serialize_full(value: Any) -> Optional[str]:
+    """JSON-serialise ``value`` in full (no truncation), or None when empty.
 
-
-def classify_block_provenance(block_message: Any) -> Optional[str]:
-    """Return which governance floor blocked a command, or None.
-
-    ``block_message`` is the terminal error envelope's ``error``/``output``
-    text. Only signatures we positively recognize match — deny-rule globs,
-    the hardline list, and the stdin password guard. Unclassifiable
-    ``BLOCKED`` texts (human denials, approval timeouts, plugin or
-    guardrail vetoes — which surface as plain errors anyway) return None,
-    so the caller emits no provenance rather than wrong provenance.
+    Used for ``capture_full_prompts`` / ``capture_full_responses``: the whole
+    point is fidelity, so no ``preview_max_chars``. None on empty or
+    unserialisable input so the caller can skip the attribute.
     """
-    if not isinstance(block_message, str) or not block_message.strip():
+    if value is None or value == "" or value == [] or value == {}:
         return None
-    lowered = block_message.lower()
-    if "blocked" not in lowered:
-        return None
-    for signature, blocked_by in _BLOCK_PROVENANCE_SIGNATURES:
-        if signature.lower() in lowered:
-            return blocked_by
-    return None
-
-
-# ── Sub-agent / delegation ───────────────────────────────────────────────────
-
-# child_status values hermes-agent reports on subagent_stop that indicate a
-# clean finish. Anything explicitly failure-like maps to an error span; unknown
-# / empty values default to OK so a missing status never inflates error rates
-# (mirrors the tool-outcome policy in on_post_tool_call).
-_SUBAGENT_ERROR_STATUSES = frozenset(
-    # ``stalled``: Hermes's stall monitor gave up on a silent child and
-    # reports it as a crash (async_delegation._stalled_result), #392.
-    {
-        "error",
-        "errored",
-        "failed",
-        "failure",
-        "cancelled",
-        "canceled",
-        "timeout",
-        "timed_out",
-        "stalled",
-    }
-)
-
-
-def subagent_span_key(child_session_id: Any) -> Optional[str]:
-    """Build the span-tracking key for a delegated child agent.
-
-    Keyed on ``child_session_id`` because that is the value the child's own
-    ``on_session_start`` carries, so the child root span can rejoin the
-    delegation span started in the parent. Returns None when there is no
-    usable id (handler then no-ops, fail-open).
-    """
-    if child_session_id is None:
-        return None
-    text = str(child_session_id).strip()
-    if not text:
-        return None
-    return f"subagent:{text}"
-
-
-def subagent_status_to_span_status(child_status: Any) -> str:
-    """Map a hermes ``child_status`` to ``"ok"`` / ``"error"``.
-
-    Explicit failure-like statuses become ``"error"``; everything else
-    (including unknown / empty) is ``"ok"`` so an absent status never
-    pollutes error rates.
-    """
-    if child_status is None:
-        return "ok"
-    text = str(child_status).strip().lower()
-    if not text:
-        return "ok"
-    if text in _SUBAGENT_ERROR_STATUSES:
-        return "error"
-    return "ok"
-
-
-# ── API errors / retries ─────────────────────────────────────────────────────
-
-_TRUE_STRINGS = frozenset({"1", "true", "t", "yes", "y", "on"})
-_FALSE_STRINGS = frozenset({"0", "false", "f", "no", "n", "off", ""})
-
-
-def to_optional_int(value: Any) -> Optional[int]:
-    """Best-effort int conversion that returns None (not 0) when unparseable.
-
-    Distinct from the hooks-module ``_to_int`` (which zero-fills) because for
-    error telemetry we must tell "status 0" apart from "no status reported".
-    """
-    if value is None or isinstance(value, bool):
-        return None
-    if isinstance(value, int):
-        return value
-    if isinstance(value, float):
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return None
+    try:
+        return json.dumps(value, ensure_ascii=False, default=_json_default)
+    except Exception:
         try:
-            return int(float(text))
-        except ValueError:
+            return str(value)
+        except Exception:
             return None
-    return None
-
-
-def coerce_bool(value: Any) -> Optional[bool]:
-    """Parse a loosely-typed truthy/falsey value, or None when undecidable.
-
-    Accepts real bools, ints, and the usual string spellings. Returns None for
-    ``None`` so callers can distinguish "not reported" from "reported false".
-    """
-    if value is None:
-        return None
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, float)):
-        return bool(value)
-    if isinstance(value, str):
-        text = value.strip().lower()
-        if text in _TRUE_STRINGS:
-            return True
-        if text in _FALSE_STRINGS:
-            return False
-        return None
-    return None
-
-
-def http_status_class(status_code: Any) -> str:
-    """Bucket an HTTP status code into a low-cardinality metric label.
-
-    Returns ``"2xx"``/``"3xx"``/``"4xx"``/``"5xx"`` for a valid HTTP code,
-    ``"network"`` when there is no code (None / 0 / unparseable — i.e. the
-    request never got an HTTP response: timeout, connection error), and
-    ``"other"`` for an out-of-range number. Keeps error-metric cardinality
-    bounded regardless of provider quirks.
-    """
-    code = to_optional_int(status_code)
-    if code is None or code <= 0:
-        return "network"
-    if 100 <= code < 600:
-        return f"{code // 100}xx"
-    return "other"
 
 
 @functools.lru_cache(maxsize=1)
@@ -539,76 +146,24 @@ def package_version() -> Optional[str]:
         return None
 
 
-# ── Hook payload helpers ─────────────────────────────────────────────────────
-# Pure functions the hook callbacks share. No OTel import, so they are unit
-# testable on their own (moved out of the hooks package in #104).
+DEFAULT_SERVICE_NAME = "hermes-agent"
+
+# Profile names that do not identify one agent: the pre-profile home and an
+# arbitrary ``HERMES_HOME`` outside the profiles root (``hermes_home``).
+_UNNAMED_PROFILES = frozenset({"", "default", "custom"})
 
 
-def to_int(value: Any) -> int:
-    """Best-effort integer conversion for usage counters (never raises)."""
-    if isinstance(value, bool) or value is None:
-        return 0
-    if isinstance(value, (int, float)):
-        return int(value)
-    if isinstance(value, str):
-        text = value.strip()
-        if not text:
-            return 0
-        try:
-            return int(float(text))
-        except ValueError:
-            return 0
-    return 0
+def named_profile(profile: Any) -> str:
+    """The profile name when it identifies one agent of a fleet, else ``""``.
 
-
-def optional_number(value: Any) -> Optional[float]:
-    """``float(value)`` or None for bools, None, empty and unparsable input."""
-    if isinstance(value, bool) or value is None or value == "":
-        return None
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def count_user_turns(conversation: Any) -> int:
-    """User prompts in a conversation (``role == "user"`` messages), or 0 when
-    it is not a list. Hermes passes the turn's whole conversation, current
-    prompt included, to ``pre_llm_call``; after a context compaction it holds
-    fewer, so callers treat the count as a floor."""
-    if not isinstance(conversation, (list, tuple)):
-        return 0
-    return sum(1 for m in conversation if isinstance(m, dict) and m.get("role") == "user")
-
-
-def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
-    """Classify a run as ``session``, ``cron`` or a host-supplied kind.
-
-    First non-empty of ``session_type`` / ``origin`` / ``run_type`` wins;
-    otherwise ``cron`` when the platform, source or trigger mentions cron or a
-    cron job id is present; else ``session``.
+    ``default`` and ``custom`` are not agent names: every single-profile
+    install is ``default``, and ``custom`` is any home outside the profiles
+    root (#395).
     """
-    for key in ("session_type", "origin", "run_type"):
-        value = kwargs.get(key)
-        if value:
-            return str(value)
-    for candidate in (platform, kwargs.get("source"), kwargs.get("trigger")):
-        if candidate and "cron" in str(candidate).lower():
-            return "cron"
-    if kwargs.get("job_id") or kwargs.get("cron_job_id"):
-        return "cron"
-    return "session"
-
-
-# Hermes's scheduler names a cron run's session ``cron_<job id>_<YYYYmmdd>_<HHMMSS>``
-# (cron/scheduler.py) and passes no job id on on_session_start.
-_CRON_SESSION_RE = re.compile(r"^cron_(?P<job>.+)_\d{8}_\d{6}$")
-
-
-def cron_job_id_from_session(session_id: Any) -> str:
-    """The cron job id embedded in a cron run's session id, or ``""``."""
-    m = _CRON_SESSION_RE.match(str(session_id or ""))
-    return m.group("job") if m else ""
+    if not isinstance(profile, str):
+        return ""
+    name = profile.strip()
+    return "" if name in _UNNAMED_PROFILES else name
 
 
 def parse_traceparent(value: Any) -> Optional[Tuple[int, int, int]]:
@@ -632,343 +187,3 @@ def parse_traceparent(value: Any) -> Optional[Tuple[int, int, int]]:
 def format_traceparent(trace_id: int, span_id: int, flags: int) -> str:
     """The W3C ``traceparent`` for a span context (version 00)."""
     return f"00-{trace_id:032x}-{span_id:016x}-{'01' if flags & 1 else '00'}"
-
-
-# ``hermes.turn.trigger`` (#394): what started a turn, from what Hermes makes
-# observable at turn start (the hook's ``platform``, the session-context vars
-# and the process environment). A closed set, so a backend can group by it.
-TURN_TRIGGERS = (
-    "user",  # a person: CLI / TUI / desktop / a gateway platform / ACP
-    "cron",  # a scheduled cron job
-    "kanban",  # a kanban worker run (HERMES_KANBAN_TASK)
-    "subagent",  # a delegated child agent
-    "a2a",  # an inbound agent-to-agent call
-    "api",  # the API server (/v1/runs, /v1/chat/completions)
-    "oneshot",  # a single-query run (hermes -z, chat -q) not covered above
-    "curator",  # Hermes's background curator
-    "batch",  # the batch runner
-    "system",  # other host housekeeping (gateway hygiene)
-)
-_PLATFORM_TRIGGERS = {
-    "subagent": "subagent",
-    "cron": "cron",
-    "a2a": "a2a",
-    "api_server": "api",
-    "curator": "curator",
-    "batch": "batch",
-    "gateway_hygiene": "system",
-}
-
-
-DEFAULT_SERVICE_NAME = "hermes-agent"
-
-# Profile names that do not identify one agent: the pre-profile home and an
-# arbitrary ``HERMES_HOME`` outside the profiles root (``hermes_home``).
-_UNNAMED_PROFILES = frozenset({"", "default", "custom"})
-
-
-def named_profile(profile: Any) -> str:
-    """The profile name when it identifies one agent of a fleet, else ``""``.
-
-    ``default`` and ``custom`` are not agent names: every single-profile
-    install is ``default``, and ``custom`` is any home outside the profiles
-    root (#395).
-    """
-    if not isinstance(profile, str):
-        return ""
-    name = profile.strip()
-    return "" if name in _UNNAMED_PROFILES else name
-
-
-def turn_trigger(
-    platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
-) -> str:
-    """Classify what started a turn into one of :data:`TURN_TRIGGERS`.
-
-    ``env(name)`` reads a Hermes session variable (context var first, then the
-    process environment). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
-    and bot-to-bot DMs are not observable as such at turn start (only as a
-    message prefix), so they classify as the turn they ride on.
-    """
-    p = str(platform or "").strip().lower()
-    if is_subagent or p == "subagent":
-        return "subagent"
-    if p == "cron" or env("HERMES_CRON_SESSION").strip() in ("1", "true"):
-        return "cron"
-    if env("HERMES_KANBAN_TASK").strip():
-        return "kanban"
-    if p in _PLATFORM_TRIGGERS:
-        return _PLATFORM_TRIGGERS[p]
-    if env("HERMES_SESSION_SOURCE").strip().lower() == "a2a":
-        return "a2a"
-    if env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
-        return "oneshot"
-    return "user"
-
-
-# Hermes ``status`` kwarg value -> documented ``hermes.tool.outcome`` value.
-# Success statuses are deliberately absent: they defer to the tool's own
-# result-reported status (see ``outcome_from_hook_status``).
-_HOOK_STATUS_SUCCESS = frozenset({"ok", "success", "completed", "complete", "done"})
-HOOK_STATUS_TO_OUTCOME = {
-    "error": "error",
-    "failed": "error",
-    "blocked": "blocked",
-    "timeout": "timeout",
-    "timed_out": "timeout",
-    "cancelled": "cancelled",
-    "canceled": "cancelled",
-}
-# Every outcome that counts as "the tool did not complete"; one definition
-# for the skill-load check and any future consumer.
-FAILURE_OUTCOMES = frozenset(HOOK_STATUS_TO_OUTCOME.values())
-
-
-def outcome_from_hook_status(status: Any) -> Optional[str]:
-    """Translate Hermes' post_tool_call ``status`` into the outcome taxonomy.
-
-    Non-success lifecycle statuses (``timeout``, ``blocked``, ``cancelled``,
-    ``error``) are authoritative and win. Returns ``None`` for a success status
-    or when the hook carried no usable status, so the caller falls back to the
-    tool's own result-reported status (else ``completed``) — that keeps custom
-    outcomes such as ``partial`` that only the tool knows about.
-    """
-    if not isinstance(status, str):
-        return None
-    key = status.strip().lower()
-    if not key or key in _HOOK_STATUS_SUCCESS:
-        return None
-    return HOOK_STATUS_TO_OUTCOME.get(key, key)
-
-
-def json_default(obj: Any) -> Any:
-    """Fallback for :func:`json.dumps` on objects handed through the api hook.
-
-    Hermes-agent emits ``tool_calls`` as ``SimpleNamespace`` (nested, with a
-    ``.function`` sub-namespace). json.dumps calls this recursively for any
-    non-serialisable object, so returning ``__dict__`` flattens each layer.
-    """
-    if hasattr(obj, "__dict__") and obj.__dict__:
-        return obj.__dict__
-    return str(obj)
-
-
-def serialize_full(value: Any) -> Optional[str]:
-    """JSON-serialise ``value`` in full (no truncation), or None when empty.
-
-    Used for ``capture_full_prompts`` / ``capture_full_responses``: the whole
-    point is fidelity, so no ``preview_max_chars``. None on empty or
-    unserialisable input so the caller can skip the attribute.
-    """
-    if value is None or value == "" or value == [] or value == {}:
-        return None
-    try:
-        return json.dumps(value, ensure_ascii=False, default=json_default)
-    except Exception:
-        try:
-            return str(value)
-        except Exception:
-            return None
-
-
-def clip_joined(items: List[str], sep: str, limit: int = 500) -> str:
-    """Join ``items`` with ``sep``, capped to ``limit`` chars with a ``...`` tail.
-
-    Unlike :func:`clip_preview` this keeps whitespace as-is (turn summaries
-    list raw commands) and returns ``""`` rather than None for no items.
-    """
-    if not items:
-        return ""
-    joined = sep.join(items)
-    if len(joined) <= limit:
-        return joined
-    if limit <= 3:
-        return "." * limit
-    return joined[: limit - 3] + "..."
-
-
-def derive_signal_endpoint(traces_endpoint: str, signal: str) -> str:
-    """Rewrite ``.../v1/traces`` to ``.../v1/<signal>`` (``metrics`` / ``logs``).
-
-    OTLP/HTTP collectors expose the three signals on one host under different
-    path suffixes; any other endpoint shape is returned unchanged.
-    """
-    if traces_endpoint.endswith("/v1/traces"):
-        return traces_endpoint[: -len("/v1/traces")] + f"/v1/{signal}"
-    return traces_endpoint
-
-
-# ── Root usage roll-up (#327) ─────────────────────────────────────────────
-
-# The attribute families the turn's token roll-up uses on the ``agent`` /
-# ``cron`` root (see hooks/usage.py: the OTel GenAI and the OpenInference
-# spelling of the same totals). Kept here, out of the hook modules, so the
-# docs-coverage test reads them as prefixes rather than attribute names.
-_USAGE_FAMILIES = ("gen_ai", "llm")
-_USAGE_MEMBERS = ("usage", "token_count")
-ROOT_USAGE_PREFIXES = tuple(f"{fam}.{mem}." for fam, mem in zip(_USAGE_FAMILIES, _USAGE_MEMBERS))
-
-
-def is_usage_key(key: str) -> bool:
-    """True for a token-usage attribute (``gen_ai.usage.*`` / ``llm.token_count.*``)."""
-    return key.startswith(ROOT_USAGE_PREFIXES)
-
-
-def without_usage_keys(attrs: Mapping[str, Any]) -> Dict[str, Any]:
-    """``attrs`` minus the token-usage attributes; everything else kept as is."""
-    return {k: v for k, v in attrs.items() if not is_usage_key(k)}
-
-
-def char_count(value: Any) -> Optional[int]:
-    """Length in characters of a hook payload value; ``None`` for ``None``.
-
-    Strings count as they are; anything else counts its ``str()`` form, so a
-    structured result still yields a size instead of raising.
-    """
-    if value is None:
-        return None
-    if isinstance(value, str):
-        return len(value)
-    try:
-        return len(str(value))
-    except Exception:  # pragma: no cover - defensive
-        return None
-
-
-# Hermes' head+tail limit leaves this notice inside the kept text
-# (``tools/tool_output_truncate.truncation_notice``); the capture-window spill
-# path instead adds ``output_total_chars`` next to ``output`` in the result.
-_TRUNCATION_NOTICE = re.compile(
-    r"\[[A-Z]+ TRUNCATED - ([\d,]+) [a-z]+ omitted out of ([\d,]+) total\]"
-)
-
-
-def terminal_truncation(result: Mapping[str, Any]) -> Tuple[bool, Optional[int]]:
-    """``(truncated, dropped_chars)`` from a terminal tool's result envelope.
-
-    Reads only what Hermes itself records about its output limits: the
-    ``output_total_chars`` field the capture-window spill adds, or the
-    ``[OUTPUT TRUNCATED - N chars omitted out of M total]`` notice the
-    head+tail limit writes into the kept text. Whitespace stripping, ANSI
-    removal and redaction also shrink the output, so a bare size comparison
-    would call those truncation; this never does.
-    """
-    output = result.get("output")
-    output_str = output if isinstance(output, str) else ("" if output is None else str(output))
-    total = result.get("output_total_chars")
-    if isinstance(total, int) and not isinstance(total, bool):
-        return True, max(total - len(output_str), 0)
-    m = _TRUNCATION_NOTICE.search(output_str)
-    if m:
-        try:
-            return True, int(m.group(1).replace(",", ""))
-        except ValueError:  # pragma: no cover - the regex only admits digits
-            return True, None
-    return False, None
-
-
-# ── Auxiliary LLM calls (#389) ───────────────────────────────────────────────
-
-# ``hermes.query_source`` values: which loop an ``api.*`` span belongs to.
-QUERY_SOURCE_MAIN = "main"
-QUERY_SOURCE_SUBAGENT = "subagent"
-QUERY_SOURCE_AUXILIARY = "auxiliary"
-
-
-def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
-    """Build the span-tracking key for one auxiliary provider attempt.
-
-    ``pre_auxiliary_call`` and ``post_auxiliary_call`` share one base payload
-    (``agent/auxiliary_hooks.py`` builds it once per attempt), so the
-    ``api_request_id`` Hermes assigns is the natural key. Hermes leaves it
-    empty for callers that pass no request metadata; then the task name plus
-    the attempt's ``started_at`` (identical on both hooks) still pairs them.
-    """
-    request_id = str(api_request_id or "").strip()
-    if request_id:
-        return f"aux:{request_id}"
-    task = str(aux_task or "").strip() or "unknown"
-    return f"aux:{task}:{started_at if started_at is not None else ''}"
-
-
-def auxiliary_task_name(aux_task: Any) -> str:
-    """The auxiliary task as a bounded label (``unknown`` when Hermes sent none)."""
-    text = str(aux_task or "").strip().lower()
-    return truncate_string(text, 80) if text else "unknown"
-
-
-def query_source_for(is_subagent: Any) -> str:
-    """``main`` or ``subagent`` for a main-loop API call."""
-    return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN
-
-
-# The OTLP exporters read these when constructed without headers (``headers or
-# parse_env_headers(...)``). The plugin's config file is the single source of
-# headers (#472), so they are hidden while exporters are built.
-OTLP_HEADER_ENV_VARS: Tuple[str, ...] = (
-    "OTEL_EXPORTER_OTLP_HEADERS",
-    "OTEL_EXPORTER_OTLP_TRACES_HEADERS",
-    "OTEL_EXPORTER_OTLP_METRICS_HEADERS",
-    "OTEL_EXPORTER_OTLP_LOGS_HEADERS",
-)
-
-
-@contextlib.contextmanager
-def without_otlp_header_env() -> Iterator[None]:
-    """Hide the ``OTEL_EXPORTER_OTLP_*HEADERS`` variables while exporters are built.
-
-    A backend entry without ``headers:`` is constructed with ``headers=None``
-    and the SDK then falls back to the environment, so a token exported for
-    some other tool (Honeycomb, Grafana Cloud, Logfire …) would be sent to
-    every credential-less backend in the file (#472). The variables are
-    restored on exit, also when construction raises; nothing else in the
-    environment is touched.
-    """
-    saved = {name: os.environ.pop(name) for name in OTLP_HEADER_ENV_VARS if name in os.environ}
-    try:
-        yield
-    finally:
-        os.environ.update(saved)
-
-
-# ``platform.machine()`` spellings -> the OTel ``host.arch`` well-known value
-# (``HostArchValues``). Unknown machines pass through lower-cased.
-_HOST_ARCH = {
-    "x86_64": "amd64",
-    "amd64": "amd64",
-    "arm64": "arm64",
-    "aarch64": "arm64",
-    "i386": "x86",
-    "i486": "x86",
-    "i586": "x86",
-    "i686": "x86",
-    "x86": "x86",
-    "armv6l": "arm32",
-    "armv7l": "arm32",
-    "armv8l": "arm32",
-    "arm": "arm32",
-    "ppc64": "ppc64",
-    "ppc64le": "ppc64",
-    "ppc": "ppc32",
-    "s390x": "s390x",
-    "ia64": "ia64",
-}
-
-
-def os_type(system: Optional[str] = None) -> str:
-    """The OTel ``os.type`` for this host (``darwin`` / ``linux`` / ``windows`` …),
-    from ``platform.system()``; empty when unknown (#476)."""
-    import platform
-
-    text = (system if system is not None else platform.system()).strip().lower()
-    return text
-
-
-def host_arch(machine: Optional[str] = None) -> str:
-    """The OTel ``host.arch`` for this host (``arm64`` / ``amd64`` / ``x86`` …),
-    from ``platform.machine()``; the raw spelling, lower-cased, when the
-    conventions name nothing for it; empty when unknown (#476)."""
-    import platform
-
-    text = (machine if machine is not None else platform.machine()).strip().lower()
-    return _HOST_ARCH.get(text, text)

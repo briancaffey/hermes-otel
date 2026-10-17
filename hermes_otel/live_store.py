@@ -38,6 +38,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from . import semconv as _sc
+from .coerce import optional_number
 
 LIVE_DB_FILENAME = "hermes_otel_live.db"
 SCHEMA_VERSION = 3  # v3 (#266): log rows carry OTel severity spelling, span_id, attributes
@@ -113,19 +114,6 @@ def _default_db_path() -> str:
 # ── pure helpers (also used by the dashboard API) ─────────────────────────
 
 
-def _num(v: Any) -> Optional[float]:
-    if isinstance(v, bool) or v is None:
-        return None
-    if isinstance(v, (int, float)):
-        return float(v)
-    if isinstance(v, str):
-        try:
-            return float(v.strip())
-        except ValueError:
-            return None
-    return None
-
-
 def _first(attrs: Dict[str, Any], keys: Sequence[str]) -> Any:
     for k in keys:
         v = attrs.get(k)
@@ -186,7 +174,7 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
 
     def pick(keys: Sequence[str]) -> Optional[float]:
         if root is not None:
-            v = _num(_first(root.get("attributes") or {}, keys))
+            v = optional_number(_first(root.get("attributes") or {}, keys))
             if v is not None:
                 return v
         total, seen = 0.0, False
@@ -197,7 +185,7 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
             # hermes.turn.auxiliary.*, never inside the turn's totals.
             if (s.get("attributes") or {}).get("hermes.query_source") == "auxiliary":
                 continue
-            v = _num(_first(s.get("attributes") or {}, keys))
+            v = optional_number(_first(s.get("attributes") or {}, keys))
             if v is not None:
                 total += v
                 seen = True
@@ -207,7 +195,8 @@ def trace_totals(spans: Iterable[Dict[str, Any]]) -> Dict[str, Optional[float]]:
     # pricing) has no total; never fall back to a subtotal (#252).
     root_attrs = (root.get("attributes") or {}) if root is not None else {}
     no_cost_total = (
-        "hermes.cost.status" in root_attrs and _num(_first(root_attrs, _COST_KEYS)) is None
+        "hermes.cost.status" in root_attrs
+        and optional_number(_first(root_attrs, _COST_KEYS)) is None
     )
     return {"tokens": pick(_TOKEN_KEYS), "cost": None if no_cost_total else pick(_COST_KEYS)}
 
@@ -249,11 +238,11 @@ def subagent_totals(spans: Iterable[Dict[str, Any]]) -> Optional[Dict[str, Any]]
         return None
 
     def total(key: str) -> Optional[float]:
-        vals = [_num((s.get("attributes") or {}).get(key)) for s in top]
+        vals = [optional_number((s.get("attributes") or {}).get(key)) for s in top]
         known = [v for v in vals if v is not None]
         return sum(known) if known else None
 
-    costs = [_num((s.get("attributes") or {}).get(_SUB_COST)) for s in top]
+    costs = [optional_number((s.get("attributes") or {}).get(_SUB_COST)) for s in top]
     return {
         "count": len(top),
         "tokens": total(_SUB_TOKENS),
@@ -281,7 +270,7 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
     # the root carries those figures: without them (a partial trace, a
     # kanban.claim run) the totals already sum every api.* span, children's
     # included, so a split would count them twice.
-    own = not partial and _num(_first(rattrs, _TOKEN_KEYS)) is not None
+    own = not partial and optional_number(_first(rattrs, _TOKEN_KEYS)) is not None
     model = None
     for s in spans:
         model = _first(s.get("attributes") or {}, _MODEL_KEYS)
@@ -309,7 +298,7 @@ def summarize_trace(spans: List[Dict[str, Any]]) -> Dict[str, Any]:
             ),
             None,
         ),
-        "turn": _num(rattrs.get("hermes.turn.number")),
+        "turn": optional_number(rattrs.get("hermes.turn.number")),
         "platform": rattrs.get("hermes.platform"),
         "partial": partial,
         "subagents": subagent_totals(spans) if own else None,
@@ -637,7 +626,7 @@ class LiveStore:
             status=span.get("status"),
             start_ns=start,
             end_ns=end,
-            duration_ms=_num(span.get("duration_ms")),
+            duration_ms=optional_number(span.get("duration_ms")),
         )
 
     def add_metric(self, name: str, value: float, attributes: Dict[str, Any], ts_ns: int) -> None:
@@ -651,7 +640,7 @@ class LiveStore:
             },
             ts=ts_ns or None,
             name=name,
-            value=_num(value),
+            value=optional_number(value),
         )
 
     def add_log(self, record: Dict[str, Any]) -> None:

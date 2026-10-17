@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_otel.helpers import TURN_TRIGGERS, turn_trigger
+from hermes_otel.hooks.attributes import TURN_TRIGGERS, turn_trigger
 
 
 def _env(**values):

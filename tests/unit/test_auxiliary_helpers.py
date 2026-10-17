@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
-from hermes_otel.helpers import (
+from hermes_otel.hooks.api_call import (
     QUERY_SOURCE_AUXILIARY,
     QUERY_SOURCE_MAIN,
     QUERY_SOURCE_SUBAGENT,
-    auxiliary_span_key,
-    auxiliary_task_name,
     query_source_for,
 )
+from hermes_otel.hooks.auxiliary import auxiliary_span_key, auxiliary_task_name
 from hermes_otel.session_state import PerSession
 
 

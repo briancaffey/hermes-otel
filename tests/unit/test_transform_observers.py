@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from hermes_otel.helpers import char_count, terminal_truncation
 from hermes_otel.hooks import on_transform_llm_output, on_transform_terminal_output
+from hermes_otel.hooks.tools import char_count, terminal_truncation
 from hermes_otel.hooks.transforms import set_attributes
 
 

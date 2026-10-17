@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_otel.helpers import host_arch, os_type
+from hermes_otel.pipeline_env import host_arch, os_type
 
 OS_WELL_KNOWN = {
     "windows",

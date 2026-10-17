@@ -7,9 +7,39 @@ from typing import Any, Dict
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import classify_approval_choice, clip_joined, truncate_string
+from ..helpers import clip_joined, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, _resolve_session_id, get_tracer
 from .attributes import _gen_ai_attributes
+
+_APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
+# Smart-guardian verdicts arrive as ``smart_<verdict>`` choices with
+# decided_by="aux_llm" (tools/approval_smart.py). smart_approve IS a grant
+# (the tool ran); smart_deny/smart_escalate are not.
+_SMART_GRANT_CHOICES = frozenset({"smart_approve"})
+_SMART_CHOICES = frozenset({"smart_approve", "smart_deny", "smart_escalate"})
+
+
+def classify_approval_choice(choice: Any, decided_by: Any = None) -> Dict[str, Any]:
+    """Normalize an approval ``choice`` into telemetry fields.
+
+    ``choice`` is one of ``once`` / ``session`` / ``always`` / ``deny`` /
+    ``timeout``, or a smart-guardian verdict ``smart_approve`` /
+    ``smart_deny`` / ``smart_escalate`` fired with decided_by="aux_llm".
+    Grants (incl. smart_approve) set ``granted``; ``timeout`` is flagged
+    distinctly. A denied or timed-out approval is a legitimate human
+    outcome, not an error.
+    """
+    c = (choice or "").strip().lower() if isinstance(choice, str) else ""
+    by = (decided_by or "").strip().lower() if isinstance(decided_by, str) else ""
+    granted = c in _APPROVAL_GRANT_CHOICES or c in _SMART_GRANT_CHOICES
+    return {
+        "choice": c,
+        "granted": granted,
+        "timed_out": c == "timeout",
+        # Who decided: "aux_llm" (smart guardian) vs. the default human
+        # answer. Empty when the caller didn't say.
+        "decided_by": by or ("aux_llm" if c in _SMART_CHOICES else ""),
+    }
 
 
 def _approval_span_key(session_id: str, tool_call_id: Any, pattern_key: str) -> str:

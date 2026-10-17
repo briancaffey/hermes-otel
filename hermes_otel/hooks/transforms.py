@@ -31,9 +31,9 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..debug_utils import debug_log
-from ..helpers import char_count, truncate_string
+from ..helpers import truncate_string
 from ._common import _fail_open, get_tracer
-from .tools import _tool_call_id
+from .tools import _tool_call_id, char_count
 
 # Hermes' environment-type strings are short identifiers (``local``,
 # ``docker``, ``ssh``, ...); the clip only guards against a surprise.
