@@ -36,7 +36,7 @@ from __future__ import annotations
 import json
 import re
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Sequence, Tuple, Union
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # The attributes a trace-list card carries, in the order the adapters ask a
 # backend for them (the TraceQL ``select()``, SigNoz's ``selectColumns``).
@@ -233,6 +233,63 @@ def otlp_batches(by_service: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, 
         otlp_batch({"service.name": service} if service else {}, spans)
         for service, spans in by_service.items()
     ]
+
+
+def attach_root(
+    spans_otlp: List[Dict[str, Any]],
+    trace_id: str,
+    *,
+    extra_root_attrs: Union[Dict[str, Any], Callable[[], Dict[str, Any]]],
+    synthetic_name: str,
+    start_ns: int,
+    end_ns: int,
+    reason: str,
+    synthetic_attrs: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Give a detail tree exactly one root, in place (#516).
+
+    A root is a span whose parent is missing or not in the tree. Exactly one:
+    it is re-parented to None and gains the ``extra_root_attrs`` it lacks (a
+    callable is consulted only then, because the lookup may cost a request).
+    Several or none: a ``synthetic-<trace_id[:16]>`` span named
+    ``synthetic_name``, spanning ``start_ns``..``end_ns``, is inserted first,
+    carrying ``synthetic_attrs`` (default: ``extra_root_attrs`` when that is
+    a dict) plus the ``synthetic`` marker and its ``reason`` so the UI can
+    label it and nobody mistakes it for a span the agent emitted (#159); every
+    orphan is re-parented to it.
+    """
+    span_ids = {sp["spanId"] for sp in spans_otlp}
+    roots = [
+        sp for sp in spans_otlp if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids
+    ]
+    if len(roots) == 1:
+        root = roots[0]
+        root["parentSpanId"] = None
+        extra = extra_root_attrs() if callable(extra_root_attrs) else extra_root_attrs
+        have = {a["key"] for a in root["attributes"]}
+        root["attributes"].extend(
+            otlp_attrs_from_dict({k: v for k, v in extra.items() if k not in have})
+        )
+        return
+    if synthetic_attrs is None:
+        synthetic_attrs = extra_root_attrs if isinstance(extra_root_attrs, dict) else {}
+    synthetic_id = f"synthetic-{trace_id[:16]}"
+    spans_otlp.insert(
+        0,
+        otlp_span(
+            trace_id,
+            synthetic_id,
+            None,
+            synthetic_name,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            attrs={**synthetic_attrs, "synthetic": True, "synthetic.reason": reason},
+            status=otlp_status("ok"),
+        ),
+    )
+    for sp in spans_otlp[1:]:
+        if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids:
+            sp["parentSpanId"] = synthetic_id
 
 
 def span_count_of(batches: Sequence[Dict[str, Any]]) -> int:
