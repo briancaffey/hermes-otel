@@ -33,7 +33,8 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
-from .helpers import derive_signal_endpoint, without_otlp_header_env
+from .helpers import without_otlp_header_env
+from .pipeline import _LoggingExporter
 from .plugin_config import DEFAULT_LOG_EXCLUDE_LOGGERS, HermesOtelConfig
 from .redaction import redact_attributes, redact_text
 
@@ -46,7 +47,7 @@ try:
     # if the SDK handler is actually removed (not just deprecated).
     from opentelemetry.exporter.otlp.proto.http._log_exporter import OTLPLogExporter
     from opentelemetry.sdk._logs import LoggerProvider, LoggingHandler, LogRecordProcessor
-    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExporter, LogExportResult
+    from opentelemetry.sdk._logs.export import BatchLogRecordProcessor, LogExportResult
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.trace import set_span_in_context
 
@@ -57,7 +58,6 @@ except ImportError:  # pragma: no cover - exercised only when SDK missing
     LoggerProvider = None  # type: ignore[assignment]
     LoggingHandler = None  # type: ignore[assignment]
     BatchLogRecordProcessor = None  # type: ignore[assignment]
-    LogExporter = object  # type: ignore[assignment,misc]
     LogExportResult = None  # type: ignore[assignment]
     LogRecordProcessor = object  # type: ignore[assignment,misc]
     Resource = None  # type: ignore[assignment]
@@ -352,48 +352,7 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
         return self._inner.force_flush(timeout_millis)
 
 
-# ── Endpoint derivation ─────────────────────────────────────────────────────
-
-
-def _derive_logs_endpoint(traces_endpoint: str) -> str:
-    """Rewrite ``.../v1/traces`` to ``.../v1/logs``.
-
-    Thin wrapper over :func:`helpers.derive_signal_endpoint` (kept as the
-    name tests and the tracer's metrics twin refer to).
-    """
-    return derive_signal_endpoint(traces_endpoint, "logs")
-
-
 # ── Processor construction ──────────────────────────────────────────────────
-
-
-class _LoggingLogExporter(LogExporter):  # type: ignore[misc]
-    """Delegating log exporter that records each batch's outcome in the debug log (#167)."""
-
-    def __init__(self, inner: Any, backend_name: str) -> None:
-        self._inner = inner
-        self._name = backend_name
-
-    def export(self, batch: Any) -> Any:
-        count = len(batch) if hasattr(batch, "__len__") else "?"
-        try:
-            result = self._inner.export(batch)
-        except Exception as e:  # pragma: no cover — exporter raised instead of returning
-            debug_log(
-                f"export {self._name} logs: {count} record(s) -> FAILURE ({type(e).__name__}: {e})"
-            )
-            return LogExportResult.FAILURE
-        debug_log(
-            f"export {self._name} logs: {count} record(s) -> {getattr(result, 'name', result)}"
-        )
-        return result
-
-    def shutdown(self) -> None:
-        self._inner.shutdown()
-
-    def force_flush(self, timeout_millis: int = 30000) -> bool:
-        flush = getattr(self._inner, "force_flush", None)
-        return flush(timeout_millis) if flush else True
 
 
 # A callable the tracer supplies: ``(session_id, span)`` of the one session
@@ -729,7 +688,8 @@ def build_log_processors(
     Returns ``[(processor, backend), ...]``. Backends that don't support
     logs are silently skipped. Any per-backend exporter init failure is
     logged and the other backends still proceed — matches the fan-out
-    semantics of :meth:`HermesOTelPlugin._init_otlp_pipeline`.
+    semantics of :func:`pipeline.init_otlp_pipeline`, and the endpoint and
+    headers come from the same :meth:`_ResolvedBackend.target` rule.
 
     *batch* carries the ``logs.batch.*`` knobs; *rules* the global
     :class:`LogRules`, which each backend's own ``logs:`` mapping may narrow
@@ -743,17 +703,17 @@ def build_log_processors(
     for b in backends:
         if not b.supports_logs:
             continue
-        # Global ``headers:`` first, the backend's own on top: per-backend wins
-        # on conflict, which keeps resolver-built auth headers intact. Mirrors
-        # HermesOTelPlugin._merge_headers and the documented precedence.
-        merged: Dict[str, str] = dict(extra_headers or {})
-        # ``logs_headers`` set (even empty) replaces the trace headers (#363).
-        merged.update((b.logs_headers if b.logs_headers is not None else b.headers) or {})
-        endpoint = b.logs_endpoint or _derive_logs_endpoint(b.endpoint)
+        target = b.target("logs", extra_headers)
         try:
             with without_otlp_header_env():
-                log_exporter = OTLPLogExporter(endpoint=endpoint, headers=merged or None)
-            exporter = _LoggingLogExporter(log_exporter, b.display_name)
+                log_exporter = OTLPLogExporter(endpoint=target.endpoint, headers=target.headers)
+            # One debug.log line per batch, as for spans (#167).
+            exporter = _LoggingExporter(
+                log_exporter,
+                f"{b.display_name} logs",
+                unit="record",
+                failure=LogExportResult.FAILURE,
+            )
             processor: Any = BatchLogRecordProcessor(
                 exporter,
                 schedule_delay_millis=batch.get("schedule_delay_ms"),

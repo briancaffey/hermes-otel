@@ -58,7 +58,6 @@ from .pipeline import (  # noqa: F401 — re-exported
     _OTEL_AVAILABLE,
     _SERVICE_INSTANCE_ID,
     _LiveSpanProcessor,
-    _LoggingSpanExporter,
     _MCPPingFilterProcessor,
     _RootUsageStrippingExporter,
     is_mcp_keepalive_ping,
@@ -343,13 +342,6 @@ class HermesOTelPlugin:
 
     def _build_resource(self, backends: Optional[List[_ResolvedBackend]] = None) -> Any:
         return _pipeline.build_resource(self, backends)
-
-    @staticmethod
-    def _derive_metrics_endpoint(traces_endpoint: str) -> str:
-        return _pipeline.derive_metrics_endpoint(traces_endpoint)
-
-    def _merge_headers(self, backend_headers: Optional[Dict[str, str]]) -> Optional[Dict[str, str]]:
-        return _pipeline.merge_headers(self, backend_headers)
 
     def _init_otlp_pipeline(self, backends: List[_ResolvedBackend]) -> bool:
         return _pipeline.init_otlp_pipeline(self, backends)

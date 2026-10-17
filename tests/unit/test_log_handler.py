@@ -48,18 +48,14 @@ class TestResolveLevel:
 
 class TestDeriveLogsEndpoint:
     def test_swaps_traces_suffix(self):
-        assert (
-            log_handler._derive_logs_endpoint("http://localhost:4318/v1/traces")
-            == "http://localhost:4318/v1/logs"
-        )
+        rb = _ResolvedBackend(type="otlp", endpoint="http://localhost:4318/v1/traces")
+        assert rb.target("logs").endpoint == "http://localhost:4318/v1/logs"
 
     def test_passthrough_when_no_traces_suffix(self):
         # Some backends expose non-suffixed OTLP endpoints; leave them alone
         # so the caller can hand the exporter what they explicitly configured.
-        assert (
-            log_handler._derive_logs_endpoint("http://collector.example/otlp")
-            == "http://collector.example/otlp"
-        )
+        rb = _ResolvedBackend(type="otlp", endpoint="http://collector.example/otlp")
+        assert rb.target("logs").endpoint == "http://collector.example/otlp"
 
 
 # ── build_log_processors ────────────────────────────────────────────────────
@@ -144,7 +140,7 @@ class TestBuildLogProcessors:
         )
         headers = fake_otlp_exporter.call_args.kwargs["headers"]
         # Per-backend headers win on key collision (they carry resolver-built
-        # auth); matches tracer._merge_headers and the documented precedence.
+        # auth): the _ResolvedBackend.target rule the span and metric exporters use too.
         assert headers == {
             "X-From-Backend": "a",
             "X-Global": "b",

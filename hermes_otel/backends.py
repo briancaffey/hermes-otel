@@ -27,10 +27,11 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
 from .backend_specs import ENV_PRIORITY, SPECS, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
+from .helpers import derive_signal_endpoint
 from .plugin_config import BackendConfig, normalize_temporality
 
 # Every per-type fact lives in the manifest (#402); these are the views the
@@ -116,13 +117,25 @@ def env_opt_in_hints() -> List[str]:
     return hints
 
 
+class SignalTarget(NamedTuple):
+    """Where one signal's exporter sends and what it sends it with."""
+
+    endpoint: str
+    headers: Optional[Dict[str, str]]
+
+
+# The OTLP signals in pipeline order; ``supports_<signal>`` /
+# ``<signal>_endpoint`` / ``<signal>_headers`` on :class:`_ResolvedBackend`.
+SIGNALS = ("traces", "metrics", "logs")
+
+
 @dataclass
 class _ResolvedBackend:
     """A backend ready to wire into the OTLP pipeline.
 
     ``headers`` may already include backend-specific auth (e.g. Langfuse
-    Basic Auth, SigNoz ingestion key); the pipeline merges the global
-    ``config.headers`` on top before constructing the exporter.
+    Basic Auth, SigNoz ingestion key); :meth:`target` merges them over the
+    global ``config.headers`` when the pipeline constructs each exporter.
     """
 
     type: str
@@ -148,6 +161,48 @@ class _ResolvedBackend:
     # Whether the ``agent`` / ``cron`` root keeps its token roll-up on the way
     # to this backend; ``False`` strips it for this exporter only (#327).
     root_usage: bool = True
+
+    def target(self, signal: str, global_headers: Optional[Dict[str, str]] = None) -> SignalTarget:
+        """The endpoint and headers to build ``signal``'s exporter with.
+
+        Headers: the global ``headers:`` first, this backend's own on top, so
+        on a conflict the backend wins (its headers carry resolver-built auth
+        such as Langfuse's ``Authorization`` or ``x-honeycomb-team``, which a
+        global header must never clobber). ``metrics_headers`` /
+        ``logs_headers`` set, even empty, replace ``headers`` for that
+        signal: GreptimeDB's trace pipeline header must not reach the other
+        signals (#363). ``None`` when nothing is configured; the pipeline
+        then builds the exporter inside :func:`helpers.without_otlp_header_env`
+        so the SDK cannot fill the gap from the shell (#472).
+
+        Endpoint: the per-signal URL when the backend names one (#366), else
+        ``/v1/<signal>`` next to the traces URL.
+        """
+        own = self.headers
+        endpoint = self.endpoint
+        if signal != "traces":
+            per_signal = getattr(self, f"{signal}_headers")
+            own = per_signal if per_signal is not None else own
+            endpoint = getattr(self, f"{signal}_endpoint") or derive_signal_endpoint(
+                self.endpoint, signal
+            )
+        merged: Dict[str, str] = dict(global_headers or {})
+        merged.update(own or {})
+        return SignalTarget(endpoint, merged or None)
+
+    def enabled_signals(self) -> Tuple[str, ...]:
+        """The signals this backend receives, in :data:`SIGNALS` order."""
+        return tuple(s for s in SIGNALS if getattr(self, f"supports_{s}"))
+
+    def describe_signals(self) -> str:
+        """The startup banner's suffix, leading space included: ``" (query
+        only)"`` for a backend that exports nothing, ``" (traces only)"`` /
+        ``" (traces + logs)"`` when metrics are off, ``""`` when they are on."""
+        if not self.supports_traces:
+            return " (query only)"
+        if self.supports_metrics:
+            return ""
+        return " (traces + logs)" if self.supports_logs else " (traces only)"
 
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
