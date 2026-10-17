@@ -34,6 +34,13 @@ the root differing only by ``hermes.turn.auxiliary.*``, nothing else) the
 verdict reports an "auxiliary race" line instead of differences and the run
 does not fail on it. Any other difference in that trace still fails.
 
+The same auxiliary call can also *start* after ``on_session_end`` and become
+a trace of its own (#577, #588). Traces are keyed by the batch's exact
+markers (``<token>-<prompt id>``, the ids from ``runs.json``), so that trace,
+whose text only echoes marker-like strings such as ``<token>-shell-echo-out``,
+matches no prompt: it is set aside as unmarked, reported as a tolerated line
+and not compared.
+
 The dashboard's Playwright checks (``scripts/dashboard_verify``) are not part
 of this script; run them separately when a PR touches the dashboard.
 """
@@ -249,13 +256,28 @@ def check_batch(manifest: Path, wait: float, log: Path) -> Dict[str, Any]:
 # ── the live store, normalised ─────────────────────────────────────────
 
 
-def _marker_id(token: str, spans: Iterable[Dict[str, Any]]) -> Optional[str]:
-    # scenarios/run.py appends "(scenario marker: <token>-<id>)" to every
-    # prompt; the id itself may contain dashes, so the closing parenthesis
-    # delimits it.
+def _marker_id(
+    token: str, spans: Iterable[Dict[str, Any]], ids: Iterable[str] = ()
+) -> Optional[str]:
+    """The prompt id whose exact batch marker the trace carries, or None.
+
+    scenarios/run.py appends "(scenario marker: <token>-<id>)" to every
+    prompt; the id itself may contain dashes, so the closing parenthesis
+    delimits it. Outside that line (a clipped preview), only a batch marker
+    ``<token>-<id>`` for an id in ``ids`` counts, and only as a whole token:
+    an echoed ``<token>-shell-echo-out`` is not ``shell-echo`` (#577).
+    """
+    spans = list(spans)
     tagged = re.compile(r"scenario marker: " + re.escape(token) + r"-([a-z0-9][a-z0-9-]*)\)")
-    loose = re.compile(re.escape(token) + r"-([a-z0-9][a-z0-9-]*)")
-    for pat in (tagged, loose):
+    pats = [tagged]
+    known = sorted({i for i in ids if i}, key=len, reverse=True)
+    if known:
+        pats.append(
+            re.compile(
+                re.escape(token) + "-(" + "|".join(re.escape(i) for i in known) + r")(?![a-z0-9-])"
+            )
+        )
+    for pat in pats:
         for sp in spans:
             for v in (sp.get("attributes") or {}).values():
                 if isinstance(v, str):
@@ -287,9 +309,34 @@ def batch_started_ns(manifest: Path) -> int:
     return int(float(started) * 1_000_000_000) if started else 0
 
 
-def dump_live(profile: str, token: str, ignore: Iterable[str], since_ns: int = 0) -> Dict[str, Any]:
+def batch_marker_ids(manifest: Path, token: str) -> List[str]:
+    """Every turn's prompt id in ``runs.json`` (its marker minus ``<token>-``)."""
+    try:
+        runs = json.loads(manifest.read_text(encoding="utf-8")).get("runs") or []
+    except (OSError, ValueError):
+        return []
+    ids: Set[str] = set()
+    for run in runs:
+        for turn in run.get("turns") or [run]:
+            marker = str(turn.get("marker") or "")
+            if marker.startswith(f"{token}-"):
+                ids.add(marker[len(token) + 1 :])
+    return sorted(ids)
+
+
+def dump_live(
+    profile: str,
+    token: str,
+    ignore: Iterable[str],
+    since_ns: int = 0,
+    ids: Iterable[str] = (),
+) -> Dict[str, Any]:
     """Every trace the batch produced, as shapes keyed by prompt id, and the
     metric names recorded since ``since_ns`` (the batch start).
+
+    A trace that carries no exact batch marker (``ids``, see ``_marker_id``)
+    lands in ``unmarked`` instead: an auxiliary call that started after its
+    turn's root ended (#577).
 
     The live store keeps the last ``dashboard_live_max_spans`` rows of each
     kind for the whole profile, so a DB-wide metric-name list flaps as earlier
@@ -304,14 +351,18 @@ def dump_live(profile: str, token: str, ignore: Iterable[str], since_ns: int = 0
         page = store.query_traces(text=token, limit=200)
         ids = [t["traceId"] for t in page.get("traces", [])]
         by_trace = store.spans_for_traces(ids)
-        out: Dict[str, Any] = {"traces": {}, "metrics": [], "logs": {}}
+        out: Dict[str, Any] = {"traces": {}, "unmarked": [], "metrics": [], "logs": {}}
+        ids = list(ids)
         for tid, spans in by_trace.items():
-            pid = _marker_id(token, spans) or tid
+            pid = _marker_id(token, spans, ids)
             by_id = {s.get("span_id"): s for s in spans}
             shapes = sorted(
                 (normalise_span(s, by_id, ignore) for s in spans),
                 key=lambda d: (d["name"] or "", d["parent"] or "", json.dumps(d["values"])),
             )
+            if pid is None:
+                out["unmarked"].append(shapes)
+                continue
             out["traces"].setdefault(pid, []).append(shapes)
             logs = store.query_logs(trace_id=tid, limit=500)
             levels = sorted({str(r.get("severity_text") or r.get("level") or "?") for r in logs})
@@ -473,6 +524,16 @@ def compare(
             tolerated.append(f"metric names: {SWEPT_METRIC} only on {side}, from the race above")
     if ma != mb:
         diffs.append(f"metric names: gone={sorted(ma - mb)} new={sorted(mb - ma)}")
+    # Not compared: whether such a trace exists depends on the same race (#577).
+    for side, data in (("base", base), ("branch", branch)):
+        unmarked = data["live"].get("unmarked") or []
+        if unmarked:
+            names = sorted({s["name"] for t in unmarked for s in t if s.get("parent") is None})
+            tolerated.append(
+                f"{len(unmarked)} trace(s) on {side} carry no exact batch marker "
+                f"(roots {names}): an auxiliary call that started after its turn "
+                "(#577), not compared"
+            )
     xa, xb = _matrix(base.get("check") or {}), _matrix(branch.get("check") or {})
     for cell in sorted(set(xa) | set(xb)):
         if cell.split("/", 1)[0] in skip_prompts:
@@ -551,7 +612,13 @@ def run_side(
     manifest = run_batch(profile, token, prompts, hermes_args, side_dir / "run_batch.log")
     print(f"[{label}] checking every source …", flush=True)
     report = check_batch(manifest, wait, side_dir / "check_batch.log")
-    live = dump_live(profile, token, ignore, since_ns=batch_started_ns(manifest))
+    live = dump_live(
+        profile,
+        token,
+        ignore,
+        since_ns=batch_started_ns(manifest),
+        ids=batch_marker_ids(manifest, token),
+    )
     result = {
         "label": desc,
         "token": token,
