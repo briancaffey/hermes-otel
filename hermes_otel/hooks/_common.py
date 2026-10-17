@@ -87,6 +87,20 @@ def set_span_attributes(span: Any, attributes: Dict[str, Any]) -> None:
             span.set_attribute(key, value)
 
 
+def span_context_of(span: Any) -> Any:
+    """The ``SpanContext`` of a live span, else ``None``: for ``None``, for span
+    objects without the OTel API (``INVALID_SPAN`` stand-ins, LangSmith runs)
+    and when the call raises.
+    """
+    get_ctx = getattr(span, "get_span_context", None)
+    if get_ctx is None:
+        return None
+    try:
+        return get_ctx()
+    except Exception:
+        return None
+
+
 def as_dict(value: Any) -> Dict[str, Any]:
     """Coerce a hook payload field to a dict, never raising.
 

@@ -14,7 +14,7 @@ _PHANTOMS = ("hermes.tokens.", "hermes.api.duration", "hermes.sessions", "hermes
 def _instrument_names() -> set:
     """Every OTLP instrument name the plugin can emit: the instrument table
     plus the host-metrics observables created in ``_create_host_metric_instruments``."""
-    from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
+    from hermes_otel.instruments import _INSTRUMENTS, HOST_METRIC_NAMES
 
     names = {spec.name for spec in _INSTRUMENTS.values()}
     names.update(HOST_METRIC_NAMES)
@@ -44,8 +44,8 @@ def test_host_metric_names_are_what_the_tracer_registers():
     from unittest.mock import MagicMock
 
     from hermes_otel.host_bridge import HostMetrics
+    from hermes_otel.instruments import HOST_METRIC_NAMES
     from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.tracer import HOST_METRIC_NAMES
 
     meter = MagicMock()
     HostMetrics(HermesOtelConfig(host_metrics=True, host_metrics_gpu="off"), meter=meter)

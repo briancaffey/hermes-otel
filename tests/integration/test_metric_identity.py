@@ -141,6 +141,6 @@ class TestResourceIdentity:
         assert build_resource(cfg, "default").attributes["service.instance.id"] == "gateway-1"
 
     def test_instance_id_is_stable_within_a_process(self):
-        from hermes_otel import tracer
+        from hermes_otel import pipeline
 
-        assert re.fullmatch(r"[0-9a-f-]{36}", tracer._SERVICE_INSTANCE_ID)
+        assert re.fullmatch(r"[0-9a-f-]{36}", pipeline._SERVICE_INSTANCE_ID)

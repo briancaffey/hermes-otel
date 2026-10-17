@@ -19,9 +19,10 @@ from unittest.mock import patch
 from hermes_otel import log_handler as lh
 from hermes_otel import plugin_config as pc
 from hermes_otel import redaction
+from hermes_otel.instruments import metric_views
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.testing import attach_logs, attach_pipeline, install_singleton
-from hermes_otel.tracer import HermesOTelPlugin, metric_views
+from hermes_otel.tracer import HermesOTelPlugin
 
 GOLDEN_ROOT = Path(__file__).resolve().parent.parent / "golden"
 

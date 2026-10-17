@@ -53,7 +53,7 @@ def _post_api_kwargs(session_id, task, **extra):
         finish_reason="stop",
         assistant_content_chars=5,
         assistant_tool_call_count=0,
-        response_content="hello",
+        response={"assistant_message": {"role": "assistant", "content": "hello"}},
     )
     base.update(extra)
     return base
@@ -385,7 +385,13 @@ class TestContentGating:
         hooks.on_pre_api_request(
             **_api_kwargs(sid, t1, messages=[{"role": "user", "content": "x" * 3000}])
         )
-        hooks.on_post_api_request(**_post_api_kwargs(sid, t1, response_content="y" * 3000))
+        hooks.on_post_api_request(
+            **_post_api_kwargs(
+                sid,
+                t1,
+                response={"assistant_message": {"role": "assistant", "content": "y" * 3000}},
+            )
+        )
         hooks.on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id=t2, session_id=sid)
         hooks.on_post_tool_call(
             tool_name="bash",

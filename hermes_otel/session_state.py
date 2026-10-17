@@ -27,12 +27,9 @@ from .helpers import truncate_string
 
 @dataclass
 class TurnSummary:
-    """Per-session aggregator of per-turn telemetry.
-
-    Flushed onto the session/agent span in ``on_session_end``. Also
-    usable as a fallback on ``on_post_llm_call`` when no session hook
-    is available.
-    """
+    """Per-session aggregator of per-turn telemetry, flushed onto the
+    session/agent span in ``on_session_end``. The hooks mutate it through
+    the intent methods below, never field by field."""
 
     tool_names: Set[str] = field(default_factory=set)
     # Preserves insertion order for "first N chars" joined output.
@@ -41,7 +38,6 @@ class TurnSummary:
     tool_outcomes: Set[str] = field(default_factory=set)
     skill_names: Set[str] = field(default_factory=set)
     api_call_count: int = 0
-    final_status: Optional[str] = None
 
     _seen_targets: Set[str] = field(default_factory=set)
     _seen_commands: Set[str] = field(default_factory=set)
@@ -67,6 +63,10 @@ class TurnSummary:
     def add_skill(self, skill: Optional[str]) -> None:
         if skill:
             self.skill_names.add(skill)
+
+    def add_api_call(self) -> None:
+        """One more main-loop API request on this turn (``pre_api_request``)."""
+        self.api_call_count += 1
 
 
 # Canonical token-total field order: the usage buckets a turn accumulates.

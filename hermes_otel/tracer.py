@@ -46,28 +46,13 @@ from .debug_utils import (
 from .flush import Flusher
 from .hermes_home import resolve_hermes_home, resolve_profile_name
 from .host_bridge import HostMetrics
-from .instruments import (  # noqa: F401 — re-exported
+from .instruments import (
     _CAPPED_LABELS,
     _INSTRUMENTS,
     COMPAT_SESSION_LABEL,
-    HOST_METRIC_NAMES,
-    InstrumentSpec,
-    metric_otlp_name,
-    metric_preferred_aggregation,
-    metric_temporality_map,
-    metric_views,
+    metric_otlp_name,  # noqa: F401 — re-exported for tests/unit/test_metrics_table.py until #562
 )
-from .pipeline import (  # noqa: F401 — re-exported
-    _OTEL_AVAILABLE,
-    _SERVICE_INSTANCE_ID,
-    Pipeline,
-    _LiveSpanProcessor,
-    _MCPPingFilterProcessor,
-    _RootUsageStrippingExporter,
-    build_pipeline,
-    is_mcp_keepalive_ping,
-    strip_root_usage,
-)
+from .pipeline import _OTEL_AVAILABLE, Pipeline, build_pipeline
 from .plugin_config import HermesOtelConfig, load_config
 from .session_state import PerSession, SessionState
 from .severity import severity_number

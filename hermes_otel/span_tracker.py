@@ -40,6 +40,7 @@ from __future__ import annotations
 import contextvars
 import threading
 import time
+from collections import OrderedDict
 from typing import Any, Dict, Optional
 
 # Imported at module load on purpose: SpanTracker.end_span() needs Status /
@@ -114,8 +115,10 @@ class SpanTracker:
         # own root span can rejoin the parent trace on ``on_session_start``.
         # Process-local: in-process delegation parents the child root directly
         # under the delegation span (one connected trace); cross-process
-        # delegation degrades to attribute-only correlation.
-        self._subagent_registry: Dict[str, Dict[str, Any]] = {}
+        # delegation degrades to attribute-only correlation. Bounded (oldest
+        # out) like the per-session tables in SessionState: a child whose
+        # session never starts would otherwise pin its record for ever.
+        self._subagent_registry: "OrderedDict[str, Dict[str, Any]]" = OrderedDict()
         # Delegation start times, child_session_id -> perf_counter. Separate
         # from the registry, which the child's own session end may drop: the
         # delegation span itself lives until subagent_stop (#392).
@@ -125,7 +128,17 @@ class SpanTracker:
         # (api:/tool: keys do not embed the session id), so a timed-out turn's
         # sub-spans can be finalized before its root.
         self._turn_started_at: Dict[str, float] = {}
-        self._session_keys: Dict[str, set] = {}
+        self._session_keys: "OrderedDict[str, set]" = OrderedDict()
+
+    # Per-session tables keyed by a session id Hermes may never close: the
+    # same cap SessionState uses for its own.
+    _MAX_SESSIONS = 4096
+
+    def _remember(self, table: "OrderedDict[str, Any]", key: str, value: Any) -> None:
+        table[key] = value
+        table.move_to_end(key)
+        while len(table) > self._MAX_SESSIONS:
+            table.popitem(last=False)
 
     def _parent_stack(self) -> list:
         """Return this context's parent span stack, creating it if needed."""
@@ -316,7 +329,7 @@ class SpanTracker:
     ) -> None:
         """Remember the delegation span opened for ``child_session_id``."""
         with self._lock:
-            self._subagent_registry[str(child_session_id)] = record
+            self._remember(self._subagent_registry, str(child_session_id), record)
             self._delegation_started_at[str(child_session_id)] = (
                 started_at if started_at is not None else time.perf_counter()
             )
@@ -393,7 +406,11 @@ class SpanTracker:
     def link_key(self, session_id: str, key: str) -> None:
         """Remember that ``key`` was opened under ``session_id``."""
         with self._lock:
-            self._session_keys.setdefault(session_id, set()).add(key)
+            keys = self._session_keys.get(session_id)
+            if keys is None:
+                keys = set()
+                self._remember(self._session_keys, session_id, keys)
+            keys.add(key)
 
     def unlink_key(self, key: str) -> None:
         """Forget ``key`` in every session's active-key set."""

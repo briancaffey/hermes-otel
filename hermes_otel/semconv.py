@@ -1358,6 +1358,9 @@ TURN_TOTAL_KEYS: Tuple[str, ...] = (
 TURN_NUMBER_KEY = "hermes.turn.number"
 PLATFORM_KEY = "hermes.platform"
 QUERY_SOURCE_KEY = "hermes.query_source"
+# Its values: which loop an ``api.*`` span belongs to.
+QUERY_SOURCE_MAIN = "main"
+QUERY_SOURCE_SUBAGENT = "subagent"
 QUERY_SOURCE_AUXILIARY = "auxiliary"
 ERROR_TYPE_KEY = "error.type"
 TOOL_NAME_KEY = "tool.name"

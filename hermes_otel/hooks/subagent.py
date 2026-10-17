@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import truncate_string
-from ._common import _emit_event, _fail_open, _preview_for, get_tracer
+from ._common import _emit_event, _fail_open, _preview_for, get_tracer, span_context_of
 from .attributes import _ID_MAX, _session_identity_attributes, correlation_attributes
 
 # child_status values hermes-agent reports on subagent_stop that indicate a
@@ -150,12 +150,8 @@ def on_subagent_start(
         # The parent turn's model, so the child's root can say whether it
         # inherited it (delegation.model unset) or runs on its own (#391).
         "parent_model": parent_ps.model if parent_ps is not None else "",
+        "context": span_context_of(span),
     }
-    if span is not None and hasattr(span, "get_span_context"):
-        try:
-            record["context"] = span.get_span_context()
-        except Exception:
-            record["context"] = None
     tracer.spans.register_subagent(child_session_id, record)
     debug_log(f"  subagent span started: key={key}, name={span_name}")
     _emit_event(

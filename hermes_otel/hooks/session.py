@@ -13,7 +13,7 @@ from ..flush import flush_turn_end
 from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ..session_state import PerSession
-from ._common import _emit_event, _fail_open, get_tracer, set_span_attributes
+from ._common import _emit_event, _fail_open, get_tracer, set_span_attributes, span_context_of
 from .attributes import (
     _ID_MAX,
     _extract_correlation_id,
@@ -187,7 +187,7 @@ def _start_session_span(
                 record["parent_session_id"], 200
             )
         span_obj = record.get("span")
-        if span_obj is not None and hasattr(span_obj, "get_span_context"):
+        if span_context_of(span_obj) is not None:
             parent_override = span_obj
             # subagent_start does not carry the child's model; its root does.
             # Put it on the delegation span so the agent-level span says which
@@ -301,8 +301,8 @@ def _turn_end_attributes(
         attributes["hermes.turn.verify_nudges"] = ps.verify_nudges
     if ps.stop_reason:
         attributes["hermes.turn.stop_reason"] = ps.stop_reason
-    ps.turn_summary.final_status = final_status
     attributes.update(_summary_attributes(ps.turn_summary))
+    attributes["hermes.turn.final_status"] = final_status
     return attributes
 
 
@@ -421,8 +421,7 @@ def _remember_root(tracer, session_id: str) -> None:
     """Keep the root span's context so a replacing session can link to it."""
     with contextlib.suppress(Exception):
         root = tracer.spans.get_session_root(session_id)
-        if root is not None and hasattr(root, "get_span_context"):
-            tracer.sessions.remember_root_context(session_id, root.get_span_context())
+        tracer.sessions.remember_root_context(session_id, span_context_of(root))
 
 
 _FINAL_STATUS = {"finalize": "finalized", "reset": "reset"}

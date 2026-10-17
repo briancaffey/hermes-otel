@@ -290,9 +290,8 @@ def on_pre_api_request(
 
     key = f"api:{task_id}"
 
-    # Per-turn summary: count api requests
     if session_id:
-        tracer.sessions.get_or_create(session_id).turn_summary.api_call_count += 1
+        tracer.sessions.get_or_create(session_id).turn_summary.add_api_call()
 
     attributes = request_attributes(
         tracer,

@@ -421,8 +421,6 @@ def _summary_attributes(summary: TurnSummary) -> Dict[str, Any]:
         attrs["hermes.turn.skills"] = clip_joined(sorted(summary.skill_names), ",")
     if summary.api_call_count:
         attrs["hermes.turn.api_call_count"] = summary.api_call_count
-    if summary.final_status:
-        attrs["hermes.turn.final_status"] = summary.final_status
     return attrs
 
 

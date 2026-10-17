@@ -23,9 +23,10 @@ from dataclasses import dataclass, field
 from typing import Any, List, Optional, Sequence
 from unittest.mock import patch
 
+from .instruments import metric_views
 from .pipeline import Pipeline, create_instruments, init_logs_pipeline
 from .plugin_config import HermesOtelConfig
-from .tracer import HermesOTelPlugin, metric_views
+from .tracer import HermesOTelPlugin
 
 
 def reset_state() -> None:

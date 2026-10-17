@@ -166,6 +166,30 @@ class TestSpanTrackerPendingStarts:
         assert tracker.pop_tool_output_chars("terminal:t1") is None
 
 
+class TestBoundedSessionTables:
+    """The delegation registry and the per-session key sets are keyed by ids
+    Hermes may never close (a child that never starts, a turn that never
+    ends): both drop their oldest entry past the cap."""
+
+    def test_subagent_registry_drops_the_oldest(self):
+        tracker = SpanTracker()
+        for i in range(tracker._MAX_SESSIONS + 10):
+            tracker.register_subagent(f"child-{i}", {"span": None})
+        assert len(tracker._subagent_registry) == tracker._MAX_SESSIONS
+        assert tracker.get_subagent("child-0") is None
+        assert tracker.get_subagent(f"child-{tracker._MAX_SESSIONS + 9}") == {"span": None}
+
+    def test_session_keys_drop_the_oldest_session(self):
+        tracker = SpanTracker()
+        for i in range(tracker._MAX_SESSIONS + 10):
+            tracker.link_key(f"s{i}", f"api:{i}")
+            tracker.link_key(f"s{i}", f"tool:{i}")
+        assert len(tracker._session_keys) == tracker._MAX_SESSIONS
+        assert tracker.pop_session_keys("s0") == set()
+        last = tracker._MAX_SESSIONS + 9
+        assert tracker.pop_session_keys(f"s{last}") == {f"api:{last}", f"tool:{last}"}
+
+
 class TestSpanTrackerConcurrencyIsolation:
     """Verify parent stack is isolated per task/thread.
 

@@ -16,6 +16,7 @@ import json
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from ..helpers import serialize_full
+from ..semconv import QUERY_SOURCE_MAIN, QUERY_SOURCE_SUBAGENT
 from ._common import as_dict
 from .attributes import (
     _gen_ai_attributes,
@@ -34,11 +35,6 @@ from .usage import (
     usage_attributes,
 )
 
-# ``hermes.query_source`` values: which loop an ``api.*`` span belongs to.
-QUERY_SOURCE_MAIN = "main"
-QUERY_SOURCE_SUBAGENT = "subagent"
-QUERY_SOURCE_AUXILIARY = "auxiliary"
-
 
 def query_source_for(is_subagent: Any) -> str:
     """``main`` or ``subagent`` for a main-loop API call."""
@@ -50,8 +46,7 @@ class HookPayload:
 
     Hermes has sent the request messages as ``request_messages`` and as
     ``messages`` (and inside ``request["body"]``), the response id as
-    ``response_id`` and as ``id``, the assistant's reply as a
-    ``response_content`` / ``response_tool_calls`` pair, as the raw
+    ``response_id`` and as ``id``, the assistant's reply as the raw
     ``assistant_message`` object and inside ``response``; the hooks no longer
     spell those fallbacks themselves.
     """
@@ -86,18 +81,14 @@ class HookPayload:
     @property
     def assistant_message(self) -> Tuple[Any, Any]:
         """``(content, tool_calls)`` of the reply, from whichever spelling Hermes
-        used: the ``response_content`` / ``response_tool_calls`` pair, else the
-        raw ``assistant_message`` object (``post_api_request``), else the
-        sanitised ``response["assistant_message"]`` dict (both hooks)."""
-        content = self.kwargs.get("response_content")
-        tool_calls = self.kwargs.get("response_tool_calls")
+        used: the raw ``assistant_message`` object (``post_api_request``), else
+        the sanitised ``response["assistant_message"]`` dict (both hooks)."""
         message = self.kwargs.get("assistant_message")
         if message is None:
             message = as_dict(self.kwargs.get("response")).get("assistant_message")
-        if message is not None:
-            content = content or _field(message, "content")
-            tool_calls = tool_calls or _field(message, "tool_calls")
-        return content, tool_calls
+        if message is None:
+            return None, None
+        return _field(message, "content"), _field(message, "tool_calls")
 
     def system_prompt(self, messages: Any) -> Optional[str]:
         """The system prompt: an explicit kwarg, else the leading system message,
