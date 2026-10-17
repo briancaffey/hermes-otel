@@ -10,6 +10,7 @@ from typing import Any, Dict, Mapping, Optional, Tuple
 from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import serialize_full, truncate_string
+from ..redaction import redact_text
 from ._common import (
     _emit_event,
     _fail_open,
@@ -57,6 +58,67 @@ def resolve_tool_identity(args: Optional[Dict[str, Any]]) -> Tuple[Optional[str]
             break
 
     return target, command
+
+
+# ── Commits (#478) ─────────────────────────────────────────────────────────
+
+# Hermes's terminal tool, plus the names a shell tool goes by in other hosts
+# that route through the same hooks. The command itself comes from the
+# ``command`` / ``cmd`` argument (``resolve_tool_identity``).
+_SHELL_TOOL_NAMES = frozenset({"terminal", "bash", "shell"})
+# ``git commit`` as a word, however the command is prefixed (``cd x &&``,
+# ``GIT_X=1``, a second space); ``git commit-tree`` and ``git committed`` are
+# not it. The pattern opencode-plugin-otel uses, so both agents count alike.
+# ``git commit`` with any of git's own options in between (``git -c k=v
+# commit``, ``git -C repo commit``, ``git --no-pager commit``); never
+# ``git commit-tree`` or ``git committed``.
+_GIT_COMMIT = re.compile(r"\bgit(?:\s+-{1,2}[\w.:/=,-]+(?:\s+[\w.@:/=,-]+)?)*\s+commit(?![-\w])")
+# git's own confirmation line: ``[main abc1234] Subject`` or, for the first
+# commit, ``[main (root-commit) abc1234] Subject``.
+_COMMIT_SUMMARY = re.compile(r"^\[[^\]\n]+ [0-9a-f]{7,40}\] (?P<subject>[^\n]*)", re.MULTILINE)
+_COMMIT_SUBJECT_MAX = 200
+
+
+def is_git_commit(tool_name: str, command: Optional[str]) -> bool:
+    """Whether a shell tool call ran ``git commit`` (by name, not by outcome)."""
+    return (
+        bool(command) and tool_name in _SHELL_TOOL_NAMES and _GIT_COMMIT.search(command) is not None
+    )
+
+
+def exit_code(result: Mapping[str, Any]) -> Optional[int]:
+    """The command's exit code from the terminal result envelope (``exit_code``,
+    or ``returncode`` as the environment layer spells it); None when absent."""
+    for key in ("exit_code", "returncode"):
+        value = result.get(key)
+        if isinstance(value, int) and not isinstance(value, bool):
+            return value
+    return None
+
+
+def commit_succeeded(outcome: str, result: Mapping[str, Any]) -> bool:
+    """The commit ran and exited 0. Hermes reports the exit code in the
+    terminal envelope; a result without one counts when nothing else reported
+    a failure (``outcome`` not in ``FAILURE_OUTCOMES``)."""
+    if outcome in FAILURE_OUTCOMES:
+        return False
+    code = exit_code(result)
+    return code is None or code == 0
+
+
+def commit_subject(output: Any) -> Optional[str]:
+    """First line of the commit message, from git's ``[branch sha] subject``
+    confirmation in the tool output; None when there is none. Redacted and
+    clipped, so a secret pasted into a commit message never leaves as is."""
+    if not isinstance(output, str) or not output:
+        return None
+    m = _COMMIT_SUMMARY.search(output)
+    if m is None:
+        return None
+    subject = m.group("subject").strip()
+    if not subject:
+        return None
+    return truncate_string(redact_text(subject), _COMMIT_SUBJECT_MAX)
 
 
 # ── Tool outcome ───────────────────────────────────────────────────────────
@@ -538,7 +600,48 @@ def on_post_tool_call(tool_name: str, args: dict, result: str, task_id: str, **k
         session_id=session_id,
         span=tool_span,
     )
+    _record_commit(tracer, tool_name, args, outcome, result_json, attributes, session_id, tool_span)
     tracer.end_span(
         key, attributes=attributes, status=status, error_message=error_msg if has_error else None
     )
     debug_log(f"  span ended: status={status}, outcome={outcome}")
+
+
+def _record_commit(
+    tracer,
+    tool_name: str,
+    args: Any,
+    outcome: str,
+    result_json: Dict[str, Any],
+    attributes: Dict[str, Any],
+    session_id: Optional[str],
+    tool_span: Any,
+) -> None:
+    """A successful ``git commit`` through a shell tool marks the tool span
+    (``hermes.tool.git_commit``), counts ``hermes.commit.count`` by the
+    session's platform and model, and emits the ``commit`` event with the
+    message's first line when git printed it (#478). Failed commits, other
+    tools and other commands leave nothing behind.
+    """
+    _, command = resolve_tool_identity(args)
+    if not is_git_commit(tool_name, command) or not commit_succeeded(outcome, result_json):
+        return
+    attributes["hermes.tool.git_commit"] = True
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    labels: Dict[str, Any] = {"platform": (ps.platform if ps else "") or "unknown"}
+    if ps is not None and ps.model:
+        labels["model"] = ps.model
+    tracer.record_metric("commit_count", 1, labels)
+    _emit_event(
+        tracer,
+        EV.COMMIT,
+        "commit",
+        {
+            "gen_ai.tool.name": tool_name,
+            "gen_ai.tool.call.id": attributes.get("gen_ai.tool.call.id"),
+            EV.ATTR_COMMIT_SUBJECT: commit_subject(result_json.get("output")),
+        },
+        session_id=session_id,
+        span=tool_span,
+    )
+    debug_log(f"  commit recorded: tool={tool_name}")

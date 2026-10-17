@@ -100,6 +100,7 @@ earliest turn root that carries the marker.
 | `logs_min`, `log_levels_any` | trace-correlated log records |
 | `events_min`, `events_max`, `event_names_any` | records with an `event_name` |
 | `logs_only_events` | every correlated record is an event (no stdlib log lines) |
+| `metrics_min` | `{instrument: n}` the instrument's total since the run started, in a source that serves metrics (metrics carry no trace id, so per run window, not per turn) |
 
 `expect_run:` is checked across a scenario's turns, per source:
 
@@ -131,7 +132,7 @@ a scenario's expectations fail if the hook stops producing its telemetry;
 | `pre_llm_call` / `post_llm_call` | every scenario | asserted: `hermes.turn.number` (`resume-three-turns`, `gateway-five-sessions`), the `llm.*` span |
 | `pre_api_request` / `post_api_request` | every scenario | asserted: `api.*` spans (`llm_calls_min`), content modes (`content-*`) |
 | `api_request_error` | `api-error-fatal` | asserted: root status `error` |
-| `pre_tool_call` / `post_tool_call` | `shell-echo` and every tool scenario | asserted: `tool.*` spans, names, call ids, outcomes |
+| `pre_tool_call` / `post_tool_call` | `shell-echo` and every tool scenario | asserted: `tool.*` spans, names, call ids, outcomes; `cli-git-commit`: `hermes.tool.git_commit`, `hermes.commit.count`, the `commit` event |
 | `transform_terminal_output` | every terminal scenario | asserted in `shell-echo`: `hermes.terminal.output.chars` on the tool span |
 | `transform_llm_output` | every scenario | asserted in `shell-echo`: `hermes.llm.output.chars` on the root |
 | `pre_auxiliary_call` / `post_auxiliary_call` | every first turn (title generation); `moa-turn` | asserted in `moa-turn` (`hermes.auxiliary.task`) |

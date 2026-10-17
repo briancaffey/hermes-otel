@@ -201,6 +201,53 @@ class TestEventCatalogue:
             == plugin.spans.get_session_root("s").get_span_context().trace_id
         )
 
+    def _commit(self, task, command="git commit -m 'add note'", exit_code=0, status="ok"):
+        hooks.on_pre_tool_call(
+            tool_name="terminal", args={"command": command}, task_id=task, session_id="s"
+        )
+        hooks.on_post_tool_call(
+            tool_name="terminal",
+            args={"command": command},
+            result=json.dumps(
+                {"output": "[main 1234abc] add note\n 1 file changed", "exit_code": exit_code}
+            ),
+            task_id=task,
+            status=status,
+            session_id="s",
+        )
+
+    def test_commit_event_on_a_successful_git_commit(self, events):
+        plugin, build = events
+        exporter = build(HermesOtelConfig(log_events=True))
+        hooks.on_session_start(session_id="s", model="m", platform="cli")
+        self._commit("t1")
+        self._commit("t2", exit_code=1)  # nothing to commit: no event
+        self._commit("t3", command="git commit-tree HEAD^{tree}")  # not a commit
+        self._commit("t4", command="git status")
+        recs = _events(exporter, EV.COMMIT)
+        assert [(r.log_record.body, r.log_record.severity_text) for r in recs] == [
+            ("commit", "INFO")
+        ]
+        attrs = recs[0].log_record.attributes
+        assert attrs["event.name"] == "commit"
+        assert attrs["hermes.session_id"] == "s"
+        assert attrs["gen_ai.tool.name"] == "terminal"
+        assert attrs["gen_ai.tool.call.id"] == "t1"
+        assert attrs[EV.ATTR_COMMIT_SUBJECT] == "add note"
+        # one tool.call event per call still, the commit event next to the first
+        assert len(_events(exporter, EV.TOOL_CALL)) == 4
+        root_trace = plugin.spans.get_session_root("s").get_span_context().trace_id
+        assert recs[0].log_record.trace_id == root_trace
+
+    def test_commit_subject_is_content_gated(self, events):
+        plugin, build = events
+        exporter = build(HermesOtelConfig(log_events=True, log_events_content="off"))
+        hooks.on_session_start(session_id="s", model="m", platform="cli")
+        self._commit("t1")
+        (rec,) = _events(exporter, EV.COMMIT)
+        assert EV.ATTR_COMMIT_SUBJECT not in rec.log_record.attributes
+        assert rec.log_record.attributes["gen_ai.tool.call.id"] == "t1"
+
     def test_turn_end_severity_follows_final_status(self, events):
         plugin, build = events
         exporter = build(HermesOtelConfig(log_events=True))

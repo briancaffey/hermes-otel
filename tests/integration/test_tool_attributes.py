@@ -160,3 +160,42 @@ class TestSkillInferredCounter:
             m.name for rm in data.resource_metrics for sm in rm.scope_metrics for m in sm.metrics
         ]
         assert "hermes.skill.inferred" in metric_names
+
+
+class TestGitCommitAttribute:
+    """``hermes.tool.git_commit`` marks the terminal call that committed (#478)."""
+
+    @staticmethod
+    def _call(tool_name, command, result, task="t1", **kw):
+        args = {"command": command}
+        on_pre_tool_call(tool_name=tool_name, args=args, task_id=task, **kw)
+        on_post_tool_call(tool_name=tool_name, args=args, result=result, task_id=task, **kw)
+
+    def test_true_on_a_successful_commit(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        self._call(
+            "terminal",
+            "git add . && git commit -m 'add note'",
+            '{"output": "[main 1234abc] add note", "exit_code": 0}',
+        )
+        span = _span_by_name(exporter.get_finished_spans(), "tool.terminal")
+        assert span.attributes["hermes.tool.git_commit"] is True
+        assert span.attributes["hermes.tool.outcome"] == "completed"
+
+    def test_absent_when_the_commit_failed(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        self._call(
+            "terminal",
+            "git commit -m 'x'",
+            '{"output": "nothing to commit, working tree clean", "exit_code": 1}',
+        )
+        span = _span_by_name(exporter.get_finished_spans(), "tool.terminal")
+        assert "hermes.tool.git_commit" not in span.attributes
+
+    def test_absent_for_other_commands_and_other_tools(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        self._call("terminal", "git commit-tree HEAD^{tree}", '{"output": "", "exit_code": 0}', "a")
+        self._call("read_file", "git commit -m x", '{"output": "", "exit_code": 0}', "b")
+        for name in ("tool.terminal", "tool.read_file"):
+            span = _span_by_name(exporter.get_finished_spans(), name)
+            assert "hermes.tool.git_commit" not in span.attributes

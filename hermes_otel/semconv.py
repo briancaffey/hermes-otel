@@ -862,6 +862,13 @@ ROWS: Tuple[Row, ...] = (
         "`hard_floor` on the tool span when a floor (not a human) blocked the call; see also `hermes.approval.decided_by` on `approval.*` spans (optional)",
     ),
     Row(
+        ("hermes.tool.git_commit",),
+        "tool.*",
+        "tool",
+        "bool",
+        "`true` when a terminal command was a `git commit` (matched as a word, so `git commit-tree` is not one) that exited 0: the call the commit counter ([metrics](/reference/metrics)) and the `commit` [event](/reference/log-events#commit) came from (optional)",
+    ),
+    Row(
         ("error.message",),
         "tool.*",
         "error",
@@ -1152,6 +1159,13 @@ ROWS: Tuple[Row, ...] = (
         "tool",
         "",
         "Tool name as the `hermes.tool.call` event carries it",
+    ),
+    Row(
+        ("hermes.commit.subject",),
+        "event",
+        "tool",
+        "",
+        "First line of the commit message on the `commit` event, read from git's own `[branch sha] subject` confirmation in the tool output; redacted, content-gated, absent when git printed none",
     ),
     Row(
         ("hermes.approval.decision",),
@@ -1470,6 +1484,9 @@ EVENT_SESSION_FINALIZE = "hermes.session.finalize"
 EVENT_KANBAN_TRANSITION = "hermes.kanban.transition"
 EVENT_AUXILIARY_CALL = "hermes.auxiliary.call"
 EVENT_INFERENCE_DETAILS = "gen_ai.client.inference.operation.details"
+# Bare, as opencode-plugin-otel names it, so one LogQL / SQL filter
+# (``event.name = "commit"``) reads both agents (#478).
+EVENT_COMMIT = "commit"
 EVENT_NAMES: Tuple[str, ...] = (
     EVENT_TURN_START,
     EVENT_TURN_END,
@@ -1482,6 +1499,7 @@ EVENT_NAMES: Tuple[str, ...] = (
     EVENT_KANBAN_TRANSITION,
     EVENT_AUXILIARY_CALL,
     EVENT_INFERENCE_DETAILS,
+    EVENT_COMMIT,
 )
 
 

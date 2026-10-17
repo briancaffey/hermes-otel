@@ -35,10 +35,12 @@ SESSION_FINALIZE = _sc.EVENT_SESSION_FINALIZE
 KANBAN_TRANSITION = _sc.EVENT_KANBAN_TRANSITION
 AUXILIARY_CALL = _sc.EVENT_AUXILIARY_CALL
 INFERENCE_DETAILS = _sc.EVENT_INFERENCE_DETAILS
+COMMIT = _sc.EVENT_COMMIT
 
 # Event-only attributes (the spans carry *_ms; events report seconds per semconv).
 ATTR_TOOL_DURATION_S = "hermes.tool.duration_s"
 ATTR_TURN_DURATION_S = "hermes.turn.duration_s"
+ATTR_COMMIT_SUBJECT = "hermes.commit.subject"
 
 # Attribute-name prefixes each event copies from its span's attribute dict.
 TOOL_PREFIXES = ("gen_ai.tool.", "hermes.tool.")
@@ -67,6 +69,7 @@ CONTENT_ATTRIBUTES: Tuple[str, ...] = (
     "hermes.subagent.summary",
     "hermes.kanban.summary",
     "hermes.kanban.reason",
+    "hermes.commit.subject",
 )
 CONTENT_MODES: Tuple[str, ...] = ("off", "preview", "full")
 _CONTENT_RANK = {"off": 0, "preview": 1, "full": 2}
@@ -218,6 +221,16 @@ EVENTS: Dict[str, Dict[str, Any]] = {
             "hermes.cost.usage",
             "llm.response.duration_ms",
             "error.type",
+        ),
+    },
+    "commit": {
+        "hook": "post_tool_call",
+        "severity": "INFO",
+        "body": "commit",
+        "attributes": (
+            "gen_ai.tool.name",
+            "gen_ai.tool.call.id",
+            "hermes.commit.subject (content)",
         ),
     },
     "gen_ai.client.inference.operation.details": {

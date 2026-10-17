@@ -131,6 +131,21 @@ scenarios:
       span_names_any: [skill.systematic-debugging]
       logs_min: 2
 
+  - id: cli-git-commit
+    why: "a successful `git commit` through the terminal tool: hermes.tool.git_commit on the tool span, one hermes.commit.count point, one commit event with the message's first line (#478)"
+    otel:
+      logs: {events: {enabled: true}}
+    prompt: "Run exactly this shell command in one terminal call and reply with only its last line of output: cd {workdir} && git init -q {token}-repo && cd {token}-repo && echo '{marker}' > note.txt && git add note.txt && git -c user.name=scenario -c user.email=scenario@example.invalid commit -q -m 'add note {marker}' && git log --oneline -1"
+    expect:
+      status: ok
+      tools_min: 1
+      tool_names_any: [terminal]
+      output_contains: "add note {marker}"
+      span_attrs_any: {hermes.tool.git_commit: "True"}
+      metrics_min: {hermes.commit.count: 1}
+      events_min: 1
+      event_names_any: [commit]
+
   # ── Sessions (resume) ──────────────────────────────────────────────────
   - id: resume-three-turns
     mode: resume

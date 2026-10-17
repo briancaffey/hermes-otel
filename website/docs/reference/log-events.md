@@ -168,6 +168,16 @@ Emitted from **`post_auxiliary_call`**. Severity: INFO; ERROR when the provider 
 | `llm.response.duration_ms` |  |
 | `error.type` |  |
 
+### `commit`
+
+Emitted from **`post_tool_call`**. Severity: INFO. Body: `commit`.
+
+| Attribute | Content-gated |
+|---|---|
+| `gen_ai.tool.name` |  |
+| `gen_ai.tool.call.id` |  |
+| `hermes.commit.subject` | yes |
+
 ### `gen_ai.client.inference.operation.details`
 
 Emitted from **`post_api_request`**. Severity: INFO. Body: `<operation> <model> (<input>/<output> tokens)`.
