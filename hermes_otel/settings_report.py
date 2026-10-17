@@ -25,7 +25,7 @@ from typing import Any, Dict, List, Optional, Tuple
 from . import backends as _backends
 from . import plugin_config as pc
 from .backend_config import BackendConfig
-from .backend_specs import BY_TYPE, SPECS, spec_for
+from .backend_specs import SPECS, spec_for
 from .plugin_config import (
     FIELD_DOCS,
     FIELD_GROUPS,
@@ -175,14 +175,15 @@ def _ui_link(bc: BackendConfig, raw: Dict[str, Any]) -> Dict[str, Any]:
     link's tooltip. Never a guess: when the UI's port cannot be known from the
     endpoint the link is omitted and the note says to set ``ui_url``. The
     per-type facts are the spec's ``ui_*`` fields (``BackendSpec.ui_rule``
-    documents the rules); an alias entry (``hyperdx``) derives nothing.
+    documents the rules); an alias entry (``hyperdx``) derives what its
+    canonical type would (#557).
     """
     t = (bc.type or "").strip().lower()
     human = _backends.display_name(t)
     if bc.ui_url and bc.ui_url.strip():
         return {"url": bc.ui_url.strip(), "source": "file", "note": "ui_url from the config file"}
     hint = "set ui_url on this entry to link the card to the UI"
-    spec = BY_TYPE.get(t)
+    spec = spec_for(t)
     rule = spec.ui_rule if spec is not None else None
 
     def derived(url: str, note: str) -> Dict[str, Any]:
