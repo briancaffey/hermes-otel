@@ -36,8 +36,8 @@ def _get_live_store():
 def live_status() -> Dict[str, Any]:
     """Whether the live store can be read, and its current fill.
 
-    ``live: false`` names the real cause: the ``hermes_otel.live_store`` module
-    could not be imported, or the file could not be opened or initialised
+    ``live: false`` names the real cause: the ``hermes_otel.live_store_registry``
+    module could not be imported, or the file could not be opened or initialised
     (``open_error``). An empty but healthy store is ``live: true`` with zero
     rows; ``dashboard_live: false`` on the gateway shows up as a store that
     never fills, which the Settings tab reports.
@@ -46,7 +46,7 @@ def live_status() -> Dict[str, Any]:
     if store is None:
         return {
             "live": False,
-            "reason": "the hermes_otel.live_store module could not be imported by the dashboard",
+            "reason": "the hermes_otel.live_store_registry module could not be imported by the dashboard",
         }
     stats = store.stats()
     if stats.get("open_error"):

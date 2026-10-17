@@ -21,14 +21,16 @@ merged PR. It's written down in two places that stay in sync:
 1. **Branch** off up-to-date `main` (`feat/…`, `fix/…`, `docs/…`). Never commit
    features straight to `main`.
 2. **Implement** following the plugin's conventions:
-   - New hook → add to `provides_hooks` in `plugin.yaml` and register it in
-     `__init__.py` inside the forward-compatible `try/except` loop.
+   - New hook → add to `provides_hooks` in `plugin.yaml` and to `hooks.HOOKS`,
+     the one `(hook name, callback)` table `register()` loops over inside its
+     forward-compatible `try/except`.
    - Handlers in the `hooks/` package accept `**kwargs` and **fail open** (guard on
      `tracer.is_enabled`, never raise into the agent loop).
    - Emit **dual-convention** attributes (OpenInference for Phoenix + `gen_ai.*`
      for Langfuse). Keep pure logic in plain functions beside the hook that
-     uses them (or `helpers.py` when several modules share them) so it's
-     testable without a tracer.
+     uses them (or a leaf module such as `helpers.py` for text or `coerce.py`
+     for scalars when several modules share them) so it's testable without a
+     tracer.
    - Real failures → `ERROR`; benign/unknown outcomes stay `OK`.
 3. **Test** with the in-memory fixtures (`inmemory_otel_setup`,
    `two_exporter_pipeline`, `inmemory_otel_with_metrics`). Keep tests
