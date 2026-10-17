@@ -14,6 +14,7 @@ from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Type
 
 from hermes_otel import plugin_config as _plugin_config
+from hermes_otel.backend_specs import SPECS, canonical_type
 from hermes_otel.coerce import coerce_bool
 from hermes_otel.helpers import named_profile
 from hermes_otel.hermes_home import resolve_profile_name
@@ -38,19 +39,11 @@ def adapters() -> List[Type[BackendAdapter]]:
 
 def find_adapter_class(backend_type: str) -> Optional[Type[BackendAdapter]]:
     """The adapter for a type or one of its manifest aliases (``hyperdx``)."""
-    wanted = {backend_type, _canonical(backend_type)}
+    wanted = {backend_type, canonical_type(backend_type)}
     for cls in _ADAPTERS:
         if wanted & set(cls.handles):
             return cls
     return None
-
-
-def _canonical(backend_type: str) -> str:
-    try:
-        from hermes_otel.backend_specs import canonical_type
-    except Exception:  # pragma: no cover — loaded by file path without the package
-        return (backend_type or "").strip().lower()
-    return canonical_type(backend_type)
 
 
 # ── Config loader ──────────────────────────────────────────────────────
@@ -276,10 +269,10 @@ def resolve_adapter(
 
 
 # ── Eager import so adapters self-register ────────────────────────────
-# Imports are at the bottom so the registry + helpers above are fully
-# defined before adapter modules start hitting them.
-# Each import is try/except so a single broken adapter doesn't take the
-# whole dashboard offline.
+# The manifest names the adapter modules, in manifest order. Imports are at
+# the bottom so the registry + helpers above are fully defined before adapter
+# modules start hitting them. Each import is try/except so a single broken
+# adapter doesn't take the whole dashboard offline.
 
 
 def _safe_import(name: str) -> None:
@@ -291,32 +284,5 @@ def _safe_import(name: str) -> None:
         )
 
 
-def _adapter_modules() -> List[str]:
-    """The adapter modules the manifest names, in manifest order; the hand list
-    is the fallback when this package is loaded by file path."""
-    try:
-        from hermes_otel.backend_specs import SPECS
-    except Exception:  # pragma: no cover
-        return list(_FALLBACK_MODULES)
-    return list(dict.fromkeys(s.adapter_module for s in SPECS if s.adapter_module))
-
-
-_FALLBACK_MODULES = (
-    "tempo",
-    "phoenix",
-    "signoz",
-    "uptrace",
-    "openobserve",
-    "langfuse",
-    "jaeger",
-    "zipkin",
-    "greptime",
-    "clickstack",
-    "victoria",
-    "aspire",
-    "gigapipe",
-    "agenta",
-)
-
-for _name in _adapter_modules():
+for _name in dict.fromkeys(s.adapter_module for s in SPECS if s.adapter_module):
     _safe_import(_name)
