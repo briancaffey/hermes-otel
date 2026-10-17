@@ -900,7 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("logs", help="captured log records")
     _add_common(s, limit=100)
-    s.add_argument("--level", default=None, help="minimum level: debug, info, warning, error")
+    s.add_argument(
+        "--level",
+        default=None,
+        help="minimum level: trace, debug, info, warn/warning, error, critical/fatal, or a number",
+    )
     s.add_argument("--logger", default=None)
     s.add_argument("--text", default=None)
     s.add_argument("--trace", default=None)

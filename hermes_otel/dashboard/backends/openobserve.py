@@ -14,6 +14,8 @@ import time
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
+from hermes_otel.severity import level_names_at_least
+
 from . import register
 from ._attrs import dotted, oo_col
 from .base import (
@@ -51,25 +53,6 @@ _DETAIL_SPAN_CAP = 500
 _DEFAULT_TRACE_WINDOW_DAYS = 90
 # Raw metric samples loaded per chart; newest kept when there are more.
 _METRIC_SAMPLE_CAP = 10000
-# Python logging levels and the OTel spellings OpenObserve stores in ``severity``.
-_LEVEL_NAMES = {
-    10: ("DEBUG", "TRACE", "DEBUG2", "DEBUG3", "DEBUG4"),
-    20: ("INFO", "INFO2", "INFO3", "INFO4"),
-    30: ("WARN", "WARNING", "WARN2", "WARN3", "WARN4"),
-    40: ("ERROR", "ERROR2", "ERROR3", "ERROR4"),
-    50: ("FATAL", "CRITICAL", "FATAL2", "FATAL3", "FATAL4"),
-}
-
-
-def _severity_names_at_least(min_level: int) -> List[str]:
-    """The ``severity`` spellings at or above a Python level (for a SQL ``IN``)."""
-    names: List[str] = []
-    for lvl in sorted(_LEVEL_NAMES):
-        if lvl >= int(min_level):
-            names.extend(_LEVEL_NAMES[lvl])
-    return names
-
-
 # A ``SELECT *`` row: the OTLP logs exporter records the Python logger name
 # as the instrumentation scope, which is the column OpenObserve keeps; the
 # flattened attribute names (``hermes_log_attribution``) get their dotted
@@ -489,7 +472,9 @@ class OpenObserveAdapter(BackendAdapter):
         if f.min_level:
             # Severity in the query, not on the page: a page of DEBUG rows
             # would otherwise come back short of WARN lines that exist (#299).
-            names = ", ".join(f"'{n}'" for n in _severity_names_at_least(f.min_level))
+            # OpenObserve stores the record's ``severity_text`` as ``severity``,
+            # so the floor is the one severity table's spellings (#555).
+            names = ", ".join(f"'{n}'" for n in level_names_at_least(f.min_level))
             where.append(f"severity IN ({names})")
         if f.session:
             # The exporter's ``hermes.session_id`` attribute; OpenObserve flattens
