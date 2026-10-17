@@ -23,7 +23,12 @@ sys.path.insert(0, str(REPO_ROOT))
 from hermes_otel import log_events as EV  # noqa: E402
 from hermes_otel.backend_specs import SPECS  # noqa: E402
 from hermes_otel.instruments import metric_spellings  # noqa: E402
-from hermes_otel.plugin_config import SPAN_FAMILIES, HermesOtelConfig, field_kinds  # noqa: E402
+from hermes_otel.plugin_config import (  # noqa: E402
+    SCALAR_KINDS,
+    SPAN_FAMILIES,
+    HermesOtelConfig,
+    field_kinds,
+)
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
 CONFIG_DOCS = REPO_ROOT / "website" / "docs" / "configuration"
@@ -75,15 +80,21 @@ def _describe(field: dataclasses.Field) -> str:
     return f"{desc}. Bounds: {rule}"
 
 
+# How an env var spells a field's value, where it differs from _TYPE_LABEL.
+_ENV_TYPE_LABEL = {"list": "comma-separated strings"}
+
+
 def render_env_table() -> str:
+    """Every env-overridable field (``SCALAR_KINDS``, list fields included)."""
     kinds = field_kinds()
     rows = ["| Env var | Maps to | Type | Default |", "|---|---|---|---|"]
     for f in dataclasses.fields(HermesOtelConfig):
         kind = kinds[f.name]
-        if kind not in ("bool", "int", "float", "str"):
+        if kind not in SCALAR_KINDS:
             continue
+        typ = _ENV_TYPE_LABEL.get(kind, _TYPE_LABEL[kind])
         rows.append(
-            f"| `HERMES_OTEL_{f.name.upper()}` | `{f.name}` | {_TYPE_LABEL[kind]} | {_default_label(f, kind)} |"
+            f"| `HERMES_OTEL_{f.name.upper()}` | `{f.name}` | {typ} | {_default_label(f, kind)} |"
         )
     return "\n".join(rows)
 
