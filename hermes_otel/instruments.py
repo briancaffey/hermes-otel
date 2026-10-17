@@ -8,7 +8,8 @@ Split out of ``tracer.py`` in #405; ``tracer`` re-exports every public name.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from functools import lru_cache
+from typing import Any, Dict, FrozenSet, List, Optional, Tuple
 
 try:
     import opentelemetry.sdk.metrics  # noqa: F401
@@ -22,9 +23,12 @@ except ImportError:  # pragma: no cover — plugin is unusable without OTel
 # hook-side key, the OTLP name every backend and the live store see, the
 # instrument kind, the unit, the description, how the value is applied, and
 # whether the instrument is part of the OTel GenAI conventions (gated by
-# ``emit_genai_metrics``). ``value`` modes: ``one`` adds 1 per call, ``int``
-# adds ``int(value)``, ``float`` adds ``value``, ``record`` records a
-# histogram point (as an int when the unit is ``{token}``).
+# ``emit_genai_metrics``). The routing decisions that read these fields are
+# the spec's own methods (#507): ``recorded`` (the GenAI and compat-family
+# gates), ``exported`` (the exclusive compat mode) and ``apply`` (the value
+# mode). ``value`` modes: ``one`` adds 1 per call, ``int`` adds
+# ``int(value)``, ``float`` adds ``value``, ``record`` records a histogram
+# point (as an int when the unit is ``{token}``).
 
 
 @dataclass(frozen=True)
@@ -51,6 +55,47 @@ class InstrumentSpec:
     # exclusive mode stops exporting.
     compat: str = ""
     compat_of: str = ""
+
+    def recorded(self, config: Any) -> bool:
+        """Whether a point for this instrument is recorded at all under ``config``.
+
+        GenAI-convention instruments need ``emit_genai_metrics``; a compat
+        instrument needs its family switched on (``metric_name_compat`` is
+        the family's name or ``both``).
+        """
+        if self.genai and not config.emit_genai_metrics:
+            return False
+        if self.compat and config.metric_name_compat not in (self.compat, "both"):
+            return False
+        return True
+
+    def exported(self, key: str, config: Any) -> bool:
+        """Whether the point reaches the OTLP instrument (the live store is
+        not an export). ``key`` is this spec's hook-side key.
+
+        The exclusive compat mode (``metric_name_compat`` set to a family's
+        name rather than ``both``) exports each twin instead of the
+        ``hermes.*`` instrument it names in ``compat_of``.
+        """
+        return key not in _replaced_keys(config.metric_name_compat)
+
+    def apply(self, instrument: Any, value: float, attrs: Dict[str, Any]) -> None:
+        """Record ``value`` on ``instrument`` the way ``self.value`` says."""
+        if self.value == "record":
+            instrument.record(int(value) if self.unit == "{token}" else value, attrs)
+        elif self.value == "one":
+            instrument.add(1, attrs)
+        elif self.value == "int":
+            instrument.add(int(value), attrs)
+        else:
+            instrument.add(value, attrs)
+
+
+@lru_cache(maxsize=None)
+def _replaced_keys(compat_mode: str) -> FrozenSet[str]:
+    """The hook-side keys whose compat twin in the family ``compat_mode``
+    replaces them in the export; empty for ``off`` and ``both``."""
+    return frozenset(s.compat_of for s in _INSTRUMENTS.values() if s.compat == compat_mode)
 
 
 # Bucket boundaries. The seconds/token lists are the ones the OTel GenAI
@@ -470,12 +515,6 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
 # and only with ``metric_name_compat_session_id: true``; every other
 # instrument keeps the plugin's rule that a metric never carries an id.
 COMPAT_SESSION_LABEL = "session.id"
-
-# The ``hermes.*`` hook-side keys that have a Claude Code twin; the exclusive
-# ``metric_name_compat: claude_code`` mode exports the twin instead of these.
-CLAUDE_CODE_REPLACES = frozenset(
-    spec.compat_of for spec in _INSTRUMENTS.values() if spec.compat == "claude_code"
-)
 
 # Claude Code's standard ``type`` values for ``claude_code.token.usage`` and
 # the canonical usage field each one is computed from. ``input`` is the
