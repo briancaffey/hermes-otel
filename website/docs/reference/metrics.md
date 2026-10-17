@@ -6,7 +6,7 @@ description: "Every metric the plugin emits — name, kind, unit, labels, and wh
 
 # Metrics reference
 
-Every instrument the plugin creates, exactly as named in `tracer._create_metric_instruments`. Metrics reach every backend with `metrics: true` through one shared `MeterProvider` (`flush_interval_ms` controls the export cadence). Backends that speak only traces (Phoenix, Jaeger, Tempo, Langfuse, Weave) ignore them.
+Every instrument the plugin creates, exactly as named in `tracer._create_metric_instruments`. Metrics reach every backend with `metrics: true` through one shared `MeterProvider` (`flush_interval_ms` controls the export cadence). Backends that speak only traces (Phoenix, Jaeger, Tempo, Langfuse, Weave) ignore them. Any instrument can be switched off on its own with [`disable_metrics`](/configuration/yaml#disable) (#479): it is then neither created nor recorded nor exported, for every backend and the live dashboard alike.
 
 **Buckets.** Every histogram has explicit bucket boundaries (a `View` per instrument, since 1.15): the OTel GenAI lists for seconds (`0.01 … 81.92`) and tokens (`1 … 67,108,864`), the spec's `invoke_workflow` list (`1 s … 2 h`) for sessions, approvals and sub-agent runs, and millisecond lists for the deprecated `ms` histograms. Before 1.15 the SDK default (`0 … 10000`, a millisecond scale) applied to everything, which put every LLM call in the first two buckets of a seconds histogram and every request over 10,000 tokens into `+Inf`. Set `metrics_histogram: exponential` to send base-2 exponential histograms instead (Prometheus 3.8+ native histograms, Datadog, New Relic, Uptrace); Mimir and SigNoz Cloud do not accept them by default.
 

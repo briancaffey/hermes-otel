@@ -714,12 +714,20 @@ def build_pipeline(
         pipeline.meter_provider = MeterProvider(
             resource=resource,
             metric_readers=pipeline.metric_readers,
-            views=metric_views(config.metrics_histogram, common=config.common_attributes or ()),
+            views=metric_views(
+                config.metrics_histogram,
+                common=config.common_attributes or (),
+                disabled=config.disable_metrics,
+            ),
         )
         _set_global_once(metrics, "meter", pipeline.meter_provider)
         pipeline.meter = pipeline.meter_provider.get_meter("hermes-otel-plugin")
         pipeline.instruments = create_instruments(pipeline.meter, config)
         debug_log(f"Metrics initialized for {len(pipeline.metric_readers)} backend(s)")
+    if config.disable_metrics:
+        logger.info("[hermes-otel] disabled metrics: %s", ", ".join(config.disable_metrics))
+    if config.disable_spans:
+        logger.info("[hermes-otel] disabled span families: %s", ", ".join(config.disable_spans))
 
     init_logs_pipeline(
         pipeline, config, backends, tracker=tracker, context_resolver=context_resolver

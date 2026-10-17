@@ -15,6 +15,7 @@ from hermes_otel.hooks import (
 )
 from hermes_otel.pipeline import create_instruments
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import build_inmemory_plugin, install_singleton
 
 
 def _api_call(session_id="s1", model="gpt-4", provider="openai", api_duration=0.5, usage=None):
@@ -678,3 +679,61 @@ class TestCommitCount:
         finally:
             install_singleton(previous)
             pipeline.shutdown()
+
+
+class TestDisableMetrics:
+    """``disable_metrics`` (#479): the named instrument never reaches the
+    reader, the others do, and ``all`` leaves the reader empty."""
+
+    @pytest.fixture()
+    def reader_for(self):
+        built = []
+
+        def build(*names):
+            pipe = build_inmemory_plugin(
+                metrics=True, config=HermesOtelConfig(disable_metrics=names)
+            )
+            install_singleton(pipe.plugin)
+            built.append(pipe)
+            return pipe.metric_reader
+
+        try:
+            yield build
+        finally:
+            for pipe in built:
+                pipe.shutdown()
+
+    @staticmethod
+    def _tool_call():
+        on_pre_tool_call(
+            tool_name="terminal", args={"command": "ls"}, task_id="t1", session_id="s1"
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={"command": "ls"}, result="ok", task_id="t1", session_id="s1"
+        )
+
+    def test_disabled_instrument_is_absent_from_the_reader(self, reader_for):
+        reader = reader_for("tool.duration")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._tool_call()
+        _api_call()
+        assert _get_metric(reader, "hermes.tool.duration") is None
+        # the seconds twin and everything else still land
+        assert _get_metric(reader, "gen_ai.execute_tool.duration") is not None
+        assert _get_metric_value(reader, "hermes.token.usage") == 150
+        assert _get_metric_value(reader, "hermes.session.count") == 1
+
+    def test_all_leaves_the_reader_empty(self, reader_for):
+        reader = reader_for("all")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._tool_call()
+        _api_call()
+        data = reader.get_metrics_data()  # None when no instrument has a point
+        names = {
+            m.name
+            for rm in (data.resource_metrics if data is not None else ())
+            for sm in rm.scope_metrics
+            for m in sm.metrics
+            if not m.name.startswith("otel.sdk.")
+        }
+        assert names == set()

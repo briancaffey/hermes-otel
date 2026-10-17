@@ -58,7 +58,12 @@ from .severity import severity_number
 from .span_tracker import SpanTracker, sweep_attributes
 
 try:
-    from opentelemetry.trace import INVALID_SPAN, set_span_in_context
+    from opentelemetry.trace import (
+        INVALID_SPAN,
+        INVALID_SPAN_CONTEXT,
+        NonRecordingSpan,
+        set_span_in_context,
+    )
 except ImportError:  # pragma: no cover — plugin is unusable without OTel
     # If OTel itself is missing we short-circuit via is_enabled=False before
     # ever returning this; the None is just to keep module-level references valid.
@@ -491,8 +496,15 @@ class HermesOTelPlugin:
         parent: Any = None,
         links: Optional[list] = None,
         sweep_with_turn: bool = True,
+        family: Optional[str] = None,
     ):
         """Create and track a new span.
+
+        A span whose family is in ``config.disable_spans`` (#479) is tracked
+        as a ``NonRecordingSpan`` carrying its parent's context: the hooks
+        set attributes on it and end it as usual (no-ops), it never reaches a
+        processor, and a child opened under it parents to the nearest
+        recording ancestor.
 
         Args:
             session_id: When provided, the span key is linked to this session
@@ -502,6 +514,8 @@ class HermesOTelPlugin:
             sweep_with_turn: ``False`` keeps the span out of the session's
                         turn sweep: a delegation span outlives the turn that
                         opened it and has its own TTL (#392).
+            family: The span's ``disable_spans`` family when it is not the
+                    first segment of ``name`` (the auxiliary ``api.*`` span).
             parent: Explicit parent span to nest under, overriding the
                     session-keyed parent stack. Used for sub-agent delegation,
                     where a child's root span must nest under the delegation
@@ -539,9 +553,19 @@ class HermesOTelPlugin:
             if effective_parent is not None and hasattr(effective_parent, "get_span_context"):
                 span_ctx = set_span_in_context(effective_parent)
 
-            span = pipeline.tracer.start_span(name, attributes=attrs, context=span_ctx, links=links)
+            if (family or name.split(".", 1)[0]) in self.config.disable_spans:
+                span = NonRecordingSpan(
+                    effective_parent.get_span_context()
+                    if span_ctx is not None
+                    else INVALID_SPAN_CONTEXT
+                )
+                debug_log(f"start_span: {name} (key={key}) not recorded: family disabled")
+            else:
+                span = pipeline.tracer.start_span(
+                    name, attributes=attrs, context=span_ctx, links=links
+                )
+                debug_log(f"start_span: {name} (key={key}, kind={kind})")
             self.spans.start_span(key, span)
-            debug_log(f"start_span: {name} (key={key}, kind={kind})")
             return span
         except Exception as e:
             debug_log(f"Error starting span '{name}': {e}")
@@ -628,9 +652,15 @@ class HermesOTelPlugin:
         session_key = f"session:{session_id}"
         swept = 0
         for key in self.spans.pop_session_keys(session_id):
-            if key == session_key or not self.spans.has_span(key):
+            span = self.spans.get_span(key)
+            if key == session_key or span is None:
                 continue
+            # A disabled family's span (#479) is ended too, so the registry
+            # forgets it, but nothing was exported: it is not a swept span.
+            recording = not hasattr(span, "is_recording") or span.is_recording()
             self.end_span(key, attributes=sweep_attributes(reason), status="ok")
+            if not recording:
+                continue
             self.record_metric(
                 "span_swept", 1, {"span_kind": key.split(":", 1)[0], "reason": reason}
             )

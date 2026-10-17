@@ -2,6 +2,7 @@
 
 import threading
 
+import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
 
@@ -15,6 +16,8 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
+from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import build_inmemory_plugin, install_singleton
 
 
 class TestSessionContainsLlm:
@@ -643,3 +646,120 @@ class TestCrossThreadNesting:
         assert _parent_span_id(llm) == agent.context.span_id
         assert _parent_span_id(api) == llm.context.span_id
         assert _parent_span_id(tool) == api.context.span_id
+
+
+class TestDisabledFamiliesReparent:
+    """``disable_spans`` (#479): a disabled family's spans are gone and what
+    nested under them parents to the nearest recording ancestor."""
+
+    @staticmethod
+    def _turn():
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+        on_pre_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=5,
+            tool_count=0,
+            approx_input_tokens=500,
+            request_char_count=2000,
+            max_tokens=1024,
+        )
+        on_pre_tool_call(
+            tool_name="terminal", args={"command": "ls"}, task_id="t1", session_id="s1"
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={"command": "ls"}, result="ok", task_id="t1", session_id="s1"
+        )
+        on_post_api_request(
+            task_id="t1",
+            session_id="s1",
+            platform="cli",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="stop",
+            message_count=5,
+            response_model="gpt-4",
+            usage={"prompt_tokens": 100, "output_tokens": 50},
+            assistant_content_chars=200,
+            assistant_tool_call_count=1,
+        )
+        on_post_llm_call(
+            session_id="s1",
+            user_message="hello",
+            assistant_response="hi",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+    @pytest.fixture()
+    def spans_with(self):
+        built = []
+
+        def build(*families):
+            pipe = build_inmemory_plugin(config=HermesOtelConfig(disable_spans=families))
+            install_singleton(pipe.plugin)
+            built.append(pipe)
+            self._turn()
+            spans = pipe.span_exporter.get_finished_spans()
+            by_id = {s.context.span_id: s.name for s in spans}
+            return {s.name: by_id.get(_parent_span_id(s)) for s in spans}
+
+        try:
+            yield build
+        finally:
+            for pipe in built:
+                pipe.shutdown()
+
+    def test_default_tree(self, spans_with):
+        assert spans_with() == {
+            "agent": None,
+            "llm.gpt-4": "agent",
+            "api.gpt-4": "llm.gpt-4",
+            "tool.terminal": "api.gpt-4",
+        }
+
+    def test_llm_disabled_api_parents_to_the_root(self, spans_with):
+        assert spans_with("llm") == {
+            "agent": None,
+            "api.gpt-4": "agent",
+            "tool.terminal": "api.gpt-4",
+        }
+
+    def test_api_disabled_tool_parents_to_the_llm(self, spans_with):
+        assert spans_with("api") == {
+            "agent": None,
+            "llm.gpt-4": "agent",
+            "tool.terminal": "llm.gpt-4",
+        }
+
+    def test_llm_and_api_disabled_tool_parents_to_the_root(self, spans_with):
+        assert spans_with("llm", "api") == {"agent": None, "tool.terminal": "agent"}
+
+    def test_tool_disabled_drops_only_the_tool_span(self, spans_with):
+        assert spans_with("tool") == {
+            "agent": None,
+            "llm.gpt-4": "agent",
+            "api.gpt-4": "llm.gpt-4",
+        }

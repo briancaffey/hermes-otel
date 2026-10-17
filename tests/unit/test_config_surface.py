@@ -50,6 +50,13 @@ class TestEnvOverrides:
             raw, expected = "warn", "WARN"
         if name == "log_events_content":
             raw, expected = "preview", "preview"
+        if name == "disable_metrics":
+            raw, expected = "tool.duration, token_usage", (
+                "hermes.tool.duration",
+                "hermes.token.usage",
+            )
+        if name == "disable_spans":
+            raw, expected = "approval, Tool", ("approval", "tool")
         monkeypatch.setenv(f"HERMES_OTEL_{name.upper()}", raw)
         cfg = load_config(path=tmp_path / "nonexistent.yaml")
         assert getattr(cfg, name) == expected, name
@@ -103,6 +110,13 @@ class TestYamlCoercion:
             raw, expected = "warn", "WARN"
         if name == "log_events_content":
             raw, expected = "preview", "preview"
+        if name == "disable_metrics":
+            raw, expected = "tool.duration, token_usage", (
+                "hermes.tool.duration",
+                "hermes.token.usage",
+            )
+        if name == "disable_spans":
+            raw, expected = "approval, Tool", ("approval", "tool")
         path = tmp_path / "hermes_otel.yaml"
         path.write_text(f"{name}: {raw}\n")
         assert getattr(load_config(path=path), name) == expected

@@ -142,6 +142,91 @@ emit_genai_metrics: true
 
 See the [Metrics reference](/reference/metrics#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
 
+## Disabling metrics and span families {#disable}
+
+Metrics are otherwise all-or-nothing per backend (`metrics: false`) and spans can only be sampled (`sample_rate`) or switched off per backend (`traces: false`). These two lists (#479) switch off individual instruments and whole span families while everything else keeps flowing.
+
+```yaml
+# Instruments never created, recorded or exported. Write the OTLP name, the
+# hook key (tool_duration) or the key with dots (tool.duration); `all` disables
+# every instrument. An unknown name logs a warning listing the valid ones.
+# Env: HERMES_OTEL_DISABLE_METRICS=tool.duration,token_usage (comma-separated).
+disable_metrics:
+  - tool.duration
+  - hermes.approval.duration
+
+# Span families never recorded. A disabled span is replaced by a non-recording
+# stand-in that carries its parent's context, so whatever would have nested
+# under it parents to the nearest recording ancestor: with `llm` disabled the
+# api.* spans sit directly under the turn root; with `api` disabled the tool.*
+# spans sit under llm.*. The hooks still run, so the metrics of a disabled
+# family (hermes.tool.duration for `tool`, hermes.approval.count for
+# `approval`) are still recorded: use disable_metrics for those. `all` is
+# refused (the turn root always records; a backend's `traces: false` is the
+# switch for whole traces). Env: HERMES_OTEL_DISABLE_SPANS=approval,skill.
+disable_spans:
+  - approval
+```
+
+A disabled instrument does not exist for the process: it is not created on the meter, `record_metric` records nothing for it (the dashboard's live store included), and a `DropAggregation` View on its name keeps anything else recorded under that name out of the export. The Settings tab shows both lists, and the plugin logs them at init.
+
+Valid `disable_metrics` entries, one row per instrument (the first column is what the config stores and the Settings tab shows):
+
+[//]: # (generated:disable-metrics:start)
+
+| Instrument | Also accepted |
+|---|---|
+| `hermes.span.swept.count` | `span.swept`, `span.swept.count`, `span_swept` |
+| `hermes.session.count` | `session.count`, `session_count` |
+| `hermes.session.turns` | `session.turns`, `session_turns` |
+| `hermes.session.duration` | `session.duration`, `session_duration` |
+| `hermes.active_time.total` | `active.time`, `active_time`, `active_time.total` |
+| `hermes.token.usage` | `token.usage`, `token_usage` |
+| `hermes.prompt_cache.tokens` | `prompt.cache.tokens`, `prompt_cache.tokens`, `prompt_cache_tokens` |
+| `hermes.prompt_cache.observations` | `prompt.cache.observations`, `prompt_cache.observations`, `prompt_cache_observations` |
+| `hermes.cost.usage` | `cost.usage`, `cost_usage` |
+| `hermes.tool.duration` | `tool.duration`, `tool_duration` |
+| `hermes.message.count` | `message.count`, `message_count` |
+| `hermes.model.usage` | `model.usage`, `model_usage` |
+| `hermes.auxiliary.count` | `auxiliary.count`, `auxiliary_count` |
+| `hermes.skill.inferred` | `skill.inferred`, `skill_inferred` |
+| `hermes.subagent.count` | `subagent.count`, `subagent_count` |
+| `hermes.subagent.duration` | `subagent.duration`, `subagent_duration` |
+| `hermes.api.error.count` | `api.error.count`, `api_error_count` |
+| `hermes.retry.count` | `retry.count`, `retry_count` |
+| `hermes.kanban.task.count` | `kanban.task.count`, `kanban_task_count` |
+| `hermes.api.time_to_first_chunk` | `api.time.to.first.chunk`, `api.time_to_first_chunk`, `api_time_to_first_chunk` |
+| `hermes.command.count` | `command.count`, `command_count` |
+| `hermes.commit.count` | `commit.count`, `commit_count` |
+| `hermes.human_input.count` | `human.input.count`, `human_input.count`, `human_input_count` |
+| `hermes.skill.lifecycle.count` | `skill.lifecycle.count`, `skill_lifecycle_count` |
+| `hermes.transcription.count` | `transcription.count`, `transcription_count` |
+| `hermes.kanban.dispatch.count` | `kanban.dispatch.count`, `kanban_dispatch_count` |
+| `hermes.kanban.dispatch.result` | `kanban.dispatch.result`, `kanban_dispatch_result` |
+| `hermes.kanban.task.updated` | `kanban.task.updated`, `kanban_task_updated` |
+| `hermes.approval.count` | `approval.count`, `approval_count` |
+| `hermes.approval.duration` | `approval.duration`, `approval_duration` |
+| `gen_ai.execute_tool.duration` | `tool.duration.s`, `tool_duration_s` |
+| `hermes.approval.wait.duration` | `approval.wait.duration`, `approval.wait.s`, `approval_wait_s` |
+| `hermes.subagent.run.duration` | `subagent.run.duration`, `subagent.run.s`, `subagent_run_s` |
+| `gen_ai.client.token.usage` | — |
+| `gen_ai.client.operation.duration` | — |
+| `gen_ai.agent.token.usage` | — |
+| `claude_code.session.count` | — |
+| `claude_code.token.usage` | — |
+| `claude_code.cost.usage` | — |
+| `claude_code.active_time.total` | — |
+
+[//]: # (generated:disable-metrics:end)
+
+Valid `disable_spans` families, by the first segment of the span name. `auxiliary` is the auxiliary `api.*` span (titling, compression, MoA; see [Auxiliary calls](/architecture/span-hierarchy#auxiliary)), which `api` leaves alone:
+
+[//]: # (generated:disable-spans:start)
+
+`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`
+
+[//]: # (generated:disable-spans:end)
+
 ## Skills
 
 ```yaml

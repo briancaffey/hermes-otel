@@ -204,7 +204,11 @@ def build_inmemory_plugin(
         meter_provider = MeterProvider(
             resource=resource,
             metric_readers=[reader],
-            views=metric_views(plugin.config.metrics_histogram, common=common),
+            views=metric_views(
+                plugin.config.metrics_histogram,
+                common=common,
+                disabled=plugin.config.disable_metrics,
+            ),
         )
         plugin.pipeline.meter_provider = meter_provider
         plugin.pipeline.meter = meter_provider.get_meter(service_name)

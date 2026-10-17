@@ -48,7 +48,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |
-| `log_exclude_loggers` | list of strings (env: comma-separated) | `('opentelemetry', 'urllib3', 'httpx', 'httpcore', 'requests', 'openai', 'asyncio', 'hpack', 'grpc', 'websockets', 'charset_normalizer', 'markdown_it')` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
+| `log_exclude_loggers` | list of strings (env: comma-separated) | `[opentelemetry, urllib3, httpx, httpcore, requests, openai, asyncio, hpack, grpc, websockets, charset_normalizer, markdown_it]` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
 | `log_logger_levels` | map | *(unset)* | Per-logger minimum level, e.g. `{gateway.config: WARNING}`; `logs.logger_levels` |
 | `log_only_in_turn` | bool | `false` | Drop records the plugin cannot attribute to a session; `logs.only_in_turn` |
 | `log_max_attribute_length` | int | `4096` | Longest exported string attribute on a log record (characters); `logs.max_attribute_length`. Bounds: ≥ 1 |
@@ -65,6 +65,8 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap). Bounds: ≥ 0 |
 | `metric_name_compat` | string | `"off"` | `off` · `claude_code` · `both` — export session count, token usage, cost and active time under Claude Code's metric names, units and labels (`claude_code.*`) instead of (`claude_code`) or beside (`both`) the `hermes.*` twins, so dashboards built for Claude Code read Hermes; see [Claude Code dashboards](/guides/claude-code-dashboards) |
 | `metric_name_compat_session_id` | bool | `false` | Also put `session.id` on the `claude_code.*` instruments, as Claude Code does by default (per-session panels need it; one series per session) |
+| `disable_metrics` | list of strings (env: comma-separated) | `[]` | Instruments never created, recorded or exported: hook keys (`tool_duration`), dotted (`tool.duration`) or OTLP names (`hermes.tool.duration`), or `all`; an unknown name warns at load. See [Disabling metrics and span families](/configuration/yaml#disable) |
+| `disable_spans` | list of strings (env: comma-separated) | `[]` | Span families never recorded (`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`); a child of a disabled span parents to the nearest recording ancestor. `all` is refused (use a backend's `traces: false`) |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
 | `remote_parent` | bool | `true` | Parent the turn root under the span named by `HERMES_OTEL_TRACEPARENT` (+ `HERMES_OTEL_TRACESTATE`) when an outer process exported them; `false` ignores the variables. The kanban worker hand-off (`TRACEPARENT`) is separate |
 | `probe_backends` | bool | `true` | At init, open one TCP connection to each backend endpoint on a background thread and log reachable / unreachable per backend; once, never periodic, no bytes sent, exports never wait for it |

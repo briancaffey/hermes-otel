@@ -8,11 +8,11 @@
  },
  "counts": {
   "changed": 0,
-  "default": 61,
+  "default": 63,
   "env": 0,
   "file": 0
  },
- "effective_yaml": "# hermes-otel effective configuration\n# resolved <WHEN> from <HOME>/hermes_otel.yaml\n# each top-level key notes where its value came from: env, file or default\n\nenabled: true  # default\nsample_rate: null  # default\nroot_span_ttl_ms: 600000  # default\nsubagent_span_ttl_ms: 86400000  # default\nflush_interval_ms: 60000  # default\npreview_max_chars: 1200  # default\ncapture_previews: true  # default\ntool_input_preview_max_chars: null  # default\ntool_output_preview_max_chars: null  # default\nllm_input_preview_max_chars: null  # default\nllm_output_preview_max_chars: null  # default\nheaders: null  # default\nglobal_tags: null  # default\nresource_attributes: null  # default\ncommon_attributes: null  # default\nproject_name: null  # default\nservice_name_from_profile: false  # default\nspan_batch_max_queue_size: 2048  # default\nspan_batch_schedule_delay_ms: 1000  # default\nspan_batch_max_export_batch_size: null  # default\nspan_batch_export_timeout_ms: 30000  # default\nforce_flush_on_session_end: true  # default\nforce_flush_wait_ms: 1500  # default\ncapture_conversation_history: false  # default\nconversation_history_max_chars: 20000  # default\ncontent_capture: full  # default\ncapture_full_prompts: true  # default\ncapture_full_responses: true  # default\ncapture_sender_id: false  # default\nemit_genai_metrics: true  # default\nmetrics_temporality: null  # default\nmetrics_histogram: explicit  # default\nmetrics_label_limit: 100  # default\nmetric_name_compat: 'off'  # default\nmetric_name_compat_session_id: false  # default\nskill_spans: true  # default\nremote_parent: true  # default\nprobe_backends: true  # default\ndiscovery_prompt: false  # default\ndashboard_live: true  # default\ndashboard_live_max_spans: 1000  # default\ndashboard_live_retention_hours: 168.0  # default\nhost_metrics: false  # default\nhost_metrics_gpu: auto  # default\nhost_metrics_interval_ms: 1000  # default\nsuppress_mcp_ping_spans: true  # default\nlogs:  # default\n  capture: false\n  level: INFO\n  attach_logger: null\n  exclude_loggers:\n  - opentelemetry\n  - urllib3\n  - httpx\n  - httpcore\n  - requests\n  - openai\n  - asyncio\n  - hpack\n  - grpc\n  - websockets\n  - charset_normalizer\n  - markdown_it\n  logger_levels: null\n  only_in_turn: false\n  max_attribute_length: 4096\n  batch:\n    schedule_delay_ms: 1000\n    max_queue_size: 2048\n    max_export_batch_size: 512\n    export_timeout_ms: 30000\n  live_min_level: INFO\n  events:\n    enabled: false\n    content: inherit\n",
+ "effective_yaml": "# hermes-otel effective configuration\n# resolved <WHEN> from <HOME>/hermes_otel.yaml\n# each top-level key notes where its value came from: env, file or default\n\nenabled: true  # default\nsample_rate: null  # default\nroot_span_ttl_ms: 600000  # default\nsubagent_span_ttl_ms: 86400000  # default\nflush_interval_ms: 60000  # default\npreview_max_chars: 1200  # default\ncapture_previews: true  # default\ntool_input_preview_max_chars: null  # default\ntool_output_preview_max_chars: null  # default\nllm_input_preview_max_chars: null  # default\nllm_output_preview_max_chars: null  # default\nheaders: null  # default\nglobal_tags: null  # default\nresource_attributes: null  # default\ncommon_attributes: null  # default\nproject_name: null  # default\nservice_name_from_profile: false  # default\nspan_batch_max_queue_size: 2048  # default\nspan_batch_schedule_delay_ms: 1000  # default\nspan_batch_max_export_batch_size: null  # default\nspan_batch_export_timeout_ms: 30000  # default\nforce_flush_on_session_end: true  # default\nforce_flush_wait_ms: 1500  # default\ncapture_conversation_history: false  # default\nconversation_history_max_chars: 20000  # default\ncontent_capture: full  # default\ncapture_full_prompts: true  # default\ncapture_full_responses: true  # default\ncapture_sender_id: false  # default\nemit_genai_metrics: true  # default\nmetrics_temporality: null  # default\nmetrics_histogram: explicit  # default\nmetrics_label_limit: 100  # default\nmetric_name_compat: 'off'  # default\nmetric_name_compat_session_id: false  # default\ndisable_metrics: []  # default\ndisable_spans: []  # default\nskill_spans: true  # default\nremote_parent: true  # default\nprobe_backends: true  # default\ndiscovery_prompt: false  # default\ndashboard_live: true  # default\ndashboard_live_max_spans: 1000  # default\ndashboard_live_retention_hours: 168.0  # default\nhost_metrics: false  # default\nhost_metrics_gpu: auto  # default\nhost_metrics_interval_ms: 1000  # default\nsuppress_mcp_ping_spans: true  # default\nlogs:  # default\n  capture: false\n  level: INFO\n  attach_logger: null\n  exclude_loggers:\n  - opentelemetry\n  - urllib3\n  - httpx\n  - httpcore\n  - requests\n  - openai\n  - asyncio\n  - hpack\n  - grpc\n  - websockets\n  - charset_normalizer\n  - markdown_it\n  logger_levels: null\n  only_in_turn: false\n  max_attribute_length: 4096\n  batch:\n    schedule_delay_ms: 1000\n    max_queue_size: 2048\n    max_export_batch_size: 512\n    export_timeout_ms: 30000\n  live_min_level: INFO\n  events:\n    enabled: false\n    content: inherit\n",
  "env_notices": [],
  "fields": [
   {
@@ -824,6 +824,38 @@
    "kind": "bool",
    "source": "default",
    "value": false
+  },
+  {
+   "changed": false,
+   "default": [],
+   "derived_from": null,
+   "description": "Instruments never created, recorded or exported: hook keys (`tool_duration`), dotted (`tool.duration`) or OTLP names (`hermes.tool.duration`), or `all`; an unknown name warns at load. See [Disabling metrics and span families](/configuration/yaml#disable)",
+   "env_invalid": false,
+   "env_raw": null,
+   "env_var": "HERMES_OTEL_DISABLE_METRICS",
+   "file_invalid": false,
+   "file_value": null,
+   "group": "Spans and metrics",
+   "key": "disable_metrics",
+   "kind": "list",
+   "source": "default",
+   "value": []
+  },
+  {
+   "changed": false,
+   "default": [],
+   "derived_from": null,
+   "description": "Span families never recorded (`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`); a child of a disabled span parents to the nearest recording ancestor. `all` is refused (use a backend's `traces: false`)",
+   "env_invalid": false,
+   "env_raw": null,
+   "env_var": "HERMES_OTEL_DISABLE_SPANS",
+   "file_invalid": false,
+   "file_value": null,
+   "group": "Spans and metrics",
+   "key": "disable_spans",
+   "kind": "list",
+   "source": "default",
+   "value": []
   },
   {
    "changed": false,
