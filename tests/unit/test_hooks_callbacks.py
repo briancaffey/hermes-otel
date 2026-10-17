@@ -1048,6 +1048,11 @@ class TestOnPostApiRequest:
         disabled_tracer.end_span.assert_not_called()
 
 
+def _reply(content: str) -> dict:
+    """``response`` as Hermes sends it: the sanitised assistant message inside."""
+    return {"assistant_message": {"role": "assistant", "content": content, "tool_calls": []}}
+
+
 class TestFullCaptureFlags:
     """content_capture: full (the default) writes the whole prompt and response,
     once per convention, onto the api.* span; preview mode writes nothing there."""
@@ -1230,18 +1235,14 @@ class TestFullCaptureFlags:
 
     def test_post_skips_response_attrs_in_preview_mode(self, mock_tracer):
         mock_tracer.config = self._preview_mode()
-        on_post_api_request(
-            **self._post_kwargs(response_content="the full response", response_tool_calls=[])
-        )
+        on_post_api_request(**self._post_kwargs(response=_reply("the full response")))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.output.messages" not in attrs
         assert "output.value" not in attrs
 
     def test_post_writes_full_response_by_default(self, mock_tracer):
         big_response = "answer " * 500  # > preview_max_chars
-        on_post_api_request(
-            **self._post_kwargs(response_content=big_response, response_tool_calls=[])
-        )
+        on_post_api_request(**self._post_kwargs(response=_reply(big_response)))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == big_response
         assert "gen_ai.output.messages" in attrs
@@ -1256,7 +1257,9 @@ class TestFullCaptureFlags:
             type="function",
             function=SimpleNamespace(name="web_search", arguments='{"q":"x"}'),
         )
-        on_post_api_request(**self._post_kwargs(response_content="", response_tool_calls=[tc]))
+        on_post_api_request(
+            **self._post_kwargs(assistant_message=SimpleNamespace(content="", tool_calls=[tc]))
+        )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.mime_type"] == "application/json"
         assert _json.loads(attrs["output.value"])[0]["function"]["name"] == "web_search"
@@ -1268,6 +1271,6 @@ class TestFullCaptureFlags:
         from hermes_otel.plugin_config import HermesOtelConfig
 
         mock_tracer.config = HermesOtelConfig(capture_full_responses=False)
-        on_post_api_request(**self._post_kwargs(response_content="hi", response_tool_calls=[]))
+        on_post_api_request(**self._post_kwargs(response=_reply("hi")))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.output.messages" not in attrs

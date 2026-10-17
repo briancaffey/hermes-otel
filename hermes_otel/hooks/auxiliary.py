@@ -25,9 +25,9 @@ from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
+from ..semconv import QUERY_SOURCE_AUXILIARY
 from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .api_call import (
-    QUERY_SOURCE_AUXILIARY,
     HookPayload,
     add_exception_event,
     apply_usage,

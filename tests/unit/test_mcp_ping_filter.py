@@ -16,8 +16,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from hermes_otel.pipeline import _MCPPingFilterProcessor, is_mcp_keepalive_ping
 from hermes_otel.plugin_config import HermesOtelConfig, load_config
-from hermes_otel.tracer import HermesOTelPlugin, _MCPPingFilterProcessor, is_mcp_keepalive_ping
+from hermes_otel.tracer import HermesOTelPlugin
 
 # Exactly what mcp/shared/jsonrpc_dispatcher.py emits for a keepalive.
 _PING_ATTRS = {"mcp.method.name": "ping", "jsonrpc.request.id": "42"}

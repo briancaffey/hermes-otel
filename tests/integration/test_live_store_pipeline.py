@@ -20,8 +20,9 @@ def live_plugin(tmp_path):
 
     import hermes_otel.live_store_registry as ls
     import hermes_otel.tracer as tracer_mod
+    from hermes_otel.pipeline import _LiveSpanProcessor
     from hermes_otel.testing import attach_pipeline
-    from hermes_otel.tracer import HermesOTelPlugin, _LiveSpanProcessor
+    from hermes_otel.tracer import HermesOTelPlugin
 
     ls._LIVE_STORE = LiveStore(db_path=str(tmp_path / "live.db"))  # fresh tmp store
     store = get_live_store()

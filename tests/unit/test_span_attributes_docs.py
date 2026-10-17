@@ -33,7 +33,7 @@ _DUAL_USE = {"hermes.retry.count", "hermes.cost.usage"}
 def _metric_names() -> set:
     """Instrument names are metrics, not span attributes: the instrument table
     plus the host-metrics observables created in ``_create_host_metric_instruments``."""
-    from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
+    from hermes_otel.instruments import _INSTRUMENTS, HOST_METRIC_NAMES
 
     instruments = {spec.name for spec in _INSTRUMENTS.values()}
     instruments.update(HOST_METRIC_NAMES)

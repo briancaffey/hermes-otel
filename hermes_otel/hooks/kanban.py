@@ -44,7 +44,14 @@ from typing import Any, Dict, Optional, Tuple
 from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import format_traceparent, parse_traceparent, truncate_string
-from ._common import _emit_event, _fail_open, _preview_for, get_tracer, set_span_attributes
+from ._common import (
+    _emit_event,
+    _fail_open,
+    _preview_for,
+    get_tracer,
+    set_span_attributes,
+    span_context_of,
+)
 from .attributes import _ID_MAX, _session_identity_attributes
 
 _SHORT_MAX = 64
@@ -83,7 +90,7 @@ def _run_parent(tracer, task_id: Any, run_id: Any, *, forget: bool = False):
 def _inject_traceparent(span: Any) -> None:
     """Point the next worker's environment at ``span`` (the run's claim)."""
     global _injected_traceparent
-    ctx = span.get_span_context() if hasattr(span, "get_span_context") else None
+    ctx = span_context_of(span)
     if ctx is None or not getattr(ctx, "is_valid", False):
         return
     value = format_traceparent(ctx.trace_id, ctx.span_id, int(ctx.trace_flags))
@@ -235,8 +242,9 @@ def on_kanban_task_claimed(
         status="ok",
         outcome="claimed",
     )
-    if span is not None and hasattr(span, "get_span_context"):
-        tracer.sessions.remember_root_context(_run_key(task_id, run_id), span.get_span_context())
+    ctx = span_context_of(span)
+    if ctx is not None:
+        tracer.sessions.remember_root_context(_run_key(task_id, run_id), ctx)
         _inject_traceparent(span)
 
 

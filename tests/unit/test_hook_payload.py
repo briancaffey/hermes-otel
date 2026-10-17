@@ -16,11 +16,7 @@ TOOL_CALL = {"id": "call_1", "type": "function", "function": {"name": "ls", "arg
 
 
 class TestAssistantMessage:
-    """The three spellings Hermes has used for the reply read as one pair."""
-
-    def test_pair_spelling(self):
-        payload = HookPayload({"response_content": "hi", "response_tool_calls": [TOOL_CALL]})
-        assert payload.assistant_message == ("hi", [TOOL_CALL])
+    """The two spellings Hermes uses for the reply read as one pair."""
 
     def test_raw_object_spelling(self):
         message = SimpleNamespace(content="hi", tool_calls=[TOOL_CALL])
@@ -30,11 +26,12 @@ class TestAssistantMessage:
         response = {"assistant_message": {"role": "assistant", "content": "hi", "tool_calls": []}}
         assert HookPayload({"response": response}).assistant_message == ("hi", [])
 
-    def test_pair_wins_over_the_message(self):
+    def test_raw_object_wins_over_the_response_dict(self):
+        """``post_api_request`` sends both; the raw object is the unsanitised one."""
         message = SimpleNamespace(content="object", tool_calls=[TOOL_CALL])
-        payload = HookPayload({"response_content": "pair", "assistant_message": message})
-        # An empty pair member still falls back to the message's field.
-        assert payload.assistant_message == ("pair", [TOOL_CALL])
+        response = {"assistant_message": {"content": "sanitised", "tool_calls": []}}
+        payload = HookPayload({"assistant_message": message, "response": response})
+        assert payload.assistant_message == ("object", [TOOL_CALL])
 
     def test_nothing_sent(self):
         assert HookPayload({}).assistant_message == (None, None)
@@ -47,7 +44,7 @@ class TestFullResponseAttributes:
         return SimpleNamespace(config=config_for(mode))
 
     def test_off_outside_full_capture(self):
-        payload = HookPayload({"response_content": "hi"})
+        payload = HookPayload({"response": {"assistant_message": {"content": "hi"}}})
         assert full_response_attributes(self._tracer("preview"), payload) == {}
 
     def test_text_reply_from_the_response_dict(self):
@@ -63,7 +60,9 @@ class TestFullResponseAttributes:
         }
 
     def test_tool_calls_only(self):
-        payload = HookPayload({"response_content": "", "response_tool_calls": [TOOL_CALL]})
+        payload = HookPayload(
+            {"response": {"assistant_message": {"content": "", "tool_calls": [TOOL_CALL]}}}
+        )
         attrs = full_response_attributes(self._tracer("full"), payload)
         assert attrs["output.mime_type"] == "application/json"
         assert json.loads(attrs["output.value"]) == [TOOL_CALL]

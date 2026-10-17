@@ -127,7 +127,7 @@ class TestDrift:
         ]:
             names |= set(QUOTED.findall(path.read_text(encoding="utf-8")))
         # Instrument names are metrics, documented in metrics.md.
-        from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
+        from hermes_otel.instruments import _INSTRUMENTS, HOST_METRIC_NAMES
 
         names -= {spec.name for spec in _INSTRUMENTS.values()} - {
             "hermes.retry.count",

@@ -269,7 +269,7 @@ class TestSharedStateLocks:
                 for i in range(300):
                     sid = f"s{n}-{i % 7}"
                     tracker.push_parent(object(), session_id=sid)
-                    sessions.get_or_create(sid).turn_summary.api_call_count += 1
+                    sessions.get_or_create(sid).turn_summary.add_api_call()
                     sessions.next_turn(sid)
                     tracker.register_skill_span(sid, "k", f"skill:{sid}:k")
                     tracker.pop_skill_spans(sid)
