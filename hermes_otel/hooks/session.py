@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from typing import Any, Dict, Optional
@@ -12,7 +13,7 @@ from ..flush import flush_turn_end
 from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ..session_state import PerSession
-from ._common import _emit_event, _fail_open, get_tracer
+from ._common import _emit_event, _fail_open, get_tracer, set_span_attributes
 from .attributes import (
     _ID_MAX,
     _extract_correlation_id,
@@ -74,12 +75,13 @@ def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None
     text = truncate_string(model, _ID_MAX) if model else ""
     if not text:
         return
-    try:
-        span.set_attribute("gen_ai.request.model", text)
-        if parent_model:
-            span.set_attribute("hermes.subagent.model_inherited", text == str(parent_model))
-    except Exception:
-        pass
+    set_span_attributes(
+        span,
+        {
+            "gen_ai.request.model": text,
+            "hermes.subagent.model_inherited": text == str(parent_model) if parent_model else None,
+        },
+    )
 
 
 def _root_attributes(
@@ -417,12 +419,10 @@ def on_session_end(
 
 def _remember_root(tracer, session_id: str) -> None:
     """Keep the root span's context so a replacing session can link to it."""
-    try:
+    with contextlib.suppress(Exception):
         root = tracer.spans.get_session_root(session_id)
         if root is not None and hasattr(root, "get_span_context"):
             tracer.sessions.remember_root_context(session_id, root.get_span_context())
-    except Exception:
-        pass
 
 
 _FINAL_STATUS = {"finalize": "finalized", "reset": "reset"}
@@ -575,12 +575,9 @@ def on_agent_loop_stopped(
     ps = tracer.sessions.peek(session_id)
     if ps is not None:
         ps.note_stop(text)
-    root = tracer.spans.get_span(f"session:{session_id}")
-    if root is not None and hasattr(root, "set_attribute"):
-        try:
-            root.set_attribute("hermes.turn.stop_reason", text)
-        except Exception:
-            pass
+    set_span_attributes(
+        tracer.spans.get_span(f"session:{session_id}"), {"hermes.turn.stop_reason": text}
+    )
 
 
 @_fail_open

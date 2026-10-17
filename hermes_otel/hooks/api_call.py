@@ -11,6 +11,7 @@ session roll-ups and the events, which differ per hook.
 
 from __future__ import annotations
 
+import contextlib
 import json
 from typing import Any, Dict, Mapping, Optional, Tuple
 
@@ -399,7 +400,5 @@ def add_exception_event(
     attrs: Dict[str, Any] = {"exception.type": error_type, "exception.escaped": True}
     if error_message or keep_empty_message:
         attrs["exception.message"] = error_message or ""
-    try:
+    with contextlib.suppress(Exception):  # never let telemetry raise
         span.add_event("exception", attrs)
-    except Exception:  # pragma: no cover — never let telemetry raise
-        pass

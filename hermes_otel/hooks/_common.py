@@ -1,4 +1,5 @@
-"""Shared plumbing for the hook callbacks: tracer lookup, fail-open, previews.
+"""Shared plumbing for the hook callbacks: tracer lookup, fail-open, previews,
+span-attribute setting.
 
 Nothing here holds state; the tracer singleton owns all of it. Every
 submodule imports :func:`get_tracer` from here so a test can swap the
@@ -7,6 +8,7 @@ tracer in one place (``hermes_otel.tracer.get_tracer``).
 
 from __future__ import annotations
 
+import contextlib
 import functools
 from typing import Any, Dict, Optional, Tuple
 
@@ -69,6 +71,22 @@ def _fail_open(fn):
     return wrapper
 
 
+def set_span_attributes(span: Any, attributes: Dict[str, Any]) -> None:
+    """Set the non-None *attributes* on a live span; never raises.
+
+    A no-op for ``None`` and for span objects without the OTel API
+    (``INVALID_SPAN`` stand-ins, LangSmith runs); a value the SDK rejects is
+    skipped on its own, the rest still land.
+    """
+    if span is None or not hasattr(span, "set_attribute"):
+        return
+    for key, value in attributes.items():
+        if value is None:
+            continue
+        with contextlib.suppress(Exception):  # never let telemetry raise
+            span.set_attribute(key, value)
+
+
 def as_dict(value: Any) -> Dict[str, Any]:
     """Coerce a hook payload field to a dict, never raising.
 
@@ -85,12 +103,10 @@ def as_dict(value: Any) -> Dict[str, Any]:
     for attr in ("model_dump", "_asdict"):
         method = getattr(value, attr, None)
         if callable(method):
-            try:
+            with contextlib.suppress(Exception):
                 out = method()
                 if isinstance(out, dict):
                     return out
-            except Exception:
-                pass
     if isinstance(value, str):
         return {"message": value} if value.strip() else {}
     d = getattr(value, "__dict__", None)
