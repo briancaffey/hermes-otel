@@ -30,6 +30,8 @@ from __future__ import annotations
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
+from hermes_otel.severity import level_names_at_least
+
 from . import register
 from ._attrs import dotted as _dotted
 from ._loki import MAX_RANGE_S, _quote
@@ -48,7 +50,6 @@ from .base import (
 )
 from .metrics_math import bucketize, counter_increases
 from .paging import log_end_ns, strictly_older
-from .severity import level_names_at_least
 from .shapes import (
     SpanRow,
     card_from_trace,

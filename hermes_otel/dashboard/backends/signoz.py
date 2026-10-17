@@ -20,6 +20,8 @@ import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
+from hermes_otel.severity import otel_severity
+
 from . import register
 from .base import (
     BackendAdapter,
@@ -47,7 +49,6 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .severity import otel_severity_for
 from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, trace_detail
 from .timeconv import ns_from_any
 
@@ -584,7 +585,7 @@ class SigNozAdapter(BackendAdapter):
                 {
                     "key": _column("severity_number", "int64"),
                     "op": ">=",
-                    "value": otel_severity_for(f.min_level),
+                    "value": otel_severity(f.min_level),
                 }
             )
         if f.text:

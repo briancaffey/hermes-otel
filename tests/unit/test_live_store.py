@@ -96,25 +96,19 @@ class TestLiveStore:
         assert row["span_id"] is None and row["event_name"] is None
         assert isinstance(row["attributes"], dict) and "code.function.name" in row["attributes"]
 
-    def test_live_log_noise_filter(self):
-        import logging
-
-        from hermes_otel.log_handler import _LiveLogNoiseFilter
-
-        nf = _LiveLogNoiseFilter()
-
-        def rec(name, msg):
-            return logging.LogRecord(name, logging.INFO, __file__, 1, msg, None, None)
+    def test_live_log_noise(self):
+        from hermes_otel.log_handler import _is_live_noise
 
         # dropped: noisy logger + probe substrings
-        assert nf.filter(rec("gateway.config", "anything")) is False
+        assert _is_live_noise("gateway.config", "anything") is True
         assert (
-            nf.filter(rec("gateway.run", "kanban notifier: board default has no subscriptions"))
-            is False
+            _is_live_noise("gateway.run", "kanban notifier: board default has no subscriptions")
+            is True
         )
-        assert nf.filter(rec("x", "Plugin platform 'raft' available but not configured")) is False
-        # kept: real agent activity
-        assert nf.filter(rec("hermes_otel", "exported 3 spans")) is True
+        assert _is_live_noise("x", "Plugin platform 'raft' available but not configured") is True
+        # kept: real agent activity, and a non-string body
+        assert _is_live_noise("hermes_otel", "exported 3 spans") is False
+        assert _is_live_noise("hermes_otel", {"k": "v"}) is False
 
     def test_singleton_create_flag(self, tmp_path):
         import hermes_otel.live_store as ls

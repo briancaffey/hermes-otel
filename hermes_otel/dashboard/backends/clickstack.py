@@ -33,6 +33,8 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import default_service_name, register
 from .base import (
     BackendAdapter,
@@ -61,7 +63,6 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .severity import otel_severity_for
 from .shapes import SpanRow, coerce_tag, otlp_event, otlp_kind, to_int, trace_detail
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
@@ -455,7 +456,7 @@ class ClickstackAdapter(BackendAdapter):
         if f.logger:
             preds.append(f"ScopeName = {sql_str(f.logger)}")
         if f.min_level:
-            preds.append(f"SeverityNumber >= {otel_severity_for(f.min_level)}")
+            preds.append(f"SeverityNumber >= {otel_severity(f.min_level)}")
         if f.event_name:
             preds.append(f"LogAttributes['event.name'] = {sql_str(f.event_name)}")
         elif f.events_only:

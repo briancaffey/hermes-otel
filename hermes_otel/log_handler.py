@@ -31,12 +31,14 @@ import dataclasses
 import logging
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
+from . import log_events as _ev
 from .backends import _ResolvedBackend
 from .debug_utils import debug_log, logger
 from .pipeline import _LoggingExporter
 from .pipeline_env import without_otlp_header_env
 from .plugin_config import DEFAULT_LOG_EXCLUDE_LOGGERS, HermesOtelConfig
 from .redaction import redact_attributes, redact_text
+from .severity import otel_severity, python_level, severity_number
 
 try:
     # opentelemetry-sdk emits a DeprecationWarning on LoggingHandler import
@@ -81,36 +83,6 @@ _PREVIOUS_DISABLE_ATTR = "_hermes_otel_previous_disable"
 # docs show them.
 _EXCLUDED_LOGGER_PREFIXES = DEFAULT_LOG_EXCLUDE_LOGGERS
 
-_SEVERITY_FLOOR = {  # Python level -> lowest OTel severity number of that band
-    logging.CRITICAL: 21,
-    logging.ERROR: 17,
-    logging.WARNING: 13,
-    logging.INFO: 9,
-    logging.DEBUG: 5,
-}
-
-
-def _python_to_severity(level: int) -> int:
-    """Python level number -> the lowest OTel severity number of that band."""
-    for py_level, sev in _SEVERITY_FLOOR.items():
-        if level >= py_level:
-            return sev
-    return 1
-
-
-def _level_to_severity(name: Any, default: int) -> int:
-    """``"WARN"`` / ``"WARNING"`` / ``30`` -> OTel severity number; *default* when unknown."""
-    if name is None:
-        return default
-    text = str(name).strip().upper()
-    if not text:
-        return default
-    text = {"WARN": "WARNING", "FATAL": "CRITICAL", "TRACE": "DEBUG"}.get(text, text)
-    level = logging.getLevelName(text) if not text.isdigit() else int(text)
-    if not isinstance(level, int):
-        return default
-    return _python_to_severity(level)
-
 
 @dataclasses.dataclass(frozen=True)
 class LogRules:
@@ -132,41 +104,38 @@ class LogRules:
     events_enabled: bool = False
     events_content: str = "inherit"
 
-    def accepts(self, logger_name: Optional[str], severity: Optional[int], attrs: Any) -> bool:
+    def accepts_logger(self, logger_name: Optional[str], severity: Optional[int]) -> bool:
+        """Not excluded, and at or above the floor for that logger (unknown severity reads as INFO)."""
         name = logger_name or ""
-        if any(
-            name == p or name.startswith(p + ".") or name.startswith(p)
-            for p in self.exclude_prefixes
-        ):
+        if any(name.startswith(p) for p in self.exclude_prefixes):
             return False
-        sev = severity if isinstance(severity, int) else 9
         floor = self.min_severity
         for prefix, level_sev in self.logger_levels:
             if name == prefix or name.startswith(prefix + "."):
                 floor = max(floor, level_sev)
                 break
-        if sev < floor:
+        return (severity if isinstance(severity, int) else 9) >= floor
+
+    def accepts(self, logger_name: Optional[str], severity: Optional[int], attrs: Any) -> bool:
+        """:meth:`accepts_logger`, plus the record must name a session when ``only_in_turn``."""
+        if not self.accepts_logger(logger_name, severity):
             return False
         if self.only_in_turn:
             try:
-                if not (attrs or {}).get(SESSION_ID_ATTRIBUTE):
-                    return False
+                return bool((attrs or {}).get(SESSION_ID_ATTRIBUTE))
             except Exception:
                 return False
         return True
 
 
-_CONTENT_RANK = {"off": 0, "preview": 1, "full": 2}
-
-
 def rules_from_config(cfg: HermesOtelConfig, *, min_level: Optional[int] = None) -> LogRules:
     """The global rules from the ``logs:`` block (*min_level* overrides ``log_level``)."""
-    level = min_level if min_level is not None else resolve_level(cfg.log_level)
+    level = min_level if min_level is not None else python_level(cfg.log_level)
     return LogRules(
-        min_severity=_python_to_severity(level),
+        min_severity=otel_severity(level),
         exclude_prefixes=tuple(cfg.log_exclude_loggers or ()),
         logger_levels=tuple(
-            (str(k), _level_to_severity(v, 1)) for k, v in (cfg.log_logger_levels or {}).items()
+            (str(k), severity_number(v, 1)) for k, v in (cfg.log_logger_levels or {}).items()
         ),
         only_in_turn=bool(cfg.log_only_in_turn),
         events_enabled=bool(cfg.log_events),
@@ -188,7 +157,7 @@ def narrow_rules(
     changes: Dict[str, Any] = {}
     level = overrides.get("level")
     if level is not None:
-        sev = _level_to_severity(level, base.min_severity)
+        sev = severity_number(level, base.min_severity)
         if sev < base.min_severity:
             logger.warning(
                 f"[hermes-otel] {where}.logs.level={level} is below the global level; "
@@ -205,8 +174,7 @@ def narrow_rules(
     if levels:
         merged = dict(base.logger_levels)
         for name, value in levels.items():
-            sev = _level_to_severity(value, 1)
-            merged[name] = max(sev, merged.get(name, 1))
+            merged[name] = max(severity_number(value, 1), merged.get(name, 1))
         changes["logger_levels"] = tuple(merged.items())
     if overrides.get("only_in_turn") is True:
         changes["only_in_turn"] = True
@@ -225,7 +193,7 @@ def narrow_rules(
     if content:
         base_mode = content_mode if base.events_content == "inherit" else base.events_content
         want = content_mode if content == "inherit" else content
-        if _CONTENT_RANK.get(want, 2) > _CONTENT_RANK.get(base_mode, 2):
+        if _ev.narrower(want, base_mode) != want:
             logger.warning(
                 f"[hermes-otel] {where}.logs.events.content={content} is wider than the global "
                 f"{base_mode}; per-backend content can only be narrower, keeping {base_mode}"
@@ -243,24 +211,39 @@ class _LoggerRulesFilter(logging.Filter):
         self._rules = rules or LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES)
 
     def filter(self, record: logging.LogRecord) -> bool:  # noqa: D401
-        rules = self._rules
-        name = record.name or ""
-        if any(
-            name == p or name.startswith(p + ".") or name.startswith(p)
-            for p in rules.exclude_prefixes
-        ):
-            return False
-        for prefix, level_sev in rules.logger_levels:
-            if name == prefix or name.startswith(prefix + "."):
-                return _python_to_severity(record.levelno) >= level_sev
-        return True
+        return self._rules.accepts_logger(record.name, otel_severity(record.levelno))
 
 
-class _ExcludeOTelInternal(_LoggerRulesFilter):
-    """The default exclusions only (kept for callers that used this name)."""
+@dataclasses.dataclass(frozen=True)
+class _RecordView:
+    """What the processors read from an SDK record, whatever the SDK wraps it in.
 
-    def __init__(self) -> None:
-        super().__init__(LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES))
+    ``rec`` is the mutable ``LogRecord`` itself (the ``log_record`` of a
+    ``ReadWriteLogRecord`` wrapper, else the object given); ``severity`` is
+    the plain OTel number or None.
+    """
+
+    rec: Any
+    logger_name: Optional[str]
+    severity: Optional[int]
+    attrs: Any
+    body: Any
+    event_name: Optional[str]
+
+    @classmethod
+    def from_sdk(cls, log_record: Any) -> "_RecordView":
+        rec = getattr(log_record, "log_record", log_record)
+        scope = getattr(log_record, "instrumentation_scope", None)
+        severity = getattr(rec, "severity_number", None)
+        severity = getattr(severity, "value", severity)
+        return cls(
+            rec=rec,
+            logger_name=getattr(scope, "name", None),
+            severity=severity if isinstance(severity, int) else None,
+            attrs=getattr(rec, "attributes", None),
+            body=getattr(rec, "body", None),
+            event_name=getattr(rec, "event_name", None) or None,
+        )
 
 
 class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
@@ -284,9 +267,6 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
         self._inner = inner
         self._rules = rules
         self._name = backend_name
-        from . import log_events as _ev
-
-        self._ev = _ev
         resolved_global = _ev.resolve_content_mode(global_events_content, span_content_mode)
         resolved_mine = _ev.resolve_content_mode(rules.events_content, span_content_mode)
         # Only a narrower per-backend mode changes anything; equal or wider = pass through.
@@ -307,19 +287,14 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
 
     def on_emit(self, log_record: Any) -> None:
         try:
-            rec = getattr(log_record, "log_record", log_record)
-            scope = getattr(log_record, "instrumentation_scope", None)
-            severity = getattr(rec, "severity_number", None)
-            severity_value = getattr(severity, "value", severity)
-            if not self._rules.accepts(
-                getattr(scope, "name", None), severity_value, getattr(rec, "attributes", None)
-            ):
+            view = _RecordView.from_sdk(log_record)
+            if not self._rules.accepts(view.logger_name, view.severity, view.attrs):
                 return
-            if getattr(rec, "event_name", None):
+            if view.event_name:
                 if not self._rules.events_enabled:
                     return  # this backend opted out of events
                 if self._event_content is not None:
-                    log_record = self._narrow_event(log_record, rec)
+                    log_record = self._narrow_event(log_record, view.rec)
         except Exception:  # pragma: no cover — never block a record on a filter bug
             pass
         self._inner.on_emit(log_record)
@@ -333,10 +308,10 @@ class BackendLogFilter(LogRecordProcessor):  # type: ignore[misc]
         import copy
 
         attrs = getattr(rec, "attributes", None) or {}
-        if not self._ev.has_content(attrs):
+        if not _ev.has_content(attrs):
             return log_record
         new_rec = copy.copy(rec)
-        new_rec.attributes = self._ev.apply_content_mode(
+        new_rec.attributes = _ev.apply_content_mode(
             dict(attrs), self._event_content, self._preview_chars
         )
         if log_record is rec:
@@ -390,14 +365,65 @@ def _session_id_from_tag(tag: Any) -> Optional[str]:
     return text or None
 
 
-def _span_context(span: Any):
+def _stamp(rec: Any, span: Any) -> bool:
+    """Copy *span*'s ids onto *rec*; False when there is no span or it has no trace id."""
     try:
         ctx = span.get_span_context() if span is not None else None
     except Exception:
-        return None
+        return False
     if ctx is None or not getattr(ctx, "trace_id", 0):
-        return None
-    return ctx
+        return False
+    rec.trace_id = ctx.trace_id
+    rec.span_id = ctx.span_id
+    rec.trace_flags = ctx.trace_flags
+    if set_span_in_context is not None:
+        rec.context = set_span_in_context(span)
+    return True
+
+
+def _strip_host_attrs(attrs: Any) -> Optional[str]:
+    """Drop the host-internal attributes in place; the session the ``session_tag`` named, if any."""
+    tag = attrs.get(_HERMES_SESSION_TAG)
+    for key in list(attrs.keys()):
+        if key in _DENY_ATTRIBUTES or key.endswith(_DENY_SUFFIXES):
+            del attrs[key]
+    return _session_id_from_tag(tag)
+
+
+def _attribute(
+    rec: Any,
+    tagged_session: Optional[str],
+    named_session: Optional[str],
+    resolve: Optional[ContextResolver],
+    span_for_session: Callable[[str], Any],
+) -> Tuple[Optional[str], Optional[str]]:
+    """``(tier, session_id)`` for *rec*, stamping trace ids when a tier finds a span.
+
+    *tagged_session* is what Hermes's ``session_tag`` named, *named_session*
+    what the record's own ``hermes.session_id`` says, *resolve* the tracer's
+    single-active-session lookup and *span_for_session* the tracker's
+    innermost open span for a session. The tiers, in order:
+
+    * ``context``: the record already carries a trace id (a span was current
+      on the logging thread); the session is the one it names, else the tag's.
+    * ``session_tag``: the tracker has an open span for the tagged session.
+    * ``single_session``: exactly one session has a turn in flight and the
+      record does not name another one (#186 policy).
+    * ``session_tag`` again, ids left empty: Hermes knows the session even
+      between turns, when no span is open for it.
+    """
+    if getattr(rec, "trace_id", 0):
+        return ATTRIBUTION_CONTEXT, named_session or tagged_session
+    if tagged_session and _stamp(rec, span_for_session(tagged_session)):
+        return ATTRIBUTION_SESSION_TAG, tagged_session
+    found = resolve() if resolve is not None else None
+    if found:
+        session, span = found
+        if (not tagged_session or str(session) == tagged_session) and _stamp(rec, span):
+            return ATTRIBUTION_SINGLE_SESSION, str(session)
+    if tagged_session:
+        return ATTRIBUTION_SESSION_TAG, tagged_session
+    return None, None
 
 
 class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
@@ -405,30 +431,25 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
 
     Registered first on the provider, ahead of the live sink and the
     exporters, so what the dashboard shows and what a backend stores are the
-    same record. In ``on_emit`` it:
+    same record. ``on_emit`` is a fixed sequence, and the order is the
+    behaviour:
 
-    1. **Attributes the line to its turn, never by guessing.** Three exact
-       tiers, tried in order; the one that applied is recorded in
-       ``hermes.log.attribution``:
-
-       * ``context`` — the record already carries a trace id because a span
-         was current on the logging thread. Left as is.
-       * ``session_tag`` — Hermes stamps the session id of the thread that
-         logged the line onto the record (``session_tag``); the tracker's
-         innermost open span for that session gives the ids. Exact under
-         any number of concurrent sessions.
-       * ``single_session`` — exactly one session has a turn in flight, so
-         the line can only be that session's (#186 policy). With several
-         sessions active an unattributable line stays unattributed.
-    2. **Adds the session attributes**: ``hermes.session_id`` and
+    1. **Drops host-internal attributes** (``hermes_home``, ``session_tag``
+       and a small deny-list of path-like keys), reading the session tag on
+       the way out, so nothing host-side can leak through a later step.
+    2. **Attributes the line to its turn, never by guessing**: the three
+       exact tiers of :func:`_attribute`, the one that applied recorded in
+       ``hermes.log.attribution``.
+    3. **Adds the session attributes**: ``hermes.session_id`` and
        ``gen_ai.conversation.id`` (the session), and ``hermes.platform``
        from the session's root span when it is known.
-    3. **Drops host-internal attributes** (``hermes_home``, ``session_tag``
-       and a small deny-list of path-like keys) before export.
-    4. **Redacts secrets** from the body and every string attribute with
-       Hermes's own redactor when the plugin runs inside Hermes, else the
-       plugin's built-in set (:mod:`hermes_otel.redaction`), so the plugin is
-       never less careful than ``agent.log``.
+    4. **Redacts secrets** from the body and every string attribute, after
+       enrichment so the added attributes are covered, with Hermes's own
+       redactor when the plugin runs inside Hermes, else the plugin's
+       built-in set (:mod:`hermes_otel.redaction`), so the plugin is never
+       less careful than ``agent.log``.
+    5. **Caps string attributes** at ``logs.max_attribute_length``, after
+       redaction so a cut never exposes part of a secret.
 
     Everything is wrapped so that logging can never raise into the agent.
     """
@@ -466,94 +487,41 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
         except Exception:
             return None
 
-    @staticmethod
-    def _stamp(rec: Any, span: Any) -> bool:
-        ctx = _span_context(span)
-        if ctx is None:
-            return False
-        rec.trace_id = ctx.trace_id
-        rec.span_id = ctx.span_id
-        rec.trace_flags = ctx.trace_flags
-        if set_span_in_context is not None:
-            rec.context = set_span_in_context(span)
-        return True
-
     # ── processor API ──────────────────────────────────────────────────────
     def on_emit(self, log_record: Any) -> None:  # ReadWriteLogRecord
         try:
-            rec = getattr(log_record, "log_record", log_record)
-            attrs = getattr(rec, "attributes", None)
+            view = _RecordView.from_sdk(log_record)
+            rec, attrs = view.rec, view.attrs
             if attrs is None:
-                attrs = {}
-                try:
-                    rec.attributes = attrs
-                except Exception:
-                    attrs = None
-
-            # 3. host-internal attributes: read what we need, then drop them.
-            tag = None
-            if attrs is not None:
-                tag = attrs.get(_HERMES_SESSION_TAG)
-                for key in list(attrs.keys()):
-                    if key in _DENY_ATTRIBUTES or key.endswith(_DENY_SUFFIXES):
-                        try:
-                            del attrs[key]
-                        except Exception:
-                            pass
-            tagged_session = _session_id_from_tag(tag)
-
-            # 1. attribution tiers.
-            tier: Optional[str] = None
-            session_id: Optional[str] = None
-            if getattr(rec, "trace_id", 0):
-                tier = ATTRIBUTION_CONTEXT
-                session_id = tagged_session
-                if attrs is not None and attrs.get(SESSION_ID_ATTRIBUTE):
-                    session_id = str(attrs[SESSION_ID_ATTRIBUTE])
-            else:
-                if tagged_session:
-                    span = self._span_for_session(tagged_session)
-                    if span is not None and self._stamp(rec, span):
-                        tier = ATTRIBUTION_SESSION_TAG
-                        session_id = tagged_session
-                if tier is None and self._resolve is not None:
-                    found = self._resolve()
-                    if found:
-                        found_session, span = found
-                        if tagged_session and str(found_session) != tagged_session:
-                            found = None  # the record names another session: do not guess
-                        elif self._stamp(rec, span):
-                            tier = ATTRIBUTION_SINGLE_SESSION
-                            session_id = str(found_session)
-                if tier is None and tagged_session:
-                    # Hermes knows the session even when no span is open for
-                    # it (between turns): keep the session, leave trace ids empty.
-                    tier = ATTRIBUTION_SESSION_TAG
-                    session_id = tagged_session
-
-            # 2. session attributes.
-            if attrs is not None:
-                if session_id:
-                    attrs.setdefault(SESSION_ID_ATTRIBUTE, session_id)
-                    attrs.setdefault(CONVERSATION_ID_ATTRIBUTE, session_id)
-                    platform = self._platform_for_session(session_id)
-                    if platform:
-                        attrs.setdefault(PLATFORM_ATTRIBUTE, platform)
-                if tier:
-                    attrs[ATTRIBUTION_ATTRIBUTE] = tier
-
-            # 4. redaction, after everything else so added attributes are covered.
+                attrs = rec.attributes = {}
+            # 1. deny-list, before anything reads or adds attributes.
+            tagged_session = _strip_host_attrs(attrs)
+            # 2. attribution.
+            named = attrs.get(SESSION_ID_ATTRIBUTE)
+            tier, session_id = _attribute(
+                rec,
+                tagged_session,
+                str(named) if named else None,
+                self._resolve,
+                self._span_for_session,
+            )
+            # 3. session attributes.
+            if session_id:
+                attrs.setdefault(SESSION_ID_ATTRIBUTE, session_id)
+                attrs.setdefault(CONVERSATION_ID_ATTRIBUTE, session_id)
+                platform = self._platform_for_session(session_id)
+                if platform:
+                    attrs.setdefault(PLATFORM_ATTRIBUTE, platform)
+            if tier:
+                attrs[ATTRIBUTION_ATTRIBUTE] = tier
+            # 4. redaction, after enrichment so the added attributes are covered.
             if self._redact:
-                body = getattr(rec, "body", None)
-                if isinstance(body, str) and body:
-                    redacted = redact_text(body)
-                    if redacted != body:
-                        rec.body = redacted
+                if isinstance(view.body, str) and view.body:
+                    rec.body = redact_text(view.body)
                 redact_attributes(attrs)
-            # 5. attribute length cap (``logs.max_attribute_length``), after redaction.
-            if self._max_len and attrs is not None:
-                for key in list(attrs.keys()):
-                    value = attrs[key]
+            # 5. the length cap (``logs.max_attribute_length``), after redaction.
+            if self._max_len:
+                for key, value in list(attrs.items()):
                     if isinstance(value, str) and len(value) > self._max_len:
                         attrs[key] = value[: self._max_len] + "…"
         except Exception:  # pragma: no cover — logging must never raise
@@ -564,10 +532,6 @@ class HermesLogProcessor(LogRecordProcessor):  # type: ignore[misc]
 
     def force_flush(self, timeout_millis: int = 30000) -> bool:
         return True
-
-
-# Kept for callers that used the previous name (#247); same processor.
-SpanContextStamper = HermesLogProcessor
 
 
 # ── Live sink ───────────────────────────────────────────────────────────────
@@ -583,22 +547,6 @@ _LIVE_NOISY_SUBSTRINGS = (
     "has no subscriptions",
 )
 _INFO_SEVERITY_NUMBER = 9  # OTel INFO = 9..12
-
-
-class _LiveLogNoiseFilter(logging.Filter):
-    """Drop Hermes's chattiest housekeeping lines (kept as a stdlib filter for callers)."""
-
-    _NOISY_LOGGERS = _LIVE_NOISY_LOGGERS
-    _NOISY_SUBSTRINGS = _LIVE_NOISY_SUBSTRINGS
-
-    def filter(self, record: logging.LogRecord) -> bool:
-        if record.name in self._NOISY_LOGGERS:
-            return False
-        try:
-            msg = record.getMessage()
-        except Exception:  # pragma: no cover
-            return True
-        return not any(s in msg for s in self._NOISY_SUBSTRINGS)
 
 
 def _is_live_noise(logger_name: Optional[str], body: Any) -> bool:
@@ -632,27 +580,22 @@ class LiveLogProcessor(LogRecordProcessor):  # type: ignore[misc]
 
     def on_emit(self, log_record: Any) -> None:
         try:
-            rec = getattr(log_record, "log_record", log_record)
-            severity = getattr(rec, "severity_number", None)
-            severity_value = getattr(severity, "value", severity)
-            scope = getattr(log_record, "instrumentation_scope", None)
-            logger_name = getattr(scope, "name", None)
-            body = getattr(rec, "body", None)
-            attributes = getattr(rec, "attributes", None)
-            if not self._rules.accepts(logger_name, severity_value, attributes):
+            view = _RecordView.from_sdk(log_record)
+            if not self._rules.accepts(view.logger_name, view.severity, view.attrs):
                 return
-            if _is_live_noise(logger_name, body):
+            if _is_live_noise(view.logger_name, view.body):
                 return
-            attrs = dict(attributes or {})
-            severity_text = str(getattr(rec, "severity_text", None) or "INFO")
+            rec, body = view.rec, view.body
+            attrs = dict(view.attrs or {})
             trace_id = getattr(rec, "trace_id", 0) or 0
             span_id = getattr(rec, "span_id", 0) or 0
             self._store.add_log(
                 {
-                    "level": severity_text,  # OTel spelling (WARN, FATAL) since store v3
-                    "severity_number": severity_value if isinstance(severity_value, int) else None,
-                    "logger": logger_name,
-                    "scope": logger_name,
+                    # OTel spelling (WARN, FATAL) since store v3
+                    "level": str(getattr(rec, "severity_text", None) or "INFO"),
+                    "severity_number": view.severity,
+                    "logger": view.logger_name,
+                    "scope": view.logger_name,
                     "body": body if isinstance(body, str) else str(body),
                     "time_unix_nano": int(getattr(rec, "timestamp", None) or 0) or None,
                     "observed_time_unix_nano": int(getattr(rec, "observed_timestamp", None) or 0)
@@ -660,7 +603,7 @@ class LiveLogProcessor(LogRecordProcessor):  # type: ignore[misc]
                     "trace_id": format(trace_id, "032x") if trace_id else None,
                     "span_id": format(span_id, "016x") if span_id else None,
                     "session_id": attrs.get(SESSION_ID_ATTRIBUTE),
-                    "event_name": getattr(rec, "event_name", None) or None,
+                    "event_name": view.event_name,
                     "attributes": attrs,
                 }
             )
@@ -813,7 +756,7 @@ def install_handler(
         if live_rules is None:
             base = rules or LogRules(exclude_prefixes=_EXCLUDED_LOGGER_PREFIXES)
             live_rules = dataclasses.replace(
-                base, min_severity=max(base.min_severity, _python_to_severity(live_min_level))
+                base, min_severity=max(base.min_severity, otel_severity(live_min_level))
             )
         provider.add_log_record_processor(LiveLogProcessor(live_store, rules=live_rules))
     for proc, _backend in processors:
@@ -894,25 +837,3 @@ def uninstall_handler(attach_logger: Optional[str] = None) -> None:
     """Remove the handler :func:`install_handler` attached (tracer shutdown)."""
     target = logging.getLogger(attach_logger) if attach_logger else logging.getLogger()
     _remove_prior_handlers(target)
-
-
-def resolve_level(name: Optional[str], default: int = logging.INFO) -> int:
-    """Parse a level string like ``"INFO"`` to an :mod:`logging` integer level.
-
-    Unknown or empty values fall back to ``default``. Accepts bare digits
-    (``"20"``) as a convenience for users mirroring the stdlib numeric API.
-    """
-    if name is None:
-        return default
-    text = str(name).strip()
-    if not text:
-        return default
-    if text.isdigit():
-        try:
-            return int(text)
-        except ValueError:
-            return default
-    resolved = logging.getLevelName(text.upper())
-    if isinstance(resolved, int):
-        return resolved
-    return default

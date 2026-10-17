@@ -33,6 +33,7 @@ from .pipeline_env import (
     without_usage_keys,
 )
 from .plugin_config import content_mode, effective_export_batch_size
+from .severity import python_level
 
 try:
     from opentelemetry import metrics, trace
@@ -686,11 +687,11 @@ def init_logs_pipeline(plugin, resource: "Resource", backends: List[_ResolvedBac
             f"OTLP logs: {backend_types})"
         )
 
-    level = log_handler.resolve_level(config.log_level)
+    level = python_level(config.log_level)
     # The live tail has its own floor (``logs.live_min_level``, INFO by
     # default) so Hermes's DEBUG firehose cannot evict useful lines from
     # the bounded buffer; OTLP keeps ``log_level``.
-    live_level = max(level, log_handler.resolve_level(config.log_live_min_level))
+    live_level = max(level, python_level(config.log_live_min_level))
     plugin._logger_provider = log_handler.install_handler(
         resource=resource,
         processors=processors,

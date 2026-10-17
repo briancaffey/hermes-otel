@@ -55,7 +55,6 @@ from .instruments import (  # noqa: F401 — re-exported
     metric_temporality_map,
     metric_views,
 )
-from .log_handler import _LiveLogNoiseFilter  # noqa: F401 — re-exported for tests
 from .pipeline import (  # noqa: F401 — re-exported
     _OTEL_AVAILABLE,
     _SERVICE_INSTANCE_ID,
@@ -67,6 +66,7 @@ from .pipeline import (  # noqa: F401 — re-exported
 )
 from .plugin_config import HermesOtelConfig, load_config
 from .session_state import PerSession, SessionState
+from .severity import severity_number
 from .span_tracker import SpanTracker, sweep_attributes
 
 try:
@@ -431,7 +431,7 @@ class HermesOTelPlugin:
                 observed_timestamp=now,
                 context=context,
                 severity_text=severity,
-                severity_number=SeverityNumber(_ev.severity_number(severity)),
+                severity_number=SeverityNumber(severity_number(severity, 9)),
                 body=body,
                 attributes=attrs,
                 event_name=name,

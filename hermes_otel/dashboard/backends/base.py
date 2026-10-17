@@ -19,7 +19,8 @@ This module holds the adapter ABC, the structured and log filters, the
 error taxonomy and the HTTP core. The rest is split by concern (#403):
 ``shapes`` (card rows, OTLP spans and batches), ``paging`` (trace and log
 pages, cursor bounds), ``metrics_math`` (name mapping, counter increases,
-bucketing), ``severity`` (level tables) and ``timeconv`` (timestamps to ns).
+bucketing) and ``timeconv`` (timestamps to ns); the level tables are the
+package's :mod:`hermes_otel.severity`.
 No side effects at import time.
 """
 
@@ -37,7 +38,8 @@ from urllib import request as _urlrequest
 
 # The OTLP attribute / status builders live in ``shapes`` (#403) and are
 # re-exported here because every adapter imports them from ``base``.
-from .severity import severity_number_for  # noqa: F401  (finish_log_row; re-exported)
+from hermes_otel.severity import severity_number
+
 from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status, to_int  # noqa: F401
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
@@ -610,7 +612,7 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     level = {"WARNING": "WARN", "CRITICAL": "FATAL"}.get(level, level)
     row["level"] = level
     if row.get("severity_number") is None:
-        row["severity_number"] = severity_number_for(level)
+        row["severity_number"] = severity_number(level)
     attrs: Dict[str, Any] = dict(row.get("attributes") or {})
     for k, v in (extra or {}).items():
         if v is None or v == "" or k in LOG_ROW_KEYS:

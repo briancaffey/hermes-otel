@@ -13,6 +13,7 @@ import pytest
 from hermes_otel.dashboard.backends import _loki, _prometheus
 from hermes_otel.dashboard.backends import tempo as tp
 from hermes_otel.dashboard.backends.base import BackendError, LogFilter
+from hermes_otel.severity import otel_severity
 
 NAMES = {
     "status": "success",
@@ -262,7 +263,7 @@ class TestLoki:
             == '{service_name=~".+"} | trace_id="abc" | hermes_session_id="s1" | scope_name="hermes_otel" | severity_number >= 13 |= "say \\"hi\\""'
         )
         assert _loki.logql_for(LogFilter(), '{job="x"}') == '{job="x"}'
-        assert [_loki.otel_severity_for(l) for l in (10, 20, 25, 40, 50, 0)] == [5, 9, 9, 17, 21, 1]
+        assert [otel_severity(l) for l in (10, 20, 25, 40, 50, 0)] == [5, 9, 9, 17, 21, 1]
 
     def test_search_flattens_streams_newest_first_and_honours_limit(self, fake_http):
         a = tp.TempoAdapter({"type": "lgtm", "endpoint": "http://h:4318/v1/traces"})
