@@ -258,15 +258,115 @@ class TestAuxiliaryRace:
         assert "No differences outside the allowlist." in out
         assert "Tolerated, not failing the run:" in out and "auxiliary race" in out
 
-    def test_run_f_branch_swept_keeps_the_other_difference(self, rc):
+    def test_run_f_branch_swept_and_an_unmarked_trace_are_tolerated(self, rc):
         base, branch = _raced_sides("branch")
-        # The auxiliary call that started after the root ended: its own trace, branch only.
-        branch["live"]["traces"]["shell-echo-out"] = [[_shape(API, None, RESPONSE_KEYS)]]
+        # The auxiliary call that started after the root ended: its own trace,
+        # branch only, carrying no exact batch marker (#577).
+        branch["live"]["unmarked"] = [[_shape(API, None, RESPONSE_KEYS)]]
         diffs, tolerated = rc.compare(base, branch, {})
-        assert diffs == ["shell-echo-out: traces only on branch"]
-        assert [
-            t for t in tolerated if "swept on branch" in t
-        ] and f"{SWEPT} only on branch" in tolerated[1]
+        assert diffs == []
+        assert [t for t in tolerated if "swept on branch" in t]
+        assert f"{SWEPT} only on branch" in tolerated[1]
+        assert tolerated[2] == (
+            f"1 trace(s) on branch carry no exact batch marker (roots ['{API}']): "
+            "an auxiliary call that started after its turn (#577), not compared"
+        )
+
+    def test_sides_recorded_before_unmarked_existed_still_compare(self, rc):
+        base, branch = _raced_sides("branch")
+        assert "unmarked" not in branch["live"]
+        diffs, _ = rc.compare(base, branch, {})
+        assert diffs == []
+
+
+class TestExactMarker:
+    """#577: a trace is keyed by the batch's exact marker, never by marker-like text."""
+
+    TOKEN = "R20261017-branch"
+    ECHO = f"{TOKEN}-shell-echo-out"
+
+    def test_echoed_marker_like_text_matches_no_prompt(self, rc):
+        # Title generation after on_session_end: its own trace, echoing the
+        # shell output but not the prompt's marker line.
+        stray = [_span(API, "x", **{"output.value": f"Echo {self.ECHO}"})]
+        assert rc._marker_id(self.TOKEN, stray, ["shell-echo", "no-tools"]) is None
+        assert rc._marker_id(self.TOKEN, stray) is None
+
+    def test_the_marker_line_wins(self, rc):
+        turn = [
+            _span(
+                "agent",
+                "r",
+                **{"input.value": f"echo {self.ECHO}\n(scenario marker: {self.TOKEN}-shell-echo)"},
+            )
+        ]
+        assert rc._marker_id(self.TOKEN, turn, ["shell-echo"]) == "shell-echo"
+
+    def test_a_bare_exact_marker_counts_without_the_marker_line(self, rc):
+        # A clipped preview lost the marker line; the rendered marker survives.
+        turn = [_span("agent", "r", **{"input.value": f"say {self.TOKEN}-multi-s1t2 now"})]
+        assert rc._marker_id(self.TOKEN, turn, ["multi-s1t1", "multi-s1t2", "multi"]) == (
+            "multi-s1t2"
+        )
+        assert rc._marker_id(self.TOKEN, turn, ["multi"]) is None
+        assert rc._marker_id(self.TOKEN, turn) is None
+
+    def test_batch_marker_ids_reads_every_turn(self, rc, tmp_path):
+        manifest = tmp_path / "runs.json"
+        manifest.write_text(
+            json.dumps(
+                {
+                    "runs": [
+                        {"marker": f"{self.TOKEN}-shell-echo", "turns": []},
+                        {
+                            "marker": f"{self.TOKEN}-multi-s1t1",
+                            "turns": [
+                                {"marker": f"{self.TOKEN}-multi-s1t1"},
+                                {"marker": f"{self.TOKEN}-multi-s1t2"},
+                            ],
+                        },
+                        {"turns": [{"marker": "other-token-x"}]},
+                    ]
+                }
+            )
+        )
+        assert rc.batch_marker_ids(manifest, self.TOKEN) == [
+            "multi-s1t1",
+            "multi-s1t2",
+            "shell-echo",
+        ]
+        assert rc.batch_marker_ids(tmp_path / "missing.json", self.TOKEN) == []
+
+    def test_dump_live_sets_the_stray_trace_aside(self, rc, tmp_path, monkeypatch):
+        from hermes_otel.live_store import LIVE_DB_FILENAME, LiveStore
+
+        home = tmp_path / "home"
+        home.mkdir()
+        monkeypatch.setattr(rc, "profile_home", lambda profile: home)
+        store = LiveStore(db_path=str(home / LIVE_DB_FILENAME))
+        now = time.time_ns()
+        marker_line = f"(scenario marker: {self.TOKEN}-shell-echo)"
+        for trace_id, span_id, name, text in (
+            ("t1", "r1", "agent", f"echo {self.ECHO}\n{marker_line}"),
+            ("t2", "a2", API, f"Echo {self.ECHO}"),
+        ):
+            store.add_span(
+                {
+                    "trace_id": trace_id,
+                    "span_id": span_id,
+                    "parent_span_id": None,
+                    "name": name,
+                    "status": "OK",
+                    "start_time_unix_nano": now,
+                    "end_time_unix_nano": now + 1,
+                    "attributes": {"input.value": text},
+                }
+            )
+        store.flush()
+        store.close()
+        live = rc.dump_live("p", self.TOKEN, (), ids=["shell-echo"])
+        assert sorted(live["traces"]) == ["shell-echo"]
+        assert [[s["name"] for s in t] for t in live["unmarked"]] == [[API]]
 
     def test_identical_sides_report_no_race(self, rc):
         base, _ = _raced_sides("branch")
