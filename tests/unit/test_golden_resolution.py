@@ -63,7 +63,7 @@ _CREDS: Dict[str, Dict[str, str]] = {
     "laminar": {"api_key": "k-test"},
     "langwatch": {"api_key": "k-test", "project": "proj-test"},
     "latitude": {"api_key": "k-test", "project": "proj-test"},
-    "greptime": {"user": "u-test", "password": "p-test"},
+    "greptime": {"user": "u-test", "password": "p-test", "db": "db-test"},
     "clickstack": {"api_key": "k-test"},
     "victoria": {"user": "u-test", "password": "p-test"},
     "aspire": {"api_key": "k-test"},

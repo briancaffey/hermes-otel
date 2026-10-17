@@ -6,6 +6,7 @@
  },
  "display_name": "GreptimeDB",
  "entry": {
+  "db": "<secret>",
   "endpoint": "http://localhost:4318/v1/traces",
   "name": "greptime-entry",
   "password": "<secret>",
@@ -19,6 +20,7 @@
     "endpoint": "http://localhost:4318/v1/otlp/v1/logs",
     "headers": {
      "Authorization": "Basic <secret>",
+     "X-Greptime-DB-Name": "<secret>",
      "x-global": "g"
     }
    }
@@ -36,16 +38,19 @@
   "endpoint": "http://localhost:4318/v1/otlp/v1/traces",
   "headers": {
    "Authorization": "Basic <secret>",
+   "X-Greptime-DB-Name": "<secret>",
    "X-Greptime-Pipeline-Name": "greptime_trace_v1"
   },
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": {
-   "Authorization": "Basic <secret>"
+   "Authorization": "Basic <secret>",
+   "X-Greptime-DB-Name": "<secret>"
   },
   "metrics_endpoint": null,
   "metrics_headers": {
-   "Authorization": "Basic <secret>"
+   "Authorization": "Basic <secret>",
+   "X-Greptime-DB-Name": "<secret>"
   },
   "metrics_temporality": null,
   "resource_attributes": null,
@@ -68,6 +73,12 @@
     "set": true,
     "source": "file (inline)",
     "value": "••••••"
+   },
+   {
+    "field": "db",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
    }
   ],
   "display_type": "GreptimeDB",

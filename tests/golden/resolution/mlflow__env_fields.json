@@ -46,6 +46,12 @@
     "set": true,
     "source": "env HO_TEST_API_KEY",
     "value": "••••••"
+   },
+   {
+    "field": "experiment_id",
+    "set": true,
+    "source": "env HO_TEST_EXPERIMENT_ID",
+    "value": "<secret>"
    }
   ],
   "display_type": "MLflow",
