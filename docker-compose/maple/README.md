@@ -27,7 +27,8 @@ backends:
   - type: otlp
     name: maple
     endpoint: http://localhost:4388/v1/traces
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ## Verify

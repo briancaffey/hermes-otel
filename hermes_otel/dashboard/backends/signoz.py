@@ -8,7 +8,7 @@ other source (#194).
 
 Self-hosted SigNoz OSS requires authentication even on localhost. Add
 an ``api_key`` (or ``api_key_env``) to the backend entry in
-``config.yaml`` — generate a key in SigNoz's "Settings → API Keys".
+``hermes_otel.yaml`` — generate a key in SigNoz's "Settings → API Keys".
 
 Without a key the adapter reports ``auth_required`` in ``status()``
 and raises a clear error when the UI actually tries to query.
@@ -730,7 +730,6 @@ def _iter_series_points(data: Any):
                 yield labels, int(point.get("timestamp") or 0) * 1_000_000, value
 
 
-# The typed attribute buckets of a ``panelType: list`` log entry.
 # The entry's own columns, read off it and put beside the attributes; the
 # session id stays among the attributes too (``session_id`` is not a column).
 _LOG_COLUMNS = LogColumns(level="severity_text", logger="scope_name")

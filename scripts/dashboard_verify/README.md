@@ -29,4 +29,5 @@ uv run --with playwright --extra dev python scripts/dashboard_verify/verify_dash
 The workload is `scripts/scenarios` (`shell-echo`, `no-tools`,
 `missing-file`, `multi-tool` by default; `--prompts` picks others). The
 dashboard must be running (`hermes dashboard --port 9119 --no-open`) and the
-source must be a named entry in the profile's `hermes_otel.yaml`.
+source must be a named entry in the profile's `hermes_otel.yaml`. `--base` points at another dashboard URL (default
+`http://127.0.0.1:9119`); `--no-browser` skips the Playwright checks.

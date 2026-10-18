@@ -615,8 +615,8 @@ class OpenObserveAdapter(BackendAdapter):
     def trace_url(self, trace_id: str) -> Optional[str]:
         """The trace in OpenObserve's own UI (``/web/traces/trace-details``,
         verified in a browser against the 2026-10 image): the org and stream
-        the adapter queries, and a 30-day window ending an hour from now so
-        the page's time picker contains the trace."""
+        the adapter queries, and a 31-day window ending one to two hours from
+        now so the page's time picker contains the trace."""
         base = str(self.cfg.get("ui_url") or self.query_url or "").rstrip("/")
         if not base:
             return None

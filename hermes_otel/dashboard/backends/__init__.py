@@ -155,7 +155,7 @@ def default_service_name(cfg: Dict[str, Any]) -> str:
 
 
 def load_config() -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
-    """Parse config.yaml. Returns ``(path, backends_list, query_backend_pin)``.
+    """Parse the resolved config file. Returns ``(path, backends_list, query_backend_pin)``.
 
     Absent file, unparseable yaml, and missing ``backends:`` all come
     back as empty. The caller decides how to report this to the user.

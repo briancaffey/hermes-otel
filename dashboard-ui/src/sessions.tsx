@@ -205,7 +205,8 @@ export function LiveSessions({
   );
 }
 
-// A local alias so sessions.tsx does not import spantree's LiveTraceCard back.
+// rowFromLive under a local name: the session's turns above render through
+// TraceCard directly, not spantree's LiveTraceCard wrapper.
 import { rowFromLive as rowFromLiveLocal } from "./lib";
 
 // Backend source: the page of search results grouped client-side by the

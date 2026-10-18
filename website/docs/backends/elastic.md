@@ -37,7 +37,7 @@ The plugin appends `/v1/traces`, `/v1/metrics`, `/v1/logs` to the endpoint as ne
 ```yaml
 backends:
   - type: elastic
-    endpoint: http://localhost:4318
+    endpoint: http://localhost:4318   # your collector's OTLP/HTTP port; the bundled stack below uses http://127.0.0.1:14319
 ```
 
 No API key is needed for a collector on a trusted network: when no key resolves, the `Authorization` header is omitted entirely (set one anyway if your collector has auth enabled — the header shape is the same).
@@ -94,6 +94,8 @@ Trace export also works through the [generic OTLP](/backends/otlp) type with a h
 | `metrics_temporality` | string | Defaults to `delta` for this type; `cumulative` overrides |
 
 The [Hermes dashboard's OTel tab](/dashboard) has no query adapter for `elastic` (like Honeycomb and Weave), so the entry exports only; use Kibana to read the data back.
+
+In single-backend (env-var) mode, `OTEL_ELASTIC_ENDPOINT` selects Elastic. An API key alone (`OTEL_ELASTIC_API_KEY` or `ELASTIC_API_KEY`) does not, because there is no default host to send to.
 
 ## Data streams
 

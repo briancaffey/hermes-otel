@@ -50,11 +50,11 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
   </div>
   <div className="feature-card">
     <h3>Privacy mode</h3>
-    <p>Flip <code>capture_previews: false</code> to strip every input/output preview at the source. Metadata (tool names, durations, tokens) still flows.</p>
+    <p>Set <code>content_capture: off</code> to record no prompts, responses or tool content at the source, or <code>preview</code> to keep short clipped previews. Metadata (tool names, durations, tokens) still flows.</p>
   </div>
   <div className="feature-card">
     <h3>Orphan-span sweep</h3>
-    <p>Long-abandoned sessions don't leak state: a TTL sweeper finalizes stale root spans with <code>final_status=timed_out</code> so your UI stays clean.</p>
+    <p>Long-abandoned sessions don't leak state: a TTL sweeper closes stale root spans with <code>hermes.turn.final_status=timed_out</code> so your UI stays clean.</p>
   </div>
 </div>
 
@@ -167,7 +167,7 @@ hermes-otel turns every Hermes lifecycle hook into a properly-nested **OpenTelem
   </Link>
   <Link className="backend-card" to="/backends/otlp">
     <div className="backend-card__name">Generic OTLP</div>
-    <div className="backend-card__desc">Any OTLP/HTTP collector. Drop in an endpoint and go.</div>
+    <div className="backend-card__desc">Any OTLP collector, over HTTP or gRPC (with TLS / mTLS). Drop in an endpoint and go.</div>
   </Link>
   <Link className="backend-card" to="/backends/multi-backend">
     <div className="backend-card__name">Multi-backend</div>
@@ -182,7 +182,7 @@ Hermes core ships content-free [gateway monitoring](https://hermes-agent.nousres
 | | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
 |---|---|---|---|
 | Scope | Gateway/cron health, content-free | Per-run traces | Per-run traces + metrics + logs |
-| Backends | Any OTLP receiver | Langfuse only | 19 backend types plus generic OTLP, fan-out |
+| Backends | Any OTLP receiver | Langfuse only | 26 backend types plus generic OTLP, fan-out |
 | Coexists with hermes-otel | Yes | Yes | |
 
 ## The span hierarchy
@@ -195,7 +195,7 @@ agent / cron                              [root, AGENT]
     └── api.{model}                       [LLM — second round-trip, final response]
 ```
 
-Each span carries the attributes both Langfuse (`gen_ai.usage.input_tokens`, `gen_ai.content.prompt`) and Phoenix (`llm.token_count.prompt`, `input.value`) expect — see [Attribute conventions](/architecture/attributes).
+Each span carries the attributes both Langfuse (`gen_ai.usage.input_tokens`, `gen_ai.input.messages`) and Phoenix (`llm.token_count.prompt`, `input.value`) expect — see [Attribute conventions](/architecture/attributes).
 
 ## Where to go next
 

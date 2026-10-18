@@ -1,8 +1,8 @@
 """OTel log pipeline for hermes-otel.
 
 Bridges Python's :mod:`logging` to the OTel logs signal. When
-:attr:`~hermes_otel.plugin_config.HermesOtelConfig.capture_logs` is true the
-tracer wires one :class:`BatchLogRecordProcessor` per log-capable backend and
+:attr:`~hermes_otel.plugin_config.HermesOtelConfig.capture_logs` is true
+:func:`hermes_otel.pipeline.init_logs_pipeline` wires one :class:`BatchLogRecordProcessor` per log-capable backend and
 attaches a :class:`LoggingHandler` to Python's root logger (or a scoped
 logger, controlled by ``log_attach_logger``).
 
@@ -569,8 +569,9 @@ class LiveLogProcessor(LogRecordProcessor):  # type: ignore[misc]
     Sits on the same provider as the exporters, after
     :class:`HermesLogProcessor`, so the row the dashboard shows is the record
     the backend stores: same ids, same attributes, same redaction. The tail is
-    floored at INFO (Hermes's DEBUG firehose would evict useful lines from the
-    bounded buffer) and skips the housekeeping noise above.
+    floored at ``logs.live_min_level`` (INFO by default: Hermes's DEBUG
+    firehose would evict useful lines from the bounded buffer) and skips the
+    housekeeping noise above.
     """
 
     def __init__(
@@ -637,7 +638,7 @@ def build_log_processors(
     Returns ``[(processor, backend), ...]``. Backends that don't support
     logs are silently skipped. Any per-backend exporter init failure is
     logged and the other backends still proceed — matches the fan-out
-    semantics of :func:`pipeline.init_otlp_pipeline`, and the endpoint and
+    semantics of :func:`pipeline.build_pipeline`, and the endpoint and
     headers come from the same :meth:`_ResolvedBackend.target` rule.
 
     *batch* carries the ``logs.batch.*`` knobs; *rules* the global
@@ -721,8 +722,9 @@ def install_handler(
     Args:
         resource: OTel ``Resource`` shared with traces/metrics so every
             signal carries the same ``service.name`` etc.
-        processors: Output of :func:`build_log_processors`. If empty the
-            handler is not attached and ``None`` is returned.
+        processors: Output of :func:`build_log_processors`. If empty and
+            there is no *live_store*, nothing is attached and ``None`` is
+            returned.
         level: Python logging level (``logging.INFO`` etc) the handler
             will accept.
         attach_logger: Logger name to attach the handler to. ``None``
@@ -747,7 +749,7 @@ def install_handler(
         common_attributes: The config's ``common_attributes``, stamped on
             every record by :class:`HermesLogProcessor` (#480).
 
-    Returns the ``LoggerProvider`` so the tracer can keep a reference for
+    Returns the ``LoggerProvider`` so the pipeline can keep a reference for
     ``force_flush`` / ``shutdown``. Returns ``None`` when logs are
     unavailable or there is neither a log-capable backend nor a live store.
     """

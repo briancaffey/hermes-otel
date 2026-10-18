@@ -23,8 +23,9 @@
 
 # ── Project / resource attributes ─────────────────────────────────────────────
 
-# Shows up in the Phoenix "Project" dropdown and as `openinference.project.name`
-# on every span. Also settable via OTEL_PROJECT_NAME / HERMES_OTEL_PROJECT_NAME.
+# Shows up in the Phoenix "Project" dropdown, as `openinference.project.name`
+# on the Resource (so every span carries it). Also settable via
+# HERMES_OTEL_PROJECT_NAME; OTEL_PROJECT_NAME is used when neither is set.
 # project_name: hermes-agent
 
 # Fleets: report each named profile as its own service, so service pickers and
@@ -114,8 +115,8 @@
 
 # Platform sender ID capture. When true, gateway sessions add the raw
 # platform sender ID as hermes.sender.id and a backend-neutral user.id
-# formatted as "{platform}:{sender_id}". The platform is already emitted
-# on LLM spans as llm.provider.
+# formatted as "{platform}:{sender_id}". The platform itself is already
+# emitted as hermes.platform.
 # This can identify users (for example Discord, Telegram, Slack, email, SMS),
 # so keep it opt-in. CLI sessions usually leave it empty.
 # capture_sender_id: false
@@ -124,7 +125,8 @@
 # llm.* span's input.value. The api.* spans don't carry message-level
 # detail, so flipping this on is the easiest way to see what the model saw.
 # Output is JSON (input.mime_type=application/json) — Phoenix pretty-prints it.
-# Respects `capture_previews` above.
+# Mostly redundant with content_capture: full, which already puts the complete
+# request on every api.* span. Nothing is attached when content_capture is off.
 # capture_conversation_history: false
 
 # Max serialized size for the conversation history (JSON, UTF-8 bytes ~ chars).
@@ -400,11 +402,11 @@
 # Metrics export interval (how often the PeriodicExportingMetricReader flushes).
 # flush_interval_ms: 60000
 
-# Flush every backend's span queue when a turn ends, so the trace shows up in
-# the UI right away instead of after span_batch_schedule_delay_ms. Runs on a
-# background thread with a 500 ms timeout per backend and coalesces, so a slow
-# or unreachable collector never stalls the agent. Metrics and logs export on
-# their own schedule; process exit flushes everything.
+# Flush every backend's span queue, then the metric and log providers, when a
+# turn ends, so the trace shows up in the UI right away instead of after
+# span_batch_schedule_delay_ms. Runs on a background thread with a 500 ms
+# timeout per backend and coalesces, so a slow or unreachable collector costs
+# a turn at most force_flush_wait_ms. Process exit flushes everything.
 # force_flush_on_session_end: true
 # How long the turn waits for that flush before returning to Hermes, in ms.
 # A healthy backend needs far less; a stuck one costs at most this much per
@@ -504,13 +506,14 @@
 # Grafana for `lgtm`, Jaeger's :16686, SigNoz's :8080).
 #
 # When `backends:` is absent or empty, the plugin falls back to single-backend
-# env-var detection (OTEL_LANGSMITH_API_KEY, OTEL_LANGFUSE_*, OTEL_SIGNOZ_ENDPOINT,
-# OTEL_PARSEABLE_ENDPOINT, OTEL_JAEGER_ENDPOINT, OTEL_TEMPO_ENDPOINT,
-# OTEL_PHOENIX_ENDPOINT — first match wins). Setting `backends:` takes full
+# env-var detection (the env-var mode column above; first match wins, from
+# OTEL_LANGSMITH_API_KEY first to OTEL_PHOENIX_ENDPOINT last, in the order of
+# ENV_PRIORITY in hermes_otel/backend_specs.py). Setting `backends:` takes full
 # control away from env detection.
 #
-# Example: fan out to all five local collectors (assumes they're running via
-# docker-compose/all.sh). Uncomment to use.
+# Example: fan out to local collectors started from docker-compose/<name>/
+# (the ports are those stacks' defaults). Keep the entries whose stacks are
+# running. Uncomment to use.
 
 # backends:
 #   - type: phoenix
@@ -574,8 +577,8 @@
 #     # headers: {x-greptime-hints: ttl=7d}   # retention; none by default
 #
 #   - type: tempo
-#     endpoint: http://localhost:3200/v1/traces
-#     # query_port: 3200            # dashboard read path (Tempo query API)
+#     endpoint: http://localhost:4358/v1/traces   # docker-compose/tempo (4318 in the container)
+#     query_port: 3210              # dashboard read path (Tempo query API; 3200 in the container)
 #
 #   - type: otlp
 #     name: my-custom-collector
@@ -583,9 +586,11 @@
 #     headers:
 #       X-Tenant: acme
 #     metrics: true
-#     logs: true       # override default (on for otlp/signoz/lgtm/uptrace/openobserve/parseable/honeycomb)
+#     logs: true       # already the default for otlp; see the type list above for each type's signals
 
-# Generic OTLP over gRPC, optionally with a private CA and mTLS:
+# Generic OTLP over gRPC (type: otlp only), optionally with a private CA and
+# mTLS. headers_helper is not available with protocol: grpc. The TLS file keys
+# also work on an HTTPS endpoint of any type.
 #   - type: otlp
 #     name: secure-telemetry
 #     protocol: grpc
@@ -667,7 +672,8 @@
 
 # ── Honeycomb quickstart ─────────────────────────────────────────────────────
 #
-# Honeycomb (SaaS, OTLP/HTTP) — traces + metrics + logs. See HONEYCOMB.md.
+# Honeycomb (SaaS, OTLP/HTTP) — traces + metrics + logs.
+# See website/docs/backends/honeycomb.md.
 # Trace export also works via a plain `type: otlp` entry; the dedicated
 # `honeycomb` type just fills in the endpoint and auth header for you.
 #
@@ -678,7 +684,7 @@
 #     # Optional dataset (sent as x-honeycomb-dataset). Modern (Environments)
 #     # keys IGNORE it — traces route by service.name, metrics to a default
 #     # "Metrics" dataset (verified live). Only Honeycomb Classic keys need it
-#     # (required for every signal). See HONEYCOMB.md.
+#     # (required for every signal). See website/docs/backends/honeycomb.md.
 #     # dataset: hermes
 #     # endpoint:                             # optional; overrides the region default
 # capture_logs: true

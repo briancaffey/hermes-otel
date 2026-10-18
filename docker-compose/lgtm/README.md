@@ -1,4 +1,4 @@
-# LGTM backend — Grafana, Loki, Tempo, Mimir + Collector
+# LGTM backend — Grafana, Loki, Tempo, Prometheus + Collector
 
 A single-container local observability stack that covers all three OTel
 signals:
@@ -6,7 +6,7 @@ signals:
 | Signal | Storage | UI |
 |---|---|---|
 | Traces | Tempo | Grafana (Tempo datasource) |
-| Metrics | Mimir (Prometheus-compatible) | Grafana (Prometheus datasource) |
+| Metrics | Prometheus (the pinned 0.34.0 image runs Prometheus 3.14, not Mimir) | Grafana (Prometheus datasource) |
 | Logs | Loki | Grafana (Loki datasource) |
 
 The bundled OTel Collector receives OTLP on `:4318` (HTTP) and `:4317`
@@ -37,10 +37,12 @@ log_level: INFO
 
 > **Don't use `type: tempo` for this stack.** That type is for a standalone
 > Tempo (traces only) and will refuse to fan out logs or metrics even when
-> pointed at the LGTM collector. `type: lgtm` is a thin alias over `otlp`
-> that declares intent and makes startup logs say "LGTM" instead of "OTLP".
+> pointed at the LGTM collector. `type: lgtm` exports like `otlp`, declares
+> intent, makes startup logs say "LGTM" instead of "OTLP", and gives the
+> dashboard tab its Tempo / Prometheus / Loki adapter.
 
-Restart hermes-agent; `[hermes-otel] ✓ OTLP at http://localhost:4318/v1/traces`
+Give the full `/v1/traces` URL: the type posts to exactly that URL. Restart
+hermes-agent; `[hermes-otel] ✓ LGTM at http://localhost:4318/v1/traces`
 should appear in its startup logs. If `capture_logs` is on you'll also
 see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 
@@ -67,15 +69,15 @@ see `[hermes-otel] ✓ Logs → 1 backend(s) (attached to root, level=INFO)`.
 | 3200 | Tempo | Tempo's own query API (Grafana points here) |
 | 4317 | Collector | OTLP gRPC receiver |
 | 4318 | Collector | OTLP HTTP receiver ← **plugin exports here** |
-| 9090 | Mimir / Prometheus | metrics UI and OTLP write endpoint |
+| 9090 | Prometheus | metrics UI and OTLP write endpoint |
 
 **Conflicts to watch for:**
 
 - **Port 3000** collides with the langfuse and latitude stacks. Run one or the other,
   not both. If you want both, remap LGTM's Grafana:
   `ports: ["3001:3000", ...]`.
-- **Port 4318** collides with jaeger and the HTTP side of signoz. Pick
-  the one you want on 4318 or remap the others.
+- **Port 4318** collides with the jaeger (v1) stack. Pick the one you want
+  on 4318 or remap the other. (SigNoz publishes its OTLP/HTTP on 4328 here.)
 
 ## Provisioned Grafana dashboards
 
@@ -114,8 +116,9 @@ The `batch` processor timeout/size (`1s` / `512`) is tuned for typical LLM
 agent workloads — lots of small spans, latency not critical. Bump both for
 higher-throughput workloads.
 
-Exporter endpoints (`127.0.0.1:4418`, `127.0.0.1:9090`, `127.0.0.1:3100`)
-target services running inside the same LGTM container. Don't rewrite
+Exporter endpoints (`127.0.0.1:4418` for Tempo, `127.0.0.1:9090/api/v1/otlp`
+for Prometheus, `127.0.0.1:3100/otlp` for Loki) target services running
+inside the same LGTM container. Don't rewrite
 them to `4317`/`4318` — those are the collector's own receiver ports.
 
 ## Tearing down
@@ -135,7 +138,7 @@ supervised by a small init:
 
 1. An OTel Collector (this file's config)
 2. Tempo (trace storage)
-3. Mimir (Prometheus-compatible metric storage)
+3. Prometheus (metric storage)
 4. Loki (log storage)
 5. Grafana with the three datasources pre-provisioned
 

@@ -22,7 +22,7 @@ def register(ctx):
     tracer = get_tracer()
     tracer.init()                 # Reads config, resolves backends, builds the pipeline
     if not tracer.is_enabled:
-        return                     # HERMES_OTEL_ENABLED=false → bail out silently
+        return                     # enabled: false (HERMES_OTEL_ENABLED=false) → bail out silently
 
     for hook_name, callback in hooks.HOOKS:   # the one (hook name, callback) table
         try:
@@ -35,20 +35,20 @@ def register(ctx):
 
 ## 2. Tracer init
 
-`tracer.init()` reads [`config.yaml`](/configuration/yaml) + env vars, resolves the backend list (single-backend env-var detection, or multi-backend from YAML, in `backends.py`), and hands the resolved backends to `pipeline.build_pipeline()`, which sets up the OTel SDK:
+`tracer.init()` reads [`$HERMES_HOME/hermes_otel.yaml`](/configuration/yaml) and the `HERMES_OTEL_*` env vars, resolves the backend list (single-backend env-var detection, or multi-backend from YAML, in `backends.py`), and hands the resolved backends to `pipeline.build_pipeline()`, which sets up the OTel SDK:
 
 ```text
 Backend resolver
   ↓
 For each backend:
-  SpanExporter (OTLP/HTTP)
+  SpanExporter (OTLP/HTTP, or OTLP/gRPC for a `protocol: grpc` entry)
   ↓
   BatchSpanProcessor (bounded queue + worker thread)
   ↓
 Attach to single TracerProvider (all processors)
 ```
 
-Each backend gets its own processor — that's the non-blocking-per-backend isolation that makes multi-backend safe.
+Each backend gets its own processor — that's the non-blocking-per-backend isolation that makes multi-backend safe. The live store (for the dashboard) is one more processor beside them. After building the pipeline, `init()` starts the reachability probe (`probe_backends`, on by default): one TCP connect per backend endpoint on a background thread, logged as reachable or unreachable. It never delays an export.
 
 ## 3. Hooks → spans
 
@@ -56,20 +56,20 @@ Hermes fires lifecycle events; the plugin translates each into a span operation:
 
 | Hook | What happens |
 |---|---|
-| `on_session_start` | `tracker.start("session.{platform}", parent=None)`; stash root |
-| `pre_llm_call` | `tracker.start("llm.{model}", parent=session_root)` |
-| `pre_api_request` | `tracker.start("api.{model}", parent=current_llm)` |
-| `post_api_request` | Set token counts on the `api.*` span, `tracker.end` it |
-| `pre_tool_call` | `tracker.start("tool.{name}", parent=current_api or current_llm)` |
-| `post_tool_call` | Set result / outcome on `tool.*` span, `tracker.end` it |
-| `post_llm_call` | Set output on `llm.*`, `tracker.end` it |
-| `on_session_end` | Compute turn summary, set on the `agent` / `cron` root, `tracker.end`, force-flush |
+| `on_session_start` | Start the `agent` (or `cron`) root and push it as the session's parent |
+| `pre_llm_call` | Start `llm.{model}` under the root and push it |
+| `pre_api_request` | Start `api.{model}` under `llm.*` and push it |
+| `post_api_request` | Set token counts on the `api.*` span, pop it and end it |
+| `pre_tool_call` | Start `tool.{name}` under the current parent (the `llm.*` span, since the `api.*` span that asked for the tool has ended) |
+| `post_tool_call` | Set result / outcome on the `tool.*` span and end it |
+| `post_llm_call` | Set output on `llm.*`, pop it and end it |
+| `on_session_end` | Compute the turn summary, set it on the `agent` / `cron` root, end it, flush |
 
-All handled by `SpanTracker` (in `span_tracker.py`), which keeps a per-session parent stack so parent/child relationships are correct even when hooks interleave.
+The plugin's tracer (`tracer.py`) starts and ends the spans; `SpanTracker` (in `span_tracker.py`) keeps the open spans and a per-session parent stack, so parent/child relationships are correct even when hooks from several sessions interleave. The [span hierarchy](/architecture/span-hierarchy) page covers the other hooks (skills, approvals, sub-agents, auxiliary calls, kanban).
 
 ## 4. Span export
 
-`span.end()` doesn't POST anything — it enqueues the finished span on every attached processor's queue. Each processor's worker thread wakes on its schedule (1 second by default) and POSTs a batch to its OTLP endpoint.
+`span.end()` doesn't POST anything — it enqueues the finished span on every attached processor's queue. Each processor's worker thread wakes on its schedule (`span_batch_schedule_delay_ms`, 1 second by default) and sends a batch to its OTLP endpoint.
 
 ```text
 span.end()
@@ -85,8 +85,8 @@ A slow backend backs up its own queue only. The agent's hot path is unaffected.
 
 Two shutdown paths:
 
-- **Graceful** — `on_session_end` runs, `force_flush_on_session_end: true` drains each span queue from a background thread (500 ms per backend, coalesced). Plus an `atexit` handler on process exit synchronously drains whatever's left, metrics and logs included.
-- **Hard crash** — no atexit, no force-flush. Up to `schedule_delay_ms` of spans can be lost (default: 1 second's worth).
+- **Graceful** — `on_session_end` runs, and `force_flush_on_session_end: true` (the default) drains each span queue from a background thread (500 ms per backend, coalesced), then metrics and logs. The turn waits up to `force_flush_wait_ms` (default 1500) for it before returning to Hermes. An `atexit` handler on process exit drains whatever is left.
+- **Hard crash** — no atexit, no force-flush. Up to `span_batch_schedule_delay_ms` of spans can be lost (default: 1 second's worth).
 
 This is the standard OTel trade-off and matches every production tracing stack — the alternative is blocking on every span end, which defeats the purpose.
 
@@ -102,9 +102,11 @@ Each line is the module's own docstring in one sentence.
 |---|---|
 | `__init__.py` | Plugin entry point: `register(ctx)` initialises the tracer and loops over `hooks.HOOKS` |
 | `plugin.yaml` | Hermes manifest — declares provided hooks |
+| `requirements.txt`, `after-install.md` | The runtime dependencies Hermes installs, and the note it shows after `hermes plugins install` |
 | `tracer.py` | `HermesOTelPlugin`, the singleton tracer manager: `init()` reads the config, resolves the backends and holds the one `Pipeline`; `record_metric`; `get_tracer()` |
-| `pipeline.py` | The export pipeline: `build_pipeline()` wires the Resource, one `BatchSpanProcessor` per backend behind the live-store and MCP-ping-filter processors, one metric reader per metrics backend and the logs pipeline into one `Pipeline` with `force_flush()` and `shutdown()` |
+| `pipeline.py` | The export pipeline: `build_pipeline()` wires the Resource, one `BatchSpanProcessor` per backend behind the common-attributes, live-store and MCP-ping-filter processors, one metric reader per metrics backend and the logs pipeline into one `Pipeline` with `force_flush()` and `shutdown()` |
 | `pipeline_env.py` | Leaf module: the OTLP endpoint and header environment the exporters see, the host platform the Resource describes, and the token-usage attribute filter the root roll-up applies |
+| `otlp_transport.py` | Builds each backend's OTLP exporters: HTTP/protobuf or gRPC, and the TLS / mTLS files (`certificate_file`, `client_certificate_file`, `client_key_file`, `insecure`) with their `OTEL_EXPORTER_OTLP_*` fallbacks |
 | `flush.py` | `Flusher`: the coalesced background turn-end flush |
 | `probe.py` | Backend reachability probe: one TCP connect per distinct endpoint at init, on a background thread, one log line per backend |
 
@@ -117,6 +119,7 @@ Each line is the module's own docstring in one sentence.
 | `backend_specs.py` | The backend manifest: one `BackendSpec` per type (signals, presets, env-var opt-in, credential fallbacks, Settings-tab facts, adapter module); `SPECS`, `BY_TYPE`, `spec_for` |
 | `backends.py` | Backend resolution: `BackendConfig` objects or environment variables → `_ResolvedBackend` (endpoint URLs, headers with auth baked in, display name); stateless, no SDK imports |
 | `settings_report.py` | Effective-settings report for the Settings tab: every field with its value, source and what the other sources said, the env-var inventory, credential masking, the effective YAML |
+| `headers_helper.py` | `headers_helper:`: runs a command that prints headers (for short-lived tokens), merges them over the static headers, and re-runs it once on a 401/403 |
 | `mcp_config.py` | Derives an `opentelemetry-mcp` server configuration from the configured backends (`otel.py mcp-config`) |
 
 **Hooks, spans and sessions**

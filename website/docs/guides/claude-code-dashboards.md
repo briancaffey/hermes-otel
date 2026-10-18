@@ -45,7 +45,7 @@ What each panel shows for Hermes:
 | Total Tokens, Tokens by Type, Token Usage by Type / Model, Cache hit ratio | `input` (uncached) + `output` + `cacheRead` + `cacheCreation`; the cache ratio is `cacheRead / (cacheRead + cacheCreation + input)` exactly as for Claude Code | the twin derives Claude Code's `input` from Hermes's whole-prompt count |
 | Active Time | `cli` only: the turn's wall-clock | Hermes has no keyboard-time signal for `user` |
 | Users, Top Users, Cost by effort | empty or one unlabelled row | `user.email`, `user.id`, `organization.id` and `effort` are Claude Code account attributes Hermes does not have |
-| Commits, Pull Requests, Lines Added / Removed, Tool Decisions, Edit Decisions by Language | empty | `commit.count`, `pull_request.count`, `lines_of_code.count` and `code_edit_tool.decision` have no Hermes counterpart yet (`commit.count` is #478) |
+| Commits, Pull Requests, Lines Added / Removed, Tool Decisions, Edit Decisions by Language | empty | `pull_request.count`, `lines_of_code.count` and `code_edit_tool.decision` have no Hermes counterpart. Hermes does count commits, as `hermes.commit.count` ([#478](https://github.com/briancaffey/hermes-otel/issues/478)), but `metric_name_compat` does not rename it to `claude_code.commit.count`, so the Commits panel stays empty |
 
 The dashboard's `organization` and `user` template variables are built from labels Hermes does not send; leave them on *All* (the `.*` match includes series without the label).
 

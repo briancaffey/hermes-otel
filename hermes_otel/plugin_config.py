@@ -12,10 +12,11 @@ Two ways to pick backends:
   * **Multi-backend** (preferred): set ``backends:`` in config.yaml. Every entry
     fans out via its own ``BatchSpanProcessor`` so traces land in all
     configured collectors in parallel without blocking the agent thread.
-  * **Single-backend (legacy)**: set one of the ``OTEL_*_ENDPOINT`` env vars
-    or Langfuse / LangSmith credentials. When ``backends:`` is empty, env-var
-    detection is used and at most one backend is selected: LangSmith first,
-    then the order of ``backend_specs.ENV_PRIORITY``.
+  * **Single-backend (legacy)**: set one backend's ``OTEL_*`` variables (an
+    ``OTEL_*_ENDPOINT``, or a vendor's ``OTEL_*`` key such as
+    ``OTEL_LANGSMITH_API_KEY``). When ``backends:`` is empty, env-var detection
+    is used and at most one backend is selected, the first that resolves in
+    ``backend_specs.ENV_PRIORITY`` order (LangSmith first).
 """
 
 from __future__ import annotations
@@ -346,7 +347,9 @@ class HermesOtelConfig:
     over that metadata.
     """
 
-    enabled: bool = _field(True, "Master kill switch; `false` unloads every hook", "General")
+    enabled: bool = _field(
+        True, "Master switch; `false` registers no hooks and exports nothing", "General"
+    )
     sample_rate: Optional[float] = _field(
         None,
         "Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling)",
@@ -421,7 +424,7 @@ class HermesOtelConfig:
     )
     resource_attributes: Optional[Dict[str, Scalar]] = _field(
         None,
-        "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`",
+        "Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`, `hermes.profile`",
         "General",
     )
     common_attributes: Optional[Dict[str, Scalar]] = _field(
@@ -574,7 +577,7 @@ class HermesOtelConfig:
     )
     log_events: bool = _field(
         False,
-        "Emit structured `hermes.*` / GenAI events from the hooks (Phase 2); `logs.events.enabled`",
+        "Emit structured `hermes.*` / GenAI events (log records with an event name) from the hooks; `logs.events.enabled`",
         "Logs",
     )
     log_events_content: str = _field(

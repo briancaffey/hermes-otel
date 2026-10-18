@@ -1,14 +1,14 @@
 ---
 sidebar_position: 5
 title: "Privacy mode"
-description: "Suppress all input/output previews (user messages, tool args, tool results) while keeping structural metadata — for shared deployments where content can't leave the process."
+description: "content_capture: off records no prompts, responses, tool arguments or tool results while keeping structural metadata — for shared deployments where content can't leave the process."
 ---
 
 # Privacy mode
 
-Some of the plugin's most valuable telemetry is also the most sensitive: the user's message, the tool arguments, the tool result, the model's response. In shared deployments (company production, multi-tenant hosting, anywhere the agent operates on data that can't leave the process), you often need to suppress all of that at the source.
+Some of the plugin's most useful telemetry is also the most sensitive: the user's message, the tool arguments, the tool result, the model's response. By default (`content_capture: full`) all of it is recorded, including the complete prompt and response on every `api.*` span. In shared deployments (company production, multi-tenant hosting, anywhere the agent handles data that must not leave the process), you need to stop that at the source.
 
-Privacy mode is a single knob that does exactly that.
+Privacy mode is one setting that does it.
 
 ## The switch
 
@@ -29,12 +29,13 @@ export HERMES_OTEL_CONTENT_CAPTURE=off
 
 When `content_capture: off`:
 
+- The complete request and response on `api.*` spans (`gen_ai.input.messages`, `gen_ai.output.messages`, `gen_ai.system_instructions`, `input.value`, `output.value`)
 - `input.value` on `llm.*` spans (user message)
 - `output.value` on `llm.*` spans (assistant response)
-- `gen_ai.content.prompt` / `gen_ai.content.completion` on `llm.*` spans
 - `input.value` on `tool.*` spans (tool args)
 - `output.value` on `tool.*` spans (tool result)
 - `hermes.approval.command` / `hermes.approval.description` on `approval.*` spans (the command awaiting human approval)
+- The goal and summary previews on `subagent.*` spans
 - The conversation-history JSON when [conversation capture](/configuration/conversation-capture) is also enabled
 
 These attributes are **never set** on the span — not "set and then redacted". A reader can't pull them back out.
@@ -68,11 +69,11 @@ If you ever see tool args or user messages in the backend UI that you didn't exp
 
 Note that `hermes.tool.command` (the shell command passed to `bash`-family tools) and `hermes.tool.target` (the file path passed to `read_file`, `edit_file`, etc.) are **not** suppressed by privacy mode. They're structured metadata, not free-form user content.
 
-If even command and target are too sensitive for your deployment, file an issue — we can add a stricter mode.
+They are clipped to 500 characters. If even command and target are too sensitive for your deployment, [file an issue](https://github.com/briancaffey/hermes-otel/issues) asking for a stricter mode.
 
 ## Interaction with `preview_max_chars`
 
-`preview_max_chars` (default: 1200) is a separate truncation cap. It clips long previews with a `...`. In `off` mode `preview_max_chars` becomes a no-op — there's nothing to clip. In `preview` mode a clipped value carries `hermes.preview.<input|output>.truncated = true` and `.original_chars`, so a short-looking value can be told from a clipped one.
+`preview_max_chars` (default: 1200) is a separate cap. It clips long previews and ends them with `...`. In `off` mode it does nothing, since there is nothing to clip. In `preview` and `full` mode a clipped preview carries `hermes.preview.<input|output>.truncated = true` and `.original_chars`, so a short-looking value can be told from a clipped one.
 
 ## Logs and events
 
@@ -86,6 +87,6 @@ See [Logs and events](/configuration/logs#what-never-leaves-the-machine) for the
 
 ## Verifying
 
-A quick way to verify privacy mode is working: run a Hermes turn that uses a tool, then inspect the trace. Every `input.value` / `output.value` / `gen_ai.content.*` attribute should be **absent** (not empty — absent). Token counts and tool names should still be present.
+To check privacy mode: run a Hermes turn that uses a tool, then inspect the trace. Every `input.value`, `output.value`, `gen_ai.input.messages` and `gen_ai.output.messages` attribute should be **absent** (not empty: absent). Token counts and tool names should still be there. The dashboard's **Settings** tab also shows the mode in force.
 
 In Langfuse, you'll see observations with empty input/output panels. In Phoenix, the Input/Output panels won't render at all for those spans.

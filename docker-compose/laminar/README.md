@@ -45,8 +45,9 @@ docker exec hermes-otel-laminar-clickhouse clickhouse-client --user ch_user --pa
 ```
 
 ## Caveats
-- `/v1/metrics` returns 200 and stores nothing (`metrics.rs` is a placeholder),
-  so keep `metrics: false` or you will wonder where they went.
+- `/v1/metrics` returns 200 and stores nothing (`metrics.rs` is a placeholder).
+  The `laminar` type leaves metrics off by default; do not set `metrics: true`
+  or you will wonder where they went.
 - **Published images skip Quickwit index creation**: the frontend logs
   "Quickwit indexes directory not found, skipping index initialization" and
   the app-server then fails every span indexing job with "index `spans_v2` not

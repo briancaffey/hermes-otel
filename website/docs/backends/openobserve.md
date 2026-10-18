@@ -24,7 +24,7 @@ Open http://localhost:5080 and log in with the default admin:
 - **Email:** `root@example.com`
 - **Password:** `Complexpass#123`
 
-Point the plugin at it — minimal `config.yaml`:
+Point the plugin at it — minimal `hermes_otel.yaml`:
 
 ```yaml
 backends:
@@ -34,7 +34,8 @@ backends:
     password_env: OPENOBSERVE_PASSWORD
     # stream_name: default          # optional; defaults to "default"
 
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ```bash
@@ -61,11 +62,11 @@ A bare origin (`endpoint: http://localhost:5080`, no path) is completed to `http
 
 OpenObserve uses HTTP Basic auth plus a `stream-name` request header that `type: otlp` can't produce for you. Declaring `type: openobserve` asks the plugin to:
 
-1. Read `user`/`password` (with `user_env`/`password_env` for env-driven secrets, plus fallbacks to `OPENOBSERVE_USER` / `OPENOBSERVE_PASSWORD`).
+1. Read `user` / `password`, else the variables `user_env` / `password_env` name, else `OTEL_OPENOBSERVE_USER` / `OTEL_OPENOBSERVE_PASSWORD`, else `OPENOBSERVE_USER` / `OPENOBSERVE_PASSWORD`. Without both the entry is skipped at startup, unless it has a [`headers_helper`](/configuration/short-lived-credentials) that prints the `Authorization` header.
 2. Build `Authorization: Basic base64(user:password)` automatically.
-3. Add `stream-name: <stream_name>` (default `default`).
+3. Add `stream-name: <stream_name>` (else `OTEL_OPENOBSERVE_STREAM`, default `default`).
 4. Display `✓ OpenObserve at <endpoint>` in startup logs.
-5. Enable all three signals (`supports_metrics=True`, `supports_logs=True`).
+5. Send all three signals (traces, metrics and logs) by default.
 
 ## Ports
 
@@ -85,7 +86,7 @@ Traces tab. Every span the plugin emits is indexed with its OpenInference / GenA
 Metrics tab. The `hermes_*` metrics (session counts, token usage, tool-duration histograms) show up as time series with their resource attributes intact.
 
 **Logs:**
-Logs tab. With `capture_logs: true`, every Python `logger.info(...)` record lands here. A line logged during a turn carries that turn's `trace_id` and `span_id` plus `hermes_session_id` (OpenObserve flattens the attribute name), and `hermes_log_attribution` says how the ids were found; lines logged between turns or from threads the plugin cannot attribute have an empty `trace_id`. Click a `trace_id` to jump to the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
+Logs tab. With `logs: {capture: true}`, every Python `logger.info(...)` record lands here. A line logged during a turn carries that turn's `trace_id` and `span_id` plus `hermes_session_id` (OpenObserve flattens the attribute name), and `hermes_log_attribution` says how the ids were found; lines logged between turns or from threads the plugin cannot attribute have an empty `trace_id`. Click a `trace_id` to jump to the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
 
 ## Streams
 
@@ -101,6 +102,20 @@ backends:
 ```
 
 Streams and their retention / index settings are managed in the OpenObserve UI under Settings → Streams.
+
+## Dashboard
+
+The bundled dashboard's OpenObserve adapter reads traces, metrics and logs back with SQL over `/api/<org>/_search`, using the same `user` / `password` as the exporter. It reads them from the entry's inline values or `user_env` / `password_env`, not from the `OTEL_OPENOBSERVE_*` fallback variables, so name them on the entry when you want the dashboard to work. Dashboard-only keys:
+
+| Key | Meaning |
+|---|---|
+| `query_port` | Port of the search API (default `5080`) |
+| `stream_name` / `stream` | Trace stream to read (default `default`) |
+| `logs_stream` | Log stream to read (default `default`) |
+| `trace_window_days` | How far back a trace-detail lookup searches (default `90`) |
+| `ui_url` | Base URL for the "open in OpenObserve" links (default: the query origin) |
+
+OpenObserve stores attribute names with underscores (`llm.model_name` becomes `llm_model_name`); the adapter maps the plugin's known names back to the dotted form.
 
 ## Organizations and users
 
@@ -124,7 +139,8 @@ backends:
   - type: phoenix
     endpoint: http://localhost:6006/v1/traces
 
-capture_logs: true
+logs:
+  capture: true
 ```
 
 Traces fan out to both; metrics and logs go only to OpenObserve (Phoenix ingests traces only).
@@ -137,7 +153,7 @@ Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL
 
 **"I see `✓ OpenObserve at ...` but no traces appear"**
 
-Check that the URL includes the org segment (`/api/default/v1/traces`, not `/v1/traces`). OpenObserve silently returns 404 on unmatched paths — the plugin has no way to surface that distinction from a regular ingestion failure.
+Check that the URL includes the org segment (`/api/default/v1/traces`, not `/v1/traces`); a bare origin such as `http://localhost:5080` is completed for you. OpenObserve answers 404 on an unknown path, which the startup banner cannot see. Turn on `HERMES_OTEL_DEBUG=true` and look in `debug.log` for the failed batch and its status code.
 
 **"Container starts, UI is up, but POSTing traces returns 400"**
 

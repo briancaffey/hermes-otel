@@ -27,8 +27,9 @@ Two parent stacks run in parallel:
 and falls back to the ContextVar.
 
 Span keys are namespaced strings: ``session:<session_id>``,
-``llm:<session_id>``, ``api:<task_id>``, ``<tool_name>:<task_id>``,
-``approval:<session_id>:<tool_call_id>``, ``skill:<session_id>:<name>``,
+``llm:<session_id>``, ``api:<task_id>``, ``aux:<request_id>``,
+``<tool_name>:<tool_call_id>`` (the task id on a Hermes without tool-call
+ids), ``approval:<session_id>:<tool_call_id>``, ``skill:<session_id>:<name>``,
 ``human_input:<request_id>`` and ``subagent:<child_session_id>``. The same
 keys index the pending-start table (:meth:`SpanTracker.mark_started`), the
 one place the plugin remembers *when* a pre-hook fired so its post-hook can

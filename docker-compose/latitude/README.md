@@ -6,7 +6,7 @@ explicitly. This folder wraps upstream's single-host stack (`docker-stack.yml`,
 vendored with one edit: `env_file: .env.production` → `latitude.env`) and adds
 Mailpit to catch the magic-link sign-in emails. Twelve upstream containers:
 web, api, ingest, workers, workflows, a one-shot migrations job, pgvector
-Postgres, ClickHouse, two Redis, Temporal, SeaweedFS. Issue #230. Plugin type:
+Postgres, ClickHouse, two Redis, Temporal, SeaweedFS (#230). Plugin type:
 `latitude` (since hermes-otel 1.23).
 
 ## Status: verified 2026-10-09
@@ -28,7 +28,8 @@ Mailpit at http://localhost:8025. API http://localhost:3001, ingest
 http://localhost:3002.
 
 ## Point hermes-otel at it
-Create a project in the UI, then Settings → API keys.
+Create a project in the UI (its slug is in the URL, `/projects/<slug>/…`),
+then copy the API key from Settings → Organization → Keys.
 ```yaml
 backends:
   - type: latitude

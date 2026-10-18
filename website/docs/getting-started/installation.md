@@ -9,13 +9,13 @@ description: "Install hermes-otel from the Hermes plugin catalog or from this re
 hermes-otel has two moving parts:
 
 1. **The plugin files**, Python source at `~/.hermes/plugins/hermes_otel/`. Hermes discovers them via `plugin.yaml`.
-2. **The OpenTelemetry runtime**, the `opentelemetry-*` packages, which must be importable from the hermes-agent venv (the interpreter that runs `hermes`).
+2. **The Python dependencies**: the `opentelemetry-*` packages and PyYAML. They must be importable from the hermes-agent venv (the virtual environment whose interpreter runs `hermes`).
 
-Since Hermes 0.21 the second part is automatic: `hermes plugins install` and `hermes plugins enable` read `python_dependencies` from `plugin.yaml`, install them into Hermes' venv under a constraints file built from Hermes' own lock, and re-apply them after every `hermes update`. Hermes' lock already pins the OTel SDK its optional `otlp` extra uses, so the plugin's `<2` requirements resolve against it.
+Since Hermes 0.21 the second part is automatic. `hermes plugins install` and `hermes plugins enable` read `python_dependencies` from `plugin.yaml`, install them into Hermes' venv (pinned against Hermes' own lock file), and install them again after every `hermes update`. Hermes' lock already pins the OTel SDK that its optional `otlp` extra uses, so the plugin's `>=1.35,<2` requirements resolve against it.
 
 ## What leaves your machine
 
-Span data, including prompts, tool arguments and tool output as previews clipped to 1200 characters by default, goes only to the OTLP backends you configure. With none configured the plugin keeps a local SQLite store under `$HERMES_HOME` for the dashboard and sends nothing. The catalog entry's description says the same thing in one sentence. `capture_previews: false` drops the content and keeps the structure ([Privacy mode](/configuration/privacy)); the three `opentelemetry-*` packages are the only things installed into the Hermes venv.
+Span data, including prompts, tool arguments and tool output, goes only to the OTLP backends you configure. By default the content is complete and unclipped (`content_capture: full`); `content_capture: preview` clips it to 1200 characters and `content_capture: "off"` sends none, keeping only the structure ([Privacy mode](/configuration/privacy)). With no backend configured, the plugin keeps a local SQLite store under `$HERMES_HOME` for the dashboard and sends nothing. The catalog entry's description says the same. The only packages installed into the Hermes venv are `opentelemetry-api`, `opentelemetry-sdk`, `opentelemetry-exporter-otlp-proto-http`, `opentelemetry-exporter-otlp-proto-grpc` and PyYAML.
 
 ## From the plugin catalog
 
@@ -41,7 +41,7 @@ just that subdirectory. It still lands at `~/.hermes/plugins/hermes_otel/`; the 
 from `plugin.yaml`, not from the path you typed. The Python dependencies are installed automatically here too.
 
 :::note What actually gets installed
-About 40 files / 500 KB: the Python modules, `plugin.yaml`, the bundled skill and the dashboard tab.
+About 90 files, roughly 1.6 MB: the Python modules, `plugin.yaml`, the bundled skill and the dashboard tab.
 The docs site, test suite and example Compose stacks stay in the repository; they are development
 material, and shipping them would put several megabytes of unused files into every Hermes install.
 
@@ -118,9 +118,11 @@ ln -s ~/git/hermes-otel/hermes_otel ~/.hermes/plugins/hermes_otel
 
 ## Optional extras
 
+PyYAML, which reads [`hermes_otel.yaml`](/configuration/yaml), is a declared dependency and is installed with the plugin. Without it only env vars and defaults apply.
+
 | Extra | Install | What it does |
 |---|---|---|
-| `yaml` | `pip install pyyaml` | Enables [`hermes_otel.yaml`](/configuration/yaml) parsing. Without it, only env vars + defaults apply. |
+| `pynvml` / `amdsmi` | `pip install pynvml` (NVIDIA), or the `amdsmi` that matches your ROCm | GPU readings for [host metrics](/configuration/host-metrics). CPU readings need only `psutil`, which ships with hermes-agent. |
 
 ## Requirements
 
@@ -134,16 +136,18 @@ When Hermes starts up, the plugin prints a startup banner:
 
 ```text
 [hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
+[hermes-otel] ✓ content_capture=full — complete prompts and responses on every api.* span (set content_capture: preview or off to reduce)
 [hermes-otel] ✓ Live dashboard store active
-[hermes-otel] Registered 23 hooks
+[hermes-otel] ✓ Phoenix reachable at localhost:6006 (<n> ms)
+[hermes-otel] Registered 34 hooks
 ```
 
-(The hook count depends on the Hermes version; 13 on Hermes 0.21.)
+The reachability line comes from a background thread, so it can appear later. 34 is every hook `plugin.yaml` declares; a Hermes build that rejects a hook name it does not know registers fewer.
 
 If you see `Registered 0 hooks` or no banner at all:
 
 - Check `hermes plugins list` shows `hermes_otel` as enabled.
-- Confirm the OTel packages import from your hermes venv: `~/git/hermes-agent/venv/bin/python -c "import opentelemetry"`.
+- Confirm the OTel SDK imports from your hermes venv: `~/git/hermes-agent/venv/bin/python -c "import opentelemetry.sdk"`. A missing SDK logs `✗ OpenTelemetry packages not available`.
 - Turn on debug logging: `export HERMES_OTEL_DEBUG=true` and re-run; see [Debug logging](/development/debug-logging).
 
 ## Uninstalling
@@ -153,7 +157,8 @@ hermes plugins remove hermes_otel
 
 # Optionally remove the OTel packages (if nothing else uses them)
 ~/git/hermes-agent/venv/bin/pip uninstall \
-  opentelemetry-api opentelemetry-sdk opentelemetry-exporter-otlp-proto-http
+  opentelemetry-api opentelemetry-sdk \
+  opentelemetry-exporter-otlp-proto-http opentelemetry-exporter-otlp-proto-grpc
 ```
 
 Or leave the plugin in place and disable it with `hermes plugins disable hermes_otel` or `HERMES_OTEL_ENABLED=false`.

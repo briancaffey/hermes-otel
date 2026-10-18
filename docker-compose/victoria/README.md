@@ -33,7 +33,8 @@ backends:
     endpoint: http://localhost:10428          # VictoriaTraces → /insert/opentelemetry/v1/traces
     metrics_endpoint: http://localhost:8428   # VictoriaMetrics → /opentelemetry/v1/metrics
     logs_endpoint: http://localhost:9428      # VictoriaLogs → /insert/opentelemetry/v1/logs
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 The banner reads `✓ Victoria at http://localhost:10428/insert/opentelemetry/v1/traces`.
 A signal whose store is not named is off (there is no host to derive it on).
@@ -74,6 +75,7 @@ Metrics appear in VictoriaMetrics about 30 s after export (`-search.latencyOffse
 - Limits worth knowing: VictoriaMetrics 40 labels per series and 4096-char
   label values; VictoriaLogs and VictoriaTraces 1000 fields per line;
   VictoriaTraces `-search.maxTraces` 1000.
-- No "open in" link: vmui's Trace Explorer has a TraceID mode but no
-  documented deep link; set `ui_url` on the entry to offer one.
+- No "open in" link per trace: vmui's Trace Explorer has a TraceID mode but
+  no documented deep link, and the adapter ignores `ui_url` for trace links
+  (`ui_url` only points the Settings card's backend name at vmui).
 - Ports 10428 / 9428 / 8428 are upstream's and collide with nothing else here.

@@ -18,7 +18,7 @@ If your backend isn't on the list but it accepts **OTLP over HTTP or gRPC**, the
 
 ## Configuration
 
-Via `config.yaml`:
+In `hermes_otel.yaml`:
 
 ```yaml
 backends:
@@ -29,13 +29,14 @@ backends:
       X-Auth: secret
       X-Tenant: acme
     metrics: true                # Default true — set false for traces-only collectors
+    logs: true                   # Default true — set false if the collector rejects /v1/logs
 ```
 
-The `name` is purely for log output ("`[hermes-otel] ✓ my-collector connected`") — it doesn't affect the spans themselves.
+The `name` is only used in log output (`[hermes-otel] ✓ my-collector at http://collector:4318/v1/traces`); it doesn't affect the spans themselves. The `endpoint` is the full traces URL: the plugin derives the metrics and logs URLs by replacing `/v1/traces` with `/v1/metrics` and `/v1/logs`. An endpoint that does not end in `/v1/traces` is used unchanged for every signal.
 
 ## gRPC and TLS
 
-Set `protocol: grpc` on a generic `type: otlp` entry. All three signals use the same gRPC target; `/v1/traces`, `/v1/metrics` and `/v1/logs` are HTTP paths and must not be included. `metrics_endpoint` and `logs_endpoint` can override the target for their signals.
+Set `protocol: grpc` on a generic `type: otlp` entry. All three signals use the same gRPC target (`host:port`, or an `http(s)://host:port` origin); `/v1/traces`, `/v1/metrics` and `/v1/logs` are HTTP paths, and a target with any path is rejected. To send metrics or logs to a different target, set `metrics_endpoint` or `logs_endpoint` on the entry (a bare `host:port` or origin, like `endpoint`).
 
 ```yaml
 content_capture: off
@@ -53,7 +54,7 @@ backends:
       Authorization: Bearer ${TELEMETRY_TOKEN}
 ```
 
-TLS verifies the server certificate and hostname. `https://host:port` and bare `host:port` targets default to TLS. For an explicitly plaintext local receiver, use `http://localhost:4317` or `insecure: true` with a bare target. `insecure: false` forces TLS even on an `http://` target. `insecure: true` with an HTTPS target, or TLS files on a plaintext connection, is rejected. This setting selects plaintext transport, not TLS with verification disabled.
+TLS verifies the server certificate and hostname. `https://host:port` and bare `host:port` targets default to TLS. For an explicitly plaintext local receiver, use `http://localhost:4317` or `insecure: true` with a bare target. `insecure: false` forces TLS even on an `http://` target. `insecure: true` with an HTTPS target, or TLS files on a plaintext connection, is rejected. This setting selects plaintext transport, not TLS with verification disabled. `insecure` is a gRPC-only key: on an `http/protobuf` entry it is rejected, because HTTP picks TLS from the `https://` scheme and always verifies.
 
 `protocol: grpc` is supported by the generic `otlp` type; named vendor backends retain their HTTP URL conventions. A single `backends:` list can mix HTTP and gRPC destinations, each with its own independent export queue. Header names are lowercased for gRPC metadata; values and per-backend precedence are unchanged.
 
@@ -137,7 +138,7 @@ backends:
 
 The repo ships a ready-made one for destinations the plugin cannot reach with a static header ([Azure Monitor](/backends/azure-monitor), AWS, Google Cloud) and for printing the raw export: see [OpenTelemetry Collector](/backends/collector).
 
-### Metrics-only at a separate endpoint
+### Metrics at a separate endpoint
 
 If your collector splits traces and metrics across different paths, the plugin derives the metrics endpoint by replacing `/v1/traces` with `/v1/metrics`. If that doesn't match your setup, set the full URL with `metrics_endpoint:` (and `logs_endpoint:` for logs) on the entry.
 
@@ -177,7 +178,7 @@ The plugin emits **both** `gen_ai.*` and OpenInference `llm.*` on every span —
 **"Traces show up; metrics don't"**
 
 - Not every backend accepts OTLP metrics. Set `metrics: false` on the backend entry to silence the metrics exporter.
-- If your metrics endpoint isn't `/v1/metrics` derived from the trace endpoint, open an issue.
+- The metrics URL is the trace endpoint with `/v1/traces` replaced by `/v1/metrics`. If that is not where your collector takes metrics, see [Metrics at a separate endpoint](#metrics-at-a-separate-endpoint).
 
 **"TLS handshake errors"**
 

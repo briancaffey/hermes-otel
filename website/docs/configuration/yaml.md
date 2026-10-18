@@ -6,19 +6,28 @@ description: "Full reference for the plugin's YAML config file — project metad
 
 # `config.yaml`
 
-A fully-annotated example ships in the repository as `config.yaml.example`. This page is the reference — every field, what it does, what the default is.
+A fully annotated example ships in the repository as `config.yaml.example`. This page walks through the fields by topic, with their defaults. The [config schema](/reference/config-schema) is generated from the code and lists every field, including the few this page only links to.
 
-Location: `$HERMES_HOME/hermes_otel.yaml` (recommended), or `$HERMES_OTEL_CONFIG`, or the legacy `$HERMES_HOME/plugins/hermes_otel/config.yaml` — see [Where does config.yaml live?](/configuration/overview). Parsed only if `pyyaml` is installed in the Hermes venv.
+Location: `$HERMES_HOME/hermes_otel.yaml` (recommended), or `$HERMES_OTEL_CONFIG`, or the legacy `$HERMES_HOME/plugins/hermes_otel/config.yaml`; see [Where does config.yaml live?](/configuration/overview). The file is parsed with PyYAML, which the plugin installs as a dependency. `${VAR}` in a string value is replaced with that environment variable.
 
 ## Project / resource attributes
 
 ```yaml
-# Shown in Phoenix's "Project" dropdown and as `openinference.project.name`
-# on every span. Env: OTEL_PROJECT_NAME or HERMES_OTEL_PROJECT_NAME.
+# Shown in Phoenix's "Project" dropdown. Set as `openinference.project.name`
+# on the Resource, so every span carries it. Env: HERMES_OTEL_PROJECT_NAME;
+# when unset, OTEL_PROJECT_NAME is used.
 project_name: hermes-agent
 
-# Free-form key/value pairs merged into the OTel Resource on every span.
-# Good for deployment tags.
+# Report each named profile as its own service (service.name=<profile>,
+# service.namespace=hermes-agent); the default profile stays hermes-agent.
+# See /configuration/profiles#one-service-per-profile.
+# Env: HERMES_OTEL_SERVICE_NAME_FROM_PROFILE. Default: false.
+service_name_from_profile: false
+
+# Free-form key/value pairs merged into the OTel Resource (shared by every
+# span, metric and log record). Good for deployment tags. The defaults
+# service.name=hermes-agent, service.instance.id, service.version,
+# process.pid and hermes.profile are set for you.
 resource_attributes:
   team: platform
   env: prod
@@ -65,7 +74,7 @@ Rules: values are scalars (string, number, bool); a key is at most 64 characters
 ## Master switch
 
 ```yaml
-# Master kill switch. false = no spans, no hooks, no OTel SDK loaded.
+# Master kill switch. false = no pipeline, no hooks registered, no spans.
 # Env: HERMES_OTEL_ENABLED
 enabled: true
 ```
@@ -82,53 +91,73 @@ sample_rate: null
 
 See [Sampling](/configuration/sampling) for how to pick a rate.
 
-## Preview shaping
+## Content capture and previews
 
 ```yaml
-# Truncation cap applied to tool input/output, user_message, assistant_response.
-# Preview values longer than this are clipped with a trailing "...".
+# How much conversation content is recorded:
+#   full     (default) the complete request and response on every api.* span,
+#            unclipped; clipped previews on the other spans
+#   preview  clipped previews only
+#   off      no content at all; names, timings, tokens and status only
+# Quote it: a bare `off` is YAML for false (accepted, and read as off).
+# Env: HERMES_OTEL_CONTENT_CAPTURE
+content_capture: "full"
+
+# Cap on preview strings (tool args and results, user message, assistant
+# response). Longer values are clipped with a trailing "...".
 # Env: HERMES_OTEL_PREVIEW_MAX_CHARS
 preview_max_chars: 1200
 
-# Global privacy kill switch. When false, ALL input/output previews are
-# suppressed (tool args, tool results, user messages, assistant responses).
-# Metadata (tool names, durations, token counts) still flows.
-# Env: HERMES_OTEL_CAPTURE_PREVIEWS
-capture_previews: true
+# Per-category caps; null = preview_max_chars.
+# Env: HERMES_OTEL_TOOL_INPUT_PREVIEW_MAX_CHARS, and so on.
+tool_input_preview_max_chars: null
+tool_output_preview_max_chars: null
+llm_input_preview_max_chars: null
+llm_output_preview_max_chars: null
 
-# When true, the llm.* span's input.value becomes the entire conversation
-# the model saw (as JSON). api.* spans don't carry message-level detail,
-# so this is the way to see what the model actually had in context.
+# Also attach the conversation Hermes held at the start of the turn to the
+# llm.* span's input.value, as JSON. Mostly redundant with content_capture:
+# full, which already puts the complete request on each api.* span.
+# Env: HERMES_OTEL_CAPTURE_CONVERSATION_HISTORY
 capture_conversation_history: false
 
-# Safety cap on the JSON'd conversation — clipped with "..." if bigger.
+# Cap on that JSON; clipped with "..." if bigger.
 conversation_history_max_chars: 20000
+
+# Gateway sessions add hermes.sender.id and user.id (`platform:sender`).
+# Can identify people, so it is opt-in. Env: HERMES_OTEL_CAPTURE_SENDER_ID
+capture_sender_id: false
 ```
 
-See [Conversation capture](/configuration/conversation-capture) for a worked example, and [Privacy mode](/configuration/privacy) for the kill switch.
+`capture_previews`, `capture_full_prompts` and `capture_full_responses` are the pre-1.11 spellings of `content_capture`. They still work (`capture_previews: false` means `off`) and log a deprecation warning. See [Conversation capture](/configuration/conversation-capture) for what each mode writes, and [Privacy mode](/configuration/privacy) for `off`.
 
 ## Logs (opt-in)
 
 ```yaml
-# Attach an OTel LoggingHandler to Python's logging so stdlib logger.info(...)
-# calls ship to any log-capable backend (SigNoz, LGTM, Uptrace, OpenObserve, Parseable,
-# or any OTLP collector). Every
-# record gets the active span's trace_id/span_id stamped on it automatically.
-# Off by default because attaching to root is invasive.
-# Env: HERMES_OTEL_CAPTURE_LOGS
-capture_logs: false
+logs:
+  # Forward Python logging records (logger.info(...)) to every log-capable
+  # backend and the dashboard's Logs tab, stamped with the turn's trace and
+  # span ids. Off by default: attaching to the root logger also exports the
+  # logs of every library Hermes imports.
+  # Env: HERMES_OTEL_CAPTURE_LOGS
+  capture: false
 
-# Minimum severity accepted: DEBUG, INFO, WARNING, ERROR, CRITICAL.
-# Env: HERMES_OTEL_LOG_LEVEL
-log_level: INFO
+  # Minimum severity: DEBUG, INFO, WARNING (or WARN), ERROR, CRITICAL.
+  # Env: HERMES_OTEL_LOG_LEVEL
+  level: INFO
 
-# Which Python logger to attach to. null = root (everything). "hermes_otel"
-# or "hermes" narrows the firehose.
-# Env: HERMES_OTEL_LOG_ATTACH_LOGGER
-log_attach_logger: null
+  # Which Python logger to attach to. null = root (everything);
+  # "hermes_otel" = the plugin's own lines only.
+  # Env: HERMES_OTEL_LOG_ATTACH_LOGGER
+  attach_logger: null
+
+  # Structured hermes.* / GenAI events from the hooks. Off by default.
+  # Env: HERMES_OTEL_LOG_EVENTS
+  events:
+    enabled: false
 ```
 
-See [OTel logs](/configuration/logs) for the full story, including the loop-avoidance filter for HTTP client libraries and which backends actually accept logs.
+The flat spellings (`capture_logs`, `log_level`, `log_attach_logger`, …) still work. See [Logs and events](/configuration/logs) for every key, the loop guard for HTTP client libraries, and which backends accept logs.
 
 ## Metrics
 
@@ -138,9 +167,29 @@ See [OTel logs](/configuration/logs) for the full story, including the loop-avoi
 # alerts work without per-user wiring. Set false for hermes.* only.
 # Env: HERMES_OTEL_EMIT_GENAI_METRICS. Default: true.
 emit_genai_metrics: true
+
+# Temporality: cumulative (Prometheus family) or delta (Datadog, New Relic,
+# Logfire). Unset = the SDK default (cumulative, or
+# OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE). SigNoz, Uptrace and
+# Elastic entries default to delta; a backend entry's own
+# metrics_temporality wins. Env: HERMES_OTEL_METRICS_TEMPORALITY
+metrics_temporality: null
+
+# Histogram aggregation: explicit (fixed bucket boundaries) or exponential
+# (base-2, for backends that accept it). Env: HERMES_OTEL_METRICS_HISTOGRAM
+metrics_histogram: explicit
+
+# Distinct values a label such as `model` may take per process before the
+# rest fold into `other`; 0 = no cap. Env: HERMES_OTEL_METRICS_LABEL_LIMIT
+metrics_label_limit: 100
+
+# Export session count, tokens, cost and active time under Claude Code's
+# metric names: off | claude_code (instead of hermes.*) | both.
+# See /guides/claude-code-dashboards. Env: HERMES_OTEL_METRIC_NAME_COMPAT
+metric_name_compat: "off"
 ```
 
-See the [Metrics reference](/reference/metrics#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
+`flush_interval_ms` (below) sets how often metrics are exported. See the [Metrics reference](/reference/metrics#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
 
 ## Disabling metrics and span families {#disable}
 
@@ -252,23 +301,74 @@ See [Span hierarchy → skill.*](/architecture/span-hierarchy#skill) for the spa
 suppress_mcp_ping_spans: true
 ```
 
+## Joining an outer trace and the startup probe
+
+```yaml
+# When the process that launched Hermes exported HERMES_OTEL_TRACEPARENT
+# (a W3C traceparent, plus optional HERMES_OTEL_TRACESTATE), every turn
+# root becomes a child of that span. false ignores the variables. The
+# kanban worker hand-off (plain TRACEPARENT) is separate.
+# Env: HERMES_OTEL_REMOTE_PARENT. Default: true.
+remote_parent: true
+
+# At startup, open one TCP connection to each backend endpoint on a
+# background thread and log "reachable" or "unreachable" per backend.
+# Runs once, sends no bytes, and never delays an export.
+# Env: HERMES_OTEL_PROBE_BACKENDS. Default: true.
+probe_backends: true
+
+# Add a short system-prompt section telling the model that telemetry and
+# the hermes_otel:observability skill exist. Changes what the model sees
+# on every turn, so it is opt-in. Env: HERMES_OTEL_DISCOVERY_PROMPT.
+discovery_prompt: false
+```
+
+## Live store and host metrics
+
+```yaml
+# Keep recent spans, metrics and logs in $HERMES_HOME/hermes_otel_live.db
+# (override the path with HERMES_OTEL_LIVE_DB) for the dashboard's Live mode.
+# Env: HERMES_OTEL_DASHBOARD_LIVE. Default: true.
+dashboard_live: true
+dashboard_live_max_spans: 1000        # rows kept per kind (spans, metrics, logs)
+dashboard_live_retention_hours: 168   # older rows are dropped; 0 = row cap only
+
+# CPU / GPU sampling. See /configuration/host-metrics.
+host_metrics: false
+host_metrics_gpu: auto                # auto | amd | nvidia | off
+host_metrics_interval_ms: 1000        # floor 50
+```
+
 ## Lifecycle / cleanup
 
 ```yaml
-# Orphan-turn sweep. If a session root span stays open longer than this,
-# subsequent hooks finalize it with `hermes.turn.final_status=timed_out`.
+# Orphan-turn sweep. A turn root still open after this long is closed,
+# with `hermes.turn.final_status=timed_out` (or `interrupted` when the
+# gateway stopped the turn).
 # Env: HERMES_OTEL_ROOT_SPAN_TTL_MS. Default: 10 minutes.
 root_span_ttl_ms: 600000
 
-# How often PeriodicExportingMetricReader flushes.
+# A subagent.* span stays open across the parent's turns (Hermes runs
+# delegations in the background). One whose subagent_stop never arrives
+# is closed after this. Env: HERMES_OTEL_SUBAGENT_SPAN_TTL_MS. Default: 24 h.
+subagent_span_ttl_ms: 86400000
+
+# How often metrics are exported (PeriodicExportingMetricReader).
 # Env: HERMES_OTEL_FLUSH_INTERVAL_MS. Default: 60s.
 flush_interval_ms: 60000
 
-# Synchronously force-flush every BatchSpanProcessor at on_session_end so
-# traces appear in the UI immediately. false = rely on the background
-# worker's schedule (slightly higher UI latency, better throughput).
-# Env: HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END.
+# At the end of each turn, flush every backend's spans, then metrics and
+# logs, from a background thread (500 ms per backend; a second request
+# while one is queued is dropped). The trace shows up in the UI right away.
+# false = rely on the batch worker's schedule.
+# Env: HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END. Default: true.
 force_flush_on_session_end: true
+
+# How long the turn waits for that flush before returning to Hermes.
+# A one-shot run (`hermes -z`) exits right after the turn, so this bounds
+# what it exports. 0 = do not wait.
+# Env: HERMES_OTEL_FORCE_FLUSH_WAIT_MS. Default: 1500.
+force_flush_wait_ms: 1500
 ```
 
 See [Orphan-span sweep](/architecture/orphan-sweep).
@@ -278,7 +378,7 @@ See [Orphan-span sweep](/architecture/orphan-sweep).
 Each backend gets its own processor with these settings. Defaults are fine for almost every workload — tune only if you're losing spans under sustained high throughput.
 
 ```yaml
-# Max spans buffered before the oldest ones get dropped.
+# Max spans buffered per backend; when full, the oldest are dropped.
 # Env: HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE
 span_batch_max_queue_size: 2048
 
@@ -286,9 +386,10 @@ span_batch_max_queue_size: 2048
 # Env: HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS
 span_batch_schedule_delay_ms: 1000
 
-# Max spans per OTLP POST.
+# Max spans per OTLP request. null = 512, or 64 when content_capture is
+# full (the default), so a batch of large spans stays under receiver limits.
 # Env: HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE
-span_batch_max_export_batch_size: 512
+span_batch_max_export_batch_size: null
 
 # Per-export HTTP timeout.
 # Env: HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS
@@ -310,6 +411,8 @@ backends:
 
 When `backends:` is absent or empty, the plugin falls back to single-backend env-var detection.
 
+Per-entry keys you may need beyond `type` and `endpoint`: `headers`, `headers_helper` for tokens that expire ([Short-lived credentials](/configuration/short-lived-credentials)), `traces` / `metrics` / `logs` to switch a signal per backend, `certificate_file` (a private CA) and `client_certificate_file` + `client_key_file` (mTLS) for an HTTPS or gRPC endpoint, and, on a `type: otlp` entry only, `protocol: grpc` with `insecure` ([gRPC and TLS](/backends/otlp#grpc-and-tls)). The [config schema](/reference/config-schema#backends-entries) lists every entry key.
+
 ## Full example
 
 ```yaml
@@ -328,13 +431,14 @@ common_attributes:
 headers:
   X-Scope-OrgID: tenant-a
 
+content_capture: "full"
 preview_max_chars: 1200
-capture_previews: true
 capture_conversation_history: true
 conversation_history_max_chars: 40000
 
-capture_logs: true
-log_level: INFO
+logs:
+  capture: true
+  level: INFO
 
 root_span_ttl_ms: 600000
 flush_interval_ms: 60000

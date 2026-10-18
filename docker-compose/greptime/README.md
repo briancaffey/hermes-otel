@@ -3,11 +3,11 @@
 [GreptimeDB](https://github.com/GreptimeTeam/greptimedb) (Apache-2.0) is a
 single-binary observability database: traces, metrics and logs arrive over
 OTLP/HTTP under `/v1/otlp`, land in SQL tables, and come back through SQL,
-PromQL and a Jaeger-compatible API, all on one HTTP port. It fills the "one
-database, SQL over everything" slot that only the non-OSS Sigiro and Maple
-stacks covered. Explicit plugin type: `greptime` (#363). Pinned v1.2.1
-(2026-09-16); v1.3 adds an opt-in `greptime_trace_v2` model into a separate
-table, so stay on v1 until the adapter learns it.
+PromQL and a Jaeger-compatible API, all on one HTTP port: one open-source
+database, SQL over every signal. The plugin has a dedicated type for it:
+`greptime` (#363). Pinned v1.2.1 (2026-09-16); v1.3 adds an opt-in
+`greptime_trace_v2` model in a separate table, so stay on v1 until the adapter
+reads it.
 
 ## Why pick it
 - One container, about 95 MB resident after a turn, no login, no account.
@@ -78,5 +78,5 @@ check it could run (see the docs page).
 - No retention by default: add `x-greptime-hints: ttl=7d` under `headers:` to
   age data out, or `down -v`.
 - The embedded dashboard has Traces, Logs and Metrics views but no documented
-  deep link to one trace, so the plugin dashboard offers no "open in" link
-  unless `ui_url` is set on the entry.
+  deep link to one trace, so the plugin dashboard offers no per-trace "open in"
+  link (`ui_url` on the entry only sets the Settings tab's link).

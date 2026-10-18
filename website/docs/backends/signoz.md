@@ -12,7 +12,7 @@ description: "Send Hermes traces and metrics to SigNoz — self-hosted or cloud 
 
 ## Self-hosted
 
-A ready-to-use compose file ships with the plugin. The upstream SigNoz stack uses port 4318 for OTLP/HTTP, which collides with Phoenix — the bundled compose remaps SigNoz's OTLP HTTP port to **4328** to avoid that:
+A ready-to-use compose file ships with the plugin. Upstream SigNoz listens for OTLP/HTTP on the standard port 4318, which collides with any other collector on the host (the LGTM stack, for one). The bundled compose file moves it to **4328**, and the UI from 8080 to **3301**:
 
 ```bash
 cd ~/.hermes/plugins/hermes_otel
@@ -23,10 +23,9 @@ Then:
 
 ```bash
 export OTEL_SIGNOZ_ENDPOINT="http://localhost:4328/v1/traces"
-export OTEL_PROJECT_NAME="hermes-agent"
 ```
 
-UI at http://localhost:3301 (SigNoz's default port).
+UI at http://localhost:3301. Before SigNoz accepts any data you must register the first admin user; see [Troubleshooting](#troubleshooting).
 
 ## SigNoz Cloud
 
@@ -35,7 +34,7 @@ export OTEL_SIGNOZ_ENDPOINT="https://ingest.us.signoz.cloud:443/v1/traces"
 export OTEL_SIGNOZ_INGESTION_KEY="sz-..."
 ```
 
-When `OTEL_SIGNOZ_INGESTION_KEY` is set, the plugin attaches the `signoz-ingestion-key` header to both the traces and metrics exporters.
+When `OTEL_SIGNOZ_INGESTION_KEY` is set, the plugin sends it as the `signoz-ingestion-key` header on the traces, metrics and logs exporters. Metrics go out as delta, the `signoz` type's preset.
 
 Regional endpoints:
 
@@ -59,10 +58,10 @@ SigNoz treats the plugin's spans as standard OTel traces. The service-map view l
 
 Metrics flow to the SigNoz metrics UI automatically:
 
-- `hermes_token_usage_total{token_type="input"|"output"}` (counter)
-- `hermes_model_usage_total` (counter, one per API call)
-- `hermes_tool_duration_milliseconds_*` (histogram)
-- `gen_ai_client_operation_duration_seconds_*` (histogram)
+- `hermes.token.usage` (counter, by `token_type`)
+- `hermes.model.usage` (counter: completed messages per model and provider)
+- `gen_ai.execute_tool.duration` (histogram, seconds; the deprecated `hermes.tool.duration` in milliseconds is still sent)
+- `gen_ai.client.operation.duration` (histogram, seconds)
 
 Full list: [Metrics reference](/reference/metrics).
 
@@ -79,7 +78,7 @@ sits on the UI port and requires authentication even when ingestion does not:
   - type: signoz
     endpoint: http://localhost:4328/v1/traces
     query_port: 3301                 # the SigNoz UI/API port (443 behind an HTTPS ingress)
-    api_key_env: SIGNOZ_API_KEY      # a PAT (sent as SIGNOZ-API-KEY) or the session JWT (sent as Bearer)
+    api_key_env: SIGNOZ_API_KEY      # a PAT or a session JWT; sent as both SIGNOZ-API-KEY and Bearer
 ```
 
 Metrics are read with the query builder (`/api/v4/query_range`): counters such
@@ -107,7 +106,7 @@ SigNoz reads `gen_ai.*` attributes for LLM-specific views, which the plugin emit
 
 **"Port 4318 is already in use"**
 
-- Phoenix and SigNoz both default to 4318 for OTLP/HTTP. The bundled compose file remaps SigNoz to 4328. If you've customised it, double-check the port.
+- 4318 is the standard OTLP/HTTP port, so any other collector on the host (the LGTM stack, a Collector) may already hold it. The bundled compose file moves SigNoz to 4328 (`SIGNOZ_OTLP_HTTP_PORT`). If you've customised it, double-check the port.
 
 **"Cloud ingestion: 401 / missing key"**
 
@@ -115,4 +114,4 @@ SigNoz reads `gen_ai.*` attributes for LLM-specific views, which the plugin emit
 
 **"Metrics show up, traces don't"**
 
-- You might be pointing metrics at the right endpoint but traces at the wrong one. `OTEL_SIGNOZ_ENDPOINT` is for traces; metrics go to a parallel `/v1/metrics` path which the plugin derives automatically from the trace endpoint. If you've set a fully custom endpoint via `config.yaml`, double-check the path.
+- `OTEL_SIGNOZ_ENDPOINT` (or `endpoint:`) is the traces URL and must end in `/v1/traces`; the plugin derives the `/v1/metrics` and `/v1/logs` URLs from it. If you set a custom endpoint in `hermes_otel.yaml`, double-check the path.

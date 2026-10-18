@@ -6,7 +6,7 @@ description: "Run Phoenix locally in Docker or send to Arize AX cloud — LLM-na
 
 # Phoenix
 
-[Arize Phoenix](https://github.com/Arize-ai/phoenix) is an open-source LLM observability platform with a tracing UI built around the [OpenInference](https://arize.com/docs/phoenix/reference/openinference) span convention. It runs as a single container, takes ~5 seconds to start, and pretty-prints JSON previews.
+[Arize Phoenix](https://github.com/Arize-ai/phoenix) is an open-source LLM observability platform with a tracing UI built around the [OpenInference](https://arize.com/docs/phoenix/reference/openinference) span convention. It runs as a single container, starts in a few seconds, and pretty-prints JSON previews.
 
 **Signals:** traces only. **Deployment:** local (single container) or Arize AX cloud. **Cost:** OSS (self-host) / commercial (cloud).
 
@@ -34,8 +34,9 @@ Phoenix also runs as a hosted service. Point at your cloud endpoint and attach t
 
 ```bash
 export OTEL_PHOENIX_ENDPOINT="https://app.phoenix.arize.com/v1/traces"
-# Headers can be passed via config.yaml:
 ```
+
+The ingest key travels as a header, which you set on a backend entry in the config file:
 
 ```yaml
 # ~/.hermes/hermes_otel.yaml
@@ -82,8 +83,8 @@ Phoenix 20 removed the `rootSpansOnly` / `orphanSpanAsRootSpan` arguments of `Pr
 
 **"Spans are missing input/output previews"**
 
-- If `capture_previews: false` or `HERMES_OTEL_CAPTURE_PREVIEWS=false` is set, previews are intentionally suppressed. Remove the setting, restart Hermes.
+- `content_capture: off` (or `HERMES_OTEL_CONTENT_CAPTURE=off`) suppresses all content on purpose. So does the older spelling `capture_previews: false` / `HERMES_OTEL_CAPTURE_PREVIEWS=false`. Remove the setting and restart Hermes.
 
 **"Tokens show as zero"**
 
-- Phoenix keys off `llm.token_count.*` — the plugin emits these on `api.*` spans (not `llm.*`). Check the child `api.*` span, not the parent.
+- Phoenix reads `llm.token_count.*`. The plugin puts these on the `api.*` spans, not on `llm.*`. Check the child `api.*` span, not the parent.

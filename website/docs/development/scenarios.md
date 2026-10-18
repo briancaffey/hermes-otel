@@ -57,7 +57,7 @@ Every turn's prompt carries a **marker**: `<token>-<id>`, or `<token>-<id>-s<ses
 
 | suite | what runs | needs |
 |---|---|---|
-| `quick` | the nine one-turn shapes (shell echo, no tools, file round-trip, failing tool, non-zero exit, several tools, long output, web fetch, skill load), plus parallel tool calls, a three-turn resumed session, events-only logs, the three content-capture modes and redaction | a model the profile can call |
+| `quick` | the nine one-turn shapes (shell echo, no tools, file round-trip, failing tool, non-zero exit, several tools, long output, web fetch, skill load), plus parallel tool calls, a `git commit` through the terminal (`cli-git-commit`), a three-turn resumed session, events-only logs, the three content-capture modes and redaction | a model the profile can call |
 | `full` | quick, plus `gateway-five-sessions`, the approval trio (granted, denied, timed out), `cron-job`, `kanban-two-profiles`, `delegate-one` and `api-error-fatal` | the second profile for kanban |
 | `extra` | `delegation-batch`, `delegation-nested`, `moa-turn` | more tokens. `moa-turn` needs `NVIDIA_API_KEY` |
 
@@ -116,6 +116,7 @@ Then run it with `make scenarios ONLY=<id>`. A scenario is ready once it passes 
 | `tools_min`, `tools_max` | bounds on `tool.*` spans |
 | `tool_names_any` | some tool span's `tool.name` contains one of these |
 | `tools_per_response_min` | at least this many tool calls after one `api.*` response (parallel calls; Hermes may run them one after another) |
+| `tools_concurrent_min` | at least this many tool spans overlapped in time |
 | `span_names_any`, `span_prefix_count_min` | span names |
 | `output_contains` | some span attribute contains this text |
 | `root_attrs` | `{key: value}` exact on the turn root (the outermost `agent` / `cron` span) |
@@ -126,6 +127,7 @@ Then run it with `make scenarios ONLY=<id>`. A scenario is ready once it passes 
 | `subagent_roots_min`, `agent_depth_min`, `attr_values_min` | multi-agent shapes |
 | `logs_min`, `log_levels_any` | log records correlated with the turn's trace |
 | `events_min`, `events_max`, `event_names_any`, `logs_only_events` | structured events |
+| `metrics_min` | `{instrument: n}` the instrument's total since the run started, in a source that serves metrics (metrics carry no trace id, so this is per run window, not per turn) |
 
 ### Expectations across turns (`expect_run:`)
 
@@ -163,5 +165,5 @@ The blocked and crashed kanban paths are covered by the [kanban demo](/developme
 
 ## Related tools
 
-- **`make refactor-check`** runs four `cli` scenarios twice, once with the base ref's plugin and once with the working tree's, and diffs the shape of what landed (see [CONTRIBUTING](https://github.com/briancaffey/hermes-otel/blob/main/CONTRIBUTING.md)).
+- **`make refactor-check`** runs four `cli` scenarios (`shell-echo`, `no-tools`, `missing-file`, `multi-tool`) twice, once with the base ref's plugin and once with the working tree's, and diffs the shape of what landed (see [CONTRIBUTING](https://github.com/briancaffey/hermes-otel/blob/main/CONTRIBUTING.md)).
 - **The dashboard verify harness** (`scripts/dashboard_verify`) uses the same scenarios as its workload.

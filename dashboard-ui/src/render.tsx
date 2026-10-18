@@ -24,9 +24,10 @@ const CLAMP_CHARS = 1600;
 /** Above this a value is offered for copying rather than rendered in full (#283). */
 const HUGE_CHARS = 200_000;
 
-// One structured / raw preference for the whole tab, held by a context the
-// shell provides (#283); every block follows the switch and the choice is
-// remembered per browser.
+// One structured / raw preference for the whole tab, held by
+// ViewModeProvider's context (#283) and remembered per browser. Nothing
+// mounts the provider today, so each block keeps its own state, seeded from
+// and written to the remembered choice.
 type ModeCtx = [ViewMode, (m: ViewMode) => void];
 const ViewModeContext: any = createContext ? createContext<ModeCtx | null>(null) : null;
 

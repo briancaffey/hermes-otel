@@ -20,8 +20,8 @@ plugin holds three objects and delegates nothing (#506):
   when ``config.host_metrics`` is on;
 - ``flusher`` — the :class:`.flush.Flusher` behind the turn-end flush.
 
-:mod:`.instruments` (the metric table, Views and temporality) and the
-pipeline's processor classes are re-exported here.
+:mod:`.instruments` holds the metric table, Views and temporality;
+:mod:`.pipeline` the providers, processor classes and Resource.
 """
 
 from __future__ import annotations
@@ -111,7 +111,7 @@ class HermesOTelPlugin:
         # orphan sweep reads.
         self.spans = SpanTracker()
         # Per-session aggregators for hook callbacks (token totals, I/O,
-        # turn summary, tool start times). Owned here so tests that
+        # turn summary). Owned here so tests that
         # re-create the tracer singleton automatically get a fresh set.
         self.sessions = SessionState()
         # The export pipeline (providers, processors, readers, meter,

@@ -14,7 +14,7 @@ Every `tool.*` span carries the raw args and result — but that's a big JSON bl
 |---|---|---|
 | `hermes.tool.target` | First non-empty args.`path` · `file_path` · `target` · `url` · `uri` | `/home/user/config.yaml` |
 | `hermes.tool.command` | First non-empty args.`command` · `cmd` | `ls -la ~/Downloads` |
-| `hermes.tool.outcome` | Result classification | `completed` · `error` · `timeout` · `blocked` |
+| `hermes.tool.outcome` | Result classification | `completed` · `error` · `timeout` · `blocked` · `cancelled` |
 | `hermes.skill.name` | The `skill_view` argument, or the directory holding the `SKILL.md` a tool read (verified on disk) | `git-workflow` |
 
 All are optional — if the input doesn't have them (e.g. a tool with no `path` arg), they're not set.
@@ -53,11 +53,15 @@ Useful dashboard queries:
 Normalised to one of:
 
 - `completed` — tool returned without error
-- `error` — tool raised an exception or the result dict had `"status": "error"`
+- `error` — tool raised an exception, or its result had a non-empty `error` or `"status": "error"`
 - `timeout` — tool ran longer than its timeout
 - `blocked` — tool was denied by a policy (e.g. command approval)
+- `cancelled` — Hermes reported the call cancelled
 
-Additional values can appear if the tool result dict has an explicit `status` field — it's lowercased and taken as-is (e.g. `status: "cancelled"`).
+Two inputs decide it, in this order:
+
+1. The `status` Hermes passes to `post_tool_call`. `timeout` / `timed_out`, `blocked` and `cancelled` / `canceled` win outright. `error` / `failed` gives `error`, unless the tool's result names a more specific `blocked`, `timeout` or `cancelled` (Hermes's terminal tool reports a governance block as `{"error": "BLOCKED: …", "status": "blocked"}`, which stays `blocked`).
+2. With a success status, or none, the tool's own result decides: an explicit `status` field (lowercased and taken as-is, so a custom value such as `partial` survives), then a non-empty `error` (`error`), then a true `timeout` or `blocked` flag. Otherwise the outcome is `completed`.
 
 The outcome also drives the span's OTel `StatusCode`:
 
@@ -67,6 +71,7 @@ The outcome also drives the span's OTel `StatusCode`:
 | `error` | `ERROR` |
 | `timeout` | `OK` ← intentional |
 | `blocked` | `OK` ← intentional |
+| `cancelled` | `OK` |
 | *anything else* | `OK` |
 
 Why timeouts and blocks don't map to `ERROR`: they're expected operational conditions, not failures of the tool itself. Treating them as errors would pollute every "error rate" dashboard. If you want to alert on blocked tools separately, filter on `hermes.tool.outcome = "blocked"` directly.

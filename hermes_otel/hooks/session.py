@@ -397,7 +397,7 @@ def on_session_end(
     tracer.unregister_turn(session_id)
 
     # End of a user-visible unit of work. Flush so the trace is visible in
-    # the backend UI immediately rather than after schedule_delay_millis.
+    # the backend UI immediately rather than after span_batch_schedule_delay_ms.
     # Honors config.force_flush_on_session_end for users who'd rather let
     # the batcher do its thing even at turn boundaries.
     if tracer.config.force_flush_on_session_end:

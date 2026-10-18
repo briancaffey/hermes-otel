@@ -6,15 +6,17 @@ description: "A generic contrib Collector in front of hermes-otel for backends w
 
 # OpenTelemetry Collector (in front of the plugin)
 
-hermes-otel exports OTLP/HTTP with static headers. Some destinations cannot be
-reached that way: Azure Monitor wants a Microsoft Entra bearer token, AWS wants
-SigV4 signatures, Google Cloud wants OAuth. The answer is the same for all of
-them: run an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/)
-next to Hermes, point the plugin at it with the generic [`otlp`](/backends/otlp)
-type, and let the Collector's exporter do the auth. The repo ships one such
-Collector as `docker-compose/collector/` with a target per destination, plus a
-default target that prints every span, metric and log record to `docker logs`.
-Issue #368.
+hermes-otel exports OTLP with headers: fixed ones from the config, or ones a
+[`headers_helper`](/configuration/short-lived-credentials) command mints. Some
+destinations cannot be reached that way: Azure Monitor's OTLP endpoints want a
+Microsoft Entra bearer token, AWS wants a SigV4 signature on every request,
+Google Cloud wants OAuth. The answer is the same for all of them: run an
+[OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) next to
+Hermes, point the plugin at it with the generic [`otlp`](/backends/otlp) type,
+and let the Collector's exporter do the auth. The repo ships one such Collector
+as `docker-compose/collector/` with a target per destination, plus a default
+target that prints every span, metric and log record to `docker logs`
+([#368](https://github.com/briancaffey/hermes-otel/issues/368)).
 
 ```bash
 docker compose -f docker-compose/collector/docker-compose.yaml up -d   # COLLECTOR_TARGET=debug
@@ -26,10 +28,14 @@ backends:
   - type: otlp
     name: collector
     endpoint: http://localhost:4448/v1/traces   # /v1/metrics and /v1/logs are derived
-    metrics: true
-    logs: true
-capture_logs: true
+    metrics: true            # the otlp default, spelled out
+    logs: true               # the otlp default, spelled out
+capture_logs: true           # log export is off until this is set
 ```
+
+The compose file publishes only the Collector's OTLP/HTTP receiver (host port
+4448). A `type: otlp` entry can also use OTLP/gRPC (`protocol: grpc`), but this
+stack does not open a gRPC port.
 
 ## Targets
 

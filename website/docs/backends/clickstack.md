@@ -91,7 +91,10 @@ In ClickHouse (`default` database):
 
 The [Hermes dashboard's OTel tab](/dashboard) reads ClickHouse over its HTTP interface (`query_port`, Basic auth from `user` / `password`):
 
-- **Traces**: SQL on `otel_traces`. Every search-bar field is a predicate on the server, including roots-only (`ParentSpanId = ''`), `status = ok`, free text (`SpanAttributes['input.value']` / `output.value` `ILIKE`) and a raw SQL predicate ANDed into the `WHERE`; a widened search (kind or tool filter) finds the earliest matching span of each trace: with a kind that span is the card, with a tool filter alone the card is the trace's root (one more query) carrying that span's attributes. String values are coerced back to numbers and booleans except on id-like keys. Each trace links to HyperDX's search page when `ui_url` is set.
+- **Traces**: SQL on `otel_traces`. Every search-bar field becomes a server-side predicate, including roots-only (`ParentSpanId = ''`), `status = ok`, free text (`SpanAttributes['input.value']` / `output.value` `ILIKE`) and a raw SQL predicate ANDed into the `WHERE`.
+  - A kind or tool filter widens the search to every span and keeps the earliest match in each trace. With a kind filter that span is the card; with a tool filter alone the card is the trace's root (one more query), carrying the matched span's attributes.
+  - String values are turned back into numbers and booleans, except on id-like keys.
+  - Each trace links to HyperDX's search page when `ui_url` is set.
 - **Metrics**: dotted names as stored; histograms are listed as `<name>.sum` and `<name>.count` so the curated panels find them. Counters and histogram sums / counts are read as raw cumulative samples with a five-minute look-behind and turned into per-bucket increases with first-sample counting; gauges stay raw. `group_by` takes the attribute key in either spelling (`tool.name` finds `tool_name`).
 - **Logs**: SQL on `otel_logs` with trace, span, logger, severity, text, session (`LogAttributes['hermes.session_id']`) and event (`LogAttributes['event.name']`) filters.
 

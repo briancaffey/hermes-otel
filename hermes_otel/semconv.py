@@ -1158,7 +1158,7 @@ ROWS: Tuple[Row, ...] = (
         "event",
         "tool",
         "",
-        "Tool wall-clock in seconds on the `hermes.tool.call` event (spans carry ms)",
+        "Tool wall-clock in seconds on the `hermes.tool.call` event (a tool span's own start and end give its duration)",
     ),
     Row(
         ("hermes.tool.name",),

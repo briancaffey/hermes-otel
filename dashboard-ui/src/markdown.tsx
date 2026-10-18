@@ -1,4 +1,4 @@
-// React renderer for markdown.ts: every node becomes an element, never HTML.
+// React renderer for md.ts: every node becomes an element, never HTML.
 import { React } from "./sdk";
 import { Block, Inline, parseBlocks } from "./md";
 

@@ -12,13 +12,13 @@ At `on_session_end`, the plugin enriches the `agent` / `cron` root span with a s
 |---|---|---|
 | `hermes.turn.tool_count` | int | Distinct tool names invoked |
 | `hermes.turn.tools` | string | Sorted CSV of distinct tool names (≤500 chars) |
-| `hermes.turn.tool_targets` | string | `\|`-joined distinct file paths / URLs |
-| `hermes.turn.tool_commands` | string | `\|`-joined distinct shell commands |
-| `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcome statuses |
+| `hermes.turn.tool_targets` | string | `\|`-joined distinct file paths / URLs, in first-seen order (≤500 chars) |
+| `hermes.turn.tool_commands` | string | `\|`-joined distinct shell commands, in first-seen order (≤500 chars) |
+| `hermes.turn.tool_outcomes` | string | Sorted CSV of distinct outcome statuses (≤500 chars) |
 | `hermes.turn.skill_count` | int | Distinct skills inferred |
-| `hermes.turn.skills` | string | Sorted CSV of distinct skill names |
-| `hermes.turn.api_call_count` | int | `pre_api_request` hooks fired during the turn |
-| `hermes.turn.final_status` | string | `completed` · `interrupted` · `failed` · `incomplete` (from Hermes' flags on `on_session_end`; `timed_out` from the orphan sweep) |
+| `hermes.turn.skills` | string | Sorted CSV of distinct skill names (≤500 chars) |
+| `hermes.turn.api_call_count` | int | Main-loop `pre_api_request` hooks fired during the turn (auxiliary calls are counted separately, as `hermes.turn.auxiliary.*`) |
+| `hermes.turn.final_status` | string | `completed` · `interrupted` · `failed` · `incomplete` (from Hermes' flags on `on_session_end`); `timed_out` from the orphan sweep; `finalized` / `reset` when a session boundary closed the root |
 
 Empty / zero aggregators are **omitted** rather than emitted as empty strings — so a turn that didn't call any tools simply won't have `hermes.turn.tool_count` on it.
 
@@ -36,7 +36,7 @@ Same logic for:
 
 - "Which turns touched `credentials.json`?" → filter on `hermes.turn.tool_targets CONTAINS "credentials.json"`
 - "Which turns ran `rm`?" → filter on `hermes.turn.tool_commands CONTAINS "rm"`
-- "Which turns errored?" → filter on `hermes.turn.tool_outcomes CONTAINS "error"` or `hermes.turn.final_status = "error"`
+- "Which turns errored?" → filter on `hermes.turn.tool_outcomes CONTAINS "error"` or `hermes.turn.final_status = "failed"`
 
 All become single-span filters on the root instead of span-tree traversals.
 
@@ -51,7 +51,7 @@ All become single-span filters on the root instead of span-tree traversals.
 | `failed` | Hermes reported the turn failed (`on_session_end` with `failed`), or its last API attempt ended in `api_request_error` and the turn never ended (see below) |
 | `finalized` / `reset` | A still-open root closed by `on_session_finalize` / `on_session_reset` |
 
-`completed` and `timed_out` both map the span `StatusCode` to `OK`. `interrupted` also stays `OK` (user interrupts aren't errors). `failed` is `ERROR`, with `error.type` from the last API error.
+`completed` and `timed_out` both map the span `StatusCode` to `OK`. `interrupted` also stays `OK` (user interrupts aren't errors). `failed` and `incomplete` are `ERROR`; `failed` carries `error.type` from the last API error.
 
 **A turn whose API attempts all fail (#467).** When the provider can't be reached, Hermes fires `api_request_error` for each attempt but neither `post_llm_call` nor `on_session_end`. The root is closed later: by `on_session_finalize` (the CLI's exit), by the orphan sweep, or, in a gateway, when the session's next turn starts. Whichever comes first sees that the last main-loop attempt failed with no success after it and closes the root `ERROR`, `final_status=failed`, `hermes.session.failed=true`, `error.type` from that attempt. The next turn then gets its own trace instead of joining the failed one.
 
@@ -59,10 +59,8 @@ This matters because every backend has a "error rate" widget that reads `StatusC
 
 ## Char caps
 
-`hermes.turn.tools` is capped at 500 characters. After a handful of distinct tool names, the CSV gets truncated with `...`. That rarely matters — a turn with more than 10 distinct tool names is unusual — but it prevents pathological cases from blowing up the attribute size.
-
-`hermes.turn.tool_targets` and `hermes.turn.tool_commands` are pipe-joined and not individually capped. A single attribute value is limited by OTel's default attribute length limit (4096 chars); beyond that the SDK truncates.
+Every string in the summary (`hermes.turn.tools`, `tool_targets`, `tool_commands`, `tool_outcomes`, `skills`) is capped at 500 characters; a longer list is cut and ends with `...`. That rarely matters for tool names, but a turn that touches many files or runs many commands fills `tool_targets` and `tool_commands` quickly, so the later entries are the ones dropped. The individual `tool.*` spans always carry their own target and command.
 
 ## Aggregation rule
 
-Distinctness is computed by normalized lowercase string equality. Two `bash` tool calls with the exact same `command` field are collapsed; two with different commands are counted separately. This keeps the rolled-up values bounded even on long-running turns.
+Distinctness is exact string equality (no case folding). Two `bash` tool calls with the exact same `command` field are collapsed; two with different commands are listed separately.

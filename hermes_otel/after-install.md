@@ -1,9 +1,9 @@
 ## hermes-otel installed
 
 Hermes 0.21+ has already installed the OpenTelemetry packages this plugin
-imports (`opentelemetry-api`, `-sdk` and `-exporter-otlp-proto-http`, 1.35 or
-newer, below 2) into its own virtualenv and will re-apply them after
-`hermes update`.
+imports (`opentelemetry-api`, `-sdk`, `-exporter-otlp-proto-http` and
+`-exporter-otlp-proto-grpc`, 1.35 or newer, below 2) into its own virtualenv
+and will re-apply them after `hermes update`.
 Enable the plugin if you have not (`hermes plugins enable hermes_otel`) and
 restart the gateway if one is running.
 
@@ -37,7 +37,13 @@ Pick one and export it before starting Hermes:
 
 | Backend | Environment |
 |---|---|
-| Phoenix | `OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces` |
+| Phoenix | `OTEL_PHOENIX_ENDPOINT=http://localhost:6006/v1/traces` (traces only) |
+| Jaeger | `OTEL_JAEGER_ENDPOINT=http://localhost:4318/v1/traces` (traces only) |
+| Grafana Tempo | `OTEL_TEMPO_ENDPOINT=http://localhost:4358/v1/traces` (traces only) |
+| SigNoz | `OTEL_SIGNOZ_ENDPOINT=http://localhost:4328/v1/traces` (+ `OTEL_SIGNOZ_INGESTION_KEY` for SigNoz Cloud) |
+| Uptrace | `OTEL_UPTRACE_ENDPOINT` + `OTEL_UPTRACE_DSN` |
+| OpenObserve | `OTEL_OPENOBSERVE_ENDPOINT=http://localhost:5080` + `OTEL_OPENOBSERVE_USER` + `OTEL_OPENOBSERVE_PASSWORD` |
+| Parseable | `OTEL_PARSEABLE_ENDPOINT` + `OTEL_PARSEABLE_API_KEY` |
 | Zipkin | `OTEL_ZIPKIN_ENDPOINT=http://localhost:9411` (the `zipkin-otel` image; traces only) |
 | GreptimeDB | `OTEL_GREPTIME_ENDPOINT=http://localhost:4398` (traces + metrics + logs; `OTEL_GREPTIME_DB` optional) |
 | ClickStack | `OTEL_CLICKSTACK_ENDPOINT=http://localhost:4408` + `OTEL_CLICKSTACK_API_KEY` (the team's ingestion key; traces + metrics + logs) |
@@ -46,21 +52,21 @@ Pick one and export it before starting Hermes:
 | Agenta | `OTEL_AGENTA_API_KEY` (cloud) or `OTEL_AGENTA_ENDPOINT=http://localhost:3060` + the key (self-hosted); traces only |
 | VictoriaMetrics family | `OTEL_VICTORIA_ENDPOINT=http://localhost:10428` (+ `OTEL_VICTORIA_METRICS_ENDPOINT=http://localhost:8428`, `OTEL_VICTORIA_LOGS_ENDPOINT=http://localhost:9428` for metrics and logs) |
 | Grafana LGTM / any OTLP collector | no env-var mode: add `backends: [{type: lgtm, endpoint: http://localhost:4318/v1/traces, metrics: true}]` to `$HERMES_HOME/hermes_otel.yaml` |
-| Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` |
+| Langfuse | `OTEL_LANGFUSE_ENDPOINT` + `OTEL_LANGFUSE_PUBLIC_API_KEY` + `OTEL_LANGFUSE_SECRET_API_KEY` (traces only) |
 | LangSmith | `OTEL_LANGSMITH_API_KEY` (traces only; `OTEL_LANGSMITH_PROJECT` for the project) |
 | Honeycomb | `OTEL_HONEYCOMB_API_KEY` |
-| W&B Weave | `OTEL_WEAVE_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` |
+| W&B Weave | `OTEL_WEAVE_API_KEY` + `WANDB_ENTITY` + `WANDB_PROJECT` (traces only) |
 | Elastic | `OTEL_ELASTIC_ENDPOINT` (+ `OTEL_ELASTIC_API_KEY` for Elastic Cloud mOTLP; omit for a local EDOT Collector) |
 | OpenLIT | `OTEL_OPENLIT_ENDPOINT` (+ `OTEL_OPENLIT_API_KEY` to scope ingest to an org/project; omit for a local stack) |
-| MLflow | `OTEL_MLFLOW_ENDPOINT` (+ `MLFLOW_EXPERIMENT_ID`, default `0`; traces only) |
+| MLflow | `OTEL_MLFLOW_ENDPOINT` (+ `OTEL_MLFLOW_EXPERIMENT_ID` or `MLFLOW_EXPERIMENT_ID`, default `0`; traces only) |
 | Comet Opik | `OTEL_OPIK_API_KEY` + `OPIK_WORKSPACE` (cloud) or `OTEL_OPIK_ENDPOINT` (self-hosted); traces only |
 | Laminar | `OTEL_LAMINAR_API_KEY` (+ `OTEL_LAMINAR_ENDPOINT` for a self-hosted app-server); traces + logs |
 | LangWatch | `OTEL_LANGWATCH_API_KEY` (+ `OTEL_LANGWATCH_ENDPOINT` for a self-hosted stack) |
 | Latitude | `OTEL_LATITUDE_API_KEY` + `LATITUDE_PROJECT` (+ `OTEL_LATITUDE_ENDPOINT` for a self-hosted ingest); traces only |
 
-Vendor SDK variables already in your environment (`LANGFUSE_PUBLIC_KEY` /
-`LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`) are used as credential
-fallbacks but never switch export on by themselves: with no `OTEL_*` variable and
+Vendor SDK variables already in your environment (for example
+`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `HONEYCOMB_API_KEY`, `WANDB_API_KEY`)
+are used as credential fallbacks but never switch export on by themselves: with no `OTEL_*` variable and
 no `backends:` list, nothing leaves the machine.
 
 Telemetry shaping (sampling, preview sizes, resource attributes) is optional and
@@ -69,11 +75,12 @@ directory: reinstalling or updating the plugin replaces this directory wholesale
 
 ### Verify
 
-Start Hermes and look for the banner:
+Start Hermes and look for these lines in its log (the hook count can be
+lower on an older Hermes that lacks some hooks):
 
 ```text
 [hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
-[hermes-otel] Registered 23 hooks
+[hermes-otel] Registered 34 hooks
 ```
 
 Nothing showing up? `export HERMES_OTEL_DEBUG=true` writes a per-span log to

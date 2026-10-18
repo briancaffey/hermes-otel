@@ -122,7 +122,7 @@ class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # vmui's Trace Explorer has a TraceID mode; the route is not documented
-        # as a deep link, so none is offered unless ``ui_url`` is set.
+        # as a deep link, so none is offered (``ui_url`` is not read here).
         return None
 
     # ── traces: typed-string tags ─────────────────────────────────────

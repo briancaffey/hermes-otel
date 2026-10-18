@@ -757,7 +757,7 @@ export function headerFacts(root: Record<string, any>, spans: NamedAttrs[] = [])
 // carries its child's WHOLE subtree (hermes.subagent.usage.* / cost.*). The
 // run is the root plus the top-level delegations, never the root plus every
 // span (#178). A delegation is nested when its parent session is another
-// delegation's child session. Mirrors live_store.top_level_subagents.
+// delegation's child session. Mirrors live_summary.top_level_subagents.
 export function topLevelSubagents(spans: NamedAttrs[]): NamedAttrs[] {
   const subs = spans.filter((s) => kindOf(s.name || "", s.attributes) === "subagent");
   const children = new Set(
@@ -781,7 +781,7 @@ export type AgentRow = {
 };
 export type AgentBreakdown = { rows: AgentRow[]; total: { tokens: number | null; calls: number | null; cost: number | null } };
 
-// helpers._SUBAGENT_ERROR_STATUSES: the child statuses the plugin marks ERROR (#392)
+// hooks/subagent.py _SUBAGENT_ERROR_STATUSES: the child statuses the plugin marks ERROR (#392)
 const SUBAGENT_ERROR_STATUSES = new Set(["error", "errored", "failed", "failure", "cancelled", "canceled", "timeout", "timed_out", "stalled"]);
 
 const sumKnown = (vals: (number | null)[]): number | null => {

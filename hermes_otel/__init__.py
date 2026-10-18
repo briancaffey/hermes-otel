@@ -17,7 +17,7 @@ def register(ctx):
     from .tracer import get_tracer
 
     # Install stderr handler on the hermes_otel logger unless the host app
-    # has already wired up its own. Keeps the "✓ backend connected" banner
+    # has already wired up its own. Keeps the "✓ <backend> at <endpoint>" banner
     # visible without forcing downstream apps to configure logging.
     configure_default_handler()
 

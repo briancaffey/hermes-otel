@@ -9,14 +9,14 @@
   <a href="https://github.com/briancaffey/hermes-otel/actions/workflows/deploy-site.yml"><img src="https://github.com/briancaffey/hermes-otel/actions/workflows/deploy-site.yml/badge.svg" alt="Docs site"></a>
   <a href="https://github.com/briancaffey/hermes-otel/releases"><img src="https://img.shields.io/badge/dynamic/toml?url=https%3A%2F%2Fraw.githubusercontent.com%2Fbriancaffey%2Fhermes-otel%2Fmain%2Fpyproject.toml&amp;query=%24.project.version&amp;prefix=v&amp;label=version&amp;color=3fb950" alt="Version"></a>
   <a href="pyproject.toml"><img src="https://img.shields.io/badge/python-3.9%E2%80%933.13-3776AB?logo=python&amp;logoColor=white" alt="Python 3.9 to 3.13"></a>
-  <a href="https://opentelemetry.io/docs/specs/otlp/"><img src="https://img.shields.io/badge/OpenTelemetry-OTLP%2FHTTP-425cc7?logo=opentelemetry&amp;logoColor=white" alt="OpenTelemetry OTLP/HTTP"></a>
+  <a href="https://opentelemetry.io/docs/specs/otlp/"><img src="https://img.shields.io/badge/OpenTelemetry-OTLP%20HTTP%20%7C%20gRPC-425cc7?logo=opentelemetry&amp;logoColor=white" alt="OpenTelemetry OTLP over HTTP or gRPC"></a>
   <a href="LICENSE"><img src="https://img.shields.io/github/license/briancaffey/hermes-otel?color=58a6ff" alt="License: Apache-2.0"></a>
 </p>
 
 <p align="center">
   <b>OpenTelemetry plugin for <a href="https://github.com/nousresearch/hermes-agent">Hermes Agent</a>.</b><br>
   Every Hermes turn — model calls, API requests, tool calls, skill loads, approvals, delegated sub-agents — becomes one OTel trace,
-  with token / cost / latency metrics and (optionally) logs and structured events, exported to any OTLP/HTTP backend.
+  with token, cost and latency metrics and (optionally) logs and structured events, exported to any OTLP backend over HTTP or gRPC.
 </p>
 
 <p align="center">
@@ -42,10 +42,10 @@ agent / cron                          ← the turn (root); turn summary at the e
 ├── skill.{name}                      ← a loaded skill; spans load → turn end
 └── llm.{model}                       ← one run_conversation
     ├── api.{model}                   ← one HTTP round-trip; tokens, cost, finish reason
-    │   ├── tool.{name}               ← each tool call; args, result, outcome
-    │   └── approval.{pattern}        ← human / smart-guardian approval wait
+    ├── tool.{name}                   ← each tool call; args, result, outcome
+    ├── approval.{pattern}            ← human / smart-guardian approval wait
     ├── subagent.{role}               ← delegate_task; the child's own trace nests here
-    │   └── agent → llm → api → tool …
+    │   └── agent → llm → api, tool …
     └── api.{model}                   ← final response
 ```
 
@@ -56,7 +56,7 @@ agent / cron                          ← the turn (root); turn summary at the e
 | `llm.{model}` | LLM | Model, provider, user message (input), assistant response (output) |
 | `api.{model}` | LLM | Token counts in both conventions (incl. cache and reasoning buckets), duration, finish reason, request parameters. On failure: `ERROR` + exception + retry metadata. `hermes.query_source` says whether the call is the agent loop's own (`main`), a delegated child's (`subagent`) or one Hermes made on the agent's behalf (`auxiliary`: titling, compression, Mixture-of-Agents references and aggregator, vision, …), the last tagged with `hermes.auxiliary.task` |
 | `tool.{name}` | TOOL | Args, result, `hermes.tool.outcome` (`completed` / `error` / `timeout` / `blocked` / `cancelled`), inferred target / command, `hermes.tool.git_commit` on a successful `git commit` (also counted as `hermes.commit.count` and a `commit` event), CPU/GPU utilization with host metrics |
-| `approval.{pattern}` | CHAIN | Decision wait time, choice (`once` / `session` / `always` / `deny` / `timeout` / `smart_approve` / `smart_deny`), who decided |
+| `approval.{pattern}` | CHAIN | Decision wait time, choice (`once` / `session` / `always` / `deny` / `timeout` / `smart_approve` / `smart_deny` / `smart_escalate`), who decided |
 | `subagent.{role}` | AGENT | Role, goal, status, duration, summary, the child's model and what its whole subtree cost; the child run is nested so a multi-agent run is one connected trace |
 
 Running several agents (delegated children, kanban workers on other profiles and models, a swarm, Mixture-of-Agents, cron)? [Observing a fleet](https://briancaffey.github.io/hermes-otel/guides/observing-a-fleet) shows what each looks like in a backend and how to ask what each one cost. A kanban card's run is one trace from the dispatcher's claim through the worker's turn.
@@ -67,7 +67,9 @@ Attributes are emitted in **both** conventions — OpenInference (`llm.*`, `inpu
 
 Tested with: [Phoenix](https://briancaffey.github.io/hermes-otel/backends/phoenix) · [Langfuse](https://briancaffey.github.io/hermes-otel/backends/langfuse) · [LangSmith](https://briancaffey.github.io/hermes-otel/backends/langsmith) · [SigNoz](https://briancaffey.github.io/hermes-otel/backends/signoz) · [Jaeger](https://briancaffey.github.io/hermes-otel/backends/jaeger) · [Zipkin](https://briancaffey.github.io/hermes-otel/backends/zipkin) · [GreptimeDB](https://briancaffey.github.io/hermes-otel/backends/greptime) · [ClickStack](https://briancaffey.github.io/hermes-otel/backends/clickstack) · [VictoriaMetrics family](https://briancaffey.github.io/hermes-otel/backends/victoria) · [Aspire Dashboard](https://briancaffey.github.io/hermes-otel/backends/aspire) · [Gigapipe](https://briancaffey.github.io/hermes-otel/backends/gigapipe) · [Agenta](https://briancaffey.github.io/hermes-otel/backends/agenta) · [Grafana Tempo](https://briancaffey.github.io/hermes-otel/backends/tempo) · [Grafana LGTM](https://briancaffey.github.io/hermes-otel/backends/lgtm) · [Uptrace](https://briancaffey.github.io/hermes-otel/backends/uptrace) · [OpenObserve](https://briancaffey.github.io/hermes-otel/backends/openobserve) · [Parseable](https://briancaffey.github.io/hermes-otel/backends/parseable) · [Honeycomb](https://briancaffey.github.io/hermes-otel/backends/honeycomb) · [W&B Weave](https://briancaffey.github.io/hermes-otel/backends/weave) · [Elastic](https://briancaffey.github.io/hermes-otel/backends/elastic) · [OpenLIT](https://briancaffey.github.io/hermes-otel/backends/openlit) · [MLflow](https://briancaffey.github.io/hermes-otel/backends/mlflow) · [Comet Opik](https://briancaffey.github.io/hermes-otel/backends/opik) · [Laminar](https://briancaffey.github.io/hermes-otel/backends/laminar) · [LangWatch](https://briancaffey.github.io/hermes-otel/backends/langwatch) · [Latitude](https://briancaffey.github.io/hermes-otel/backends/latitude).
 
-Any OTLP/HTTP or OTLP/gRPC endpoint works as `type: otlp` (HTTP/protobuf by default; set `protocol: grpc` for gRPC). Both transports support TLS and client-certificate authentication; see [gRPC and TLS](https://briancaffey.github.io/hermes-otel/backends/otlp#grpc-and-tls). Several can be fed at once, each with its own export queue. Which backend carries which signal (Phoenix, Jaeger, Zipkin, Tempo, Langfuse, Weave, MLflow, Opik, Latitude and Agenta are traces-only; Laminar takes traces and logs) is in the [backends overview](https://briancaffey.github.io/hermes-otel/backends/overview). Every self-hostable backend, plus the candidates tracked in #232, has a ready-made Compose stack under [`docker-compose/`](docker-compose/), one folder per backend; [`docker-compose/README.md`](docker-compose/README.md) is the manual with the comparison table and port map.
+Any other OTLP endpoint works as `type: otlp`. It sends HTTP/protobuf by default; set `protocol: grpc` for gRPC. Both transports support TLS and client certificates (mTLS); see [gRPC and TLS](https://briancaffey.github.io/hermes-otel/backends/otlp#grpc-and-tls). You can send to several backends at once, and each gets its own export queue.
+
+Not every backend takes every signal. Phoenix, Langfuse, LangSmith, Jaeger, Zipkin, Tempo, W&B Weave, MLflow, Opik, Latitude and Agenta take traces only; Laminar takes traces and logs; the rest take traces, metrics and logs. The [backends overview](https://briancaffey.github.io/hermes-otel/backends/overview) has the full table. Every self-hostable backend, plus the candidates tracked in [#232](https://github.com/briancaffey/hermes-otel/issues/232), has a ready-made Compose stack under [`docker-compose/`](docker-compose/), one folder per backend; [`docker-compose/README.md`](docker-compose/README.md) has the comparison table and the port map.
 
 ## Install
 
@@ -130,7 +132,7 @@ agent                             13.22 s  ▇▇▇▇▇▇▇▇▇▇▇▇�
 ── 10 spans · 13.22 s · 39,919 tokens
 ```
 
-`status`, `traces`, `trace`, `span`, `sessions`, `stats`, `metrics`, `logs` and read-only `sql`, each with `--json`, `--since` and `--source <backend>`: see [The observability skill](https://briancaffey.github.io/hermes-otel/skill). Traces on Jaeger or Tempo can also be searched from Claude Code, Cursor or Hermes itself through Traceloop's `opentelemetry-mcp` server: [Query your traces over MCP](https://briancaffey.github.io/hermes-otel/configuration/mcp-query-server).
+The commands are `status`, `traces`, `trace`, `span`, `sessions`, `stats`, `metrics`, `logs`, read-only `sql` and `mcp-config`. Most take `--json`, a time window (`--since`, `--until`) and `--source <backend>`; see [The observability skill](https://briancaffey.github.io/hermes-otel/skill). Traces on Jaeger or Tempo can also be searched from Claude Code, Cursor or Hermes itself through Traceloop's `opentelemetry-mcp` server: [Query your traces over MCP](https://briancaffey.github.io/hermes-otel/configuration/mcp-query-server).
 
 ## How it works
 
@@ -143,7 +145,7 @@ Hermes ships two observability surfaces of its own. hermes-otel is the third, ru
 | | Hermes gateway monitoring (core) | Bundled Langfuse plugin | hermes-otel |
 |---|---|---|---|
 | Scope | Gateway and cron health, content-free by design: no prompts, tool calls, tokens or per-run traces | Per-run traces | Per-run traces (session → LLM → API → tool → sub-agent → approval), GenAI/OpenInference attributes, metrics and logs |
-| Backends | Any OTLP receiver (`monitoring.export.otlp`) | Langfuse only | 19 backend types plus generic OTLP, fanned out in parallel |
+| Backends | Any OTLP receiver (`monitoring.export.otlp`) | Langfuse only | 26 backend types plus generic OTLP, fanned out in parallel |
 | Coexists with hermes-otel | Yes | Yes | |
 
 Docs for the core surfaces: [Gateway Monitoring](https://hermes-agent.nousresearch.com/docs/developer-guide/gateway-monitoring) and the `plugins/observability/langfuse` directory in hermes-agent.
@@ -154,10 +156,10 @@ Docs for the core surfaces: [Gateway Monitoring](https://hermes-agent.nousresear
 |---|---|
 | `hermes_otel/` | The plugin — the only directory Hermes installs (runtime modules, `plugin.yaml`, the bundled skill, the dashboard bundle) |
 | `website/` | The Docusaurus docs site |
-| `tests/` | Unit and integration tiers run in CI; `e2e/` and `smoke/` need real backends |
+| `tests/` | Unit, integration and the credential-free `e2e_ci/` tier run in CI; `e2e/` and `smoke/` need real backends |
 | `docker-compose/` | Backend stacks for local development |
 | `dashboard-ui/` | TSX sources for the dashboard tab; `npm run build` writes into `hermes_otel/dashboard/dist/` |
-| `scripts/` | The Hermes plugin security scanner, the docs generators and the catalog-entry renderer CI runs |
+| `scripts/` | Tools CI runs (the plugin security scanner, the docs and vocabulary generators, the coverage floors, the catalog-entry renderer) and live-check harnesses (`scenarios/`, `dashboard_verify/`, `kanban_demo/`, `refactor_check/`) |
 | `docs/` | Assets fetched from outside the repo at a pinned commit: the plugin-catalog banner and its HTML source (`make banner` re-renders it) |
 | `marketing/`, `archive/` | Launch video and article; historical design notes |
 

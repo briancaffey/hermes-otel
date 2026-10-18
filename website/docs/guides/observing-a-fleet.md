@@ -65,7 +65,7 @@ Board health is metrics, not spans:
 ## Recipes
 
 **Spend per profile.**
-- *Metrics (Prometheus-style backends):* `sum by (profile) (increase(hermes_token_usage_total[1h]))` for tokens, and `hermes_cost_usage_total` for USD where Hermes priced the calls. Add `query_source` to split main calls from sub-agent and auxiliary calls.
+- *Metrics (Prometheus-style backends):* `sum by (profile) (increase(hermes_token_usage_total[1h]))` for tokens, and `hermes_cost_usage_USD_total` for USD where Hermes priced the calls (the unit is part of the Prometheus name, as for `claude_code_cost_usage_USD_total`). Add `query_source` to split main calls from sub-agent and auxiliary calls.
 - *Spans:* group turn roots (`agent`, `cron`) by `hermes.profile` and sum their `gen_ai.usage.*`.
 
 **One service per agent.** Set `service_name_from_profile: true` in every profile's `hermes_otel.yaml` and each named profile exports as its own `service.name` under `service.namespace=hermes-agent`. Service pickers (Jaeger, Tempo, SigNoz, Uptrace) then list `coder`, `reviewer` … instead of one `hermes-agent`, and a kanban run's trace crosses services: the dispatcher's profile owns `kanban.claim`, the assignee's profile owns the worker's `agent` root. See [Profiles](/configuration/profiles#one-service-per-profile) for what changes in saved queries.
@@ -97,7 +97,7 @@ Export the launcher's own spans to the same backend and the Hermes `agent` root 
 1. It clones `minimal` into `fleet-worker` and `fleet-reviewer`, each on its own NVIDIA model.
 2. It runs `hermes kanban swarm` (two workers → reviewer → synthesizer) through `hermes kanban dispatch`.
 3. It checks that every card's run is one trace, and that each worker root names its own profile and model.
-4. It deletes the profiles it created.
+4. It deletes the profiles it created (`--keep-profiles` keeps them).
 
 The swarm's synthesizer card asks for the `humanizer` skill. In a profile without it, that worker exits before its first turn, and the report says so with the worker's last output. Its run still has claim and spawn in one trace, but no turn to join. For delegation and MoA turns, see the multi-agent scenarios in the [scenario harness](/development/scenarios#multi-agent-scenarios).
 

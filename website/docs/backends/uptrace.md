@@ -24,7 +24,7 @@ Wait ~20s for ClickHouse to finish applying migrations, then open the UI at http
 - **Email:** `admin@uptrace.local`
 - **Password:** `admin`
 
-Point the plugin at it — minimal `config.yaml`:
+Point the plugin at it — minimal `hermes_otel.yaml`:
 
 ```yaml
 backends:
@@ -32,7 +32,8 @@ backends:
     endpoint: http://localhost:14318/v1/traces
     dsn: http://project1_secret@localhost:14318?grpc=14317
 
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 The `dsn` value is the ingestion DSN for the seeded project (`hermes-agent` under org `hermes-otel`, token `project1_secret`). The plugin sends it as the `uptrace-dsn` header on every OTLP request; Uptrace uses it to route data to the right project.
@@ -41,12 +42,12 @@ The `dsn` value is the ingestion DSN for the seeded project (`hermes-agent` unde
 
 Uptrace authenticates with a custom `uptrace-dsn` header that `type: otlp` can't synthesise for you. Declaring `type: uptrace` asks the plugin to:
 
-1. Read `dsn:` (or `dsn_env:` → env var → `UPTRACE_DSN` / `OTEL_UPTRACE_DSN`).
+1. Read `dsn:`, else the variable `dsn_env:` names, else `OTEL_UPTRACE_DSN`, else `UPTRACE_DSN`. The entry is skipped at startup when none is set.
 2. Set the `uptrace-dsn` request header automatically.
 3. Display `✓ Uptrace at <endpoint>` in startup logs.
-4. Enable all three signals (`supports_metrics=True`, `supports_logs=True`).
+4. Send all three signals (traces, metrics and logs) by default, with metrics as delta (the type's preset).
 
-Keep secrets out of `config.yaml` — use `dsn_env` and set the variable in your shell:
+Keep secrets out of `hermes_otel.yaml` — use `dsn_env` and set the variable in your shell:
 
 ```yaml
 backends:
@@ -84,7 +85,7 @@ Navigation → Metrics. Query with PromQL over any `hermes_*` metric the plugin 
 - `hermes_tool_duration_bucket` — tool execution histogram
 
 **Logs:**
-Navigation → Logs. When `capture_logs: true` is on, every `logger.info(...)` from hermes or the plugin lands here. A line logged during a turn carries that turn's `trace_id` and `span_id`, `hermes.session_id` and `hermes.log.attribution`; lines the plugin cannot attribute to a turn (between turns, or from another thread while several sessions are active) arrive without trace ids. Click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
+Navigation → Logs. When `logs: {capture: true}` is on, every `logger.info(...)` from hermes or the plugin lands here. A line logged during a turn carries that turn's `trace_id` and `span_id`, `hermes.session_id` and `hermes.log.attribution`; lines the plugin cannot attribute to a turn (between turns, or from another thread while several sessions are active) arrive without trace ids. Click a log record's `trace_id` to jump into the corresponding trace. See [OTel logs](/configuration/logs#where-the-ids-come-from) for the attribution rules.
 
 ## Dashboard
 
@@ -149,7 +150,8 @@ backends:
   - type: phoenix
     endpoint: http://localhost:6006/v1/traces
 
-capture_logs: true
+logs:
+  capture: true
 ```
 
 Traces fan out to both; metrics and logs go only to Uptrace (Phoenix ingests traces only — the plugin skips it automatically).

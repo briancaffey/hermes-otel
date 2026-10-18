@@ -11,7 +11,7 @@ hermes-otel uses [release-please](https://github.com/googleapis/release-please) 
 1. You merge conventional commits to `main`.
 2. A `release-please` workflow opens (or updates) a Release PR that bumps the version and updates `CHANGELOG.md`.
 3. When you merge that Release PR, a GitHub Release is cut and a tag is pushed.
-4. (Optional) A follow-up workflow can publish to PyPI / rebuild the docs / etc.
+4. The same workflow renders the plugin-catalog entry for the release; a sha-bump PR upstream makes it installable from the catalog ([below](#after-the-release-bump-the-plugin-catalog-pin)).
 
 ## Conventional Commits → version bumps
 
@@ -33,13 +33,14 @@ The hidden types are excluded from the changelog *and* from the bump decision, s
 After a qualifying commit lands, release-please opens a PR titled something like:
 
 ```text
-chore(main): release hermes-otel 0.2.0
+chore(main): release hermes-otel 1.32.1
 ```
 
 The PR updates:
 
 - `pyproject.toml` version field (release type `python`)
 - `hermes_otel/plugin.yaml` `version` — the number `hermes plugins list` shows (declared under `extra-files`)
+- `hermes_otel/dashboard/manifest.json` `version` and the package's own entry in `uv.lock` (also `extra-files`)
 - `CHANGELOG.md` with the commit subjects grouped by type
 - `.release-please-manifest.json` (internal tracking file)
 
@@ -49,7 +50,7 @@ Review the changelog entries — if you want to tweak wording, edit the PR direc
 
 Two files control release-please:
 
-- `release-please-config.json`: release type, tag format, and the `extra-files` list (plugin.yaml)
+- `release-please-config.json`: release type, tag format, and the `extra-files` list (plugin.yaml, the dashboard manifest, uv.lock)
 - `.release-please-manifest.json`: current version
 
 ```json
@@ -61,7 +62,9 @@ Two files control release-please:
       "package-name": "hermes-otel",
       "include-v-in-tag": true,
       "extra-files": [
-        { "type": "yaml", "path": "hermes_otel/plugin.yaml", "jsonpath": "$.version" }
+        { "type": "yaml", "path": "hermes_otel/plugin.yaml", "jsonpath": "$.version" },
+        { "type": "json", "path": "hermes_otel/dashboard/manifest.json", "jsonpath": "$.version" },
+        { "type": "toml", "path": "uv.lock", "jsonpath": "$.package[?(@.name=='hermes-otel')].version" }
       ]
     }
   }
@@ -75,7 +78,7 @@ Tags are `hermes-otel-vX.Y.Z` (the component name is part of the tag), and GitHu
 `.github/workflows/release-please.yml` runs on every push to `main` and does three things:
 
 1. Runs `googleapis/release-please-action`, which opens or updates the Release PR, or cuts the release when the Release PR was just merged.
-2. While a Release PR is open, merges `main` into its branch and refreshes `uv.lock` (release-please bumps `pyproject.toml` but never the lockfile, and only rebases the branch when the release notes change), so the PR's checks stay current.
+2. While a Release PR is open, merges `main` into its branch and runs `uv lock`, committing `uv.lock` if it changed. release-please only rebases the branch when the release notes change, so without this a `ci:` / `test:` / `chore:` commit on `main` would leave the PR's checks stale.
 3. When a release was just created, renders the plugin-catalog entry for it (next section), uploads it to the GitHub release as `hermes_otel.yaml`, and prints it in the job summary.
 
 ### Why a PAT instead of `GITHUB_TOKEN`?
@@ -95,7 +98,7 @@ hermes-otel is listed in the [Hermes plugin catalog](https://github.com/NousRese
    python scripts/render_catalog_entry.py --sha "$(git rev-parse hermes-otel-vX.Y.Z)" --version X.Y.Z
    ```
 
-2. In a fork of `NousResearch/hermes-agent`, replace `plugin-catalog/hermes_otel.yaml` with that file and open a PR titled `plugin-catalog: bump hermes_otel to X.Y.Z`. Upstream CI clones this repo at the pinned sha and runs `hermes plugins validate --install-deps`; the `Catalog admission checks` job in this repo's CI runs the same gates on every PR, so the upstream check should already be green.
+2. In a fork of `NousResearch/hermes-agent`, replace `plugin-catalog/hermes_otel.yaml` with that file and open a PR titled `plugin-catalog: bump hermes_otel to X.Y.Z`. Upstream CI clones this repo at the pinned sha and runs `hermes plugins validate --install-deps`. This repo's `Catalog admission` workflow (`.github/workflows/catalog-admission.yml`) runs the same gates on every push to `main`, weekly and on manual dispatch, so the upstream check should already be green.
 
 3. Reviewers look at the commit range between the old and new sha, so keep the PR body to the release notes link and anything a reviewer must know (new hooks, new dependencies, new env vars).
 
@@ -117,8 +120,8 @@ Open an issue if you'd like to see this sooner.
 You should almost never need this; release-please handles everything. If the action is broken:
 
 ```bash
-# Bump the version in pyproject.toml, hermes_otel/plugin.yaml and .release-please-manifest.json,
-# then update CHANGELOG.md
+# Bump the version in pyproject.toml, hermes_otel/plugin.yaml, hermes_otel/dashboard/manifest.json
+# and .release-please-manifest.json, run `uv lock`, then update CHANGELOG.md
 git commit -am "chore(main): release hermes-otel X.Y.Z"
 git tag hermes-otel-vX.Y.Z
 git push origin main --tags
@@ -129,4 +132,4 @@ gh release upload hermes-otel-vX.Y.Z hermes_otel.yaml
 
 ## Version alignment
 
-`pyproject.toml` is the source of truth; `hermes_otel/plugin.yaml` and `.release-please-manifest.json` track it and a unit test fails if they drift. Don't edit any of them by hand; let release-please do it.
+`pyproject.toml` is the source of truth; `hermes_otel/plugin.yaml` and `.release-please-manifest.json` track it and `tests/unit/test_install_artifact.py` fails if they drift. Don't edit any of them by hand; let release-please do it.

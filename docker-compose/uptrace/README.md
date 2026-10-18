@@ -32,13 +32,14 @@ backends:
     endpoint: http://localhost:14318/v1/traces
     dsn: http://project1_secret@localhost:14318?grpc=14317
 
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 The `dsn` above matches the seed data in `uptrace.yml` (one project named
 `hermes-agent` under org `hermes-otel`, token `project1_secret`). Rotate
 by editing `docker-compose/uptrace/uptrace.yml` and restarting the stack;
-don't forget to update `config.yaml` to match.
+don't forget to update `hermes_otel.yaml` to match.
 
 Restart hermes-agent; `[hermes-otel] ✓ Uptrace at http://localhost:14318/v1/traces`
 should appear in startup logs.
@@ -52,7 +53,7 @@ should appear in startup logs.
   emits (`hermes_session_count_total`, `hermes_token_usage_total`, the
   tool-duration histogram).
 - **Logs** — structured logs with automatic `trace_id` / `span_id`
-  correlation when `capture_logs` is on. Clicking a log record's
+  correlation when `logs: {capture: true}` is on. Clicking a log record's
   `trace_id` jumps to the full trace.
 
 ## Ports
@@ -92,7 +93,7 @@ docker compose -f docker-compose/uptrace/docker-compose.yaml down -v
   separate endpoint; the plugin uses the OTLP path.)
 - **Logs:** yes — stored alongside traces with trace-ID correlation.
 
-Set `metrics: false` / `logs: false` per-backend in `config.yaml` if you
+Set `metrics: false` / `logs: false` per-backend in `hermes_otel.yaml` if you
 want traces only.
 
 ## Why not just run the upstream compose?

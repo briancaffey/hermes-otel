@@ -23,7 +23,8 @@ backends:
   - type: otlp
     name: sigiro
     endpoint: http://localhost:4378/v1/traces
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ## Verify

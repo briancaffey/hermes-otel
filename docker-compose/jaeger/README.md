@@ -25,6 +25,7 @@ UI: http://localhost:16686 (no login).
 backends:
   - type: jaeger
     endpoint: http://localhost:4318/v1/traces
+    query_port: 16686           # dashboard read path (the default; shown for clarity)
 ```
 
 ## Verify

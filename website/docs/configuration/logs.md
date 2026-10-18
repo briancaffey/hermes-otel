@@ -36,7 +36,7 @@ logs:
     content: inherit             # inherit (follow content_capture) | full | preview | off
 ```
 
-Every key is also a flat field (`capture_logs`, `log_level`, `log_attach_logger`, `log_exclude_loggers`, `log_logger_levels`, `log_only_in_turn`, `log_max_attribute_length`, `log_batch_*`, `log_live_min_level`, `log_events`, `log_events_content`) and a `HERMES_OTEL_<FIELD>` environment variable (lists are comma-separated), so an older `capture_logs: true` keeps working; the loader prints one line saying the block is preferred, and when both spellings disagree the block wins with a warning. The [config schema](/reference/config-schema) lists each field with its block path.
+Every key is also a flat field (`capture_logs`, `log_level`, `log_attach_logger`, `log_exclude_loggers`, `log_logger_levels`, `log_only_in_turn`, `log_max_attribute_length`, `log_batch_*`, `log_live_min_level`, `log_events`, `log_events_content`), so an older `capture_logs: true` keeps working. The loader prints one line saying the block is preferred, and when both spellings disagree the block wins with a warning. Each flat field except the `log_logger_levels` mapping also has a `HERMES_OTEL_<FIELD>` environment variable (`HERMES_OTEL_CAPTURE_LOGS=true`; lists are comma-separated). The [config schema](/reference/config-schema) lists each field with its block path.
 
 ### Per backend
 
@@ -157,11 +157,15 @@ Per backend, `supports_logs` is derived from the type and overridden with `logs:
 | [Uptrace](/backends/uptrace) | ✅ | default on; the dashboard speaks both the 2.1 and the 2.0 query API |
 | [Parseable](/backends/parseable) | ✅ | default on; `logs_dataset` names the dataset |
 | [Honeycomb](/backends/honeycomb) | ✅ | default on; one dataset per signal with Classic keys |
+| [GreptimeDB](/backends/greptime), [ClickStack](/backends/clickstack), [Aspire](/backends/aspire), [Gigapipe](/backends/gigapipe), [Elastic](/backends/elastic), [OpenLIT](/backends/openlit), [LangWatch](/backends/langwatch) | ✅ | default on |
+| [Victoria](/backends/victoria) | ✅ | default on; logs go to VictoriaLogs at `logs_endpoint` |
+| [Laminar](/backends/laminar) | ✅ | default on (traces and logs; no metrics) |
 | [Phoenix](/backends/phoenix) | ❌ | traces only |
 | [Langfuse](/backends/langfuse) | ❌ | traces only |
 | [LangSmith](/backends/langsmith) | ❌ | traces only |
-| [Jaeger](/backends/jaeger) | ❌ | traces only |
+| [Jaeger](/backends/jaeger), [Zipkin](/backends/zipkin) | ❌ | traces only |
 | [Grafana Tempo](/backends/tempo) | ❌ | traces only; use [LGTM](/backends/lgtm) for all three signals |
+| [Agenta](/backends/agenta), [MLflow](/backends/mlflow), [Comet Opik](/backends/opik), [Latitude](/backends/latitude) | ❌ | traces only |
 | [W&B Weave](/backends/weave) | ❌ | trace ingest only |
 
 With `logs.capture` or `logs.events.enabled` on and **no** configured backend accepting logs, the records still reach the live store (the dashboard's Logs tab) and the startup banner says `Logs → live store only`; with the live store off as well, a single warning is printed and Python logging is left alone.

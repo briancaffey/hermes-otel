@@ -83,8 +83,8 @@ Secrets should live in env vars (`*_env:` keys). Plaintext `public_key:` / `secr
 
 Langfuse groups traces into sessions automatically. hermes-otel's `agent` / `cron` root spans show up as top-level traces; nested `llm.*` / `api.*` / `tool.*` appear as observations within.
 
-- **User message** lands on `gen_ai.content.prompt` / `input.value` on the `llm.*` span.
-- **Assistant response** lands on `gen_ai.content.completion` / `output.value`.
+- **User message** lands on `input.value` / `gen_ai.input.messages` on the `llm.*` span; the full request messages are on each `api.*` span (with the default `content_capture: full`).
+- **Assistant response** lands on `output.value` / `gen_ai.output.messages`.
 - **Token counts** use `gen_ai.usage.input_tokens` and `gen_ai.usage.output_tokens` on `api.*` spans.
 - **Tool calls** appear as child spans with inputs/outputs.
 
@@ -94,7 +94,7 @@ Langfuse keys off `gen_ai.*`. The plugin emits that alongside the OpenInference 
 
 ## Metrics
 
-Langfuse doesn't accept OTLP metrics — it's trace-only. The plugin auto-skips the metrics exporter when Langfuse is the sole backend. If you want token/tool/cost metrics too, fan out to a metrics-capable backend in parallel; see [Multi-backend](/backends/multi-backend).
+Langfuse doesn't accept OTLP metrics or logs — it's trace-only. The `langfuse` type turns metrics and logs off by default, so the plugin builds no metrics exporter for this entry. If you want token/tool/cost metrics too, fan out to a metrics-capable backend in parallel; see [Multi-backend](/backends/multi-backend).
 
 ## Dashboard
 
@@ -113,11 +113,11 @@ A trace ingested through OTLP keeps its real root observation (the plugin's `age
 
 **"Nothing arrives and there is no error"**
 
-- The OTLP exporter's failures (a `405` or `401` from Langfuse) are logged by the `opentelemetry` Python logger, not the plugin's debug log ([#167](https://github.com/briancaffey/hermes-otel/issues/167)). Run Hermes with `PYTHONWARNINGS`/logging at WARNING for `opentelemetry.exporter` to see them, or export one span with the SDK directly to confirm the URL and keys.
+- Turn on the plugin's debug log (`HERMES_OTEL_DEBUG=true`; it writes `$HERMES_HOME/plugins/hermes_otel/debug.log`). Every batch gets one line, `export Langfuse: N span(s) -> SUCCESS` or `-> FAILURE` ([#167](https://github.com/briancaffey/hermes-otel/issues/167)). The HTTP status behind a failure (a `405` or `401` from Langfuse) is logged by the `opentelemetry` Python logger.
 
 **"Spans show up but without message content"**
 
-- Check `capture_previews` — if it's false, the plugin is suppressing `input.value` / `output.value` at the source.
+- Check `content_capture` (or the older `capture_previews`) — with `content_capture: off` the plugin suppresses `input.value` / `output.value` at the source.
 - Remember: by default `input.value` is just the latest user turn. To capture the full conversation history, enable [conversation capture](/configuration/conversation-capture).
 
 **"Self-hosted Langfuse won't start"**

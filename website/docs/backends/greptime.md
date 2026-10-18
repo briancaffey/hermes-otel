@@ -50,7 +50,7 @@ The three signals need **different headers**: GreptimeDB rejects a trace batch w
 | Field | Meaning |
 |---|---|
 | `endpoint` | **Required.** The GreptimeDB HTTP origin, e.g. `http://localhost:4398` (bundled stack) or `http://<host>:4000`. Also via `OTEL_GREPTIME_ENDPOINT`. |
-| `db` / `db_env` | Optional database for all three signals (`X-Greptime-DB-Name`; fallback `OTEL_GREPTIME_DB`). Unset means the server default, `public`. |
+| `db` / `db_env` | Optional database for all three signals (`X-Greptime-DB-Name`; fallback `OTEL_GREPTIME_DB`). Unset means the server default, `public`. The dashboard reads the same database. |
 | `user` / `user_env`, `password` / `password_env` | Optional Basic auth, for a server started with `--user-provider` (fallbacks `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD`). Omitted when either is missing. |
 | `headers` | Extra headers on every signal, e.g. `x-greptime-hints: ttl=7d` to age data out. A `X-Greptime-Pipeline-Name` here replaces the default trace pipeline and goes on traces only. |
 | `metrics` / `logs` / `traces` | Per-signal toggles; all three default **on**. |
@@ -79,7 +79,8 @@ The [Hermes dashboard's OTel tab](/dashboard) reads GreptimeDB on the same port 
 - **Traces** through the Jaeger-compatible API under `/v1/jaeger` (`query_path`). It speaks the Jaeger v1 grammar (`service`, `operation` exact, `tags` as JSON, `start` / `end` in µs, `minDuration` with a unit) and returns typed tags, so the Jaeger adapter does the work. Every search names a service (`service_name`, else the plugin's `resource_attributes.service.name`, else `hermes-agent`). Because `limit=N` keeps N *arbitrary* traces rather than the newest, the adapter asks for `search_fetch` (default 500) and cuts the page itself.
 - **Metrics** through SQL on the metric tables: raw samples with a five-minute look-behind so counters are turned into per-bucket increases with first-sample counting (GreptimeDB's PromQL route answers a range-vector instant query with an empty body, so SQL is the only way to get raw samples). `group_by` names an attribute; its column is the dotted name with underscores. The metric list comes from PromQL's `label/__name__/values` route, narrowed by `metrics_match`.
 - **Logs** through SQL on `opentelemetry_logs` (`logs_table`): trace, span, logger, severity, text, session and event filters, the last two through `json_get_string(log_attributes, '["hermes.session_id"]')` (a bracket path, because a bare dotted path would descend into nested objects).
-- `status = ok` and free text are not expressible on the trace search (no negative or body search in the Jaeger grammar). No "open in" link: the embedded dashboard has no documented deep link to one trace; set `ui_url` on the entry to offer one.
+- `status = ok` and free text cannot be expressed on the trace search (the Jaeger grammar has no negative match and no body search).
+- No per-trace "open in" link: the embedded dashboard has no documented deep link to one trace. `ui_url` on the entry only sets the Settings tab's link to the UI.
 
 ## Verified behavior
 
@@ -93,7 +94,7 @@ Read back after one turn (`project_name: greptime-363`, GreptimeDB v1.2.1):
 | Headers | traces without the pipeline header → 400; logs with it → 400; metrics and logs without it → 200 |
 | Jaeger API | `service` required; `start` / `end` in µs, `tags` JSON, `operation` exact, `minDuration=4s` and `4000ms` both accepted; unknown id → 404; `limit` truncates arbitrarily |
 | PromQL | `query_range` and `label/__name__/values` work with the plugin's names; a range-vector instant query returns an empty body |
-| Dashboard verify harness | fresh four-turn batch: every trace, metric and log check passed once the adapter over-fetched; details in the PR |
+| Dashboard verify harness | fresh four-turn batch: every trace, metric and log check passed once the adapter over-fetched (`search_fetch`) |
 | Resident memory | about 95 MB |
 
 ## Caveats
@@ -108,5 +109,5 @@ Read back after one turn (`project_name: greptime-363`, GreptimeDB v1.2.1):
 
 - **`greptime requires endpoint`** — no `endpoint:` and no `OTEL_GREPTIME_ENDPOINT`; there is no default host.
 - **`400 Pipeline is required for this API` in the debug log** — the entry is `type: otlp`, not `type: greptime`; or a `headers:` block replaced `X-Greptime-Pipeline-Name` with something GreptimeDB does not know.
-- **`400 Unsupported pipeline for logs`** — the trace pipeline header reached `/v1/otlp/v1/logs`; a plugin older than this type, or a custom `logs_headers` is missing.
+- **`400 Unsupported pipeline for logs`** — the trace pipeline header reached `/v1/otlp/v1/logs`. Either the entry is `type: otlp` with the header under `headers:`, or a `type: greptime` entry sets `X-Greptime-Pipeline-Name` under `headers:` (entry headers go to every signal). Remove the header from `headers:`; the type sends `greptime_trace_v1` on traces by itself.
 - **Metrics tab empty in the dashboard** — the metric tables are created on the first export; a one-shot run exports once at exit. Widen the window; the adapter counts a series' first sample.

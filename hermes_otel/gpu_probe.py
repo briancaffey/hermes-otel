@@ -241,7 +241,7 @@ def _nvidia_gpu_stats(handles):
     """Return one stats dict per NVIDIA GPU via NVML.
 
     Unlike amdsmi, NVML's units are unambiguous and well documented: memory in
-    bytes, power in milliwatts — both converted here to the MB/W the CSV uses.
+    bytes, power in milliwatts — both converted here to the MB / W of the reading dict.
     """
     import pynvml
 

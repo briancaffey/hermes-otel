@@ -28,7 +28,8 @@ Then declare the backend:
 backends:
   - type: openlit
     endpoint: http://localhost:4338      # the OTLP/HTTP receiver (4318 inside the container)
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 The startup banner reads `✓ OpenLIT at http://localhost:4338/v1/traces`. Open `http://localhost:3010` (default login `user@openlit.io` / `openlituser`) and the turn appears under Traces, with token and cost metrics on the dashboard.

@@ -18,7 +18,7 @@ Create a project at [telemetry.dev](https://telemetry.dev) and copy an ingest AP
 export TELEMETRY_DEV_API_KEY="td_live_..."
 ```
 
-Declare the backend in `config.yaml`:
+Declare the backend in `hermes_otel.yaml`:
 
 ```yaml
 backends:
@@ -29,7 +29,7 @@ backends:
       Authorization: Bearer ${TELEMETRY_DEV_API_KEY}
 ```
 
-You should see `✓ telemetry-dev connected` in startup logs. Run a Hermes turn, open your project dashboard at [telemetry.dev](https://telemetry.dev), and the session trace is there — no local UI to run.
+You should see `✓ telemetry-dev at https://ingest.telemetry.dev/v1/traces` in startup logs. Run a Hermes turn, open your project dashboard at [telemetry.dev](https://telemetry.dev), and the session trace is there — no local UI to run.
 
 ## Endpoints and auth
 
@@ -37,7 +37,7 @@ You should see `✓ telemetry-dev connected` in startup logs. Run a Hermes turn,
 |---|---|---|
 | Traces | `https://ingest.telemetry.dev/v1/traces` | The one you configure. |
 | Metrics | `https://ingest.telemetry.dev/v1/metrics` | Derived automatically by replacing `/v1/traces` — matches telemetry.dev's path scheme, nothing to configure. |
-| Logs | `https://ingest.telemetry.dev/v1/logs` | Accepted at ingest; ships only when [`capture_logs: true`](/configuration/logs) is set. |
+| Logs | `https://ingest.telemetry.dev/v1/logs` | Accepted at ingest; the plugin sends log records only when [`logs: {capture: true}`](/configuration/logs) is set. |
 
 - Auth is a single header: `Authorization: Bearer td_live_...`. Keys are created per project (and per environment), so one Hermes deployment maps cleanly to one project.
 - Both OTLP/HTTP encodings are accepted (`application/x-protobuf` and `application/json`); the plugin's exporters send protobuf.
@@ -57,7 +57,7 @@ The OpenInference (`llm.*`, `input.value` / `output.value`) attributes ride alon
 
 Two layers compose:
 
-- **At the source:** `capture_previews: false` strips every input/output preview before export, as with any backend — see [Privacy](/configuration/privacy).
+- **At the source:** `content_capture: off` strips every prompt, response and preview before export, as with any backend; see [Privacy](/configuration/privacy).
 - **At ingest:** telemetry.dev projects support server-side redaction patterns applied before storage, useful when you want previews for debugging but specific tokens/PII scrubbed.
 
 ## Troubleshooting
@@ -68,7 +68,7 @@ The `Authorization` header is missing or the key is malformed — it must be `Be
 
 **Traces show up; logs don't**
 
-Logs are opt-in on the plugin side: set `capture_logs: true`. See [OTel logs](/configuration/logs).
+Logs are opt-in on the plugin side: set `logs: {capture: true}`. See [OTel logs](/configuration/logs).
 
 ## See also
 

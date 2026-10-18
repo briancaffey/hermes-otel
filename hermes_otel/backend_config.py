@@ -27,7 +27,7 @@ class BackendConfig:
     discouraged because the file is plaintext.
     """
 
-    type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | parseable | honeycomb | weave
+    type: str  # a type from the manifest (backend_specs.SPECS), e.g. phoenix | langfuse | otlp
     name: Optional[str] = None  # display name (defaults to type)
     endpoint: Optional[str] = None  # HTTP traces URL, or gRPC host:port / origin
     # Where this backend's web UI lives, for the dashboard's Settings tab to
@@ -43,15 +43,13 @@ class BackendConfig:
     headers_helper: Optional[str] = None
     headers_helper_timeout_ms: Optional[int] = None
     traces: Optional[bool] = None  # None = on. False = dashboard/query-only, no trace export.
-    metrics: Optional[bool] = None  # None = auto (off for langfuse/jaeger/tempo)
+    metrics: Optional[bool] = None  # None = the type's preset (BackendSpec.metrics)
     metrics_temporality: Optional[str] = None  # cumulative | delta; None = type preset / top-level
     # Export the turn's token roll-up (``gen_ai.usage.*`` / ``llm.token_count.*``
     # on the ``agent`` / ``cron`` root) to this backend. None = type preset:
     # off for backends that sum usage over every span (opik, langwatch, #327).
     root_usage: Optional[bool] = None
-    logs: Optional[bool] = (
-        None  # None = auto (on for signoz/otlp/lgtm/uptrace/openobserve/parseable/honeycomb)
-    )
+    logs: Optional[bool] = None  # None = the type's preset (BackendSpec.logs)
     # Per-backend log settings (#266): ``logs:`` given as a mapping in yaml
     # turns the signal on and keeps the mapping here. Keys mirror the
     # top-level ``logs:`` block (``level``, ``exclude_loggers``,

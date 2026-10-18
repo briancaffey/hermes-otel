@@ -12,7 +12,7 @@ Every structured event the plugin can emit, exactly as named in `hermes_otel.log
 
 **Content.** Attributes marked *content-gated* carry prompt, response or tool content and are the only ones `logs.events.content` governs: `full` keeps what the span has, `preview` clips to `preview_max_chars`, `off` drops them, `inherit` (the default) follows `content_capture`. A backend's own `logs: {events: {content: …}}` may narrow them further for that backend only. Metadata attributes always travel.
 
-**Severity.** Severity numbers follow the OTel bands (INFO 9, WARN 13, ERROR 17); the rule per event is stated in its section. `hermes.tool.duration_s` and `hermes.turn.duration_s` exist only on events (the spans carry the `*_ms` form); everything else is shared with the spans.
+**Severity.** Severity numbers follow the OTel bands (INFO 9, WARN 13, ERROR 17); the rule per event is stated in its section. `hermes.tool.duration_s`, `hermes.turn.duration_s` and `hermes.session.duration_s` exist only on events and log records (a span's duration is its own start and end time); every other attribute is shared with the spans.
 
 This page is generated from the code by `scripts/gen_config_docs.py`; `tests/unit/test_config_surface.py` fails when it drifts, and `tests/unit/test_log_events_docs.py` fails when a hook emits an event the catalogue does not list.
 

@@ -18,7 +18,7 @@ This file is the catalog of those differences. Part 1 is one matrix per
 category. Part 2 lists each backend's quirks with the exact treatment the
 plugin gives it, and the issue where that was settled. Part 3 is the short
 list of what the plugin normalizes. Every statement comes from
-`hermes_otel/backends.py`, a dashboard adapter under
+`hermes_otel/backend_specs.py`, `hermes_otel/backends.py`, a dashboard adapter under
 `hermes_otel/dashboard/backends/`, a folder README here, a page under
 `website/docs/backends/`, or a closed issue; nothing here is a guess. Where a
 figure is quoted it carries the date and version it was measured against.
@@ -32,7 +32,7 @@ Legend: **std** means the standard OTLP/HTTP paths `/v1/traces`,
 base URL (or the vendor prefix, or the full traces URL) and the resolver
 produces the full per-signal URLs. "derived" means `/v1/metrics` and
 `/v1/logs` are produced from the traces URL by swapping the last path segment
-(`helpers.derive_signal_endpoint`).
+(`pipeline_env.derive_signal_endpoint`).
 
 ### A. Where OTLP lands
 
@@ -73,9 +73,11 @@ produces the full per-signal URLs. "derived" means `/v1/metrics` and
 | otel-tui | `otlp` | std :4438 (upstream 4318) | no UI port: a TTY (`docker attach`) | generic; derived |
 | Maple Local | `otlp` | std :4388 | ingest and UI share :4388 | generic; derived |
 
-Transport everywhere is OTLP/HTTP with protobuf bodies
-(`opentelemetry-exporter-otlp-proto-http`); gRPC is never used. Parseable OSS
-is the one backend that refuses protobuf, hence its collector.
+Transport is OTLP/HTTP with protobuf bodies
+(`opentelemetry-exporter-otlp-proto-http`) for every type. Only a generic
+`type: otlp` entry can switch to OTLP/gRPC (`protocol: grpc`, #469); the
+named types keep their HTTP URL rules. Parseable OSS is the one backend that
+refuses protobuf, hence its collector.
 
 ### B. Who you are: authentication
 
@@ -117,12 +119,16 @@ LangWatch, Latitude, telemetry.dev), `ApiKey` (Elastic), the bare key (Opik),
 and vendor headers for the rest. The per-type resolver builds the right one
 from `api_key` / `api_key_env` / the vendor's own env var, and the global
 `headers:` block is merged **under** the resolver's headers so it can never
-clobber the auth it built.
+clobber the auth it built. A `headers_helper` on the entry (a command that
+prints the headers, re-run on a 401/403, #483) is merged on top of both, and
+an entry with one no longer needs the static key that would otherwise be
+required.
 
 Env-var mode has one more rule: a vendor's own credential variable
-(`LANGFUSE_PUBLIC_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`,
+(`LANGSMITH_API_KEY`, `LANGFUSE_PUBLIC_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`,
 `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`,
-`LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`) never switches
+`LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`,
+`AGENTA_API_KEY`, `HYPERDX_API_KEY`) never switches
 export on by itself, because those are often set for other tools and Hermes
 loads `$HERMES_HOME/.env` into the process. One plugin-namespaced `OTEL_*`
 variable is the opt-in (#259).
@@ -137,10 +143,10 @@ variable is the opt-in (#259).
 | GreptimeDB | database (`X-Greptime-DB-Name`, default `public`), then `service.name` | `db` / `db_env` |
 | ClickStack | the key = the team; `ServiceName` column | `api_key` |
 | Agenta | the key = the project; `ag.session.id` from `session.id`; resource attributes dropped | `api_key` |
-| Gigapipe | `service.name` (Tempo `rootServiceName`, Prometheus `job`, Loki `service_name` label) | `project_name` / `resource_attributes` |
-| Aspire Dashboard | a *resource* = `service.name` + `service.instance.id` (one per Hermes process); the API's `resource=` takes the bare service name only while one instance exists, so the adapter names every instance | `project_name` / `resource_attributes` |
-| VictoriaTraces / Logs / Metrics | `service.name` (VictoriaTraces and VictoriaLogs stream field; a VictoriaMetrics label) | `project_name` / `resource_attributes`; `headers: {VL-Stream-Fields: …}` for the log stream key |
-| Jaeger / Zipkin / Tempo / LGTM | `service.name` | `project_name` / `resource_attributes` |
+| Gigapipe | `service.name` (Tempo `rootServiceName`, Prometheus `job`, Loki `service_name` label) | `resource_attributes` (`service.name`) or `service_name_from_profile` |
+| Aspire Dashboard | a *resource* = `service.name` + `service.instance.id` (one per Hermes process); the API's `resource=` takes the bare service name only while one instance exists, so the adapter names every instance | `resource_attributes` (`service.name`) or `service_name_from_profile` |
+| VictoriaTraces / Logs / Metrics | `service.name` (VictoriaTraces and VictoriaLogs stream field; a VictoriaMetrics label) | `resource_attributes` (`service.name`) or `service_name_from_profile`; `headers: {VL-Stream-Fields: …}` for the log stream key |
+| Jaeger / Zipkin / Tempo / LGTM | `service.name` | `resource_attributes` (`service.name`) or `service_name_from_profile` |
 | Uptrace | project = the DSN | `dsn` |
 | OpenObserve | org in the URL path, stream in the `stream-name` header (default `default`; a bad name is a 400) | `stream_name` |
 | Parseable | one dataset per signal: `X-P-Stream: hermes-{traces,metrics,logs}` plus `X-P-Log-Source: otel-{traces,metrics,logs}` | `traces_dataset`, `metrics_dataset`, `logs_dataset` |
@@ -232,8 +238,8 @@ installed, so one-shot runs export all three signals (logs only since 1.24.0).
 | Datadog, New Relic, Logfire (generic `otlp`) | **delta required** (Datadog rejects cumulative sums; Logfire dashboards stay empty; New Relic prefers delta) | none yet (#232): set `metrics_temporality: delta` on the entry | Datadog and New Relic accept them | — |
 | LangWatch | stored (73 metric points from one turn, 2026-10) | cumulative | — | — |
 
-Presets live in `_TEMPORALITY_PRESETS` (`signoz`, `uptrace`, `elastic` →
-`delta`, #233). An explicit `metrics_temporality` on the entry wins; the
+Presets are the `temporality` field of each type's `BackendSpec` in
+`backend_specs.py` (`signoz`, `uptrace`, `elastic` → `delta`, #233). An explicit `metrics_temporality` on the entry wins; the
 top-level key sets every backend. `metrics_histogram: exponential` is global,
 so use it only when every configured backend accepts base-2 histograms.
 
@@ -283,8 +289,8 @@ Three things the plugin does here:
    LangWatch) would then show twice the tokens, so for those two types the
    exporter bound to that entry rebuilds the root without
    `gen_ai.usage.*` / `llm.token_count.*` (`root_usage: false`, the
-   `_NO_ROOT_USAGE_PRESETS` preset, #327, on `main` since #353 for 1.24.0; on
-   1.23 and earlier the totals double). Phoenix, Langfuse, MLflow and
+   `root_usage` field of their `BackendSpec`, #327, since 1.24.0; on 1.23 and
+   earlier the totals double). Phoenix, Langfuse, MLflow and
    Laminar read the root's own numbers and keep it. Only that backend's copy
    changes; every other exporter and the live store still get the roll-up.
 3. It sets `session.id`, `gen_ai.conversation.id` and the legacy
@@ -333,7 +339,7 @@ versions of it.
 | Tempo / LGTM | Tempo `/api/search` (TraceQL) + `/api/traces/{id}`; Prometheus `/api/v1/query` (range vectors) and `/api/v1/query_range`; Loki `/loki/api/v1/query_range` | none | — | TraceQL `nestedSetParent < 0` with `spss=1`; trace ids re-padded to 32 hex digits because Tempo drops leading zeros |
 | Uptrace | `/internal/v1` in **two dialects** (2.1: `/spans/{p}`, `/logs/{p}`, `/metrics/{p}`, ms times, `::str` keys; 2.0: everything under `/tracing/{p}`); MQL for metrics | a **user** token (`user_token_env`), not the DSN's project token | **2.0 vs 2.1**, probed once per process via `/internal/v1/logs/{p}/systems` (2.0 answers with the SPA's HTML) (#243, #298) | 2.1: `_parent_id = ""` server-side; 2.0: client-side from `parentId` |
 | OpenObserve | `POST /api/{org}/_search?type=traces\|metrics\|logs` with SQL; stream schema endpoint for columns | same Basic pair | the parent column is named `reference_parent_span_id`, `reference` (a JSON string) or `parent_span_id` depending on the build; tried in order (#299) | that column `IS NULL OR = ''` |
-| Honeycomb, Weave, Elastic, Parseable, OpenLIT, MLflow, Opik, Laminar, LangWatch, Latitude, `otlp` | **no adapter**: the tab shows them as unavailable and the Live source or the backend's own UI is the answer | — | Honeycomb's Query Data API is Enterprise-gated, asynchronous and limited to 7 days | — |
+| LangSmith, Honeycomb, Weave, Elastic, Parseable, OpenLIT, MLflow, Opik, Laminar, LangWatch, Latitude, `otlp` | **no adapter**: the tab shows them as unavailable and the Live source or the backend's own UI is the answer | — | Honeycomb's Query Data API is Enterprise-gated, asynchronous and limited to 7 days | — |
 
 Metric reads have their own quirks, all about **one-shot processes**:
 PromQL `increase()` never counts a series' first sample, so the Prometheus
@@ -361,7 +367,7 @@ healthy is from the folder READMEs.
 |---|---|---|---|---|---|---|
 | Phoenix | 1 | under 100 MB | ~10 s | none | image is `latest`, unpinned; SQLite dies with the container unless you add a volume | Elastic License 2.0 |
 | Langfuse | 6 | ~3 GB | 20-60 s; traces appear 10-20 s after export (async via MinIO) | none (headless init seeds user and keys) | `LANGFUSE_VERSION=4` is a separate data set: `down -v` when switching | MIT core + EE folders |
-| SigNoz | 5 | — | 30-60 s | **mandatory** admin registration (`POST /api/v1/register`, 12+ char mixed password) or the collector stays `nop` and resets connections | — | OSS |
+| SigNoz | 4 (+2 one-shot jobs) | — | 30-60 s | **mandatory** admin registration (`POST /api/v1/register`, 12+ char mixed password) or the collector stays `nop` and resets connections | — | OSS |
 | Jaeger v1 / v2 | 1 | ~25 MB | seconds | none | v1 line ended at 1.76.0 (Dec 2025); v2 pinned 2.21.0 | Apache-2.0 |
 | Agenta | 11 (trimmed from 15-17) | ~2 GB (api ~900 MB) | ~1-2 min | sign up + mint a key (`mint-api-key.sh`) | runner (`SYS_ADMIN` + `/dev/fuse`), playground services, cron, mobile UI, Composio and Traefik (Docker socket) dropped; nginx front door; PostHog key emptied; ~4 GB of images | MIT (ee/ separate) |
 | Gigapipe | 2 | ~16 MB + ~300 MB ClickHouse | ~10 s | none | `BULK_MAX_AGE_MS=100` so a one-shot turn is queryable at once; qryn-view UI built into the image | AGPL-3.0 |
@@ -421,7 +427,7 @@ Format: **quirk** → treatment (issue).
 - `attributes` comes back as one nested JSON string → flattened to dotted keys by the adapter.
 
 ### Langfuse (`langfuse`, v3 and v4)
-- Vendor ingest prefix `/api/public/otel` → `_langfuse_traces_url` completes a root URL, the prefix, or the full URL (a root URL used to be posted as-is and every export died with a 405 that only the `opentelemetry` logger saw; PR #169, and the reason #167 added the per-batch `SUCCESS|FAILURE` lines to debug.log).
+- Vendor ingest prefix `/api/public/otel` → `langfuse_traces_url` completes a root URL, the prefix, or the full URL (a root URL used to be posted as-is and every export died with a 405 that only the `opentelemetry` logger saw; PR #169, and the reason #167 added the per-batch `SUCCESS|FAILURE` lines to debug.log).
 - Basic auth from two keys, plus `x-langfuse-ingestion-version: 4` → built by the resolver; both keys required.
 - Vendor `LANGFUSE_*` variables are often set for other tools, and used to switch on export to Langfuse Cloud with full content capture → they fill credentials only; `OTEL_LANGFUSE_*` is the opt-in (#258, #259, PRs #255, #261, #263).
 - `docker.io/minio/minio` left Docker Hub → the compose uses `cgr.dev/chainguard/minio`, as upstream does (PR #340).
@@ -439,7 +445,7 @@ Format: **quirk** → treatment (issue).
 ### SigNoz (`signoz`)
 - Fresh volume: OpAMP pushes a `nop` pipeline to the collector until an admin exists, so every healthcheck is green and every OTLP POST gets a connection reset (#239) → the README's headless `POST /api/v1/register` recipe; check `GET /api/v1/version` → `setupCompleted`.
 - Cloud key travels as `signoz-ingestion-key`, not `Authorization` → the resolver sets it on the trace, metric and log exporters; self-hosted needs none.
-- Recommends delta; exponential histograms delta-only and self-hosted-only → `_TEMPORALITY_PRESETS["signoz"] = "delta"` (#233); SigNoz Cloud does not accept exponential histograms by default.
+- Recommends delta; exponential histograms delta-only and self-hosted-only → `temporality="delta"` on the `signoz` spec (#233); SigNoz Cloud does not accept exponential histograms by default.
 - The query API sits on the UI port and **requires auth even on localhost** → `query_port: 3301` plus `api_key_env`; the adapter sends the key as both `SIGNOZ-API-KEY` and `Authorization: Bearer`, because the community build has no PAT endpoint (`/api/v1/pats` answers the SPA page) and the only credential is the 30-minute session JWT from `POST /api/v2/sessions/email_password` (#297, #302).
 - Trace detail `POST /api/v1/traces/{id}` answers the SPA page on v0.119 → `GET` first, POST only after a 4xx (#297). Histogram parts are **dotted** (`hermes.tool.duration.sum` / `.count`) → the pair is folded into one histogram.
 - Its `increase` over-counts one-shot turns that share a step, and steps are stamped at an epoch-aligned start → the adapter reads `timeAggregation=latest` grouped by `service.instance.id`, opens the window on the step grid and computes increases itself (#297).
@@ -528,7 +534,7 @@ Format: **quirk** → treatment (issue).
 - Verified 2026-10-11: one turn stored 7 spans (`agent` root, `llm.*`, three `api.*`, `tool.terminal`, `tool.read_file`), about 300 MB resident.
 
 ### Grafana Tempo (`tempo`)
-- Traces only, and the type refuses metrics and logs even behind a collector that would take them → a traces-only spec; set `metrics: true` / `logs: true` explicitly, or use `lgtm`.
+- Traces only, and the type keeps metrics and logs off by default even behind a collector that would take them → a traces-only spec; set `metrics: true` / `logs: true` explicitly, or use `lgtm`.
 - **Attribute values truncated at 2048 bytes** by default, which cut `gen_ai.input.messages` → `tempo.yaml` raises `distributor.max_attribute_bytes` to 131072.
 - Search lags 20-30 s behind ingest.
 - Search returns the first `limit` matches in block order, not the newest (verified on 3.0.3: `limit=3` over four traces skipped a newer one about half the time) → the adapter over-fetches `search_fetch` (default 500) and sorts.
@@ -551,7 +557,7 @@ Format: **quirk** → treatment (issue).
 - Keeps 3000 and 4318, so it cannot run beside Langfuse / Latitude or Jaeger; `all.sh` skips it.
 
 ### Uptrace (`uptrace`)
-- Auth is a **DSN** in the `uptrace-dsn` header, not a key → `dsn` / `dsn_env` / `UPTRACE_DSN`; the resolver never parses it. The exporter still needs `endpoint` next to `dsn` (#298).
+- Auth is a **DSN** in the `uptrace-dsn` header, not a key → `dsn` / `dsn_env` / `OTEL_UPTRACE_DSN` / `UPTRACE_DSN`; the resolver never parses it. The exporter still needs `endpoint` next to `dsn` (#298).
 - Prefers delta and converts cumulative → preset `delta` (#233); exponential histograms recommended.
 - The read side needs a **user** token, not the project token → `user_token_env` (or `UPTRACE_USER_TOKEN`).
 - A 401 on the dialect probe used to cache "2.1" for the process lifetime → auth errors cache nothing (#298, PR #309).
@@ -691,7 +697,7 @@ The short version, for the overview page and the video:
 7. **Isolation.** One `BatchSpanProcessor`, one metric reader and one log
    processor per backend, each on its own queue, so a slow or dead backend
    never blocks the agent or the other backends.
-8. **Headers that cannot misfire.** `${VAR}` expands in header values (#92); the per-backend headers win over the global block (#105); a vendor credential alone never switches export on (#259).
+8. **Headers that cannot misfire.** `${VAR}` expands in header values (#92); the per-backend headers win over the global block (#105); a vendor credential alone never switches export on (#259); a `headers_helper` command can mint a short-lived credential and is re-run on a 401/403 (#483).
 9. **Reading it back the same way.** Eight read APIs (GraphQL, TraceQL +
    PromQL + LogQL, SQL, a query builder, two REST dialects, two Jaeger
    generations, two Langfuse generations) behind one search bar, one trace
@@ -710,5 +716,5 @@ The short version, for the overview page and the video:
 When a backend changes, re-run one turn through it (`docker-compose/README.md`, "The
 loop"), read the debug log, query the store with the folder's Verify
 command, and update the row here with the date and version. If a statement
-here disagrees with `backends.py` or an adapter, the code is right and this
+here disagrees with `backend_specs.py`, `backends.py` or an adapter, the code is right and this
 file is wrong: fix it in the same PR.

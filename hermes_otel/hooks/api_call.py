@@ -196,8 +196,8 @@ def apply_usage(
     cache_labels: Dict[str, Any],
 ) -> Tuple[Optional[Dict[str, int]], Optional[Dict[str, Any]]]:
     """Token usage and cost for one attempt: the dual-convention usage
-    attributes, the ``hermes.token.usage`` / prompt-cache / GenAI token
-    histograms, the cost estimate (#252) as attributes and the ``cost_usage``
+    attributes, the ``hermes.token.usage`` / prompt-cache counters and the
+    GenAI token histogram, the cost estimate (#252) as attributes and the ``cost_usage``
     metric, and one ``model_usage`` count. Returns ``(totals, cost)``;
     ``(None, None)`` when the attempt reported no usage.
 

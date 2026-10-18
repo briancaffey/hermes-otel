@@ -26,6 +26,8 @@ Tempo API: http://localhost:3210.
 backends:
   - type: tempo
     endpoint: http://localhost:4358/v1/traces
+    query_port: 3210                         # dashboard only: Tempo's API on this stack
+    ui_url: http://localhost:3020/explore    # dashboard only: trace links into Grafana
 ```
 
 ## Verify

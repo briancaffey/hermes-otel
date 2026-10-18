@@ -2,7 +2,7 @@
 
 Thanks for your interest in contributing. This project is an
 OpenTelemetry plugin for [Hermes Agent](https://github.com/nousresearch/hermes-agent)
-that exports LLM traces to a number of OTLP-compatible backends.
+that exports traces, metrics and logs for every agent turn to OTLP backends.
 
 ## Ground rules
 
@@ -11,8 +11,8 @@ that exports LLM traces to a number of OTLP-compatible backends.
 - **Small, focused PRs.** One change per PR; easier to review and easier
   to revert.
 - **Tests required** for new behavior, bug fixes, and new backends.
-- **Docs follow code** — if you add a config knob, update
-  `README.md` / `docs/` in the same PR.
+- **Docs follow code.** If you add a config knob, update `README.md` and
+  `website/docs/` in the same PR.
 
 ## Workflow
 
@@ -71,7 +71,7 @@ Runtime code lives in `hermes_otel/`; everything else is development material.
 
 ```text
 hermes_otel/        ← the install artifact: modules, plugin.yaml, skill, dashboard
-tests/              unit / integration / e2e / smoke
+tests/              unit / integration / e2e_ci / e2e / smoke, plus golden/ and helpers/
 website/            Docusaurus docs site
 docker-compose/     example backend stacks
 scripts/            dev + CI utilities
@@ -102,6 +102,7 @@ change and add higher tiers if they're warranted.
 |------|--------|-------|-------------|
 | Unit | (default) | nothing | helper logic, single-hook behavior, mocked tracer |
 | Integration | (default) | nothing | real OTel SDK + `InMemorySpanExporter`, span hierarchy, metrics |
+| E2E (CI) | `-m e2e_ci` | the `hermes` binary on PATH (or `HERMES_BIN`); no model, key or backend | a real Hermes turn through the plugin, against a scripted model provider and an in-process OTLP receiver (`make ci-e2e`) |
 | E2E | `-m e2e` | Docker | exports to a real Phoenix / Langfuse container |
 | Smoke | `-m smoke` | hermes gateway + backend running | full pipeline |
 
@@ -111,6 +112,7 @@ uv run --extra dev --extra e2e pytest -m e2e            # all E2E tests
 uv run --extra dev --extra e2e pytest -m phoenix        # Phoenix only
 uv run --extra dev --extra e2e pytest -m langfuse       # Langfuse only
 uv run --extra dev --extra e2e pytest -m smoke          # smoke tests
+make ci-e2e                                             # the credential-free e2e_ci tier
 ```
 
 Docker services are started/stopped automatically by the E2E fixtures.
@@ -131,9 +133,10 @@ See `docker-compose/` and `docker-compose/all.sh`.
 
 ## Commit messages
 
-Use [Conventional Commits](https://www.conventionalcommits.org/). The
-release-please tooling (added in a later phase) will derive versions and
-a changelog from them.
+Use [Conventional Commits](https://www.conventionalcommits.org/).
+release-please derives the version and the changelog from them; see
+[Releasing](https://briancaffey.github.io/hermes-otel/development/releasing)
+for which commit types cut a release.
 
 ```
 feat(backends): add honeycomb as a first-class backend type
@@ -155,9 +158,10 @@ footer: `feat(config)!: rename root_span_ttl_ms to session_ttl_ms`.
 Before opening a PR:
 
 - [ ] `make ci` passes locally. It runs what GitHub Actions runs, job for
-      job (lockfile check, ruff, black, plugin scan, tests with the 85%
-      coverage gate and the per-module floors in `coverage-floors.json`,
-      dashboard bundle up to date + vitest, docs build, wheel build), so a
+      job (lockfile check, ruff, black, plugin scan, the telemetry
+      vocabulary check, tests with the 85% coverage gate and the per-module
+      floors in `coverage-floors.json`, dashboard bundle up to date +
+      tsc/eslint/prettier + vitest, docs build, wheel build), so a
       green `make ci` is a green pipeline, with four exceptions it names in
       its header: the Python version matrix, `make ci-floor` (the suite on
       the OpenTelemetry 1.35 floor), `make ci-e2e` (the real `hermes`
@@ -171,14 +175,16 @@ Before opening a PR:
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
 - [ ] Added / updated tests that prove the behavior change.
-- [ ] Updated `README.md` or `docs/` if user-visible behavior changed.
+- [ ] Updated `README.md` or `website/docs/` if user-visible behavior changed.
 - [ ] Commit message follows Conventional Commits.
 - [ ] No secrets in the diff — `config.yaml` is gitignored; use
       `config.yaml.example` for documentation.
 
-GitHub Actions runs the same jobs on every PR and on main. E2E and smoke
-tiers are intentionally not run in CI (they need Docker / a real Hermes
-install); maintainers run those locally before releases.
+GitHub Actions runs the same jobs on every PR and on main, plus the
+OpenTelemetry-floor job and the `e2e_ci` tier against a pinned Hermes
+(`e2e-hermes`). The Docker `e2e` and `smoke` tiers do not run in CI (they
+need containers or a running Hermes); maintainers run them locally before
+releases.
 
 Release PRs are opened by release-please. Its version bump also updates
 `uv.lock` (an `extra-files` entry in `release-please-config.json`), so the
@@ -233,7 +239,7 @@ placeholders and masked. `UPDATE_GOLDEN=1 pytest tests/unit/test_golden_resoluti
 re-records; a refactor PR that changes a fixture lists every changed line. The
 same module holds the cross-registry consistency checks (exporter types vs
 adapter `handles`, `signal_support()` vs adapter capabilities, env vars read vs
-`KNOWN_ENV_VARS`), marked `xfail(strict=True)` while #402 is open.
+`KNOWN_ENV_VARS`).
 
 ### Adapter goldens
 
@@ -381,7 +387,8 @@ per-type facts are declared once and derived everywhere else.
 Please include:
 
 - Python version + OS.
-- `hermes-otel` version (`pip show hermes-otel`) and commit SHA if
+- `hermes-otel` version (the `version:` line of
+  `~/.hermes/plugins/hermes_otel/plugin.yaml`) and the commit SHA if
   installed from source.
 - Backend(s) configured (Phoenix / Langfuse / LangSmith / ...).
 - A minimal repro — either a unit test or a snippet that calls the

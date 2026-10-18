@@ -6,7 +6,7 @@ description: "content_capture: full (the default), preview or off — what of th
 
 # Conversation capture
 
-One setting decides how much of the conversation content the plugin records:
+One setting decides how much of the conversation content (prompts, tool input and output, responses) the plugin records:
 
 ```yaml
 # hermes_otel.yaml
@@ -41,7 +41,7 @@ Two things to know:
 - **Nothing is clipped by the plugin.** Hermes hands the hook both a sanitised copy of the request, where long strings are cut and end in `...[truncated N chars]`, and the raw `request_messages` list it actually sent. The plugin reads the raw list, so a 15,000-character system prompt arrives whole. A `[truncated N chars]` marker inside captured content means the value came through a payload only the sanitised copy carried; raise `HERMES_PLUGIN_PAYLOAD_MAX_CHARS` in Hermes's environment.
 - **It is large and verbatim.** Each `api.*` span in a turn repeats the whole prefix, so a long turn stores the conversation several times over, and it is stored on every configured backend. The export batch drops to 64 spans per POST automatically (`span_batch_max_export_batch_size` overrides). See [Limitations](/reference/limitations#full-content-capture-is-the-default-and-large).
 
-Tool spans keep previews in every mode: in `full` mode the complete tool result is already inside the next `api.*` span's message list, as the model saw it. MCP tool spans (`mcp_*`) are the exception and carry their full arguments and result.
+Tool spans carry previews in both `full` and `preview` mode: in `full` mode the complete tool result is already inside the next `api.*` span's message list, as the model saw it. MCP tool spans (`mcp_*`) are the exception: in `full` mode they carry their full arguments and result.
 
 ## Previews and the truncation markers
 

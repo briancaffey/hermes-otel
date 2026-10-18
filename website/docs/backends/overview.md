@@ -6,7 +6,7 @@ description: "Comparison of every supported backend — signals, deployment, cos
 
 # Backends overview
 
-hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should work — but these are the ones that ship with first-class support, docker-compose files, and (where relevant) smoke-test coverage.
+hermes-otel exports plain **OTLP** (OpenTelemetry's wire protocol) over HTTP, or over gRPC with the generic `otlp` type, so any OTLP-compatible backend should work. The ones below ship with first-class support, docker-compose files, and (where relevant) smoke-test coverage.
 
 ## Supported today
 
@@ -66,7 +66,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 → [GreptimeDB](/backends/greptime) — one container, OTLP in under `/v1/otlp`, SQL, PromQL and a Jaeger-compatible API out; the dashboard adapter reads all three signals.
 
 **"I want all three signals — traces, metrics, AND logs — in Grafana, in one container"**
-→ [Grafana LGTM](/backends/lgtm) — `grafana/otel-lgtm` bundles Grafana + Tempo + Loki + Mimir + a collector. Pair with `capture_logs: true` and you get [trace-id-correlated logs](/configuration/logs) out of the box.
+→ [Grafana LGTM](/backends/lgtm) — `grafana/otel-lgtm` bundles Grafana + Tempo + Loki + Mimir + a collector. Turn on `logs: {capture: true}` and you get [trace-id-correlated logs](/configuration/logs) out of the box.
 
 **"I'm already on LangChain / LangSmith"**
 → [LangSmith](/backends/langsmith) — free personal tier, zero extra infra.
@@ -121,7 +121,7 @@ hermes-otel speaks plain **OTLP/HTTP**, so any OTLP-compatible backend should wo
 
 ## Signal support
 
-Backends differ in which OTel signals they accept. The plugin auto-skips signals a backend can't take — you don't need to configure anything.
+Backends differ in which OTel signals they accept. Each backend type turns off, by default, the signals its backend can't take, so you don't need to configure anything. An explicit `traces` / `metrics` / `logs` on the entry still wins.
 
 | Backend | Traces | Metrics | Logs |
 |---|---|---|---|
@@ -153,7 +153,7 @@ Backends differ in which OTel signals they accept. The plugin auto-skips signals
 | LangWatch | ✅ | ✅ | ✅ |
 | Latitude | ✅ | ❌ | ❌ |
 | telemetry.dev | ✅ | ✅ | ✅ |
-| Generic OTLP | ✅ | depends on collector | depends on collector |
+| Generic OTLP | ✅ | ✅ on by default; set `metrics: false` if the collector rejects it | ✅ on by default; set `logs: false` if the collector rejects it |
 
 If you care about token / tool / cost metrics on a traces-only backend, pair it with a Prometheus-compatible sink or fan out to SigNoz / LGTM / OpenObserve alongside. See [OTel logs](/configuration/logs) for the logs pipeline.
 
@@ -192,7 +192,7 @@ Single-backend selection is env-var-driven. First match wins:
 3. `OTEL_SIGNOZ_ENDPOINT` set → SigNoz
 4. `OTEL_UPTRACE_ENDPOINT` + DSN set → Uptrace
 5. `OTEL_OPENOBSERVE_ENDPOINT` + credentials set → OpenObserve
-6. `OTEL_PARSEABLE_ENDPOINT` + `PARSEABLE_API_KEY` set → Parseable
+6. `OTEL_PARSEABLE_ENDPOINT` + `OTEL_PARSEABLE_API_KEY` (or `PARSEABLE_API_KEY`) set → Parseable
 7. `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) + `WANDB_ENTITY` + `WANDB_PROJECT` set → W&B Weave
 8. `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) set → Honeycomb
 9. `OTEL_ELASTIC_ENDPOINT` set → Elastic (`OTEL_ELASTIC_API_KEY` optional: a local EDOT Collector needs none, and a key alone never opts in because Elastic has no default host)
@@ -213,9 +213,9 @@ Single-backend selection is env-var-driven. First match wins:
 24. `OTEL_TEMPO_ENDPOINT` set → Tempo
 25. `OTEL_PHOENIX_ENDPOINT` set → Phoenix
 
-Vendor SDK variables (`LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`, `HYPERDX_API_KEY`, `AGENTA_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
+Vendor SDK variables (`LANGSMITH_API_KEY`, `LANGFUSE_PUBLIC_KEY` / `LANGFUSE_SECRET_KEY`, `WANDB_API_KEY`, `HONEYCOMB_API_KEY`, `ELASTIC_API_KEY`, `OPENLIT_API_KEY`, `MLFLOW_TRACKING_TOKEN`, `OPIK_API_KEY`, `LMNR_PROJECT_API_KEY`, `LANGWATCH_API_KEY`, `LATITUDE_API_KEY`, `HYPERDX_API_KEY`, `AGENTA_API_KEY`) only fill in credentials. On their own they never switch export on, because they are often set for other tools and Hermes loads `$HERMES_HOME/.env` into the process; one plugin-namespaced `OTEL_*` variable is the explicit opt-in. When such credentials are present without the opt-in, the startup log says which `OTEL_*` variable would enable export, and the dashboard's OTel → Settings → Environment view shows the same notice.
 
-Setting `backends:` in `config.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
+Setting `backends:` in `hermes_otel.yaml` overrides the env-var flow entirely — see [Multi-backend fan-out](/backends/multi-backend).
 
 ## What each backend does differently
 

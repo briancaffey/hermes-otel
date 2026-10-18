@@ -53,7 +53,7 @@ Export also works through the [generic OTLP](/backends/otlp) type with a hand-wr
 | `metrics` / `logs` / `traces` | Per-signal toggles; metrics and logs default **off** (no such routes). |
 | `headers` | Extra headers, merged on top of the generated ones. |
 | `ui_url` | Dashboard read path: the project's observability page, `http://<host>/w/<workspace>/p/<project>/observability`, for an "open in" link. |
-| `service_name` | Dashboard read path: the service shown on cards and in the detail's resource (Agenta does not store resource attributes). |
+| `service_name` | Dashboard read path: the service shown on cards and in the detail's resource, because Agenta does not store resource attributes. Unset means the plugin's own `service.name`. |
 
 No metric-temporality preset (no metrics). The `agent` root keeps its token roll-up: Agenta's cumulative total on the root equalled the sum of the `api.*` spans in the verified turn, so nothing is double-counted.
 
@@ -76,7 +76,7 @@ Agenta types every span (`agent` for the root, `chat` for `llm.*` and `api.*`, `
 The [Hermes dashboard's OTel tab](/dashboard) reads Agenta through `POST /api/spans/query` with the same project key:
 
 - **Search**: a `TracingQuery` with `windowing` (`oldest` / `newest` from the window and the cursor, `order: descending`) and `filtering` conditions: `parent_id is null` for roots-only, `span_name is` / `startswith` for the name and kind filters, `attributes` with a dotted `key` (`hermes.session_id`, `llm.model_name` or `gen_ai.request.model`, and `k=v` pairs from the raw box) with `eq`, the tool filter as `span_name is tool.<name>`, `status_code is` / `is_not STATUS_CODE_ERROR`, and free text as `contains` on `input.value`, `output.value`, `ag.data.outputs` and `ag.unsupported.data.inputs`; each "or" is one query per key merged client-side, because the API accepts a nested `or` group but drops it (v0.122: a text search returned every root). The grammar has no duration field, so the minimum duration is applied to the fetched rows. Span counts come from one more query over the page's trace ids.
-- **Detail**: the trace's spans, flattened from Agenta's nested attribute objects to dotted keys, with Agenta's derived `ag.data.*` and `ag.meta.*` copies of the inputs and outputs dropped (the plugin's own `input.value` and `gen_ai.*.messages` already carry them) and `ag.metrics.*` / `ag.type.*` kept. Resource attributes are not stored, so the resource is the entry's `service_name`.
+- **Detail**: the trace's spans, flattened from Agenta's nested attribute objects to dotted keys, with Agenta's derived `ag.data.*`, `ag.meta.*` and `ag.unsupported.*` copies of the inputs and outputs dropped (the plugin's own `input.value` and `gen_ai.*.messages` already carry them) and `ag.metrics.*` / `ag.type.*` kept. Resource attributes are not stored, so the resource is the entry's `service_name`.
 - Current Agenta (`agenta-api:latest`, 2026-10-18) no longer stores `llm.model_name`, `tool.name` or a root's `input.value` / `output.value` as sent: it keeps `gen_ai.request.model`, `gen_ai.tool.name` and the span name, and moves the text to `ag.data.outputs` / `ag.unsupported.data.inputs`. The search asks both the old and the new keys, and a card or detail span missing one of those four keys shows the moved value under it.
 - `service` is not a filter (the key is the project), and no "open in" link is offered unless `ui_url` names the observability page.
 
@@ -96,7 +96,7 @@ The [Hermes dashboard's OTel tab](/dashboard) reads Agenta through `POST /api/sp
 - **Protobuf only** on the OTLP route (the plugin's default); batches over 10 MB are 413.
 - **Asynchronous ingest**: spans pass through a Redis stream and appear a few seconds after the export; a 200 means accepted, not stored.
 - **Heavy**: the trimmed stack is eleven containers and about 4 GB of images; the upstream stack adds a sandbox runner (needs `SYS_ADMIN` + `/dev/fuse`), playground services, a mobile UI and Traefik.
-- **Resource attributes are dropped** on ingest; the dashboard shows the entry's service name.
+- **Resource attributes are dropped** on ingest; the dashboard shows the entry's `service_name` instead.
 - Sign-ups are open on a fresh stack; the compose header lists the local secrets to change before exposing the port.
 
 ## Troubleshooting

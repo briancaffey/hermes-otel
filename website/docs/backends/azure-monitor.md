@@ -13,7 +13,7 @@ documented route goes through the Azure Monitor OpenTelemetry Distro, the Azure
 Monitor Agent, the AKS add-on, or an OpenTelemetry Collector. So there is no
 `type: azure`; hermes-otel reaches Azure through the
 [OpenTelemetry Collector](/backends/collector) the repo ships, with the generic
-[`otlp`](/backends/otlp) type. Issue #228.
+[`otlp`](/backends/otlp) type ([#228](https://github.com/briancaffey/hermes-otel/issues/228)).
 
 **Signals:** traces + metrics + logs (through the Collector). **Deployment:**
 Azure subscription plus one local container. **Status:** documented, not
@@ -43,9 +43,9 @@ verified; this page was written against Microsoft's and the exporter's docs on
      - type: otlp
        name: azure-monitor
        endpoint: http://localhost:4448/v1/traces   # /v1/metrics and /v1/logs are derived
-       metrics: true
-       logs: true
-   capture_logs: true
+       metrics: true                               # the otlp default, spelled out
+       logs: true                                  # the otlp default, spelled out
+   capture_logs: true                              # log export is off until this is set
    ```
 
 4. Run a Hermes turn, then check in the portal under **Logs**. The exporter
@@ -148,9 +148,10 @@ becomes a real `type: azure`.
 - **Agents (Preview)** in Application Insights is "based on OpenTelemetry
   Generative AI Semantics": agent runs, tool calls and models, token usage and
   costs, with a simple end-to-end view. hermes-otel emits `gen_ai.operation.name`
-  (`invoke_agent`, `chat`, `execute_tool`), `gen_ai.request.model`,
-  `gen_ai.usage.*` and `gen_ai.conversation.id` on every span
-  ([attributes](/architecture/attributes)), which is the input that view reads.
+  (`invoke_agent` on the turn, `chat` on LLM and API calls, `execute_tool` on
+  tools), `gen_ai.request.model`, `gen_ai.usage.*` and `gen_ai.conversation.id`
+  on those spans ([attributes](/architecture/attributes)), which is the input
+  that view reads.
   Whether it recognises Hermes spans as agent runs has not been checked.
 - **Coding-agent dashboards** (Claude Code, Codex, Copilot, …) in Azure Managed
   Grafana filter on each product's own metric names and `cloud_RoleName`

@@ -261,8 +261,8 @@ class UptraceAdapter(BackendAdapter):
         )
         self.project_id = int(cfg.get("project_id") or 1)
         # Trace and log queries are pinned to the agent's service (Uptrace
-        # writes its own spans and lines into the same project): the entry's ``service_name``, else the
-        # plugin's resource ``service.name``, else ``hermes-agent``;
+        # writes its own spans and lines into the same project): the service
+        # ``default_service_name`` picks (the entry's ``service_name`` first);
         # ``service_name: off`` removes the pin.
         raw_service = cfg.get("service_name")
         if isinstance(raw_service, str) and raw_service.strip().lower() in _NO_PIN:
@@ -697,7 +697,7 @@ def _attrs_dotted(raw: Any) -> Dict[str, Any]:
 
 
 def _row_start_ns(sp: Dict[str, Any]) -> int:
-    """Start of a raw span/log row in ns (``time`` is RFC 3339)."""
+    """Start of a raw span/log row in ns (``time`` is in milliseconds)."""
     try:
         return int(_search_hit(sp, str(sp.get("traceId") or "")).get("startTimeUnixNano") or 0)
     except Exception:
