@@ -9,7 +9,7 @@ from __future__ import annotations
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Optional, Tuple
 from urllib.parse import urlparse
 
 from .backends import _ResolvedBackend
@@ -31,12 +31,12 @@ def _warn_darwin_fork() -> None:
 
 
 def _file_option(
-    backend: _ResolvedBackend, field: str, env_suffix: str, signal: str
+    backend: _ResolvedBackend, field: str, env_suffix: str, signal: str, use_env: bool = True
 ) -> Optional[str]:
     value = getattr(backend, field)
-    if value is None:
+    if value is None and use_env:
         value = os.getenv(f"OTEL_EXPORTER_OTLP_{signal.upper()}_{env_suffix}")
-    if value is None:
+    if value is None and use_env:
         value = os.getenv(f"OTEL_EXPORTER_OTLP_{env_suffix}")
     if value is None:
         return None
@@ -57,24 +57,40 @@ def create_exporter(
 
     Explicit per-backend TLS files take precedence over signal-specific SDK
     environment variables, which take precedence over the global SDK variables.
-    Supplying TLS files for a plaintext destination is an error, not a downgrade.
+    TLS files on the entry for a plaintext destination are an error, not a
+    downgrade; the SDK variables apply to TLS destinations only, as in the SDK,
+    so a global ``OTEL_EXPORTER_OTLP_CERTIFICATE`` for one HTTPS collector
+    leaves an ``http://`` entry exporting as before.
     """
     if backend.protocol not in ("http/protobuf", "grpc"):
         raise ValueError(f"unsupported OTLP protocol {backend.protocol!r}")
     endpoint = kwargs["endpoint"]
     parsed = urlparse(endpoint if "://" in endpoint else "//" + endpoint)
-    certificate = _file_option(backend, "certificate_file", "CERTIFICATE", signal)
-    key = _file_option(backend, "client_key_file", "CLIENT_KEY", signal)
-    client = _file_option(backend, "client_certificate_file", "CLIENT_CERTIFICATE", signal)
-    if (key and not client) or (backend.protocol == "grpc" and bool(key) != bool(client)):
-        raise ValueError("client_key_file and client_certificate_file must be supplied together")
-    has_tls_files = bool(certificate or key or client)
+    explicit_tls = any(
+        getattr(backend, f) is not None
+        for f in ("certificate_file", "client_key_file", "client_certificate_file")
+    )
+
+    def tls_files(use_env: bool) -> Tuple[Optional[str], Optional[str], Optional[str]]:
+        certificate = _file_option(backend, "certificate_file", "CERTIFICATE", signal, use_env)
+        key = _file_option(backend, "client_key_file", "CLIENT_KEY", signal, use_env)
+        client = _file_option(
+            backend, "client_certificate_file", "CLIENT_CERTIFICATE", signal, use_env
+        )
+        if (key and not client) or (backend.protocol == "grpc" and bool(key) != bool(client)):
+            raise ValueError(
+                "client_key_file and client_certificate_file must be supplied together"
+            )
+        return certificate, key, client
 
     if backend.protocol == "http/protobuf":
         if backend.insecure is not None:
             raise ValueError("insecure is a gRPC-only option; HTTP always verifies TLS")
-        if has_tls_files and parsed.scheme != "https":
-            raise ValueError("TLS files require an HTTPS endpoint")
+        if parsed.scheme != "https":
+            if explicit_tls:
+                raise ValueError("TLS files require an HTTPS endpoint")
+            return http_exporter(**kwargs)
+        certificate, key, client = tls_files(use_env=True)
         if certificate:
             kwargs["certificate_file"] = certificate
         if key:
@@ -103,8 +119,10 @@ def create_exporter(
             insecure = parsed.scheme == "http"
     if parsed.scheme == "https" and insecure:
         raise ValueError("insecure: true conflicts with an HTTPS endpoint")
-    if insecure and has_tls_files:
+    if insecure and explicit_tls:
         raise ValueError("TLS files cannot be used with an insecure gRPC connection")
+    certificate, key, client = tls_files(use_env=not insecure)
+    has_tls_files = bool(certificate or key or client)
 
     if sys.platform == "darwin" and not _DARWIN_WARNED:
         _warn_darwin_fork()
