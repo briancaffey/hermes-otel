@@ -139,7 +139,7 @@ The repo ships a ready-made one for destinations the plugin cannot reach with a 
 
 ### Metrics-only at a separate endpoint
 
-If your collector splits traces and metrics across different paths, the plugin derives the metrics endpoint by replacing `/v1/traces` with `/v1/metrics`. If that doesn't match your setup, open an issue — we can add a `metrics_endpoint:` override.
+If your collector splits traces and metrics across different paths, the plugin derives the metrics endpoint by replacing `/v1/traces` with `/v1/metrics`. If that doesn't match your setup, set the full URL with `metrics_endpoint:` (and `logs_endpoint:` for logs) on the entry.
 
 ## Env var auth
 

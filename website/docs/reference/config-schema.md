@@ -93,6 +93,7 @@ Shared fields (all optional unless noted):
 | `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full HTTP traces URL, or gRPC `host:port` / `https://host:port` origin (no signal path). **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
+| `metrics_endpoint`, `logs_endpoint` | string | The full URL (gRPC: the target) for that signal, used as written instead of the one derived from `endpoint`; `victoria` reads them as its store origins (below) |
 | `protocol` | string | `http/protobuf` (default), or `grpc` for a generic `type: otlp` entry. Applies to traces, metrics and logs; `headers_helper` needs `http/protobuf` |
 | `insecure` | bool | gRPC only: `true` selects plaintext, `false` forces TLS. Unset: SDK INSECURE env vars, then the endpoint scheme (`http` is plaintext; HTTPS / bare targets are TLS). HTTPS cannot be combined with `true` |
 | `certificate_file` | string | PEM CA bundle for server verification; unset uses SDK CERTIFICATE env vars or system trust |

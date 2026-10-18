@@ -110,7 +110,7 @@ class BackendConfig:
     # greptime: the database the signals land in (X-Greptime-DB-Name; default public)
     db: Optional[str] = None
     db_env: Optional[str] = None
-    # victoria: the metrics and logs stores (VictoriaMetrics, VictoriaLogs); traces go to `endpoint`
+    # Per-signal URLs (any type; victoria: the VictoriaMetrics / VictoriaLogs stores); traces go to `endpoint`
     metrics_endpoint: Optional[str] = None
     logs_endpoint: Optional[str] = None
     # Dashboard-only keys the entry carried (``query_port``, ``prometheus_url``,
