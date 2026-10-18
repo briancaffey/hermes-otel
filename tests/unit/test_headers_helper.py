@@ -365,6 +365,72 @@ class TestResolveAndTarget:
         assert "traces init failed" in caplog.text and "exited 2" in caplog.text
 
 
+# Each type that requires a static credential, the header that credential
+# becomes, and the non-credential fields it needs beyond ``endpoint``.
+_REQUIRED_AUTH = {
+    "agenta": ("Authorization", {}),
+    "clickstack": ("authorization", {}),
+    "honeycomb": ("x-honeycomb-team", {}),
+    "laminar": ("Authorization", {}),
+    "langfuse": ("Authorization", {}),
+    "langsmith": ("x-api-key", {}),
+    "langwatch": ("Authorization", {}),
+    "latitude": ("Authorization", {"project": "proj"}),
+    "openobserve": ("Authorization", {}),
+    "parseable": ("X-API-Key", {}),
+    "uptrace": ("uptrace-dsn", {}),
+    "weave": ("wandb-api-key", {}),
+}
+
+
+class TestHelperOnlyEntries:
+    """A ``headers_helper`` stands in for the static credential (#583)."""
+
+    @pytest.fixture(autouse=True)
+    def _no_backend_env(self, monkeypatch):
+        from _helpers import clear_backend_env
+
+        clear_backend_env(monkeypatch)
+
+    @staticmethod
+    def _entry(backend_type, **extra):
+        header, fields = _REQUIRED_AUTH[backend_type]
+        return BackendConfig(
+            type=backend_type, endpoint="http://127.0.0.1:4318/v1/traces", **fields, **extra
+        )
+
+    @pytest.mark.parametrize("backend_type", sorted(_REQUIRED_AUTH))
+    def test_helper_alone_resolves_without_the_static_header(self, backend_type):
+        rb = resolve(self._entry(backend_type, headers_helper="mint-headers"))
+        header = _REQUIRED_AUTH[backend_type][0]
+        for headers in (rb.headers, rb.metrics_headers, rb.logs_headers):
+            assert header not in (headers or {})
+        assert rb.headers_helper is not None and rb.headers_helper.runs == 0
+
+    @pytest.mark.parametrize("backend_type", sorted(_REQUIRED_AUTH))
+    def test_neither_credential_nor_helper_is_still_an_error(self, backend_type):
+        with pytest.raises(ValueError, match="requires"):
+            resolve(self._entry(backend_type))
+
+    def test_blank_helper_does_not_count(self):
+        with pytest.raises(ValueError, match="openobserve requires user and password"):
+            resolve(self._entry("openobserve", headers_helper="  "))
+
+    def test_helper_only_openobserve_sends_what_the_helper_mints(self, tmp_path):
+        rb = resolve(
+            self._entry(
+                "openobserve",
+                headers_helper=script(tmp_path, 'print("Authorization=Basic bWludDpwdw==")\n'),
+            )
+        )
+        target = rb.target("traces")
+        assert target.headers == {"Authorization": "Basic bWludDpwdw==", "stream-name": "default"}
+
+    def test_credentials_still_win_the_static_header_with_a_helper(self):
+        rb = resolve(self._entry("honeycomb", api_key="k", headers_helper="mint-headers"))
+        assert rb.headers["x-honeycomb-team"] == "k"
+
+
 class TestExporterKwargs:
     def test_no_helper_means_the_two_classic_kwargs(self):
         from hermes_otel.backends import SignalTarget

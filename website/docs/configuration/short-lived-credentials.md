@@ -40,6 +40,7 @@ backends:
 | **stdout** | Either one JSON object (`{"Authorization": "Bearer …", "x-goog-user-project": "p"}`) or one `Name=value` per line. Blank lines and `#` comments are skipped. Values may contain `=`. |
 | **Exit code** | Non-zero is a failure: the message carries the code and the first lines of stderr (redacted). |
 | **Precedence** | Minted headers sit on top of the entry's static `headers:` and of what the type's resolver built (an OpenObserve entry's `Authorization: Basic …`, Honeycomb's `x-honeycomb-team`). The helper is the live credential, so on the same name it wins. Print the full set every run: a header it stops printing is removed from the requests. |
+| **Static credential** | Optional when a helper is set. A type that otherwise refuses an entry without its credential (OpenObserve `user`/`password`, Langfuse `public_key`/`secret_key`, Uptrace `dsn`, Honeycomb, LangSmith, Laminar, LangWatch, Latitude, Weave, Agenta, Parseable and ClickStack `api_key`) accepts a helper in its place and leaves that header for the helper to mint (#583). Fields that are not the credential (Latitude's `project`) are still required. With neither, the entry is still skipped at startup. |
 | **Signals** | One helper process serves the entry's traces, metrics and logs exporters; each gets the same minted set and each refreshes on its own 401/403. |
 
 A helper that fails **at startup** skips that backend entry with the error in
@@ -97,8 +98,8 @@ or a script that reads a file another process keeps fresh.
 ## Example: a rotated password (OpenObserve)
 
 The explicit types build their auth header from the entry's fields; a helper
-replaces it with a fresh value. For OpenObserve, which takes HTTP Basic auth, a
-helper that reads the password from a file:
+replaces it with a fresh value, or mints it alone. For OpenObserve, which takes
+HTTP Basic auth, a helper that reads the password from a file:
 
 ```bash
 #!/bin/sh
@@ -112,11 +113,15 @@ printf 'Authorization=Basic %s\n' "$auth"
 backends:
   - type: openobserve
     endpoint: http://localhost:5080/api/default/v1/traces
-    user_env: OPENOBSERVE_USER                 # the type still wants its fields;
-    password_env: OPENOBSERVE_PASSWORD         # the helper's Authorization wins
     headers_helper: /home/me/.hermes/mint-oo-headers.sh
 capture_logs: true
 ```
+
+The entry needs no `user` / `password` for exporting: the helper's
+`Authorization` is the only one sent. The dashboard's OpenObserve tab queries
+with the entry's own `user` / `password` (or `*_env`), so set them as well if
+you read the backend from the dashboard; the helper's header still wins on
+export.
 
 Change the user's password in the OpenObserve UI, write the new one to
 `~/.hermes/oo-password`, and the next batch goes: a 401, one helper run, one
