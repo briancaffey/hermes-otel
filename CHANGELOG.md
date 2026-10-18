@@ -1,5 +1,30 @@
 # Changelog
 
+## [1.32.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.1...hermes-otel-v1.32.2) (2026-10-18)
+
+
+### Bug Fixes
+
+* **backends:** a GreptimeDB pipeline header under headers: goes to traces only ([#606](https://github.com/briancaffey/hermes-otel/issues/606)) ([#620](https://github.com/briancaffey/hermes-otel/issues/620)) ([8ef0964](https://github.com/briancaffey/hermes-otel/commit/8ef0964735c0806c9f1da231353e4ff6da3ae3e7))
+* **backends:** an entry's metrics_endpoint / logs_endpoint apply on every type ([#607](https://github.com/briancaffey/hermes-otel/issues/607)) ([#625](https://github.com/briancaffey/hermes-otel/issues/625)) ([a1c697c](https://github.com/briancaffey/hermes-otel/commit/a1c697cb36af60c22b454869e5e32ad628237413))
+* **compose:** LangWatch's mint-api-key.py ticks the onboarding checkbox on current builds ([#635](https://github.com/briancaffey/hermes-otel/issues/635)) ([#636](https://github.com/briancaffey/hermes-otel/issues/636)) ([6b1f939](https://github.com/briancaffey/hermes-otel/commit/6b1f9397ddeb87ff3d6cf7441534598c88ecabfe))
+* **compose:** the Agenta stack starts on agenta-api:latest again ([#628](https://github.com/briancaffey/hermes-otel/issues/628)) ([#631](https://github.com/briancaffey/hermes-otel/issues/631)) ([5c39595](https://github.com/briancaffey/hermes-otel/commit/5c395951b87f9ec48ef0130173482c5546135de3))
+* **dashboard:** a `type: jaeger` entry without query_port queries 16686, not the OTLP port ([#605](https://github.com/briancaffey/hermes-otel/issues/605)) ([#621](https://github.com/briancaffey/hermes-otel/issues/621)) ([8d1049b](https://github.com/briancaffey/hermes-otel/commit/8d1049bb6292ca886034d6246fda7b3472ac7a4f))
+* **dashboard:** adapters resolve an entry's settings the way the exporter does ([#614](https://github.com/briancaffey/hermes-otel/issues/614)) ([#624](https://github.com/briancaffey/hermes-otel/issues/624)) ([7dccd7a](https://github.com/briancaffey/hermes-otel/commit/7dccd7a2e61a706ea7bda7b415e64bcbc357485c))
+* **dashboard:** name hermes_otel.yaml and tell a failed live store from a failed import ([#616](https://github.com/briancaffey/hermes-otel/issues/616)) ([#626](https://github.com/briancaffey/hermes-otel/issues/626)) ([223d57a](https://github.com/briancaffey/hermes-otel/commit/223d57ae1db0a55160e88f6fb89efa3faa02769f))
+* **dashboard:** read current Agenta's moved model, tool and text keys ([#630](https://github.com/briancaffey/hermes-otel/issues/630)) ([#633](https://github.com/briancaffey/hermes-otel/issues/633)) ([06c26ba](https://github.com/briancaffey/hermes-otel/commit/06c26bacb7eb68fb6eb137fe7fb4d6dcf673d013))
+* **dashboard:** read the Hermes host ApiError's status and body ([#611](https://github.com/briancaffey/hermes-otel/issues/611)) ([#623](https://github.com/briancaffey/hermes-otel/issues/623)) ([efb4ef3](https://github.com/briancaffey/hermes-otel/commit/efb4ef301c5335e1dc82c73081bd1e8a87ae5385))
+* **dashboard:** show the turn's tool sets apart and split targets on | ([#612](https://github.com/briancaffey/hermes-otel/issues/612)) ([#629](https://github.com/briancaffey/hermes-otel/issues/629)) ([3f83754](https://github.com/briancaffey/hermes-otel/commit/3f83754d317b5aef2c40a93f060203273b08fb7b))
+* **hooks:** attribute the subagent.stop log event to the parent session ([#613](https://github.com/briancaffey/hermes-otel/issues/613)) ([#619](https://github.com/briancaffey/hermes-otel/issues/619)) ([5414e5c](https://github.com/briancaffey/hermes-otel/commit/5414e5c601a0ae9bfd1362988dbe14e997b796ba))
+* **pipeline:** startup banner names the exported signals when traces is off ([#608](https://github.com/briancaffey/hermes-otel/issues/608)) ([#618](https://github.com/briancaffey/hermes-otel/issues/618)) ([9439544](https://github.com/briancaffey/hermes-otel/commit/943954447b39a03692cf83055ed78282e0bb40b1))
+* **settings:** say OTEL_SERVICE_NAME is overridden by the plugin ([#609](https://github.com/briancaffey/hermes-otel/issues/609)) ([#622](https://github.com/briancaffey/hermes-otel/issues/622)) ([feccccb](https://github.com/briancaffey/hermes-otel/commit/feccccb61b049a8ee1d2a3f681d70d193b616b8d))
+* **tracer:** every backends: entry invalid falls back to live-only ([#610](https://github.com/briancaffey/hermes-otel/issues/610)) ([#627](https://github.com/briancaffey/hermes-otel/issues/627)) ([2f325a4](https://github.com/briancaffey/hermes-otel/commit/2f325a44e7ed85c332261739f5b8696fb50bbf86))
+
+
+### Documentation
+
+* audit every page, README and comment against the code ([#604](https://github.com/briancaffey/hermes-otel/issues/604)) ([#634](https://github.com/briancaffey/hermes-otel/issues/634)) ([2948eff](https://github.com/briancaffey/hermes-otel/commit/2948effffb50f1a4dcfd6a3142dc86d1d5284a27))
+
 ## [1.32.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.0...hermes-otel-v1.32.1) (2026-10-18)
 
 
