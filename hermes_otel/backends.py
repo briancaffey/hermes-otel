@@ -254,15 +254,11 @@ def choose_secret(
     return SecretChoice()
 
 
-def _fallbacks(spec: BackendSpec, field: str) -> Tuple[str, ...]:
-    return next((c.env for c in spec.credentials if c.field == field), ())
-
-
 def _secret(bc: BackendConfig, spec: BackendSpec, field: str) -> Optional[str]:
     """``bc.<field>``, else the variable ``bc.<field>_env`` names, else the
     spec's fallback variables for the field (``BackendSpec.credentials``)."""
     return choose_secret(
-        getattr(bc, field), getattr(bc, f"{field}_env", None), _fallbacks(spec, field)
+        getattr(bc, field), getattr(bc, f"{field}_env", None), spec.fallback_envs(field)
     ).value
 
 
@@ -325,7 +321,7 @@ def _auth_header(bc: BackendConfig, spec: BackendSpec) -> Dict[str, str]:
     if value:
         return {auth.name: value}
     if auth.required and not _has_helper(bc):
-        names = " / ".join(_fallbacks(spec, auth.field))
+        names = " / ".join(spec.fallback_envs(auth.field))
         raise ValueError(
             f"{spec.type} requires {auth.field} / {auth.field}_env"
             + (f" (or set {names})" if names else "")

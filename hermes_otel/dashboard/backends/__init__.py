@@ -177,6 +177,25 @@ def load_config() -> Tuple[Optional[Path], List[Dict[str, Any]], Optional[str]]:
 # ── Resolution ─────────────────────────────────────────────────────────
 
 
+def expand_entry(b: Dict[str, Any]) -> Dict[str, Any]:
+    """The entry with ``${VAR}`` expanded in its string values, one level into
+    mappings and lists (``headers``), the way the exporter's loader expands
+    them (``plugin_config.expand_env_refs``; an unset variable stays literal
+    and is warned about by name, never by value). Only the adapter sees the
+    result: ``/status`` and the CLI keep reporting the entry as written (#614).
+    """
+    where = f"backends[{backend_label(b)}]"
+
+    def _one(v: Any) -> Any:
+        if isinstance(v, dict):
+            return {k: _plugin_config.expand_env_refs(x, where=where) for k, x in v.items()}
+        if isinstance(v, list):
+            return [_plugin_config.expand_env_refs(x, where=where) for x in v]
+        return _plugin_config.expand_env_refs(v, where=where)
+
+    return {k: _one(v) for k, v in b.items()}
+
+
 def _instantiate(b: Dict[str, Any], cfg_path: Optional[Path] = None) -> Optional[BackendAdapter]:
     """The adapter for one entry, reused across requests while the config file
     is unchanged. A constructor that raises is a config error the user should
@@ -194,7 +213,7 @@ def _instantiate(b: Dict[str, Any], cfg_path: Optional[Path] = None) -> Optional
     if cached is not None:
         return cached
     try:
-        adapter = cls(b)
+        adapter = cls(expand_entry(b))
     except ConfigError:
         raise
     except Exception as e:

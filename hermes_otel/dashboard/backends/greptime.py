@@ -123,7 +123,9 @@ class GreptimeAdapter(PrometheusMetrics, JaegerAdapter):
         super().__init__(cfg)
         # The Jaeger-compatible API has no v3; never probe for one.
         self.query_api = "v1"
-        self.db = str(cfg.get("db") or _DEFAULT_DB)
+        # ``db`` / ``db_env`` / ``OTEL_GREPTIME_DB``: the database the exporter
+        # writes to (``X-Greptime-DB-Name``), else the server default.
+        self.db = resolve_env_or_literal(cfg, "db", "db_env") or _DEFAULT_DB
         self.logs_table = str(cfg.get("logs_table") or _DEFAULT_LOGS_TABLE)
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")

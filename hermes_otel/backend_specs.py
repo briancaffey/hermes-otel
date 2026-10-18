@@ -168,6 +168,11 @@ class BackendSpec:
     #: when its store is named); ``resolve()`` then leaves them alone.
     signals_from_resolver: bool = False
 
+    def fallback_envs(self, field: str) -> Tuple[str, ...]:
+        """The env vars a resolver reads for credential ``field`` when neither
+        the inline value nor ``<field>_env`` is set (``()`` for none)."""
+        return next((c.env for c in self.credentials if c.field == field), ())
+
     @property
     def traces_only(self) -> bool:
         return not self.metrics and not self.logs
