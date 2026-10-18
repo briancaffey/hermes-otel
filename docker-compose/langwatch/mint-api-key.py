@@ -56,7 +56,8 @@ def main() -> int:
 
     with sync_playwright() as p:
         browser = p.chromium.launch()
-        page = browser.new_context().new_page()
+        # A tall viewport: the onboarding form puts its checkbox below the fold.
+        page = browser.new_context(viewport={"width": 1280, "height": 1600}).new_page()
         page.goto(f"{URL}/auth/signup", wait_until="networkidle")
         page.fill("input[name=email]", EMAIL)
         page.click("button[type=submit]")
@@ -74,7 +75,9 @@ def main() -> int:
         page.fill("input[placeholder*='name' i]", "hermes-otel")
         box = page.query_selector("input[type=checkbox]")
         if box and not box.is_checked():
-            box.check(force=True)
+            # Current builds render it outside the viewport even when
+            # scrolled; a DOM click ticks it either way.
+            box.evaluate("el => el.click()")
         page.click("button:has-text('Next')")
         # Step 2: starting point, Finish creates the project.
         page.wait_for_selector("[role=radio]", timeout=30_000)
