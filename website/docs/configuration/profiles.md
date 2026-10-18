@@ -67,7 +67,7 @@ service_name_from_profile: true
 | On, a named profile (`coder`) | `coder` | `hermes-agent` |
 | On, `default` or `custom` | `hermes-agent` | not set |
 
-- `resource_attributes.service.name` in the same file still wins, as it does today.
+- `resource_attributes.service.name` in the same file still wins over the profile name (`service.namespace` stays `hermes-agent` unless `resource_attributes` sets it too). `OTEL_SERVICE_NAME` has no effect in either mode.
 - `service.instance.id` stays one per process, so two processes of one profile still write separate metric series.
 - The namespace is only set in this mode on purpose: Prometheus-style backends fold it into the `job` label (`hermes-agent/coder`), and setting it on every install would rename every existing series.
 - The [dashboard tab](/dashboard) scopes its backend queries to the service of the profile you are viewing (`?profile=coder` queries `coder`), so set the option for the dashboard's profile too. A backend entry's own `service_name` still pins one.
