@@ -122,9 +122,23 @@ class TestGreptimeBackendType:
             )
         )
         assert rb.headers == {"X-Greptime-Pipeline-Name": "greptime_trace_v2"}
-        # A user-supplied pipeline header is passed through on every signal, as
-        # every entry in ``headers`` is; GreptimeDB then decides.
-        assert rb.logs_headers == {"X-Greptime-Pipeline-Name": "greptime_trace_v2"}
+        # GreptimeDB 400s a pipeline header on the logs route (#606).
+        assert rb.metrics_headers == {}
+        assert rb.logs_headers == {}
+        assert rb.target("metrics").headers is None
+        assert rb.target("logs").headers is None
+
+    def test_user_pipeline_header_matches_case_insensitively(self):
+        rb = backends.resolve(
+            BackendConfig(
+                type="greptime",
+                endpoint="http://h:4000",
+                headers={"x-greptime-pipeline-name": "custom", "x-greptime-hints": "ttl=7d"},
+            )
+        )
+        assert rb.headers == {"X-Greptime-Pipeline-Name": "custom", "x-greptime-hints": "ttl=7d"}
+        assert rb.metrics_headers == {"x-greptime-hints": "ttl=7d"}
+        assert rb.logs_headers == {"x-greptime-hints": "ttl=7d"}
 
     def test_signal_overrides(self):
         rb = backends.resolve(

@@ -395,6 +395,7 @@ def _resolve_langfuse(bc: BackendConfig, spec: BackendSpec) -> _Wire:
 # GreptimeDB's OTLP prefix and the pipeline its trace ingest requires.
 _GREPTIME_OTLP_PREFIX = "/v1/otlp"
 _GREPTIME_TRACE_PIPELINE = "greptime_trace_v1"
+_GREPTIME_PIPELINE_HEADER = "X-Greptime-Pipeline-Name"
 
 
 def _resolve_greptime(bc: BackendConfig, spec: BackendSpec) -> _Wire:
@@ -412,7 +413,8 @@ def _resolve_greptime(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     greptime_trace_v1`` (the only pipeline the trace model accepts; without it
     the batch is rejected). Metrics and logs do not take it (a pipeline name on
     the logs route would select a log pipeline of that name), so they get their
-    own header sets. ``db`` / ``db_env`` (fallback ``OTEL_GREPTIME_DB``) sets
+    own header sets; a pipeline header under ``headers:`` replaces the default on
+    traces and is kept off the other two. ``db`` / ``db_env`` (fallback ``OTEL_GREPTIME_DB``) sets
     ``X-Greptime-DB-Name``; unset means the server default, ``public``. Basic
     auth from ``user`` + ``password`` (fallbacks ``OTEL_GREPTIME_USER`` /
     ``OTEL_GREPTIME_PASSWORD``) when the server runs with a user provider;
@@ -435,11 +437,16 @@ def _resolve_greptime(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     basic = _basic_auth(bc, spec)
     if basic:
         common["Authorization"] = basic
-    common.update(bc.headers or {})
-    trace_headers = {"X-Greptime-Pipeline-Name": _GREPTIME_TRACE_PIPELINE, **common}
-    # A user-supplied pipeline header (another trace model, e.g. v2) wins.
-    if bc.headers and "X-Greptime-Pipeline-Name" in bc.headers:
-        trace_headers["X-Greptime-Pipeline-Name"] = bc.headers["X-Greptime-Pipeline-Name"]
+    # A user-supplied pipeline header (another trace model, e.g. v2) replaces
+    # the default on traces and, like the default, never reaches metrics or
+    # logs (#606); header names match case-insensitively.
+    pipeline = _GREPTIME_TRACE_PIPELINE
+    for name, value in (bc.headers or {}).items():
+        if name.lower() == _GREPTIME_PIPELINE_HEADER.lower():
+            pipeline = value
+        else:
+            common[name] = value
+    trace_headers = {_GREPTIME_PIPELINE_HEADER: pipeline, **common}
     return _Wire(ep, trace_headers, metrics_headers=dict(common), logs_headers=dict(common))
 
 
