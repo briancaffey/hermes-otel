@@ -6,11 +6,11 @@ available on the CI runners); no private keys or external service are required.
 
 import logging
 import os
+import shutil
 import subprocess
 from concurrent.futures import ThreadPoolExecutor
 from dataclasses import replace
 
-import grpc
 import pytest
 from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (
     ExportLogsServiceRequest,
@@ -32,13 +32,23 @@ from hermes_otel.otlp_transport import create_exporter
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
+pytestmark = pytest.mark.grpc
+
+OPENSSL = shutil.which("openssl") or "openssl"
+
 
 @pytest.fixture(scope="module")
 def certificates(tmp_path_factory):
     root = tmp_path_factory.mktemp("grpc-tls")
 
     def openssl(*args):
-        subprocess.run(["openssl", *args], cwd=root, check=True, capture_output=True)
+        # Absolute paths, no cwd and inherited fds keep CPython on posix_spawn:
+        # a fork() child of a process with grpcio loaded can SIGSEGV on macOS.
+        args = [
+            str(root / a) if a.endswith((".key", ".pem", ".csr", ".ext", ".srl")) else a
+            for a in args
+        ]
+        subprocess.run([OPENSSL, *args], check=True, capture_output=True, close_fds=False)
 
     def ca(name):
         openssl(
@@ -104,6 +114,8 @@ def receiver(certificates):
     servers = []
 
     def start(mode):
+        import grpc  # here, not at collection: see the ``grpc`` marker
+
         received = {signal: [] for signal in ("traces", "metrics", "logs")}
         metadata = []
         server = grpc.server(ThreadPoolExecutor(max_workers=3))

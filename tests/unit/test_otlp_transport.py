@@ -9,6 +9,8 @@ from hermes_otel.backend_config import BackendConfig, coerce_backends
 from hermes_otel.backends import _ResolvedBackend, resolve
 from hermes_otel.otlp_transport import create_exporter
 
+pytestmark = pytest.mark.grpc
+
 
 @pytest.fixture(autouse=True)
 def clean_transport_env(monkeypatch):
@@ -345,3 +347,26 @@ def test_settings_card_lists_protocol_only_when_it_is_not_the_default():
     assert "protocol" not in _backend_summary(http, {}, False)["fields"]
     fields = _backend_summary(grpc_entry, {}, False)["fields"]
     assert fields["protocol"] == "grpc" and fields["insecure"] is True
+
+
+@pytest.mark.parametrize("platform,warned", [("darwin", True), ("linux", False)])
+def test_macos_fork_warning_is_logged_once(
+    backend, grpc_exporters, monkeypatch, caplog, platform, warned
+):
+    import hermes_otel.otlp_transport as transport
+
+    monkeypatch.setattr(transport.sys, "platform", platform)
+    monkeypatch.setattr(transport, "_DARWIN_WARNED", False)
+    for _ in range(2):
+        create_exporter(backend, "traces", Mock(), endpoint=backend.endpoint)
+    assert caplog.text.count("grpc on macOS") == (1 if warned else 0)
+
+
+def test_http_never_warns_about_grpc(monkeypatch, caplog):
+    import hermes_otel.otlp_transport as transport
+
+    monkeypatch.setattr(transport.sys, "platform", "darwin")
+    monkeypatch.setattr(transport, "_DARWIN_WARNED", False)
+    backend = resolve(BackendConfig(type="otlp", endpoint="http://x:4318/v1/traces"))
+    create_exporter(backend, "traces", Mock(), endpoint=backend.endpoint, headers=None)
+    assert "grpc on macOS" not in caplog.text

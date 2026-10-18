@@ -7,11 +7,27 @@ so an HTTP-only installation does not depend on importing grpcio at startup.
 from __future__ import annotations
 
 import os
+import sys
 from pathlib import Path
 from typing import Any, Optional
 from urllib.parse import urlparse
 
 from .backends import _ResolvedBackend
+from .debug_utils import logger
+
+_DARWIN_WARNED = False
+
+
+def _warn_darwin_fork() -> None:
+    """Say once that loading grpcio on macOS makes ``fork()`` children
+    crash-prone (grpcio >= 1.78.1, Network.framework's atfork handler)."""
+    global _DARWIN_WARNED
+    _DARWIN_WARNED = True
+    logger.warning(
+        "[hermes-otel] ⚠ protocol: grpc on macOS: grpcio can make forked subprocesses "
+        "(tools, git) crash with SIGSEGV; prefer http/protobuf where the collector accepts it "
+        "(https://briancaffey.github.io/hermes-otel/backends/otlp#grpc-on-macos)"
+    )
 
 
 def _file_option(
@@ -90,6 +106,8 @@ def create_exporter(
     if insecure and has_tls_files:
         raise ValueError("TLS files cannot be used with an insecure gRPC connection")
 
+    if sys.platform == "darwin" and not _DARWIN_WARNED:
+        _warn_darwin_fork()
     import grpc
     from opentelemetry.exporter.otlp.proto.grpc._log_exporter import OTLPLogExporter
     from opentelemetry.exporter.otlp.proto.grpc.metric_exporter import OTLPMetricExporter

@@ -74,6 +74,10 @@ Missing, empty or unreadable files and incomplete gRPC client identities fail th
 
 A `headers_helper` needs `protocol: http/protobuf`: its 401/403 re-mint rides the HTTP exporter's session, which a gRPC channel does not have, so a gRPC entry with a helper is refused at startup instead of exporting with a token that silently expires.
 
+### gRPC on macOS
+
+grpcio 1.78.1 and later have a fork-safety problem on macOS: once its native library is loaded, a child created with `fork()` can die with `SIGSEGV` inside Apple's Network framework before it runs its command. The plugin imports grpcio only when an entry sets `protocol: grpc`, so HTTP-only setups are unaffected, and the plugin's own `headers_helper` runs through `posix_spawn`, which is not affected. Hermes and its tools start other subprocesses (the terminal tool, git, browsers) that can fail intermittently in that process. Linux is not affected. On a Mac, prefer the default `http/protobuf` unless the collector accepts only gRPC; `GRPC_ENABLE_FORK_SUPPORT=false` does not prevent it.
+
 ## Examples
 
 ### Honeycomb

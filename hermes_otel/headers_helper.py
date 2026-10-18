@@ -36,11 +36,14 @@ value is a bearer/basic string is masked whole; anything else goes through
 from __future__ import annotations
 
 import json
+import os
 import shlex
+import shutil
 import subprocess
+import sys
 import threading
 import time
-from typing import Any, Callable, Dict, NamedTuple, Optional, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Tuple
 
 from .debug_utils import debug_log
 from .redaction import REPORT_MASK, is_header_secret_name, is_secret_value, redact_text
@@ -129,6 +132,24 @@ def describe_headers(headers: Dict[str, str]) -> str:
     return ", ".join(parts)
 
 
+# On macOS a ``fork()`` child can die with SIGSEGV in Network.framework's
+# atfork handler once grpcio's native library is loaded (a ``protocol: grpc``
+# backend in the same process, #469). ``posix_spawn`` runs no atfork
+# handlers; CPython takes that path only for an absolute executable and, on
+# macOS, ``close_fds=False`` (descriptors are non-inheritable by default,
+# PEP 446, so the helper still inherits only its three pipes).
+_SPAWN_KWARGS: Dict[str, Any] = {"close_fds": False} if sys.platform == "darwin" else {}
+
+
+def _spawnable(argv: List[str]) -> List[str]:
+    """``argv`` with a bare command name resolved on ``PATH``, as the exec
+    would; a name ``PATH`` lacks is left for the run to report."""
+    if os.sep in argv[0]:
+        return argv
+    found = shutil.which(argv[0])
+    return [found, *argv[1:]] if found else argv
+
+
 class HeadersHelper:
     """One backend entry's ``headers_helper``: the command, its cached output,
     and :meth:`refresh_after` to run it again.
@@ -212,12 +233,13 @@ class HeadersHelper:
         started = time.monotonic()
         try:
             proc = self._runner(
-                self.argv,
+                _spawnable(self.argv),
                 shell=False,
                 capture_output=True,
                 text=True,
                 timeout=self.timeout_ms / 1000.0,
                 check=False,
+                **_SPAWN_KWARGS,
             )
         except subprocess.TimeoutExpired:
             raise HeadersHelperError(
