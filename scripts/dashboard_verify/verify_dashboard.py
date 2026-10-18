@@ -164,12 +164,19 @@ def parse_iso(s: str) -> float:
     return datetime.fromisoformat(s.replace("Z", "+00:00")).timestamp()
 
 
+def run_start(r: Dict[str, Any]) -> Optional[float]:
+    """When ``r`` started, in Unix seconds: ``started_unix`` (every entry
+    ``scripts/scenarios/run.py`` writes has it; a cli run has nothing else),
+    else the ISO ``started_at`` older manifests carry."""
+    if r.get("started_unix") is not None:
+        return float(r["started_unix"])
+    return parse_iso(r["started_at"]) if r.get("started_at") else None
+
+
 def batch_window(runs: List[Dict[str, Any]]) -> Tuple[int, int]:
-    starts = [parse_iso(r["started_at"]) for r in runs if r.get("started_at")]
+    starts = [s for s in (run_start(r) for r in runs) if s is not None]
     ends = [
-        parse_iso(r["started_at"]) + float(r.get("duration_s") or 0)
-        for r in runs
-        if r.get("started_at")
+        run_start(r) + float(r.get("duration_s") or 0) for r in runs if run_start(r) is not None
     ]
     return int(min(starts)) - 30, int(max(ends)) + 90
 
@@ -1439,7 +1446,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if not manifest.exists():
         print(f"no manifest at {manifest}", file=sys.stderr)
         return 2
-    runs = [r for r in load_manifest(manifest) if r.get("started_at")]
+    runs = [r for r in load_manifest(manifest) if run_start(r) is not None]
     print(f"batch {token}: {[r['id'] for r in runs]}")
     host = Host(args.base, args.profile)
     if not host.token:
