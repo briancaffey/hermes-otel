@@ -262,7 +262,18 @@ class TestHeaderPrecedence:
         assert (
             rb(supports_metrics=False, supports_logs=True).describe_signals() == " (traces + logs)"
         )
-        assert rb(supports_traces=False).describe_signals() == " (query only)"
+        # traces off: name what still exports; "query only" when nothing does (#608)
+        assert rb(supports_traces=False).describe_signals() == " (metrics only)"
+        assert (
+            rb(supports_traces=False, supports_metrics=False, supports_logs=True).describe_signals()
+            == " (logs only)"
+        )
+        assert (
+            rb(supports_traces=False, supports_logs=True).describe_signals() == " (metrics + logs)"
+        )
+        assert (
+            rb(supports_traces=False, supports_metrics=False).describe_signals() == " (query only)"
+        )
 
 
 class TestSharedStateLocks:

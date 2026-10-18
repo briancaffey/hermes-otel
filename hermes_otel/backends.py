@@ -188,11 +188,16 @@ class _ResolvedBackend:
         return tuple(s for s in SIGNALS if getattr(self, f"supports_{s}"))
 
     def describe_signals(self) -> str:
-        """The startup banner's suffix, leading space included: ``" (query
-        only)"`` for a backend that exports nothing, ``" (traces only)"`` /
-        ``" (traces + logs)"`` when metrics are off, ``""`` when they are on."""
+        """The startup banner's suffix, leading space included: ``""`` when
+        traces and metrics are on, else the exported signals named (``"
+        (traces only)"``, ``" (traces + logs)"``, ``" (metrics only)"``,
+        ``" (logs only)"``, ``" (metrics + logs)"``), and ``" (query
+        only)"`` for a backend that exports nothing (#608)."""
         if not self.supports_traces:
-            return " (query only)"
+            exported = [s for s in ("metrics", "logs") if getattr(self, f"supports_{s}")]
+            if not exported:
+                return " (query only)"
+            return f" ({exported[0]} only)" if len(exported) == 1 else " (metrics + logs)"
         if self.supports_metrics:
             return ""
         return " (traces + logs)" if self.supports_logs else " (traces only)"
