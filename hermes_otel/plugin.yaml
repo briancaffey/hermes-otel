@@ -1,5 +1,5 @@
 name: hermes_otel
-version: 1.31.0
+version: 1.32.0
 manifest_version: 2
 description: >-
   OpenTelemetry for Hermes Agent: sessions, LLM and API calls, tool calls,
@@ -10,7 +10,8 @@ description: >-
   off sends none); vendor SDK keys already in the environment are used only
   after that opt-in; with nothing configured it keeps a local owner-only SQLite
   store under $HERMES_HOME and sends nothing; installs opentelemetry-api, -sdk,
-  -exporter-otlp-proto-http and -exporter-otlp-proto-grpc (>=1.35,<2) and PyYAML.
+  -exporter-otlp-proto-http and -exporter-otlp-proto-grpc (>=1.35,<2) and
+  PyYAML.
 author: Brian Caffey
 license: Apache-2.0
 homepage: https://briancaffey.github.io/hermes-otel/
