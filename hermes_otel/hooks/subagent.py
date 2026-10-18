@@ -227,7 +227,7 @@ def on_subagent_stop(
     _emit_event(
         tracer,
         EV.SUBAGENT_STOP,
-        f"sub-agent {attributes.get('hermes.subagent.role') or 'worker'} "
+        f"sub-agent {role or attributes.get('hermes.subagent.role') or 'worker'} "
         f"{attributes.get('hermes.subagent.status') or status}",
         {
             **{k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},

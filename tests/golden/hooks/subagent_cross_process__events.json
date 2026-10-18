@@ -72,7 +72,7 @@
     "hermes.subagent.usage.output_tokens": 50,
     "hermes.subagent.usage.total_tokens": 150
    },
-   "body": "sub-agent worker failed",
+   "body": "sub-agent builder failed",
    "event_name": "hermes.subagent.stop",
    "severity": "ERROR",
    "span": "S3",

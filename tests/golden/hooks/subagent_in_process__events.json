@@ -129,7 +129,7 @@
     "hermes.subagent.usage.output_tokens": 50,
     "hermes.subagent.usage.total_tokens": 150
    },
-   "body": "sub-agent worker completed",
+   "body": "sub-agent researcher completed",
    "event_name": "hermes.subagent.stop",
    "severity": "INFO",
    "span": "S5",
