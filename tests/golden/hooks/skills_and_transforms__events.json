@@ -279,6 +279,16 @@
   },
   {
    "attributes": {
+    "platform": "cli",
+    "profile": "golden",
+    "type": "cli"
+   },
+   "name": "hermes.active_time.total",
+   "unit": "s",
+   "value": "<num>"
+  },
+  {
+   "attributes": {
     "model": "gpt-4",
     "profile": "golden",
     "provider": "openai"

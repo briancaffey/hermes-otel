@@ -4,9 +4,9 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from hermes_otel.helpers import char_count, terminal_truncation
 from hermes_otel.hooks import on_transform_llm_output, on_transform_terminal_output
-from hermes_otel.hooks.transforms import set_attributes
+from hermes_otel.hooks._common import set_span_attributes
+from hermes_otel.hooks.tools import char_count, terminal_truncation
 
 
 class _Span:
@@ -43,7 +43,7 @@ class TestTerminalObserver:
             "hermes.terminal.returncode": 0,
             "hermes.terminal.env_type": "local",
         }
-        assert mock_tracer.sessions.pop_tool_output_chars("terminal:tc1") == 50_000
+        assert mock_tracer.spans.pop_tool_output_chars("terminal:tc1") == 50_000
 
     def test_falls_back_to_task_id_without_a_tool_call_id(self, mock_tracer):
         span = _Span()
@@ -63,7 +63,7 @@ class TestTerminalObserver:
 
     def test_no_span_still_keeps_the_size_for_post_tool_call(self, mock_tracer):
         assert on_transform_terminal_output(output="abc", returncode=0, task_id="t2") is None
-        assert mock_tracer.sessions.pop_tool_output_chars("terminal:t2") == 3
+        assert mock_tracer.spans.pop_tool_output_chars("terminal:t2") == 3
 
     def test_non_int_returncode_and_blank_env_type_are_omitted(self, mock_tracer):
         span = _Span()
@@ -74,7 +74,7 @@ class TestTerminalObserver:
     def test_disabled_tracer_is_a_no_op(self, mock_tracer):
         mock_tracer.is_enabled = False
         assert on_transform_terminal_output(output="abc", returncode=0, task_id="t4") is None
-        assert mock_tracer.sessions.pop_tool_output_chars("terminal:t4") is None
+        assert mock_tracer.spans.pop_tool_output_chars("terminal:t4") is None
 
 
 class TestLlmOutputObserver:
@@ -104,17 +104,17 @@ class TestLlmOutputObserver:
         assert root.attributes == {}
 
 
-class TestSetAttributes:
+class TestSetSpanAttributes:
     def test_skips_objects_without_the_otel_api_and_none_values(self):
-        set_attributes(object(), {"a": 1})  # LangSmith runs have no set_attribute
+        set_span_attributes(object(), {"a": 1})  # LangSmith runs have no set_attribute
         span = _Span()
-        set_attributes(span, {"a": 1, "b": None})
+        set_span_attributes(span, {"a": 1, "b": None})
         assert span.attributes == {"a": 1}
 
     def test_never_raises_when_set_attribute_does(self):
         span = MagicMock()
         span.set_attribute.side_effect = RuntimeError("boom")
-        set_attributes(span, {"a": 1})
+        set_span_attributes(span, {"a": 1})
 
 
 class TestFailOpen:

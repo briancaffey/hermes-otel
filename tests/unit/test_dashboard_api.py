@@ -375,7 +375,7 @@ class TestLiveHardening:
         store.close()
 
     def test_router_resolves_the_store_from_the_environment(self, tmp_path, monkeypatch):
-        from hermes_otel import live_store as ls
+        from hermes_otel import live_store_registry as ls
 
         monkeypatch.setattr(ls, "_LIVE_STORE", None)
         monkeypatch.setattr(ls, "_STORES_BY_PATH", {})

@@ -177,7 +177,7 @@
  {
   "method": "GET",
   "path": "/api/search",
-  "query_contains": "tool.",
+  "query_contains": "name =~ \"^tool",
   "json": {
    "traces": [
     {
@@ -198,8 +198,8 @@
         {
          "spanID": "aaaa000000000001",
          "name": "tool.terminal",
-         "startTimeUnixNano": "1791750000000000000",
-         "durationNanos": "4029000000",
+         "startTimeUnixNano": "1791750001500000000",
+         "durationNanos": "1120770000",
          "attributes": [
           {
            "key": "tool.name",
@@ -244,8 +244,113 @@
         {
          "spanID": "aaaa000000000001",
          "name": "tool.terminal",
-         "startTimeUnixNano": "1791749400000000000",
-         "durationNanos": "4029000000",
+         "startTimeUnixNano": "1791749401500000000",
+         "durationNanos": "1120770000",
+         "attributes": [
+          {
+           "key": "tool.name",
+           "value": {
+            "stringValue": "terminal"
+           }
+          },
+          {
+           "key": "openinference.span.kind",
+           "value": {
+            "stringValue": "TOOL"
+           }
+          },
+          {
+           "key": "name",
+           "value": {
+            "stringValue": "tool.terminal"
+           }
+          }
+         ]
+        }
+       ],
+       "matched": 1
+      }
+     ]
+    }
+   ],
+   "metrics": {
+    "inspectedTraces": 2,
+    "inspectedBytes": "120394"
+   }
+  }
+ },
+ {
+  "method": "GET",
+  "path": "/api/search",
+  "query_contains": ".tool.name = \"terminal\"",
+  "json": {
+   "traces": [
+    {
+     "traceID": "ab43116e1d6d4a1a449db547c36ca808",
+     "rootServiceName": "hermes-agent",
+     "rootTraceName": "agent",
+     "startTimeUnixNano": "1791750000000000000",
+     "durationMs": 4029,
+     "serviceStats": {
+      "hermes-agent": {
+       "spanCount": 3,
+       "errorCount": 1
+      }
+     },
+     "spanSets": [
+      {
+       "spans": [
+        {
+         "spanID": "aaaa000000000001",
+         "name": "tool.terminal",
+         "startTimeUnixNano": "1791750001500000000",
+         "durationNanos": "1120770000",
+         "attributes": [
+          {
+           "key": "tool.name",
+           "value": {
+            "stringValue": "terminal"
+           }
+          },
+          {
+           "key": "openinference.span.kind",
+           "value": {
+            "stringValue": "TOOL"
+           }
+          },
+          {
+           "key": "name",
+           "value": {
+            "stringValue": "tool.terminal"
+           }
+          }
+         ]
+        }
+       ],
+       "matched": 1
+      }
+     ]
+    },
+    {
+     "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1",
+     "rootServiceName": "hermes-agent",
+     "rootTraceName": "agent",
+     "startTimeUnixNano": "1791749400000000000",
+     "durationMs": 4029,
+     "serviceStats": {
+      "hermes-agent": {
+       "spanCount": 3,
+       "errorCount": 1
+      }
+     },
+     "spanSets": [
+      {
+       "spans": [
+        {
+         "spanID": "aaaa000000000001",
+         "name": "tool.terminal",
+         "startTimeUnixNano": "1791749401500000000",
+         "durationNanos": "1120770000",
          "attributes": [
           {
            "key": "tool.name",

@@ -31,27 +31,13 @@ from __future__ import annotations
 from typing import Any, Optional
 
 from ..debug_utils import debug_log
-from ..helpers import char_count, truncate_string
-from ._common import _fail_open, get_tracer
-from .tools import _tool_call_id
+from ..helpers import truncate_string
+from ._common import _fail_open, get_tracer, set_span_attributes
+from .tools import _tool_call_id, char_count
 
 # Hermes' environment-type strings are short identifiers (``local``,
 # ``docker``, ``ssh``, ...); the clip only guards against a surprise.
 _ENV_TYPE_MAX = 64
-
-
-def set_attributes(span: Any, attributes: dict) -> None:
-    """Set attributes on a live span; a no-op for span objects without the
-    OTel API (``INVALID_SPAN`` stand-ins) and never raises."""
-    if span is None or not hasattr(span, "set_attribute"):
-        return
-    for key, value in attributes.items():
-        if value is None:
-            continue
-        try:
-            span.set_attribute(key, value)
-        except Exception:  # pragma: no cover — never let telemetry raise
-            pass
 
 
 @_fail_open
@@ -85,10 +71,10 @@ def on_transform_terminal_output(
         attributes["hermes.terminal.env_type"] = truncate_string(str(env_type), _ENV_TYPE_MAX)
 
     span = tracer.spans.get_span(key)
-    set_attributes(span, attributes)
+    set_span_attributes(span, attributes)
     if raw_chars is not None:
         # on_post_tool_call reads this back to measure the output limit.
-        tracer.sessions.record_tool_output_chars(key, raw_chars)
+        tracer.spans.record_tool_output_chars(key, raw_chars)
     return None
 
 
@@ -116,5 +102,5 @@ def on_transform_llm_output(
     root = tracer.spans.get_session_root(sid) if sid else None
     if root is None:
         root = tracer.spans.get_current_parent(sid or None)
-    set_attributes(root, {"hermes.llm.output.chars": chars})
+    set_span_attributes(root, {"hermes.llm.output.chars": chars})
     return None

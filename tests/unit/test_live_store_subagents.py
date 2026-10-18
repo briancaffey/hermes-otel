@@ -10,7 +10,7 @@ from __future__ import annotations
 
 from helpers.live import span
 
-from hermes_otel.live_store import subagent_totals, summarize_trace, top_level_subagents
+from hermes_otel.live_summary import subagent_totals, summarize_trace, top_level_subagents
 
 ROOT = {"hermes.session_id": "p", "gen_ai.usage.total_tokens": 100, "hermes.cost.usage": 0.01}
 

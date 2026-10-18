@@ -11,9 +11,13 @@ session roll-ups and the events, which differ per hook.
 
 from __future__ import annotations
 
+import contextlib
+import json
 from typing import Any, Dict, Mapping, Optional, Tuple
 
 from ..helpers import serialize_full
+from ..semconv import QUERY_SOURCE_MAIN, QUERY_SOURCE_SUBAGENT
+from ._common import as_dict
 from .attributes import (
     _gen_ai_attributes,
     _gen_ai_request_param_attributes,
@@ -32,13 +36,19 @@ from .usage import (
 )
 
 
+def query_source_for(is_subagent: Any) -> str:
+    """``main`` or ``subagent`` for a main-loop API call."""
+    return QUERY_SOURCE_SUBAGENT if is_subagent else QUERY_SOURCE_MAIN
+
+
 class HookPayload:
     """The ``**kwargs`` of an api hook with every alternate spelling read in one place.
 
     Hermes has sent the request messages as ``request_messages`` and as
     ``messages`` (and inside ``request["body"]``), the response id as
-    ``response_id`` and as ``id``; the hooks no longer spell those fallbacks
-    themselves.
+    ``response_id`` and as ``id``, the assistant's reply as the raw
+    ``assistant_message`` object and inside ``response``; the hooks no longer
+    spell those fallbacks themselves.
     """
 
     def __init__(self, kwargs: Mapping[str, Any]) -> None:
@@ -68,6 +78,18 @@ class HookPayload:
     def response_id(self) -> Any:
         return self.kwargs.get("response_id") or self.kwargs.get("id")
 
+    @property
+    def assistant_message(self) -> Tuple[Any, Any]:
+        """``(content, tool_calls)`` of the reply, from whichever spelling Hermes
+        used: the raw ``assistant_message`` object (``post_api_request``), else
+        the sanitised ``response["assistant_message"]`` dict (both hooks)."""
+        message = self.kwargs.get("assistant_message")
+        if message is None:
+            message = as_dict(self.kwargs.get("response")).get("assistant_message")
+        if message is None:
+            return None, None
+        return _field(message, "content"), _field(message, "tool_calls")
+
     def system_prompt(self, messages: Any) -> Optional[str]:
         """The system prompt: an explicit kwarg, else the leading system message,
         else the Responses API ``instructions`` field."""
@@ -88,6 +110,11 @@ class HookPayload:
         body = self.body
         instructions = body.get("instructions") or body.get("system")
         return str(instructions) if instructions else None
+
+
+def _field(message: Any, name: str) -> Any:
+    """A field of a message Hermes sent as a dict or as an SDK object."""
+    return message.get(name) if isinstance(message, dict) else getattr(message, name, None)
 
 
 # ── the request side ───────────────────────────────────────────────────
@@ -203,6 +230,9 @@ def apply_usage(
             tracer.record_metric(
                 "cost_usage", cost["usd"], {**model_labels, "cost_status": cost["status"]}
             )
+            # Claude Code's name for the same figure (#485); dropped unless
+            # metric_name_compat switches it on.
+            tracer.record_metric("claude_code.cost.usage", cost["usd"], model_labels)
     tracer.record_metric("model_usage", 1, model_labels)
     return totals, cost
 
@@ -218,11 +248,12 @@ def duration_seconds(value: Any) -> Optional[float]:
 def response_attributes(
     *,
     api_duration: Optional[float],
-    finish_reason: Any,
-    assistant_content_chars: Any,
-    assistant_tool_call_count: Any,
+    finish_reason: Any = None,
+    assistant_content_chars: Any = None,
+    assistant_tool_call_count: Any = None,
 ) -> Dict[str, Any]:
-    """Timing, finish reason and response size in both conventions."""
+    """Timing, finish reason and response size in both conventions (the
+    failure path has only the timing)."""
     attributes: Dict[str, Any] = {}
     if api_duration:
         attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
@@ -233,6 +264,36 @@ def response_attributes(
         attributes["llm.response.output_chars"] = assistant_content_chars
     if assistant_tool_call_count:
         attributes["llm.response.tool_calls"] = assistant_tool_call_count
+    return attributes
+
+
+def full_response_attributes(tracer, payload: HookPayload) -> Dict[str, Any]:
+    """The complete response in both conventions (#74), only in full capture:
+    one assistant message carrying the text and the tool calls it made."""
+    if not tracer.config.captures_full_responses():
+        return {}
+    content, tool_calls = payload.assistant_message
+    message: Dict[str, Any] = {"role": "assistant"}
+    if content:
+        message["content"] = str(content)
+    tool_calls_serialized = serialize_full(tool_calls)
+    if tool_calls_serialized is not None:
+        try:
+            message["tool_calls"] = json.loads(tool_calls_serialized)
+        except Exception:
+            message["tool_calls"] = tool_calls_serialized
+    if len(message) == 1:
+        return {}
+    attributes: Dict[str, Any] = {
+        "gen_ai.output.messages": json.dumps([message], ensure_ascii=False)
+    }
+    if content:
+        attributes["output.value"] = str(content)
+        attributes["output.mime_type"] = "text/plain"
+    else:
+        attributes["output.value"] = tool_calls_serialized
+        attributes["output.mime_type"] = "application/json"
+    attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
     return attributes
 
 
@@ -300,6 +361,7 @@ def ensure_span(
     session_id: Optional[str],
     model: Any,
     provider: Any,
+    links: Optional[list] = None,
 ) -> Tuple[Any, bool]:
     """The in-flight span for ``key``, or a fresh one carrying the identity
     the start hook would have set. Returns ``(span, created)``.
@@ -316,7 +378,7 @@ def ensure_span(
     identity.update(_session_identity_attributes(session_id))
     identity.update(_model_attributes(model, provider))
     span = tracer.start_span(
-        name=name, key=key, kind="llm", attributes=identity, session_id=session_id
+        name=name, key=key, kind="llm", attributes=identity, session_id=session_id, links=links
     )
     return span, True
 
@@ -330,7 +392,5 @@ def add_exception_event(
     attrs: Dict[str, Any] = {"exception.type": error_type, "exception.escaped": True}
     if error_message or keep_empty_message:
         attrs["exception.message"] = error_message or ""
-    try:
+    with contextlib.suppress(Exception):  # never let telemetry raise
         span.add_event("exception", attrs)
-    except Exception:  # pragma: no cover — never let telemetry raise
-        pass

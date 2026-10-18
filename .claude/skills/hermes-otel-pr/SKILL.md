@@ -38,7 +38,7 @@ relative to `hermes_otel/`:
 | `tracer.py` | `HermesOTelPlugin` singleton: backend init, `start_span`/`end_span`, `record_metric`, metric instruments, orphan sweep, flush. |
 | `span_tracker.py` | Active-span registry + per-session parent stacks (survive cross-thread hook dispatch). |
 | `session_state.py` | Per-session aggregators (`PerSession`, `TurnSummary`). |
-| `helpers.py` | Pure functions (no OTel import) — unit-testable. |
+| `helpers.py` | Shared text helpers (no OTel import); `coerce.py` the scalar coercers; `pipeline_env.py` the exporter-env / host facts. |
 | `plugin_config.py` | `HermesOtelConfig` frozen dataclass + yaml/env loader. |
 | `backends.py` | Resolves config/env into backend endpoints+headers. |
 
@@ -77,12 +77,13 @@ git checkout -b feat/<short-slug>     # or fix/<slug>, docs/<slug>
 - **Attributes:** emit **dual convention** where applicable — OpenInference
   (`llm.*`, `openinference.*`, `input.value`/`output.value`) for Phoenix *and*
   `gen_ai.*` for Langfuse/OTel GenAI. Clip strings with `truncate_string` /
-  `clip_preview`; gate previews through `_preview` (respects `capture_previews`
+  `clip_preview`; gate previews through `_preview_for` (respects `content_capture`
   and the per-category `*_preview_max_chars` config).
 - **Metrics:** add the instrument in `tracer._create_metric_instruments`, a
   branch in `tracer.record_metric`, then call `tracer.record_metric(name, value, attrs)`.
   Keep label cardinality low (model, provider, role, status — never raw ids).
-- **Pure logic → `helpers.py`** so it can be unit-tested without importing OTel.
+- **Pure logic → plain functions in the owning module** (`helpers.py` only when several
+  modules share them) so it can be unit-tested without a tracer.
 - **Status policy:** real failures map to `ERROR`; deliberately-benign outcomes
   (tool timeout/blocked, unknown/missing status) stay `OK` so they don't inflate
   error rates. Match the surrounding code's existing choice.

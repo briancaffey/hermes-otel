@@ -15,9 +15,10 @@ import pytest
 from _helpers import clear_backend_env
 
 from hermes_otel import log_handler
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backends import _ResolvedBackend
-from hermes_otel.helpers import OTLP_HEADER_ENV_VARS, without_otlp_header_env
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
+from hermes_otel.pipeline_env import OTLP_HEADER_ENV_VARS, without_otlp_header_env
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 # A header the shell might export for some other tool; the name is arbitrary.

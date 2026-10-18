@@ -59,6 +59,20 @@ scenarios-full:
 	-uv run --extra dev python scripts/scenarios/run.py --profile $(SCENARIO_PROFILE) --suite full --token $(SCENARIO_TOKEN) $(if $(ONLY),--only $(ONLY)) $(SCENARIO_ARGS)
 	uv run --extra dev python scripts/scenarios/check.py --manifest $(SCENARIO_RUNS)/runs.json
 
+# ── Credential-free end-to-end tier (#482) ─────────────────────────────
+# tests/e2e_ci: the real `hermes` binary (on PATH, or HERMES_BIN) runs a
+# one-shot turn, a tool-call turn and a resumed turn through this checkout's
+# plugin against a scripted OpenAI-compatible provider and an in-process
+# OTLP receiver, both on 127.0.0.1. No model, no key, no backend. The Hermes
+# home it builds is kept under HERMES_E2E_HOME, so Hermes's runtime venv
+# staging (about a minute) happens once; delete the directory to start cold.
+# CI runs this with a pinned Hermes on every PR (test.yml, e2e-hermes) and
+# weekly against hermes-agent main (e2e-hermes-main.yml).
+HERMES_E2E_HOME ?= $(HOME)/.cache/hermes-otel/e2e-home
+.PHONY: ci-e2e
+ci-e2e:
+	HERMES_E2E_HOME=$(HERMES_E2E_HOME) uv run --extra dev pytest tests/e2e_ci -m e2e_ci --tb=short -q --durations=5
+
 # ── The CI gate, locally ───────────────────────────────────────────────
 # Mirrors .github/workflows/test.yml job for job: lint (lockfile, ruff,
 # black), plugin scan, tests with the 85% coverage gate and the per-module
@@ -68,7 +82,8 @@ scenarios-full:
 #
 # Not run by `make ci` (slow or environment-bound): the Python 3.9 / 3.11
 # matrix (this runs the current venv's interpreter only), `make ci-floor`
-# (the suite against the OpenTelemetry 1.35 floor, a fresh venv), and the
+# (the suite against the OpenTelemetry 1.35 floor, a fresh venv), `make
+# ci-e2e` (the real `hermes` binary through the plugin, below), and the
 # catalog-admission workflow (installs hermes-agent main; push to main,
 # weekly, or dispatch).
 .PHONY: ci ci-fast ci-lint ci-scan ci-semconv ci-test ci-floor ci-dashboard ci-docs ci-wheel
@@ -87,8 +102,8 @@ ci-scan:
 	uv run --extra dev python scripts/scan_plugin_artifact.py
 
 # The telemetry vocabulary (hermes_otel/semconv.py) generates
-# dashboard-ui/src/semconv.generated.ts and is checked against the span
-# attribute reference page; a stale file or a drifted page fails here (#404).
+# dashboard-ui/src/semconv.generated.ts and the tables of the span attribute
+# reference page; a stale file or a drifted table fails here (#404, #523).
 ci-semconv:
 	uv run python scripts/gen_semconv.py --check
 

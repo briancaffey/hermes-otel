@@ -18,13 +18,29 @@ REPO_ROOT = Path(__file__).resolve().parents[2]
 PKG = REPO_ROOT / "hermes_otel" / "hooks"
 
 
-class TestReExports:
-    def test_every_declared_hook_has_a_callback_on_the_package(self):
-        manifest = yaml.safe_load((REPO_ROOT / "hermes_otel" / "plugin.yaml").read_text())
-        for name in manifest["provides_hooks"]:
+def _manifest_hooks():
+    return yaml.safe_load((REPO_ROOT / "hermes_otel" / "plugin.yaml").read_text())["provides_hooks"]
+
+
+class TestHookTable:
+    """``hooks.HOOKS`` is the one hook table (#511): the manifest, ``register()``
+    and ``__all__`` all follow it."""
+
+    def test_table_is_the_manifest(self):
+        declared = _manifest_hooks()
+        assert [name for name, _ in hooks.HOOKS] == declared  # same rows, manifest order
+        assert len(hooks.HOOKS) == len(set(declared)) == 34
+        assert "mcp_request_headers" not in {name for name, _ in hooks.HOOKS}  # #130
+
+    def test_every_row_is_the_packages_callback(self):
+        for name, callback in hooks.HOOKS:
             attr = name if name.startswith("on_") else f"on_{name}"
-            assert callable(getattr(hooks, attr)), attr
+            assert callable(callback), attr
+            assert getattr(hooks, attr) is callback, attr
             assert attr in hooks.__all__
+
+
+class TestReExports:
 
     def test_only_the_public_surface_is_exported(self):
         """Callbacks, ``get_tracer`` and ``get_current_traceparent``; helpers live

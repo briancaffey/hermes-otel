@@ -11,8 +11,8 @@ from urllib import parse as _urlparse
 import pytest
 
 from hermes_otel.dashboard import backends
+from hermes_otel.dashboard.backends import _prometheus, jaeger
 from hermes_otel.dashboard.backends import greptime as gp
-from hermes_otel.dashboard.backends import jaeger
 from hermes_otel.dashboard.backends.base import BackendError, LogFilter, StructuredFilter
 
 NS = 1_000_000_000
@@ -169,8 +169,8 @@ class TestMetrics:
     def test_metric_names_use_the_prometheus_label_route(self, monkeypatch):
         calls: List[str] = []
         monkeypatch.setattr(
-            gp,
-            "_prom_metric_names",
+            _prometheus,
+            "metric_names",
             lambda base, s, e, match, headers=None: calls.append((base, match)) or [{"name": "x"}],
         )
         assert _adapter(metrics_match='{__name__=~"hermes_.*"}').metric_names(T0, T0 + 60) == [

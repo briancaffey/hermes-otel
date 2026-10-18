@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from hermes_otel import mcp_config as mc
-from hermes_otel import query_cli
+from hermes_otel import query_cli, query_sources
 
 J = {"type": "jaeger", "name": "jaeger-local", "endpoint": "http://localhost:4318/v1/traces"}
 T = {"type": "tempo", "endpoint": "http://tempo.lan:4358/v1/traces", "query_port": 3210}
@@ -149,7 +149,7 @@ def _fake_backends(entries, pin=None):
 
 def _run(monkeypatch, tmp_path, *argv, entries, pin=None):
     monkeypatch.setenv("HERMES_HOME", str(tmp_path))
-    monkeypatch.setattr(query_cli, "_import_backends", lambda: _fake_backends(entries, pin))
+    monkeypatch.setattr(query_sources, "_import_backends", lambda: _fake_backends(entries, pin))
     out, err = io.StringIO(), io.StringIO()
     code = query_cli.main(["mcp-config", *argv], out=out, err=err)
     return code, out.getvalue(), err.getvalue()

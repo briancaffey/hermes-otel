@@ -5,7 +5,7 @@
     "query": {
      "end_time": 1791750060000000,
      "size": 50,
-     "sql": "SELECT * FROM \"default\" WHERE severity IN ('WARN', 'WARNING', 'WARN2', 'WARN3', 'WARN4', 'ERROR', 'ERROR2', 'ERROR3', 'ERROR4', 'FATAL', 'CRITICAL', 'FATAL2', 'FATAL3', 'FATAL4') AND body LIKE '%careful%' ORDER BY _timestamp DESC LIMIT 50",
+     "sql": "SELECT * FROM \"default\" WHERE severity IN ('WARN', 'WARNING', 'ERROR', 'CRITICAL', 'FATAL') AND body LIKE '%careful%' ORDER BY _timestamp DESC LIMIT 50",
      "start_time": 1791746400000000
     }
    },

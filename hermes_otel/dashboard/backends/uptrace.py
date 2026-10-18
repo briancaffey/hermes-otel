@@ -43,19 +43,19 @@ from .base import (
     BackendAdapter,
     BackendError,
     HTTPException,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     bearer,
-    finish_log_row,
     http_get_json,
+    log_row,
     not_found,
-    otlp_status,
     query_origin,
     register_cache,
     require_credential,
     resolve_env_or_literal,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import bucketize, increases_per_process
 from .paging import (
     log_end_ns,
     strictly_older,
@@ -66,15 +66,21 @@ from .paging import (
 )
 from .shapes import (
     CARD_ATTRIBUTE_KEYS,
+    SpanRow,
     card_row,
-    group_by_service,
-    otlp_batches,
-    otlp_span,
-    span_count_of,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    trace_detail,
 )
 
 # Entries that switch the service pin on log queries off.
 _NO_PIN = ("", "off", "none", "any", "*")
+
+# A widened search's root lookup without a server-side root filter keeps the
+# roots from up to this many spans per trace (#558).
+_ROOT_ROWS_PER_TRACE = 50
+
 
 _DEFAULT_UPTRACE_HTTP_PORT = 14318
 _API = "/internal/v1"
@@ -455,17 +461,48 @@ class UptraceAdapter(BackendAdapter):
                 page["next_before_ns"] = min(
                     int(page["next_before_ns"] or 0) or min(oldest), *oldest
                 )
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            ids = [t["traceID"] for t in page["traces"]]
+            recard_roots(page, self._roots(ids, root_filter, start_s, end_s))
         return page
+
+    def _roots(
+        self, trace_ids: List[str], root_filter: str, start_s: int, end_s: int
+    ) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id: one span query on
+        ``_trace_id in (...)``, with the server's root filter on 2.1 and the
+        roots kept from ``parentId`` on 2.0. A root outside the window, or a
+        failed query, leaves its trace's matched card."""
+        if not trace_ids:
+            return {}
+        d = self._dialect()
+        ids = ", ".join(f'"{_esc(t)}"' for t in trace_ids)
+        parts = [root_filter] if root_filter else []
+        parts.append(f"where _trace_id in ({ids})")
+        params: List[Tuple[str, Any]] = [
+            *self._systems(d["span_systems"]),
+            ("query", " | ".join(parts)),
+            *d["sort"],
+            ("limit", len(trace_ids) * (1 if root_filter else _ROOT_ROWS_PER_TRACE)),
+        ]
+        try:
+            data = self._get(self._path("spans"), start_s, end_s, params)
+        except BackendError:
+            return {}
+        out: Dict[str, SpanRow] = {}
+        for sp in (data.get("spans") if isinstance(data, dict) else None) or []:
+            if isinstance(sp, dict) and sp.get("traceId") and not sp.get("parentId"):
+                out.setdefault(str(sp["traceId"]), _row(sp))
+        return out
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = self._api_url(self._path("trace", trace_id=trace_id), [])
         data = http_get_json(url, headers=self._headers(), timeout=20.0)
         out = _trace_to_otlp(data)
-        n = span_count_of(out["batches"])
-        if n == 0:
+        if not out["span_count"]:
             raise not_found(trace_id, "Uptrace")
-        out["span_count"] = n
-        out["truncated"] = False
         return out
 
     # ── metrics (#194) ────────────────────────────────────────────────
@@ -530,9 +567,10 @@ class UptraceAdapter(BackendAdapter):
             )
             return (data.get("timeseries") if isinstance(data, dict) else None) or []
 
-        def ident_of(attrs: Dict[str, Any]) -> str:
+        def ident_of(attrs: Dict[str, Any]) -> Tuple[str, str]:
+            """``(label, instance)``: the chart label and the exporting process."""
             label = str(attrs.get(label_key, "—")) if label_key else "_"
-            return f"{label}\x00{attrs.get(_INSTANCE_KEY, '')}" if cumulative else label
+            return label, str(attrs.get(_INSTANCE_KEY, ""))
 
         points = []
         if instrument == "histogram" and agg == "count":
@@ -552,22 +590,22 @@ class UptraceAdapter(BackendAdapter):
                 sum_series = sums.get(key)
                 if not sum_series:
                     continue
-                attrs = plain_attrs(avg_series.get("attrs"))
-                ident = ident_of(attrs)
+                label, instance = ident_of(plain_attrs(avg_series.get("attrs")))
                 sum_by_t = dict(zip(sum_series.get("time") or [], sum_series.get("value") or []))
                 for ts_ms, avg in zip(avg_series.get("time") or [], avg_series.get("value") or []):
                     total = sum_by_t.get(ts_ms)
                     if avg is None or total is None or not avg:
                         continue
-                    points.append((int(ts_ms) * 1_000_000, float(round(total / avg)), ident))
+                    points.append(
+                        (int(ts_ms) * 1_000_000, float(round(total / avg)), label, instance)
+                    )
         else:
             for series in fetch(expr):
-                attrs = plain_attrs(series.get("attrs"))
-                ident = ident_of(attrs)
+                label, instance = ident_of(plain_attrs(series.get("attrs")))
                 for ts_ms, value in zip(series.get("time") or [], series.get("value") or []):
                     if value is None:
                         continue
-                    points.append((int(ts_ms) * 1_000_000, float(value), ident))
+                    points.append((int(ts_ms) * 1_000_000, float(value), label, instance))
         # Uptrace picks its own interval and, for a counter's ``$m`` and a
         # histogram's ``sum($m)`` / ``count($m)``, answers the CUMULATIVE value
         # at each interval end, forward-filled into later intervals (verified
@@ -576,12 +614,9 @@ class UptraceAdapter(BackendAdapter):
         # points are what the chart wants, and a series that starts inside the
         # window counts its first value, exactly as for the other stores (#298).
         if cumulative:
-            points = [
-                (ts, v, ident.split("\x00", 1)[0])
-                for ts, v, ident in counter_increases(
-                    points, window_start_ns=start_s * 1_000_000_000
-                )
-            ]
+            points = increases_per_process(points, window_start_ns=start_s * 1_000_000_000)
+        else:
+            points = [(ts, v, label) for ts, v, label, _instance in points]
         out = bucketize(points, start_s * 1_000_000_000, end_s * 1_000_000_000, bucket_s, "sum")
         out["agg"] = agg
         out["name"] = name
@@ -690,73 +725,68 @@ def _search_hit(sp: Dict[str, Any], trace_id: str) -> Dict[str, Any]:
     )
 
 
+def _row(sp: Dict[str, Any]) -> SpanRow:
+    """One span row of a trace as a row: ms to ns, attribute keys dotted."""
+    start_ns = _ns_from_ms(sp.get("time"))
+    return SpanRow(
+        sp.get("traceId"),
+        sp.get("id"),
+        sp.get("parentId"),
+        str(sp.get("name") or sp.get("displayName") or ""),
+        start_ns=start_ns,
+        end_ns=start_ns + _ns_from_ms(sp.get("duration") or 0) if start_ns else 0,
+        attrs=_attrs_dotted(sp.get("attrs")),
+        service=str(plain_attrs(sp.get("attrs")).get("service_name") or ""),
+        kind=otlp_kind(sp.get("kind")),
+        status=otlp_status(sp.get("statusCode")),
+    )
+
+
 def _trace_to_otlp(data: Any) -> Dict[str, Any]:
-    """A trace's span rows → OTLP batches, one per service.
+    """A trace's span rows → the detail every adapter answers, one batch per
+    service (see :func:`trace_detail`).
 
     2.1's ``/traces/{p}/{id}`` nests a span's log records under ``logs``; the
     tree only needs the spans (the Logs sub-tab queries logs by trace id).
     """
-    spans_raw = [
-        sp
-        for sp in ((data.get("spans") if isinstance(data, dict) else None) or [])
-        if isinstance(sp, dict)
-    ]
-
-    def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-        start_ns = _ns_from_ms(sp.get("time"))
-        return otlp_span(
-            sp.get("traceId"),
-            sp.get("id"),
-            sp.get("parentId"),
-            sp.get("name") or sp.get("displayName"),
-            start_ns=start_ns,
-            end_ns=start_ns + _ns_from_ms(sp.get("duration") or 0) if start_ns else 0,
-            attrs=_attrs_dotted(sp.get("attrs")),
-            status=otlp_status(sp.get("statusCode")),
-            kind=_KIND.get(str(sp.get("kind") or "internal"), 1),
-        )
-
-    by_service = group_by_service(
-        spans_raw, lambda sp: plain_attrs(sp.get("attrs")).get("service_name")
+    return trace_detail(
+        [
+            _row(sp)
+            for sp in ((data.get("spans") if isinstance(data, dict) else None) or [])
+            if isinstance(sp, dict)
+        ]
     )
-    return {
-        "batches": otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-    }
 
 
-_KIND = {"internal": 1, "server": 2, "client": 3, "producer": 4, "consumer": 5}
+_LOG_COLUMNS = LogColumns(
+    level="log_severity",
+    severity_number="log_severity_number",
+    logger="otel_library_name",
+    session_id="hermes_session_id",
+    event_name=("event_name", "log_event_name"),
+    drop=("service_name",),
+    attr_key=_dotted,
+)
 
 
 def _log_record(sp: Dict[str, Any]) -> Dict[str, Any]:
-    """One ``log:*`` row → the live store's record shape.
+    """One ``log:*`` row → the live store's record shape: the attributes plus
+    the body and the ids the row carries beside them (see :func:`log_row`).
 
     Standalone log rows carry a synthetic trace id of their own; only a log
     written inside a span keeps the real one (its ``parentId`` is that span).
+    Without a ``log_severity`` attribute the level is the row's ``system``.
     """
     raw = plain_attrs(sp.get("attrs"))
-    known = {
-        "log_severity",
-        "log_severity_number",
-        "otel_library_name",
-        "hermes_session_id",
-        "event_name",
-        "log_event_name",
-        "service_name",
-    }
-    row = {
-        "level": str(
-            raw.get("log_severity") or str(sp.get("system") or "log:info").split(":")[-1]
-        ).upper(),
-        "severity_number": raw.get("log_severity_number"),
-        "logger": str(raw.get("otel_library_name") or ""),
-        "body": str(sp.get("displayName") or sp.get("name") or ""),
-        "time_unix_nano": _ns_from_ms(sp.get("time")),
-        "trace_id": None if sp.get("standalone") else (sp.get("traceId") or None),
-        "span_id": None if sp.get("standalone") else (sp.get("parentId") or None),
-        "session_id": raw.get("hermes_session_id") or None,
-        "event_name": raw.get("event_name") or raw.get("log_event_name") or None,
-    }
-    return finish_log_row(row, {_dotted(k): v for k, v in raw.items() if k not in known})
+    standalone = sp.get("standalone")
+    raw.update(
+        body=str(sp.get("displayName") or sp.get("name") or ""),
+        trace_id=None if standalone else sp.get("traceId"),
+        span_id=None if standalone else sp.get("parentId"),
+    )
+    if not raw.get("log_severity"):
+        raw["log_severity"] = str(sp.get("system") or "log:info").split(":")[-1]
+    return log_row(raw, _LOG_COLUMNS, time_ns=_ns_from_ms(sp.get("time")))
 
 
 def _raise_query_errors(data: Any) -> None:

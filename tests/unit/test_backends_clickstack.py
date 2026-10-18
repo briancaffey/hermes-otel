@@ -8,7 +8,8 @@ compose stack in docker-compose/clickstack.
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 EP = "http://localhost:4408"
 
@@ -82,7 +83,7 @@ class TestClickstackBackendType:
         assert rb.supports_logs is False
 
     def test_no_temporality_preset_and_root_usage_kept(self):
-        assert backends.preset_temporality("clickstack") is None
+        assert spec_for("clickstack").temporality is None
         rb = backends.resolve(BackendConfig(type="clickstack", endpoint=EP, api_key="k"))
         assert rb.root_usage is True
 

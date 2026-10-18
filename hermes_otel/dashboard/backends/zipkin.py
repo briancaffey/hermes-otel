@@ -23,7 +23,6 @@ Self-hosted Zipkin runs unauthenticated; a bearer token (``api_key`` /
 from __future__ import annotations
 
 import json
-import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 
@@ -35,59 +34,23 @@ from .base import (
     bearer,
     http_get_json,
     not_found,
-    otlp_status,
     parse_kv_tokens,
     query_origin,
     resolve_env_or_literal,
-    root_of,
-    span_matches,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
 from .shapes import (
-    card_attrs,
-    card_row,
-    group_by_service,
-    otlp_batches,
+    SpanRow,
+    card_from_trace,
+    coerce_tag,
     otlp_event,
-    otlp_span,
+    otlp_kind,
+    otlp_status,
     to_int,
+    trace_detail,
 )
 
 _DEFAULT_ZIPKIN_PORT = 9411
-
-# Zipkin span kinds → OTLP ``SpanKind`` numbers; a span without ``kind``
-# (every INTERNAL span) is 1.
-_OTLP_KIND = {"SERVER": 2, "CLIENT": 3, "PRODUCER": 4, "CONSUMER": 5}
-
-_INT_RE = re.compile(r"^-?\d+$")
-_FLOAT_RE = re.compile(r"^-?\d+\.\d+(e[+-]?\d+)?$", re.IGNORECASE)
-# Keys whose digit-only values are identifiers, never numbers.
-_ID_KEY_SUFFIXES = (".id", "_id", "id")
-
-
-def coerce_tag(key: str, value: Any) -> Any:
-    """Undo Zipkin's stringification where it is safe: ``"7589"`` → 7589,
-    ``"1442.3"`` → 1442.3, ``"true"`` → True. A digit-only value on an id-like
-    key (``session_id``, ``service.instance.id``) stays a string."""
-    if not isinstance(value, str):
-        return value
-    if value == "true":
-        return True
-    if value == "false":
-        return False
-    if key.endswith(_ID_KEY_SUFFIXES):
-        return value
-    if _INT_RE.match(value):
-        try:
-            return int(value)
-        except ValueError:
-            return value
-    if _FLOAT_RE.match(value):
-        try:
-            return float(value)
-        except ValueError:
-            return value
-    return value
 
 
 def parse_annotation(value: Any) -> Tuple[str, Dict[str, Any]]:
@@ -183,21 +146,23 @@ class ZipkinAdapter(BackendAdapter):
         tags = span.get("tags") or {}
         return {k: coerce_tag(k, v) for k, v in tags.items() if isinstance(k, str)}
 
-    def _root_matches(
-        self, root: Dict[str, Any], attrs: Dict[str, Any], f: StructuredFilter
-    ) -> bool:
-        """Whether the ROOT span itself satisfies the filter: ``annotationQuery``
-        and ``spanName`` match any span of a trace, so roots-only re-checks the
-        same predicates on the root (#295); an orphan (its real root outside
-        the window) is no root."""
-        if root.get("parentId"):
-            return False
-        return span_matches(
-            f,
-            name=root.get("name") or "",
+    def _row(self, span: Dict[str, Any], trace_id: Any) -> SpanRow:
+        """A Zipkin v2 span as a row: tags coerced, µs to ns, annotations as
+        events, the OTLP kind from Zipkin's (a span without one is INTERNAL)."""
+        attrs = self._attrs(span)
+        start_us = to_int(span.get("timestamp"))
+        return SpanRow(
+            span.get("traceId") or trace_id,
+            span.get("id"),
+            span.get("parentId"),
+            str(span.get("name") or ""),
+            start_ns=start_us * 1000,
+            end_ns=(start_us + to_int(span.get("duration"))) * 1000 if start_us else 0,
             attrs=attrs,
-            duration_ns=to_int(root.get("duration")) * 1000,
-            equals=self._tags(f),
+            service=self._service_of(span),
+            kind=otlp_kind(span.get("kind")),
+            status=self._status_of(attrs),
+            events=self._events(span),
         )
 
     @staticmethod
@@ -230,48 +195,20 @@ class ZipkinAdapter(BackendAdapter):
         data = http_get_json(url, headers=self._headers(), timeout=15.0)
         items = data if isinstance(data, list) else []
 
+        # ``annotationQuery`` and ``spanName`` match any span of a trace: the
+        # root is re-checked against the same tags (#295).
+        equals = self._tags(f)
         traces: List[Dict[str, Any]] = []
         for spans in items:
             if not isinstance(spans, list):
                 continue
             spans = [sp for sp in spans if isinstance(sp, dict)]
-            if not spans:
+            trace_id = spans[0].get("traceId") if spans else None
+            if not trace_id:
                 continue
-            trace_id = spans[0].get("traceId")
-            root = root_of(spans, lambda sp: sp.get("id"), lambda sp: sp.get("parentId"))
-            if not trace_id or root is None:
-                continue
-            attrs = self._attrs(root)
-            if f.roots_only and not self._root_matches(root, attrs, f):
-                continue
-            card = root
-            if not f.roots_only and f.name_prefix:
-                # Widened to every span (the kind filter): the card is the
-                # first span carrying the prefix, as the other adapters show it.
-                card = next(
-                    (
-                        sp
-                        for sp in sorted(spans, key=lambda sp: to_int(sp.get("timestamp")))
-                        if str(sp.get("name") or "").startswith(f.name_prefix)
-                    ),
-                    None,
-                )
-                if card is None:
-                    continue
-                attrs = self._attrs(card)
-            name = card.get("name") or ""
-            traces.append(
-                card_row(
-                    trace_id,
-                    span_id=card.get("id"),
-                    name=name,
-                    attrs=card_attrs(attrs, name, self._status_of(attrs).get("code") == 2),
-                    start_ns=to_int(card.get("timestamp")) * 1000,
-                    duration_ms=to_int(card.get("duration")) // 1000,
-                    service=self._service_of(card),
-                    span_count=len(spans),
-                )
-            )
+            card = card_from_trace(f, [self._row(sp, trace_id) for sp in spans], equals=equals)
+            if card is not None:
+                traces.append(card)
         return trace_page(strictly_older_traces(traces, f), limit)
 
     @staticmethod
@@ -292,23 +229,4 @@ class ZipkinAdapter(BackendAdapter):
         spans = [sp for sp in (data if isinstance(data, list) else []) if isinstance(sp, dict)]
         if not spans:
             raise not_found(trace_id, "Zipkin")
-
-        def one(sp: Dict[str, Any]) -> Dict[str, Any]:
-            attrs = self._attrs(sp)
-            start_us = to_int(sp.get("timestamp"))
-            return otlp_span(
-                sp.get("traceId") or trace_id,
-                sp.get("id"),
-                sp.get("parentId"),
-                sp.get("name"),
-                start_ns=start_us * 1000,
-                end_ns=(start_us + to_int(sp.get("duration"))) * 1000 if start_us else 0,
-                attrs=attrs,
-                status=self._status_of(attrs),
-                kind=_OTLP_KIND.get(str(sp.get("kind") or "").upper(), 1),
-                events=self._events(sp),
-            )
-
-        by_service = group_by_service(spans, self._service_of)
-        batches = otlp_batches({svc: [one(sp) for sp in sps] for svc, sps in by_service.items()})
-        return {"batches": batches, "span_count": len(spans), "truncated": False}
+        return trace_detail([self._row(sp, trace_id) for sp in spans])

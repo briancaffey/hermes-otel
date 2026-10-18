@@ -26,9 +26,10 @@ from opentelemetry.proto.collector.trace.v1.trace_service_pb2 import (
 )
 from opentelemetry.sdk.trace.export import SpanExportResult
 
+from hermes_otel.backend_config import BackendConfig
 from hermes_otel.backends import resolve
 from hermes_otel.otlp_transport import create_exporter
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -211,7 +212,7 @@ def test_all_three_signals_reach_real_grpc_receiver(receiver, certificates, mode
         plugin.end_span("test", status="ok")
         plugin.record_metric("session_count", 1, {"platform": "test"})
         logging.getLogger("hermes-grpc-test").warning("gRPC log test")
-        plugin._force_flush(timeout_millis=5000)
+        plugin.pipeline.force_flush(timeout_millis=5000)
         assert all(received.values()), {signal: len(items) for signal, items in received.items()}
         spans = [
             span
@@ -300,10 +301,10 @@ def test_exporter_init_failure_does_not_block_another_backend(receiver, certific
     )
     try:
         assert plugin.init()
-        assert len(plugin._span_processors) == 1
+        assert len(plugin.pipeline.span_processors) == 1
         plugin.start_span(name="healthy-backend", key="test", kind="general")
         plugin.end_span("test", status="ok")
-        plugin._force_flush(timeout_millis=5000)
+        plugin.pipeline.force_flush(timeout_millis=5000)
         assert received["traces"]
     finally:
         plugin.shutdown()

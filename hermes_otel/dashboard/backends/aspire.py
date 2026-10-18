@@ -33,18 +33,25 @@ from . import default_service_name, register
 from .base import (
     BackendAdapter,
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
-    finish_log_row,
     http_get_json,
+    log_row,
     not_found,
     query_origin,
     resolve_env_or_literal,
-    root_of,
-    span_matches,
 )
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older, strictly_older_traces, trace_page
-from .shapes import card_attrs, card_row, otlp_attrs_to_dict, otlp_unwrap, span_count_of, to_int
+from .shapes import (
+    SpanRow,
+    card_from_trace,
+    otlp_attrs_to_dict,
+    otlp_status,
+    otlp_unwrap,
+    span_count_of,
+    to_int,
+)
 
 _DEFAULT_UI_PORT = 18888
 # The API has no time window, so a search reads this many traces (newest or
@@ -67,6 +74,11 @@ _DOTNET_LEVELS = {
 }
 
 
+# The record's own fields are read off the OTLP JSON record and put beside
+# the attributes under their record key; session and event are attributes.
+_LOG_COLUMNS = LogColumns(session_id="hermes.session_id", event_name="event.name")
+
+
 def level_for(severity_number: Any, severity_text: Any) -> str:
     try:
         n = int(severity_number or 0)
@@ -76,6 +88,22 @@ def level_for(severity_number: Any, severity_text: Any) -> str:
         if n >= floor:
             return name
     return _DOTNET_LEVELS.get(str(severity_text or "").strip().lower(), "INFO")
+
+
+def _row(span: Dict[str, Any], service: str) -> SpanRow:
+    """An OTLP JSON span as a row. The status code arrives as a number or as
+    its name (``STATUS_CODE_ERROR``, ``Error``); :func:`otlp_status` reads both."""
+    return SpanRow(
+        str(span["traceId"]),
+        span.get("spanId"),
+        span.get("parentSpanId"),
+        str(span.get("name") or ""),
+        start_ns=to_int(span.get("startTimeUnixNano")),
+        end_ns=to_int(span.get("endTimeUnixNano")),
+        attrs=otlp_attrs_to_dict(span.get("attributes")),
+        service=service,
+        status=otlp_status((span.get("status") or {}).get("code")),
+    )
 
 
 @register
@@ -159,92 +187,38 @@ class AspireAdapter(BackendAdapter):
     # ── traces ────────────────────────────────────────────────────────
 
     @staticmethod
-    def _spans_of(data: Any) -> List[Dict[str, Any]]:
-        """Flatten OTLP JSON into spans, each carrying its resource attributes."""
-        out: List[Dict[str, Any]] = []
+    def _rows_of(data: Any) -> List[SpanRow]:
+        """Flatten OTLP JSON into rows, each carrying its resource's service."""
+        out: List[SpanRow] = []
         payload = data.get("data") if isinstance(data, dict) else None
         for rs in (payload or {}).get("resourceSpans") or []:
             if not isinstance(rs, dict):
                 continue
             res = otlp_attrs_to_dict((rs.get("resource") or {}).get("attributes"))
+            service = str(res.get("service.name") or "")
             for ss in rs.get("scopeSpans") or []:
                 for sp in (ss or {}).get("spans") or []:
                     if isinstance(sp, dict) and sp.get("traceId"):
-                        sp = dict(sp)
-                        sp["_resource"] = res
-                        out.append(sp)
+                        out.append(_row(sp, service))
         return out
-
-    @staticmethod
-    def _status_code(span: Dict[str, Any]) -> int:
-        code = (span.get("status") or {}).get("code")
-        if code in (2, "STATUS_CODE_ERROR", "Error"):
-            return 2
-        if code in (1, "STATUS_CODE_OK", "Ok"):
-            return 1
-        return 0
-
-    def _matches(self, span: Dict[str, Any], attrs: Dict[str, Any], f: StructuredFilter) -> bool:
-        """The API has no filters: every structured predicate is checked here."""
-        return span_matches(
-            f,
-            name=str(span.get("name") or ""),
-            attrs=attrs,
-            duration_ns=to_int(span.get("endTimeUnixNano")) - to_int(span.get("startTimeUnixNano")),
-            error=self._status_code(span) == 2,
-            text=f"{attrs.get('input.value', '')}\n{attrs.get('output.value', '')}",
-        )
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         resources = self._resource_params(f.service or self.default_service)
         if resources is None:
             return trace_page([], limit)
         params: List[tuple] = [*resources, ("limit", str(self.search_fetch))]
-        spans = self._spans_of(self._get("/api/telemetry/traces", params))
-        by_trace: Dict[str, List[Dict[str, Any]]] = {}
-        for sp in spans:
-            by_trace.setdefault(str(sp["traceId"]), []).append(sp)
+        by_trace: Dict[str, List[SpanRow]] = {}
+        for r in self._rows_of(self._get("/api/telemetry/traces", params)):
+            by_trace.setdefault(r.trace_id, []).append(r)
         start_ns, end_ns = int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000
         rows: List[Dict[str, Any]] = []
-        for tid, tspans in by_trace.items():
-            tspans.sort(key=lambda sp: to_int(sp.get("startTimeUnixNano")))
-            root = root_of(tspans, lambda sp: sp.get("spanId"), lambda sp: sp.get("parentSpanId"))
-            if f.roots_only:
-                if root.get("parentSpanId"):
-                    continue  # an orphan: its real root is outside the fetch
-                card = root
-                attrs = otlp_attrs_to_dict(card.get("attributes"))
-                if not self._matches(card, attrs, f):
-                    continue
-            else:
-                card = next(
-                    (
-                        sp
-                        for sp in tspans
-                        if self._matches(sp, otlp_attrs_to_dict(sp.get("attributes")), f)
-                    ),
-                    None,
-                )
-                if card is None:
-                    continue
-                attrs = otlp_attrs_to_dict(card.get("attributes"))
-            card_start = to_int(card.get("startTimeUnixNano"))
-            if not (start_ns <= card_start < end_ns):
-                continue
-            name = card.get("name") or ""
-            rows.append(
-                card_row(
-                    tid,
-                    span_id=card.get("spanId"),
-                    name=name,
-                    attrs=card_attrs(attrs, name, self._status_code(card) == 2),
-                    start_ns=card_start,
-                    duration_ms=max(0, to_int(card.get("endTimeUnixNano")) - card_start)
-                    // 1_000_000,
-                    service=(card.get("_resource") or {}).get("service.name") or "",
-                    span_count=len(tspans),
-                )
-            )
+        for tspans in by_trace.values():
+            tspans.sort(key=lambda r: r.start_ns)
+            # The API has no filters: every predicate is checked here, and the
+            # card must start inside the window the API cannot bound either.
+            card = card_from_trace(f, tspans, check_all=True)
+            if card is not None and start_ns <= int(card["startTimeUnixNano"]) < end_ns:
+                rows.append(card)
         return trace_page(strictly_older_traces(rows, f), limit)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
@@ -298,9 +272,9 @@ class AspireAdapter(BackendAdapter):
         start_ns, end_ns = int(start_s) * 1_000_000_000, log_end_ns(end_s, f)
         floor = 0
         if f.min_level:
-            from .severity import otel_severity_for
+            from hermes_otel.severity import otel_severity
 
-            floor = otel_severity_for(f.min_level)
+            floor = otel_severity(f.min_level)
         records: List[Dict[str, Any]] = []
         for rec in self._records(f, self.default_service):
             ts = to_int(rec.get("timeUnixNano"))
@@ -315,26 +289,23 @@ class AspireAdapter(BackendAdapter):
                 continue
             attrs = otlp_attrs_to_dict(rec.get("attributes"))
             attrs.pop("aspire.log_id", None)
-            session = attrs.pop("hermes.session_id", None)
-            event_name = attrs.pop("event.name", None)
-            if f.session and str(session) != f.session:
+            event_name = attrs.get("event.name")
+            if f.session and str(attrs.get("hermes.session_id")) != f.session:
                 continue
             if f.event_name and event_name != f.event_name:
                 continue
             if f.events_only and not event_name:
                 continue
-            record = {
+            raw = {
+                **attrs,
                 "level": level_for(rec.get("severityNumber"), rec.get("severityText")),
-                "severity_number": severity or None,
-                "logger": rec.get("_scope") or "",
-                "body": otlp_unwrap(rec.get("body")) if rec.get("body") is not None else "",
-                "time_unix_nano": ts,
-                "trace_id": rec.get("traceId") or None,
-                "span_id": rec.get("spanId") or None,
-                "session_id": session,
-                "event_name": event_name,
+                "severity_number": severity,
+                "logger": rec.get("_scope"),
+                "body": otlp_unwrap(rec.get("body")),
+                "trace_id": rec.get("traceId"),
+                "span_id": rec.get("spanId"),
             }
-            records.append(finish_log_row(record, attrs))
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=ts))
         records.sort(key=lambda r: int(r.get("time_unix_nano") or 0), reverse=True)
         return strictly_older(records, f)[: int(limit) + LOG_PAGE_SLACK]
 

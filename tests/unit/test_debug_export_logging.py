@@ -57,7 +57,7 @@ class TestExportResultLines:
     def test_span_batches_log_success_and_failure(self, debug_log_file):
         from opentelemetry.sdk.trace.export import SpanExportResult
 
-        from hermes_otel.tracer import _LoggingSpanExporter
+        from hermes_otel.pipeline import _LoggingExporter
 
         class Ok:
             def export(self, spans):
@@ -73,8 +73,9 @@ class TestExportResultLines:
             def shutdown(self):
                 pass
 
-        _LoggingSpanExporter(Ok(), "Phoenix").export([object()] * 3)
-        _LoggingSpanExporter(Bad(), "Langfuse").export([object()])
+        failure = SpanExportResult.FAILURE
+        _LoggingExporter(Ok(), "Phoenix", unit="span", failure=failure).export([object()] * 3)
+        _LoggingExporter(Bad(), "Langfuse", unit="span", failure=failure).export([object()])
         du.close_debug_log()
         lines = _lines(debug_log_file)
         assert "export Phoenix: 3 span(s) -> SUCCESS" in lines
@@ -82,14 +83,16 @@ class TestExportResultLines:
 
     def test_real_batch_processor_reports_through_the_wrapper(self, debug_log_file):
         from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
+        from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExportResult
         from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
-        from hermes_otel.tracer import _LoggingSpanExporter
+        from hermes_otel.pipeline import _LoggingExporter
 
         inner = InMemorySpanExporter()
         provider = TracerProvider()
-        processor = BatchSpanProcessor(_LoggingSpanExporter(inner, "InMemory"))
+        processor = BatchSpanProcessor(
+            _LoggingExporter(inner, "InMemory", unit="span", failure=SpanExportResult.FAILURE)
+        )
         provider.add_span_processor(processor)
         tracer = provider.get_tracer("t")
         for _ in range(2):
@@ -105,7 +108,7 @@ class TestExportResultLines:
         pytest.importorskip("opentelemetry.sdk._logs")
         from opentelemetry.sdk._logs.export import LogExportResult
 
-        from hermes_otel.log_handler import _LoggingLogExporter
+        from hermes_otel.pipeline import _LoggingExporter
 
         class Ok:
             def export(self, batch):
@@ -114,7 +117,9 @@ class TestExportResultLines:
             def shutdown(self):
                 pass
 
-        _LoggingLogExporter(Ok(), "SigNoz").export([object()] * 4)
+        _LoggingExporter(
+            Ok(), "SigNoz logs", unit="record", failure=LogExportResult.FAILURE
+        ).export([object()] * 4)
         du.close_debug_log()
         assert "export SigNoz logs: 4 record(s) -> SUCCESS" in _lines(debug_log_file)
 

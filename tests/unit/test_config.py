@@ -638,6 +638,28 @@ class TestHostMetricsConfig:
         cfg = load_config(path=path)
         assert cfg.host_metrics_gpu == "auto"
 
+    @pytest.mark.parametrize(
+        "yaml_text,vendor",
+        [
+            ("host_metrics_gpu: off\n", "off"),  # bare off = YAML false (#563)
+            ("host_metrics_gpu: on\n", "auto"),  # bare on = YAML true: probing on, auto-detect
+            ("host_metrics_gpu: 'off'\n", "off"),
+        ],
+    )
+    def test_yaml_bare_off_and_on_are_not_booleans(self, tmp_path, caplog, yaml_text, vendor):
+        pytest.importorskip("yaml")
+        path = tmp_path / "hermes_otel.yaml"
+        path.write_text(yaml_text)
+        with caplog.at_level(logging.WARNING, logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert cfg.host_metrics_gpu == vendor
+        assert not any("host_metrics_gpu" in r.getMessage() for r in caplog.records)
+
+    def test_env_off_switches_gpu_probing_off(self, monkeypatch, tmp_path):
+        monkeypatch.setenv("HERMES_OTEL_HOST_METRICS_GPU", "off")
+        cfg = load_config(path=tmp_path / "nonexistent.yaml")
+        assert cfg.host_metrics_gpu == "off"
+
 
 class TestContentIntent:
     """The hooks ask the config what to record instead of reading the legacy booleans (#405)."""

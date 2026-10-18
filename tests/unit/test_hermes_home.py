@@ -17,6 +17,7 @@ import pytest
 
 from hermes_otel import hermes_home as hh
 from hermes_otel.hooks.attributes import profile_attributes
+from hermes_otel.pipeline import build_resource
 
 
 @pytest.fixture()
@@ -145,14 +146,15 @@ class TestPluginPaths:
             override.reset(token)
         assert plugin_config.hermes_home() == root
 
-    def test_dashboard_adapters_config_path(self, fake_hermes):
-        dash = Path(hh.__file__).parent / "dashboard"
-        if str(dash) not in sys.path:
-            sys.path.insert(0, str(dash))
-        import backends  # noqa: E402
+    def test_dashboard_adapters_config_path(self, fake_hermes, monkeypatch):
+        from hermes_otel import plugin_config
+        from hermes_otel.dashboard import backends
 
         root, override = fake_hermes
         alpha = root / "profiles" / "alpha"
+        # Derive both locations from the home in force (the conftest pins them).
+        monkeypatch.setattr(plugin_config, "DURABLE_CONFIG_PATH", None)
+        monkeypatch.setattr(plugin_config, "DEFAULT_CONFIG_PATH", None)
         token = override.set(str(alpha))
         try:
             assert alpha / "hermes_otel.yaml" in backends.candidate_config_paths()
@@ -172,7 +174,10 @@ class TestProfileOnTelemetry:
     def test_resource_and_metric_label(self, inmemory_otel_with_metrics):
         exporter, reader, plugin = inmemory_otel_with_metrics
         plugin.profile_name = "alpha"
-        assert plugin._build_resource().attributes["hermes.profile"] == "alpha"
+        assert (
+            build_resource(plugin.config, plugin.profile_name).attributes["hermes.profile"]
+            == "alpha"
+        )
         plugin.record_metric("session_count", 1, {"platform": "cli"})
         data = reader.get_metrics_data()
         points = [

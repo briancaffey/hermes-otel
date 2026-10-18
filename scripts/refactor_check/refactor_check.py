@@ -21,6 +21,26 @@ prompts and answers vary between two runs of the same code and are left out;
 ``allowlist.yaml`` can exclude more, with a reason per entry. A difference not
 in the allowlist fails the run.
 
+One difference is recognised rather than allowlisted (#552): at the end of a
+cli turn Hermes fires an auxiliary API call (title generation) that races
+``on_session_end``. When it loses, the turn's root lacks
+``hermes.turn.auxiliary.*``, the auxiliary ``api.*`` span is closed by the
+leftover sweep (``hermes.span.ended_by`` / ``hermes.span.sweep_reason`` and no
+response attributes) and ``hermes.span.swept.count`` is recorded; when it
+wins, the span carries the full response. Either outcome happens with the
+same plugin code, so when a prompt's two traces differ in exactly that way
+(one auxiliary ``api.*`` span swept on one side and answered on the other,
+the root differing only by ``hermes.turn.auxiliary.*``, nothing else) the
+verdict reports an "auxiliary race" line instead of differences and the run
+does not fail on it. Any other difference in that trace still fails.
+
+The same auxiliary call can also *start* after ``on_session_end`` and become
+a trace of its own (#577, #588). Traces are keyed by the batch's exact
+markers (``<token>-<prompt id>``, the ids from ``runs.json``), so that trace,
+whose text only echoes marker-like strings such as ``<token>-shell-echo-out``,
+matches no prompt: it is set aside as unmarked, reported as a tolerated line
+and not compared.
+
 The dashboard's Playwright checks (``scripts/dashboard_verify``) are not part
 of this script; run them separately when a PR touches the dashboard.
 """
@@ -30,18 +50,20 @@ from __future__ import annotations
 import argparse
 import datetime as dt
 import json
-import os
 import re
 import shutil
 import subprocess
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Sequence
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Set, Tuple
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parent.parent
 SCENARIOS = REPO / "scripts" / "scenarios"
+sys.path.insert(0, str(REPO / "scripts"))
+from _common import profile_home  # noqa: E402
+
 DEFAULT_PROMPTS = "shell-echo,no-tools,missing-file,multi-tool"
 
 # Attribute values that do not depend on what the model said or how long it
@@ -86,17 +108,25 @@ IDENTITY_KEYS = frozenset(
 )
 PRESERVE_IN_PLUGIN_DIR = (".install-metadata.json", "config.yaml", ".env", "debug.log")
 
+# The auxiliary race (#552, see the module docstring): what the sweep leaves on
+# an api.* span it closes, what a response adds, what the root gains when the
+# auxiliary call lands in time, and the metric the sweep records.
+SWEEP_KEYS = frozenset({"hermes.span.ended_by", "hermes.span.sweep_reason"})
+RESPONSE_KEY_PREFIXES = (
+    "gen_ai.response.",
+    "gen_ai.usage.",
+    "gen_ai.output.",
+    "llm.response.",
+    "llm.token_count.",
+    "output.",
+    "hermes.cost.",
+    "hermes.content.output_chars",
+)
+AUXILIARY_ROOT_PREFIX = "hermes.turn.auxiliary."
+SWEPT_METRIC = "hermes.span.swept.count"
+
 
 # ── profile plumbing (same rules as scripts/scenarios) ─────────────────
-
-
-def profile_home(profile: str) -> Path:
-    base = (
-        Path(os.environ["HERMES_HOME"]).expanduser()
-        if os.environ.get("HERMES_HOME")
-        else Path.home() / ".hermes"
-    )
-    return base if profile in ("", "default") else base / "profiles" / profile
 
 
 def batches_root(profile: str) -> Path:
@@ -226,13 +256,28 @@ def check_batch(manifest: Path, wait: float, log: Path) -> Dict[str, Any]:
 # ── the live store, normalised ─────────────────────────────────────────
 
 
-def _marker_id(token: str, spans: Iterable[Dict[str, Any]]) -> Optional[str]:
-    # scenarios/run.py appends "(scenario marker: <token>-<id>)" to every
-    # prompt; the id itself may contain dashes, so the closing parenthesis
-    # delimits it.
+def _marker_id(
+    token: str, spans: Iterable[Dict[str, Any]], ids: Iterable[str] = ()
+) -> Optional[str]:
+    """The prompt id whose exact batch marker the trace carries, or None.
+
+    scenarios/run.py appends "(scenario marker: <token>-<id>)" to every
+    prompt; the id itself may contain dashes, so the closing parenthesis
+    delimits it. Outside that line (a clipped preview), only a batch marker
+    ``<token>-<id>`` for an id in ``ids`` counts, and only as a whole token:
+    an echoed ``<token>-shell-echo-out`` is not ``shell-echo`` (#577).
+    """
+    spans = list(spans)
     tagged = re.compile(r"scenario marker: " + re.escape(token) + r"-([a-z0-9][a-z0-9-]*)\)")
-    loose = re.compile(re.escape(token) + r"-([a-z0-9][a-z0-9-]*)")
-    for pat in (tagged, loose):
+    pats = [tagged]
+    known = sorted({i for i in ids if i}, key=len, reverse=True)
+    if known:
+        pats.append(
+            re.compile(
+                re.escape(token) + "-(" + "|".join(re.escape(i) for i in known) + r")(?![a-z0-9-])"
+            )
+        )
+    for pat in pats:
         for sp in spans:
             for v in (sp.get("attributes") or {}).values():
                 if isinstance(v, str):
@@ -255,8 +300,49 @@ def normalise_span(span: Dict[str, Any], by_id: Dict[str, Dict[str, Any]], ignor
     }
 
 
-def dump_live(profile: str, token: str, ignore: Iterable[str]) -> Dict[str, Any]:
-    """Every trace the batch produced, as shapes keyed by prompt id."""
+def batch_started_ns(manifest: Path) -> int:
+    """When the batch started (``started_unix`` in ``runs.json``), in ns; 0 when unknown."""
+    try:
+        started = json.loads(manifest.read_text(encoding="utf-8")).get("started_unix")
+    except (OSError, ValueError):
+        return 0
+    return int(float(started) * 1_000_000_000) if started else 0
+
+
+def batch_marker_ids(manifest: Path, token: str) -> List[str]:
+    """Every turn's prompt id in ``runs.json`` (its marker minus ``<token>-``)."""
+    try:
+        runs = json.loads(manifest.read_text(encoding="utf-8")).get("runs") or []
+    except (OSError, ValueError):
+        return []
+    ids: Set[str] = set()
+    for run in runs:
+        for turn in run.get("turns") or [run]:
+            marker = str(turn.get("marker") or "")
+            if marker.startswith(f"{token}-"):
+                ids.add(marker[len(token) + 1 :])
+    return sorted(ids)
+
+
+def dump_live(
+    profile: str,
+    token: str,
+    ignore: Iterable[str],
+    since_ns: int = 0,
+    ids: Iterable[str] = (),
+) -> Dict[str, Any]:
+    """Every trace the batch produced, as shapes keyed by prompt id, and the
+    metric names recorded since ``since_ns`` (the batch start).
+
+    A trace that carries no exact batch marker (``ids``, see ``_marker_id``)
+    lands in ``unmarked`` instead: an auxiliary call that started after its
+    turn's root ended (#577).
+
+    The live store keeps the last ``dashboard_live_max_spans`` rows of each
+    kind for the whole profile, so a DB-wide metric-name list flaps as earlier
+    sessions' points are evicted between the two sides (#532); only names whose
+    newest point falls inside the batch count.
+    """
     sys.path.insert(0, str(REPO))
     from hermes_otel.live_store import LIVE_DB_FILENAME, LiveStore
 
@@ -265,19 +351,25 @@ def dump_live(profile: str, token: str, ignore: Iterable[str]) -> Dict[str, Any]
         page = store.query_traces(text=token, limit=200)
         ids = [t["traceId"] for t in page.get("traces", [])]
         by_trace = store.spans_for_traces(ids)
-        out: Dict[str, Any] = {"traces": {}, "metrics": [], "logs": {}}
+        out: Dict[str, Any] = {"traces": {}, "unmarked": [], "metrics": [], "logs": {}}
+        ids = list(ids)
         for tid, spans in by_trace.items():
-            pid = _marker_id(token, spans) or tid
+            pid = _marker_id(token, spans, ids)
             by_id = {s.get("span_id"): s for s in spans}
             shapes = sorted(
                 (normalise_span(s, by_id, ignore) for s in spans),
                 key=lambda d: (d["name"] or "", d["parent"] or "", json.dumps(d["values"])),
             )
+            if pid is None:
+                out["unmarked"].append(shapes)
+                continue
             out["traces"].setdefault(pid, []).append(shapes)
             logs = store.query_logs(trace_id=tid, limit=500)
             levels = sorted({str(r.get("severity_text") or r.get("level") or "?") for r in logs})
             out["logs"][pid] = {"levels": levels, "attributed": bool(logs)}
-        out["metrics"] = sorted(m["name"] for m in store.metric_names())
+        out["metrics"] = sorted(
+            m["name"] for m in store.metric_names() if int(m.get("lastTs") or 0) >= since_ns
+        )
         return out
     finally:
         store.close()
@@ -303,9 +395,73 @@ def _matrix(report: Dict[str, Any]) -> Dict[str, str]:
     return out
 
 
-def compare(base: Dict[str, Any], branch: Dict[str, Any], allow: Dict[str, Any]) -> List[str]:
-    """Human-readable differences; empty when the sides agree."""
+def _same_shape(sa: Dict[str, Any], sb: Dict[str, Any], skip_keys: Set[str]) -> bool:
+    """What ``compare`` checks on a span pair, as one answer."""
+    return (
+        sa["parent"] == sb["parent"]
+        and sa["status"] == sb["status"]
+        and set(sa["keys"]) - skip_keys == set(sb["keys"]) - skip_keys
+        and all(sa["values"][k] == sb["values"][k] for k in set(sa["values"]) & set(sb["values"]))
+    )
+
+
+def _auxiliary_race(
+    base_shapes: List[Dict[str, Any]], branch_shapes: List[Dict[str, Any]], skip_keys: Set[str]
+) -> Optional[str]:
+    """The side (``"base"`` / ``"branch"``) whose auxiliary ``api.*`` span was
+    closed by the sweep while the other side's got its response (#552), or
+    ``None`` when the two traces differ in any other way, or not at all.
+
+    Exactly one ``api.*`` span may differ, by the sweep marks on one side
+    against the response attributes on the other, with ``hermes.query_source``
+    ``auxiliary`` on both; the root may differ by ``hermes.turn.auxiliary.*``
+    keys, missing on the swept side; every other span is the same shape.
+    """
+    if [s["name"] for s in base_shapes] != [s["name"] for s in branch_shapes]:
+        return None
+    swept: Optional[str] = None
+    root_lacking: Optional[str] = None
+    for sa, sb in zip(base_shapes, branch_shapes):
+        if _same_shape(sa, sb, skip_keys):
+            continue
+        ka, kb = set(sa["keys"]) - skip_keys, set(sb["keys"]) - skip_keys
+        same_otherwise = _same_shape({**sa, "keys": []}, {**sb, "keys": []}, skip_keys)
+        if sa["parent"] is None and sa["name"] == "agent":
+            if not same_otherwise or not all(k.startswith(AUXILIARY_ROOT_PREFIX) for k in ka ^ kb):
+                return None
+            root_lacking = "base" if ka < kb else "branch" if kb < ka else None
+            if root_lacking is None:
+                return None
+            continue
+        if swept is not None or not sa["name"].startswith("api.") or not same_otherwise:
+            return None
+        if sa["values"].get("hermes.query_source") != "auxiliary":
+            return None
+        if SWEEP_KEYS <= ka and not (SWEEP_KEYS & kb):
+            swept, swept_keys, answered_keys = "base", ka, kb
+        elif SWEEP_KEYS <= kb and not (SWEEP_KEYS & ka):
+            swept, swept_keys, answered_keys = "branch", kb, ka
+        else:
+            return None
+        response = answered_keys - swept_keys
+        if swept_keys - answered_keys != SWEEP_KEYS or not response:
+            return None
+        if not all(k.startswith(RESPONSE_KEY_PREFIXES) for k in response):
+            return None
+    if swept is None or (root_lacking is not None and root_lacking != swept):
+        return None
+    return swept
+
+
+def compare(
+    base: Dict[str, Any], branch: Dict[str, Any], allow: Dict[str, Any]
+) -> Tuple[List[str], List[str]]:
+    """Human-readable differences that fail the run, and the tolerated lines
+    reported next to them (auxiliary races, #552); both empty when the sides
+    agree."""
     diffs: List[str] = []
+    tolerated: List[str] = []
+    swept_sides: Set[str] = set()
     skip_prompts = set(allow.get("tolerate_prompts") or [])
     skip_metrics = set(allow.get("ignore_metrics") or [])
     # Applied here as well as at dump time, so --recompare honours an allowlist
@@ -322,6 +478,15 @@ def compare(base: Dict[str, Any], branch: Dict[str, Any], allow: Dict[str, Any])
         if len(a) != len(b):
             diffs.append(f"{pid}: {len(a)} trace(s) on base, {len(b)} on branch")
         for ta, tb in zip(a, b):
+            swept = _auxiliary_race(ta, tb, skip_keys)
+            if swept:
+                swept_sides.add(swept)
+                tolerated.append(
+                    f"{pid}: auxiliary race (#552): the auxiliary api.* span was swept on "
+                    f"{swept} and answered on the other side; the root lacks "
+                    f"hermes.turn.auxiliary.* on {swept}"
+                )
+                continue
             names_a = [s["name"] for s in ta]
             names_b = [s["name"] for s in tb]
             if names_a != names_b:
@@ -351,15 +516,31 @@ def compare(base: Dict[str, Any], branch: Dict[str, Any], allow: Dict[str, Any])
             )
     ma = set(base["live"]["metrics"]) - skip_metrics
     mb = set(branch["live"]["metrics"]) - skip_metrics
+    # The sweep that closed a raced span is the only thing recording
+    # hermes.span.swept.count on that side; on the other side it is a difference.
+    for side, mine, other in (("base", ma, mb), ("branch", mb, ma)):
+        if side in swept_sides and SWEPT_METRIC in mine and SWEPT_METRIC not in other:
+            mine.discard(SWEPT_METRIC)
+            tolerated.append(f"metric names: {SWEPT_METRIC} only on {side}, from the race above")
     if ma != mb:
         diffs.append(f"metric names: gone={sorted(ma - mb)} new={sorted(mb - ma)}")
+    # Not compared: whether such a trace exists depends on the same race (#577).
+    for side, data in (("base", base), ("branch", branch)):
+        unmarked = data["live"].get("unmarked") or []
+        if unmarked:
+            names = sorted({s["name"] for t in unmarked for s in t if s.get("parent") is None})
+            tolerated.append(
+                f"{len(unmarked)} trace(s) on {side} carry no exact batch marker "
+                f"(roots {names}): an auxiliary call that started after its turn "
+                "(#577), not compared"
+            )
     xa, xb = _matrix(base.get("check") or {}), _matrix(branch.get("check") or {})
     for cell in sorted(set(xa) | set(xb)):
         if cell.split("/", 1)[0] in skip_prompts:
             continue
         if xa.get(cell) != xb.get(cell):
             diffs.append(f"check_batch {cell}: base={xa.get(cell)} branch={xb.get(cell)}")
-    return diffs
+    return diffs, tolerated
 
 
 def load_allowlist(path: Path) -> Dict[str, Any]:
@@ -373,7 +554,13 @@ def load_allowlist(path: Path) -> Dict[str, Any]:
     return data if isinstance(data, dict) else {}
 
 
-def render_report(base: Dict[str, Any], branch: Dict[str, Any], diffs: List[str], out: Path) -> str:
+def render_report(
+    base: Dict[str, Any],
+    branch: Dict[str, Any],
+    diffs: List[str],
+    out: Path,
+    tolerated: Sequence[str] = (),
+) -> str:
     lines = [
         "# refactor-check",
         "",
@@ -384,12 +571,12 @@ def render_report(base: Dict[str, Any], branch: Dict[str, Any], diffs: List[str]
         "## Verdict",
         "",
         "No differences outside the allowlist." if not diffs else f"{len(diffs)} difference(s):",
-        "",
-        *[f"- {d}" for d in diffs],
-        "",
-        "## check_batch matrices",
-        "",
     ]
+    if diffs:
+        lines += ["", *[f"- {d}" for d in diffs]]
+    if tolerated:
+        lines += ["", "Tolerated, not failing the run:", "", *[f"- {t}" for t in tolerated]]
+    lines += ["", "## check_batch matrices", ""]
     for side in (base, branch):
         rep = side.get("check_report_md")
         lines += [f"### {side['label']}", "", rep.strip() if rep else "(no report)", ""]
@@ -425,7 +612,13 @@ def run_side(
     manifest = run_batch(profile, token, prompts, hermes_args, side_dir / "run_batch.log")
     print(f"[{label}] checking every source …", flush=True)
     report = check_batch(manifest, wait, side_dir / "check_batch.log")
-    live = dump_live(profile, token, ignore)
+    live = dump_live(
+        profile,
+        token,
+        ignore,
+        since_ns=batch_started_ns(manifest),
+        ids=batch_marker_ids(manifest, token),
+    )
     result = {
         "label": desc,
         "token": token,
@@ -503,8 +696,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.recompare:
         base = json.loads((args.recompare / "base" / "side.json").read_text(encoding="utf-8"))
         branch = json.loads((args.recompare / "branch" / "side.json").read_text(encoding="utf-8"))
-        diffs = compare(base, branch, allow)
-        print(render_report(base, branch, diffs, args.recompare))
+        diffs, tolerated = compare(base, branch, allow)
+        print(render_report(base, branch, diffs, args.recompare, tolerated=tolerated))
         return 1 if diffs else 0
     if not (plugin_dir / "plugin.yaml").exists():
         sys.exit(f"profile {args.profile!r} has no hermes_otel plugin at {plugin_dir}")
@@ -544,8 +737,8 @@ def main(argv: Optional[List[str]] = None) -> int:
     finally:
         restore_plugin(backup, plugin_dir)
         print(f"restored {plugin_dir} from the backup")
-    diffs = compare(base, branch, allow)
-    print(render_report(base, branch, diffs, out))
+    diffs, tolerated = compare(base, branch, allow)
+    print(render_report(base, branch, diffs, out, tolerated=tolerated))
     print(f"report: {out / 'report.md'}")
     return 1 if diffs else 0
 

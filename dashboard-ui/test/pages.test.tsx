@@ -75,6 +75,7 @@ const settingsReport = {
     durable_path: "/x/hermes_otel.yaml",
     legacy_path: "/y",
     unknown_keys: [],
+    fingerprint: "0a1b2c3d4e5f",
   },
   counts: { env: 0, file: 1, default: 3, changed: 1 },
   groups: ["General", "Backends"],
@@ -240,6 +241,7 @@ describe("pages mount against fixture payloads", () => {
   it("Settings renders the report header, a field row and the config line", async () => {
     const el = await mount(SettingsPage);
     expect(el.textContent).toContain("hermes-otel 1.19.0");
+    expect(el.textContent).toContain("config 0a1b2c3d4e5f");
     expect(el.textContent).toContain("dashboard_live");
     expect(el.textContent).toContain("/x/hermes_otel.yaml");
   });

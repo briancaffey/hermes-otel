@@ -107,9 +107,9 @@
   },
   "type": "openobserver",
   "ui": {
-   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
-   "source": null,
-   "url": null
+   "note": "derived from the endpoint: OpenObserve serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
   }
  },
  "signal_support": {

@@ -9,11 +9,14 @@ module is more than ``--tolerance`` points under its floor.
 
     python scripts/coverage_floor.py                 # check (CI, make ci-test)
     python scripts/coverage_floor.py --update        # re-record after a deliberate change
+    python scripts/coverage_floor.py --add-missing   # floors for new modules only
     python scripts/coverage_floor.py --strict-new    # a module with no floor is a failure
 
 A module that no longer exists is ignored; a new module without a floor is
 reported and passes unless ``--strict-new`` is given, so the floor file is
-updated deliberately, not on every PR.
+updated deliberately, not on every PR. ``--add-missing`` records a floor for
+each module without one, at its current coverage, and leaves every other
+line of the file alone; ``--update`` rewrites them all.
 """
 
 from __future__ import annotations
@@ -81,6 +84,20 @@ def write_floors(percents: Dict[str, float], floors_path: Path) -> Dict[str, int
     return floors
 
 
+def add_missing_floors(percents: Dict[str, float], floors_path: Path) -> Dict[str, int]:
+    """Insert a floor for every module that has none, at its percent rounded
+    down; existing floors and the ``_comment`` are left as they are."""
+    existing = json.loads(floors_path.read_text(encoding="utf-8")) if floors_path.exists() else {}
+    added = {
+        module: int(math.floor(pct))
+        for module, pct in sorted(percents.items())
+        if module not in existing
+    }
+    if added:
+        floors_path.write_text(json.dumps({**existing, **added}, indent=2) + "\n", encoding="utf-8")
+    return added
+
+
 def main(argv: List[str] | None = None) -> int:
     ap = argparse.ArgumentParser(
         description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter
@@ -88,7 +105,11 @@ def main(argv: List[str] | None = None) -> int:
     ap.add_argument("--report", default=DEFAULT_REPORT, help="pytest-cov JSON report")
     ap.add_argument("--floors", default=DEFAULT_FLOORS, help="the floors file")
     ap.add_argument("--tolerance", type=float, default=DEFAULT_TOLERANCE)
-    ap.add_argument("--update", action="store_true", help="re-record the floors from the report")
+    mode = ap.add_mutually_exclusive_group()
+    mode.add_argument("--update", action="store_true", help="re-record the floors from the report")
+    mode.add_argument(
+        "--add-missing", action="store_true", help="record floors for modules without one only"
+    )
     ap.add_argument("--strict-new", action="store_true", help="fail on a module without a floor")
     args = ap.parse_args(argv)
 
@@ -103,6 +124,12 @@ def main(argv: List[str] | None = None) -> int:
         floors = write_floors(percents, floors_path)
         print(f"coverage floor: recorded {len(floors)} module floors in {floors_path}")
         return 0
+    if args.add_missing:
+        added = add_missing_floors(percents, floors_path)
+        for module, floor in added.items():
+            print(f"coverage floor: added {module} at {floor}%")
+        print(f"coverage floor: added {len(added)} module floor(s) to {floors_path}")
+        return 0
 
     floors = load_floors(floors_path)
     failures, unfloored = check(percents, floors, args.tolerance)
@@ -110,7 +137,8 @@ def main(argv: List[str] | None = None) -> int:
         print(f"coverage floor: FAIL {line}")
     for module in unfloored:
         print(
-            f"coverage floor: no floor for {module} ({percents[module]:.1f}%); add it with --update"
+            f"coverage floor: no floor for {module} ({percents[module]:.1f}%); "
+            "add it with --add-missing"
         )
     if failures or (args.strict_new and unfloored):
         print(

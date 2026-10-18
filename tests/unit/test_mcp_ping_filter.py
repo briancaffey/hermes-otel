@@ -16,8 +16,9 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 from opentelemetry.trace import SpanKind, Status, StatusCode
 
+from hermes_otel.pipeline import _MCPPingFilterProcessor, is_mcp_keepalive_ping
 from hermes_otel.plugin_config import HermesOtelConfig, load_config
-from hermes_otel.tracer import HermesOTelPlugin, _MCPPingFilterProcessor, is_mcp_keepalive_ping
+from hermes_otel.tracer import HermesOTelPlugin
 
 # Exactly what mcp/shared/jsonrpc_dispatcher.py emits for a keepalive.
 _PING_ATTRS = {"mcp.method.name": "ping", "jsonrpc.request.id": "42"}
@@ -160,7 +161,7 @@ class TestInitWiring:
             "OTEL_TEMPO_ENDPOINT",
         ):
             monkeypatch.delenv(var, raising=False)
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         if ls._LIVE_STORE is not None:
 
@@ -174,7 +175,7 @@ class TestInitWiring:
         # process-wide OTel state; the plugin keeps its own provider object.
         with patch("hermes_otel.pipeline.trace.set_tracer_provider"):
             assert plugin.init() is True
-        provider = plugin._tracer_provider
+        provider = plugin.pipeline.tracer_provider
         assert provider is not None
         return provider, ls
 

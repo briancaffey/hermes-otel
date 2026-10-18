@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "hermes-otel"
-version = "1.30.0"
+version = "1.31.0"
 description = "OpenTelemetry plugin for Hermes Agent — auto-export LLM traces to Phoenix, Langfuse, LangSmith, SigNoz, Jaeger, Tempo, and W&B Weave."
 readme = "README.md"
 license = { text = "Apache-2.0" }
@@ -109,8 +109,9 @@ markers = [
     "phoenix: requires Phoenix container",
     "langfuse: requires Langfuse containers",
     "smoke: full-stack tests requiring hermes-agent + observability backend running",
+    "e2e_ci: credential-free end-to-end tier: the real hermes binary against a scripted provider and an in-process OTLP receiver (make ci-e2e)",
 ]
-addopts = "-m 'not e2e and not smoke' -v"
+addopts = "-m 'not e2e and not smoke and not e2e_ci' -v"
 
 [tool.coverage.run]
 source = ["hermes_otel"]

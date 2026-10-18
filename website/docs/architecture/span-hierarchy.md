@@ -34,6 +34,8 @@ agent / cron                                  [AGENT]
 - **`approval.*`** — one per dangerous-command approval prompt. Spans the time the agent blocks waiting for a human to approve/deny, correlated to the gated tool via `gen_ai.tool.call.id`. See [`approval.*`](#approval) below.
 - **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
+Every family but the root can be switched off with [`disable_spans`](/configuration/yaml#disable) (#479). A disabled span is a non-recording stand-in carrying its parent's context, so the tree closes over it: with `llm` disabled the `api.*` spans parent to `agent`, with `api` disabled the `tool.*` spans parent to `llm.*`. The hooks still run and still record the family's metrics.
+
 ## `agent` / `cron`
 
 The root span of every turn. It is named `agent`, or `cron` when the Hermes session kind is a cron job; the kind itself (`cli`, `telegram`, `discord`, …) is on `hermes.session.kind`.
@@ -112,7 +114,7 @@ The `api.*` span is the right place to look for token counts — not the parent 
 
 ### Auxiliary calls {#auxiliary}
 
-Hermes also calls models **on the agent's behalf**: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer, the `/goal` judge. Each physical attempt is an `api.{model}` span too, tagged `hermes.query_source=auxiliary` and `hermes.auxiliary.task=<task>`, nested under whatever the owning turn has in flight (so a MoA turn shows its fan-out: N `api.<reference>` spans and one `api.<aggregator>` under the turn's `llm.*`), or standing as its own root when no turn owns it (the kanban dispatcher decomposing a card). They are never pushed as parents.
+Hermes also calls models **on the agent's behalf**: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer, the `/goal` judge. Each physical attempt is an `api.{model}` span too, tagged `hermes.query_source=auxiliary` and `hermes.auxiliary.task=<task>`, nested under whatever the owning turn has in flight (so a MoA turn shows its fan-out: N `api.<reference>` spans and one `api.<aggregator>` under the turn's `llm.*`), or standing as its own root when no turn owns it (the kanban dispatcher decomposing a card). They are never pushed as parents. An attempt that starts after its turn's root already ended (Hermes's title generation can fire after `on_session_end`) stays its own root too, tagged `hermes.span.after_turn=true`, with a span link (`hermes.link=turn_root`) to the root it followed: parenting it under the ended root would show a child outliving its parent. Its usage is counted on no turn's roll-up.
 
 ```text
 agent

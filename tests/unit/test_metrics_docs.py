@@ -14,7 +14,7 @@ _PHANTOMS = ("hermes.tokens.", "hermes.api.duration", "hermes.sessions", "hermes
 def _instrument_names() -> set:
     """Every OTLP instrument name the plugin can emit: the instrument table
     plus the host-metrics observables created in ``_create_host_metric_instruments``."""
-    from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
+    from hermes_otel.instruments import _INSTRUMENTS, HOST_METRIC_NAMES
 
     names = {spec.name for spec in _INSTRUMENTS.values()}
     names.update(HOST_METRIC_NAMES)
@@ -43,16 +43,15 @@ def test_host_metric_names_are_what_the_tracer_registers():
     """``HOST_METRIC_NAMES`` is read by the docs tests instead of the source."""
     from unittest.mock import MagicMock
 
+    from hermes_otel.host_bridge import HostMetrics
+    from hermes_otel.instruments import HOST_METRIC_NAMES
     from hermes_otel.plugin_config import HermesOtelConfig
-    from hermes_otel.tracer import HOST_METRIC_NAMES, HermesOTelPlugin
 
-    plugin = HermesOTelPlugin(config=HermesOtelConfig(host_metrics=True))
-    plugin._meter = MagicMock()
-    plugin._host_metrics = MagicMock()
-    plugin._create_host_metric_instruments()
+    meter = MagicMock()
+    HostMetrics(HermesOtelConfig(host_metrics=True, host_metrics_gpu="off"), meter=meter)
     created = {
         call.args[0]
         for method in ("create_observable_gauge", "create_observable_up_down_counter")
-        for call in getattr(plugin._meter, method).call_args_list
+        for call in getattr(meter, method).call_args_list
     }
     assert created == set(HOST_METRIC_NAMES)

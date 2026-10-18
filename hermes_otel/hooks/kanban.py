@@ -39,17 +39,21 @@ from __future__ import annotations
 
 import itertools
 import os
-import threading
-from collections import OrderedDict
 from typing import Any, Dict, Optional, Tuple
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
 from ..helpers import format_traceparent, parse_traceparent, truncate_string
-from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _session_identity_attributes
+from ._common import (
+    _emit_event,
+    _fail_open,
+    _preview_for,
+    get_tracer,
+    set_span_attributes,
+    span_context_of,
+)
+from .attributes import _ID_MAX, _session_identity_attributes
 
-_ID_MAX = 200
 _SHORT_MAX = 64
 _seq = itertools.count(1)
 
@@ -59,34 +63,20 @@ _seq = itertools.count(1)
 _FAILED_EXIT_KINDS = frozenset({"nonzero_exit", "signaled"})
 
 
-# The trace context of each run's claim span, by (task_id, run_id), so the
-# dispatcher's later transitions of that run join its trace. Bounded: a
-# long-lived gateway dispatcher claims cards for days.
-_RUN_CONTEXTS: "OrderedDict[Tuple[str, str], Any]" = OrderedDict()
-_RUN_CONTEXTS_MAX = 512
-_RUN_LOCK = threading.Lock()
 # The TRACEPARENT value this process put in os.environ for the next worker,
 # so cleanup never removes one the user (or another tool) set.
 _injected_traceparent: Optional[str] = None
 
 
-def _run_key(task_id: Any, run_id: Any) -> Tuple[str, str]:
-    return (str(task_id or ""), str(run_id if run_id is not None else ""))
+def _run_key(task_id: Any, run_id: Any) -> str:
+    """The run's key in the tracer's root-context table: the claim span is the
+    run's root, remembered so the dispatcher's later transitions join its trace."""
+    return f"kanban:{task_id or ''}:{run_id if run_id is not None else ''}"
 
 
-def _remember_run(task_id: Any, run_id: Any, context: Any) -> None:
-    with _RUN_LOCK:
-        _RUN_CONTEXTS[_run_key(task_id, run_id)] = context
-        _RUN_CONTEXTS.move_to_end(_run_key(task_id, run_id))
-        while len(_RUN_CONTEXTS) > _RUN_CONTEXTS_MAX:
-            _RUN_CONTEXTS.popitem(last=False)
-
-
-def _run_parent(task_id: Any, run_id: Any, *, forget: bool = False):
+def _run_parent(tracer, task_id: Any, run_id: Any, *, forget: bool = False):
     """The claim span of this run as a parent, else a new trace."""
-    with _RUN_LOCK:
-        key = _run_key(task_id, run_id)
-        ctx = _RUN_CONTEXTS.pop(key, None) if forget else _RUN_CONTEXTS.get(key)
+    ctx = tracer.sessions.root_context(_run_key(task_id, run_id), forget=forget)
     if ctx is None:
         return _own_root()
     try:
@@ -100,7 +90,7 @@ def _run_parent(task_id: Any, run_id: Any, *, forget: bool = False):
 def _inject_traceparent(span: Any) -> None:
     """Point the next worker's environment at ``span`` (the run's claim)."""
     global _injected_traceparent
-    ctx = span.get_span_context() if hasattr(span, "get_span_context") else None
+    ctx = span_context_of(span)
     if ctx is None or not getattr(ctx, "is_valid", False):
         return
     value = format_traceparent(ctx.trace_id, ctx.span_id, int(ctx.trace_flags))
@@ -151,6 +141,16 @@ def kanban_identity(
     return attrs
 
 
+def _int_attributes(*fields: Tuple[str, Any]) -> Dict[str, Any]:
+    """The ``(key, value)`` pairs whose value Hermes sent as a real int (a
+    pid, an exit code); a bool or a digit string is not one."""
+    return {
+        key: value
+        for key, value in fields
+        if isinstance(value, int) and not isinstance(value, bool)
+    }
+
+
 def _own_root():
     """A parent that forces a new trace (the OTel invalid span)."""
     try:
@@ -173,18 +173,6 @@ def _worker_turn(tracer) -> Tuple[Optional[str], Any, Any]:
         return None, None, None
     session_id, root = live
     return session_id, tracer.spans.get_current_parent(session_id) or root, root
-
-
-def set_attributes(span: Any, attributes: Dict[str, Any]) -> None:
-    if span is None or not hasattr(span, "set_attribute"):
-        return
-    for key, value in attributes.items():
-        if value is None:
-            continue
-        try:
-            span.set_attribute(key, value)
-        except Exception:  # pragma: no cover - never let telemetry raise
-            pass
 
 
 def _transition(
@@ -254,8 +242,9 @@ def on_kanban_task_claimed(
         status="ok",
         outcome="claimed",
     )
-    if span is not None and hasattr(span, "get_span_context"):
-        _remember_run(task_id, run_id, span.get_span_context())
+    ctx = span_context_of(span)
+    if ctx is not None:
+        tracer.sessions.remember_root_context(_run_key(task_id, run_id), ctx)
         _inject_traceparent(span)
 
 
@@ -278,15 +267,14 @@ def on_kanban_worker_spawned(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "spawned")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(_int_attributes(("hermes.kanban.worker_pid", worker_pid)))
     _clear_traceparent()  # the worker's environment is already built
     _transition(
         tracer,
         "kanban.spawn",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id),
+        parent=_run_parent(tracer, task_id, run_id),
         status="ok",
         outcome="spawned",
     )
@@ -311,12 +299,13 @@ def on_kanban_worker_exited(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "worker_exited")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(
+        _int_attributes(
+            ("hermes.kanban.worker_pid", worker_pid), ("hermes.kanban.exit_code", exit_code)
+        )
+    )
     kind = truncate_string(str(exit_kind), _SHORT_MAX) if exit_kind else "unknown"
     attrs["hermes.kanban.exit_kind"] = kind
-    if isinstance(exit_code, int) and not isinstance(exit_code, bool):
-        attrs["hermes.kanban.exit_code"] = exit_code
     if outcome:
         attrs["hermes.kanban.outcome"] = truncate_string(str(outcome), _SHORT_MAX)
     if retry_status:
@@ -327,7 +316,7 @@ def on_kanban_worker_exited(
         "kanban.worker_exit",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id, forget=True),
+        parent=_run_parent(tracer, task_id, run_id, forget=True),
         status="error" if failed else "ok",
         outcome="worker_exited",
         severity="ERROR" if failed else "INFO",
@@ -351,8 +340,7 @@ def on_kanban_worker_stale_claim(
     if not tracer.is_enabled:
         return
     attrs = kanban_identity(task_id, board, assignee, run_id, "stale_claim")
-    if isinstance(worker_pid, int) and not isinstance(worker_pid, bool):
-        attrs["hermes.kanban.worker_pid"] = worker_pid
+    attrs.update(_int_attributes(("hermes.kanban.worker_pid", worker_pid)))
     if isinstance(heartbeat_stale, bool):
         attrs["hermes.kanban.heartbeat_stale"] = heartbeat_stale
     if retry_status:
@@ -362,7 +350,7 @@ def on_kanban_worker_stale_claim(
         "kanban.stale_claim",
         attrs,
         session_id=None,
-        parent=_run_parent(task_id, run_id, forget=True),
+        parent=_run_parent(tracer, task_id, run_id, forget=True),
         status="ok",
         outcome="stale_claim",
         severity="WARN",
@@ -386,7 +374,7 @@ def _finish(tracer, name: str, attrs: Dict[str, Any], outcome: str, text_key: st
         # The worker's turn root learns which card it worked and how it ended,
         # so span-only readers (the bundled dashboard's live store, a backend
         # that cannot filter on Resource attributes) can find it too.
-        set_attributes(
+        set_span_attributes(
             root,
             {
                 "hermes.kanban.task_id": attrs.get("hermes.kanban.task_id"),

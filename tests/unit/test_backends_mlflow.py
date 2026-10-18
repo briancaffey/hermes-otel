@@ -3,7 +3,8 @@
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 
 class TestMlflowBackendType:
@@ -90,7 +91,7 @@ class TestMlflowBackendType:
         assert rb.supports_metrics is True and rb.supports_logs is True
 
     def test_no_temporality_preset(self):
-        assert backends.preset_temporality("mlflow") is None
+        assert spec_for("mlflow").temporality is None
 
 
 class TestMlflowEnvMode:

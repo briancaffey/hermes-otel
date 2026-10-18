@@ -30,6 +30,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
 | `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
 | `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
+| `common_attributes` | map | *(unset)* | Stamped on every span, log record and metric point (not the Resource), for backends that do not index resource attributes per signal; scalar values, keys of at most 64 chars outside `hermes.` / `gen_ai.` / `service.`. A plugin attribute of the same name wins; changing a value starts new metric series |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `service_name_from_profile` | bool | `false` | A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins |
 | `span_batch_max_queue_size` | int | `2048` | Max buffered spans per backend before drops. Bounds: ≥ 1 |
@@ -47,7 +48,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |
-| `log_exclude_loggers` | list of strings (env: comma-separated) | `('opentelemetry', 'urllib3', 'httpx', 'httpcore', 'requests', 'openai', 'asyncio', 'hpack', 'grpc', 'websockets', 'charset_normalizer', 'markdown_it')` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
+| `log_exclude_loggers` | list of strings (env: comma-separated) | `[opentelemetry, urllib3, httpx, httpcore, requests, openai, asyncio, hpack, grpc, websockets, charset_normalizer, markdown_it]` | Logger-name prefixes never forwarded (loop guard + Hermes' noisy third-party loggers); `logs.exclude_loggers` |
 | `log_logger_levels` | map | *(unset)* | Per-logger minimum level, e.g. `{gateway.config: WARNING}`; `logs.logger_levels` |
 | `log_only_in_turn` | bool | `false` | Drop records the plugin cannot attribute to a session; `logs.only_in_turn` |
 | `log_max_attribute_length` | int | `4096` | Longest exported string attribute on a log record (characters); `logs.max_attribute_length`. Bounds: ≥ 1 |
@@ -62,6 +63,10 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `metrics_temporality` | string \| null | *(unset)* | Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins |
 | `metrics_histogram` | string | `"explicit"` | Histogram aggregation: `explicit` (spec bucket boundaries) or `exponential` (base-2, for backends that accept it) |
 | `metrics_label_limit` | int | `100` | Distinct values a metric label such as `model` may take per process before the rest fold into `other` (0 = no cap). Bounds: ≥ 0 |
+| `metric_name_compat` | string | `"off"` | `off` · `claude_code` · `both` — export session count, token usage, cost and active time under Claude Code's metric names, units and labels (`claude_code.*`) instead of (`claude_code`) or beside (`both`) the `hermes.*` twins, so dashboards built for Claude Code read Hermes; see [Claude Code dashboards](/guides/claude-code-dashboards) |
+| `metric_name_compat_session_id` | bool | `false` | Also put `session.id` on the `claude_code.*` instruments, as Claude Code does by default (per-session panels need it; one series per session) |
+| `disable_metrics` | list of strings (env: comma-separated) | `[]` | Instruments never created, recorded or exported: hook keys (`tool_duration`), dotted (`tool.duration`) or OTLP names (`hermes.tool.duration`), or `all`; an unknown name warns at load. See [Disabling metrics and span families](/configuration/yaml#disable) |
+| `disable_spans` | list of strings (env: comma-separated) | `[]` | Span families never recorded (`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`); a child of a disabled span parents to the nearest recording ancestor. `all` is refused (use a backend's `traces: false`) |
 | `skill_spans` | bool | `true` | Open a `skill.<name>` span on each successful skill load, closed at turn end |
 | `remote_parent` | bool | `true` | Parent the turn root under the span named by `HERMES_OTEL_TRACEPARENT` (+ `HERMES_OTEL_TRACESTATE`) when an outer process exported them; `false` ignores the variables. The kanban worker hand-off (`TRACEPARENT`) is separate |
 | `probe_backends` | bool | `true` | At init, open one TCP connection to each backend endpoint on a background thread and log reachable / unreachable per backend; once, never periodic, no bytes sent, exports never wait for it |
@@ -88,7 +93,7 @@ Shared fields (all optional unless noted):
 | `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
 | `name` | string | Friendly name shown in logs (default: `type`) |
 | `endpoint` | string | Full HTTP traces URL, or gRPC `host:port` / `https://host:port` origin (no signal path). **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
-| `protocol` | string | `http/protobuf` (default), or `grpc` for a generic `type: otlp` entry. Applies to traces, metrics and logs |
+| `protocol` | string | `http/protobuf` (default), or `grpc` for a generic `type: otlp` entry. Applies to traces, metrics and logs; `headers_helper` needs `http/protobuf` |
 | `insecure` | bool | gRPC only: `true` selects plaintext, `false` forces TLS. Unset: SDK INSECURE env vars, then the endpoint scheme (`http` is plaintext; HTTPS / bare targets are TLS). HTTPS cannot be combined with `true` |
 | `certificate_file` | string | PEM CA bundle for server verification; unset uses SDK CERTIFICATE env vars or system trust |
 | `client_certificate_file` | string | PEM client certificate chain for mTLS; gRPC requires `client_key_file` too |
@@ -100,6 +105,8 @@ Shared fields (all optional unless noted):
 | `root_usage` | bool | Send the turn's token roll-up (`gen_ai.usage.*` / `llm.token_count.*` on the `agent` / `cron` root) to this backend. Preset `false` for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); `true` everywhere else. Only this entry's exporter is affected: the span is rebuilt without those keys on its way out, the `api.*` spans and `hermes.cost.*` stay |
 | `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
 | `headers` | map | Per-backend HTTP headers / gRPC metadata (merged onto top-level `headers`; gRPC names are lowercased) |
+| `headers_helper` | string | A command (argv string, no shell) whose stdout, a JSON object or `Name=value` lines, mints headers merged over `headers` and the type's own auth header on every signal of this entry; on a 401/403 it is re-run once and the batch retried once ([short-lived credentials](/configuration/short-lived-credentials), [#483](https://github.com/briancaffey/hermes-otel/issues/483)) |
+| `headers_helper_timeout_ms` | int | How long one helper run may take; default `5000` |
 
 TLS paths support `~` and `${VAR_NAME}`. Explicit paths override signal-specific SDK environment variables, then global variables. Invalid files or TLS credentials on a plaintext endpoint are rejected. See [gRPC and TLS](/backends/otlp#grpc-and-tls) for examples, environment variables and certificate rotation.
 
@@ -299,10 +306,11 @@ All three signals on by default. See [Uptrace](/backends/uptrace).
 
 | Field | Type | Description |
 |---|---|---|
-| `endpoint` | string | **Required.** `http://<host>:5080/api/<org>/v1/traces`. Also via `OTEL_OPENOBSERVE_ENDPOINT` |
+| `endpoint` | string | **Required.** `http://<host>:5080/api/<org>/v1/traces`, or the bare origin `http://<host>:5080`, which the plugin completes with `org`. Also via `OTEL_OPENOBSERVE_ENDPOINT` |
 | `user` / `user_env` | string | Basic-auth user (falls back to `OTEL_OPENOBSERVE_USER` / `OPENOBSERVE_USER`) |
 | `password` / `password_env` | string | Basic-auth password (falls back to `OTEL_OPENOBSERVE_PASSWORD` / `OPENOBSERVE_PASSWORD`) |
 | `stream_name` | string | Optional stream name (`OTEL_OPENOBSERVE_STREAM`) |
+| `org` | string | Org that completes a bare-origin `endpoint` (`OTEL_OPENOBSERVE_ORG`, default `default`); ignored when `endpoint` has a path. The dashboard also reads it |
 
 All three signals on by default. See [OpenObserve](/backends/openobserve).
 

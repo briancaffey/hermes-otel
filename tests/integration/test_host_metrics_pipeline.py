@@ -5,9 +5,13 @@ the observable-instrument callbacks and the live-store mirror can be asserted
 deterministically.
 """
 
+from unittest.mock import patch
+
 from _helpers import metric_points as _points
 
+from hermes_otel.host_bridge import HostMetrics
 from hermes_otel.host_metrics import GpuReading, Sample
+from hermes_otel.pipeline import build_resource
 from hermes_otel.plugin_config import HermesOtelConfig
 
 
@@ -33,16 +37,21 @@ def _sample(at=1.0, proc=(0.25, 0.05), sys=(0.5, 0.1), gpus=()):
     )
 
 
+def _config(**overrides):
+    return HermesOtelConfig(host_metrics=True, host_metrics_gpu="off", **overrides)
+
+
 def _enable(plugin, **overrides):
-    plugin.config = HermesOtelConfig(host_metrics=True, host_metrics_gpu="off", **overrides)
-    plugin._create_host_metric_instruments()
-    return plugin._host_metrics
+    """Give ``plugin`` a HostMetrics on its meter, as ``init()`` does; returns the sampler."""
+    plugin.config = _config(**overrides)
+    plugin.host_metrics = HostMetrics(plugin.config, meter=plugin.pipeline.meter)
+    return plugin.host_metrics.sampler
 
 
 class TestObservableInstruments:
     def test_no_instruments_when_host_metrics_off(self, inmemory_otel_with_metrics):
         _exporter, reader, plugin = inmemory_otel_with_metrics
-        assert plugin._host_metrics is None
+        assert plugin.host_metrics is None
         assert _metric(reader, "process.cpu.utilization") is None
 
     def test_cpu_gauges_by_mode(self, inmemory_otel_with_metrics):
@@ -88,45 +97,59 @@ class TestObservableInstruments:
         assert all(p.attributes["hw.type"] == "gpu" for p in power)
         assert _metric(reader, "hw.power").unit == "W"
 
-    def test_instruments_registered_once_per_meter(self, inmemory_otel_with_metrics):
-        _exporter, reader, plugin = inmemory_otel_with_metrics
-        sampler = _enable(plugin)
-        again = plugin._ensure_host_sampler()
-        assert again is sampler  # same sampler object reused
+    def test_no_meter_registers_nothing(self):
+        # The live-only pipeline has no meter: the sampler still exists for
+        # the live-store mirror and the per-tool window attributes.
+        host = HostMetrics(_config(), meter=None)
+        assert host.sampler is not None and host.running is False
 
 
 class TestLifecycle:
-    def test_host_metrics_property_reflects_running_state(self, inmemory_otel_with_metrics):
+    def test_running_and_window_follow_the_sampler_thread(self, inmemory_otel_with_metrics):
         _exporter, _reader, plugin = inmemory_otel_with_metrics
         sampler = _enable(plugin)
-        assert plugin.host_metrics is None  # created but not started
+        host = plugin.host_metrics
+        assert host.running is False  # created but not started
+        assert host.window(0.0, 1.0) is None  # the hooks see nothing until it runs
         sampler._thread = type("T", (), {"is_alive": lambda self: True})()
-        assert plugin.host_metrics is sampler
+        assert host.running is True
         sampler._thread = None
-        plugin.stop_host_metrics()
-        plugin.stop_host_metrics()
+        host.stop()
+        host.stop()
 
-    def test_start_logs_warning_without_psutil(self, inmemory_otel_with_metrics, monkeypatch):
+    def test_start_logs_warning_without_psutil(self, monkeypatch, caplog):
         import hermes_otel.host_metrics as hm
 
-        _exporter, _reader, plugin = inmemory_otel_with_metrics
         monkeypatch.setattr(hm, "psutil", None)
-        plugin.config = HermesOtelConfig(host_metrics=True)
-        plugin._start_host_metrics()
-        assert plugin.host_metrics is None
+        host = HostMetrics(HermesOtelConfig(host_metrics=True, host_metrics_gpu="off"))
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            host.start()
+        assert host.running is False
+        assert any("psutil is not importable" in r.getMessage() for r in caplog.records)
 
-    def test_start_runs_thread_when_available(self, inmemory_otel_with_metrics):
-        _exporter, _reader, plugin = inmemory_otel_with_metrics
-        plugin.config = HermesOtelConfig(
-            host_metrics=True, host_metrics_gpu="off", host_metrics_interval_ms=50
-        )
-        plugin._start_host_metrics()
+    def test_start_runs_thread_when_available(self):
+        host = HostMetrics(_config(host_metrics_interval_ms=50))
+        host.start()
         try:
-            assert plugin.host_metrics is not None
-            assert plugin.host_metrics.running
+            assert host.running
         finally:
-            plugin.stop_host_metrics()
-        assert plugin.host_metrics is None
+            host.stop()
+        assert host.running is False
+
+    def test_init_starts_the_sampler_and_shutdown_drops_it(self, monkeypatch):
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        plugin = HermesOTelPlugin(
+            config=_config(dashboard_live=True, host_metrics_interval_ms=50, capture_logs=False)
+        )
+        with patch("hermes_otel.pipeline.trace.set_tracer_provider"):
+            assert plugin.init() is True  # live-only: no meter, the sampler still runs
+        try:
+            assert plugin.host_metrics is not None and plugin.host_metrics.running
+            assert plugin.host_metrics.live_active is True
+        finally:
+            plugin.shutdown()
+        assert plugin.host_metrics is None and plugin.pipeline is None
 
 
 class TestLiveStoreMirror:
@@ -140,41 +163,29 @@ class TestLiveStoreMirror:
             def add_metric(self, name, value, attrs, ts):
                 seen.append((name, value, ts))
 
-        import hermes_otel.live_store as ls
+        import hermes_otel.live_store_registry as ls
 
         monkeypatch.setattr(ls, "get_live_store", lambda: _Store())
-        plugin._live_active = True
-        plugin._mirror_host_sample(_sample(gpus=[GpuReading(0, 0.75, None, None)]))
+        host = HostMetrics(_config(), live_active=True)
+        host.mirror_sample(_sample(gpus=[GpuReading(0, 0.75, None, None)]))
         assert seen == [
             ("process.cpu.utilization", 0.3, 1_700_000_000_000_000_000),
             ("system.cpu.utilization", 0.6, 1_700_000_000_000_000_000),
             ("hw.gpu.utilization", 0.75, 1_700_000_000_000_000_000),
         ]
 
-    def test_mirror_is_noop_when_live_inactive(self, inmemory_otel_with_metrics, monkeypatch):
-        _exporter, _reader, plugin = inmemory_otel_with_metrics
-        plugin._live_active = False
-        plugin._mirror_host_sample(_sample())  # must not raise
+    def test_mirror_is_noop_when_live_inactive(self):
+        HostMetrics(_config(), live_active=False).mirror_sample(_sample())  # must not raise
 
 
 class TestResourceHostName:
     def test_host_name_added_when_host_metrics_on(self):
-        from hermes_otel.tracer import HermesOTelPlugin
-
-        plugin = HermesOTelPlugin(HermesOtelConfig(host_metrics=True))
-        attrs = plugin._build_resource([]).attributes
+        attrs = build_resource(HermesOtelConfig(host_metrics=True), "default", []).attributes
         assert attrs["host.name"]
 
     def test_configured_host_name_wins(self):
-        from hermes_otel.tracer import HermesOTelPlugin
-
-        plugin = HermesOTelPlugin(
-            HermesOtelConfig(host_metrics=True, resource_attributes={"host.name": "gpu-box-1"})
-        )
-        assert plugin._build_resource([]).attributes["host.name"] == "gpu-box-1"
+        cfg = HermesOtelConfig(host_metrics=True, resource_attributes={"host.name": "gpu-box-1"})
+        assert build_resource(cfg, "default", []).attributes["host.name"] == "gpu-box-1"
 
     def test_absent_when_host_metrics_off(self):
-        from hermes_otel.tracer import HermesOTelPlugin
-
-        plugin = HermesOTelPlugin(HermesOtelConfig())
-        assert "host.name" not in plugin._build_resource([]).attributes
+        assert "host.name" not in build_resource(HermesOtelConfig(), "default", []).attributes

@@ -4,18 +4,12 @@ from __future__ import annotations
 
 from typing import Any, Dict, Optional
 
-from ..helpers import to_int, truncate_string
+from ..coerce import to_int
+from ..helpers import truncate_string
+from ..instruments import claude_code_token_types
+from ..session_state import PRICED_COST_STATUSES
 from ._common import as_dict
-
-# Canonical token-total field order. Used when iterating or copying.
-_USAGE_FIELDS = (
-    "prompt_tokens",
-    "completion_tokens",
-    "total_tokens",
-    "cache_read_tokens",
-    "cache_write_tokens",
-    "reasoning_tokens",
-)
+from .attributes import _ID_MAX
 
 
 def normalize_usage(usage: dict) -> Dict[str, int]:
@@ -98,17 +92,17 @@ _USAGE_METRIC_LABELS = (
 
 
 def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, Any]) -> None:
-    """Record one ``token_usage`` metric per non-zero canonical field."""
+    """Record one ``token_usage`` metric per non-zero canonical field, and
+    the Claude Code twin (#485) with Claude Code's ``type`` values: the
+    uncached prompt as ``input``, no ``reasoning`` subset. ``record_metric``
+    drops the twin unless ``metric_name_compat`` switches it on."""
     for key, label in _USAGE_METRIC_LABELS:
         v = totals.get(key, 0)
         if v:
             tracer.record_metric("token_usage", v, {**base_attrs, "token_type": label})
-
-
-# Cost statuses that carry a real dollar figure. Hermes's other two,
-# ``included`` (subscription route: an API-equivalent estimate is not a charge)
-# and ``unknown`` (no price for the model), have no amount to report.
-_PRICED_COST_STATUSES = ("actual", "estimated")
+    for label, v in claude_code_token_types(totals).items():
+        if v:
+            tracer.record_metric("claude_code.token.usage", v, {**base_attrs, "type": label})
 
 
 def _estimate_cost(
@@ -139,7 +133,7 @@ def _estimate_cost(
         )
         status = str(getattr(result, "status", "") or "unknown")
         amount = getattr(result, "amount_usd", None)
-        usd = float(amount) if amount is not None and status in _PRICED_COST_STATUSES else None
+        usd = float(amount) if amount is not None and status in PRICED_COST_STATUSES else None
         return {"status": status, "source": str(getattr(result, "source", "") or ""), "usd": usd}
     except Exception:
         return None
@@ -208,9 +202,9 @@ def genai_metric_dims(
     if prov:
         dims["gen_ai.provider.name"] = prov
     if model:
-        dims["gen_ai.request.model"] = truncate_string(model, 200)
+        dims["gen_ai.request.model"] = truncate_string(model, _ID_MAX)
     if response_model:
-        dims["gen_ai.response.model"] = truncate_string(response_model, 200)
+        dims["gen_ai.response.model"] = truncate_string(response_model, _ID_MAX)
     return dims
 
 

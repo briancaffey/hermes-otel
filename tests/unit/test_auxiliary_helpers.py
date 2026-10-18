@@ -2,15 +2,19 @@
 
 from __future__ import annotations
 
-from hermes_otel.helpers import (
-    QUERY_SOURCE_AUXILIARY,
-    QUERY_SOURCE_MAIN,
-    QUERY_SOURCE_SUBAGENT,
+from types import SimpleNamespace
+
+from opentelemetry.trace import SpanContext, TraceFlags
+
+from hermes_otel.hooks.api_call import query_source_for
+from hermes_otel.hooks.auxiliary import (
+    after_turn_links,
     auxiliary_span_key,
     auxiliary_task_name,
-    query_source_for,
 )
-from hermes_otel.session_state import PerSession
+from hermes_otel.semconv import QUERY_SOURCE_AUXILIARY, QUERY_SOURCE_MAIN, QUERY_SOURCE_SUBAGENT
+from hermes_otel.session_state import PerSession, SessionState
+from hermes_otel.span_tracker import SpanTracker
 
 
 class TestSpanKey:
@@ -91,3 +95,40 @@ class TestAuxiliaryRollup:
         assert ps.usage["prompt_tokens"] == 0
         assert ps.usage_updated is False
         assert ps.cost_statuses == []
+
+
+class TestAfterTurnLinks:
+    CTX = SpanContext(0xABC, 0xDEF, is_remote=False, trace_flags=TraceFlags(1))
+
+    def _tracer(self):
+        return SimpleNamespace(spans=SpanTracker(), sessions=SessionState())
+
+    def test_links_to_the_remembered_root_when_no_turn_is_open(self):
+        tracer = self._tracer()
+        tracer.sessions.remember_root_context("s1", self.CTX)
+        links = after_turn_links(tracer, "s1")
+        assert [ln.context for ln in links] == [self.CTX]
+        assert links[0].attributes["hermes.link"] == "turn_root"
+
+    def test_none_while_the_turn_is_open(self):
+        tracer = self._tracer()
+        tracer.sessions.remember_root_context("s1", self.CTX)
+        tracer.spans.push_parent(object(), session_id="s1")
+        assert after_turn_links(tracer, "s1") is None
+
+    def test_turn_id_of_a_newer_turn_is_not_after_the_turn(self):
+        tracer = self._tracer()
+        tracer.sessions.remember_root_context("s1", self.CTX)
+        tracer.sessions.remember_turn_id("s1", "s1:t:1")
+        assert after_turn_links(tracer, "s1", "s1:t:1") is not None
+        assert after_turn_links(tracer, "s1", "s1:t:2") is None
+        # No turn_id on either side: the open-turn check alone decides.
+        assert after_turn_links(tracer, "s1") is not None
+        tracer.sessions.remember_turn_id("s1", "")  # ignored
+        assert tracer.sessions.last_turn_id("s1") == "s1:t:1"
+        assert tracer.sessions.last_turn_id("s-unknown") == ""
+
+    def test_none_without_a_session_or_a_remembered_root(self):
+        tracer = self._tracer()
+        assert after_turn_links(tracer, None) is None
+        assert after_turn_links(tracer, "s-unknown") is None

@@ -3,7 +3,8 @@
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 EP = "http://localhost:3060"
 
@@ -69,7 +70,7 @@ class TestAgentaBackendType:
         )
         assert rb.headers == {"Authorization": "ApiKey k", "X-A": "1"}
         assert rb.supports_metrics is True  # a collector in front could take them
-        assert backends.preset_temporality("agenta") is None
+        assert spec_for("agenta").temporality is None
         assert backends.signal_support("agenta") == {
             "traces": True,
             "metrics": False,

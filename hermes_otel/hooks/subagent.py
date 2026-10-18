@@ -2,13 +2,66 @@
 
 from __future__ import annotations
 
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import subagent_span_key, subagent_status_to_span_status, truncate_string
-from ._common import _emit_event, _fail_open, _preview_for, get_tracer
-from .attributes import _session_identity_attributes, correlation_attributes
+from ..helpers import truncate_string
+from ._common import _emit_event, _fail_open, _preview_for, get_tracer, span_context_of
+from .attributes import _ID_MAX, _session_identity_attributes, correlation_attributes
+
+# child_status values hermes-agent reports on subagent_stop that indicate a
+# clean finish. Anything explicitly failure-like maps to an error span; unknown
+# / empty values default to OK so a missing status never inflates error rates
+# (mirrors the tool-outcome policy in on_post_tool_call).
+_SUBAGENT_ERROR_STATUSES = frozenset(
+    # ``stalled``: Hermes's stall monitor gave up on a silent child and
+    # reports it as a crash (async_delegation._stalled_result), #392.
+    {
+        "error",
+        "errored",
+        "failed",
+        "failure",
+        "cancelled",
+        "canceled",
+        "timeout",
+        "timed_out",
+        "stalled",
+    }
+)
+
+
+def subagent_span_key(child_session_id: Any) -> Optional[str]:
+    """Build the span-tracking key for a delegated child agent.
+
+    Keyed on ``child_session_id`` because that is the value the child's own
+    ``on_session_start`` carries, so the child root span can rejoin the
+    delegation span started in the parent. Returns None when there is no
+    usable id (handler then no-ops, fail-open).
+    """
+    if child_session_id is None:
+        return None
+    text = str(child_session_id).strip()
+    if not text:
+        return None
+    return f"subagent:{text}"
+
+
+def subagent_status_to_span_status(child_status: Any) -> str:
+    """Map a hermes ``child_status`` to ``"ok"`` / ``"error"``.
+
+    Explicit failure-like statuses become ``"error"``; everything else
+    (including unknown / empty) is ``"ok"`` so an absent status never
+    pollutes error rates.
+    """
+    if child_status is None:
+        return "ok"
+    text = str(child_status).strip().lower()
+    if not text:
+        return "ok"
+    if text in _SUBAGENT_ERROR_STATUSES:
+        return "error"
+    return "ok"
 
 
 @_fail_open
@@ -45,19 +98,21 @@ def on_subagent_start(
 
     # No role reported → plain ``subagent`` span with no role attribute; a
     # placeholder role would be indistinguishable from a real one (#155).
-    role = truncate_string(child_role, 200) if child_role else ""
+    role = truncate_string(child_role, _ID_MAX) if child_role else ""
     span_name = f"subagent.{role}" if role else "subagent"
 
     attributes: Dict[str, Any] = {
         "gen_ai.operation.name": "invoke_agent",
-        "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+        "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
     }
     if role:
         attributes["gen_ai.agent.name"] = role
         attributes["hermes.subagent.role"] = role
     attributes.update(_session_identity_attributes(parent_session_id))
     if parent_session_id:
-        attributes["hermes.subagent.parent_session_id"] = truncate_string(parent_session_id, 200)
+        attributes["hermes.subagent.parent_session_id"] = truncate_string(
+            parent_session_id, _ID_MAX
+        )
     for src, dest in (
         ("parent_turn_id", "hermes.subagent.parent_turn_id"),
         ("child_subagent_id", "hermes.subagent.child_id"),
@@ -65,7 +120,7 @@ def on_subagent_start(
     ):
         value = kwargs.get(src)
         if value:
-            attributes[dest] = truncate_string(value, 200)
+            attributes[dest] = truncate_string(value, _ID_MAX)
     goal_preview = _preview_for(tracer, "tool_input", child_goal)
     if goal_preview is not None:
         attributes["hermes.subagent.goal"] = goal_preview
@@ -95,12 +150,8 @@ def on_subagent_start(
         # The parent turn's model, so the child's root can say whether it
         # inherited it (delegation.model unset) or runs on its own (#391).
         "parent_model": parent_ps.model if parent_ps is not None else "",
+        "context": span_context_of(span),
     }
-    if span is not None and hasattr(span, "get_span_context"):
-        try:
-            record["context"] = span.get_span_context()
-        except Exception:
-            record["context"] = None
     tracer.spans.register_subagent(child_session_id, record)
     debug_log(f"  subagent span started: key={key}, name={span_name}")
     _emit_event(
@@ -140,7 +191,7 @@ def on_subagent_stop(
     record = tracer.spans.pop_subagent(child_session_id)
     tracer.spans.end_delegation(child_session_id)
     role = (record.get("role") if record else None) or (
-        truncate_string(child_role, 200) if child_role else ""
+        truncate_string(child_role, _ID_MAX) if child_role else ""
     )
 
     status = subagent_status_to_span_status(child_status)
@@ -180,7 +231,7 @@ def on_subagent_stop(
         f"{attributes.get('hermes.subagent.status') or status}",
         {
             **{k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},
-            "hermes.subagent.child_session_id": truncate_string(child_session_id, 200),
+            "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
         },
         severity="ERROR" if status == "error" else "INFO",
         session_id=kwargs.get("parent_session_id")

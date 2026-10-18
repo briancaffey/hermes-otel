@@ -21,6 +21,7 @@ def _load(name: str):
         sys.path.insert(0, str(SCRIPTS))
     spec = importlib.util.spec_from_file_location(f"scenarios_{name}", SCRIPTS / f"{name}.py")
     mod = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = mod  # dataclasses resolve their module through sys.modules
     spec.loader.exec_module(mod)
     return mod
 
@@ -109,7 +110,7 @@ class TestScenarioFile:
             "agent_depth_min", "attr_values_min", "span_names_any", "output_contains",
             "root_attrs", "span_attrs_any", "attrs_absent", "attr_max_len", "text_absent",
             "logs_min", "log_levels_any", "events_min", "event_names_any", "events_max",
-            "logs_only_events", "logs_text_absent",
+            "logs_only_events", "logs_text_absent", "metrics_min",
         }  # fmt: skip
         known_run = {
             "turn_numbers", "same_session", "sessions_distinct", "traces_distinct",

@@ -55,6 +55,8 @@ OpenObserve's OTLP endpoint is **per-organization, per-signal**:
 
 Configure `endpoint:` with the **traces** URL; the plugin derives the other two by swapping the final path segment. The default organization is `default` — if you create additional orgs in the UI, use their name in the URL.
 
+A bare origin (`endpoint: http://localhost:5080`, no path) is completed to `http://localhost:5080/api/<org>/v1/traces`, with `<org>` from the entry's `org:` (or `OTEL_OPENOBSERVE_ORG`), default `default`. A URL with any path is used exactly as given, so a reverse-proxy prefix keeps working.
+
 ## Why a dedicated `type: openobserve`
 
 OpenObserve uses HTTP Basic auth plus a `stream-name` request header that `type: otlp` can't produce for you. Declaring `type: openobserve` asks the plugin to:
@@ -131,7 +133,7 @@ Traces fan out to both; metrics and logs go only to OpenObserve (Phoenix ingests
 
 **"401 Unauthorized in agent logs"**
 
-Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve/docker-compose.yaml` match what you're passing to the plugin.
+Basic-auth credentials don't match the root account. Confirm `ZO_ROOT_USER_EMAIL` / `ZO_ROOT_USER_PASSWORD` in `docker-compose/openobserve/docker-compose.yaml` match what you're passing to the plugin. A password that is rotated while Hermes runs can be followed with a [`headers_helper`](/configuration/short-lived-credentials#example-a-rotated-password-openobserve) that prints the current `Authorization` header: the plugin re-runs it on the first 401 and retries that batch.
 
 **"I see `✓ OpenObserve at ...` but no traces appear"**
 

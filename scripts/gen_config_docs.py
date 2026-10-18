@@ -22,14 +22,16 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from hermes_otel import log_events as EV  # noqa: E402
 from hermes_otel.backend_specs import SPECS  # noqa: E402
+from hermes_otel.instruments import metric_spellings  # noqa: E402
 from hermes_otel.plugin_config import (  # noqa: E402
-    FIELD_DOCS,
-    NUMERIC_BOUNDS,
+    SCALAR_KINDS,
+    SPAN_FAMILIES,
     HermesOtelConfig,
     field_kinds,
 )
 
 DOCS = REPO_ROOT / "website" / "docs" / "reference"
+CONFIG_DOCS = REPO_ROOT / "website" / "docs" / "configuration"
 
 _TYPE_LABEL = {
     "bool": "bool",
@@ -48,6 +50,8 @@ def _default_label(field: dataclasses.Field, kind: str) -> str:
         return "*(unset)*" if kind in ("map", "backends", "str") else "`null`"
     if isinstance(d, bool):
         return f"`{'true' if d else 'false'}`"
+    if isinstance(d, tuple):
+        return f"`[{', '.join(d)}]`"
     if isinstance(d, str):
         return f'`"{d}"`'
     return f"`{d}`"
@@ -61,14 +65,14 @@ def render_fields_table() -> str:
         typ = _TYPE_LABEL[kind]
         if kind in ("float", "int", "str") and str(f.type).startswith("Optional"):
             typ += " \\| null"
-        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {_describe(f.name)} |")
+        rows.append(f"| `{f.name}` | {typ} | {_default_label(f, kind)} | {_describe(f)} |")
     return "\n".join(rows)
 
 
-def _describe(name: str) -> str:
-    """The field's description plus its numeric bounds (``NUMERIC_BOUNDS``, #487)."""
-    desc = FIELD_DOCS[name]
-    bounds = NUMERIC_BOUNDS.get(name)
+def _describe(field: dataclasses.Field) -> str:
+    """The field's ``doc`` plus its numeric ``bounds`` (#487), from its metadata."""
+    desc = field.metadata["doc"]
+    bounds = field.metadata.get("bounds")
     if bounds is None:
         return desc
     lo, hi = bounds
@@ -76,15 +80,21 @@ def _describe(name: str) -> str:
     return f"{desc}. Bounds: {rule}"
 
 
+# How an env var spells a field's value, where it differs from _TYPE_LABEL.
+_ENV_TYPE_LABEL = {"list": "comma-separated strings"}
+
+
 def render_env_table() -> str:
+    """Every env-overridable field (``SCALAR_KINDS``, list fields included)."""
     kinds = field_kinds()
     rows = ["| Env var | Maps to | Type | Default |", "|---|---|---|---|"]
     for f in dataclasses.fields(HermesOtelConfig):
         kind = kinds[f.name]
-        if kind not in ("bool", "int", "float", "str"):
+        if kind not in SCALAR_KINDS:
             continue
+        typ = _ENV_TYPE_LABEL.get(kind, _TYPE_LABEL[kind])
         rows.append(
-            f"| `HERMES_OTEL_{f.name.upper()}` | `{f.name}` | {_TYPE_LABEL[kind]} | {_default_label(f, kind)} |"
+            f"| `HERMES_OTEL_{f.name.upper()}` | `{f.name}` | {typ} | {_default_label(f, kind)} |"
         )
     return "\n".join(rows)
 
@@ -148,8 +158,36 @@ def render_backend_env_table() -> str:
     return "\n".join(rows)
 
 
+def render_disable_metrics() -> str:
+    """The ``disable_metrics`` vocabulary (#479): every instrument's OTLP name
+    and the other spellings the loader accepts for it."""
+    rows = ["| Instrument | Also accepted |", "|---|---|"]
+    for name, spellings in metric_spellings().items():
+        rows.append(f"| `{name}` | {', '.join(f'`{s}`' for s in spellings) or '—'} |")
+    return "\n".join(rows)
+
+
+def render_disable_spans() -> str:
+    """The ``disable_spans`` vocabulary (#479), as one line of names."""
+    return ", ".join(f"`{f}`" for f in SPAN_FAMILIES)
+
+
+def render_disable_names_yaml() -> str:
+    """Both vocabularies as yaml comment lines for ``config.yaml.example``."""
+    rows = ["# Valid disable_metrics entries (generated from hermes_otel/instruments.py):"]
+    rows.append("#   all")
+    for name, spellings in metric_spellings().items():
+        rows.append(f"#   {name:<36} {' / '.join(spellings)}".rstrip())
+    rows.append("# Valid disable_spans families (generated from hermes_otel/plugin_config.py):")
+    rows.append(f"#   {', '.join(SPAN_FAMILIES)}")
+    return "\n".join(rows)
+
+
 BLOCKS = {
     (DOCS / "config-schema.md", "config-fields"): render_fields_table,
+    (CONFIG_DOCS / "yaml.md", "disable-metrics"): render_disable_metrics,
+    (CONFIG_DOCS / "yaml.md", "disable-spans"): render_disable_spans,
+    (REPO_ROOT / "config.yaml.example", "disable-names"): render_disable_names_yaml,
     (DOCS / "env-vars.md", "env-overrides"): render_env_table,
     (DOCS / "env-vars.md", "backend-env-vars"): render_backend_env_table,
     (DOCS / "log-events.md", "log-events"): render_events_table,
@@ -177,10 +215,6 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     ap.add_argument("--write", action="store_true", help="update the docs in place")
     args = ap.parse_args(argv)
-    missing = [f.name for f in dataclasses.fields(HermesOtelConfig) if f.name not in FIELD_DOCS]
-    if missing:
-        print(f"FIELD_DOCS is missing: {missing}")
-        return 1
     drift = 0
     for (path, name), render in BLOCKS.items():
         current = path.read_text(encoding="utf-8")

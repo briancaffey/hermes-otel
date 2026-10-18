@@ -5,9 +5,9 @@ from unittest.mock import Mock
 
 import pytest
 
+from hermes_otel.backend_config import BackendConfig, coerce_backends
 from hermes_otel.backends import _ResolvedBackend, resolve
-from hermes_otel.otlp_transport import create_exporter, signal_endpoint
-from hermes_otel.plugin_config import BackendConfig, coerce_backends
+from hermes_otel.otlp_transport import create_exporter
 
 
 @pytest.fixture(autouse=True)
@@ -43,7 +43,7 @@ def grpc_exporters(monkeypatch):
 @pytest.mark.parametrize("signal", ["traces", "metrics", "logs"])
 def test_grpc_uses_same_target_and_selected_exporter(backend, grpc_exporters, signal):
     http = Mock()
-    endpoint = signal_endpoint(backend, signal)
+    endpoint = backend.target(signal).endpoint
     result = create_exporter(
         backend, signal, http, endpoint=endpoint, headers={"Authorization": "token"}
     )
@@ -57,7 +57,7 @@ def test_grpc_uses_same_target_and_selected_exporter(backend, grpc_exporters, si
 @pytest.mark.parametrize("signal", ["traces", "metrics", "logs"])
 def test_http_defaults_preserve_constructor_arguments(signal):
     backend = resolve(BackendConfig(type="otlp", endpoint="http://localhost:4318/v1/traces"))
-    endpoint = signal_endpoint(backend, signal)
+    endpoint = backend.target(signal).endpoint
     assert endpoint == f"http://localhost:4318/v1/{signal}"
     http = Mock()
     create_exporter(backend, signal, http, endpoint=endpoint, headers=None)
@@ -69,7 +69,7 @@ def test_http_defaults_preserve_constructor_arguments(signal):
 def test_signal_endpoint_overrides(protocol, signal):
     backend = _ResolvedBackend(type="otlp", endpoint="https://traces:443", protocol=protocol)
     backend = replace(backend, **{f"{signal}_endpoint": "https://other:443"})
-    assert signal_endpoint(backend, signal) == "https://other:443"
+    assert backend.target(signal).endpoint == "https://other:443"
 
 
 def test_yaml_loads_transport_fields(monkeypatch):
@@ -298,3 +298,50 @@ def test_grpc_client_identity_from_sdk_env(backend, grpc_exporters, tmp_path, mo
     credentials.assert_called_once_with(
         root_certificates=None, private_key=b"key", certificate_chain=b"cert"
     )
+
+
+# ── Follow-ups from merging main (#469) ─────────────────────────────────────
+
+
+def test_grpc_with_a_headers_helper_is_refused():
+    # The 401/403 re-mint rides the HTTP session; a gRPC token would expire.
+    with pytest.raises(ValueError, match="headers_helper needs protocol: http/protobuf"):
+        resolve(
+            BackendConfig(
+                type="otlp", endpoint="localhost:4317", protocol="grpc", headers_helper="mint"
+            )
+        )
+    http = resolve(BackendConfig(type="otlp", endpoint="http://x/v1/traces", headers_helper="m"))
+    assert http.headers_helper is not None
+
+
+def test_http_helper_session_reaches_the_http_exporter():
+    session = object()
+    http = Mock()
+    backend = resolve(BackendConfig(type="otlp", endpoint="http://x:4318/v1/traces"))
+    create_exporter(
+        backend, "traces", http, endpoint=backend.endpoint, headers=None, session=session
+    )
+    http.assert_called_once_with(endpoint=backend.endpoint, headers=None, session=session)
+
+
+def test_protocol_and_tls_fields_change_the_fingerprint():
+    from hermes_otel.plugin_config import HermesOtelConfig
+
+    def fp(**fields):
+        entry = BackendConfig(type="otlp", endpoint="localhost:4317", **fields)
+        return HermesOtelConfig(backends=(entry,)).fingerprint()
+
+    assert fp() != fp(protocol="grpc")
+    assert fp(protocol="grpc") != fp(protocol="grpc", certificate_file="/ca.pem")
+    assert fp(protocol="grpc", insecure=True) != fp(protocol="grpc", insecure=False)
+
+
+def test_settings_card_lists_protocol_only_when_it_is_not_the_default():
+    from hermes_otel.settings_report import _backend_summary
+
+    http = BackendConfig(type="otlp", endpoint="http://x:4318/v1/traces")
+    grpc_entry = BackendConfig(type="otlp", endpoint="x:4317", protocol="grpc", insecure=True)
+    assert "protocol" not in _backend_summary(http, {}, False)["fields"]
+    fields = _backend_summary(grpc_entry, {}, False)["fields"]
+    assert fields["protocol"] == "grpc" and fields["insecure"] is True

@@ -33,9 +33,10 @@ import time
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-sys.path.insert(0, str(Path(__file__).resolve().parent))
+sys.path[:0] = [str(Path(__file__).resolve().parent), str(Path(__file__).resolve().parents[1])]
 
-from common import profile_home, render_expect  # noqa: E402
+from _common import profile_home  # noqa: E402
+from common import render_expect  # noqa: E402
 
 Finding = Tuple[str, str]  # (FAIL | WARN | INFO, message)
 TURN_ROOT_NAMES = ("agent", "cron")
@@ -512,6 +513,33 @@ def find_trace(
     )
 
 
+def metric_total(
+    cli: Cli, source: str, name: str, since: str
+) -> Tuple[Optional[float], Optional[str]]:
+    """The instrument's window total from the query CLI's ``metrics`` command
+    (the sum of every series' buckets), or ``(None, error)``."""
+    res, err = cli.run("metrics", name, "--since", since, "--agg", "sum", source=source)
+    if err:
+        return None, err
+    series = (res or {}).get("series") or {} if isinstance(res, dict) else {}
+    return float(sum(v for vals in series.values() for v in vals if v is not None)), None
+
+
+def evaluate_metrics(ex: Dict[str, Any], cli: Cli, source: str, since: str) -> List[Finding]:
+    """``metrics_min``: the instrument's total since the run started, in a
+    source that serves metrics. Metrics carry no trace id, so this is per run
+    window, not per turn; the live store counts points, a backend reads its
+    own samples."""
+    out: List[Finding] = []
+    for name, want in (ex.get("metrics_min") or {}).items():
+        total, err = metric_total(cli, source, str(name), since)
+        if err:
+            out.append(("FAIL", f"metrics query for {name} failed: {err}"))
+        elif total < float(want):
+            out.append(("FAIL", f"{name} totals {total:g} in the run window, expected ≥ {want}"))
+    return out
+
+
 def check(
     manifest: Dict[str, Any],
     clis: Dict[str, Cli],
@@ -585,6 +613,8 @@ def check(
                         logs = logs or []
                         cell["logs"] = len(logs)
                 cell["findings"].extend(evaluate(ex, marker, spans, logs))
+                if src.get("metrics"):
+                    cell["findings"].extend(evaluate_metrics(ex, cli, sname, since))
                 per_source_turns[sname].append(
                     {
                         **turn,

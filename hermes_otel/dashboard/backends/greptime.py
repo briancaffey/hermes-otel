@@ -33,25 +33,36 @@ from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import register
-from ._prometheus import LOOKBEHIND_S, effective_agg, is_counter
-from ._prometheus import metric_names as _prom_metric_names
+from ._prometheus import PrometheusMetrics, is_counter
 from .base import (
     BackendError,
+    LogColumns,
     LogFilter,
     _execute,
     basic_auth,
     bearer,
-    finish_log_row,
+    log_row,
     register_cache,
     resolve_env_or_literal,
     validate_label_name,
     validate_metric_name,
 )
 from .jaeger import JaegerAdapter
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import LOOKBEHIND_S, bucketize, fold_samples, series_ident
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
-from .severity import otel_severity_for
+from .shapes import to_int
+
+# The logs table's columns; session and event live in ``log_attributes``.
+_LOG_COLUMNS = LogColumns(
+    time="timestamp",
+    level="severity_text",
+    logger="scope_name",
+    session_id="hermes.session_id",
+    event_name="event.name",
+)
 
 _DEFAULT_GREPTIME_PORT = 4000
 # ``/api/traces?limit=N`` keeps N arbitrary traces, not the newest (verified on
@@ -97,7 +108,7 @@ def json_key(key: str) -> str:
 
 
 @register
-class GreptimeAdapter(JaegerAdapter):
+class GreptimeAdapter(PrometheusMetrics, JaegerAdapter):
     handles = frozenset({"greptime"})
     query_lang_label = "Jaeger tags (key=value)"
     raw_placeholder = "tool.name=terminal error=true"
@@ -113,17 +124,17 @@ class GreptimeAdapter(JaegerAdapter):
         self.query_api = "v1"
         self.db = str(cfg.get("db") or _DEFAULT_DB)
         self.logs_table = str(cfg.get("logs_table") or _DEFAULT_LOGS_TABLE)
-        self.metrics_match = cfg.get("metrics_match") or None
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
         self.sql_url = f"{self.query_url}/v1/sql?{_urlparse.urlencode({'db': self.db})}"
-        self.prometheus_url = f"{self.query_url}/v1/prometheus"
+        # The metric list comes from the PromQL label-values route; the
+        # samples from SQL (``metrics_query`` below).
+        self._use_prometheus(f"{self.query_url}/v1/prometheus", cfg)
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_api"] = "jaeger-compatible"
         base["sql_url"] = self.sql_url
-        base["prometheus_url"] = self.prometheus_url
         base["db"] = self.db
         return base
 
@@ -178,11 +189,6 @@ class GreptimeAdapter(JaegerAdapter):
 
     # ── metrics (#194 shapes) ─────────────────────────────────────────
 
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _prom_metric_names(
-            self.prometheus_url, start_s, end_s, self.metrics_match, headers=self._headers()
-        )
-
     def metrics_query(
         self,
         name: str,
@@ -226,24 +232,12 @@ class GreptimeAdapter(JaegerAdapter):
             except (KeyError, TypeError, ValueError, IndexError):
                 continue
             tags = {c: row[idx[c]] for c in tag_cols if c in idx and row[idx[c]] is not None}
-            ident = "|".join(f"{k}={v}" for k, v in sorted(tags.items()))
+            ident = series_ident(tags)
             labels_of[ident] = str(tags.get(label_col, "—")) if label_col else "_"
             samples.append((ts_ns, value, ident))
-        if counter:
-            increases = counter_increases(samples, window_start_ns=start_ns)
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in increases]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg if agg != "last" else "sum")
-            out["cumulative"] = True
-            out["series_start_rule"] = (
-                f"a series with no sample in the {LOOKBEHIND_S}s before the window "
-                "counts its first value"
-            )
-        else:
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in samples]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg)
-        out["agg"] = effective_agg(name, agg)
-        out["agg_requested"] = agg
-        out["name"] = name
+        out = fold_samples(
+            samples, labels_of, start_ns, end_ns, bucket_s, agg, name=name, cumulative=counter
+        )
         out["sql"] = sql
         return out
 
@@ -266,7 +260,7 @@ class GreptimeAdapter(JaegerAdapter):
         if f.logger:
             preds.append(f'"scope_name" = {sql_str(f.logger)}')
         if f.min_level:
-            preds.append(f'"severity_number" >= {otel_severity_for(f.min_level)}')
+            preds.append(f'"severity_number" >= {otel_severity(f.min_level)}')
         if f.event_name:
             preds.append(
                 f'json_get_string("log_attributes", {json_key("event.name")}) '
@@ -290,37 +284,17 @@ class GreptimeAdapter(JaegerAdapter):
             + f' ORDER BY "timestamp" DESC LIMIT {n}'
         )
         cols, rows = self._sql(sql)
-        idx = {c: i for i, c in enumerate(cols)}
-
-        def col(row: List[Any], name: str) -> Any:
-            i = idx.get(name)
-            return row[i] if i is not None and i < len(row) else None
-
         records: List[Dict[str, Any]] = []
         for row in rows:
-            attrs = col(row, "log_attributes")
+            rec = dict(zip(cols, row))
+            attrs = rec.pop("log_attributes", None)
             if isinstance(attrs, str):
                 try:
                     attrs = json.loads(attrs)
                 except (TypeError, ValueError):
                     attrs = {"raw": attrs}
-            attrs = dict(attrs) if isinstance(attrs, dict) else {}
-            try:
-                ts_ns = int(col(row, "timestamp") or 0)
-            except (TypeError, ValueError):
-                ts_ns = 0
-            record = {
-                "level": col(row, "severity_text") or "INFO",
-                "severity_number": col(row, "severity_number"),
-                "logger": col(row, "scope_name") or "",
-                "body": col(row, "body") or "",
-                "time_unix_nano": ts_ns,
-                "trace_id": col(row, "trace_id") or None,
-                "span_id": col(row, "span_id") or None,
-                "session_id": attrs.pop("hermes.session_id", None),
-                "event_name": attrs.pop("event.name", None),
-            }
-            records.append(finish_log_row(record, attrs))
+            raw = {**(attrs if isinstance(attrs, dict) else {}), **rec}
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=to_int(rec.get("timestamp"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

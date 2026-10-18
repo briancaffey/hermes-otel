@@ -168,32 +168,32 @@ because the plugin's debug log only sees the HTTP status.
 
 | Backend | Traces | Metrics | Logs | Failure mode for the missing ones | Plugin default |
 |---|---|---|---|---|---|
-| Phoenix | yes | no | no | 405 on `/v1/metrics` and `/v1/logs` (#160) | `_TRACES_ONLY`: no metrics or logs exporter is created |
-| Langfuse | yes | no | no | no such routes | `_TRACES_ONLY` |
+| Phoenix | yes | no | no | 405 on `/v1/metrics` and `/v1/logs` (#160) | traces-only spec: no metrics or logs exporter is created |
+| Langfuse | yes | no | no | no such routes | traces-only spec |
 | LangSmith | yes | no | no | the OTLP ingest serves traces only | metrics and logs off |
 | SigNoz | yes | yes | yes | before first-run setup the collector runs a `nop` pipeline and resets the connection | all on |
-| Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | `_TRACES_ONLY` |
-| Agenta | yes | no | no | only `/api/otlp/v1/traces` is mounted (404 elsewhere); ingest is asynchronous via a Redis stream, 200 = accepted | `_TRACES_ONLY` |
+| Jaeger | yes | no | no | not served (a forced `metrics: true` is expected to 404) | traces-only spec |
+| Agenta | yes | no | no | only `/api/otlp/v1/traces` is mounted (404 elsewhere); ingest is asynchronous via a Redis stream, 200 = accepted | traces-only spec |
 | Gigapipe | yes | yes (cumulative only) | yes | delta points rejected one by one in `partial_success`; `/v1/logs` answers 204 | all on |
 | Aspire Dashboard | yes | yes (Gauge, Sum, Histogram; **exponential histograms rejected**, "is not supported") | yes | — | all on |
 | VictoriaTraces / Logs / Metrics | yes | yes (its own store) | yes (its own store) | a signal whose store is not named has nowhere to go; an explicit `metrics: true` / `logs: true` without the store skips the entry with a hint | on per named store |
 | ClickStack | yes | yes | yes | nothing listens on 4317/4318 until the first team exists (the Collector gets its receivers over OpAMP); then 401 without the key | all on |
 | GreptimeDB | yes | yes (no exponential histograms) | yes | traces without `X-Greptime-Pipeline-Name: greptime_trace_v1` → 400 "Pipeline is required"; logs **with** it → 400 "Unsupported pipeline for logs" (verified 2026-10-11) | all on; the pipeline header goes on traces only (`metrics_headers` / `logs_headers`), and an empty per-signal header set now means "none", not "the trace headers" |
-| Zipkin | yes | no | no | `/v1/metrics` is 404; `/v1/logs` answers 202 and keeps a record only as an annotation on a span it can name through an `event.name` attribute, which the plugin's records lack, so nothing is stored (verified 2026-10-11) | `_TRACES_ONLY` |
-| Tempo | yes | no | no | not served | `_TRACES_ONLY` (even behind a collector that would accept them; set `metrics: true` explicitly) |
+| Zipkin | yes | no | no | `/v1/metrics` is 404; `/v1/logs` answers 202 and keeps a record only as an annotation on a span it can name through an `event.name` attribute, which the plugin's records lack, so nothing is stored (verified 2026-10-11) | traces-only spec |
+| Tempo | yes | no | no | not served | traces-only spec (even behind a collector that would accept them; set `metrics: true` explicitly) |
 | Grafana LGTM | yes | yes | yes | — | all on |
 | Uptrace | yes | yes | yes | — | all on |
 | OpenObserve | yes | yes | yes | — | all on |
 | Parseable | yes | yes | yes | OSS: `400 Protobuf ingestion is not supported` without the collector | all on |
 | Honeycomb | yes | yes | yes | — | all on |
-| W&B Weave | yes | no | no | W&B documents the endpoint for traces only | `_TRACES_ONLY` |
+| W&B Weave | yes | no | no | W&B documents the endpoint for traces only | traces-only spec |
 | Elastic | yes | yes | yes | **silent**: exporter says SUCCESS, the collector's bulk indexer fails if the cluster is red | all on, delta preset |
 | OpenLIT | yes | yes | yes | — | all on |
-| MLflow | yes | no | no | 404 on `/v1/metrics` and `/v1/logs` | `_TRACES_ONLY` |
-| Comet Opik | yes | no | no | 404 under the vendor prefix | `_TRACES_ONLY` |
-| Laminar | yes | **no** | yes | `/v1/metrics` answers **200 and stores nothing** (a placeholder handler) | `_NO_METRICS`: metrics off, logs on |
+| MLflow | yes | no | no | 404 on `/v1/metrics` and `/v1/logs` | traces-only spec |
+| Comet Opik | yes | no | no | 404 under the vendor prefix | traces-only spec |
+| Laminar | yes | **no** | yes | `/v1/metrics` answers **200 and stores nothing** (a placeholder handler) | `metrics=False, logs=True` spec: metrics off, logs on |
 | LangWatch | yes | yes | yes | — | all on |
-| Latitude | yes | no | no | the ingest service has only `/v1/traces` and health routes | `_TRACES_ONLY` |
+| Latitude | yes | no | no | the ingest service has only `/v1/traces` and health routes | traces-only spec |
 | telemetry.dev | yes | yes | yes | — | generic `otlp`: all on |
 | Langtrace | partial | no | no | not served | generic `otlp`: set `metrics: false`, `logs: false` on the entry |
 | Sigiro, Maple | yes | yes | yes | — | generic `otlp`: all on |
@@ -203,7 +203,7 @@ because the plugin's debug log only sees the HTTP status.
 Three failure modes, one of them invisible: a 404/405 you can see in the
 debug log, a connection reset you can see, and Laminar's 200-with-nothing
 and Elastic's red-cluster drop that you cannot. The per-type defaults
-(`_TRACES_ONLY`, `_LOGS_CAPABLE`, `_NO_METRICS` in `backends.py`) exist so a
+(`metrics` / `logs` on each type's `BackendSpec` in `backend_specs.py`) exist so a
 user never has to discover the invisible ones. The generic `otlp` type cannot
 know, so it defaults every signal on and you turn them off per entry.
 
@@ -412,7 +412,7 @@ Format: **quirk** → treatment (issue).
 
 ### Phoenix (`phoenix`)
 - Ingest and UI on one port, no redirect from the root → the endpoint must end in `/v1/traces`; the resolver uses it as given.
-- 405 on `/v1/metrics` and `/v1/logs` → in `_TRACES_ONLY`; no metrics or logs exporter is created; banner says "(traces only)" (#160). A collector in front can still take them: `metrics: true` on the entry overrides.
+- 405 on `/v1/metrics` and `/v1/logs` → a traces-only spec; no metrics or logs exporter is created; banner says "(traces only)" (#160). A collector in front can still take them: `metrics: true` on the entry overrides.
 - Reads OpenInference, not GenAI → the plugin emits both; tokens are on the `api.*` spans and Phoenix totals them itself.
 - No default endpoint, despite what early docs promised (#93) → `requires endpoint`.
 - `status=error` on Phoenix means the **root** span's status, while the Live source means any span errored (#293); documented as a semantic difference.
@@ -425,7 +425,7 @@ Format: **quirk** → treatment (issue).
 - Basic auth from two keys, plus `x-langfuse-ingestion-version: 4` → built by the resolver; both keys required.
 - Vendor `LANGFUSE_*` variables are often set for other tools, and used to switch on export to Langfuse Cloud with full content capture → they fill credentials only; `OTEL_LANGFUSE_*` is the opt-in (#258, #259, PRs #255, #261, #263).
 - `docker.io/minio/minio` left Docker Hub → the compose uses `cgr.dev/chainguard/minio`, as upstream does (PR #340).
-- Traces only → `_TRACES_ONLY`.
+- Traces only → `metrics=False, logs=False` in the spec.
 - **v4 `events_only` removed the v3 trace endpoints** (`/api/public/traces`, `/observations`, `/sessions`) → the adapter probes `GET /api/public/traces?limit=1`, treats a 404 naming `events_only` as v4, and reads `/api/public/v2/observations` plus `/api/public/v2/metrics` instead; `query_api: v3|v4` pins (#246). v4 observations carry no input, output or per-span usage; trace totals come from the metrics query.
 - OTLP-ingested observations keep the span attributes verbatim under `metadata.attributes`; Langfuse's own `usage` is zero-filled on non-GENERATION types → the adapter reads the attributes first and skips `usage` on OTLP observations, which fixed the header showing 0 tokens (#346).
 - Langfuse drops the `tool.` prefix on TOOL observations → restored by the adapter.
@@ -448,7 +448,7 @@ Format: **quirk** → treatment (issue).
 - Ports remapped (4318 → 4328, 4317 → 4327, 8080 → 3301) so it coexists with LGTM and Jaeger.
 
 ### Jaeger (`jaeger`, v1 and v2)
-- Traces only → `_TRACES_ONLY`; a forced `metrics: true` is expected to 404.
+- Traces only → `metrics=False, logs=False` in the spec; a forced `metrics: true` is expected to 404.
 - Not LLM-aware → tokens and messages are plain tags; fine for a span-tree look.
 - **v2 serves only `/api/v3`** (OTLP-JSON) and 404s the classic routes; Jaeger 1.x also exposes an `/api/v3` gateway with snake_case parameters → the adapter probes classic first, then v3; `query_api: v1|v3` pins (#245, PR #338). v3 silently ignores `attributes[k]=v`, so the tag map goes JSON-encoded in `query.attributes`; an empty search is a 404 "No traces found".
 - `tags=` and `operation=` match any span of a trace → with roots-only the adapter re-checks the root itself (#295); the root is the span with no `CHILD_OF` reference.
@@ -499,7 +499,7 @@ Format: **quirk** → treatment (issue).
 - Ingest is gated by the **team's ingestion key** as a bare `authorization` header (`bearertokenauth` accepts `Bearer` too) → `api_key` / `api_key_env` with `OTEL_CLICKSTACK_API_KEY` / `HYPERDX_API_KEY` fallbacks; a missing key skips the entry, because every batch would be a 401.
 - The Collector's OTLP receivers do not exist until a team does (config arrives over OpAMP) → `mint-api-key.sh` registers the first account through `POST /api/register/password`, reads `db.teams.findOne().apiKey` from the all-in-one's MongoDB and waits for 4318 to answer.
 - All three signals in the standard OTel ClickHouse tables; metric names stay **dotted**, histograms are one table with `Count` and `Sum` → the adapter lists `<name>.sum` / `<name>.count` and reads raw cumulative samples with the five-minute look-behind (#296).
-- Every map value is a string → coerced back on read except on id-like keys (`coerce_tag`, shared with Zipkin).
+- Every map value is a string → coerced back on read except on id-like keys (`coerce_tag` in `dashboard/backends/shapes.py`, which the Zipkin, Victoria and Gigapipe adapters use too).
 - The bundled `default` ClickHouse user answers only from inside the container → `user: api`, `password: api` (defined with open networks by the image) on the entry; ClickHouse answers a bad query with 400/404 and text, mapped to a `backend` error.
 - The Collector lower-cases `SeverityText` → upper-cased again on read; `otelcol_*` self-metrics land in `otel_metrics_gauge` → `metrics_match` keeps the plugin's namespaces.
 - Ports remapped to 3050 / 4407 / 4408 / 8124 (upstream 8080 / 4317 / 4318 / 8123 collide with hn.fm, LGTM, Jaeger and Uptrace); 3-day TTL; 2.6 GB image, about 1.1 GB resident.
@@ -519,7 +519,7 @@ Format: **quirk** → treatment (issue).
 
 ### Zipkin (`zipkin`)
 - The stock `openzipkin/zipkin` image has **no OTLP endpoint** → the folder runs the `zipkin-otel` contrib image (0.3.0 = Zipkin 3.6.0), where `POST /v1/traces` lives on the query port 9411 next to the UI and API v2. Marked experimental upstream; needs 128-bit trace ids, which OTLP always sends.
-- Traces only → `_TRACES_ONLY`: `/v1/metrics` is 404; `/v1/logs` is accepted (202) and stored only as an annotation on a span named by trace id, span id and an `event.name` attribute, which the plugin's log records do not carry.
+- Traces only → `metrics=False, logs=False` in the spec: `/v1/metrics` is 404; `/v1/logs` is accepted (202) and stored only as an annotation on a span named by trace id, span id and an `event.name` attribute, which the plugin's log records do not carry.
 - Every attribute becomes a string tag (`"7589"`, `"true"`); arrays lose their brackets; links are dropped; INTERNAL spans have no kind → the adapter coerces numbers and booleans back on read, except on id-like keys.
 - Status is the `otel.status_code` tag plus an `error` tag carrying the message on ERROR; events are annotations whose value is the event name or `"name":{...}` → mapped back to OTLP status and events.
 - Search is `serviceName` + `annotationQuery` (`k=v and k2=v2`, no quoting, so a value containing ` and ` cannot be expressed), `spanName` exact, `minDuration` in µs, window `endTs` + `lookback` in ms → model, session, tool, error status and the raw query go server-side; the kind prefix and roots-only are client-side, and the root is re-checked because tags match any span (#295).
@@ -528,7 +528,7 @@ Format: **quirk** → treatment (issue).
 - Verified 2026-10-11: one turn stored 7 spans (`agent` root, `llm.*`, three `api.*`, `tool.terminal`, `tool.read_file`), about 300 MB resident.
 
 ### Grafana Tempo (`tempo`)
-- Traces only, and the type refuses metrics and logs even behind a collector that would take them → `_TRACES_ONLY`; set `metrics: true` / `logs: true` explicitly, or use `lgtm`.
+- Traces only, and the type refuses metrics and logs even behind a collector that would take them → a traces-only spec; set `metrics: true` / `logs: true` explicitly, or use `lgtm`.
 - **Attribute values truncated at 2048 bytes** by default, which cut `gen_ai.input.messages` → `tempo.yaml` raises `distributor.max_attribute_bytes` to 131072.
 - Search lags 20-30 s behind ingest.
 - Search returns the first `limit` matches in block order, not the newest (verified on 3.0.3: `limit=3` over four traces skipped a newer one about half the time) → the adapter over-fetches `search_fetch` (default 500) and sorts.
@@ -586,7 +586,7 @@ Format: **quirk** → treatment (issue).
 - Had no plugin-namespaced key, so `WANDB_API_KEY` + entity + project alone used to switch export on → `OTEL_WEAVE_API_KEY` / `_ENDPOINT` / `_BASE_URL` opt in (PR #255).
 - Routes by **resource attributes** `wandb.entity` / `wandb.project` → copied from the entry (or `resource_attributes`); both must be present for env-var mode to select it; one Weave project per process.
 - Dedicated Cloud uses a different path prefix (`/traces/otel/v1/traces`) than SaaS (`/otel/v1/traces`) → `_weave_endpoint_from_base`.
-- W&B documents the endpoint for traces → `_TRACES_ONLY`.
+- W&B documents the endpoint for traces → a traces-only spec.
 - Expects `wandb.thread_id` and `wandb.is_turn=true` on the root → set by the plugin.
 
 ### Elastic (`elastic`)
@@ -606,21 +606,21 @@ Format: **quirk** → treatment (issue).
 ### MLflow (`mlflow`)
 - **Mandatory** `x-mlflow-experiment-id` (400 without it) → default `"0"`; `experiment_id` / `OTEL_MLFLOW_EXPERIMENT_ID` / `MLFLOW_EXPERIMENT_ID`.
 - Needs MLflow ≥ 3.6 and a SQL tracking store; the file store refuses OTLP → the compose uses SQLite.
-- 404 on `/v1/metrics` and `/v1/logs` → `_TRACES_ONLY`.
+- 404 on `/v1/metrics` and `/v1/logs` → a traces-only spec.
 - Computes trace token totals and cost itself (`mlflow.trace.tokenUsage`, `mlflow.trace.cost`) from the span attributes; reads the root → keeps the roll-up.
 - macOS AirPlay owns port 5000 → host port 5001.
 
 ### Comet Opik (`opik`)
 - Vendor prefix `/api/v1/private/otel` → `_opik_traces_url` completes the UI base, the SDK's `…/api` override, the prefix, or the full URL; cloud default host.
 - Cloud auth is the **bare key** in `Authorization` (no Bearer) plus `Comet-Workspace`; self-hosted needs nothing → every header optional and omitted when unresolved.
-- `/metrics` and `/logs` under the prefix 404 → `_TRACES_ONLY`.
+- `/metrics` and `/logs` under the prefix 404 → a traces-only spec.
 - **Sums `gen_ai.usage.*` over every span**, so the root's roll-up doubled trace tokens and the estimated cost (28 560 shown for 14 280 real, #327) → `root_usage: false` preset; after it, the trace total equals the `api.*` spans (#353, 1.24.0; one turn re-run live went from 27 914 to 13 953 prompt tokens). Opik maps `agent` → `general`, `api.*` / `llm.*` → `llm`; HTTP only, gRPC errors.
 - First start takes one to three minutes while ClickHouse and MySQL migrate.
 
 ### Laminar (`laminar`)
 - Ingest is on the **app-server** (:8100 here, upstream 8000), not the frontend → endpoint is the app-server base; cloud default `api.lmnr.ai`.
 - A project key is required on both editions → resolver skips the entry with a clear message instead of a stream of 401s; `mint-api-key.sh` scripts the key.
-- **`/v1/metrics` answers 200 and stores nothing** → `_NO_METRICS`: metrics off by default, traces and logs on (verified: log records stored).
+- **`/v1/metrics` answers 200 and stores nothing** → `metrics=False, logs=True` in the spec: metrics off by default, traces and logs on (verified: log records stored).
 - The published frontend skips creating its Quickwit `spans_v2` index → a `quickwit-init` job creates it, or span search stays empty forever.
 
 ### LangWatch (`langwatch`)
@@ -632,7 +632,7 @@ Format: **quirk** → treatment (issue).
 ### Latitude (`latitude`)
 - Ingest is a separate **ingest service** (:3002), not the web or API ports → endpoint is its base; cloud default `ingest.latitude.so`.
 - Both the Bearer key **and** `X-Latitude-Project: <slug>` are mandatory; spans without a project are rejected → both required by the resolver; a missing one skips the entry.
-- Only `/v1/traces` and health routes exist → `_TRACES_ONLY`. Ingest answers 202; 32 MiB per request by default. Per-span column values were not inspected (the stack was torn down to reclaim disk, PR #331).
+- Only `/v1/traces` and health routes exist → a traces-only spec. Ingest answers 202; 32 MiB per request by default. Per-span column values were not inspected (the stack was torn down to reclaim disk, PR #331).
 - Latitude ships its own Hermes plugin → running both double-traces every turn.
 - 13 containers, about 18 GB of images; the key is encrypted at rest and cannot be read back from Postgres.
 

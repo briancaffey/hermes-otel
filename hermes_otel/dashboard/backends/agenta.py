@@ -23,7 +23,6 @@ plugin's default service name.
 from __future__ import annotations
 
 import copy
-import datetime as _dt
 from typing import Any, Dict, List, Optional
 
 from . import default_service_name, register
@@ -44,8 +43,8 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import card_attrs, card_row, flatten_dotted, otlp_batches, otlp_span
-from .victoria import rfc3339_to_ns
+from .shapes import SpanRow, flatten_dotted, otlp_kind, recard_roots, trace_detail
+from .timeconv import ns_from_s, ns_to_rfc3339, rfc3339_to_ns
 
 _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
 # A widened search returns spans, several per trace; fetch a few per requested row.
@@ -56,20 +55,7 @@ _MAX_TRACE_SPANS = 2000
 # ``input.value`` / ``gen_ai.input.messages`` already carry them.
 _FREE_TEXT_KEYS = ("input.value", "output.value")  # the roots' prompt and answer
 _DROP_PREFIXES = ("ag.data.", "ag.meta.")
-_KIND = {
-    "SPAN_KIND_INTERNAL": 1,
-    "SPAN_KIND_SERVER": 2,
-    "SPAN_KIND_CLIENT": 3,
-    "SPAN_KIND_PRODUCER": 4,
-    "SPAN_KIND_CONSUMER": 5,
-}
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
-
-
-def iso(ns: int) -> str:
-    secs, rem = divmod(int(ns), 1_000_000_000)
-    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{rem // 1000:06d}Z"
 
 
 def _cond(
@@ -184,8 +170,8 @@ class AgentaAdapter(BackendAdapter):
         body: Dict[str, Any] = {
             "formatting": {"focus": "span", "format": "agenta"},
             "windowing": {
-                "oldest": iso(int(start_s) * 1_000_000_000),
-                "newest": iso(trace_end_bound(f, end_s, "ns")),
+                "oldest": ns_to_rfc3339(ns_from_s(start_s), digits=6),
+                "newest": ns_to_rfc3339(trace_end_bound(f, end_s, "ns"), digits=6),
                 "limit": int(limit),
                 "order": "descending",
             },
@@ -204,13 +190,26 @@ class AgentaAdapter(BackendAdapter):
         flat = flatten_dotted(span.get("attributes") or {}, keep_empty=True)
         return {k: v for k, v in flat.items() if not k.startswith(_DROP_PREFIXES)}
 
-    @staticmethod
-    def _times(span: Dict[str, Any]) -> tuple:
+    def _row(self, span: Dict[str, Any], trace_id: Any = None) -> SpanRow:
+        """An Agenta span as a row. A missing end is the start; resource
+        attributes are not stored, so the plugin's service name stands in."""
         start = rfc3339_to_ns(span.get("start_time"))
-        end = rfc3339_to_ns(span.get("end_time")) or start
-        return start, end
+        return SpanRow(
+            str(span.get("trace_id") or trace_id or ""),
+            span.get("span_id"),
+            span.get("parent_id"),
+            str(span.get("span_name") or ""),
+            start_ns=start,
+            end_ns=rfc3339_to_ns(span.get("end_time")) or start,
+            attrs=self._attrs(span),
+            service=self.default_service,
+            kind=otlp_kind(span.get("span_kind")),
+            status={"code": _STATUS.get(str(span.get("status_code") or ""), 0), "message": ""},
+        )
 
-    def _counts(self, trace_ids: List[str]) -> Dict[str, int]:
+    def _trace_rows(self, trace_ids: List[str]) -> Dict[str, List[SpanRow]]:
+        """Every span of the page's traces (up to ``_MAX_TRACE_SPANS``), by
+        trace: the span counts, and the root a tool-filter card shows."""
         if not trace_ids:
             return {}
         spans = self._query(
@@ -223,58 +222,44 @@ class AgentaAdapter(BackendAdapter):
                 },
             }
         )
-        counts: Dict[str, int] = {}
+        out: Dict[str, List[SpanRow]] = {}
         for sp in spans:
-            tid = str(sp.get("trace_id") or "")
-            counts[tid] = counts.get(tid, 0) + 1
-        return counts
+            r = self._row(sp)
+            out.setdefault(r.trace_id, []).append(r)
+        return out
 
     # ── public API ───────────────────────────────────────────────────
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
         fetch = widened_fetch(limit, f.roots_only, _ROWS_PER_TRACE, inclusive=True)
         seen: set = set()
-        spans: List[Dict[str, Any]] = []
+        spans: List[SpanRow] = []
         for body in self._bodies(f, start_s, end_s, fetch):
             for sp in self._query(body):
                 key = (sp.get("trace_id"), sp.get("span_id"))
                 if key in seen:
                     continue
                 seen.add(key)
-                spans.append(sp)
-        spans.sort(key=lambda sp: self._times(sp)[0], reverse=True)
+                spans.append(self._row(sp))
+        spans.sort(key=lambda r: r.start_ns, reverse=True)
         spans = spans[:fetch]
-        cards: Dict[str, Dict[str, Any]] = {}
-        for sp in spans:
-            tid = str(sp.get("trace_id") or "")
-            if not tid:
+        cards: Dict[str, SpanRow] = {}
+        for r in spans:
+            if not r.trace_id:
                 continue
-            start, end = self._times(sp)
-            if f.min_duration_ms and (end - start) < int(f.min_duration_ms) * 1_000_000:
+            if f.min_duration_ms and r.duration_ns < int(f.min_duration_ms) * 1_000_000:
                 continue
-            prev = cards.get(tid)
-            if prev is None or start < self._times(prev)[0]:
-                cards[tid] = sp
-        counts = self._counts(list(cards))
-        rows: List[Dict[str, Any]] = []
-        for tid, sp in cards.items():
-            start, end = self._times(sp)
-            name = sp.get("span_name") or ""
-            rows.append(
-                card_row(
-                    tid,
-                    span_id=sp.get("span_id"),
-                    name=name,
-                    attrs=card_attrs(
-                        self._attrs(sp), name, sp.get("status_code") == "STATUS_CODE_ERROR"
-                    ),
-                    start_ns=start,
-                    duration_ms=max(0, end - start) // 1_000_000,
-                    service=self.default_service,
-                    span_count=counts.get(tid, 1),
-                )
-            )
+            prev = cards.get(r.trace_id)
+            if prev is None or r.start_ns < prev.start_ns:
+                cards[r.trace_id] = r
+        by_trace = self._trace_rows(list(cards))
+        rows = [r.card(len(by_trace.get(tid) or []) or 1) for tid, r in cards.items()]
         page = trace_page(strictly_older_traces(rows, f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            roots = {r.trace_id: r for spans in by_trace.values() for r in spans if not r.parent_id}
+            recard_roots(page, roots)
         return mark_full_fetch(page, len(spans), fetch, widened=not f.roots_only)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
@@ -292,28 +277,6 @@ class AgentaAdapter(BackendAdapter):
         )
         if not spans:
             raise not_found(trace_id, "Agenta")
-        otlp = []
-        for sp in spans:
-            start, end = self._times(sp)
-            otlp.append(
-                otlp_span(
-                    sp.get("trace_id") or trace_id,
-                    sp.get("span_id"),
-                    sp.get("parent_id"),
-                    sp.get("span_name"),
-                    start_ns=start,
-                    end_ns=end,
-                    attrs=self._attrs(sp),
-                    status={
-                        "code": _STATUS.get(str(sp.get("status_code") or ""), 0),
-                        "message": "",
-                    },
-                    kind=_KIND.get(str(sp.get("span_kind") or ""), 1),
-                )
-            )
-        return {
-            # Resource attributes are not stored: the plugin's service name stands in.
-            "batches": otlp_batches({self.default_service: otlp}),
-            "span_count": len(otlp),
-            "truncated": len(spans) >= _MAX_TRACE_SPANS,
-        }
+        return trace_detail(
+            [self._row(sp, trace_id) for sp in spans], truncated=len(spans) >= _MAX_TRACE_SPANS
+        )

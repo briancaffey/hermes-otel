@@ -8,16 +8,15 @@ identity keys) cannot drift between hooks (#104).
 from __future__ import annotations
 
 import json
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, Optional, Tuple
 
+from ..coerce import optional_number
 from ..helpers import (
     DEFAULT_SERVICE_NAME,
     clip_joined,
     named_profile,
-    optional_number,
     package_version,
     truncate_string,
-    turn_trigger,
 )
 from ..session_state import TurnSummary
 
@@ -144,9 +143,61 @@ def session_env(name: str) -> str:
         return os.environ.get(name, "")
 
 
+# ``hermes.turn.trigger`` (#394): what started a turn, from what Hermes makes
+# observable at turn start (the hook's ``platform``, the session-context vars
+# and the process environment). A closed set, so a backend can group by it.
+TURN_TRIGGERS = (
+    "user",  # a person: CLI / TUI / desktop / a gateway platform / ACP
+    "cron",  # a scheduled cron job
+    "kanban",  # a kanban worker run (HERMES_KANBAN_TASK)
+    "subagent",  # a delegated child agent
+    "a2a",  # an inbound agent-to-agent call
+    "api",  # the API server (/v1/runs, /v1/chat/completions)
+    "oneshot",  # a single-query run (hermes -z, chat -q) not covered above
+    "curator",  # Hermes's background curator
+    "batch",  # the batch runner
+    "system",  # other host housekeeping (gateway hygiene)
+)
+_PLATFORM_TRIGGERS = {
+    "subagent": "subagent",
+    "cron": "cron",
+    "a2a": "a2a",
+    "api_server": "api",
+    "curator": "curator",
+    "batch": "batch",
+    "gateway_hygiene": "system",
+}
+
+
+def turn_trigger(
+    platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
+) -> str:
+    """Classify what started a turn into one of :data:`TURN_TRIGGERS`.
+
+    ``env(name)`` reads a Hermes session variable (context var first, then the
+    process environment). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
+    and bot-to-bot DMs are not observable as such at turn start (only as a
+    message prefix), so they classify as the turn they ride on.
+    """
+    p = str(platform or "").strip().lower()
+    if is_subagent or p == "subagent":
+        return "subagent"
+    if p == "cron" or env("HERMES_CRON_SESSION").strip() in ("1", "true"):
+        return "cron"
+    if env("HERMES_KANBAN_TASK").strip():
+        return "kanban"
+    if p in _PLATFORM_TRIGGERS:
+        return _PLATFORM_TRIGGERS[p]
+    if env("HERMES_SESSION_SOURCE").strip().lower() == "a2a":
+        return "a2a"
+    if env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
+        return "oneshot"
+    return "user"
+
+
 def turn_trigger_attributes(platform: Any, is_subagent: bool = False) -> Dict[str, str]:
     """``hermes.turn.trigger``: what started the turn (#394), see
-    :func:`hermes_otel.helpers.turn_trigger`."""
+    :func:`turn_trigger`."""
     return {"hermes.turn.trigger": turn_trigger(platform, is_subagent=is_subagent, env=session_env)}
 
 
@@ -290,18 +341,11 @@ def correlation_attributes(tracer, session_id: Optional[str], extra_kwargs: dict
     must not create aggregators (#105). ``_start_session_span`` is the one
     writer of ``correlation_id``.
     """
-    incoming = _extract_correlation_id(extra_kwargs)
-    session_key = str(session_id) if session_id else ""
-    correlation_id = incoming
-
-    if session_key:
-        ps = tracer.sessions.peek(session_key)
-        if incoming:
-            if ps is not None:
-                ps.correlation_id = incoming
-        elif ps is not None and ps.correlation_id:
+    correlation_id = _extract_correlation_id(extra_kwargs)
+    if not correlation_id and session_id:
+        ps = tracer.sessions.peek(str(session_id))
+        if ps is not None and ps.correlation_id:
             correlation_id = ps.correlation_id
-
     if not correlation_id:
         return {}
     return {"correlation.id": truncate_string(correlation_id, _ID_MAX)}
@@ -377,8 +421,6 @@ def _summary_attributes(summary: TurnSummary) -> Dict[str, Any]:
         attrs["hermes.turn.skills"] = clip_joined(sorted(summary.skill_names), ",")
     if summary.api_call_count:
         attrs["hermes.turn.api_call_count"] = summary.api_call_count
-    if summary.final_status:
-        attrs["hermes.turn.final_status"] = summary.final_status
     return attrs
 
 
@@ -395,11 +437,11 @@ def _tool_host_utilization_attributes(tracer, started_at: float, ended_at: float
     unless the tool itself drives the GPU. Empty when host metrics are off or
     the tool finished between two samples.
     """
-    sampler = tracer.host_metrics
-    if sampler is None:
+    host = tracer.host_metrics
+    if host is None:
         return {}
     try:
-        stats = sampler.window(started_at, ended_at)
+        stats = host.window(started_at, ended_at)
     except Exception:  # pragma: no cover — never break the hook
         return {}
     if stats is None:

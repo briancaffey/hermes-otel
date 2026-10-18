@@ -12,6 +12,7 @@ import pytest
 from hermes_otel.dashboard import backends
 from hermes_otel.dashboard.backends import agenta as ag
 from hermes_otel.dashboard.backends.base import BackendError, ConfigError, StructuredFilter
+from hermes_otel.dashboard.backends.timeconv import ns_to_rfc3339
 
 NS = 1_000_000_000
 TRACE = "43ee4400ec42281d784993ce6d26cb27"
@@ -150,7 +151,6 @@ class TestHelpers:
             "session_id": "s",
             "e": {},
         }
-        assert ag.iso(1_791_754_699_123_456_789) == "2026-10-11T21:38:19.123456Z"
 
     def test_attrs_drop_agenta_copies_but_keep_metrics(self):
         attrs = ag.AgentaAdapter._attrs(ROOT)
@@ -177,9 +177,9 @@ class TestQuery:
         assert calls[0]["url"] == "http://localhost:3060/api/spans/query"
         assert calls[0]["headers"] == {"Authorization": "ApiKey ak"}
         assert body["formatting"] == {"focus": "span", "format": "agenta"}
-        assert body["windowing"]["oldest"] == ag.iso((T0 - 60) * NS)
-        assert body["windowing"]["newest"] == ag.iso(
-            (T0 + 30) * NS + 500_000
+        assert body["windowing"]["oldest"] == ns_to_rfc3339((T0 - 60) * NS, digits=6)
+        assert body["windowing"]["newest"] == ns_to_rfc3339(
+            (T0 + 30) * NS + 500_000, digits=6
         )  # the cursor tightens newest
         assert body["windowing"]["limit"] == 11 and body["windowing"]["order"] == "descending"
         conds = body["filtering"]["conditions"]
@@ -288,6 +288,28 @@ class TestRows:
         assert [r["rootTraceName"] for r in rows] == ["tool.terminal"]
         attrs = {x["key"]: x["value"] for x in rows[0]["spanSets"][0]["spans"][0]["attributes"]}
         assert attrs["tool.name"] == {"stringValue": "terminal"}
+
+    def test_widened_without_a_kind_cards_the_root_and_keeps_the_match(self, monkeypatch):
+        # #558: a tool filter widens to any span, but the row is the trace's root.
+        _capture(
+            monkeypatch,
+            [{"count": 2, "spans": [FAILED, TOOL]}, {"count": 3, "spans": [ROOT, TOOL, FAILED]}],
+        )
+        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "agent" and row["startTimeUnixNano"] == str(T0 * NS)
+        assert row["durationMs"] == 3884 and row["spanCount"] == 3
+        shown = row["spanSets"][0]["spans"][0]
+        assert shown["name"] == "tool.terminal"
+        attrs = {x["key"]: x["value"] for x in shown["attributes"]}
+        assert attrs["tool.name"] == {"stringValue": "terminal"}
+        # The root missing from the trace's spans: the matched span stays the card.
+        _capture(
+            monkeypatch,
+            [{"count": 1, "spans": [TOOL]}, {"count": 2, "spans": [TOOL, FAILED]}],
+        )
+        row = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
 
     def test_error_card_and_min_duration_client_side(self, monkeypatch):
         _capture(monkeypatch, [{"count": 1, "spans": [FAILED]}, {"count": 1, "spans": [FAILED]}])

@@ -121,9 +121,10 @@ class TestNoHighCardinalityLabels:
 
 class TestResourceIdentity:
     def test_resource_has_process_identity(self):
-        from hermes_otel.tracer import HermesOTelPlugin
+        from hermes_otel.pipeline import build_resource
+        from hermes_otel.plugin_config import HermesOtelConfig
 
-        res = dict(HermesOTelPlugin()._build_resource().attributes)
+        res = dict(build_resource(HermesOtelConfig(), "default").attributes)
         assert res["service.name"] == "hermes-agent"
         assert re.fullmatch(r"[0-9a-f-]{36}", res["service.instance.id"])
         assert res["process.pid"] == os.getpid()
@@ -133,15 +134,13 @@ class TestResourceIdentity:
         assert re.fullmatch(r"\d+\.\d+\.\d+", res["service.version"])
 
     def test_user_resource_attributes_override_defaults(self):
+        from hermes_otel.pipeline import build_resource
         from hermes_otel.plugin_config import HermesOtelConfig
-        from hermes_otel.tracer import HermesOTelPlugin
 
-        plugin = HermesOTelPlugin(
-            config=HermesOtelConfig(resource_attributes={"service.instance.id": "gateway-1"})
-        )
-        assert plugin._build_resource().attributes["service.instance.id"] == "gateway-1"
+        cfg = HermesOtelConfig(resource_attributes={"service.instance.id": "gateway-1"})
+        assert build_resource(cfg, "default").attributes["service.instance.id"] == "gateway-1"
 
     def test_instance_id_is_stable_within_a_process(self):
-        from hermes_otel import tracer
+        from hermes_otel import pipeline
 
-        assert re.fullmatch(r"[0-9a-f-]{36}", tracer._SERVICE_INSTANCE_ID)
+        assert re.fullmatch(r"[0-9a-f-]{36}", pipeline._SERVICE_INSTANCE_ID)

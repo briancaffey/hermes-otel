@@ -12,17 +12,6 @@ from typing import Any, Optional
 from urllib.parse import urlparse
 
 from .backends import _ResolvedBackend
-from .helpers import derive_signal_endpoint
-
-
-def signal_endpoint(backend: _ResolvedBackend, signal: str) -> str:
-    """gRPC shares one target; HTTP derives /v1/metrics and /v1/logs."""
-    override = getattr(backend, f"{signal}_endpoint", None)
-    if override:
-        return override
-    if signal == "traces" or backend.protocol == "grpc":
-        return backend.endpoint
-    return derive_signal_endpoint(backend.endpoint, signal)
 
 
 def _file_option(

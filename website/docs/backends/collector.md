@@ -66,7 +66,11 @@ has the command.
 
 Every backend with its own page here takes the plugin's OTLP/HTTP directly, and
 the explicit types ([overview](/backends/overview)) add the headers, paths and
-signal defaults each one needs. Reach for the Collector when the destination
-needs signed or exchanged auth, when you need processing the plugin does not do
+signal defaults each one needs. A token that merely expires (a Google Cloud access
+token, a vault-issued OIDC token, a rotated key) no longer needs it either: a
+backend entry's [`headers_helper`](/configuration/short-lived-credentials) runs a
+command that mints the headers and re-runs it on a 401/403. Reach for the
+Collector when the destination needs a signature over the request (AWS SigV4),
+when you need processing the plugin does not do
 (sampling, redaction beyond `content_capture`, temporality conversion), or when
 you want to see the raw export without a backend at all.

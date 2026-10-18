@@ -20,17 +20,16 @@ import threading
 import time
 from collections import OrderedDict
 from dataclasses import dataclass, field
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Dict, Iterable, List, Optional, Set, Tuple
+
+from .helpers import truncate_string
 
 
 @dataclass
 class TurnSummary:
-    """Per-session aggregator of per-turn telemetry.
-
-    Flushed onto the session/agent span in ``on_session_end``. Also
-    usable as a fallback on ``on_post_llm_call`` when no session hook
-    is available.
-    """
+    """Per-session aggregator of per-turn telemetry, flushed onto the
+    session/agent span in ``on_session_end``. The hooks mutate it through
+    the intent methods below, never field by field."""
 
     tool_names: Set[str] = field(default_factory=set)
     # Preserves insertion order for "first N chars" joined output.
@@ -39,7 +38,6 @@ class TurnSummary:
     tool_outcomes: Set[str] = field(default_factory=set)
     skill_names: Set[str] = field(default_factory=set)
     api_call_count: int = 0
-    final_status: Optional[str] = None
 
     _seen_targets: Set[str] = field(default_factory=set)
     _seen_commands: Set[str] = field(default_factory=set)
@@ -66,16 +64,50 @@ class TurnSummary:
         if skill:
             self.skill_names.add(skill)
 
+    def add_api_call(self) -> None:
+        """One more main-loop API request on this turn (``pre_api_request``)."""
+        self.api_call_count += 1
+
+
+# Canonical token-total field order: the usage buckets a turn accumulates.
+USAGE_FIELDS = (
+    "prompt_tokens",
+    "completion_tokens",
+    "total_tokens",
+    "cache_read_tokens",
+    "cache_write_tokens",
+    "reasoning_tokens",
+)
+
+# Cost statuses that carry a real dollar figure (#252). Hermes's other two,
+# ``included`` (subscription route: an API-equivalent estimate is not a charge)
+# and ``unknown`` (no price for the model), have no amount to report.
+PRICED_COST_STATUSES = frozenset({"actual", "estimated"})
+
 
 def _empty_usage() -> Dict[str, int]:
-    return {
-        "prompt_tokens": 0,
-        "completion_tokens": 0,
-        "total_tokens": 0,
-        "cache_read_tokens": 0,
-        "cache_write_tokens": 0,
-        "reasoning_tokens": 0,
-    }
+    return dict.fromkeys(USAGE_FIELDS, 0)
+
+
+def cost_status_attributes(
+    statuses: Iterable[str], usd: float, status_key: str, usage_key: str
+) -> Dict[str, Any]:
+    """``status_key`` always, plus ``usage_key`` only when every call was priced.
+
+    The one pricing rule for a turn, its auxiliary calls and a delegation
+    subtree: ``partial`` with no amount when only some calls were priced, so a
+    subtotal is never read as the whole; empty when no call reported a status.
+    Callers spell both keys out in full so the semconv drift check sees them.
+    """
+    seen = set(statuses)
+    if not seen:
+        return {}
+    if seen <= PRICED_COST_STATUSES:
+        status = "actual" if seen == {"actual"} else "estimated"
+        return {status_key: status, usage_key: usd}
+    if seen & PRICED_COST_STATUSES:
+        return {status_key: "partial"}
+    return {status_key: "included" if seen == {"included"} else "unknown"}
 
 
 @dataclass
@@ -86,8 +118,9 @@ class PerSession:
     ``on_session_end`` can skip emitting zero-valued token attributes
     when no LLM traffic actually occurred.
 
-    ``io_captured`` is set by ``on_pre_llm_call`` when the first input is
-    captured, so continuation turns don't overwrite the first user message.
+    ``io_captured`` is set by :meth:`capture_input` with the first input, so
+    continuation turns don't overwrite the first user message. The hooks
+    mutate a session through the intent methods below, never field by field.
     """
 
     usage: Dict[str, int] = field(default_factory=_empty_usage)
@@ -118,6 +151,9 @@ class PerSession:
     # The model the turn started on (``on_session_start`` / the lazy root),
     # kept so a delegated child can say whether it inherited it (#391).
     model: str = ""
+    # The Hermes surface the turn runs on (``cli``, ``telegram`` …), as the
+    # root received it; the tool hooks label per-session metrics with it (#478).
+    platform: str = ""
     # agent_loop_stopped (#396): the reason the gateway gave when it stopped
     # this turn, so the root ends "interrupted" even if only the sweep ends it.
     stop_reason: str = ""
@@ -146,6 +182,60 @@ class PerSession:
     aux_error_count: int = 0
     aux_cost_statuses: List[str] = field(default_factory=list)
     aux_cost_usd: float = 0.0
+
+    def capture_input(self, preview: Optional[str]) -> None:
+        """Keep the session's first LLM input; later turns do not overwrite it."""
+        if not self.io_captured:
+            self.io["input"] = preview or ""
+            self.io_captured = True
+
+    def capture_output(self, preview: Optional[str]) -> None:
+        """Keep the latest LLM output; never buffered without a captured input."""
+        if self.io_captured:
+            self.io["output"] = preview or ""
+
+    def set_sender(self, sender_id: str, user_id: str) -> None:
+        self.sender_id = sender_id
+        self.user_id = user_id
+
+    def note_stop(self, reason: str) -> None:
+        self.stop_reason = reason
+
+    def note_verify(self) -> None:
+        self.verify_nudges += 1
+
+    def record_attempt(
+        self,
+        totals: Optional[Dict[str, int]],
+        cost: Optional[Dict[str, Any]],
+        *,
+        provider: str,
+        response_model: str,
+    ) -> None:
+        """Account one completed main-loop API attempt.
+
+        A success clears ``last_api_failed`` (a retry that worked, #467) even
+        without usage; with usage, the totals, the real provider and the
+        reported response model roll onto the turn for ``on_session_end``.
+        """
+        self.last_api_failed = False
+        if totals is None:
+            return
+        for key in USAGE_FIELDS:
+            self.usage[key] += totals[key]
+        self.usage_updated = True
+        if provider:
+            self.provider = provider
+        if response_model:
+            self.response_model = truncate_string(response_model, 200)
+        if cost is not None:
+            self.add_cost(cost["status"], cost["usd"])
+
+    def record_api_failure(self, error_type: str) -> None:
+        """Remember why the last main-loop attempt failed (#467)."""
+        self.last_api_failed = True
+        if error_type:
+            self.last_error_type = error_type
 
     def add_cost(self, status: str, usd: Optional[float]) -> None:
         self.cost_statuses.append(status)
@@ -182,53 +272,41 @@ class PerSession:
         if self.aux_usage["prompt_tokens"] or self.aux_usage["completion_tokens"]:
             attrs["hermes.turn.auxiliary.input_tokens"] = self.aux_usage["prompt_tokens"]
             attrs["hermes.turn.auxiliary.output_tokens"] = self.aux_usage["completion_tokens"]
-        statuses = set(self.aux_cost_statuses)
-        if statuses and statuses <= {"actual", "estimated"}:
-            attrs["hermes.turn.auxiliary.cost.status"] = (
-                "actual" if statuses == {"actual"} else "estimated"
+        attrs.update(
+            cost_status_attributes(
+                self.aux_cost_statuses,
+                self.aux_cost_usd,
+                "hermes.turn.auxiliary.cost.status",
+                "hermes.turn.auxiliary.cost.usage",
             )
-            attrs["hermes.turn.auxiliary.cost.usage"] = self.aux_cost_usd
-        elif statuses & {"actual", "estimated"}:
-            attrs["hermes.turn.auxiliary.cost.status"] = "partial"
-        elif statuses:
-            attrs["hermes.turn.auxiliary.cost.status"] = (
-                "included" if statuses == {"included"} else "unknown"
-            )
+        )
         return attrs
 
-    def api_failure_close(self) -> Optional[Dict[str, Any]]:
-        """Root attributes for a turn closed by finalize or the sweep whose
-        last main-loop API attempt failed (#467), or None when it did not.
+    def api_failure_close(self, otherwise: str) -> Tuple[Dict[str, Any], str, Optional[str]]:
+        """How finalize or the sweep closes a root that never got its
+        ``on_session_end``: the ``(attributes, status, error_message)`` for
+        ``end_span``.
 
-        Hermes returns from that path without post_llm_call or on_session_end,
-        so this is the only place the turn can be recorded as failed.
+        Hermes returns from a turn whose every main-loop API attempt failed
+        without post_llm_call or on_session_end (#467), so this is the only
+        place such a turn can be recorded as failed: an error naming the last
+        error type. Any other turn closes OK with ``otherwise`` as its status.
         """
         if not self.last_api_failed:
-            return None
+            return {"hermes.turn.final_status": otherwise}, "ok", None
         attrs: Dict[str, Any] = {
             "hermes.turn.final_status": "failed",
             "hermes.session.failed": True,
         }
         if self.last_error_type:
             attrs["error.type"] = self.last_error_type
-        return attrs
+        return attrs, "error", f"turn failed: {self.last_error_type or 'API request failed'}"
 
     def cost_rollup(self) -> Dict[str, Any]:
-        """The turn's cost attributes for the root span (empty when no call was priced).
-
-        ``hermes.cost.usage`` is set only when every API call had a price;
-        a turn mixing priced and unpriced calls reports ``partial`` with no
-        amount, so a subtotal is never read as the turn's cost.
-        """
-        statuses = set(self.cost_statuses)
-        if not statuses:
-            return {}
-        if statuses <= {"actual", "estimated"}:
-            status = "actual" if statuses == {"actual"} else "estimated"
-            return {"hermes.cost.status": status, "hermes.cost.usage": self.cost_usd}
-        if statuses & {"actual", "estimated"}:
-            return {"hermes.cost.status": "partial"}
-        return {"hermes.cost.status": "included" if statuses == {"included"} else "unknown"}
+        """The turn's ``hermes.cost.*`` for the root span (empty when no call was priced)."""
+        return cost_status_attributes(
+            self.cost_statuses, self.cost_usd, "hermes.cost.status", "hermes.cost.usage"
+        )
 
 
 @dataclass
@@ -241,21 +319,22 @@ class DelegationTotals:
     cost_usd: float = 0.0
     api_call_count: int = 0
 
+    def _fold(
+        self, usage: Dict[str, int], cost_statuses: List[str], cost_usd: float, api_calls: int
+    ) -> None:
+        for k, v in usage.items():
+            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
+        self.cost_statuses.extend(cost_statuses)
+        self.cost_usd += cost_usd
+        self.api_call_count += api_calls
+
     def add_turn(self, ps: "PerSession") -> None:
         """Fold one finished turn of the child in."""
-        for k, v in ps.usage.items():
-            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
-        self.cost_statuses.extend(ps.cost_statuses)
-        self.cost_usd += ps.cost_usd
-        self.api_call_count += ps.turn_summary.api_call_count
+        self._fold(ps.usage, ps.cost_statuses, ps.cost_usd, ps.turn_summary.api_call_count)
 
     def add(self, other: "DelegationTotals") -> None:
         """Fold a grandchild's subtree in (a nested orchestrator)."""
-        for k, v in other.usage.items():
-            self.usage[k] = self.usage.get(k, 0) + int(v or 0)
-        self.cost_statuses.extend(other.cost_statuses)
-        self.cost_usd += other.cost_usd
-        self.api_call_count += other.api_call_count
+        self._fold(other.usage, other.cost_statuses, other.cost_usd, other.api_call_count)
 
     def attributes(self) -> Dict[str, Any]:
         """``hermes.subagent.*`` rollup attributes for the delegation span.
@@ -272,18 +351,14 @@ class DelegationTotals:
             "hermes.subagent.usage.total_tokens": u.get("total_tokens", 0),
             "hermes.subagent.api_call_count": self.api_call_count,
         }
-        statuses = set(self.cost_statuses)
-        if statuses and statuses <= {"actual", "estimated"}:
-            attrs["hermes.subagent.cost.status"] = (
-                "actual" if statuses == {"actual"} else "estimated"
+        attrs.update(
+            cost_status_attributes(
+                self.cost_statuses,
+                self.cost_usd,
+                "hermes.subagent.cost.status",
+                "hermes.subagent.cost.usage",
             )
-            attrs["hermes.subagent.cost.usage"] = self.cost_usd
-        elif statuses & {"actual", "estimated"}:
-            attrs["hermes.subagent.cost.status"] = "partial"
-        elif statuses:
-            attrs["hermes.subagent.cost.status"] = (
-                "included" if statuses == {"included"} else "unknown"
-            )
+        )
         return attrs
 
 
@@ -296,10 +371,6 @@ class SessionState:
     Hermes dispatches hooks across threads, so every check-then-insert here
     (``get_or_create``, ``next_turn``'s counter bookkeeping) runs under one
     re-entrant lock.
-
-    Tool timings are keyed by ``f"{tool_name}:{tool_call_id}"`` (with the
-    legacy task id as fallback), not session-scoped, so they live in their own
-    dict alongside the session aggregators.
     """
 
     # Upper bound on remembered turn counters for sessions whose aggregator has
@@ -310,20 +381,22 @@ class SessionState:
     def __init__(self) -> None:
         self._lock = threading.RLock()
         self._sessions: Dict[str, PerSession] = {}
-        self._tool_times: Dict[str, float] = {}
-        # Raw terminal output size per tool key, recorded by the
-        # transform_terminal_output observer and read back in post_tool_call.
-        self._tool_output_chars: Dict[str, int] = {}
         # Turn counters outlive the per-turn PerSession (which on_session_end
         # pops), so continuation turns keep counting: session_id -> last turn.
         self._turn_counters: "OrderedDict[str, int]" = OrderedDict()
         # Session-level bookkeeping for on_session_finalize / on_session_reset
         # (#29): when the session's first turn started (wall clock), the span
         # context of its most recently closed root (so the next session can
-        # link to it), and which session a new one replaced.
+        # link to it; a kanban run's claim span is remembered the same way, so
+        # the run's later transitions join its trace), and which session a new
+        # one replaced.
         self._first_seen: "OrderedDict[str, float]" = OrderedDict()
         self._last_root_context: "OrderedDict[str, Any]" = OrderedDict()
         self._previous_session: "OrderedDict[str, str]" = OrderedDict()
+        # The Hermes ``turn_id`` of each session's latest turn (from
+        # ``pre_llm_call``): tells an auxiliary call of the turn that just
+        # ended from one of the next turn that has no root yet (#588).
+        self._last_turn_id: "OrderedDict[str, str]" = OrderedDict()
         # The session most recently finalized; a reset that names no old
         # session (the CLI) is taken to replace it.
         self.last_finalized: Optional[str] = None
@@ -452,15 +525,32 @@ class SessionState:
             return self._first_seen.get(session_id)
 
     def remember_root_context(self, session_id: str, context: Any) -> None:
-        """Keep the span context of the session's latest closed root span."""
+        """Keep the span context of the session's (or kanban run's) latest
+        closed root span. Bounded like every table here."""
         if not session_id or context is None:
             return
         with self._lock:
             self._remember(self._last_root_context, session_id, context)
 
-    def root_context(self, session_id: str) -> Any:
+    def root_context(self, session_id: str, *, forget: bool = False) -> Any:
+        """The remembered root context, or None; ``forget`` drops it too."""
         with self._lock:
+            if forget:
+                return self._last_root_context.pop(session_id, None)
             return self._last_root_context.get(session_id)
+
+    def remember_turn_id(self, session_id: str, turn_id: Any) -> None:
+        """Keep the Hermes ``turn_id`` of the session's latest turn. Bounded."""
+        text = str(turn_id or "").strip()
+        if not session_id or not text:
+            return
+        with self._lock:
+            self._remember(self._last_turn_id, session_id, text)
+
+    def last_turn_id(self, session_id: str) -> str:
+        """The latest turn's Hermes ``turn_id``, or ``""`` when none was seen."""
+        with self._lock:
+            return self._last_turn_id.get(session_id, "")
 
     def set_previous(self, new_session_id: str, old_session_id: str) -> None:
         """Record that ``new_session_id`` replaced ``old_session_id`` (a reset)."""
@@ -500,36 +590,14 @@ class SessionState:
                 return ps.turn_number
             return self._turn_counters.get(session_id, 0)
 
-    # ── Tool timings ─────────────────────────────────────────────────────
-
-    def record_tool_start(self, key: str, started_at: float) -> None:
-        with self._lock:
-            self._tool_times[key] = started_at
-
-    def pop_tool_start(self, key: str) -> Optional[float]:
-        with self._lock:
-            return self._tool_times.pop(key, None)
-
-    def has_tool_start(self, key: str) -> bool:
-        with self._lock:
-            return key in self._tool_times
-
-    def record_tool_output_chars(self, key: str, chars: int) -> None:
-        with self._lock:
-            self._tool_output_chars[key] = chars
-
-    def pop_tool_output_chars(self, key: str) -> Optional[int]:
-        with self._lock:
-            return self._tool_output_chars.pop(key, None)
-
     # ── Bulk reset (used by tests via singleton re-creation) ─────────────
 
     def clear(self) -> None:
         with self._lock:
             self._sessions.clear()
-            self._tool_times.clear()
             self._turn_counters.clear()
             self._first_seen.clear()
             self._last_root_context.clear()
             self._previous_session.clear()
+            self._last_turn_id.clear()
             self.last_finalized = None

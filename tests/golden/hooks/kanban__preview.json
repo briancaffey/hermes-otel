@@ -25,6 +25,16 @@
   },
   {
    "attributes": {
+    "platform": "cli",
+    "profile": "golden",
+    "type": "cli"
+   },
+   "name": "hermes.active_time.total",
+   "unit": "s",
+   "value": "<num>"
+  },
+  {
+   "attributes": {
     "board": "default",
     "outcome": "blocked",
     "profile": "golden"

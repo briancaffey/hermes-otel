@@ -15,7 +15,9 @@ from unittest.mock import MagicMock, patch
 
 from _helpers import clear_backend_env as _clear_backend_env
 
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.pipeline import Pipeline
+from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -99,24 +101,22 @@ class TestSpanFanOut:
 
 class TestForceFlushFansOut:
     def test_force_flush_calls_every_processor(self):
-        """``_force_flush`` must drain every processor, not just the first."""
-        plugin = HermesOTelPlugin()
+        """``Pipeline.force_flush`` must drain every processor, not just the first."""
         proc1 = MagicMock()
         proc2 = MagicMock()
         proc3 = MagicMock()
-        plugin._span_processors = [proc1, proc2, proc3]
+        pipeline = Pipeline(span_processors=[proc1, proc2, proc3])
 
-        plugin._force_flush()
+        pipeline.force_flush()
 
         for p in (proc1, proc2, proc3):
             p.force_flush.assert_called_once_with(timeout_millis=2000)
 
     def test_force_flush_with_one_processor(self):
-        plugin = HermesOTelPlugin()
         proc = MagicMock()
-        plugin._span_processors = [proc]
+        pipeline = Pipeline(span_processors=[proc])
 
-        plugin._force_flush()
+        pipeline.force_flush()
 
         proc.force_flush.assert_called_once_with(timeout_millis=2000)
 
@@ -144,10 +144,10 @@ class TestConfigBackendsRouting:
         ):
             assert plugin.init() is True
 
-        assert len(plugin._span_processors) == 2
+        assert len(plugin.pipeline.span_processors) == 2
         # Neither Phoenix (405 on /v1/metrics, #160) nor Jaeger takes metrics
         # by default → no metric reader at all.
-        assert len(plugin._metric_readers) == 0
+        assert len(plugin.pipeline.metric_readers) == 0
 
     def test_three_metrics_capable_backends(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -166,8 +166,8 @@ class TestConfigBackendsRouting:
             patch("hermes_otel.pipeline.metrics.set_meter_provider"),
         ):
             assert plugin.init() is True
-        assert len(plugin._span_processors) == 3
-        assert len(plugin._metric_readers) == 3
+        assert len(plugin.pipeline.span_processors) == 3
+        assert len(plugin.pipeline.metric_readers) == 3
 
     def test_config_backends_takes_priority_over_env(self, monkeypatch):
         """When config.backends is set, env vars must not add a second backend."""
@@ -221,8 +221,8 @@ class TestConfigBackendsRouting:
 
         span_endpoints = [call.kwargs.get("endpoint") for call in mock_span_exp.call_args_list]
         assert span_endpoints == ["http://collector:4318/v1/traces"]
-        assert len(plugin._span_processors) == 1
-        assert len(plugin._metric_readers) == 1
+        assert len(plugin.pipeline.span_processors) == 1
+        assert len(plugin.pipeline.metric_readers) == 1
 
     def test_invalid_backend_skipped_others_still_initialize(self, monkeypatch):
         """A bad entry (missing endpoint) is skipped; valid entries still initialize."""
@@ -242,7 +242,7 @@ class TestConfigBackendsRouting:
         ):
             assert plugin.init() is True
         # Only jaeger survived.
-        assert len(plugin._span_processors) == 1
+        assert len(plugin.pipeline.span_processors) == 1
 
     def test_all_backends_invalid_returns_false(self, monkeypatch):
         _clear_backend_env(monkeypatch)
@@ -289,7 +289,7 @@ class TestPartialBackendFailure:
             assert plugin.init() is True
 
         # Two backends (phoenix + tempo) survived; the broken jaeger was skipped.
-        assert len(plugin._span_processors) == 2
+        assert len(plugin.pipeline.span_processors) == 2
 
     def test_single_backend_failure_returns_false(self, monkeypatch):
         """If THE ONLY backend fails to construct, init() returns False."""
@@ -336,7 +336,7 @@ class TestLangfuseBackendConfig:
         headers = mock_exp.call_args.kwargs["headers"]
         assert headers is not None and "Authorization" in headers
         # Langfuse → no metrics reader
-        assert len(plugin._metric_readers) == 0
+        assert len(plugin.pipeline.metric_readers) == 0
 
 
 class TestSecretResolution:

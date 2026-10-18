@@ -63,6 +63,12 @@
     "set": true,
     "source": "file (inline)",
     "value": "••••••"
+   },
+   {
+    "field": "experiment_id",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
    }
   ],
   "display_type": "MLflow",

@@ -8,7 +8,8 @@ Split out of ``tracer.py`` in #405; ``tracer`` re-exports every public name.
 from __future__ import annotations
 
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional, Tuple
+from functools import lru_cache
+from typing import Any, Dict, FrozenSet, Iterable, List, Optional, Tuple
 
 try:
     import opentelemetry.sdk.metrics  # noqa: F401
@@ -22,9 +23,13 @@ except ImportError:  # pragma: no cover — plugin is unusable without OTel
 # hook-side key, the OTLP name every backend and the live store see, the
 # instrument kind, the unit, the description, how the value is applied, and
 # whether the instrument is part of the OTel GenAI conventions (gated by
-# ``emit_genai_metrics``). ``value`` modes: ``one`` adds 1 per call, ``int``
-# adds ``int(value)``, ``float`` adds ``value``, ``record`` records a
-# histogram point (as an int when the unit is ``{token}``).
+# ``emit_genai_metrics``). The routing decisions that read these fields are
+# the spec's own methods (#507): ``enabled`` (the compat-family gate, which
+# decides whether the instrument is created at all), ``recorded`` (``enabled``
+# plus the GenAI gate), ``exported`` (the exclusive compat mode) and ``apply``
+# (the value mode). ``value`` modes: ``one`` adds 1 per call, ``int`` adds
+# ``int(value)``, ``float`` adds ``value``, ``record`` records a histogram
+# point (as an int when the unit is ``{token}``).
 
 
 @dataclass(frozen=True)
@@ -44,6 +49,61 @@ class InstrumentSpec:
     labels: Tuple[str, ...] = ()
     # Superseded by a seconds instrument; documented as deprecated.
     deprecated: bool = False
+    # Metric-name compatibility family this instrument belongs to (#485):
+    # ``claude_code`` instruments are created and recorded only when
+    # ``metric_name_compat`` selects that family; ``compat_of`` names the
+    # hook-side key of the ``hermes.*`` instrument they mirror, which the
+    # exclusive mode stops exporting.
+    compat: str = ""
+    compat_of: str = ""
+
+    def enabled(self, config: Any) -> bool:
+        """Whether this instrument exists at all under ``config``.
+
+        A compat instrument needs its family switched on (``metric_name_compat``
+        is the family's name or ``both``); an instrument named in
+        ``disable_metrics`` (#479) never exists; every other instrument always
+        does. ``create_instruments`` creates exactly the enabled ones.
+        """
+        if self.name in disabled_names(config.disable_metrics):
+            return False
+        return not self.compat or config.metric_name_compat in (self.compat, "both")
+
+    def recorded(self, config: Any) -> bool:
+        """Whether a point for this instrument is recorded at all under ``config``:
+        it is ``enabled`` and, for a GenAI-convention instrument,
+        ``emit_genai_metrics`` is on."""
+        if self.genai and not config.emit_genai_metrics:
+            return False
+        return self.enabled(config)
+
+    def exported(self, key: str, config: Any) -> bool:
+        """Whether the point reaches the OTLP instrument (the live store is
+        not an export). ``key`` is this spec's hook-side key.
+
+        The exclusive compat mode (``metric_name_compat`` set to a family's
+        name rather than ``both``) exports each twin instead of the
+        ``hermes.*`` instrument it names in ``compat_of``.
+        """
+        return key not in _replaced_keys(config.metric_name_compat)
+
+    def apply(self, instrument: Any, value: float, attrs: Dict[str, Any]) -> None:
+        """Record ``value`` on ``instrument`` the way ``self.value`` says."""
+        if self.value == "record":
+            instrument.record(int(value) if self.unit == "{token}" else value, attrs)
+        elif self.value == "one":
+            instrument.add(1, attrs)
+        elif self.value == "int":
+            instrument.add(int(value), attrs)
+        else:
+            instrument.add(value, attrs)
+
+
+@lru_cache(maxsize=None)
+def _replaced_keys(compat_mode: str) -> FrozenSet[str]:
+    """The hook-side keys whose compat twin in the family ``compat_mode``
+    replaces them in the export; empty for ``off`` and ``both``."""
+    return frozenset(s.compat_of for s in _INSTRUMENTS.values() if s.compat == compat_mode)
 
 
 # Bucket boundaries. The seconds/token lists are the ones the OTel GenAI
@@ -131,6 +191,14 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "record",
         boundaries=_B_HUMAN_SECONDS,
         labels=("platform", "reason"),
+    ),
+    "active_time": InstrumentSpec(
+        "hermes.active_time.total",
+        "counter",
+        "s",
+        "Seconds the agent loop spent working on turns (type=cli); Hermes has no signal for a person's typing time, so type=user is never recorded",
+        "float",
+        labels=("type", "platform"),
     ),
     "token_usage": InstrumentSpec(
         "hermes.token.usage",
@@ -265,6 +333,14 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         "one",
         labels=("command", "surface"),
     ),
+    "commit_count": InstrumentSpec(
+        "hermes.commit.count",
+        "counter",
+        "{commit}",
+        "Successful `git commit` commands run through the terminal tool, by platform and model; never the message or the repository (#478)",
+        "one",
+        labels=("platform", "model"),
+    ),
     "human_input_count": InstrumentSpec(
         "hermes.human_input.count",
         "counter",
@@ -394,26 +470,180 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         boundaries=_B_TOKENS,
         labels=("gen_ai.token.type",) + _GENAI_LABELS,
     ),
+    # Claude Code metric-name compatibility (#485): the instruments Claude
+    # Code's own telemetry exports (code.claude.com/docs/en/monitoring-usage),
+    # with Claude Code's units and label names, so a Grafana / Datadog
+    # dashboard built for Claude Code reads Hermes as one more agent. Created
+    # only when ``metric_name_compat`` is ``claude_code`` or ``both``; never
+    # written to the live store (the plugin's dashboard keeps reading the
+    # ``hermes.*`` twins). Units are Claude Code's literal ones (``tokens``,
+    # ``USD``, ``s``) because Prometheus-family stores put them in the series
+    # name: ``claude_code_token_usage_tokens_total``,
+    # ``claude_code_cost_usage_USD_total``, ``claude_code_active_time_seconds_total``.
+    # ``query_source`` is shared with Hermes as is (``main`` / ``subagent`` /
+    # ``auxiliary`` in both). ``type`` on token.usage is ``input`` (the
+    # uncached prompt) / ``output`` / ``cacheRead`` / ``cacheCreation``, never
+    # ``reasoning``, so summing every type gives the request's whole count.
+    "claude_code.session.count": InstrumentSpec(
+        "claude_code.session.count",
+        "counter",
+        "{session}",
+        "Sessions created, as Claude Code's telemetry names it (start_type: fresh, resume)",
+        "one",
+        labels=("start_type",),
+        compat="claude_code",
+        compat_of="session_count",
+    ),
+    "claude_code.token.usage": InstrumentSpec(
+        "claude_code.token.usage",
+        "counter",
+        "tokens",
+        "Tokens consumed by type (input, output, cacheRead, cacheCreation), model and query_source, as Claude Code's telemetry names it",
+        "int",
+        labels=("type", "model", "query_source"),
+        compat="claude_code",
+        compat_of="token_usage",
+    ),
+    "claude_code.cost.usage": InstrumentSpec(
+        "claude_code.cost.usage",
+        "counter",
+        "USD",
+        "USD cost per API call by model and query_source, as Claude Code's telemetry names it",
+        "float",
+        labels=("model", "query_source"),
+        compat="claude_code",
+        compat_of="cost_usage",
+    ),
+    "claude_code.active_time.total": InstrumentSpec(
+        "claude_code.active_time.total",
+        "counter",
+        "s",
+        "Seconds of agent activity by type (cli), as Claude Code's telemetry names it",
+        "float",
+        labels=("type",),
+        compat="claude_code",
+        compat_of="active_time",
+    ),
 }
 
+# Claude Code's standard per-session attribute (``session_id`` once a
+# Prometheus store has escaped it). Only the compat instruments may carry it,
+# and only with ``metric_name_compat_session_id: true``; every other
+# instrument keeps the plugin's rule that a metric never carries an id.
+COMPAT_SESSION_LABEL = "session.id"
 
-def metric_views(histogram: str = "explicit") -> List[Any]:
+# Claude Code's standard ``type`` values for ``claude_code.token.usage`` and
+# the canonical usage field each one is computed from. ``input`` is the
+# uncached part of the prompt (Claude Code reports the API's ``input_tokens``,
+# which excludes cache reads and writes), so it is derived in
+# ``claude_code_token_types``.
+CLAUDE_CODE_TOKEN_TYPES = ("input", "output", "cacheRead", "cacheCreation")
+
+
+# ``disable_metrics`` (#479). A spelling is the hook-side key (``tool_duration``),
+# the key with dots (``tool.duration``), the OTLP name (``hermes.tool.duration``)
+# or the OTLP name without its ``hermes.`` prefix; the config stores the OTLP
+# name, the one a backend and the metrics reference show. ``all`` is every
+# instrument.
+DISABLE_ALL = "all"
+
+
+@lru_cache(maxsize=None)
+def _spellings() -> Dict[str, str]:
+    """Every accepted spelling, lower-cased, to the OTLP name it means."""
+    table: Dict[str, str] = {}
+    for key, spec in _INSTRUMENTS.items():
+        spellings = {key, spec.name}
+        if "." not in key:
+            spellings.add(key.replace("_", "."))
+        if spec.name.startswith("hermes."):
+            spellings.add(spec.name[len("hermes.") :])
+        for spelling in spellings:
+            table[spelling.lower()] = spec.name
+    return table
+
+
+def instrument_name(spelling: str) -> Optional[str]:
+    """The OTLP name a ``disable_metrics`` entry means, or ``None`` for an
+    unknown spelling (``all`` is returned as is)."""
+    text = str(spelling).strip().lower()
+    return DISABLE_ALL if text == DISABLE_ALL else _spellings().get(text)
+
+
+def metric_spellings() -> Dict[str, Tuple[str, ...]]:
+    """Per OTLP name, the other ``disable_metrics`` spellings that mean it, in
+    instrument order (the config reference lists these)."""
+    out: Dict[str, List[str]] = {spec.name: [] for spec in _INSTRUMENTS.values()}
+    for spelling, name in _spellings().items():
+        if spelling != name:
+            out[name].append(spelling)
+    return {name: tuple(sorted(spellings)) for name, spellings in out.items()}
+
+
+@lru_cache(maxsize=None)
+def disabled_names(disable_metrics: Tuple[str, ...]) -> FrozenSet[str]:
+    """The OTLP names a normalised ``disable_metrics`` tuple switches off:
+    every instrument when it holds ``all``."""
+    if DISABLE_ALL in disable_metrics:
+        return frozenset(s.name for s in _INSTRUMENTS.values())
+    return frozenset(disable_metrics)
+
+
+def claude_code_token_types(totals: Dict[str, int]) -> Dict[str, int]:
+    """Claude Code's four token ``type`` values from Hermes's canonical
+    totals (``normalize_usage``): the uncached prompt as ``input``, the
+    completion as ``output``, cache reads and writes as themselves. The
+    ``reasoning`` subset of the output is left out so the four sum to the
+    request's whole token count, as they do in Claude Code."""
+    prompt = int(totals.get("prompt_tokens", 0) or 0)
+    cache_read = int(totals.get("cache_read_tokens", 0) or 0)
+    cache_write = int(totals.get("cache_write_tokens", 0) or 0)
+    return {
+        "input": max(prompt - cache_read - cache_write, 0),
+        "output": int(totals.get("completion_tokens", 0) or 0),
+        "cacheRead": cache_read,
+        "cacheCreation": cache_write,
+    }
+
+
+def metric_views(
+    histogram: str = "explicit", common: Iterable[str] = (), disabled: Iterable[str] = ()
+) -> List[Any]:
     """One ``View`` per instrument: the label allow-list and, for histograms
     with ``histogram="explicit"``, the bucket boundaries (#233).
 
     With ``exponential`` the boundaries are left to the readers' preferred
     aggregation (a View's aggregation would override every reader's).
+    ``common`` are the ``common_attributes`` keys (#480): ``record_metric``
+    puts them on every point, so every allow-list admits them. ``disabled``
+    is the config's ``disable_metrics`` (#479): a disabled instrument gets a
+    ``DropAggregation`` View instead, so nothing recorded under its name is
+    ever exported, whoever records it.
     """
     if not _OTEL_AVAILABLE:
         return []
-    from opentelemetry.sdk.metrics.view import ExplicitBucketHistogramAggregation, View
+    from opentelemetry.sdk.metrics.view import (
+        DropAggregation,
+        ExplicitBucketHistogramAggregation,
+        View,
+    )
 
+    always = {"profile", *common}
+    dropped = disabled_names(tuple(disabled))
     views: List[Any] = []
     for spec in _INSTRUMENTS.values():
+        if spec.name in dropped:
+            views.append(View(instrument_name=spec.name, aggregation=DropAggregation()))
+            continue
         kwargs: Dict[str, Any] = {
             "instrument_name": spec.name,
-            "attribute_keys": set(spec.labels) | {"profile"},
+            "attribute_keys": set(spec.labels) | always,
         }
+        if spec.compat:
+            # Claude Code puts ``session.id`` on every metric by default; the
+            # compat instruments carry it when the user opts in
+            # (``metric_name_compat_session_id``), so the View lets it through.
+            kwargs["attribute_keys"] |= {COMPAT_SESSION_LABEL}
         if spec.kind == "histogram" and spec.boundaries and histogram != "exponential":
             kwargs["aggregation"] = ExplicitBucketHistogramAggregation(
                 boundaries=list(spec.boundaries)
@@ -491,12 +721,6 @@ _CAPPED_LABELS = frozenset(
         "error_type",
     }
 )
-
-
-def metric_otlp_name(key: str) -> str:
-    """The OTLP instrument name for a hook-side metric key (the key itself when unknown)."""
-    spec = _INSTRUMENTS.get(key)
-    return spec.name if spec else key
 
 
 # The observable instruments ``host_bridge.create_host_metric_instruments``

@@ -2,7 +2,7 @@
 
 import pytest
 
-from hermes_otel.helpers import subagent_span_key, subagent_status_to_span_status
+from hermes_otel.hooks.subagent import subagent_span_key, subagent_status_to_span_status
 
 
 class TestSubagentSpanKey:

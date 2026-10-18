@@ -9,7 +9,14 @@
 
 Plus the small decoders every adapter needs on the way: an OTLP ``AnyValue``
 unwrapped, an attribute list as a dict, a nested attribute object flattened
-to dotted keys, a tolerant integer.
+to dotted keys, a tolerant integer, a span kind in any spelling.
+
+Between the two sits :class:`SpanRow` (#513): the facts an adapter decodes
+its native span into. :func:`card_from_trace` turns a trace's rows into its
+list row (the root, or the matched span of a kind filter, with the orphan
+and predicate re-checks),
+:func:`trace_detail` turns them into the batches; an adapter writes only the
+decoder.
 
 Thirteen adapters used to carry their own copy of the card-key table and of
 the row literal, and they had drifted (``spanCount`` missing here, ``matched``
@@ -28,7 +35,9 @@ meaning two things there). The rules are now these:
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Iterable, List, Optional, Sequence, Union
+import re
+from dataclasses import dataclass, field
+from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple, Union
 
 # The attributes a trace-list card carries, in the order the adapters ask a
 # backend for them (the TraceQL ``select()``, SigNoz's ``selectColumns``).
@@ -62,7 +71,12 @@ def card_attrs(attrs: Dict[str, Any], name: str = "", error: bool = False) -> Di
 
 
 def to_int(value: Any) -> int:
-    """A numeric field (``startTime``, ``duration``), 0 when malformed."""
+    """A numeric field (``startTime``, ``duration``), 0 when malformed.
+
+    Not :func:`hermes_otel.coerce.to_int`: OTLP JSON carries nanosecond
+    timestamps as 19-digit strings, which ``int(text)`` keeps exact and a
+    round trip through ``float`` would not (#522).
+    """
     try:
         return int(value or 0)
     except (TypeError, ValueError):
@@ -77,9 +91,12 @@ def to_int(value: Any) -> int:
 
 def otlp_unwrap(value: Any) -> Any:
     """An OTLP JSON ``AnyValue`` (``{"stringValue": ...}``) → the Python value;
-    ``intValue`` arrives as a digit string and comes back as an int."""
+    ``intValue`` arrives as a digit string and comes back as an int, and the
+    empty ``{}`` that :func:`otlp_attr` writes for ``None`` comes back as ``None``."""
     if not isinstance(value, dict):
         return value
+    if not value:
+        return None
     for key in ("stringValue", "boolValue", "doubleValue"):
         if key in value:
             return value[key]
@@ -222,15 +239,61 @@ def otlp_batches(by_service: Dict[str, List[Dict[str, Any]]]) -> List[Dict[str, 
     ]
 
 
-def group_by_service(
-    spans: Iterable[Dict[str, Any]], service_of: Callable[[Dict[str, Any]], Any]
-) -> Dict[str, List[Dict[str, Any]]]:
-    """Spans grouped by the service ``service_of`` names for each (``""`` when
-    unknown), first-seen order."""
-    out: Dict[str, List[Dict[str, Any]]] = {}
-    for sp in spans:
-        out.setdefault(str(service_of(sp) or ""), []).append(sp)
-    return out
+def attach_root(
+    spans_otlp: List[Dict[str, Any]],
+    trace_id: str,
+    *,
+    extra_root_attrs: Union[Dict[str, Any], Callable[[], Dict[str, Any]]],
+    synthetic_name: str,
+    start_ns: int,
+    end_ns: int,
+    reason: str,
+    synthetic_attrs: Optional[Dict[str, Any]] = None,
+) -> None:
+    """Give a detail tree exactly one root, in place (#516).
+
+    A root is a span whose parent is missing or not in the tree. Exactly one:
+    it is re-parented to None and gains the ``extra_root_attrs`` it lacks (a
+    callable is consulted only then, because the lookup may cost a request).
+    Several or none: a ``synthetic-<trace_id[:16]>`` span named
+    ``synthetic_name``, spanning ``start_ns``..``end_ns``, is inserted first,
+    carrying ``synthetic_attrs`` (default: ``extra_root_attrs`` when that is
+    a dict) plus the ``synthetic`` marker and its ``reason`` so the UI can
+    label it and nobody mistakes it for a span the agent emitted (#159); every
+    orphan is re-parented to it.
+    """
+    span_ids = {sp["spanId"] for sp in spans_otlp}
+    roots = [
+        sp for sp in spans_otlp if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids
+    ]
+    if len(roots) == 1:
+        root = roots[0]
+        root["parentSpanId"] = None
+        extra = extra_root_attrs() if callable(extra_root_attrs) else extra_root_attrs
+        have = {a["key"] for a in root["attributes"]}
+        root["attributes"].extend(
+            otlp_attrs_from_dict({k: v for k, v in extra.items() if k not in have})
+        )
+        return
+    if synthetic_attrs is None:
+        synthetic_attrs = extra_root_attrs if isinstance(extra_root_attrs, dict) else {}
+    synthetic_id = f"synthetic-{trace_id[:16]}"
+    spans_otlp.insert(
+        0,
+        otlp_span(
+            trace_id,
+            synthetic_id,
+            None,
+            synthetic_name,
+            start_ns=start_ns,
+            end_ns=end_ns,
+            attrs={**synthetic_attrs, "synthetic": True, "synthetic.reason": reason},
+            status=otlp_status("ok"),
+        ),
+    )
+    for sp in spans_otlp[1:]:
+        if not sp.get("parentSpanId") or sp["parentSpanId"] not in span_ids:
+            sp["parentSpanId"] = synthetic_id
 
 
 def span_count_of(batches: Sequence[Dict[str, Any]]) -> int:
@@ -290,3 +353,261 @@ def card_row(
         }
     )
     return row
+
+
+# ── one typed span: what every adapter decodes its native span into ─────
+
+_SPAN_KINDS = {"internal": 1, "server": 2, "client": 3, "producer": 4, "consumer": 5}
+
+
+def otlp_kind(value: Any) -> int:
+    """A span kind in any backend's spelling → the OTLP ``SpanKind`` number:
+    ``2``, ``"2"``, ``"SERVER"``, ``"Server"``, ``"server"`` and
+    ``"SPAN_KIND_SERVER"`` are all 2. Unknown or missing is 1 (INTERNAL)."""
+    if isinstance(value, int) and not isinstance(value, bool):
+        return value or 1
+    text = str(value or "").strip().lower()
+    if text.isdigit():
+        return int(text) or 1
+    if text.startswith("span_kind_"):
+        text = text[len("span_kind_") :]
+    return _SPAN_KINDS.get(text, 1)
+
+
+_INT_RE = re.compile(r"^-?\d+$")
+_FLOAT_RE = re.compile(r"^-?\d+\.\d+(e[+-]?\d+)?$", re.IGNORECASE)
+# Keys whose digit-only values are identifiers, never numbers.
+_ID_KEY_SUFFIXES = (".id", "_id", "id")
+
+
+def coerce_tag(key: str, value: Any) -> Any:
+    """Undo a backend's stringification of a tag where it is safe (Zipkin,
+    VictoriaTraces, ClickStack, Gigapipe): ``"7589"`` → 7589, ``"1442.3"`` →
+    1442.3, ``"true"`` → True. A digit-only value on an id-like key
+    (``session_id``, ``service.instance.id``) stays a string."""
+    if not isinstance(value, str):
+        return value
+    if value == "true":
+        return True
+    if value == "false":
+        return False
+    if key.endswith(_ID_KEY_SUFFIXES):
+        return value
+    if _INT_RE.match(value):
+        try:
+            return int(value)
+        except ValueError:
+            return value
+    if _FLOAT_RE.match(value):
+        try:
+            return float(value)
+        except ValueError:
+            return value
+    return value
+
+
+def dedupe_spans(data: Any) -> Any:
+    """Drop repeated spans (same span id) from an OTLP-JSON trace.
+
+    Two entries that both end in one Tempo (a ``tempo`` entry next to an
+    ``lgtm`` gateway that forwards to the same Tempo) store every span twice
+    until compaction merges them, and the waterfall would show each span
+    doubled. The first copy wins.
+    """
+    if not isinstance(data, dict):
+        return data
+    seen: set = set()
+    for batch in data.get("batches") or []:
+        for scope in batch.get("scopeSpans") or []:
+            kept = []
+            for sp in scope.get("spans") or []:
+                sid = sp.get("spanId")
+                if sid and sid in seen:
+                    continue
+                if sid:
+                    seen.add(sid)
+                kept.append(sp)
+            scope["spans"] = kept
+    return data
+
+
+@dataclass(frozen=True)
+class SpanRow:
+    """The facts a card or a detail span is built from, whatever the backend
+    called them (#513). An adapter's ``_row(sp)`` decodes its native span
+    into one; :func:`card_from_trace` and :func:`trace_detail` do the rest.
+
+    ``status`` is the OTLP status (see :func:`otlp_status`) and ``error``
+    reads it: one spelling of "this span failed". ``kind`` is the OTLP
+    transport kind (see :func:`otlp_kind`; 1 for a backend whose kinds are
+    semantic). ``resource`` is the batch the detail puts the span in; ``None``
+    means ``{"service.name": service}`` (nothing when the service is unknown).
+    """
+
+    trace_id: Any
+    span_id: Any
+    parent_id: Any
+    name: str
+    start_ns: int
+    end_ns: int
+    attrs: Dict[str, Any]
+    service: str = ""
+    kind: int = 1
+    status: Dict[str, Any] = field(default_factory=dict)
+    events: Optional[List[Dict[str, Any]]] = None
+    resource: Optional[Dict[str, Any]] = None
+
+    @property
+    def error(self) -> bool:
+        return self.status.get("code") == 2
+
+    @property
+    def duration_ns(self) -> int:
+        return max(0, self.end_ns - self.start_ns)
+
+    def card(self, span_count: Optional[int] = None) -> Dict[str, Any]:
+        """This span as its trace's list row (see :func:`card_row`)."""
+        return card_row(
+            self.trace_id,
+            span_id=self.span_id,
+            name=self.name,
+            attrs=card_attrs(self.attrs, self.name, self.error),
+            start_ns=self.start_ns,
+            duration_ms=self.duration_ns // 1_000_000,
+            service=self.service,
+            span_count=span_count,
+        )
+
+
+def card_from_trace(
+    f: Any,
+    rows: Sequence[SpanRow],
+    *,
+    equals: Optional[Dict[str, Any]] = None,
+    check_all: bool = False,
+    server_roots: bool = False,
+) -> Optional[Dict[str, Any]]:
+    """One trace's list row, built from the span the filter ``f`` (a
+    ``StructuredFilter``) picks among ``rows``, the trace's spans; ``None``
+    when the trace has no card under the filter.
+
+    Roots-only: the card is the root (the first row whose parent is absent or
+    not among the rows). The backend may have matched ANY span of the trace
+    (Jaeger's ``tags=``, Zipkin's ``annotationQuery``, #295), so the root
+    must itself satisfy the predicates, and an orphan (its real root outside
+    the window) is no root. ``server_roots`` says the backend answered
+    roots-only itself (Tempo's ``nestedSetParent < 0`` with every predicate
+    on the root): the root is the card as the detail shows it, orphan or not,
+    nothing re-checked.
+
+    Widened (a kind or tool filter matches non-root spans): the matched span
+    is the first by start satisfying the predicates; none, no card. With a
+    name prefix (a kind) the card is that span. Without one (a tool filter,
+    the kind "other") the card is the trace's ROOT, since a list row stands
+    for the whole trace, and the matched span is its span set: the reason the
+    row matched (#558).
+
+    ``equals`` replaces ``f.attr_equals`` (an adapter that folded its raw
+    tags into one dict). ``check_all`` is for a backend that applied no
+    predicate (Aspire's API has no filters) or matched a span its answer does
+    not name (Gigapipe's span set): status and free text are checked here
+    too, on the root (roots-only) or on every span by start (widened).
+    """
+    from .base import root_of, span_matches  # base imports this module's emitters
+
+    if not rows:
+        return None
+    root = root_of(rows, lambda r: r.span_id, lambda r: r.parent_id)  # type: ignore[arg-type]
+
+    def ok(r: SpanRow) -> bool:
+        text = f"{r.attrs.get('input.value', '')}\n{r.attrs.get('output.value', '')}"
+        return span_matches(
+            f,
+            name=r.name,
+            attrs=r.attrs,
+            duration_ns=r.duration_ns,
+            error=r.error if check_all else None,
+            text=text if check_all else None,
+            equals=equals,
+        )
+
+    if f.roots_only:
+        if server_roots:
+            card = root
+        elif root.parent_id:
+            return None
+        else:
+            card = root if ok(root) else None
+        return card.card(len(rows)) if card is not None else None
+    matched = next((r for r in sorted(rows, key=lambda r: r.start_ns) if ok(r)), None)
+    if matched is None:
+        return None
+    if f.name_prefix:
+        return matched.card(len(rows))
+    return as_root_row(matched.card(len(rows)), root)
+
+
+def as_root_row(row: Dict[str, Any], root: SpanRow) -> Dict[str, Any]:
+    """A card row built from a matched span, carded as its trace's ``root``
+    (#558): the root's name, start, duration and service (the row's own when
+    the root names none); the span set, the span count and everything else
+    the row's own, the reason it matched."""
+    out = dict(row)
+    out.update(
+        {
+            "rootTraceName": root.name or "",
+            "startTimeUnixNano": str(root.start_ns) if root.start_ns else "0",
+            "durationMs": root.duration_ns // 1_000_000,
+            "rootServiceName": str(root.service or row.get("rootServiceName") or ""),
+        }
+    )
+    return out
+
+
+def recard_roots(page: Dict[str, Any], roots: Dict[str, SpanRow]) -> Dict[str, Any]:
+    """A widened page of a span-level search (each row a matched span)
+    re-carded as the traces' roots, for a filter without a kind (see
+    :func:`card_from_trace` and :func:`as_root_row`, #558). ``roots`` is by
+    trace id; a trace without a known root keeps its matched card. The page
+    was cut and its cursor taken on the matched spans, which is what the
+    next query bounds, so only the rows change; they are re-sorted newest
+    root first."""
+    rows = []
+    for t in page.get("traces") or []:
+        root = roots.get(str(t.get("traceID") or ""))
+        rows.append(t if root is None else as_root_row(t, root))
+    rows.sort(key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
+    page["traces"] = rows
+    return page
+
+
+def trace_detail(rows: Sequence[SpanRow], *, truncated: bool = False) -> Dict[str, Any]:
+    """What ``get_trace()`` answers: the rows as OTLP batches, one per
+    resource in first-seen order (see :attr:`SpanRow.resource`),
+    ``span_count`` their number and ``truncated`` as the caller says."""
+    groups: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
+    for r in rows:
+        if r.resource is not None:
+            resource = r.resource
+        else:
+            resource = {"service.name": r.service} if r.service else {}
+        key = json.dumps(resource, sort_keys=True, default=str)
+        groups.setdefault(key, (resource, []))[1].append(
+            otlp_span(
+                r.trace_id,
+                r.span_id,
+                r.parent_id,
+                r.name,
+                start_ns=r.start_ns,
+                end_ns=r.end_ns,
+                attrs=r.attrs,
+                status=r.status,
+                kind=r.kind,
+                events=r.events,
+            )
+        )
+    return {
+        "batches": [otlp_batch(resource, spans) for resource, spans in groups.values()],
+        "span_count": len(rows),
+        "truncated": truncated,
+    }

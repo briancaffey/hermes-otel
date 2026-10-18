@@ -38,6 +38,32 @@ def _reset_otel_state(monkeypatch, tmp_path_factory):
     reset_state()
 
 
+@pytest.fixture(autouse=True)
+def _shutdown_initialised_plugins(monkeypatch):
+    """Shut down every plugin a test ``init()``-ed itself, singleton or not.
+
+    ``init()`` registers the plugin's ``shutdown`` with ``atexit``, so a plugin
+    a test built and dropped kept its exporter threads until interpreter exit,
+    where that hook and the SDK's own ``MeterProvider`` exit hook shut the same
+    provider ("shutdown can only be called once", printed after the summary).
+    ``shutdown()`` is idempotent, so a test that already shut its plugin down
+    (or ``reset_state`` above) costs nothing here."""
+    from hermes_otel.tracer import HermesOTelPlugin
+
+    plugins = []
+    real_init = HermesOTelPlugin.init
+
+    def init(self, *args, **kwargs):
+        if self not in plugins:
+            plugins.append(self)
+        return real_init(self, *args, **kwargs)
+
+    monkeypatch.setattr(HermesOTelPlugin, "init", init)
+    yield
+    for plugin in plugins:
+        plugin.shutdown()
+
+
 def _build_inmemory_plugin(n_exporters: int = 1):
     """``(exporters, plugin, provider)`` from :func:`hermes_otel.testing.build_inmemory_plugin`
     (kept for the fixtures below)."""
@@ -93,32 +119,14 @@ def inmemory_otel_with_metrics():
 
     Returns ``(span_exporter, metric_reader, plugin)``.
     """
-    from opentelemetry.sdk.metrics import MeterProvider
-    from opentelemetry.sdk.metrics.export import InMemoryMetricReader
-    from opentelemetry.sdk.resources import Resource
+    from hermes_otel.testing import build_inmemory_plugin
 
-    exporters, plugin, trace_provider = _build_inmemory_plugin(n_exporters=1)
-
-    metric_reader = InMemoryMetricReader()
-    from hermes_otel.tracer import metric_views
-
-    meter_provider = MeterProvider(
-        resource=Resource.create({"service.name": "hermes-otel-test"}),
-        metric_readers=[metric_reader],
-        views=metric_views(),
-    )
-    plugin._meter = meter_provider.get_meter("hermes-otel-test")
-    plugin._meter_provider = meter_provider
-    plugin._metric_readers = [metric_reader]
-    plugin._create_metric_instruments()
-
-    _install_as_singleton(plugin)
+    pipeline = build_inmemory_plugin(metrics=True)
+    _install_as_singleton(pipeline.plugin)
     try:
-        yield exporters[0], metric_reader, plugin
+        yield pipeline.span_exporter, pipeline.metric_reader, pipeline.plugin
     finally:
-        exporters[0].clear()
-        trace_provider.shutdown()
-        meter_provider.shutdown()
+        pipeline.shutdown()
 
 
 @pytest.fixture(autouse=True)

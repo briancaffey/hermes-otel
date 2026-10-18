@@ -13,7 +13,9 @@ from hermes_otel.hooks import (
     on_session_end,
     on_session_start,
 )
+from hermes_otel.pipeline import create_instruments
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import build_inmemory_plugin, install_singleton
 
 
 def _api_call(session_id="s1", model="gpt-4", provider="openai", api_duration=0.5, usage=None):
@@ -452,3 +454,286 @@ class TestModelUsageMetric:
 
         value = _get_metric_value(metric_reader, "hermes.model.usage")
         assert value == 1
+
+
+class TestClaudeCodeCompat:
+    """``metric_name_compat`` (#485): the reader sees the ``claude_code.*``
+    twins with Claude Code's labels, the twins replace (``claude_code``) or
+    accompany (``both``) their ``hermes.*`` originals, and nothing else moves.
+    """
+
+    @staticmethod
+    def _switch(plugin, mode, **more):
+        plugin.config = HermesOtelConfig(metric_name_compat=mode, **more)
+        plugin.pipeline.instruments = create_instruments(plugin.pipeline.meter, plugin.config)
+
+    @staticmethod
+    def _labels(metric_reader, name):
+        return [dict(dp.attributes) for dp in _points(_get_metric(metric_reader, name))]
+
+    @pytest.fixture
+    def priced(self, monkeypatch):
+        from hermes_otel.hooks import api_call
+
+        monkeypatch.setattr(
+            api_call,
+            "_estimate_cost",
+            lambda *a, **k: {"status": "estimated", "source": "test", "usd": 0.25},
+        )
+
+    def test_off_exports_no_claude_code_instrument(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        assert _get_metric(metric_reader, "claude_code.token.usage") is None
+        assert _get_metric(metric_reader, "claude_code.session.count") is None
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+
+    def test_claude_code_mode_replaces_the_four_twins(self, inmemory_otel_with_metrics, priced):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "claude_code")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call(
+            usage={
+                "prompt_tokens": 1000,
+                "output_tokens": 50,
+                "cache_read_tokens": 600,
+                "cache_write_tokens": 100,
+                "reasoning_tokens": 20,
+            }
+        )
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+
+        # The hermes.* twins are not exported ...
+        for name in (
+            "hermes.session.count",
+            "hermes.token.usage",
+            "hermes.cost.usage",
+            "hermes.active_time.total",
+        ):
+            assert _get_metric(metric_reader, name) is None, name
+        # ... the claude_code.* instruments are, with Claude Code's labels ...
+        tokens = {
+            dp.attributes["type"]: dp.value
+            for dp in _points(_get_metric(metric_reader, "claude_code.token.usage"))
+        }
+        assert tokens == {"input": 300, "output": 50, "cacheRead": 600, "cacheCreation": 100}
+        for labels in self._labels(metric_reader, "claude_code.token.usage"):
+            assert labels["model"] == "gpt-4" and labels["query_source"] == "main"
+            assert "token_type" not in labels and "provider" not in labels
+            assert "session.id" not in labels  # opt-in only
+        assert self._labels(metric_reader, "claude_code.session.count") == [
+            {"profile": plugin.profile_name, "start_type": "fresh"}
+        ]
+        assert _get_metric_value(metric_reader, "claude_code.cost.usage") == 0.25
+        assert self._labels(metric_reader, "claude_code.cost.usage") == [
+            {"profile": plugin.profile_name, "model": "gpt-4", "query_source": "main"}
+        ]
+        active = _points(_get_metric(metric_reader, "claude_code.active_time.total"))
+        assert len(active) == 1 and active[0].value >= 0
+        assert dict(active[0].attributes) == {"profile": plugin.profile_name, "type": "cli"}
+        # ... and every other hermes.* / gen_ai.* instrument is untouched.
+        assert _get_metric_value(metric_reader, "hermes.model.usage") == 1
+        assert _get_metric(metric_reader, "gen_ai.client.token.usage") is not None
+
+    def test_both_mode_exports_both_families(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        assert _get_metric_value(metric_reader, "hermes.token.usage") == 150
+        assert _get_metric_value(metric_reader, "claude_code.token.usage") == 150
+        assert _get_metric_value(metric_reader, "hermes.session.count") == 1
+        assert _get_metric_value(metric_reader, "claude_code.session.count") == 1
+
+    def test_claude_code_units(self, inmemory_otel_with_metrics, priced):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        on_session_end(
+            session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
+        )
+        units = {
+            n: _get_metric(metric_reader, n).unit
+            for n in (
+                "claude_code.token.usage",
+                "claude_code.cost.usage",
+                "claude_code.active_time.total",
+                "claude_code.session.count",
+            )
+        }
+        assert units == {
+            "claude_code.token.usage": "tokens",
+            "claude_code.cost.usage": "USD",
+            "claude_code.active_time.total": "s",
+            "claude_code.session.count": "{session}",
+        }
+
+    def test_session_id_label_on_opt_in(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both", metric_name_compat_session_id=True)
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        _api_call()
+        for labels in self._labels(metric_reader, "claude_code.token.usage"):
+            assert labels["session.id"] == "s1"
+        assert self._labels(metric_reader, "claude_code.session.count")[0]["session.id"] == "s1"
+        # never on the hermes.* twin
+        for labels in self._labels(metric_reader, "hermes.token.usage"):
+            assert "session.id" not in labels
+
+    def test_resumed_session_counts_as_resume(self, inmemory_otel_with_metrics):
+        from hermes_otel.hooks import on_pre_llm_call
+
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        self._switch(plugin, "both")
+        # No on_session_start in this process: the root is synthesised on the
+        # first pre_llm_call (a resumed / gateway / cron turn).
+        on_pre_llm_call(
+            session_id="s9",
+            user_message="again",
+            conversation_history=[],
+            is_first_turn=False,
+            model="gpt-4",
+            platform="cli",
+        )
+        assert self._labels(metric_reader, "claude_code.session.count") == [
+            {"profile": plugin.profile_name, "start_type": "resume"}
+        ]
+
+
+class TestCommitCount:
+    """One ``hermes.commit.count`` point and one ``commit`` record per
+    successful ``git commit`` through the terminal tool (#478)."""
+
+    @staticmethod
+    def _commit(session_id, task, exit_code=0, command="git commit -m 'add note'", **kw):
+        args = {"command": command}
+        on_pre_tool_call(tool_name="terminal", args=args, task_id=task, session_id=session_id)
+        on_post_tool_call(
+            tool_name="terminal",
+            args=args,
+            result='{"output": "[main 1234abc] add note", "exit_code": %d}' % exit_code,
+            task_id=task,
+            session_id=session_id,
+            **kw,
+        )
+
+    def test_counted_by_the_session_platform_and_model(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._commit("s1", "t1")
+        self._commit("s1", "t2")
+        self._commit("s1", "t3", exit_code=1)  # a failed commit is not one
+        self._commit("s1", "t4", command="git commit-tree HEAD^{tree}")
+        metric = _get_metric(metric_reader, "hermes.commit.count")
+        assert metric is not None and metric.unit == "{commit}"
+        points = _points(metric)
+        assert len(points) == 1 and points[0].value == 2
+        assert dict(points[0].attributes) == {
+            "profile": plugin.profile_name,
+            "platform": "cli",
+            "model": "gpt-4",
+        }
+
+    def test_without_a_session_the_platform_is_unknown(self, inmemory_otel_with_metrics):
+        _, metric_reader, plugin = inmemory_otel_with_metrics
+        args = {"command": "git commit -m x"}
+        on_pre_tool_call(tool_name="terminal", args=args, task_id="t1")
+        on_post_tool_call(
+            tool_name="terminal", args=args, result='{"output": "", "exit_code": 0}', task_id="t1"
+        )
+        points = _points(_get_metric(metric_reader, "hermes.commit.count"))
+        assert [dict(p.attributes) for p in points] == [
+            {"profile": plugin.profile_name, "platform": "unknown"}
+        ]
+
+    def test_nothing_without_a_commit(self, inmemory_otel_with_metrics):
+        _, metric_reader, _ = inmemory_otel_with_metrics
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._commit("s1", "t1", command="git status")
+        assert _get_metric(metric_reader, "hermes.commit.count") is None
+
+    def test_one_point_and_one_record_on_the_same_pipeline(self):
+        from hermes_otel.testing import build_inmemory_plugin, install_singleton
+
+        pipeline = build_inmemory_plugin(
+            metrics=True, logs=True, config=HermesOtelConfig(log_events=True)
+        )
+        previous = install_singleton(pipeline.plugin)
+        try:
+            on_session_start(session_id="s1", model="gpt-4", platform="cli")
+            self._commit("s1", "t1")
+            assert _get_metric_value(pipeline.metric_reader, "hermes.commit.count") == 1
+            records = [
+                r.log_record
+                for r in pipeline.log_exporter.get_finished_logs()
+                if r.log_record.event_name == "commit"
+            ]
+            assert len(records) == 1
+            assert records[0].body == "commit"
+            assert records[0].attributes["hermes.session_id"] == "s1"
+            assert records[0].attributes["hermes.commit.subject"] == "add note"
+        finally:
+            install_singleton(previous)
+            pipeline.shutdown()
+
+
+class TestDisableMetrics:
+    """``disable_metrics`` (#479): the named instrument never reaches the
+    reader, the others do, and ``all`` leaves the reader empty."""
+
+    @pytest.fixture()
+    def reader_for(self):
+        built = []
+
+        def build(*names):
+            pipe = build_inmemory_plugin(
+                metrics=True, config=HermesOtelConfig(disable_metrics=names)
+            )
+            install_singleton(pipe.plugin)
+            built.append(pipe)
+            return pipe.metric_reader
+
+        try:
+            yield build
+        finally:
+            for pipe in built:
+                pipe.shutdown()
+
+    @staticmethod
+    def _tool_call():
+        on_pre_tool_call(
+            tool_name="terminal", args={"command": "ls"}, task_id="t1", session_id="s1"
+        )
+        on_post_tool_call(
+            tool_name="terminal", args={"command": "ls"}, result="ok", task_id="t1", session_id="s1"
+        )
+
+    def test_disabled_instrument_is_absent_from_the_reader(self, reader_for):
+        reader = reader_for("tool.duration")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._tool_call()
+        _api_call()
+        assert _get_metric(reader, "hermes.tool.duration") is None
+        # the seconds twin and everything else still land
+        assert _get_metric(reader, "gen_ai.execute_tool.duration") is not None
+        assert _get_metric_value(reader, "hermes.token.usage") == 150
+        assert _get_metric_value(reader, "hermes.session.count") == 1
+
+    def test_all_leaves_the_reader_empty(self, reader_for):
+        reader = reader_for("all")
+        on_session_start(session_id="s1", model="gpt-4", platform="cli")
+        self._tool_call()
+        _api_call()
+        data = reader.get_metrics_data()  # None when no instrument has a point
+        names = {
+            m.name
+            for rm in (data.resource_metrics if data is not None else ())
+            for sm in rm.scope_metrics
+            for m in sm.metrics
+            if not m.name.startswith("otel.sdk.")
+        }
+        assert names == set()

@@ -9,8 +9,11 @@ import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
+from hermes_otel.buckets import bucketize
 from hermes_otel.dashboard import backends, plugin_api
-from hermes_otel.dashboard.backends.metrics_math import bucketize, counter_increases
+from hermes_otel.dashboard.backends import langfuse
+from hermes_otel.dashboard.backends.base import filter_support_of
+from hermes_otel.dashboard.backends.metrics_math import counter_increases
 
 CFG = [
     {"type": "phoenix", "name": "phx", "endpoint": "http://localhost:6006"},
@@ -114,6 +117,32 @@ class TestStatusAndRoutes:
         }
         assert st["metrics"] is True and st["logs"] is True
         assert st["filters"]["free_text"] == "server"  # the active (oo) adapter's
+
+    def test_status_filters_agree_between_the_top_level_and_the_row(self, monkeypatch):
+        # Langfuse's v4 override widens the class declaration (roots_only and
+        # status_error become server-side). The top level used to spread the
+        # declaration while the same backend's row applied the override, so one
+        # response said two things about one backend (#519).
+        cfg = [
+            {
+                "type": "langfuse",
+                "name": "lf4",
+                "endpoint": "http://localhost:3002",
+                "public_key": "pk",
+                "secret_key": "sk",
+                "query_api": "v4",
+            }
+        ]
+        monkeypatch.setattr(backends, "load_config", lambda: (None, cfg, None))
+        monkeypatch.setattr("hermes_otel.dashboard.backends.top_level_config", lambda: {})
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            st = c.get("/status").json()
+        row = {b["name"]: b for b in st["available"]}["lf4"]
+        assert st["filters"] == row["filters"]
+        assert st["filters"]["roots_only"] == "server" and st["filters"]["status_error"] == "server"
+        assert filter_support_of(langfuse.LangfuseAdapter)["roots_only"] == "none"
 
     def test_status_for_a_chosen_backend(self, client):
         st = client.get("/status", params={"backend": "phx"}).json()
@@ -224,6 +253,11 @@ class TestBucketHelpers:
         assert out["series"] == {"x": [1.0, 2.0, None], "y": [None, 4.0, None]}
         assert out["points"] == 3 and out["bucketS"] == 60
         assert bucketize([(s, 1, "x"), (s, 3, "x")], s, s, 60, agg="avg")["series"] == {"x": [2.0]}
+
+    def test_bucketize_counts_a_valueless_point_without_plotting_it(self):
+        s = 1_020_000_000_000
+        out = bucketize([(s, None, "x"), (s + 1e9, 2, "x"), (s - 61e9, 5, "x")], s, s, 60)
+        assert out["series"] == {"x": [2.0]} and out["points"] == 3
 
 
 class TestOpenObserveMetrics:

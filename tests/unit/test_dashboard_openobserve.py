@@ -25,6 +25,7 @@ from hermes_otel.dashboard.backends import (
 )
 from hermes_otel.dashboard.backends.base import (
     BackendError,
+    LogFilter,
     StructuredFilter,
 )
 
@@ -71,6 +72,27 @@ class TestOpenObserve:
         out = self._adapter().search(StructuredFilter(name_prefix="api."), 0, 10, 5)
         assert out["traces"] == [] and len(sqls) == 1
         assert "operation_name LIKE 'api.%'" in sqls[0] and "reference_parent_span_id" in sqls[0]
+
+    def test_the_level_floor_is_the_one_severity_table(self, monkeypatch):
+        """``severity IN (...)`` spells every name of each band at or above the
+        floor, in the one table's order; no second list (#555)."""
+        sqls = []
+
+        def fake(url, body, headers=None, timeout=None):
+            sqls.append(body["query"]["sql"])
+            return {"hits": []}
+
+        monkeypatch.setattr(openobserve, "http_post_json", fake)
+        a = self._adapter()
+        for level, expected in {
+            10: "'DEBUG', 'INFO', 'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'FATAL'",
+            30: "'WARN', 'WARNING', 'ERROR', 'CRITICAL', 'FATAL'",
+            50: "'CRITICAL', 'FATAL'",
+        }.items():
+            a.logs_search(LogFilter(min_level=level), 0, 10, 5)
+            assert f"severity IN ({expected})" in sqls[-1], sqls[-1]
+        assert "TRACE" not in sqls[0]  # TRACE sits below DEBUG
+        assert "DEBUG2" not in sqls[0]  # the numbered OTel spellings are gone
 
     def test_a_rejected_column_falls_through_and_roots_are_kept_client_side(self, monkeypatch):
         sqls = []

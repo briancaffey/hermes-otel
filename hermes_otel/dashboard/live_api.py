@@ -24,23 +24,20 @@ def _get_live_store():
     shared SQLite file itself (``create=True``) and reads what the gateway
     writes. The store follows the profile of the request (#70): a dashboard
     serving several profiles reads each one's own file. ``None`` only when the
-    ``hermes_otel.live_store`` module cannot be imported.
+    plugin's live store (``hermes_otel.live_store_registry``) cannot be imported.
     """
-    mod = plugin_module("live_store")
+    mod = plugin_module("live_store_registry")
     if mod is None:
         return None
-    per_home = getattr(mod, "get_live_store_for_home", None)
-    if per_home is not None:
-        return per_home(create=True)
-    return mod.get_live_store(create=True)
+    return mod.get_live_store_for_home(create=True)
 
 
 @router.get("/live/status")
 def live_status() -> Dict[str, Any]:
     """Whether the live store can be read, and its current fill.
 
-    ``live: false`` names the real cause: the ``hermes_otel.live_store`` module
-    could not be imported, or the file could not be opened or initialised
+    ``live: false`` names the real cause: the ``hermes_otel.live_store_registry``
+    module could not be imported, or the file could not be opened or initialised
     (``open_error``). An empty but healthy store is ``live: true`` with zero
     rows; ``dashboard_live: false`` on the gateway shows up as a store that
     never fills, which the Settings tab reports.
@@ -49,7 +46,7 @@ def live_status() -> Dict[str, Any]:
     if store is None:
         return {
             "live": False,
-            "reason": "the hermes_otel.live_store module could not be imported by the dashboard",
+            "reason": "the hermes_otel.live_store_registry module could not be imported by the dashboard",
         }
     stats = store.stats()
     if stats.get("open_error"):

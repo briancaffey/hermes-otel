@@ -18,8 +18,10 @@ from opentelemetry.sdk.trace.export import SimpleSpanProcessor
 from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig, HermesOtelConfig
-from hermes_otel.tracer import HermesOTelPlugin, _RootUsageStrippingExporter, strip_root_usage
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.pipeline import _RootUsageStrippingExporter, strip_root_usage
+from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.tracer import HermesOTelPlugin
 
 ROLLUP = {
     "openinference.span.kind": "AGENT",

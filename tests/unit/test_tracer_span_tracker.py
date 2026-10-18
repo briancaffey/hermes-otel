@@ -1,5 +1,6 @@
 """Tests for the SpanTracker class in tracer.py."""
 
+import time
 from unittest.mock import MagicMock
 
 from opentelemetry.trace import StatusCode
@@ -119,6 +120,74 @@ class TestSpanTrackerEndAll:
         assert tracker.get_span("k1") is None
         assert tracker.get_span("k2") is None
         assert tracker.get_current_parent() is None
+
+    def test_end_all_drops_pending_starts(self):
+        tracker = SpanTracker()
+        tracker.mark_started("bash:t1")
+        tracker.record_tool_output_chars("terminal:t1", 12)
+        tracker.end_all()
+        assert not tracker.has_started("bash:t1")
+        assert tracker.pop_tool_output_chars("terminal:t1") is None
+
+
+class TestSpanTrackerPendingStarts:
+    """One table answers "when did this start" for tools, approvals and
+    human-input waits (#510); the post-hook pops it."""
+
+    def test_mark_pop_round_trip(self):
+        tracker = SpanTracker()
+        tracker.mark_started("bash:t1", 1000.0)
+        assert tracker.has_started("bash:t1")
+        assert tracker.pop_started("bash:t1") == 1000.0
+        assert not tracker.has_started("bash:t1")
+        assert tracker.pop_started("bash:t1") is None
+
+    def test_mark_defaults_to_now(self):
+        tracker = SpanTracker()
+        before = time.perf_counter()
+        tracker.mark_started("approval:s1:c1")
+        started = tracker.pop_started("approval:s1:c1")
+        assert before <= started <= time.perf_counter()
+
+    def test_pop_elapsed_measures_and_forgets(self):
+        tracker = SpanTracker()
+        tracker.mark_started("human_input:r1", time.perf_counter() - 2.0)
+        elapsed = tracker.pop_elapsed("human_input:r1")
+        assert 2.0 <= elapsed < 3.0
+        assert tracker.pop_elapsed("human_input:r1") is None
+
+    def test_pop_elapsed_without_start_is_none(self):
+        assert SpanTracker().pop_elapsed("bash:never") is None
+
+    def test_tool_output_chars_round_trip(self):
+        tracker = SpanTracker()
+        tracker.record_tool_output_chars("terminal:t1", 50_000)
+        assert tracker.pop_tool_output_chars("terminal:t1") == 50_000
+        assert tracker.pop_tool_output_chars("terminal:t1") is None
+
+
+class TestBoundedSessionTables:
+    """The delegation registry and the per-session key sets are keyed by ids
+    Hermes may never close (a child that never starts, a turn that never
+    ends): both drop their oldest entry past the cap."""
+
+    def test_subagent_registry_drops_the_oldest(self):
+        tracker = SpanTracker()
+        for i in range(tracker._MAX_SESSIONS + 10):
+            tracker.register_subagent(f"child-{i}", {"span": None})
+        assert len(tracker._subagent_registry) == tracker._MAX_SESSIONS
+        assert tracker.get_subagent("child-0") is None
+        assert tracker.get_subagent(f"child-{tracker._MAX_SESSIONS + 9}") == {"span": None}
+
+    def test_session_keys_drop_the_oldest_session(self):
+        tracker = SpanTracker()
+        for i in range(tracker._MAX_SESSIONS + 10):
+            tracker.link_key(f"s{i}", f"api:{i}")
+            tracker.link_key(f"s{i}", f"tool:{i}")
+        assert len(tracker._session_keys) == tracker._MAX_SESSIONS
+        assert tracker.pop_session_keys("s0") == set()
+        last = tracker._MAX_SESSIONS + 9
+        assert tracker.pop_session_keys(f"s{last}") == {f"api:{last}", f"tool:{last}"}
 
 
 class TestSpanTrackerConcurrencyIsolation:

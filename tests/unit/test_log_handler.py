@@ -7,7 +7,7 @@ Covers the three parts the tracer depends on:
 * :func:`install_handler` — attaches an OTel ``LoggingHandler`` to the
   right Python logger, sets level appropriately, is idempotent across
   repeated installs, and filters out OTel-internal logger records.
-* :func:`resolve_level` — string-to-int level parsing.
+* :mod:`hermes_otel.severity` — the level spellings the pipeline is configured with.
 """
 
 from __future__ import annotations
@@ -19,28 +19,34 @@ import pytest
 
 from hermes_otel import log_handler
 from hermes_otel.backends import _ResolvedBackend
+from hermes_otel.severity import otel_severity, python_level
+from hermes_otel.testing import attach_logs, attach_pipeline
 
-# ── resolve_level ──────────────────────────────────────────────────────────
+# ── python_level ───────────────────────────────────────────────────────────
 
 
-class TestResolveLevel:
+class TestPythonLevel:
     def test_named_levels(self):
-        assert log_handler.resolve_level("DEBUG") == logging.DEBUG
-        assert log_handler.resolve_level("INFO") == logging.INFO
-        assert log_handler.resolve_level("warning") == logging.WARNING
-        assert log_handler.resolve_level("Error") == logging.ERROR
+        assert python_level("DEBUG") == logging.DEBUG
+        assert python_level("INFO") == logging.INFO
+        assert python_level("warning") == logging.WARNING
+        assert python_level("Error") == logging.ERROR
+
+    def test_otel_spellings_and_trace(self):
+        assert python_level("WARN") == logging.WARNING and python_level("FATAL") == logging.CRITICAL
+        assert python_level("trace") == 5  # below DEBUG, where OTel puts it (#521)
 
     def test_numeric_level(self):
-        assert log_handler.resolve_level("20") == 20
-        assert log_handler.resolve_level("40") == 40
+        assert python_level("20") == 20
+        assert python_level("40") == 40
 
     def test_unknown_falls_back_to_default(self):
-        assert log_handler.resolve_level("bogus") == logging.INFO
-        assert log_handler.resolve_level("") == logging.INFO
-        assert log_handler.resolve_level(None) == logging.INFO
+        assert python_level("bogus") == logging.INFO
+        assert python_level("") == logging.INFO
+        assert python_level(None) == logging.INFO
 
     def test_custom_default(self):
-        assert log_handler.resolve_level(None, default=logging.WARNING) == logging.WARNING
+        assert python_level(None, default=logging.WARNING) == logging.WARNING
 
 
 # ── Endpoint derivation ─────────────────────────────────────────────────────
@@ -48,18 +54,14 @@ class TestResolveLevel:
 
 class TestDeriveLogsEndpoint:
     def test_swaps_traces_suffix(self):
-        assert (
-            log_handler._derive_logs_endpoint("http://localhost:4318/v1/traces")
-            == "http://localhost:4318/v1/logs"
-        )
+        rb = _ResolvedBackend(type="otlp", endpoint="http://localhost:4318/v1/traces")
+        assert rb.target("logs").endpoint == "http://localhost:4318/v1/logs"
 
     def test_passthrough_when_no_traces_suffix(self):
         # Some backends expose non-suffixed OTLP endpoints; leave them alone
         # so the caller can hand the exporter what they explicitly configured.
-        assert (
-            log_handler._derive_logs_endpoint("http://collector.example/otlp")
-            == "http://collector.example/otlp"
-        )
+        rb = _ResolvedBackend(type="otlp", endpoint="http://collector.example/otlp")
+        assert rb.target("logs").endpoint == "http://collector.example/otlp"
 
 
 # ── build_log_processors ────────────────────────────────────────────────────
@@ -144,7 +146,7 @@ class TestBuildLogProcessors:
         )
         headers = fake_otlp_exporter.call_args.kwargs["headers"]
         # Per-backend headers win on key collision (they carry resolver-built
-        # auth); matches tracer._merge_headers and the documented precedence.
+        # auth): the _ResolvedBackend.target rule the span and metric exporters use too.
         assert headers == {
             "X-From-Backend": "a",
             "X-Global": "b",
@@ -293,7 +295,7 @@ class TestLgtmBackendType:
 
     def test_lgtm_resolves_as_logs_capable(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(type="lgtm", endpoint="http://localhost:4318/v1/traces")
@@ -305,14 +307,14 @@ class TestLgtmBackendType:
 
     def test_lgtm_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="lgtm"))
 
     def test_lgtm_allows_name_override(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -326,7 +328,7 @@ class TestLgtmBackendType:
     def test_tempo_remains_traces_only(self):
         """Sanity: don't let LGTM's addition change tempo's behavior."""
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(type="tempo", endpoint="http://localhost:4318/v1/traces")
@@ -340,7 +342,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_resolves_with_dsn(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -360,14 +362,14 @@ class TestUptraceBackendType:
 
     def test_uptrace_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="uptrace", dsn="http://t@h:14318"))
 
     def test_uptrace_requires_dsn(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="dsn"):
             backends.resolve(
@@ -379,7 +381,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_dsn_from_env(self, monkeypatch):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         monkeypatch.setenv("UPTRACE_DSN", "http://token@host:14318?grpc=14317")
         rb = backends.resolve(
@@ -392,7 +394,7 @@ class TestUptraceBackendType:
 
     def test_uptrace_user_headers_merge_on_top(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -413,7 +415,7 @@ class TestOpenObserveBackendType:
         import base64
 
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -433,14 +435,14 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_requires_endpoint(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="openobserve", user="u", password="p"))
 
     def test_openobserve_requires_credentials(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="user and password"):
             backends.resolve(
@@ -452,7 +454,7 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_credentials_from_env(self, monkeypatch):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         monkeypatch.setenv("OPENOBSERVE_USER", "root@example.com")
         monkeypatch.setenv("OPENOBSERVE_PASSWORD", "Complexpass#123")
@@ -466,7 +468,7 @@ class TestOpenObserveBackendType:
 
     def test_openobserve_custom_stream_name(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -485,7 +487,7 @@ class TestParseableBackendType:
 
     def test_parseable_resolves_all_signal_headers(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -511,7 +513,7 @@ class TestParseableBackendType:
 
     def test_parseable_custom_datasets_and_headers(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         rb = backends.resolve(
             BackendConfig(
@@ -532,7 +534,7 @@ class TestParseableBackendType:
 
     def test_parseable_requires_endpoint_and_api_key(self):
         from hermes_otel import backends
-        from hermes_otel.plugin_config import BackendConfig
+        from hermes_otel.backend_config import BackendConfig
 
         with pytest.raises(ValueError, match="endpoint"):
             backends.resolve(BackendConfig(type="parseable", api_key="p-key"))
@@ -558,7 +560,9 @@ class TestParseableBackendType:
         assert rb.headers["X-P-Stream"] == "env-traces"
 
 
-class TestExcludeOTelInternalFilter:
+class TestDefaultLoggerRulesFilter:
+    """``_LoggerRulesFilter()`` with no rules carries the built-in exclusions."""
+
     def _record(self, name: str, level: int = logging.DEBUG) -> logging.LogRecord:
         return logging.LogRecord(
             name=name,
@@ -571,7 +575,7 @@ class TestExcludeOTelInternalFilter:
         )
 
     def test_drops_opentelemetry_records(self):
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record("opentelemetry.sdk._logs.export")) is False
 
     @pytest.mark.parametrize(
@@ -586,11 +590,11 @@ class TestExcludeOTelInternalFilter:
     )
     def test_drops_http_client_records(self, logger_name):
         """HTTP-client DEBUG logs would loop if we forwarded them."""
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record(logger_name)) is False
 
     def test_keeps_application_records(self):
-        f = log_handler._ExcludeOTelInternal()
+        f = log_handler._LoggerRulesFilter()
         assert f.filter(self._record("hermes_otel.hooks", level=logging.INFO)) is True
         assert f.filter(self._record("hermes.gateway", level=logging.INFO)) is True
         assert f.filter(self._record("myapp.module", level=logging.INFO)) is True
@@ -618,10 +622,10 @@ class TestTracerLogsPipelineWiring:
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=False))
         with patch.object(log_handler, "build_log_processors") as mock_build:
-            plugin._init_logs_pipeline(Resource.create({}), [self._capable_backend()])
+            pipeline = attach_logs(plugin, [self._capable_backend()], resource=Resource.create({}))
         mock_build.assert_not_called()
-        assert plugin._logger_provider is None
-        assert plugin._log_processors == []
+        assert pipeline.logger_provider is None
+        assert pipeline.log_processors == []
 
     def test_installs_handler_when_capture_logs_true(self, clean_root_logger):
         from opentelemetry.sdk.resources import Resource
@@ -633,12 +637,12 @@ class TestTracerLogsPipelineWiring:
         plugin = HermesOTelPlugin(config=cfg)
 
         with patch.object(log_handler, "OTLPLogExporter", new=MagicMock()):
-            plugin._init_logs_pipeline(
-                Resource.create({"service.name": "t"}), [self._capable_backend()]
+            pipeline = attach_logs(
+                plugin, [self._capable_backend()], resource=Resource.create({"service.name": "t"})
             )
 
-        assert plugin._logger_provider is not None
-        assert len(plugin._log_processors) == 1
+        assert pipeline.logger_provider is not None
+        assert len(pipeline.log_processors) == 1
         # Handler reached the root logger with our marker.
         markers = [
             h for h in clean_root_logger.handlers if getattr(h, log_handler._HANDLER_MARKER, False)
@@ -656,30 +660,31 @@ class TestTracerLogsPipelineWiring:
         traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
 
         with caplog.at_level("WARNING", logger="hermes_otel"):
-            plugin._init_logs_pipeline(Resource.create({}), [traces_only])
+            pipeline = attach_logs(plugin, [traces_only], resource=Resource.create({}))
 
-        assert plugin._logger_provider is None
+        assert pipeline.logger_provider is None
         assert any("no configured backend accepts OTLP logs" in r.message for r in caplog.records)
 
     def test_live_store_alone_gets_a_provider(self, clean_root_logger, caplog, tmp_path):
         from opentelemetry.sdk.resources import Resource
 
-        from hermes_otel import live_store as ls
+        from hermes_otel import live_store_registry as reg
+        from hermes_otel.live_store import LiveStore
         from hermes_otel.plugin_config import HermesOtelConfig
         from hermes_otel.tracer import HermesOTelPlugin
 
         plugin = HermesOTelPlugin(config=HermesOtelConfig(capture_logs=True, dashboard_live=True))
-        store = ls.LiveStore(db_path=str(tmp_path / "live.db"))
-        plugin._live_active = True
+        store = LiveStore(db_path=str(tmp_path / "live.db"))
+        pipeline = attach_pipeline(plugin, resource=Resource.create({}), live_active=True)
         traces_only = _ResolvedBackend(type="tempo", endpoint="x", supports_logs=False)
         with (
-            patch.object(ls, "get_live_store", return_value=store),
+            patch.object(reg, "get_live_store", return_value=store),
             caplog.at_level("INFO", logger="hermes_otel"),
         ):
-            plugin._init_logs_pipeline(Resource.create({}), [traces_only])
+            attach_logs(plugin, [traces_only])
         try:
-            assert plugin._logger_provider is not None
-            assert plugin._log_processors == []
+            assert pipeline.logger_provider is not None
+            assert pipeline.log_processors == []
             assert any("live store only" in r.message for r in caplog.records)
             # Only the plugin's own warnings count: an earlier test's shut-down
             # global MeterProvider makes the OTel SDK log one of its own here.
@@ -692,12 +697,11 @@ class TestTracerLogsPipelineWiring:
             store.close()
 
     def test_force_flush_drains_logger_provider(self):
-        from hermes_otel.tracer import HermesOTelPlugin
+        from hermes_otel.pipeline import Pipeline
 
-        plugin = HermesOTelPlugin()
-        plugin._logger_provider = MagicMock()
-        plugin._force_flush()
-        plugin._logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
+        pipeline = Pipeline(logger_provider=MagicMock())
+        pipeline.force_flush()
+        pipeline.logger_provider.force_flush.assert_called_once_with(timeout_millis=2000)
 
 
 def _fake(prefix: str, body: str) -> str:
@@ -965,8 +969,8 @@ class TestLiveSinkOnTheProvider:
         assert [type(c).__name__ for c in chain] == ["HermesLogProcessor", "LiveLogProcessor"]
         store.close()
 
-    def test_python_to_severity_bands(self):
-        f = log_handler._python_to_severity
+    def test_otel_severity_bands(self):
+        f = otel_severity
         assert (f(logging.DEBUG), f(logging.INFO), f(logging.WARNING)) == (5, 9, 13)
         assert (f(logging.ERROR), f(logging.CRITICAL), f(0)) == (17, 21, 1)
 

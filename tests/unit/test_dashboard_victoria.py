@@ -15,7 +15,7 @@ from urllib import request as _urlrequest
 import pytest
 
 from hermes_otel.dashboard import backends
-from hermes_otel.dashboard.backends import jaeger
+from hermes_otel.dashboard.backends import _prometheus, jaeger
 from hermes_otel.dashboard.backends import victoria as vt
 from hermes_otel.dashboard.backends.base import (
     BackendError,
@@ -23,6 +23,7 @@ from hermes_otel.dashboard.backends.base import (
     LogFilter,
     StructuredFilter,
 )
+from hermes_otel.dashboard.backends.timeconv import ns_to_rfc3339
 
 NS = 1_000_000_000
 T0 = 1_791_750_400
@@ -156,13 +157,6 @@ class TestSetup:
 
 
 class TestHelpers:
-    def test_rfc3339_round_trip(self):
-        ns = 1_791_750_470_202_258_944
-        assert vt.rfc3339_to_ns("2026-10-11T20:27:50.202258944Z") == ns
-        assert vt.ns_to_rfc3339(ns) == "2026-10-11T20:27:50.202258944Z"
-        assert vt.rfc3339_to_ns("2026-10-11T20:27:50Z") == 1_791_750_470 * NS
-        assert vt.rfc3339_to_ns("garbage") == 0
-
     def test_logsql_str(self):
         assert vt.logsql_str('a "b" \\ c') == '"a \\"b\\" \\\\ c"'
 
@@ -217,16 +211,16 @@ class TestMetrics:
     def test_prometheus_reader_on_the_metrics_store(self, monkeypatch):
         seen: Dict[str, Any] = {}
         monkeypatch.setattr(
-            vt,
-            "_prom_metric_names",
+            _prometheus,
+            "metric_names",
             lambda base, s, e, match, headers=None: seen.update(names=(base, match, headers))
             or [{"name": "x"}],
         )
         monkeypatch.setattr(
-            vt,
-            "_prom_metrics_query",
-            lambda base, name, s, e, b, group_by=None, agg="sum", headers=None: seen.update(
-                query=(base, name, group_by, agg)
+            _prometheus,
+            "metrics_query",
+            lambda base, name, s, e, b, group_by=None, agg="sum", headers=None, **kw: seen.update(
+                query=(base, name, group_by, agg, kw["counter_samples"])
             )
             or {"name": name},
         )
@@ -243,11 +237,13 @@ class TestMetrics:
             )["name"]
             == "hermes_token_usage_total"
         )
+        # VictoriaMetrics answers range-vector instant queries: the reader's default fetch
         assert seen["query"] == (
             "http://localhost:8428",
             "hermes_token_usage_total",
             "token_type",
             "sum",
+            _prometheus._instant_range_vector,
         )
 
 
@@ -280,9 +276,7 @@ class TestLogs:
             before_ns=(T0 + 30) * NS,
         )
         parts = _adapter()._log_filters(f, T0, T0 + 60)
-        assert (
-            parts[0] == f"_time:[{vt.ns_to_rfc3339(T0 * NS)}, {vt.ns_to_rfc3339((T0 + 30) * NS)})"
-        )
+        assert parts[0] == f"_time:[{ns_to_rfc3339(T0 * NS)}, {ns_to_rfc3339((T0 + 30) * NS)})"
         assert 'trace_id:"t"' in parts and 'span_id:"s"' in parts
         assert 'hermes.session_id:"sid"' in parts and 'scope.name:"cli"' in parts
         assert "severity_number:>=13" in parts

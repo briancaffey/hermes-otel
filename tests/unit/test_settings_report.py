@@ -9,6 +9,9 @@ import dataclasses
 import pytest
 
 from hermes_otel import plugin_config as pc
+from hermes_otel import settings_report
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import SPECS
 from hermes_otel.plugin_config import FIELD_DOCS, FIELD_GROUPS, HermesOtelConfig
 from hermes_otel.settings_report import (
     MASK,
@@ -61,17 +64,6 @@ def home(tmp_path, monkeypatch):
     monkeypatch.setenv("LF_SECRET", "sk-expanded")
     monkeypatch.setenv("OO_PASSWORD", "pw")
     return tmp_path
-
-
-class TestGroupsAndDocs:
-    def test_every_field_is_grouped_exactly_once(self):
-        names = {f.name for f in dataclasses.fields(HermesOtelConfig)}
-        grouped = [k for _, keys in FIELD_GROUPS for k in keys]
-        assert sorted(grouped) == sorted(names)
-        assert len(grouped) == len(set(grouped))
-
-    def test_every_field_has_a_description(self):
-        assert set(FIELD_DOCS) == {f.name for f in dataclasses.fields(HermesOtelConfig)}
 
 
 class TestFieldReports:
@@ -247,6 +239,14 @@ class TestRenderings:
         assert cfg["exists"] is True and cfg["parse_ok"] is True
         assert cfg["mtime"] is not None
 
+    def test_config_block_carries_the_short_fingerprint(self, home):
+        # The same value the plugin logs when it builds its pipeline (#484):
+        # what the loader resolves from this file and environment.
+        cfg = build_settings_report()["config"]
+        assert cfg["fingerprint"] == pc.load_config().fingerprint()[: pc.SHORT_FINGERPRINT_CHARS]
+        assert len(cfg["fingerprint"]) == pc.SHORT_FINGERPRINT_CHARS
+        assert build_settings_report(reveal=True)["config"]["fingerprint"] == cfg["fingerprint"]
+
     def test_missing_file_is_reported_not_an_error(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HERMES_HOME", str(tmp_path))
         monkeypatch.delenv(pc.CONFIG_PATH_ENV, raising=False)
@@ -352,11 +352,11 @@ class TestBackendCards:
         from hermes_otel import backends as b
 
         for name, bc in {
-            "phoenix": pc.BackendConfig(type="phoenix", endpoint="http://x/v1/traces"),
-            "jaeger-proxied": pc.BackendConfig(
+            "phoenix": BackendConfig(type="phoenix", endpoint="http://x/v1/traces"),
+            "jaeger-proxied": BackendConfig(
                 type="jaeger", endpoint="http://x/v1/traces", metrics=True
             ),
-            "lgtm": pc.BackendConfig(type="lgtm", endpoint="http://x/v1/traces", logs=False),
+            "lgtm": BackendConfig(type="lgtm", endpoint="http://x/v1/traces", logs=False),
         }.items():
             rb = b.resolve(bc)
             sig = cards[name]["signals"]
@@ -396,6 +396,20 @@ class TestBackendCards:
         assert cards["honeycomb"]["ui"]["url"] == "https://ui.eu1.honeycomb.io"
         assert cards["weave"]["ui"]["url"] == "https://wandb.ai/acme/agents/weave"
 
+    @pytest.mark.parametrize(
+        "alias, canonical",
+        [(a, s.type) for s in SPECS for a in s.aliases],
+    )
+    @pytest.mark.parametrize(
+        "endpoint", ["http://localhost:4318/v1/traces", "https://otel.example.com/v1/traces"]
+    )
+    def test_alias_entry_gets_its_canonical_types_ui_link(self, alias, canonical, endpoint):
+        """An alias is another spelling of the same backend (#557)."""
+        got = settings_report._ui_link(BackendConfig(type=alias, endpoint=endpoint), {})
+        want = settings_report._ui_link(BackendConfig(type=canonical, endpoint=endpoint), {})
+        assert got == want
+        assert "generic OTLP collector" not in got["note"]
+
     def test_temporality_names_the_rule_that_set_it(self, cards):
         assert cards["signoz"]["metrics_temporality"] == {"value": "delta", "source": "type preset"}
         assert cards["openobserve"]["metrics_temporality"] == {
@@ -413,6 +427,82 @@ class TestBackendCards:
         )
         (card,) = build_settings_report()["fields"][-1]["value"]
         assert card["metrics_temporality"] == {"value": "cumulative", "source": "SDK default"}
+
+    @pytest.mark.parametrize(
+        "entry, want_fields, want_credentials",
+        [
+            (
+                BackendConfig(
+                    type="victoria",
+                    endpoint="http://localhost:10428",
+                    metrics_endpoint="http://localhost:8428",
+                    logs_endpoint="http://localhost:9428",
+                ),
+                {
+                    "endpoint": "http://localhost:10428",
+                    "metrics_endpoint": "http://localhost:8428",
+                    "logs_endpoint": "http://localhost:9428",
+                },
+                {},
+            ),
+            (
+                BackendConfig(
+                    type="mlflow",
+                    endpoint="http://localhost:5000",
+                    experiment_id="7",
+                    workspace="ws",
+                ),
+                {"endpoint": "http://localhost:5000"},
+                {"experiment_id": "7", "workspace": "ws"},
+            ),
+            (
+                BackendConfig(type="opik", workspace="acme", project="agents"),
+                {},
+                {"workspace": "acme", "project": "agents"},
+            ),
+            (
+                BackendConfig(type="greptime", endpoint="http://localhost:4000", db="hermes"),
+                {"endpoint": "http://localhost:4000"},
+                {"db": "hermes"},
+            ),
+            (
+                BackendConfig(
+                    type="elastic", endpoint="http://localhost:8200", dataset="d", namespace="n"
+                ),
+                {"endpoint": "http://localhost:8200", "dataset": "d", "namespace": "n"},
+                {},
+            ),
+        ],
+        ids=["victoria", "mlflow", "opik", "greptime", "elastic"],
+    )
+    def test_every_configured_field_reaches_the_card_and_the_yaml(
+        self, entry, want_fields, want_credentials
+    ):
+        """Regression for #501: the field lists are derived from the manifest and
+        ``BackendConfig``, so no configured scalar is dropped from the card or
+        from the effective YAML the tab offers to paste back."""
+        card = settings_report._backend_summary(entry, {}, reveal=False)
+        assert card["fields"] == want_fields
+        assert {c["field"]: c["value"] for c in card["credentials"]} == want_credentials
+        as_yaml = settings_report._backend_as_yaml(card)
+        for k, v in {**want_fields, **want_credentials}.items():
+            assert as_yaml[k] == v, k
+
+    def test_field_lists_cover_every_backend_config_scalar(self):
+        """Every ``BackendConfig`` field is either structured (reported under
+        its own key), a credential from the manifest, a ``*_env`` pointer, or
+        a plain scalar; nothing falls through."""
+        names = {f.name for f in dataclasses.fields(BackendConfig)}
+        covered = (
+            set(settings_report._STRUCTURED_BACKEND_FIELDS)
+            | set(settings_report._ALL_CREDENTIAL_FIELDS)
+            | set(settings_report._PLAIN_BACKEND_FIELDS)
+            | {n for n in names if n.endswith("_env")}
+        )
+        assert covered == names
+        assert set(settings_report._ALL_CREDENTIAL_FIELDS) == {
+            c.field for s in SPECS for c in s.credentials
+        }
 
     def test_query_fields_and_effective_yaml_round_trip(self, cards, home):
         assert cards["jaeger-query"]["query_fields"] == {"query_port": 16686}
@@ -529,7 +619,7 @@ class TestProfileAwareReport:
 
 class TestMetricsSettingsMirrorTheLoader:
     """``load_config`` drops an unknown ``metrics_histogram`` / ``metrics_temporality``
-    (``reconcile_metrics_settings``); the report used to show the bad value as
+    (the field's ``choices`` rule); the report used to show the bad value as
     applied (#413)."""
 
     def test_unknown_histogram_from_the_file_is_flagged_and_the_default_applies(self, home):

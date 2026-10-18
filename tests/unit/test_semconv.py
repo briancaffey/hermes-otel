@@ -1,7 +1,7 @@
 """``hermes_otel.semconv`` is the one source of the telemetry vocabulary (#404):
 the registry is consistent, the readers derive from it, the hooks' literals
-are registered, the reference page lists exactly the registry, and the
-generated TypeScript is current."""
+are registered, and the generated TypeScript and reference-page tables are
+current (#523)."""
 
 from __future__ import annotations
 
@@ -11,7 +11,7 @@ from pathlib import Path
 
 import pytest
 
-from hermes_otel import live_store, log_events, query_cli, semconv
+from hermes_otel import live_store, live_summary, log_events, semconv
 from hermes_otel.dashboard.backends import _attrs
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
@@ -43,6 +43,14 @@ class TestRegistry:
         assert semconv.attribute("tool.name").group == "tool"
         assert semconv.attribute("no.such") is None
         assert set(semconv.groups()) >= {"session", "usage", "tool", "kanban"}
+
+    def test_rows_are_placed_and_the_first_row_is_home(self, gen):
+        """Every row lands in a page table (typed) or is off-page; an attribute
+        listed in several rows takes its meaning from the first."""
+        assert gen.check_rows() == []
+        home = semconv.attribute("gen_ai.operation.name")
+        assert (home.where, home.doc) == ("agent / cron: start", "`invoke_agent`")
+        assert semconv.attribute("hermes.span_kind").where == "skill.*"
 
     def test_key_chains_are_registered(self):
         for chain in (
@@ -84,6 +92,9 @@ class TestSpanKinds:
             ("tool.terminal", {"hermes.span_kind": "approval"}, "approval"),
             ("tool.terminal", {"hermes.span_kind": "bogus"}, "tool"),
             ("approval.rm", {}, "approval"),
+            ("human_input.clarify", {}, "human_input"),
+            ("human_input.approval", {"hermes.span_kind": "human_input"}, "human_input"),
+            ("ask", {"hermes.span_kind": "human_input"}, "human_input"),
             ("subagent.r", {}, "subagent"),
             ("llm.m", {}, "llm"),
             ("api.m", {}, "api"),
@@ -94,20 +105,24 @@ class TestSpanKinds:
     def test_span_kind(self, name, attrs, kind):
         assert semconv.span_kind(name, attrs) == kind
         # the live store's classifier is the registry's
-        assert live_store.span_kind(name, attrs) == kind
+        assert live_summary.span_kind(name, attrs) == kind
 
     def test_live_store_tables_derive_from_the_registry(self):
         assert live_store._KIND_PREFIXES == semconv.KIND_PREFIXES
-        assert live_store._SESSION_KEYS == semconv.SESSION_KEYS
-        assert live_store._MODEL_KEYS == semconv.MODEL_KEYS
-        assert live_store._TOKEN_KEYS == semconv.TOTAL_TOKEN_KEYS
-        assert query_cli._MODEL_KEYS == semconv.MODEL_KEYS
-        assert query_cli._COST_KEY == semconv.COST_KEY
+        assert live_summary._SESSION_KEYS == semconv.SESSION_KEYS
+        assert live_store._MODEL_KEYS == live_summary._MODEL_KEYS == semconv.MODEL_KEYS
+        assert live_summary._TOKEN_KEYS == semconv.TOTAL_TOKEN_KEYS
         assert set(_attrs.KNOWN_ATTRIBUTES) == set(semconv.ATTRIBUTE_NAMES)
 
     def test_every_kind_has_a_prefix_table(self):
         assert set(semconv.KIND_PREFIXES) == set(semconv.KINDS) - {"other"}
         assert semconv.KIND_PREFIXES["agent"] == ("agent", "agent.")
+
+    def test_every_override_the_hooks_set_is_a_kind(self):
+        """``hermes.span_kind`` values the hooks write (skill, approval,
+        human_input) must be kinds the table knows, or they classify as other (#556)."""
+        assert set(semconv.KIND_OVERRIDES) == {"skill", "approval", "human_input"}
+        assert set(semconv.KIND_OVERRIDES) <= set(semconv.KIND_PREFIXES)
 
 
 class TestDrift:
@@ -121,7 +136,7 @@ class TestDrift:
         ]:
             names |= set(QUOTED.findall(path.read_text(encoding="utf-8")))
         # Instrument names are metrics, documented in metrics.md.
-        from hermes_otel.tracer import _INSTRUMENTS, HOST_METRIC_NAMES
+        from hermes_otel.instruments import _INSTRUMENTS, HOST_METRIC_NAMES
 
         names -= {spec.name for spec in _INSTRUMENTS.values()} - {
             "hermes.retry.count",
@@ -130,8 +145,16 @@ class TestDrift:
         names -= set(HOST_METRIC_NAMES) | {"gen_ai.token.type"}
         assert semconv.unknown_names(names) == []
 
-    def test_reference_page_lists_exactly_the_registry(self, gen):
-        assert gen.check_docs() == []
+    def test_reference_page_tables_are_current(self, gen):
+        text = gen.DOC.read_text(encoding="utf-8")
+        assert text == gen.render_docs(text), "run: python scripts/gen_semconv.py"
+
+    def test_reference_page_ticks_every_span_attribute(self, gen):
+        """Names off the page are only the event / log-record / backend-derived ones."""
+        text = gen.DOC.read_text(encoding="utf-8")
+        off_page = {a.name for a in semconv.ATTRIBUTES if a.where in gen.OFF_PAGE}
+        missing = [n for n in semconv.ATTRIBUTE_NAMES if n not in off_page and f"`{n}`" not in text]
+        assert missing == []
 
     def test_generated_typescript_is_current(self, gen):
         current = gen.TS_OUT.read_text(encoding="utf-8")

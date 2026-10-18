@@ -72,6 +72,8 @@ Signal-specific variants, such as `OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE` and `O
 
 Missing, empty or unreadable files and incomplete gRPC client identities fail that destination's exporter initialization without falling back to plaintext or silently ignoring the CA. Other destinations continue exporting. Certificates are loaded at initialization; restart Hermes after rotating them.
 
+A `headers_helper` needs `protocol: http/protobuf`: its 401/403 re-mint rides the HTTP exporter's session, which a gRPC channel does not have, so a gRPC entry with a helper is refused at startup instead of exporting with a token that silently expires.
+
 ## Examples
 
 ### Honeycomb

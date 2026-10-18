@@ -81,7 +81,9 @@
   "display_type": "Victoria",
   "docs_path": "/backends/victoria",
   "fields": {
-   "endpoint": "http://localhost:4318/v1/traces"
+   "endpoint": "http://localhost:4318/v1/traces",
+   "logs_endpoint": "http://localhost:9428",
+   "metrics_endpoint": "http://localhost:8428"
   },
   "headers": null,
   "known_type": true,
@@ -111,9 +113,9 @@
   },
   "type": "victoriatraces",
   "ui": {
-   "note": "a generic OTLP collector has no UI; set ui_url on this entry to link the card to the UI",
-   "source": null,
-   "url": null
+   "note": "derived from the endpoint: Victoria serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
   }
  },
  "signal_support": {

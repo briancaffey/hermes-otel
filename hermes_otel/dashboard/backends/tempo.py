@@ -2,9 +2,9 @@
 
 Traces come from Tempo. For ``type: lgtm`` (and any Tempo entry that names
 them) metrics come from the stack's Prometheus and logs from its Loki, via
-the ``_prometheus`` / ``_loki`` helpers (#194): ``prometheus_url`` and
-``loki_url`` default to ports 9090 and 3100 on the Tempo host, which is the
-``grafana/otel-lgtm`` layout.
+the ``PrometheusMetrics`` / ``LokiLogs`` mixins (#194): ``prometheus_url``
+and ``loki_url`` default to ports 9090 and 3100 on the Tempo host, which is
+the ``grafana/otel-lgtm`` layout.
 
 Tempo is the reference backend — the card + detail response shapes the
 rest of the plugin consumes were copied from Tempo's search + trace
@@ -24,21 +24,20 @@ import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 
-from . import _loki, _prometheus, register
+from . import register
+from ._loki import LokiLogs
+from ._prometheus import PrometheusMetrics
 from .base import (
     FILTER_KEYS,
     BackendAdapter,
-    BackendError,
-    ConfigError,
-    LogFilter,
     StructuredFilter,
+    first_accepted,
     http_get_json,
     not_found,
     query_origin,
-    rejected_request,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
-from .shapes import CARD_ATTRIBUTE_KEYS, span_count_of
+from .shapes import CARD_ATTRIBUTE_KEYS, dedupe_spans, span_count_of, to_int
 
 _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")
 
@@ -55,31 +54,6 @@ _DEFAULT_SEARCH_FETCH = 500
 # The ``| select()`` list: the card attributes as span attributes, plus the
 # intrinsics the card reads.
 _CARD_SELECT_ATTRS = tuple(f".{k}" for k in CARD_ATTRIBUTE_KEYS) + ("status", "name")
-
-
-def _dedupe_spans(data: Any) -> Any:
-    """Drop repeated spans (same span id) from an OTLP-JSON trace.
-
-    Two entries that both end in one Tempo (a ``tempo`` entry next to an
-    ``lgtm`` gateway that forwards to the same Tempo) store every span twice
-    until compaction merges them, and the waterfall would show each span
-    doubled. The first copy wins.
-    """
-    if not isinstance(data, dict):
-        return data
-    seen: set = set()
-    for batch in data.get("batches") or []:
-        for scope in batch.get("scopeSpans") or []:
-            kept = []
-            for sp in scope.get("spans") or []:
-                sid = sp.get("spanId")
-                if sid and sid in seen:
-                    continue
-                if sid:
-                    seen.add(sid)
-                kept.append(sp)
-            scope["spans"] = kept
-    return data
 
 
 def _re_esc(text: str) -> str:
@@ -103,6 +77,29 @@ def _esc(s: str) -> str:
 _DISABLED = ("off", "none", "disabled", "false")
 
 
+def card_matched_span(row: Dict[str, Any], span: Dict[str, Any]) -> None:
+    """Card a widened row as its span set's ``span`` (a kind filter, #558):
+    the span's name, start and duration replace the trace's, so the row does
+    not read as a tool that ran as long as the whole turn (#598). A field the
+    span lacks (``name`` is an attribute on older builds; a build may leave
+    the timing out) keeps the trace's value."""
+    name = span.get("name") or next(
+        (
+            (a.get("value") or {}).get("stringValue")
+            for a in span.get("attributes") or []
+            if a.get("key") == "name"
+        ),
+        None,
+    )
+    if name:
+        row["rootTraceName"] = name
+    start = to_int(span.get("startTimeUnixNano"))
+    if start:
+        row["startTimeUnixNano"] = str(start)
+    if span.get("durationNanos") is not None:
+        row["durationMs"] = to_int(span.get("durationNanos")) // 1_000_000
+
+
 def _sibling_url(explicit: Any, is_stack: bool, scheme: str, host: str, port: int) -> Optional[str]:
     """An explicit URL wins, ``off`` disables the signal, and an ``lgtm`` entry
     otherwise defaults to the stack port on the Tempo host."""
@@ -116,7 +113,7 @@ def _sibling_url(explicit: Any, is_stack: bool, scheme: str, host: str, port: in
 
 
 @register
-class TempoAdapter(BackendAdapter):
+class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
     handles = frozenset({"lgtm", "tempo"})
     query_lang_label = "TraceQL"
     raw_placeholder = '{ .llm.provider = "openai" }'
@@ -154,14 +151,15 @@ class TempoAdapter(BackendAdapter):
         # Metrics and logs: on for ``lgtm`` (the stack ships Prometheus + Loki
         # next to Tempo) and for any entry that points at them explicitly.
         is_stack = cfg.get("type") == "lgtm"
-        self.prometheus_url = _sibling_url(
-            cfg.get("prometheus_url"), is_stack, scheme, host, _DEFAULT_PROMETHEUS_PORT
+        self._use_prometheus(
+            _sibling_url(
+                cfg.get("prometheus_url"), is_stack, scheme, host, _DEFAULT_PROMETHEUS_PORT
+            ),
+            cfg,
         )
-        self.loki_url = _sibling_url(
-            cfg.get("loki_url"), is_stack, scheme, host, _DEFAULT_LOKI_PORT
+        self._use_loki(
+            _sibling_url(cfg.get("loki_url"), is_stack, scheme, host, _DEFAULT_LOKI_PORT), cfg
         )
-        self.supports_metrics = self.prometheus_url is not None
-        self.supports_logs = self.loki_url is not None
         # How many traces to ask Tempo for per page (``search_fetch``); the
         # page is cut to ``limit`` after sorting newest-first. See
         # ``_search_params``.
@@ -169,54 +167,6 @@ class TempoAdapter(BackendAdapter):
             self.search_fetch = max(1, int(cfg.get("search_fetch") or _DEFAULT_SEARCH_FETCH))
         except (TypeError, ValueError):
             self.search_fetch = _DEFAULT_SEARCH_FETCH
-        self.metrics_match = cfg.get("metrics_match") or None
-        self.loki_selector = cfg.get("loki_selector") or _loki.DEFAULT_SELECTOR
-
-    def status(self) -> Dict[str, Any]:
-        base = super().status()
-        if self.prometheus_url:
-            base["prometheus_url"] = self.prometheus_url
-        if self.loki_url:
-            base["loki_url"] = self.loki_url
-        return base
-
-    # ── metrics via Prometheus (#194) ─────────────────────────────────
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _prometheus.metric_names(self._prometheus(), start_s, end_s, self.metrics_match)
-
-    def metrics_query(
-        self,
-        name: str,
-        start_s: int,
-        end_s: int,
-        bucket_s: int,
-        group_by: Optional[str] = None,
-        agg: str = "sum",
-    ) -> Dict[str, Any]:
-        return _prometheus.metrics_query(
-            self._prometheus(), name, start_s, end_s, bucket_s, group_by=group_by, agg=agg
-        )
-
-    # ── logs via Loki (#194) ──────────────────────────────────────────
-
-    def logs_search(
-        self, f: LogFilter, start_s: int, end_s: int, limit: int
-    ) -> List[Dict[str, Any]]:
-        return _loki.logs_search(self._loki(), f, start_s, end_s, limit, self.loki_selector)
-
-    def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _loki.loggers(self._loki(), start_s, end_s, self.loki_selector)
-
-    def _prometheus(self) -> str:
-        if not self.prometheus_url:
-            raise ConfigError("This backend has no prometheus_url configured")
-        return self.prometheus_url
-
-    def _loki(self) -> str:
-        if not self.loki_url:
-            raise ConfigError("This backend has no loki_url configured")
-        return self.loki_url
 
     def _predicates(self, f: StructuredFilter) -> List[str]:
         predicates: List[str] = []
@@ -315,21 +265,14 @@ class TempoAdapter(BackendAdapter):
         return params
 
     def search(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        params = self._search_params(f, start_s, end_s, limit, self._build_traceql(f))
-        url = f"{self.query_url}/api/search?{_urlparse.urlencode(params)}"
-        try:
-            data = http_get_json(url)
-        except BackendError as exc:
-            # Older Tempo builds reject the ``| select()`` pipeline with a 4xx;
-            # retry the same predicates without it. Anything else (unreachable,
-            # auth, 5xx) is reported as is (#296).
-            if not rejected_request(exc):
-                raise
-            params = self._search_params(
-                f, start_s, end_s, limit, self._build_traceql(f, with_select=False)
-            )
-            url = f"{self.query_url}/api/search?{_urlparse.urlencode(params)}"
-            data = http_get_json(url)
+        def fetch(with_select: bool) -> Any:
+            q = self._build_traceql(f, with_select=with_select)
+            params = self._search_params(f, start_s, end_s, limit, q)
+            return http_get_json(f"{self.query_url}/api/search?{_urlparse.urlencode(params)}")
+
+        # Older Tempo builds reject the ``| select()`` pipeline with a 4xx; the
+        # same predicates are retried without it (#296).
+        data = first_accepted(lambda: fetch(True), lambda: fetch(False))
 
         result: Dict[str, Any] = data if isinstance(data, dict) else {"traces": []}
         traces = [t for t in (result.get("traces") or []) if isinstance(t, dict)]
@@ -346,25 +289,15 @@ class TempoAdapter(BackendAdapter):
             traces = [t for t in traces if (t.get("rootTraceName") or "").startswith(f.name_prefix)]
 
         for t in traces:
-            if not f.roots_only:
-                # Widened to every span (the kind filter): the card is the
-                # matched span, named like the other backends name it, not the
-                # trace's root. ``name`` is in the select list.
-                sets = t.get("spanSets") or ([t["spanSet"]] if t.get("spanSet") else [])
+            if not f.roots_only and f.name_prefix:
+                # Widened by a kind: the card is the matched span, named and
+                # timed like the other backends card it, not the trace's root
+                # (#598). Widened by a tool filter alone the row stays the
+                # root, its span set the matched span (#558).
+                sets = t.get("spanSets") or []
                 spans = (sets[0].get("spans") or []) if sets else []
                 if spans:
-                    # ``name`` is a top-level field of the span when selected,
-                    # an attribute on older builds.
-                    matched = spans[0].get("name") or next(
-                        (
-                            (a.get("value") or {}).get("stringValue")
-                            for a in spans[0].get("attributes") or []
-                            if a.get("key") == "name"
-                        ),
-                        None,
-                    )
-                    if matched:
-                        t["rootTraceName"] = matched
+                    card_matched_span(t, spans[0])
             # Tempo prints a trace id without its leading zeros; the live
             # store, Loki and the other backends carry all 32 hex digits, and
             # the Logs sub-tab correlates by the exact string (#296).
@@ -419,7 +352,7 @@ class TempoAdapter(BackendAdapter):
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = f"{self.query_url}/api/traces/{trace_id}"
-        data = _dedupe_spans(http_get_json(url, timeout=20.0))
+        data = dedupe_spans(http_get_json(url, timeout=20.0))
         if not isinstance(data, dict):
             raise not_found(trace_id, "Tempo")
         n = span_count_of(data.get("batches") or [])

@@ -26,7 +26,8 @@ Fires when the tool returns (success, error, timeout, block, or cancel).
 - **Attributes set on end:** `output.value` (result), `hermes.tool.outcome` (a specific non-success hook `status` — `timeout` / `blocked` / `cancelled` — is authoritative; a coarse hook `error` yields to an explicit `blocked` / `timeout` / `cancelled` in the result's `status` field, so governance blocks are not counted as errors; otherwise the result's own `status`, else `completed`)
 - **Span status:** `ERROR` if outcome is `error`, else `OK`
 - **Skill spans:** when the call loaded a skill and succeeded (`skill_view` result `success: true`, or a `/skills/` file read that did not error), opens the `skill.<name>` span and adds the skill to `hermes.turn.skills`; failed loads do neither
-- **Metrics:** `hermes.tool.duration{tool_name}` histogram (on end); `hermes.skill.inferred{skill_name, source}` counter (on start) — see [Metrics](/reference/metrics)
+- **Commits (#478):** when the terminal tool's command was a `git commit` (matched as a word, so `git commit-tree` is not one) and it exited 0 (the result's `exit_code`), the span gets `hermes.tool.git_commit: true`, `hermes.commit.count{platform, model}` is incremented and the `commit` event is emitted with the message's first line from git's own `[branch sha] subject` confirmation (redacted, content-gated). A failed commit, another tool or another command leaves nothing behind
+- **Metrics:** `hermes.tool.duration{tool_name}` histogram (on end); `hermes.skill.inferred{skill_name, source}` counter (on start); `hermes.commit.count{platform, model}` on a successful `git commit` — see [Metrics](/reference/metrics)
 
 ### `pre_llm_call`
 
@@ -76,7 +77,7 @@ Only API-level failures become `ERROR`. Tool timeout/blocked outcomes deliberate
 
 Fire once per physical provider attempt of every **auxiliary** LLM call Hermes makes on the agent's behalf: session titling, context compression, the Mixture-of-Agents reference models and aggregator, vision, approval classification, the kanban decomposer and triage specifier, the `/goal` judge, … (`agent/auxiliary_hooks.py` upstream). They carry the `pre_api_request` / `post_api_request` payload shape plus `aux_task` and the identity of the main turn they run under (`session_id` is empty for turn-less callers such as the kanban dispatcher). Registered conditionally (newer Hermes). Deliberately distinct events upstream: the main-loop `*_api_request` hooks never see this traffic, so without these two hooks every auxiliary call is invisible and the turn's spend is under-reported.
 
-- **Span op:** `api.{model}` (span kind `LLM`), nested under whatever the owning turn has in flight (`llm.*`, `api.*` or the root); its own root when there is no turn. Never pushed as a parent: nothing runs inside an auxiliary attempt (the MoA aggregator's tool calls belong to the main loop's `api.*`).
+- **Span op:** `api.{model}` (span kind `LLM`), nested under whatever the owning turn has in flight (`llm.*`, `api.*` or the root); its own root when there is no turn. Never pushed as a parent: nothing runs inside an auxiliary attempt (the MoA aggregator's tool calls belong to the main loop's `api.*`). An attempt that starts **after** its session's turn root ended (title generation can fire after `on_session_end`) is not parented under the ended root: it is its own root with `hermes.span.after_turn=true` and a span link (`hermes.link=turn_root`) to that root, and its usage is counted on no turn's `hermes.turn.auxiliary.*` (that roll-up is already exported). An attempt whose `turn_id` names a newer turn (preflight compression, which runs before the next turn's root opens) is not an after-turn call and counts on that next turn.
 - **Attributes:** `hermes.query_source=auxiliary`, `hermes.auxiliary.task` (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …), then the same model, provider, request, token, cost and duration attributes as a main-loop `api.*` span; `error.type` + an `exception` span event and status `ERROR` when the attempt failed; `gen_ai.request.stream=true` and no usage for a streamed attempt (Hermes hands the stream back unconsumed).
 - **Turn roll-up:** counted on the owning turn's root as `hermes.turn.auxiliary.*` (call count, error count, tokens, cost), **beside** the turn totals, never inside them: the main loop's `api.*` span for the `moa` provider already carries what the MoA facade returns, so folding the attempts in would count them twice. The dashboard's trace totals skip auxiliary spans for the same reason.
 - **Metrics:** `hermes.auxiliary.count{aux_task, status, model, provider}`; the usual `hermes.token.usage`, `hermes.cost.usage`, `hermes.model.usage` with `query_source=auxiliary` (main-loop calls carry `main` or `subagent`); `gen_ai.client.token.usage` and `gen_ai.client.operation.duration`.
@@ -287,10 +288,10 @@ pre_api_request          open  api.{model}       (child of llm)
 pre_tool_call            open  tool.{name}       (child of api or llm)
 subagent_start           open  subagent.{role}   (child of api or llm)
 transform_terminal_output  attrs tool.terminal   (raw output size, return code, env type; returns None)
-post_tool_call           close tool.{name}       + result size, terminal truncation
+post_tool_call           close tool.{name}       + result size, terminal truncation, git commit (attr + hermes.commit.count + commit event)
 post_api_request         close api.{model}        (OK)
 api_request_error        close api.{model}        (ERROR + exception + retry attrs/metrics)
-pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's llm/api/root, or own root; not a parent)
+pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's llm/api/root, or own root, linked to the ended root after the turn; not a parent)
 post_auxiliary_call      close api.{model}       (auxiliary: usage, cost, ERROR on failure; turn roll-up hermes.turn.auxiliary.*)
 post_llm_call            close llm.{model}
 transform_llm_output     attr  agent/cron        (final response size; returns None)

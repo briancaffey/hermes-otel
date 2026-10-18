@@ -2,14 +2,43 @@
 
 from __future__ import annotations
 
-import time
 from typing import Any, Dict
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import classify_approval_choice, clip_joined, truncate_string
+from ..helpers import clip_joined, truncate_string
 from ._common import _emit_event, _fail_open, _preview_for, _resolve_session_id, get_tracer
-from .attributes import _gen_ai_attributes
+from .attributes import _ID_MAX, _gen_ai_attributes
+
+_APPROVAL_GRANT_CHOICES = frozenset({"once", "session", "always"})
+# Smart-guardian verdicts arrive as ``smart_<verdict>`` choices with
+# decided_by="aux_llm" (tools/approval_smart.py). smart_approve IS a grant
+# (the tool ran); smart_deny/smart_escalate are not.
+_SMART_GRANT_CHOICES = frozenset({"smart_approve"})
+_SMART_CHOICES = frozenset({"smart_approve", "smart_deny", "smart_escalate"})
+
+
+def classify_approval_choice(choice: Any, decided_by: Any = None) -> Dict[str, Any]:
+    """Normalize an approval ``choice`` into telemetry fields.
+
+    ``choice`` is one of ``once`` / ``session`` / ``always`` / ``deny`` /
+    ``timeout``, or a smart-guardian verdict ``smart_approve`` /
+    ``smart_deny`` / ``smart_escalate`` fired with decided_by="aux_llm".
+    Grants (incl. smart_approve) set ``granted``; ``timeout`` is flagged
+    distinctly. A denied or timed-out approval is a legitimate human
+    outcome, not an error.
+    """
+    c = (choice or "").strip().lower() if isinstance(choice, str) else ""
+    by = (decided_by or "").strip().lower() if isinstance(decided_by, str) else ""
+    granted = c in _APPROVAL_GRANT_CHOICES or c in _SMART_GRANT_CHOICES
+    return {
+        "choice": c,
+        "granted": granted,
+        "timed_out": c == "timeout",
+        # Who decided: "aux_llm" (smart guardian) vs. the default human
+        # answer. Empty when the caller didn't say.
+        "decided_by": by or ("aux_llm" if c in _SMART_CHOICES else ""),
+    }
 
 
 def _approval_span_key(session_id: str, tool_call_id: Any, pattern_key: str) -> str:
@@ -46,7 +75,7 @@ def on_pre_approval_request(
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
     # No pattern key reported → plain ``approval`` span without the attribute;
     # a placeholder key would read like a real rule (#155).
-    pk = truncate_string(pattern_key, 200) if pattern_key else ""
+    pk = truncate_string(pattern_key, _ID_MAX) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
     attributes: Dict[str, Any] = {"hermes.span_kind": "approval"}
@@ -54,7 +83,7 @@ def on_pre_approval_request(
         attributes["hermes.approval.pattern_key"] = pk
     if tool_call_id:
         # Correlates the approval to the tool span / call it gates.
-        attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, 200)
+        attributes["gen_ai.tool.call.id"] = truncate_string(tool_call_id, _ID_MAX)
     if surface:
         attributes["hermes.approval.surface"] = truncate_string(surface, 60)
     if pattern_keys:
@@ -71,7 +100,7 @@ def on_pre_approval_request(
             attributes["hermes.approval.description"] = desc
     attributes.update(_gen_ai_attributes(session_id, "approval"))
 
-    tracer.spans.record_approval_start(key, time.perf_counter())
+    tracer.spans.mark_started(key)
     tracer.start_span(
         name=f"approval.{pk}" if pk else "approval",
         key=key,
@@ -103,7 +132,7 @@ def on_post_approval_response(
         return
 
     session_id = _resolve_session_id(kwargs, turn_id=turn_id)
-    pk = truncate_string(pattern_key, 200) if pattern_key else ""
+    pk = truncate_string(pattern_key, _ID_MAX) if pattern_key else ""
     key = _approval_span_key(session_id, tool_call_id, pk)
 
     verdict = classify_approval_choice(choice, kwargs.get("decided_by"))
@@ -117,10 +146,10 @@ def on_post_approval_response(
         # Provenance: human answer vs. smart-guardian (aux LLM) verdict.
         attributes["hermes.approval.decided_by"] = verdict["decided_by"]
 
-    start = tracer.spans.pop_approval_start(key)
+    elapsed = tracer.spans.pop_elapsed(key)
     duration_ms = None
-    if start is not None:
-        duration_ms = (time.perf_counter() - start) * 1000
+    if elapsed is not None:
+        duration_ms = elapsed * 1000
         attributes["hermes.approval.duration_ms"] = round(duration_ms, 1)
 
     approval_span = tracer.spans.get_span(key)

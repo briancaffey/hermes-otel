@@ -45,10 +45,31 @@
 # global_tags:
 #   team: platform
 
+# Stamped on every span, log record and metric point as a plain attribute
+# (not on the Resource), for backends that do not index resource attributes
+# per signal (Loki labels, Mimir series, OpenObserve columns). Scalars only;
+# keys up to 64 characters; hermes. / gen_ai. / service. keys are reserved and
+# dropped with a warning. Changing a value starts new metric series.
+# common_attributes:
+#   team: platform
+#   cost_center: research
+
 # Extra HTTP headers added to every OTLP exporter call across ALL backends.
 # Per-backend headers (under `backends:` below) are merged on top and win on conflict.
 # headers:
 #   X-Company-Auth: shared-secret
+#
+# Headers that expire (a Google Cloud access token, a vault-issued OIDC token, a
+# rotated key) come from a per-backend `headers_helper:` instead: a command (an
+# argv string, no shell) whose stdout — a JSON object or `Name=value` lines — is
+# merged over the entry's static headers on every signal. On a 401/403 the plugin
+# re-runs it once and retries that batch once (#483). The helper runs with the
+# plugin's environment. See website/docs/configuration/short-lived-credentials.md.
+# backends:
+#   - type: otlp
+#     endpoint: https://telemetry.googleapis.com/v1/traces
+#     headers_helper: /home/me/.hermes/mint-gcp-headers.sh   # prints Authorization=Bearer ...
+#     headers_helper_timeout_ms: 5000                          # default
 
 # ── Telemetry shaping ─────────────────────────────────────────────────────────
 
@@ -191,6 +212,84 @@
 # Distinct values a label such as `model` or `tool_name` may take per process
 # before the rest fold into `other` (the Python SDK has no cardinality limit).
 # metrics_label_limit: 100
+#
+# Claude Code metric-name compatibility (#485). `claude_code` exports the
+# session count, token usage, cost and active time under Claude Code's names,
+# units and labels (claude_code.session.count, claude_code.token.usage,
+# claude_code.cost.usage, claude_code.active_time.total) instead of their
+# hermes.* twins, so a Grafana dashboard built for Claude Code shows Hermes
+# as one more agent; `both` keeps the hermes.* twins too. Claude Code's
+# dashboards count sessions by `session.id`; opt in to that label below.
+# metric_name_compat: off
+# metric_name_compat_session_id: false
+
+# ── Disabling metrics and span families (#479) ────────────────────────────────
+#
+# Instruments never created, recorded or exported: the OTLP name, the hook key
+# (tool_duration) or the key with dots (tool.duration); `all` for every
+# instrument. An unknown name logs a warning listing the valid ones.
+# Also settable via HERMES_OTEL_DISABLE_METRICS (comma-separated).
+# disable_metrics:
+#   - tool.duration
+#   - hermes.approval.duration
+#
+# Span families never recorded. A disabled span's children parent to the
+# nearest recording ancestor (with llm disabled api.* sits under the turn
+# root, with api disabled tool.* sits under llm.*). The hooks still run, so a
+# disabled family's metrics are still recorded; use disable_metrics for those.
+# `all` is refused: the turn root always records, a backend's `traces: false`
+# switches whole traces off. Also settable via HERMES_OTEL_DISABLE_SPANS.
+# disable_spans:
+#   - approval
+#
+# [//]: # (generated:disable-names:start)
+
+# Valid disable_metrics entries (generated from hermes_otel/instruments.py):
+#   all
+#   hermes.span.swept.count              span.swept / span.swept.count / span_swept
+#   hermes.session.count                 session.count / session_count
+#   hermes.session.turns                 session.turns / session_turns
+#   hermes.session.duration              session.duration / session_duration
+#   hermes.active_time.total             active.time / active_time / active_time.total
+#   hermes.token.usage                   token.usage / token_usage
+#   hermes.prompt_cache.tokens           prompt.cache.tokens / prompt_cache.tokens / prompt_cache_tokens
+#   hermes.prompt_cache.observations     prompt.cache.observations / prompt_cache.observations / prompt_cache_observations
+#   hermes.cost.usage                    cost.usage / cost_usage
+#   hermes.tool.duration                 tool.duration / tool_duration
+#   hermes.message.count                 message.count / message_count
+#   hermes.model.usage                   model.usage / model_usage
+#   hermes.auxiliary.count               auxiliary.count / auxiliary_count
+#   hermes.skill.inferred                skill.inferred / skill_inferred
+#   hermes.subagent.count                subagent.count / subagent_count
+#   hermes.subagent.duration             subagent.duration / subagent_duration
+#   hermes.api.error.count               api.error.count / api_error_count
+#   hermes.retry.count                   retry.count / retry_count
+#   hermes.kanban.task.count             kanban.task.count / kanban_task_count
+#   hermes.api.time_to_first_chunk       api.time.to.first.chunk / api.time_to_first_chunk / api_time_to_first_chunk
+#   hermes.command.count                 command.count / command_count
+#   hermes.commit.count                  commit.count / commit_count
+#   hermes.human_input.count             human.input.count / human_input.count / human_input_count
+#   hermes.skill.lifecycle.count         skill.lifecycle.count / skill_lifecycle_count
+#   hermes.transcription.count           transcription.count / transcription_count
+#   hermes.kanban.dispatch.count         kanban.dispatch.count / kanban_dispatch_count
+#   hermes.kanban.dispatch.result        kanban.dispatch.result / kanban_dispatch_result
+#   hermes.kanban.task.updated           kanban.task.updated / kanban_task_updated
+#   hermes.approval.count                approval.count / approval_count
+#   hermes.approval.duration             approval.duration / approval_duration
+#   gen_ai.execute_tool.duration         tool.duration.s / tool_duration_s
+#   hermes.approval.wait.duration        approval.wait.duration / approval.wait.s / approval_wait_s
+#   hermes.subagent.run.duration         subagent.run.duration / subagent.run.s / subagent_run_s
+#   gen_ai.client.token.usage
+#   gen_ai.client.operation.duration
+#   gen_ai.agent.token.usage
+#   claude_code.session.count
+#   claude_code.token.usage
+#   claude_code.cost.usage
+#   claude_code.active_time.total
+# Valid disable_spans families (generated from hermes_otel/plugin_config.py):
+#   tool, api, llm, approval, skill, subagent, kanban, auxiliary, human_input
+
+# [//]: # (generated:disable-names:end)
 
 # ── Skill execution-window spans ──────────────────────────────────────────────
 #

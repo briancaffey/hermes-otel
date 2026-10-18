@@ -62,13 +62,19 @@ class TestArtifactContents:
             "hooks/llm.py",
             "hooks/subagent.py",
             "hooks/propagation.py",
+            "hooks/skills.py",
             "tracer.py",
             "span_tracker.py",
             "session_state.py",
             "helpers.py",
+            "coerce.py",
+            "pipeline_env.py",
             "plugin_config.py",
             "backends.py",
             "live_store.py",
+            "live_store_registry.py",
+            "live_summary.py",
+            "buckets.py",
             "log_handler.py",
             "debug_utils.py",
             # Registered as the `hermes_otel:observability` skill by register().
@@ -76,6 +82,8 @@ class TestArtifactContents:
             # The skill's terminal query tool (#215) and the module it launches.
             "skills/observability/scripts/otel.py",
             "query_cli.py",
+            "query_sources.py",
+            "query_render.py",
             # Dashboard tab, loaded by the separate `hermes dashboard` process.
             "dashboard/manifest.json",
             "dashboard/plugin_api.py",

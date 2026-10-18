@@ -90,7 +90,8 @@
   var KIND_OVERRIDE_ATTR = "hermes.span_kind";
   var KIND_OVERRIDES = [
     "skill",
-    "approval"
+    "approval",
+    "human_input"
   ];
   var KIND_RULES = [
     {
@@ -127,6 +128,13 @@
       "kind": "approval",
       "prefixes": [
         "approval"
+      ],
+      "exact": []
+    },
+    {
+      "kind": "human_input",
+      "prefixes": [
+        "human_input."
       ],
       "exact": []
     },
@@ -271,6 +279,8 @@
     tool: "var(--otel-kind-tool)",
     skill: "var(--otel-kind-skill)",
     approval: "var(--otel-kind-approval)",
+    human_input: "var(--otel-kind-approval)",
+    // a wait on the person, like an approval
     subagent: "var(--otel-kind-subagent)",
     session: "var(--otel-kind-agent)",
     cron: "var(--otel-kind-cron)",
@@ -1817,7 +1827,7 @@
     if (hours % 24 === 0) return `${hours / 24}d`;
     return `${hours}h`;
   }
-  var KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "skill", "session", "other"];
+  var KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "human_input", "skill", "session", "other"];
   var KIND_PREFIX = {
     agent: "agent",
     cron: "cron",
@@ -1826,6 +1836,7 @@
     llm: "llm.",
     api: "api.",
     approval: "approval",
+    human_input: "human_input.",
     skill: "skill.",
     session: "session"
   };
@@ -4221,7 +4232,14 @@
     const q = query.trim().toLowerCase();
     const rawText = rawMode === "file" ? (report == null ? void 0 : report.config.raw) || "" : (report == null ? void 0 : report.effective_yaml) || "";
     const rawMatches = q ? rawText.split("\n").filter((l) => l.toLowerCase().includes(q)).length : 0;
-    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-base font-semibold tracking-tight" }, "Settings"), report ? /* @__PURE__ */ React.createElement("span", { className: "text-xs text-muted-foreground" }, "hermes-otel ", report.process.plugin_version || "?", " \xB7 resolved ", fmtTimeAgo(report.resolved_at * 1e9)) : null, /* @__PURE__ */ React.createElement("div", { className: "ml-auto flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement(Segmented, { value: view, onChange: setView, label: "settings view", options: VIEWS }), reveal ? /* @__PURE__ */ React.createElement(Button, { variant: "outline", size: "sm", onClick: () => setReveal(false), title: "mask credential values again" }, "hide secrets") : confirming ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-2 text-[11px] text-muted-foreground" }, "credential values will be shown on this page", /* @__PURE__ */ React.createElement(
+    return /* @__PURE__ */ React.createElement("div", { className: "space-y-3" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement("span", { className: "text-base font-semibold tracking-tight" }, "Settings"), report ? /* @__PURE__ */ React.createElement("span", { className: "text-xs text-muted-foreground" }, "hermes-otel ", report.process.plugin_version || "?", report.config.fingerprint ? /* @__PURE__ */ React.createElement(React.Fragment, null, " \xB7 config ", /* @__PURE__ */ React.createElement(
+      "span",
+      {
+        className: "font-mono",
+        title: "Fingerprint of the resolved configuration (secrets hashed). The plugin logs the same value when it builds its pipeline; a match means this is the configuration the gateway runs."
+      },
+      report.config.fingerprint
+    )) : null, " \xB7 resolved ", fmtTimeAgo(report.resolved_at * 1e9)) : null, /* @__PURE__ */ React.createElement("div", { className: "ml-auto flex flex-wrap items-center gap-2" }, /* @__PURE__ */ React.createElement(Segmented, { value: view, onChange: setView, label: "settings view", options: VIEWS }), reveal ? /* @__PURE__ */ React.createElement(Button, { variant: "outline", size: "sm", onClick: () => setReveal(false), title: "mask credential values again" }, "hide secrets") : confirming ? /* @__PURE__ */ React.createElement("span", { className: "inline-flex items-center gap-2 text-[11px] text-muted-foreground" }, "credential values will be shown on this page", /* @__PURE__ */ React.createElement(
       Button,
       {
         variant: "outline",

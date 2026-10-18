@@ -11,7 +11,8 @@ import base64
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 PIPELINE = {"X-Greptime-Pipeline-Name": "greptime_trace_v1"}
 
@@ -133,7 +134,7 @@ class TestGreptimeBackendType:
         assert rb.supports_logs is False
 
     def test_no_temporality_preset(self):
-        assert backends.preset_temporality("greptime") is None
+        assert spec_for("greptime").temporality is None
 
     def test_signal_support_table(self):
         assert backends.signal_support("greptime") == {

@@ -8,7 +8,8 @@ produces in ``_init_otlp_pipeline``.
 import pytest
 
 from hermes_otel import hooks
-from hermes_otel.live_store import LiveStore, get_live_store
+from hermes_otel.live_store import LiveStore
+from hermes_otel.live_store_registry import get_live_store
 from hermes_otel.plugin_config import HermesOtelConfig
 
 
@@ -17,9 +18,11 @@ def live_plugin(tmp_path):
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import TracerProvider
 
-    import hermes_otel.live_store as ls
+    import hermes_otel.live_store_registry as ls
     import hermes_otel.tracer as tracer_mod
-    from hermes_otel.tracer import HermesOTelPlugin, _LiveSpanProcessor
+    from hermes_otel.pipeline import _LiveSpanProcessor
+    from hermes_otel.testing import attach_pipeline
+    from hermes_otel.tracer import HermesOTelPlugin
 
     ls._LIVE_STORE = LiveStore(db_path=str(tmp_path / "live.db"))  # fresh tmp store
     store = get_live_store()
@@ -28,9 +31,7 @@ def live_plugin(tmp_path):
     provider.add_span_processor(_LiveSpanProcessor(store))
 
     plugin = HermesOTelPlugin()
-    plugin.tracer = provider.get_tracer("live-test")
-    plugin._initialized = True
-    plugin._live_active = True
+    attach_pipeline(plugin, tracer=provider.get_tracer("live-test"), live_active=True)
     plugin.config = HermesOtelConfig(dashboard_live=True)
 
     prev = tracer_mod._tracer
@@ -76,7 +77,7 @@ class TestLivePipeline:
         # No MeterProvider is wired (live-only), yet record_metric still feeds
         # the live store because the tap runs before the meter guard.
         store, plugin = live_plugin
-        assert plugin._meter is None
+        assert plugin.pipeline.meter is None
         hooks.on_session_start(session_id="s2", model="gpt-4", platform="cli")
         names = [m["name"] for m in store.metrics()]
         assert "hermes.session.count" in names  # the OTLP name, as the backends see it (#95)

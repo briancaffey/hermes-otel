@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from hermes_otel.helpers import host_arch, os_type
+from hermes_otel.pipeline_env import host_arch, os_type
 
 OS_WELL_KNOWN = {
     "windows",
@@ -65,7 +65,7 @@ class TestResource:
         from hermes_otel.pipeline import build_resource
 
         _, plugin = inmemory_otel_setup
-        attrs = dict(build_resource(plugin).attributes)
+        attrs = dict(build_resource(plugin.config, plugin.profile_name).attributes)
         assert attrs["os.type"] == os_type()
         assert attrs["host.arch"] == host_arch()
 
@@ -77,7 +77,7 @@ class TestResource:
         plugin.config = HermesOtelConfig(
             resource_attributes={"os.type": "z_os", "host.arch": "s390x"}
         )
-        attrs = dict(build_resource(plugin).attributes)
+        attrs = dict(build_resource(plugin.config, plugin.profile_name).attributes)
         assert attrs["os.type"] == "z_os" and attrs["host.arch"] == "s390x"
 
     def test_unknown_platform_sets_nothing(self, inmemory_otel_setup, monkeypatch):
@@ -88,5 +88,5 @@ class TestResource:
         monkeypatch.setattr(platform, "system", lambda: "")
         monkeypatch.setattr(platform, "machine", lambda: "")
         _, plugin = inmemory_otel_setup
-        attrs = dict(build_resource(plugin).attributes)
+        attrs = dict(build_resource(plugin.config, plugin.profile_name).attributes)
         assert "os.type" not in attrs and "host.arch" not in attrs

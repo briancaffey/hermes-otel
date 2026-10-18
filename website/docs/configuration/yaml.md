@@ -29,13 +29,38 @@ resource_attributes:
 # global_tags:
 #   team: platform
 
+# Stamped on every span, every log record and every metric point as a plain
+# attribute, for backends that do not index resource attributes per signal
+# (Loki labels, Mimir series, OpenObserve columns). Scalars only; keys of at
+# most 64 characters; `hermes.`, `gen_ai.` and `service.` are reserved and
+# dropped with a warning. See "Which attributes reach which signal" below.
+common_attributes:
+  team: otel
+  cost_center: research
+
 # Extra HTTP headers added to every OTLP request across ALL backends.
 # Per-backend `headers:` are merged on top (per-backend wins on conflict).
+# A per-backend `headers_helper:` command mints headers that expire; see
+# /configuration/short-lived-credentials.
 # This file is the only source of headers: the SDK's OTEL_EXPORTER_OTLP_*HEADERS
 # variables are ignored so one backend's token never reaches another (#472).
 headers:
   X-Scope-OrgID: tenant-a
 ```
+
+### Which attributes reach which signal {#which-attributes-reach-which-signal}
+
+`resource_attributes` describe the *process* and travel on the OTLP Resource, which every signal shares but which not every backend indexes per signal: Loki keeps a fixed set of resource attributes as labels, Mimir's OTLP write promotes only the standard ones to series labels, OpenObserve stores them in columns that differ per stream type. `common_attributes` (#480) are stamped on the *data points themselves*, so `team=otel` filters traces, logs and metrics alike on any backend.
+
+| Key | Spans | Log records and events | Metric points | Resource |
+|---|---|---|---|---|
+| `resource_attributes` (and `global_tags`) | via the Resource | via the Resource | via the Resource | yes |
+| `common_attributes` | every span on the plugin's provider, third-party (MCP, httpx) spans included | every record and event, before redaction and the length cap | every point of the plugin's instruments (the Views admit the keys); not the host/GPU observables or the SDK's own `otel.sdk.*` series | no |
+| `project_name` | via the Resource (`openinference.project.name`) | via the Resource | via the Resource | yes |
+| profile | `hermes.profile` on the root span | — | `profile` label on every point | `hermes.profile` |
+| session id | `session.id` / `hermes.session.id` on the root | `hermes.session_id` / `gen_ai.conversation.id` | never (compat instruments only, with `metric_name_compat_session_id`) | no |
+
+Rules: values are scalars (string, number, bool); a key is at most 64 characters and never under `hermes.`, `gen_ai.` or `service.` (the plugin's vocabularies and the service identity); a rejected entry is dropped with a warning at load and the rest apply. A key the plugin already sets on a span, record or point is left alone: the plugin's attribute wins. `${VAR}` references expand like everywhere else in the file. Because the values are constant for the process they do not fan metric series out, but they are part of each series' identity: changing `team: otel` to `team: platform` and restarting starts new series (the old ones go stale), exactly as a change to `service.instance.id` would.
 
 ## Master switch
 
@@ -116,6 +141,91 @@ emit_genai_metrics: true
 ```
 
 See the [Metrics reference](/reference/metrics#otel-genai-semantic-convention-metrics) for the full instrument list, units, and labels.
+
+## Disabling metrics and span families {#disable}
+
+Metrics are otherwise all-or-nothing per backend (`metrics: false`) and spans can only be sampled (`sample_rate`) or switched off per backend (`traces: false`). These two lists (#479) switch off individual instruments and whole span families while everything else keeps flowing.
+
+```yaml
+# Instruments never created, recorded or exported. Write the OTLP name, the
+# hook key (tool_duration) or the key with dots (tool.duration); `all` disables
+# every instrument. An unknown name logs a warning listing the valid ones.
+# Env: HERMES_OTEL_DISABLE_METRICS=tool.duration,token_usage (comma-separated).
+disable_metrics:
+  - tool.duration
+  - hermes.approval.duration
+
+# Span families never recorded. A disabled span is replaced by a non-recording
+# stand-in that carries its parent's context, so whatever would have nested
+# under it parents to the nearest recording ancestor: with `llm` disabled the
+# api.* spans sit directly under the turn root; with `api` disabled the tool.*
+# spans sit under llm.*. The hooks still run, so the metrics of a disabled
+# family (hermes.tool.duration for `tool`, hermes.approval.count for
+# `approval`) are still recorded: use disable_metrics for those. `all` is
+# refused (the turn root always records; a backend's `traces: false` is the
+# switch for whole traces). Env: HERMES_OTEL_DISABLE_SPANS=approval,skill.
+disable_spans:
+  - approval
+```
+
+A disabled instrument does not exist for the process: it is not created on the meter, `record_metric` records nothing for it (the dashboard's live store included), and a `DropAggregation` View on its name keeps anything else recorded under that name out of the export. The Settings tab shows both lists, and the plugin logs them at init.
+
+Valid `disable_metrics` entries, one row per instrument (the first column is what the config stores and the Settings tab shows):
+
+[//]: # (generated:disable-metrics:start)
+
+| Instrument | Also accepted |
+|---|---|
+| `hermes.span.swept.count` | `span.swept`, `span.swept.count`, `span_swept` |
+| `hermes.session.count` | `session.count`, `session_count` |
+| `hermes.session.turns` | `session.turns`, `session_turns` |
+| `hermes.session.duration` | `session.duration`, `session_duration` |
+| `hermes.active_time.total` | `active.time`, `active_time`, `active_time.total` |
+| `hermes.token.usage` | `token.usage`, `token_usage` |
+| `hermes.prompt_cache.tokens` | `prompt.cache.tokens`, `prompt_cache.tokens`, `prompt_cache_tokens` |
+| `hermes.prompt_cache.observations` | `prompt.cache.observations`, `prompt_cache.observations`, `prompt_cache_observations` |
+| `hermes.cost.usage` | `cost.usage`, `cost_usage` |
+| `hermes.tool.duration` | `tool.duration`, `tool_duration` |
+| `hermes.message.count` | `message.count`, `message_count` |
+| `hermes.model.usage` | `model.usage`, `model_usage` |
+| `hermes.auxiliary.count` | `auxiliary.count`, `auxiliary_count` |
+| `hermes.skill.inferred` | `skill.inferred`, `skill_inferred` |
+| `hermes.subagent.count` | `subagent.count`, `subagent_count` |
+| `hermes.subagent.duration` | `subagent.duration`, `subagent_duration` |
+| `hermes.api.error.count` | `api.error.count`, `api_error_count` |
+| `hermes.retry.count` | `retry.count`, `retry_count` |
+| `hermes.kanban.task.count` | `kanban.task.count`, `kanban_task_count` |
+| `hermes.api.time_to_first_chunk` | `api.time.to.first.chunk`, `api.time_to_first_chunk`, `api_time_to_first_chunk` |
+| `hermes.command.count` | `command.count`, `command_count` |
+| `hermes.commit.count` | `commit.count`, `commit_count` |
+| `hermes.human_input.count` | `human.input.count`, `human_input.count`, `human_input_count` |
+| `hermes.skill.lifecycle.count` | `skill.lifecycle.count`, `skill_lifecycle_count` |
+| `hermes.transcription.count` | `transcription.count`, `transcription_count` |
+| `hermes.kanban.dispatch.count` | `kanban.dispatch.count`, `kanban_dispatch_count` |
+| `hermes.kanban.dispatch.result` | `kanban.dispatch.result`, `kanban_dispatch_result` |
+| `hermes.kanban.task.updated` | `kanban.task.updated`, `kanban_task_updated` |
+| `hermes.approval.count` | `approval.count`, `approval_count` |
+| `hermes.approval.duration` | `approval.duration`, `approval_duration` |
+| `gen_ai.execute_tool.duration` | `tool.duration.s`, `tool_duration_s` |
+| `hermes.approval.wait.duration` | `approval.wait.duration`, `approval.wait.s`, `approval_wait_s` |
+| `hermes.subagent.run.duration` | `subagent.run.duration`, `subagent.run.s`, `subagent_run_s` |
+| `gen_ai.client.token.usage` | — |
+| `gen_ai.client.operation.duration` | — |
+| `gen_ai.agent.token.usage` | — |
+| `claude_code.session.count` | — |
+| `claude_code.token.usage` | — |
+| `claude_code.cost.usage` | — |
+| `claude_code.active_time.total` | — |
+
+[//]: # (generated:disable-metrics:end)
+
+Valid `disable_spans` families, by the first segment of the span name. `auxiliary` is the auxiliary `api.*` span (titling, compression, MoA; see [Auxiliary calls](/architecture/span-hierarchy#auxiliary)), which `api` leaves alone:
+
+[//]: # (generated:disable-spans:start)
+
+`tool`, `api`, `llm`, `approval`, `skill`, `subagent`, `kanban`, `auxiliary`, `human_input`
+
+[//]: # (generated:disable-spans:end)
 
 ## Skills
 
@@ -211,6 +321,9 @@ resource_attributes:
   team: platform
   env: prod
   region: us-east-1
+
+common_attributes:
+  team: platform
 
 headers:
   X-Scope-OrgID: tenant-a

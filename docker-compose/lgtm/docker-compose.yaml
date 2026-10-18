@@ -30,7 +30,7 @@
 #   capture_logs: true   # ship Python logs to Loki too
 #
 # See docker-compose/lgtm/README.md for the full walkthrough and the
-# pre-built Grafana dashboard (pending — phase 2 of otel_plan.md).
+# provisioned Grafana dashboards (grafana-dashboards/).
 
 services:
   lgtm:
@@ -46,6 +46,14 @@ services:
       # lgtm/otelcol-config.yaml. All interfaces inside the container so
       # the published ports below work; narrow it if you know better.
       - OTEL_BIND_HOST=0.0.0.0
+      # Ingest a zero sample at every cumulative series' start timestamp
+      # (the OTLP start_time_unix_nano), so a counter that was exported once
+      # by a short-lived process (a one-shot `hermes -z` turn, a `claude -p`
+      # run) still has an increase() / rate() for PromQL dashboards. Without
+      # it a series with a single sample reads as 0 on every Claude Code
+      # dashboard panel (#485; the same first-sample gap the plugin's own
+      # dashboard works around in its adapter, #296).
+      - PROMETHEUS_EXTRA_ARGS=--enable-feature=created-timestamp-zero-ingestion
     ports:
       - "3000:3000"   # Grafana UI
       - "3100:3100"   # Loki
@@ -60,6 +68,12 @@ services:
       # (rate/errors/duration) on the Prometheus side without the app
       # having to emit them.
       - ./otelcol-config.yaml:/otel-lgtm/otelcol-config.yaml:ro
+      # Grafana dashboards shipped with the plugin (#485): the provisioning
+      # file sits beside the image's own, the JSON files are read from the
+      # folder below. Grafana rescans it every 10 s, so adding a dashboard
+      # needs no restart.
+      - ./grafana-provisioning-dashboards.yaml:/otel-lgtm/grafana/conf/provisioning/dashboards/hermes-otel.yaml:ro
+      - ./grafana-dashboards:/otel-lgtm/hermes-otel-dashboards:ro
     healthcheck:
       # The image writes /tmp/ready when every bundled service is up. That's
       # a cheaper and more accurate signal than hitting Grafana (which is up

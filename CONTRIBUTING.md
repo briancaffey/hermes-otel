@@ -158,12 +158,15 @@ Before opening a PR:
       job (lockfile check, ruff, black, plugin scan, tests with the 85%
       coverage gate and the per-module floors in `coverage-floors.json`,
       dashboard bundle up to date + vitest, docs build, wheel build), so a
-      green `make ci` is a green pipeline, with three exceptions it names in
+      green `make ci` is a green pipeline, with four exceptions it names in
       its header: the Python version matrix, `make ci-floor` (the suite on
-      the OpenTelemetry 1.35 floor) and the catalog-admission workflow.
+      the OpenTelemetry 1.35 floor), `make ci-e2e` (the real `hermes`
+      binary through the plugin; needs `hermes` on PATH, no keys) and the
+      catalog-admission workflow.
       A module may not drop more than one point under its floor; after a
       change that deliberately adds or removes coverage, re-record with
-      `python scripts/coverage_floor.py --update` and commit the file.
+      `python scripts/coverage_floor.py --update` and commit the file; a new
+      module gets its floor from `--add-missing`, which leaves the others alone.
       The pull request template carries this list. `make ci-fast` skips the
       two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - [ ] If `black --check` complains, apply with `uv run --extra dev black .`.
@@ -275,12 +278,13 @@ Every attribute name the plugin emits, the fallback chains readers use
 and the event names live in `hermes_otel/semconv.py` (#404). The live store,
 the query CLI, the OpenObserve column table and `dashboard-ui/src/lib.ts`
 read it; `scripts/gen_semconv.py` writes `dashboard-ui/src/semconv.generated.ts`
-and `--check` (run by `make ci-semconv` and CI) fails when that file is stale
-or when `website/docs/reference/span-attributes.md` lists more or fewer
-attributes than the registry. To add an attribute: emit it in a hook, add its
-`Attr` to the registry, document it on the reference page, run the generator,
-rebuild the dashboard bundle. `tests/unit/test_semconv.py` fails on a hook
-literal the registry does not know.
+and the tables of `website/docs/reference/span-attributes.md` (from the
+registry's `ROWS`, between marker comments; the page's prose is hand-written),
+and `--check` (run by `make ci-semconv` and CI) fails when either is stale. To
+add an attribute: emit it in a hook, add it to a `Row` in the registry, run the
+generator, commit the regenerated TypeScript and page, rebuild the dashboard
+bundle. `tests/unit/test_semconv.py` fails on a hook literal the registry does
+not know.
 
 ## Live before/after check (`make refactor-check`)
 
@@ -292,7 +296,13 @@ live store, then does the same with the working tree and diffs the *shape*
 of the telemetry (span names, parentage, status, attribute keys, the
 run-stable values) plus the check matrices. Model output, durations, tokens
 and cost are never compared; `scripts/refactor_check/allowlist.yaml` lists
-the keys that legitimately come and go, each with a reason. The report lands
+the keys that legitimately come and go, each with a reason. One difference
+is recognised rather than allowlisted: the auxiliary API call at the end of
+a cli turn races `on_session_end` (#552), so when a prompt's only difference
+is that auxiliary `api.*` span swept on one side and answered on the other
+(plus the root's `hermes.turn.auxiliary.*` and `hermes.span.swept.count`),
+the verdict reports an "auxiliary race" line and the run does not fail on
+it. The report lands
 under `scripts/refactor_check/out/<branch>-vs-<base>-<stamp>/report.md`; the
 profile's plugin directory is restored afterwards.
 
@@ -314,11 +324,19 @@ per-type facts are declared once and derived everywhere else.
 1. Add one `BackendSpec` to `SPECS` in `hermes_otel/backend_specs.py`:
    display name, the OTLP signals it accepts, temporality and root-usage
    presets, how env-var mode selects it, its credential fields and the env
-   vars each falls back to. The exporter, the Settings tab, the MCP config
-   and the dashboard registry all read their tables from here.
-2. Add `_resolve_<type>(bc)` in `hermes_otel/backends.py` and register it in
-   `_RESOLVERS`. It turns a `BackendConfig` into endpoints and headers. Use
-   `_resolve_secret` for credentials, so precedence matches every other type.
+   vars each falls back to, its endpoint variable and default host, and the
+   one auth header it sends (`auth=AuthHeader(...)`). The exporter, the
+   Settings tab, the MCP config and the dashboard registry all read their
+   tables from here. A plain OTLP/HTTP type (an endpoint, at most one auth
+   header, `/v1/traces` normalisation) is complete at this step:
+   `backends._resolve_plain` serves it from the spec.
+2. Only when the type has bespoke URL or header rules (a vendor ingest path,
+   per-signal header sets, Resource attributes): add
+   `_resolve_<type>(bc, spec)` in `hermes_otel/backends.py` and register it
+   in `_RESOLVERS`. It returns a `_Wire` (endpoint and headers); `resolve()`
+   adds everything the spec knows. Use `_endpoint(bc, spec)` and
+   `_secret(bc, spec, "<field>")`, so env fallbacks come from the spec and
+   precedence matches every other type.
 3. Run `uv run --extra dev python scripts/gen_config_docs.py --write` to
    regenerate the type list and the env-var reference.
 4. Tests: `tests/unit/test_backends_<type>.py` for env-var precedence and
@@ -338,7 +356,8 @@ per-type facts are declared once and derived everywhere else.
      `query_origin`, `basic_auth`/`bearer`/`require_credential`, the HTTP
      core and `register_cache` for any probe cache.
    - `paging`: trace and log pages, cursor bounds.
-   - `metrics_math`, `severity` and `timeconv`.
+   - `metrics_math` and `timeconv`, and the package's `hermes_otel/severity.py`
+     for level spellings.
    Declare `filter_support` honestly: `server`, `client` or `none` per key.
 6. Tests: `tests/unit/test_dashboard_<type>.py`, plus adapter goldens.
    Add `tests/golden/adapters/<type>/config.json` and `routes.json`, then

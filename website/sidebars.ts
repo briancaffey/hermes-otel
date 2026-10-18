@@ -19,7 +19,7 @@ const sidebars: SidebarsConfig = {
       type: 'category',
       label: 'Guides',
       collapsed: false,
-      items: ['guides/observing-a-fleet'],
+      items: ['guides/observing-a-fleet', 'guides/claude-code-dashboards'],
     },
     {
       type: 'category',
@@ -70,6 +70,7 @@ const sidebars: SidebarsConfig = {
         'configuration/overview',
         'configuration/yaml',
         'configuration/environment-variables',
+        'configuration/short-lived-credentials',
         'configuration/sampling',
         'configuration/privacy',
         'configuration/conversation-capture',

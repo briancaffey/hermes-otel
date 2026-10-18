@@ -10,30 +10,32 @@ same keys it does on Tempo.
 from __future__ import annotations
 
 import json
+import os
 import time
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
+
+from hermes_otel.severity import level_names_at_least
 
 from . import register
 from ._attrs import dotted, oo_col
 from .base import (
     BackendAdapter,
-    BackendError,
     HTTPException,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     basic_auth,
-    finish_log_row,
+    first_accepted,
     http_get_json,
     http_post_json,
+    log_row,
     not_found,
-    otlp_status,
     query_origin,
-    rejected_request,
     require_credential,
     resolve_env_or_literal,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import fold_samples, series_ident
 from .paging import (
     strictly_older,
     strictly_older_traces,
@@ -41,7 +43,20 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, card_row, group_by_service, otlp_batches, otlp_span
+from .shapes import (
+    CARD_ATTRIBUTE_KEYS,
+    SpanRow,
+    card_row,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    trace_detail,
+)
+
+# A widened search's root lookup without a server-side root filter keeps the
+# roots from up to this many spans per trace (#558).
+_ROOT_ROWS_PER_TRACE = 50
+
 
 _DEFAULT_OO_PORT = 5080
 # The trace detail asks for this many rows and says so when there are more.
@@ -51,23 +66,18 @@ _DETAIL_SPAN_CAP = 500
 _DEFAULT_TRACE_WINDOW_DAYS = 90
 # Raw metric samples loaded per chart; newest kept when there are more.
 _METRIC_SAMPLE_CAP = 10000
-# Python logging levels and the OTel spellings OpenObserve stores in ``severity``.
-_LEVEL_NAMES = {
-    10: ("DEBUG", "TRACE", "DEBUG2", "DEBUG3", "DEBUG4"),
-    20: ("INFO", "INFO2", "INFO3", "INFO4"),
-    30: ("WARN", "WARNING", "WARN2", "WARN3", "WARN4"),
-    40: ("ERROR", "ERROR2", "ERROR3", "ERROR4"),
-    50: ("FATAL", "CRITICAL", "FATAL2", "FATAL3", "FATAL4"),
-}
-
-
-def _severity_names_at_least(min_level: int) -> List[str]:
-    """The ``severity`` spellings at or above a Python level (for a SQL ``IN``)."""
-    names: List[str] = []
-    for lvl in sorted(_LEVEL_NAMES):
-        if lvl >= int(min_level):
-            names.extend(_LEVEL_NAMES[lvl])
-    return names
+# A ``SELECT *`` row: the OTLP logs exporter records the Python logger name
+# as the instrumentation scope, which is the column OpenObserve keeps; the
+# flattened attribute names (``hermes_log_attribution``) get their dotted
+# name back (#268). ``_p`` / ``_o2_id`` are OpenObserve's bookkeeping.
+_LOG_COLUMNS = LogColumns(
+    time="_timestamp",
+    level=("severity", "severity_text", "level"),
+    logger=("instrumentation_library_name", "logger_name"),
+    session_id=("session_id", "hermes_session_id"),
+    drop=("_p", "_o2_id"),
+    attr_key=dotted,
+)
 
 
 def _like_escape(v: Any) -> str:
@@ -116,8 +126,14 @@ class OpenObserveAdapter(BackendAdapter):
         endpoint = cfg.get("endpoint") or ""
         self.query_url = query_origin(cfg, _DEFAULT_OO_PORT)
         # Org is the first path segment in the endpoint, e.g.
-        # ``/api/default/v1/traces`` → ``default``.
-        self.org = cfg.get("org") or _extract_org(endpoint) or "default"
+        # ``/api/default/v1/traces`` → ``default``; for a bare-origin
+        # endpoint, the org the exporter completed it with (#582).
+        self.org = (
+            cfg.get("org")
+            or _extract_org(endpoint)
+            or os.getenv("OTEL_OPENOBSERVE_ORG", "").strip()
+            or "default"
+        )
         self.stream = cfg.get("stream_name") or cfg.get("stream") or "default"
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
@@ -228,72 +244,42 @@ class OpenObserveAdapter(BackendAdapter):
         # for more and dedupe.
         want = widened_fetch(limit, True)
         wide = widened_fetch(limit, False)
+
+        def rows_for(predicate: str, size: int) -> List[Dict[str, Any]]:
+            body = {
+                "query": {
+                    "sql": f"SELECT * FROM {self.stream} WHERE {where}{predicate} "
+                    f"ORDER BY _timestamp DESC LIMIT {size}",
+                    "start_time": int(start_s) * 1_000_000,  # µs
+                    "end_time": end_us,
+                    "size": size,
+                }
+            }
+            data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
+            hits = data.get("hits") if isinstance(data, dict) else None
+            return [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+
         # Roots only: the stream names the parent in one of two columns
         # depending on the OpenObserve version. Each spelling is tried in
         # turn; a later attempt runs ONLY when the earlier one was rejected
         # (an unknown column is a 400), never when it matched nothing: an
         # empty answer is the answer (#299). The last attempt has no root
         # predicate and is filtered here from each row's parent fields.
-        if f.roots_only:
-            attempts = [
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} AND "
-                    f"(reference_parent_span_id IS NULL OR reference_parent_span_id = '') "
-                    f"ORDER BY _timestamp DESC LIMIT {want}",
-                    want,
-                    False,
-                ),
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} AND "
-                    f"(reference IS NULL OR reference = '') "
-                    f"ORDER BY _timestamp DESC LIMIT {want}",
-                    want,
-                    False,
-                ),
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} "
-                    f"ORDER BY _timestamp DESC LIMIT {wide}",
-                    wide,
-                    True,
-                ),
-            ]
-        else:
-            attempts = [
-                (
-                    f"SELECT * FROM {self.stream} WHERE {where} "
-                    f"ORDER BY _timestamp DESC LIMIT {wide}",
-                    wide,
-                    False,
-                )
-            ]
-
-        rows: List[Dict[str, Any]] = []
         client_roots = False
-        last_err: Optional[Exception] = None
-        for sql, size, filter_roots_here in attempts:
-            body = {
-                "query": {
-                    "sql": sql,
-                    "start_time": int(start_s) * 1_000_000,  # µs
-                    "end_time": end_us,
-                    "size": size,
-                }
-            }
-            try:
-                data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
-            except BackendError as e:
-                if not rejected_request(e):
-                    raise  # unreachable, auth, config: no other spelling will help
-                last_err = e
-                continue
-            hits = data.get("hits") if isinstance(data, dict) else None
-            rows = [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
-            client_roots = filter_roots_here
-            last_err = None
-            break
-
-        if last_err is not None:
-            raise last_err
+        if f.roots_only:
+            rows, client_roots = first_accepted(
+                lambda: (
+                    rows_for(
+                        " AND (reference_parent_span_id IS NULL OR reference_parent_span_id = '')",
+                        want,
+                    ),
+                    False,
+                ),
+                lambda: (rows_for(" AND (reference IS NULL OR reference = '')", want), False),
+                lambda: (rows_for("", wide), True),
+            )
+        else:
+            rows = rows_for("", wide)
 
         traces: Dict[str, Dict[str, Any]] = {}
         for row in rows:
@@ -314,8 +300,73 @@ class OpenObserveAdapter(BackendAdapter):
                 # The span count joins below, from one grouped query per page.
             )
         page = trace_page(strictly_older_traces(list(traces.values()), f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            recard_roots(page, self._roots([t["traceID"] for t in page["traces"]], start_s, end_s))
         self._attach_span_counts({t["traceID"]: t for t in page["traces"]}, start_s, end_s)
         return page
+
+    def _roots(self, trace_ids: List[str], start_s: int, end_s: int) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id: one query on the
+        ``trace_id IN`` list with the root predicate, each parent-column
+        spelling tried in turn only when the previous one was rejected (as in
+        ``search``), the last kept client-side from each row's parent fields.
+        The window is a day wider on both sides, like the span count's. A
+        failed query leaves the matched cards."""
+        if not trace_ids:
+            return {}
+        ids = ", ".join(f"'{_sql_escape(t)}'" for t in trace_ids)
+        url = f"{self.query_url}/api/{self.org}/_search?type=traces"
+
+        def rows_for(predicate: str, size: int) -> List[Dict[str, Any]]:
+            body = {
+                "query": {
+                    "sql": f"SELECT * FROM {self.stream} WHERE trace_id IN ({ids}){predicate} "
+                    f"ORDER BY _timestamp ASC LIMIT {size}",
+                    "start_time": max(0, int(start_s) - 86400) * 1_000_000,
+                    "end_time": (int(end_s) + 86400) * 1_000_000,
+                    "size": size,
+                }
+            }
+            data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
+            hits = data.get("hits") if isinstance(data, dict) else None
+            return [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+
+        n = len(trace_ids)
+        try:
+            rows = first_accepted(
+                lambda: rows_for(
+                    " AND (reference_parent_span_id IS NULL OR reference_parent_span_id = '')", n
+                ),
+                lambda: rows_for(" AND (reference IS NULL OR reference = '')", n),
+                lambda: rows_for("", n * _ROOT_ROWS_PER_TRACE),
+            )
+        except Exception:
+            return {}
+        out: Dict[str, SpanRow] = {}
+        for row in rows:
+            if not self._is_root_row(row):
+                continue
+            tid = row.get("trace_id") or row.get("traceId")
+            if not tid:
+                continue
+            start = int(row.get("start_time") or 0)
+            out.setdefault(
+                tid,
+                SpanRow(
+                    tid,
+                    row.get("span_id"),
+                    None,
+                    str(row.get("operation_name") or row.get("name") or ""),
+                    start_ns=start,
+                    # ``duration`` is in microseconds in the traces stream.
+                    end_ns=start + int(row.get("duration") or 0) * 1000,
+                    attrs={},
+                    service=str(row.get("service_name") or ""),
+                ),
+            )
+        return out
 
     def _attach_span_counts(
         self, traces: Dict[str, Dict[str, Any]], start_s: int, end_s: int
@@ -452,6 +503,7 @@ class OpenObserveAdapter(BackendAdapter):
         # counter is per process, and two processes' samples folded into one
         # series would read the second one's first value as "no increase".
         samples = []
+        labels_of: Dict[str, str] = {}
         # ``start_time`` is the counter's own start (ns): a series that started
         # inside the window is a fresh process whose first sample counts in
         # full (one-shot runs export each counter once, #299).
@@ -461,34 +513,28 @@ class OpenObserveAdapter(BackendAdapter):
             v = _maybe_num(r.get("value"))
             if not isinstance(v, (int, float)):
                 continue
-            ident = "|".join(f"{k}={r[k]}" for k in sorted(r) if k not in skip)
+            ident = series_ident(r, drop=skip)
+            # The requested label, in either spelling (``gen_ai.request.model``
+            # arrives as ``gen_ai_request_model``).
+            labels_of[ident] = (
+                str(r.get(group_by, r.get(group_by.replace(".", "_"), "—"))) if group_by else "_"
+            )
             samples.append((int(r.get("_timestamp") or 0) * 1000, float(v), ident))
             st = _maybe_num(r.get("start_time"))
             if isinstance(st, (int, float)) and int(st) >= window_start_ns:
                 started.add(ident)
-        if cumulative:
-            samples = counter_increases(samples, started_in_window=started)
-
-        # Collapse the series identity to the requested group_by label.
-        def label_of(ident: str) -> str:
-            if not group_by:
-                return "_"
-            for part in ident.split("|"):
-                k, _, val = part.partition("=")
-                if k == group_by or k == group_by.replace(".", "_"):
-                    return val
-            return "—"
-
-        points = [(ts, v, label_of(ident)) for ts, v, ident in samples]
-        # ``last`` of a counter's increases has no per-bucket meaning: fold them
-        # with ``sum`` and say so, as the Prometheus-family adapters do.
-        fold = "sum" if (cumulative and agg == "last") else agg
-        out = bucketize(
-            points, int(start_s) * 1_000_000_000, int(end_s) * 1_000_000_000, bucket_s, fold
+        out = fold_samples(
+            samples,
+            labels_of,
+            window_start_ns,
+            int(end_s) * 1_000_000_000,
+            bucket_s,
+            agg,
+            name=name,
+            cumulative=cumulative,
+            started_in_window=started,
         )
-        out["agg_requested"] = agg
-        out["name"] = name
-        out["cumulative"] = cumulative
+        out.setdefault("cumulative", False)  # a gauge says so here, as detected
         out["truncated"] = truncated
         return out
 
@@ -498,11 +544,6 @@ class OpenObserveAdapter(BackendAdapter):
 
     def _log_stream(self) -> str:
         return str(self.cfg.get("logs_stream") or self._LOG_STREAM_DEFAULT)
-
-    @staticmethod
-    def _level_name(row: Dict[str, Any]) -> str:
-        sev = row.get("severity") or row.get("severity_text") or row.get("level") or "INFO"
-        return str(sev).upper()
 
     def logs_search(
         self, f: LogFilter, start_s: int, end_s: int, limit: int
@@ -515,7 +556,9 @@ class OpenObserveAdapter(BackendAdapter):
         if f.min_level:
             # Severity in the query, not on the page: a page of DEBUG rows
             # would otherwise come back short of WARN lines that exist (#299).
-            names = ", ".join(f"'{n}'" for n in _severity_names_at_least(f.min_level))
+            # OpenObserve stores the record's ``severity_text`` as ``severity``,
+            # so the floor is the one severity table's spellings (#555).
+            names = ", ".join(f"'{n}'" for n in level_names_at_least(f.min_level))
             where.append(f"severity IN ({names})")
         if f.session:
             # The exporter's ``hermes.session_id`` attribute; OpenObserve flattens
@@ -548,42 +591,10 @@ class OpenObserveAdapter(BackendAdapter):
             if wants_events and _is_missing_event_column(exc):
                 return []
             raise
-        out: List[Dict[str, Any]] = []
-        for r in rows:
-            level = self._level_name(r)
-            known = {
-                "_timestamp",
-                "body",
-                "trace_id",
-                "span_id",
-                "session_id",
-                "hermes_session_id",
-                "severity",
-                "severity_text",
-                "severity_number",
-                "level",
-                "instrumentation_library_name",
-                "logger_name",
-                "event_name",
-                "_p",
-                "_o2_id",
-            }
-            row = {
-                "level": level,
-                "severity_number": r.get("severity_number"),
-                # The OTLP logs exporter records the Python logger name as
-                # the instrumentation scope; that is the column OpenObserve keeps.
-                "logger": r.get("instrumentation_library_name") or r.get("logger_name") or "",
-                "body": r.get("body") or "",
-                "time_unix_nano": int(r.get("_timestamp") or 0) * 1000,
-                "trace_id": r.get("trace_id"),
-                "span_id": r.get("span_id"),
-                "session_id": r.get("session_id") or r.get("hermes_session_id"),
-                "event_name": r.get("event_name"),
-            }
-            # OpenObserve flattens attribute names (``hermes_log_attribution``);
-            # give the documented ones their dotted name back (#268).
-            out.append(finish_log_row(row, {dotted(k): v for k, v in r.items() if k not in known}))
+        out = [
+            log_row(r, _LOG_COLUMNS, time_ns=int(r.get("_timestamp") or 0) * 1000)  # µs column
+            for r in rows
+        ]
         return strictly_older(out, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
@@ -649,10 +660,7 @@ class OpenObserveAdapter(BackendAdapter):
                 f"Trace {trace_id} not found in OpenObserve stream {self.stream!r} "
                 f"(last {self.trace_window_days} days)",
             )
-        out = _rows_to_otlp(rows)
-        out["span_count"] = len(rows)
-        out["truncated"] = len(rows) >= _DETAIL_SPAN_CAP
-        return out
+        return _rows_to_otlp(rows)
 
 
 def _extract_org(endpoint: str) -> Optional[str]:
@@ -723,34 +731,39 @@ _SKIP_OTLP_COLS = frozenset(
 )
 
 
-def _rows_to_otlp(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
-    def one(row: Dict[str, Any]) -> Dict[str, Any]:
-        attrs = {
-            dotted(k): _maybe_num(v)
-            for k, v in row.items()
-            if k not in _SKIP_OTLP_COLS and v is not None and v != ""
-        }
-        parent = (
-            row.get("reference_parent_span_id")
-            or _extract_parent_from_reference(row.get("reference"))
-            or row.get("parent_span_id")
-        )
-        return otlp_span(
-            row.get("trace_id"),
-            row.get("span_id"),
-            parent,
-            row.get("operation_name") or row.get("name"),
-            start_ns=int(row.get("start_time") or 0),
-            end_ns=int(row.get("end_time") or 0),
-            attrs=attrs,
-            status=otlp_status(row.get("status_code"), row.get("status_message") or ""),
-            kind=int(row.get("span_kind") or 1),
-        )
-
-    by_service = group_by_service(
-        [r for r in rows if isinstance(r, dict)], lambda r: r.get("service_name")
+def _row(row: Dict[str, Any]) -> SpanRow:
+    """One stream row as a row: columns dotted back, the parent from
+    whichever of the three places OpenObserve put it."""
+    attrs = {
+        dotted(k): _maybe_num(v)
+        for k, v in row.items()
+        if k not in _SKIP_OTLP_COLS and v is not None and v != ""
+    }
+    parent = (
+        row.get("reference_parent_span_id")
+        or _extract_parent_from_reference(row.get("reference"))
+        or row.get("parent_span_id")
     )
-    return {"batches": otlp_batches({svc: [one(r) for r in rs] for svc, rs in by_service.items()})}
+    return SpanRow(
+        row.get("trace_id"),
+        row.get("span_id"),
+        parent,
+        str(row.get("operation_name") or row.get("name") or ""),
+        start_ns=int(row.get("start_time") or 0),
+        end_ns=int(row.get("end_time") or 0),
+        attrs=attrs,
+        service=str(row.get("service_name") or ""),
+        kind=otlp_kind(row.get("span_kind")),
+        status=otlp_status(row.get("status_code"), row.get("status_message") or ""),
+    )
+
+
+def _rows_to_otlp(rows: List[Dict[str, Any]]) -> Dict[str, Any]:
+    """The detail every adapter answers (see :func:`trace_detail`), truncated
+    when the rows fill ``_DETAIL_SPAN_CAP``."""
+    return trace_detail(
+        [_row(r) for r in rows if isinstance(r, dict)], truncated=len(rows) >= _DETAIL_SPAN_CAP
+    )
 
 
 def _extract_parent_from_reference(ref: Any) -> Optional[str]:

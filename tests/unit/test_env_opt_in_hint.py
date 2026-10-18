@@ -11,6 +11,7 @@ from _helpers import clear_backend_env
 from hermes_otel import backends
 from hermes_otel import plugin_config as pc
 from hermes_otel import settings_report as sr
+from hermes_otel.pipeline import Pipeline
 from hermes_otel.tracer import HermesOTelPlugin
 
 
@@ -70,11 +71,11 @@ class TestTracerLogsTheHint:
         monkeypatch.setenv("HONEYCOMB_API_KEY", "hc")
         plugin = HermesOTelPlugin()
         with (
-            patch.object(plugin, "_init_otlp_pipeline", return_value=True) as mock_otlp,
+            patch("hermes_otel.tracer.build_pipeline", return_value=Pipeline()) as mock_otlp,
             caplog.at_level(logging.INFO, logger="hermes_otel"),
         ):
             assert plugin.init() is True
-            assert mock_otlp.call_args[0][0] == []  # live-only, nothing exported
+            assert mock_otlp.call_args[0][1] == []  # live-only, nothing exported
         lines = [r.getMessage() for r in caplog.records if "not exporting" in r.getMessage()]
         assert len(lines) == 1
         assert "HONEYCOMB_API_KEY is set" in lines[0] and lines[0].startswith("[hermes-otel] ")
@@ -83,7 +84,7 @@ class TestTracerLogsTheHint:
         clear_backend_env(monkeypatch)
         plugin = HermesOTelPlugin()
         with (
-            patch.object(plugin, "_init_otlp_pipeline", return_value=True),
+            patch("hermes_otel.tracer.build_pipeline", return_value=Pipeline()),
             caplog.at_level(logging.INFO, logger="hermes_otel"),
         ):
             plugin.init()

@@ -145,7 +145,7 @@ class TestPhoenixTraceExport:
             )
 
             # Force flush
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
 
             # Wait for Phoenix to ingest
             time.sleep(3)
@@ -243,7 +243,7 @@ class TestPhoenixTraceExport:
                 platform="e2e-test",
             )
 
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
             time.sleep(3)
 
             spans = _query_phoenix_spans(phoenix_service)
@@ -305,7 +305,7 @@ class TestPhoenixTraceExport:
                 assistant_tool_call_count=0,
             )
 
-            plugin._force_flush()
+            plugin.pipeline.force_flush()
             time.sleep(3)
 
             spans = _query_phoenix_spans(phoenix_service)

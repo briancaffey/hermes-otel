@@ -2,20 +2,13 @@
 
 from __future__ import annotations
 
-import json
 from typing import Any, Dict, Optional
 
 from .. import log_events as EV
+from ..coerce import coerce_bool, to_optional_int
 from ..debug_utils import debug_log
-from ..helpers import (
-    coerce_bool,
-    count_user_turns,
-    http_status_class,
-    query_source_for,
-    serialize_full,
-    to_optional_int,
-    truncate_string,
-)
+from ..helpers import truncate_string
+from ..instruments import COMPAT_SESSION_LABEL
 from ._common import (
     _emit_event,
     _fail_open,
@@ -30,6 +23,8 @@ from .api_call import (
     add_exception_event,
     apply_usage,
     ensure_span,
+    full_response_attributes,
+    query_source_for,
     record_first_chunk,
     record_operation_duration,
     request_attributes,
@@ -37,6 +32,7 @@ from .api_call import (
     token_suffix,
 )
 from .attributes import (
+    _ID_MAX,
     _gen_ai_attributes,
     _message_json,
     _metric_model_labels,
@@ -50,7 +46,34 @@ from .attributes import (
     correlation_attributes,
 )
 from .session import _start_session_span
-from .usage import _USAGE_FIELDS, genai_metric_dims
+from .usage import genai_metric_dims
+
+
+def count_user_turns(conversation: Any) -> int:
+    """User prompts in a conversation (``role == "user"`` messages), or 0 when
+    it is not a list. Hermes passes the turn's whole conversation, current
+    prompt included, to ``pre_llm_call``; after a context compaction it holds
+    fewer, so callers treat the count as a floor."""
+    if not isinstance(conversation, (list, tuple)):
+        return 0
+    return sum(1 for m in conversation if isinstance(m, dict) and m.get("role") == "user")
+
+
+def http_status_class(status_code: Any) -> str:
+    """Bucket an HTTP status code into a low-cardinality metric label.
+
+    Returns ``"2xx"``/``"3xx"``/``"4xx"``/``"5xx"`` for a valid HTTP code,
+    ``"network"`` when there is no code (None / 0 / unparseable — i.e. the
+    request never got an HTTP response: timeout, connection error), and
+    ``"other"`` for an out-of-range number. Keeps error-metric cardinality
+    bounded regardless of provider quirks.
+    """
+    code = to_optional_int(status_code)
+    if code is None or code <= 0:
+        return "network"
+    if 100 <= code < 600:
+        return f"{code // 100}xx"
+    return "other"
 
 
 def _llm_input_attributes(tracer, user_message: Any) -> Dict[str, Any]:
@@ -89,6 +112,7 @@ def on_pre_llm_call(
     # close it so this turn gets its own root instead of joining that trace.
     if session_id:
         tracer.close_failed_turn(session_id)
+        tracer.sessions.remember_turn_id(session_id, kwargs.get("turn_id"))
 
     # hermes fires on_session_start only on the very first turn, but
     # on_session_end fires per turn. On continuation turns (2+) we arrive
@@ -122,33 +146,31 @@ def on_pre_llm_call(
             content=False,
         )
 
-    # Capture first LLM input for top-level session span
-    if session_id:
-        ps = tracer.sessions.get_or_create(session_id)
-        if not ps.io_captured:
-            ps.io["input"] = _preview_for(tracer, "llm_input", user_message) or ""
-            ps.io_captured = True
+    # The turn's aggregator: the first LLM input for the top-level session
+    # span, the sender, and the provider its earlier API calls reported.
+    ps = tracer.sessions.get_or_create(session_id) if session_id else None
+    if ps is not None:
+        ps.capture_input(_preview_for(tracer, "llm_input", user_message))
 
     # OpenInference attributes — Phoenix Info panel. The provider is only
     # known once an API call has reported it (continuation turns); the
     # platform is not a provider (#153).
-    known = tracer.sessions.peek(session_id) if session_id else None
     attributes: Dict[str, Any] = {}
     attributes.update(_session_identity_attributes(session_id))
-    attributes.update(_model_attributes(model, known.provider if known else None))
+    attributes.update(_model_attributes(model, ps.provider if ps is not None else None))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
     attributes.update(_turn_attributes(tracer, session_id))
 
     if tracer.config.capture_sender_id:
-        sender_id = truncate_string(kwargs.get("sender_id"), 200) if kwargs.get("sender_id") else ""
+        sender_id = (
+            truncate_string(kwargs.get("sender_id"), _ID_MAX) if kwargs.get("sender_id") else ""
+        )
         if sender_id:
             sender_attrs = _sender_attributes(sender_id, truncate_string(platform, 120))
             attributes.update(sender_attrs)
-            if session_id:
-                ps = tracer.sessions.get_or_create(session_id)
-                ps.sender_id = sender_id
-                ps.user_id = sender_attrs["user.id"]
+            if ps is not None:
+                ps.set_sender(sender_id, sender_attrs["user.id"])
 
     # Opt-in: put the entire conversation the model is about to see on
     # input.value. Falls back to just the latest user_message otherwise —
@@ -202,12 +224,10 @@ def on_post_llm_call(
 
     preview, original = _preview_marked(tracer, "llm_output", assistant_response)
 
-    # Capture last LLM output for top-level session span. Only if the
-    # session already has I/O buffered (i.e. pre_llm_call ran) — mirrors
-    # prior behaviour where we never wrote output without a matching input.
+    # Capture last LLM output for the top-level session span.
     ps = tracer.sessions.peek(session_id) if session_id else None
-    if ps is not None and ps.io_captured:
-        ps.io["output"] = preview or ""
+    if ps is not None:
+        ps.capture_output(preview)
 
     # Provider / response model: what this turn's API calls reported, never
     # the platform or the request model (#153, #155).
@@ -271,9 +291,8 @@ def on_pre_api_request(
 
     key = f"api:{task_id}"
 
-    # Per-turn summary: count api requests
     if session_id:
-        tracer.sessions.get_or_create(session_id).turn_summary.api_call_count += 1
+        tracer.sessions.get_or_create(session_id).turn_summary.add_api_call()
 
     attributes = request_attributes(
         tracer,
@@ -299,39 +318,6 @@ def on_pre_api_request(
     # Push as parent — tool spans during this API call will nest under it
     tracer.spans.push_parent(span, session_id=session_id)
     debug_log(f"  API span started: key={key}")
-
-
-def _full_response_attributes(payload: HookPayload) -> Dict[str, Any]:
-    """The complete response in both conventions, once each (#74): one
-    assistant message carrying the text and the tool calls it made."""
-    response_content = payload.get("response_content")
-    response_tool_calls = payload.get("response_tool_calls")
-    assistant_message = payload.get("assistant_message")
-    if assistant_message is not None:
-        if not response_content:
-            response_content = getattr(assistant_message, "content", None)
-        if not response_tool_calls:
-            response_tool_calls = getattr(assistant_message, "tool_calls", None)
-    message: Dict[str, Any] = {"role": "assistant"}
-    if response_content:
-        message["content"] = str(response_content)
-    tool_calls_serialized = serialize_full(response_tool_calls)
-    if tool_calls_serialized is not None:
-        try:
-            message["tool_calls"] = json.loads(tool_calls_serialized)
-        except Exception:
-            message["tool_calls"] = tool_calls_serialized
-    attributes: Dict[str, Any] = {}
-    if len(message) > 1:
-        attributes["gen_ai.output.messages"] = json.dumps([message], ensure_ascii=False)
-        if response_content:
-            attributes["output.value"] = str(response_content)
-            attributes["output.mime_type"] = "text/plain"
-        else:
-            attributes["output.value"] = tool_calls_serialized
-            attributes["output.mime_type"] = "application/json"
-        attributes["hermes.content.output_chars"] = len(attributes["output.value"] or "")
-    return attributes
 
 
 @_fail_open
@@ -370,11 +356,14 @@ def on_post_api_request(
     # Only a reported response model; the request model is not a response (#155).
     attributes.update(_response_model_attributes(response_model))
     if payload.response_id:
-        attributes["gen_ai.response.id"] = truncate_string(payload.response_id, 200)
+        attributes["gen_ai.response.id"] = truncate_string(payload.response_id, _ID_MAX)
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     model_labels = _metric_model_labels(model, provider)
     model_labels["query_source"] = _query_source(tracer, session_id)
+    # Only the opt-in claude_code.* instruments keep this (record_metric
+    # strips it for everything else, #485).
+    model_labels[COMPAT_SESSION_LABEL] = session_id
 
     # Token usage (dual convention), the usage/cache/GenAI metrics and the
     # cost estimate; then the turn's roll-up on the session.
@@ -391,23 +380,13 @@ def on_post_api_request(
         cache_labels={**model_labels, "api_mode": api_mode},
     )
     if session_id:
-        # A success after a failed attempt (a retry that worked) clears #467's flag.
+        # An aggregator is minted only when the call reported usage; a bare
+        # success still clears #467's flag on an existing one.
         ps = tracer.sessions.peek(session_id)
+        if ps is None and totals is not None:
+            ps = tracer.sessions.get_or_create(session_id)
         if ps is not None:
-            ps.last_api_failed = False
-    if totals is not None and session_id:
-        ps = tracer.sessions.get_or_create(session_id)
-        for field in _USAGE_FIELDS:
-            ps.usage[field] += totals[field]
-        ps.usage_updated = True
-        # Remember the real LLM provider and the reported response model —
-        # on_session_end only sees the platform and the request model.
-        if provider:
-            ps.provider = provider
-        if response_model:
-            ps.response_model = truncate_string(response_model, 200)
-        if cost is not None:
-            ps.add_cost(cost["status"], cost["usd"])
+            ps.record_attempt(totals, cost, provider=provider, response_model=response_model)
 
     attributes.update(
         response_attributes(
@@ -421,9 +400,7 @@ def on_post_api_request(
         tracer, api_duration, genai_metric_dims(model, provider, response_model)
     )
     record_first_chunk(tracer, attributes, payload, _metric_model_labels(model, provider))
-
-    if tracer.config.captures_full_responses():
-        attributes.update(_full_response_attributes(payload))
+    attributes.update(full_response_attributes(tracer, payload))
 
     # The GenAI semconv inference event (#267): request attributes from the api
     # span's start, response attributes from this hook, content gated by
@@ -452,6 +429,28 @@ def on_post_api_request(
     # Mark as OK
     tracer.end_span(key, attributes=attributes, status="ok")
     debug_log(f"  API span ended: status=ok, tokens={usage.get('total_tokens', 0) if usage else 0}")
+
+
+def _error_attributes(
+    error_type: str, status_code: Any, retry_count: Any, max_retries: Any, retryable: Optional[bool]
+) -> Dict[str, Any]:
+    """The failure's own attributes: each value Hermes reported under its
+    key(s), absent when it sent nothing usable."""
+    attributes: Dict[str, Any] = {}
+    if error_type:
+        attributes["error.type"] = error_type
+    for value, keys in (
+        (
+            to_optional_int(status_code),
+            ("http.response.status_code", "gen_ai.response.status_code"),
+        ),
+        (to_optional_int(retry_count), ("hermes.retry.count",)),
+        (to_optional_int(max_retries), ("hermes.max_retries",)),
+        (retryable, ("hermes.retryable",)),
+    ):
+        if value is not None:
+            attributes.update(dict.fromkeys(keys, value))
+    return attributes
 
 
 @_fail_open
@@ -490,40 +489,22 @@ def on_api_request_error(
     if isinstance(error, BaseException):
         error = {"type": type(error).__name__, "message": str(error)}
     error = as_dict(error)
-    error_type = truncate_string(error.get("type"), 200) if error.get("type") else ""
+    error_type = truncate_string(error.get("type"), _ID_MAX) if error.get("type") else ""
     error_message = truncate_string(error.get("message") or reason, 500)
     status_class = http_status_class(status_code)
     is_retryable = coerce_bool(retryable)
 
-    # Build the error attributes that go on whichever span we close.
-    attributes: Dict[str, Any] = {}
-    if error_type:
-        attributes["error.type"] = error_type
-    sc = to_optional_int(status_code)
-    if sc is not None:
-        attributes["http.response.status_code"] = sc
-        attributes["gen_ai.response.status_code"] = sc
-    rc = to_optional_int(retry_count)
-    if rc is not None:
-        attributes["hermes.retry.count"] = rc
-    mr = to_optional_int(max_retries)
-    if mr is not None:
-        attributes["hermes.max_retries"] = mr
-    if is_retryable is not None:
-        attributes["hermes.retryable"] = is_retryable
-    if api_duration:
-        attributes["llm.response.duration_ms"] = round(api_duration * 1000, 1)
+    # The error attributes that go on whichever span we close.
+    attributes = _error_attributes(error_type, status_code, retry_count, max_retries, is_retryable)
+    attributes.update(response_attributes(api_duration=api_duration))
     attributes.update(_gen_ai_attributes(session_id, "chat"))
     attributes.update(_provider_attributes(provider or platform))
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
 
     # Remember why this turn failed so on_session_end can surface it on the root.
-    if session_id:
-        ps = tracer.sessions.peek(session_id)
-        if ps is not None:
-            ps.last_api_failed = True
-            if error_type:
-                ps.last_error_type = error_type
+    ps = tracer.sessions.peek(session_id) if session_id else None
+    if ps is not None:
+        ps.record_api_failure(error_type)
 
     _emit_event(
         tracer,

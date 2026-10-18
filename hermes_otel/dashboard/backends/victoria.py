@@ -14,7 +14,7 @@ Three stores, three read paths, one entry:
   and ``error="false"`` is not an error. ``limit`` is over-fetched and the page
   cut here, as for GreptimeDB.
 * Metrics: VictoriaMetrics speaks the Prometheus API, including range-vector
-  instant queries, so the shared Prometheus reader is used as-is. It expects
+  instant queries, so the ``PrometheusMetrics`` mixin is used as-is. It expects
   the Prometheus spelling the bundled stack produces with
   ``-opentelemetry.usePrometheusNaming`` (``hermes_token_usage_total``).
 * Logs: VictoriaLogs' ``/select/logsql/query`` answers NDJSON rows with
@@ -29,52 +29,45 @@ writes to) name the read side too; ``prometheus_url`` / ``logs_url`` override.
 
 from __future__ import annotations
 
-import datetime as _dt
 import json
 import re
 from typing import Any, Dict, List, Optional
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import register
-from ._prometheus import metric_names as _prom_metric_names
-from ._prometheus import metrics_query as _prom_metrics_query
+from ._prometheus import PrometheusMetrics
 from .base import (
     BackendError,
     ConfigError,
+    LogColumns,
     LogFilter,
     _execute,
     basic_auth,
     bearer,
-    finish_log_row,
+    log_row,
     resolve_env_or_literal,
     rewrite_host_for_docker,
 )
 from .jaeger import JaegerAdapter
 from .paging import LOG_PAGE_SLACK, log_end_ns, strictly_older
-from .severity import otel_severity_for
-from .zipkin import coerce_tag
+from .shapes import coerce_tag
+from .timeconv import ns_to_rfc3339, rfc3339_to_ns
 
 _DEFAULT_TRACES_PORT = 10428
 # ``/api/traces?limit=N``: whether VictoriaTraces keeps the newest N is not
 # documented; fetch wide and cut the page here, as for GreptimeDB.
 _DEFAULT_SEARCH_FETCH = 500
 
-# VictoriaLogs fields that are the row, not attributes.
-_LOG_ROW_FIELDS = frozenset(
-    {
-        "_msg",
-        "_time",
-        "_stream",
-        "_stream_id",
-        "trace_id",
-        "span_id",
-        "severity_number",
-        "severity_text",
-        "scope.name",
-        "hermes.session_id",
-        "event.name",
-    }
+# VictoriaLogs' columns; its own ``_``-prefixed fields (``_msg``, ``_time``,
+# ``_stream``) are filtered out before the row is built.
+_LOG_COLUMNS = LogColumns(
+    level="severity_text",
+    logger="scope.name",
+    session_id="hermes.session_id",
+    event_name="event.name",
 )
 
 
@@ -89,32 +82,13 @@ def _origin(url: Optional[str]) -> Optional[str]:
     return f"{parsed.scheme}://{host}{port}"
 
 
-def rfc3339_to_ns(text: Any) -> int:
-    """``2026-10-11T20:27:50.202258944Z`` → unix ns (fraction kept to 9 digits)."""
-    s = str(text or "").strip()
-    m = re.match(r"^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2})(?:\.(\d+))?(Z|[+-]\d{2}:\d{2})$", s)
-    if not m:
-        return 0
-    base, frac, tz = m.groups()
-    dt = _dt.datetime.fromisoformat(base + ("+00:00" if tz == "Z" else tz))
-    secs = int(dt.timestamp())
-    nanos = int((frac or "0")[:9].ljust(9, "0"))
-    return secs * 1_000_000_000 + nanos
-
-
-def ns_to_rfc3339(ns: int) -> str:
-    secs, rem = divmod(int(ns), 1_000_000_000)
-    base = _dt.datetime.fromtimestamp(secs, tz=_dt.timezone.utc).strftime("%Y-%m-%dT%H:%M:%S")
-    return f"{base}.{rem:09d}Z"
-
-
 def logsql_str(value: Any) -> str:
     """A LogsQL quoted string (double quotes, backslash escapes)."""
     return json.dumps(str(value))
 
 
 @register
-class VictoriaAdapter(JaegerAdapter):
+class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
     handles = frozenset({"victoria", "victoriatraces"})
     query_lang_label = "Jaeger tags (key=value)"
     raw_placeholder = "tool.name=terminal error=true"
@@ -127,19 +101,15 @@ class VictoriaAdapter(JaegerAdapter):
         self.query_api = "v1"  # the Jaeger-compatible API has no v3
         self.user = resolve_env_or_literal(cfg, "user", "user_env")
         self.password = resolve_env_or_literal(cfg, "password", "password_env")
-        self.prometheus_url = _origin(cfg.get("prometheus_url")) or _origin(
-            cfg.get("metrics_endpoint")
+        self._use_prometheus(
+            _origin(cfg.get("prometheus_url")) or _origin(cfg.get("metrics_endpoint")), cfg
         )
         self.logs_url = _origin(cfg.get("logs_url")) or _origin(cfg.get("logs_endpoint"))
-        self.supports_metrics = self.prometheus_url is not None
         self.supports_logs = self.logs_url is not None
-        self.metrics_match = cfg.get("metrics_match") or None
 
     def status(self) -> Dict[str, Any]:
         base = super().status()
         base["query_api"] = "jaeger-compatible"
-        if self.prometheus_url:
-            base["prometheus_url"] = self.prometheus_url
         if self.logs_url:
             base["logs_url"] = self.logs_url
         return base
@@ -156,44 +126,13 @@ class VictoriaAdapter(JaegerAdapter):
 
     # ── traces: typed-string tags ─────────────────────────────────────
 
-    def _span_tags_as_dict(self, span: Dict[str, Any]) -> Dict[str, Any]:
+    @staticmethod
+    def _span_tags_as_dict(span: Dict[str, Any]) -> Dict[str, Any]:
         out: Dict[str, Any] = {}
         for tag in span.get("tags") or []:
             if isinstance(tag, dict) and tag.get("key"):
                 out[tag["key"]] = coerce_tag(str(tag["key"]), tag.get("value"))
         return out
-
-    # ── metrics via the Prometheus reader ─────────────────────────────
-
-    def _prometheus(self) -> str:
-        if not self.prometheus_url:
-            raise ConfigError("This backend has no metrics_endpoint / prometheus_url configured")
-        return self.prometheus_url
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return _prom_metric_names(
-            self._prometheus(), start_s, end_s, self.metrics_match, headers=self._headers()
-        )
-
-    def metrics_query(
-        self,
-        name: str,
-        start_s: int,
-        end_s: int,
-        bucket_s: int,
-        group_by: Optional[str] = None,
-        agg: str = "sum",
-    ) -> Dict[str, Any]:
-        return _prom_metrics_query(
-            self._prometheus(),
-            name,
-            start_s,
-            end_s,
-            bucket_s,
-            group_by=group_by,
-            agg=agg,
-            headers=self._headers(),
-        )
 
     # ── logs via LogsQL ───────────────────────────────────────────────
 
@@ -246,7 +185,7 @@ class VictoriaAdapter(JaegerAdapter):
         if f.logger:
             parts.append(f"scope.name:{logsql_str(f.logger)}")
         if f.min_level:
-            parts.append(f"severity_number:>={otel_severity_for(f.min_level)}")
+            parts.append(f"severity_number:>={otel_severity(f.min_level)}")
         if f.event_name:
             parts.append(f"event.name:{logsql_str(f.event_name)}")
         elif f.events_only:
@@ -264,27 +203,10 @@ class VictoriaAdapter(JaegerAdapter):
         )
         records: List[Dict[str, Any]] = []
         for row in self._logsql(query, limit=n):
-            attrs = {
-                k: coerce_tag(k, v)
-                for k, v in row.items()
-                if k not in _LOG_ROW_FIELDS and not k.startswith("_")
-            }
-            try:
-                severity = int(row.get("severity_number") or 0) or None
-            except (TypeError, ValueError):
-                severity = None
-            record = {
-                "level": str(row.get("severity_text") or "INFO").upper(),
-                "severity_number": severity,
-                "logger": row.get("scope.name") or "",
-                "body": row.get("_msg") or "",
-                "time_unix_nano": rfc3339_to_ns(row.get("_time")),
-                "trace_id": row.get("trace_id") or None,
-                "span_id": row.get("span_id") or None,
-                "session_id": row.get("hermes.session_id") or None,
-                "event_name": row.get("event.name") or None,
-            }
-            records.append(finish_log_row(record, attrs))
+            # Every field is a string; give the attributes their types back.
+            raw = {k: coerce_tag(k, v) for k, v in row.items() if not k.startswith("_")}
+            raw["body"] = row.get("_msg")
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=rfc3339_to_ns(row.get("_time"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

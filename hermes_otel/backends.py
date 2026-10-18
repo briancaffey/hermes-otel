@@ -1,6 +1,6 @@
 """Backend resolution for hermes-otel.
 
-Converts declarative :class:`~hermes_otel.plugin_config.BackendConfig`
+Converts declarative :class:`~hermes_otel.backend_config.BackendConfig`
 objects (from ``config.yaml``) **or** environment variables into
 ready-to-wire :class:`_ResolvedBackend` instances. Each
 ``_ResolvedBackend`` carries exactly what the OTLP pipeline needs:
@@ -11,12 +11,15 @@ The module is intentionally stateless — no per-call cache, no mutation
 of the plugin, no OTel SDK imports. Tracer wiring happens in
 ``tracer.py``; this module decides *what* to wire.
 
-Adding a backend: one :class:`~hermes_otel.backend_specs.BackendSpec` in
-``backend_specs.py`` (display name, signals, env opt-in, credentials, ...),
-then a ``_resolve_<name>(bc)`` function below registered in ``_RESOLVERS``.
-Every per-type table this module used to keep (signals, display names, env
-priority, opt-in, vendor credentials, temporality and root-usage presets) is
-a view over the manifest (#402).
+Every per-type fact (display name, signals, env opt-in, credentials and
+their fallback variables, endpoint variable and default host, auth header,
+temporality and root-usage presets) is the type's
+:class:`~hermes_otel.backend_specs.BackendSpec`. A resolver,
+``_resolve_<type>(bc, spec)``, decides only what the spec cannot say: the
+URL(s) and headers (a :class:`_Wire`); :func:`resolve` builds the
+``_ResolvedBackend`` from the spec and that. Plain OTLP types (an endpoint,
+at most one auth header) share :func:`_resolve_plain`; ``_RESOLVERS`` holds
+the ones with bespoke URL or header rules.
 """
 
 from __future__ import annotations
@@ -27,46 +30,14 @@ import os
 import re
 import urllib.parse
 from dataclasses import dataclass
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, List, NamedTuple, Optional, Sequence, Tuple
 
-from .backend_specs import ENV_PRIORITY, SPECS, spec_for
+from .backend_config import BackendConfig
+from .backend_specs import BY_TYPE, ENV_PRIORITY, SPECS, BackendSpec, spec_for
 from .backend_specs import KNOWN_TYPES as SPEC_KNOWN_TYPES
-from .plugin_config import BackendConfig, normalize_temporality
-
-# Every per-type fact lives in the manifest (#402); these are the views the
-# rest of this module (and the tests) read.
-_TRACES_ONLY = frozenset(s.type for s in SPECS if s.traces_only)
-_LOGS_CAPABLE = frozenset(s.type for s in SPECS if s.logs)
-# Backends that take traces and logs but silently drop metrics (Laminar's
-# /v1/metrics answers 200 and stores nothing); metrics default off for them.
-_NO_METRICS = frozenset(s.type for s in SPECS if not s.metrics and s.logs)
-_DISPLAY_NAMES: Dict[str, str] = {s.type: s.display_name for s in SPECS}
-
-# Honeycomb OTLP/HTTP base endpoints by region (the SDK-style ``/v1/traces``
-# suffix is appended by the resolver; ``tracer.py`` / ``log_handler.py`` derive
-# the ``/v1/metrics`` and ``/v1/logs`` variants from it).
-_HONEYCOMB_ENDPOINTS = {
-    "us": "https://api.honeycomb.io",
-    "eu": "https://api.eu1.honeycomb.io",
-}
-
-_WEAVE_DEFAULT_ENDPOINT = "https://trace.wandb.ai/otel/v1/traces"
-
-# Priority for env-var-driven single-backend detection. First backend whose
-# required env vars are fully set wins.
-_ENV_PRIORITY: List[str] = list(ENV_PRIORITY)
-
-# Env-var mode must not switch on export to a vendor just because that vendor's
-# SDK-standard credentials are in the environment (#255): these types need at
-# least one plugin-namespaced variable as the explicit opt-in.
-_ENV_OPT_IN: Dict[str, Tuple[str, ...]] = {s.type: s.env_opt_in for s in SPECS if s.env_opt_in}
-
-# The vendor-variable sets that used to select each type on their own; each
-# inner tuple is one alternative spelling. Used only to tell the user why
-# env-var mode did not export (#259).
-_VENDOR_CREDENTIALS: Dict[str, Tuple[Tuple[str, ...], ...]] = {
-    s.type: s.vendor_credentials for s in SPECS if s.vendor_credentials
-}
+from .headers_helper import HeadersHelper, headers_helper_for
+from .pipeline_env import derive_signal_endpoint
+from .plugin_config import normalize_temporality
 
 
 def traces_url(endpoint: str) -> str:
@@ -84,22 +55,23 @@ def vendor_credentials_without_opt_in() -> List[Tuple[str, List[str], Tuple[str,
     """Types whose vendor credentials are in the environment but whose
     ``OTEL_*`` opt-in is not: ``[(type, present_vendor_vars, opt_in_vars)]``.
 
-    Env-var mode deliberately ignores these (see ``_ENV_OPT_IN``); the caller
-    turns the list into a one-line notice so the silence is explained.
+    Env-var mode deliberately ignores these (``BackendSpec.env_opt_in``, #255);
+    the caller turns the list into a one-line notice so the silence is
+    explained (#259).
     """
     out: List[Tuple[str, List[str], Tuple[str, ...]]] = []
-    for backend_type, opt_in in _ENV_OPT_IN.items():
-        if any(_set(name) for name in opt_in):
+    for spec in SPECS:
+        if not spec.env_opt_in or any(_set(name) for name in spec.env_opt_in):
             continue
         present: List[str] = []
-        for group in _VENDOR_CREDENTIALS[backend_type]:
+        for group in spec.vendor_credentials:
             hit = next((name for name in group if _set(name)), None)
             if hit is None:
                 present = []
                 break
             present.append(hit)
         if present:
-            out.append((backend_type, present, opt_in))
+            out.append((spec.type, present, spec.env_opt_in))
     return out
 
 
@@ -107,7 +79,7 @@ def env_opt_in_hints() -> List[str]:
     """Human-readable version of :func:`vendor_credentials_without_opt_in`."""
     hints: List[str] = []
     for backend_type, present, opt_in in vendor_credentials_without_opt_in():
-        label = _DISPLAY_NAMES.get(backend_type, backend_type)
+        label = BY_TYPE[backend_type].display_name
         hints.append(
             f"{' and '.join(present)} {'is' if len(present) == 1 else 'are'} set, but env-var mode "
             f"only exports to {label} when one of {', '.join(opt_in)} is also set "
@@ -116,13 +88,28 @@ def env_opt_in_hints() -> List[str]:
     return hints
 
 
+class SignalTarget(NamedTuple):
+    """Where one signal's exporter sends and what it sends it with. ``headers``
+    already include what ``headers_helper`` minted; the helper itself rides
+    along so the exporter's session can re-mint them on a 401/403 (#483)."""
+
+    endpoint: str
+    headers: Optional[Dict[str, str]]
+    headers_helper: Optional[HeadersHelper] = None
+
+
+# The OTLP signals in pipeline order; ``supports_<signal>`` /
+# ``<signal>_endpoint`` / ``<signal>_headers`` on :class:`_ResolvedBackend`.
+SIGNALS = ("traces", "metrics", "logs")
+
+
 @dataclass
 class _ResolvedBackend:
     """A backend ready to wire into the OTLP pipeline.
 
     ``headers`` may already include backend-specific auth (e.g. Langfuse
-    Basic Auth, SigNoz ingestion key); the pipeline merges the global
-    ``config.headers`` on top before constructing the exporter.
+    Basic Auth, SigNoz ingestion key); :meth:`target` merges them over the
+    global ``config.headers`` when the pipeline constructs each exporter.
     """
 
     type: str
@@ -148,36 +135,84 @@ class _ResolvedBackend:
     # Whether the ``agent`` / ``cron`` root keeps its token roll-up on the way
     # to this backend; ``False`` strips it for this exporter only (#327).
     root_usage: bool = True
+    # The entry's ``headers_helper`` (#483), shared by the three signals'
+    # exporters so one process mints for all and one cache serves them.
+    headers_helper: Optional[HeadersHelper] = None
+    # The OTLP transport and its TLS settings (#469); ``grpc`` only on a
+    # generic ``type: otlp`` entry. :func:`otlp_transport.create_exporter`
+    # picks the exporter class and channel credentials from these.
     protocol: str = "http/protobuf"
     insecure: Optional[bool] = None
     certificate_file: Optional[str] = None
     client_key_file: Optional[str] = None
     client_certificate_file: Optional[str] = None
 
+    def target(self, signal: str, global_headers: Optional[Dict[str, str]] = None) -> SignalTarget:
+        """The endpoint and headers to build ``signal``'s exporter with.
+
+        Headers: the global ``headers:`` first, this backend's own on top, so
+        on a conflict the backend wins (its headers carry resolver-built auth
+        such as Langfuse's ``Authorization`` or ``x-honeycomb-team``, which a
+        global header must never clobber), then what ``headers_helper``
+        minted on top of both: the helper is the live credential (#483); its
+        first run happens here, so a helper that fails skips the entry at
+        init. ``metrics_headers`` / ``logs_headers`` set, even empty, replace
+        ``headers`` for that signal: GreptimeDB's trace pipeline header must
+        not reach the other signals (#363). ``None`` when nothing is
+        configured; the pipeline then builds the exporter inside
+        :func:`pipeline_env.without_otlp_header_env` so the SDK cannot fill
+        the gap from the shell (#472).
+
+        Endpoint: the per-signal URL when the backend names one (#366), else
+        ``/v1/<signal>`` next to the traces URL; a gRPC backend serves every
+        signal on the one target (#469).
+        """
+        own = self.headers
+        endpoint = self.endpoint
+        if signal != "traces":
+            per_signal = getattr(self, f"{signal}_headers")
+            own = per_signal if per_signal is not None else own
+            endpoint = getattr(self, f"{signal}_endpoint") or (
+                self.endpoint
+                if self.protocol == "grpc"
+                else derive_signal_endpoint(self.endpoint, signal)
+            )
+        merged: Dict[str, str] = dict(global_headers or {})
+        merged.update(own or {})
+        if self.headers_helper is not None:
+            merged.update(self.headers_helper.headers())
+        return SignalTarget(endpoint, merged or None, self.headers_helper)
+
+    def enabled_signals(self) -> Tuple[str, ...]:
+        """The signals this backend receives, in :data:`SIGNALS` order."""
+        return tuple(s for s in SIGNALS if getattr(self, f"supports_{s}"))
+
+    def describe_signals(self) -> str:
+        """The startup banner's suffix, leading space included: ``" (query
+        only)"`` for a backend that exports nothing, ``" (traces only)"`` /
+        ``" (traces + logs)"`` when metrics are off, ``""`` when they are on."""
+        if not self.supports_traces:
+            return " (query only)"
+        if self.supports_metrics:
+            return ""
+        return " (traces + logs)" if self.supports_logs else " (traces only)"
+
+
+@dataclass
+class _Wire:
+    """What a resolver decides for one entry: where each signal goes and the
+    headers it carries. :func:`resolve` adds everything the manifest knows."""
+
+    endpoint: str
+    headers: Optional[Dict[str, str]] = None
+    metrics_headers: Optional[Dict[str, str]] = None
+    logs_headers: Optional[Dict[str, str]] = None
+    metrics_endpoint: Optional[str] = None
+    logs_endpoint: Optional[str] = None
+    resource_attributes: Optional[Dict[str, str]] = None
+
 
 # ── Shared helpers ─────────────────────────────────────────────────────────
-
-
-def _metrics_for(backend_type: str, override: Optional[bool]) -> bool:
-    if override is not None:
-        return override
-    spec = spec_for(backend_type)
-    return spec.metrics if spec is not None else True
-
-
-def _logs_for(backend_type: str, override: Optional[bool]) -> bool:
-    if override is not None:
-        return override
-    spec = spec_for(backend_type)
-    return spec.logs if spec is not None else False
-
-
-def _traces_for(override: Optional[bool]) -> bool:
-    # Traces are the primary signal for every existing backend. ``False`` is
-    # opt-in for query-only/dashboard-only entries that should not receive span
-    # exports (for example, querying Tempo directly while exporting through an
-    # OTel Collector).
-    return True if override is None else override
 
 
 @dataclass(frozen=True)
@@ -213,33 +248,98 @@ def choose_secret(
     return SecretChoice()
 
 
-def _resolve_secret(
-    inline: Optional[str],
-    env_name: Optional[str],
-    fallback_envs: List[str],
-) -> Optional[str]:
-    """Pick the first available secret value. Inline > named env > fallback envs."""
-    return choose_secret(inline, env_name, fallback_envs).value
+def _fallbacks(spec: BackendSpec, field: str) -> Tuple[str, ...]:
+    return next((c.env for c in spec.credentials if c.field == field), ())
 
 
-def _display(bc: BackendConfig, t: str) -> str:
-    return bc.name or _DISPLAY_NAMES.get(t, t.capitalize()) or "OTLP"
+def _secret(bc: BackendConfig, spec: BackendSpec, field: str) -> Optional[str]:
+    """``bc.<field>``, else the variable ``bc.<field>_env`` names, else the
+    spec's fallback variables for the field (``BackendSpec.credentials``)."""
+    return choose_secret(
+        getattr(bc, field), getattr(bc, f"{field}_env", None), _fallbacks(spec, field)
+    ).value
+
+
+def _basic_auth(bc: BackendConfig, spec: BackendSpec) -> Optional[str]:
+    """``Basic <base64 user:password>`` when both resolve, else ``None``."""
+    user = _secret(bc, spec, "user")
+    pw = _secret(bc, spec, "password")
+    if user and pw:
+        return "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    return None
+
+
+def _has_helper(bc: BackendConfig) -> bool:
+    """Whether the entry names a ``headers_helper``: the helper mints the auth
+    header itself, so a resolver that requires a static credential accepts the
+    entry without one and leaves its header out (#583)."""
+    return bool((bc.headers_helper or "").strip())
+
+
+def _endpoint(bc: BackendConfig, spec: BackendSpec) -> str:
+    """The entry's ``endpoint``, else ``spec.endpoint_env`` and the vendor
+    fallbacks, else the host for ``region`` when the spec has several, else
+    ``spec.default_endpoint``; ``""`` when nothing names one. An unknown
+    region is an error unless the spec has a default host for it."""
+    ep = bc.endpoint or ""
+    names = ((spec.endpoint_env,) if spec.endpoint_env else ()) + spec.endpoint_env_fallbacks
+    for name in names:
+        ep = ep or os.getenv(name, "")
+    if not ep and spec.region_endpoints:
+        region = (bc.region or "us").strip().lower()
+        ep = spec.region_endpoints.get(region) or spec.default_endpoint or ""
+        if not ep:
+            raise ValueError(
+                f"{spec.type} region must be one of {sorted(spec.region_endpoints)}, "
+                f"got {bc.region!r}"
+            )
+    return (ep or spec.default_endpoint or "").strip()
+
+
+def _required_endpoint(bc: BackendConfig, spec: BackendSpec) -> str:
+    ep = _endpoint(bc, spec)
+    if not ep:
+        hint = f" (or set {spec.endpoint_env})" if spec.endpoint_env else ""
+        raise ValueError(f"{spec.type} requires endpoint{hint}")
+    return ep
+
+
+def _auth_header(bc: BackendConfig, spec: BackendSpec) -> Dict[str, str]:
+    """The one header ``spec.auth`` describes, or ``{}`` when it is optional
+    and nothing resolves, or when the entry's ``headers_helper`` mints it."""
+    auth = spec.auth
+    if auth is None:
+        return {}
+    if auth.scheme == "Basic":
+        value = _basic_auth(bc, spec)
+    else:
+        value = _secret(bc, spec, auth.field)
+        if value and auth.scheme:
+            value = f"{auth.scheme} {value}"
+    if value:
+        return {auth.name: value}
+    if auth.required and not _has_helper(bc):
+        names = " / ".join(_fallbacks(spec, auth.field))
+        raise ValueError(
+            f"{spec.type} requires {auth.field} / {auth.field}_env"
+            + (f" (or set {names})" if names else "")
+        )
+    return {}
 
 
 # ── Per-backend resolvers ──────────────────────────────────────────────────
 
 
-def _resolve_phoenix(bc: BackendConfig) -> _ResolvedBackend:
-    ep = (bc.endpoint or os.getenv("OTEL_PHOENIX_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("phoenix requires endpoint")
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="phoenix",
-        endpoint=ep,
-        display_name=_display(bc, "phoenix"),
-        headers=extra or None,
-    )
+def _resolve_plain(bc: BackendConfig, spec: BackendSpec) -> _Wire:
+    """A plain OTLP/HTTP type: the endpoint (required unless the spec has a
+    default host), normalised to ``/v1/traces`` when the spec says so, and the
+    one auth header the spec declares; the entry's ``headers`` win."""
+    ep = _required_endpoint(bc, spec)
+    if spec.normalize_endpoint:
+        ep = traces_url(ep)
+    headers = _auth_header(bc, spec)
+    headers.update(bc.headers or {})
+    return _Wire(ep, headers or None)
 
 
 _LANGFUSE_OTEL_PATH = "/api/public/otel"
@@ -273,100 +373,23 @@ def langfuse_traces_url(endpoint: str) -> str:
     return ep + "/v1/traces"
 
 
-def _resolve_langfuse(bc: BackendConfig) -> _ResolvedBackend:
-    pub = _resolve_secret(
-        bc.public_key,
-        bc.public_key_env,
-        ["OTEL_LANGFUSE_PUBLIC_API_KEY", "LANGFUSE_PUBLIC_KEY"],
-    )
-    sec = _resolve_secret(
-        bc.secret_key,
-        bc.secret_key_env,
-        ["OTEL_LANGFUSE_SECRET_API_KEY", "LANGFUSE_SECRET_KEY"],
-    )
-    if not (pub and sec):
+def _resolve_langfuse(bc: BackendConfig, spec: BackendSpec) -> _Wire:
+    pub = _secret(bc, spec, "public_key")
+    sec = _secret(bc, spec, "secret_key")
+    if not (pub and sec) and not _has_helper(bc):
         raise ValueError("langfuse requires public_key and secret_key")
-    ep = (bc.endpoint or os.getenv("OTEL_LANGFUSE_ENDPOINT", "")).strip()
+    ep = _endpoint(bc, spec)
     if not ep:
         base = (bc.base_url or os.getenv("LANGFUSE_BASE_URL", "")).strip().rstrip("/")
         root = base if base else "https://cloud.langfuse.com"
         ep = f"{root}/api/public/otel/v1/traces"
     ep = langfuse_traces_url(ep)
-    auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth}",
-        "x-langfuse-ingestion-version": "4",
-    }
+    headers = {"x-langfuse-ingestion-version": "4"}
+    if pub and sec:
+        auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
+        headers["Authorization"] = f"Basic {auth}"
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="langfuse",
-        endpoint=ep,
-        display_name=_display(bc, "langfuse"),
-        headers=headers,
-    )
-
-
-def _resolve_signoz(bc: BackendConfig) -> _ResolvedBackend:
-    ep = (bc.endpoint or os.getenv("OTEL_SIGNOZ_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("signoz requires endpoint")
-    key = _resolve_secret(
-        bc.ingestion_key,
-        bc.ingestion_key_env,
-        ["OTEL_SIGNOZ_INGESTION_KEY"],
-    )
-    headers: Dict[str, str] = {}
-    if key:
-        headers["signoz-ingestion-key"] = key
-    headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="signoz",
-        endpoint=ep,
-        display_name=_display(bc, "signoz"),
-        headers=headers or None,
-    )
-
-
-def _resolve_jaeger(bc: BackendConfig) -> _ResolvedBackend:
-    ep = (bc.endpoint or os.getenv("OTEL_JAEGER_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("jaeger requires endpoint")
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="jaeger",
-        endpoint=ep,
-        display_name=_display(bc, "jaeger"),
-        headers=extra or None,
-    )
-
-
-def _resolve_zipkin(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve a Zipkin backend (traces only, OTLP/HTTP through the zipkin-otel
-    contrib module).
-
-    The stock ``openzipkin/zipkin`` image has no OTLP endpoint; the
-    ``ghcr.io/openzipkin-contrib/zipkin-otel`` image serves ``POST /v1/traces``
-    on the query port (9411) next to the UI and the v2 API. ``endpoint`` is
-    required (no default host); a bare origin gets the ``/v1/traces`` suffix
-    and a ``/v1/metrics`` or ``/v1/logs`` URL is rewritten to it.
-
-    Auth: none upstream; anything in ``headers`` is passed through for a proxy.
-
-    Signals: traces only. The module answers ``/v1/metrics`` with 404 and keeps
-    a ``/v1/logs`` record only as an annotation on a span it can name, which
-    the plugin's log records never do, so both default off (``_TRACES_ONLY``).
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_ZIPKIN_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("zipkin requires endpoint (or set OTEL_ZIPKIN_ENDPOINT)")
-    ep = traces_url(ep)
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="zipkin",
-        endpoint=ep,
-        display_name=_display(bc, "zipkin"),
-        headers=extra or None,
-    )
+    return _Wire(ep, headers)
 
 
 # GreptimeDB's OTLP prefix and the pipeline its trace ingest requires.
@@ -374,7 +397,7 @@ _GREPTIME_OTLP_PREFIX = "/v1/otlp"
 _GREPTIME_TRACE_PIPELINE = "greptime_trace_v1"
 
 
-def _resolve_greptime(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_greptime(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve a GreptimeDB backend (standalone or cluster, OTLP/HTTP, all three
     signals).
 
@@ -399,83 +422,25 @@ def _resolve_greptime(bc: BackendConfig) -> _ResolvedBackend:
     cumulative and delta points as sent (no preset) and rejects exponential
     histograms, which the plugin does not emit by default.
     """
-    ep = (bc.endpoint or os.getenv("OTEL_GREPTIME_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("greptime requires endpoint (or set OTEL_GREPTIME_ENDPOINT)")
-    ep = ep.rstrip("/")
+    ep = _required_endpoint(bc, spec).rstrip("/")
     ep = re.sub(r"/v1/(traces|metrics|logs)$", "", ep).rstrip("/")
     if ep.endswith(_GREPTIME_OTLP_PREFIX):
         ep = ep[: -len(_GREPTIME_OTLP_PREFIX)].rstrip("/")
     ep = f"{ep}{_GREPTIME_OTLP_PREFIX}/v1/traces"
 
     common: Dict[str, str] = {}
-    db = _resolve_secret(bc.db, bc.db_env, ["OTEL_GREPTIME_DB"])
+    db = _secret(bc, spec, "db")
     if db:
         common["X-Greptime-DB-Name"] = db
-    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_GREPTIME_USER"])
-    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_GREPTIME_PASSWORD"])
-    if user and pw:
-        common["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    basic = _basic_auth(bc, spec)
+    if basic:
+        common["Authorization"] = basic
     common.update(bc.headers or {})
     trace_headers = {"X-Greptime-Pipeline-Name": _GREPTIME_TRACE_PIPELINE, **common}
     # A user-supplied pipeline header (another trace model, e.g. v2) wins.
     if bc.headers and "X-Greptime-Pipeline-Name" in bc.headers:
         trace_headers["X-Greptime-Pipeline-Name"] = bc.headers["X-Greptime-Pipeline-Name"]
-
-    return _ResolvedBackend(
-        type="greptime",
-        endpoint=ep,
-        display_name=_display(bc, "greptime"),
-        headers=trace_headers,
-        metrics_headers=dict(common),
-        logs_headers=dict(common),
-    )
-
-
-def _resolve_clickstack(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve a ClickStack / HyperDX backend (all-in-one or split stack,
-    OTLP/HTTP, all three signals).
-
-    ClickStack's bundled OpenTelemetry Collector listens on the standard
-    ``/v1/traces``, ``/v1/metrics`` and ``/v1/logs`` paths (port 4318 in the
-    container, 4408 in the bundled stack) and **requires the team's ingestion
-    API key** on every request, as a bare ``authorization: <key>`` header (no
-    ``Bearer``). ``endpoint`` is required (no default host); a bare base URL
-    gets the ``/v1/traces`` suffix and ``tracer.py`` / ``log_handler.py``
-    derive the other two from it.
-
-    The key comes from ``api_key`` / ``api_key_env``, else
-    ``OTEL_CLICKSTACK_API_KEY`` / ``HYPERDX_API_KEY`` (the vendor SDK's own
-    variable). Without one the Collector answers 401 for every batch, so a
-    missing key skips the entry at startup instead of filling the debug log
-    with failures; the key is minted in the UI (Team Settings → API Keys) or
-    read from the all-in-one's MongoDB (docker-compose/clickstack/README.md).
-
-    Signals: traces, metrics and logs all on; the ClickHouse exporter stores
-    every metric type as sent, so no temporality preset.
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_CLICKSTACK_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("clickstack requires endpoint (or set OTEL_CLICKSTACK_ENDPOINT)")
-    ep = traces_url(ep)
-
-    key = _resolve_secret(
-        bc.api_key, bc.api_key_env, ["OTEL_CLICKSTACK_API_KEY", "HYPERDX_API_KEY"]
-    )
-    if not key:
-        raise ValueError(
-            "clickstack requires api_key / api_key_env (the team's ingestion API key; "
-            "or set OTEL_CLICKSTACK_API_KEY)"
-        )
-    headers: Dict[str, str] = {"authorization": key}
-    headers.update(bc.headers or {})
-
-    return _ResolvedBackend(
-        type="clickstack",
-        endpoint=ep,
-        display_name=_display(bc, "clickstack"),
-        headers=headers,
-    )
+    return _Wire(ep, trace_headers, metrics_headers=dict(common), logs_headers=dict(common))
 
 
 _VICTORIA_TRACES_PATH = "/insert/opentelemetry/v1/traces"
@@ -491,7 +456,7 @@ def _victoria_url(raw: str, path: str) -> str:
     return f"{base.rstrip('/')}{path}"
 
 
-def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_victoria(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve the VictoriaMetrics family: VictoriaTraces, VictoriaMetrics and
     VictoriaLogs, three single-binary stores with one OTLP/HTTP route each.
 
@@ -502,7 +467,8 @@ def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
     Each takes an origin or the full URL, also via ``OTEL_VICTORIA_ENDPOINT``,
     ``OTEL_VICTORIA_METRICS_ENDPOINT`` and ``OTEL_VICTORIA_LOGS_ENDPOINT``. The
     three stores are separate processes, so a signal whose store is not named
-    is simply off: there is no host to derive it on.
+    is simply off: there is no host to derive it on (``resolve()`` reads that
+    from the per-signal endpoints, ``signals_from_resolver``).
 
     Headers: none upstream. Basic auth from ``user`` + ``password`` (fallbacks
     ``OTEL_VICTORIA_USER`` / ``OTEL_VICTORIA_PASSWORD``) when the stores run
@@ -515,14 +481,14 @@ def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
     VictoriaMetrics stores cumulative points natively (no preset); exponential
     histograms become its ``vmrange`` histograms.
     """
-    ep = (bc.endpoint or os.getenv("OTEL_VICTORIA_ENDPOINT", "")).strip()
+    ep = _endpoint(bc, spec)
     if not ep:
         raise ValueError(
             "victoria requires endpoint (VictoriaTraces; or set OTEL_VICTORIA_ENDPOINT)"
         )
-    traces_url = _victoria_url(ep, _VICTORIA_TRACES_PATH)
-    m_ep = (bc.metrics_endpoint or os.getenv("OTEL_VICTORIA_METRICS_ENDPOINT", "")).strip()
-    l_ep = (bc.logs_endpoint or os.getenv("OTEL_VICTORIA_LOGS_ENDPOINT", "")).strip()
+    traces = _victoria_url(ep, _VICTORIA_TRACES_PATH)
+    m_ep = (bc.metrics_endpoint or os.getenv(spec.metrics_endpoint_env or "", "")).strip()
+    l_ep = (bc.logs_endpoint or os.getenv(spec.logs_endpoint_env or "", "")).strip()
     metrics_url = _victoria_url(m_ep, _VICTORIA_METRICS_PATH) if m_ep else None
     logs_url = _victoria_url(l_ep, _VICTORIA_LOGS_PATH) if l_ep else None
 
@@ -532,106 +498,25 @@ def _resolve_victoria(bc: BackendConfig) -> _ResolvedBackend:
         raise ValueError("victoria logs need logs_endpoint (VictoriaLogs)")
 
     common: Dict[str, str] = {}
-    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_VICTORIA_USER"])
-    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_VICTORIA_PASSWORD"])
-    if user and pw:
-        common["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
+    basic = _basic_auth(bc, spec)
+    if basic:
+        common["Authorization"] = basic
     common.update(bc.headers or {})
     log_headers = {"VL-Stream-Fields": "service.name", **common}
-
-    return _ResolvedBackend(
-        type="victoria",
-        endpoint=traces_url,
-        display_name=_display(bc, "victoria"),
-        headers=dict(common),
+    return _Wire(
+        traces,
+        dict(common),
         metrics_headers=dict(common),
         logs_headers=log_headers,
         metrics_endpoint=metrics_url,
         logs_endpoint=logs_url,
-        supports_traces=_traces_for(bc.traces),
-        supports_metrics=_metrics_for("victoria", bc.metrics) and metrics_url is not None,
-        supports_logs=_logs_for("victoria", bc.logs) and logs_url is not None,
     )
 
 
-def _resolve_aspire(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve a standalone .NET Aspire Dashboard (OTLP/HTTP, all three signals).
-
-    The dashboard takes OTLP on the standard ``/v1/traces``, ``/v1/metrics``
-    and ``/v1/logs`` paths of its OTLP/HTTP port (18890 upstream, 4418 in the
-    bundled stack); the UI and the read API live on another port (18888).
-    ``endpoint`` is required (no default host); a bare base URL gets the
-    ``/v1/traces`` suffix and the other two are derived from it.
-
-    Auth: none in anonymous mode (the bundled stack). With
-    ``DASHBOARD__OTLP__AUTHMODE=ApiKey`` the dashboard wants the key in an
-    ``x-otlp-api-key`` header: ``api_key`` / ``api_key_env`` (fallback
-    ``OTEL_ASPIRE_API_KEY``) fills it; omitted entirely when none resolves.
-
-    Signals: traces, metrics and logs all on. The dashboard stores Gauge, Sum
-    and Histogram points and **rejects exponential histograms** ("is not
-    supported"), so the plugin's default explicit-bucket histograms are what
-    it wants; no temporality preset.
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_ASPIRE_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("aspire requires endpoint (or set OTEL_ASPIRE_ENDPOINT)")
-    ep = traces_url(ep)
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ASPIRE_API_KEY"])
-    headers: Dict[str, str] = {}
-    if key:
-        headers["x-otlp-api-key"] = key
-    headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="aspire",
-        endpoint=ep,
-        display_name=_display(bc, "aspire"),
-        headers=headers,
-    )
-
-
-def _resolve_gigapipe(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve a Gigapipe (formerly qryn) backend: OTLP/HTTP, all three signals,
-    one port.
-
-    Gigapipe takes ``/v1/traces``, ``/v1/metrics`` and ``/v1/logs`` on the
-    same port that serves its Tempo, Prometheus and Loki query APIs (3100
-    upstream, 3110 in the bundled stack). ``endpoint`` is required (no
-    default host); a bare base URL gets the ``/v1/traces`` suffix and the
-    other two are derived from it. Traces and logs are protobuf only, which is
-    what the plugin sends.
-
-    Auth: none unless the server runs with ``GIGAPIPE_LOGIN`` /
-    ``GIGAPIPE_PASSWORD``; then Basic from ``user`` + ``password`` (fallbacks
-    ``OTEL_GIGAPIPE_USER`` / ``OTEL_GIGAPIPE_PASSWORD``), omitted otherwise.
-
-    Signals: all on. Gigapipe stores cumulative points and **rejects delta
-    points** one by one (reported in ``partial_success``), so the SDK's
-    cumulative default is the right one; no preset.
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_GIGAPIPE_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("gigapipe requires endpoint (or set OTEL_GIGAPIPE_ENDPOINT)")
-    ep = traces_url(ep)
-    headers: Dict[str, str] = {}
-    user = _resolve_secret(bc.user, bc.user_env, ["OTEL_GIGAPIPE_USER"])
-    pw = _resolve_secret(bc.password, bc.password_env, ["OTEL_GIGAPIPE_PASSWORD"])
-    if user and pw:
-        headers["Authorization"] = "Basic " + base64.b64encode(f"{user}:{pw}".encode()).decode()
-    headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="gigapipe",
-        endpoint=ep,
-        display_name=_display(bc, "gigapipe"),
-        headers=headers or None,
-    )
-
-
-_AGENTA_CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"}
 _AGENTA_OTLP_PATH = "/api/otlp/v1/traces"
 
 
-def _resolve_agenta(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_agenta(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve an Agenta backend (self-hosted or Agenta Cloud, traces only).
 
     Agenta ingests OTLP traces at ``/api/otlp/v1/traces`` (protobuf only) and
@@ -645,161 +530,64 @@ def _resolve_agenta(bc: BackendConfig) -> _ResolvedBackend:
     SDK's variable). The key is scoped to one project and routes the spans
     there; a missing key skips the entry at startup instead of a 401 per batch.
 
-    Signals: traces only (``_TRACES_ONLY``).
+    Signals: traces only.
     """
-    region = (bc.region or "us").strip().lower()
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_AGENTA_ENDPOINT", "")
-        or os.getenv("AGENTA_HOST", "")
-        or _AGENTA_CLOUD.get(region, _AGENTA_CLOUD["us"])
-    ).strip()
-    ep = re.sub(r"(/api)?(/otlp)?(/v1/traces)?/?$", "", ep.rstrip("/"))
+    ep = re.sub(r"(/api)?(/otlp)?(/v1/traces)?/?$", "", _endpoint(bc, spec).rstrip("/"))
     ep = f"{ep}{_AGENTA_OTLP_PATH}"
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_AGENTA_API_KEY", "AGENTA_API_KEY"])
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError(
             "agenta requires api_key / api_key_env (a project API key; or set OTEL_AGENTA_API_KEY)"
         )
-    headers: Dict[str, str] = {"Authorization": f"ApiKey {key}"}
+    headers: Dict[str, str] = {"Authorization": f"ApiKey {key}"} if key else {}
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="agenta",
-        endpoint=ep,
-        display_name=_display(bc, "agenta"),
-        headers=headers,
+    return _Wire(ep, headers)
+
+
+def openobserve_traces_url(endpoint: str, org: str) -> str:
+    """The OpenObserve traces URL for ``endpoint``: a bare origin (empty or
+    ``/`` path) becomes ``<origin>/api/<org>/v1/traces``, since the exporter
+    posts to exactly the URL it is given and the origin answers 405 (#582);
+    any URL with a path is kept as given."""
+    ep = endpoint.strip()
+    parts = urllib.parse.urlsplit(ep)
+    if parts.path.strip("/"):
+        return ep
+    return urllib.parse.urlunsplit(
+        (parts.scheme, parts.netloc, f"/api/{org}/v1/traces", parts.query, "")
     )
 
 
-def _resolve_tempo(bc: BackendConfig) -> _ResolvedBackend:
-    ep = (bc.endpoint or os.getenv("OTEL_TEMPO_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("tempo requires endpoint")
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="tempo",
-        endpoint=ep,
-        display_name=_display(bc, "tempo"),
-        headers=extra or None,
-    )
-
-
-def _resolve_otlp(bc: BackendConfig) -> _ResolvedBackend:
-    # No conventional env var for the generic OTLP type — callers provide
-    # the endpoint via config.yaml. env-var fallback is intentionally absent.
-    ep = (bc.endpoint or "").strip()
-    if not ep:
-        raise ValueError("otlp requires endpoint")
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="otlp",
-        endpoint=ep,
-        display_name=bc.name or "OTLP",
-        headers=extra or None,
-    )
-
-
-def _resolve_lgtm(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve the Grafana LGTM stack (Grafana + Loki + Tempo + Mimir + collector).
-
-    Functionally identical to :func:`_resolve_otlp` — the LGTM container
-    exposes a standard OTLP HTTP receiver on the collector at :4318. We
-    keep this as a distinct type purely so users running the shipped
-    ``docker-compose/lgtm/docker-compose.yaml`` can declare ``type: lgtm`` in config.yaml
-    and self-document the intent, instead of ``type: otlp name: lgtm``.
-    The display name defaults to ``LGTM`` so startup logs say what they
-    actually are.
-    """
-    ep = (bc.endpoint or "").strip()
-    if not ep:
-        raise ValueError("lgtm requires endpoint")
-    extra = dict(bc.headers or {})
-    return _ResolvedBackend(
-        type="lgtm",
-        endpoint=ep,
-        display_name=_display(bc, "lgtm"),
-        headers=extra or None,
-    )
-
-
-def _resolve_uptrace(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve Uptrace (all-in-one traces/metrics/logs backend).
-
-    Auth model: per-project DSN sent in the ``uptrace-dsn`` request header,
-    e.g. ``http://project1_secret@localhost:14318?grpc=14317``. The DSN
-    carries the ingestion token; the endpoint URL is where OTLP payloads
-    land. We don't try to parse the DSN — Uptrace does that server-side.
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_UPTRACE_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("uptrace requires endpoint")
-    dsn = _resolve_secret(
-        bc.dsn,
-        bc.dsn_env,
-        ["OTEL_UPTRACE_DSN", "UPTRACE_DSN"],
-    )
-    if not dsn:
-        raise ValueError("uptrace requires dsn (e.g. http://<project_token>@host:14318?grpc=14317)")
-    headers: Dict[str, str] = {"uptrace-dsn": dsn}
-    headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="uptrace",
-        endpoint=ep,
-        display_name=_display(bc, "uptrace"),
-        headers=headers,
-    )
-
-
-def _resolve_openobserve(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_openobserve(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve OpenObserve (all-in-one traces/metrics/logs backend).
 
     Auth model: HTTP Basic using the admin email + password (or any user
     created in the UI), plus an optional ``stream-name`` header that
     routes ingested data into a named stream (defaults to ``default``).
     The endpoint URL embeds the org in its path, e.g.
-    ``http://localhost:5080/api/default/v1/traces``.
+    ``http://localhost:5080/api/default/v1/traces``; a bare origin is
+    completed with ``org`` (``OTEL_OPENOBSERVE_ORG``, default ``default``).
+    An entry with a ``headers_helper`` needs no user/password: the helper
+    mints ``Authorization`` (#583).
     """
-    ep = (bc.endpoint or os.getenv("OTEL_OPENOBSERVE_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("openobserve requires endpoint")
-    user = _resolve_secret(
-        bc.user,
-        bc.user_env,
-        ["OTEL_OPENOBSERVE_USER", "OPENOBSERVE_USER"],
-    )
-    pw = _resolve_secret(
-        bc.password,
-        bc.password_env,
-        ["OTEL_OPENOBSERVE_PASSWORD", "OPENOBSERVE_PASSWORD"],
-    )
-    if not (user and pw):
+    org = (bc.org or os.getenv("OTEL_OPENOBSERVE_ORG", "") or "default").strip()
+    ep = openobserve_traces_url(_required_endpoint(bc, spec), org)
+    basic = _basic_auth(bc, spec)
+    if not basic and not _has_helper(bc):
         raise ValueError("openobserve requires user and password")
     stream = (bc.stream_name or os.getenv("OTEL_OPENOBSERVE_STREAM", "") or "default").strip()
-    auth = base64.b64encode(f"{user}:{pw}".encode()).decode()
-    headers: Dict[str, str] = {
-        "Authorization": f"Basic {auth}",
-        "stream-name": stream,
-    }
+    headers: Dict[str, str] = {"stream-name": stream}
+    if basic:
+        headers["Authorization"] = basic
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="openobserve",
-        endpoint=ep,
-        display_name=_display(bc, "openobserve"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
 
 
-def _resolve_parseable(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_parseable(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve Parseable direct OTLP/HTTP ingest for all three signals."""
-    ep = (bc.endpoint or os.getenv("OTEL_PARSEABLE_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("parseable requires endpoint")
-    key = _resolve_secret(
-        bc.api_key,
-        bc.api_key_env,
-        ["OTEL_PARSEABLE_API_KEY", "PARSEABLE_API_KEY"],
-    )
-    if not key:
+    ep = _required_endpoint(bc, spec)
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError("parseable requires api_key")
 
     traces_dataset = (
@@ -812,24 +600,16 @@ def _resolve_parseable(bc: BackendConfig) -> _ResolvedBackend:
         bc.logs_dataset or os.getenv("PARSEABLE_LOGS_DATASET", "") or "hermes-logs"
     ).strip()
 
-    common = {"X-API-Key": key}
+    common = {"X-API-Key": key} if key else {}
     trace_headers = {**common, "X-P-Stream": traces_dataset, "X-P-Log-Source": "otel-traces"}
     metric_headers = {**common, "X-P-Stream": metrics_dataset, "X-P-Log-Source": "otel-metrics"}
     log_headers = {**common, "X-P-Stream": logs_dataset, "X-P-Log-Source": "otel-logs"}
     for signal_headers in (trace_headers, metric_headers, log_headers):
         signal_headers.update(bc.headers or {})
-
-    return _ResolvedBackend(
-        type="parseable",
-        endpoint=ep,
-        display_name=_display(bc, "parseable"),
-        headers=trace_headers,
-        metrics_headers=metric_headers,
-        logs_headers=log_headers,
-    )
+    return _Wire(ep, trace_headers, metrics_headers=metric_headers, logs_headers=log_headers)
 
 
-def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_honeycomb(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve Honeycomb (SaaS, OTLP/HTTP — traces + metrics + logs).
 
     Auth model: the API key travels in the ``x-honeycomb-team`` header. An
@@ -837,9 +617,9 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     (``us``|``eu``) selects the base endpoint when one isn't given explicitly.
 
     Endpoint: defaults to the US ingest host (or EU for ``region: eu``) with the
-    ``/v1/traces`` suffix the OTLP pipeline expects. ``tracer.py`` and
-    ``log_handler.py`` rewrite that suffix to ``/v1/metrics`` and ``/v1/logs``,
-    which matches Honeycomb's per-signal path scheme exactly.
+    ``/v1/traces`` suffix the OTLP pipeline expects (``spec.region_endpoints``).
+    ``tracer.py`` and ``log_handler.py`` rewrite that suffix to ``/v1/metrics``
+    and ``/v1/logs``, which matches Honeycomb's per-signal path scheme exactly.
 
     Dataset routing: ``x-honeycomb-dataset`` is honored only by Honeycomb
     Classic keys (where it's required for every signal). Modern "Environments"
@@ -849,44 +629,18 @@ def _resolve_honeycomb(bc: BackendConfig) -> _ResolvedBackend:
     one merged header set, which is correct for Classic and a harmless no-op for
     modern keys; leave ``dataset`` unset on a modern key.
     """
-    key = _resolve_secret(
-        bc.api_key,
-        bc.api_key_env,
-        ["OTEL_HONEYCOMB_API_KEY", "HONEYCOMB_API_KEY"],
-    )
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError(
             "honeycomb requires api_key (or set OTEL_HONEYCOMB_API_KEY / HONEYCOMB_API_KEY)"
         )
-
-    ep = (bc.endpoint or os.getenv("OTEL_HONEYCOMB_ENDPOINT", "")).strip()
-    if not ep:
-        region = (bc.region or "us").strip().lower()
-        base = _HONEYCOMB_ENDPOINTS.get(region)
-        if base is None:
-            raise ValueError(
-                f"honeycomb region must be one of {sorted(_HONEYCOMB_ENDPOINTS)}, got {bc.region!r}"
-            )
-        ep = f"{base}/v1/traces"
-
-    headers: Dict[str, str] = {"x-honeycomb-team": key}
+    ep = _endpoint(bc, spec)
+    headers: Dict[str, str] = {"x-honeycomb-team": key} if key else {}
     dataset = (bc.dataset or "").strip()
     if dataset:
         headers["x-honeycomb-dataset"] = dataset
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="honeycomb",
-        endpoint=ep,
-        display_name=_display(bc, "honeycomb"),
-        headers=headers,
-    )
-
-
-# LangSmith's OTLP ingest base per region; the plugin appends ``/otel/v1/traces``.
-_LANGSMITH_ENDPOINTS = {
-    "us": "https://api.smith.langchain.com",
-    "eu": "https://eu.api.smith.langchain.com",
-}
+    return _Wire(ep, headers)
 
 
 def _langsmith_traces_url(ep: str) -> str:
@@ -900,7 +654,7 @@ def _langsmith_traces_url(ep: str) -> str:
     return f"{base}/v1/traces"
 
 
-def _resolve_langsmith(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_langsmith(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve LangSmith (SaaS, OTLP/HTTP — traces only).
 
     LangSmith accepts OTLP traces at ``<api base>/otel/v1/traces`` with the
@@ -910,42 +664,21 @@ def _resolve_langsmith(bc: BackendConfig) -> _ResolvedBackend:
     path is gone (#415) and ``LANGSMITH_TRACING`` selects nothing. The vendor
     variables (``LANGSMITH_API_KEY``, ``LANGSMITH_PROJECT``,
     ``LANGSMITH_ENDPOINT``) still fill in values once the entry or the
-    ``OTEL_LANGSMITH_*`` opt-in names the backend (#255).
+    ``OTEL_LANGSMITH_*`` opt-in names the backend (#255). ``region`` (``us``
+    default, ``eu``) picks the host when no endpoint is given.
     """
-    key = _resolve_secret(
-        bc.api_key, bc.api_key_env, ["OTEL_LANGSMITH_API_KEY", "LANGSMITH_API_KEY"]
-    )
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError(
             "langsmith requires api_key (or set OTEL_LANGSMITH_API_KEY / LANGSMITH_API_KEY)"
         )
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_LANGSMITH_ENDPOINT", "")
-        or os.getenv("LANGSMITH_ENDPOINT", "")
-    ).strip()
-    if not ep:
-        region = (bc.region or "us").strip().lower()
-        base = _LANGSMITH_ENDPOINTS.get(region)
-        if base is None:
-            raise ValueError(
-                f"langsmith region must be one of {sorted(_LANGSMITH_ENDPOINTS)}, got {bc.region!r}"
-            )
-        ep = base
-    ep = _langsmith_traces_url(ep)
-    headers: Dict[str, str] = {"x-api-key": key}
-    project = _resolve_secret(
-        bc.project, bc.project_env, ["OTEL_LANGSMITH_PROJECT", "LANGSMITH_PROJECT"]
-    )
+    ep = _langsmith_traces_url(_endpoint(bc, spec))
+    headers: Dict[str, str] = {"x-api-key": key} if key else {}
+    project = _secret(bc, spec, "project")
     if project:
         headers["Langsmith-Project"] = project
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="langsmith",
-        endpoint=ep,
-        display_name=_display(bc, "langsmith"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
 
 
 # Valid data-stream name component (Elastic's own rule for
@@ -960,7 +693,7 @@ def _resolve_langsmith(bc: BackendConfig) -> _ResolvedBackend:
 _ELASTIC_DS_COMPONENT = re.compile(r"[a-z0-9_.]{1,100}")
 
 
-def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_elastic(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve an Elastic OTLP backend (Elastic Cloud mOTLP or self-hosted EDOT).
 
     Auth model: Elastic's managed OTLP endpoint (mOTLP) authenticates with an
@@ -974,7 +707,8 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     endpoint for all signals) or your EDOT Collector's OTLP/HTTP address. A
     bare base URL is given the ``/v1/traces`` suffix the pipeline expects;
     ``tracer.py`` / ``log_handler.py`` derive the ``/v1/metrics`` and
-    ``/v1/logs`` variants from it.
+    ``/v1/logs`` variants from it. Endpoint and header are the plain rules
+    (``spec.normalize_endpoint`` / ``spec.auth``).
 
     Data streams: optional ``dataset`` / ``namespace`` fields are copied to
     the ``data_stream.dataset`` / ``data_stream.namespace`` Resource
@@ -984,20 +718,7 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
     so every configured backend receives them; two elastic entries with
     different values conflict at init.
     """
-    ep = (bc.endpoint or os.getenv("OTEL_ELASTIC_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("elastic requires endpoint (or set OTEL_ELASTIC_ENDPOINT)")
-    # Normalise to the traces URL the pipeline keys off: a bare base gets the
-    # suffix, and a per-signal URL for another signal is rewritten so that the
-    # derived /v1/metrics and /v1/logs variants stay correct.
-    ep = traces_url(ep)
-
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_ELASTIC_API_KEY", "ELASTIC_API_KEY"])
-    headers: Dict[str, str] = {}
-    if key:
-        headers["Authorization"] = f"ApiKey {key}"
-    headers.update(bc.headers or {})
-
+    wire = _resolve_plain(bc, spec)
     resource_attrs: Dict[str, str] = {}
     for field, attr in (("dataset", "data_stream.dataset"), ("namespace", "data_stream.namespace")):
         value = getattr(bc, field)
@@ -1009,54 +730,10 @@ def _resolve_elastic(bc: BackendConfig) -> _ResolvedBackend:
                 "(lowercase letters, digits, '_' and '.' only, no '-'; max 100 chars)"
             )
         resource_attrs[attr] = value
-
-    return _ResolvedBackend(
-        type="elastic",
-        endpoint=ep,
-        display_name=_display(bc, "elastic"),
-        headers=headers,
-        resource_attributes=resource_attrs or None,
-    )
+    return dataclasses.replace(wire, resource_attributes=resource_attrs or None)
 
 
-def _resolve_openlit(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve an OpenLIT backend (self-hosted, OTLP/HTTP, all three signals).
-
-    OpenLIT runs an OTLP receiver next to its UI: ``/v1/traces``, ``/v1/metrics``
-    and ``/v1/logs`` on port 4318 of the app container (the UI port does not
-    proxy them on the 2.1.0 image). ``endpoint`` is required (no default host); a bare base
-    URL gets the ``/v1/traces`` suffix and ``tracer.py`` / ``log_handler.py``
-    derive the other two from it.
-
-    Auth: optional. An OpenLIT API key scopes ingest to an organisation,
-    project and environment and travels as ``Authorization: Bearer <key>``;
-    without one the data lands in the deployment's ``INIT_DB_*`` defaults,
-    which is what a local compose stack wants. When no key resolves the header
-    is omitted entirely.
-
-    Signals: traces, metrics and logs all on by default; OpenLIT stores every
-    OTel metric type with cumulative temporality, so no preset is needed.
-    """
-    ep = (bc.endpoint or os.getenv("OTEL_OPENLIT_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("openlit requires endpoint (or set OTEL_OPENLIT_ENDPOINT)")
-    ep = traces_url(ep)
-
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_OPENLIT_API_KEY", "OPENLIT_API_KEY"])
-    headers: Dict[str, str] = {}
-    if key:
-        headers["Authorization"] = f"Bearer {key}"
-    headers.update(bc.headers or {})
-
-    return _ResolvedBackend(
-        type="openlit",
-        endpoint=ep,
-        display_name=_display(bc, "openlit"),
-        headers=headers,
-    )
-
-
-def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_mlflow(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve an MLflow tracking server (OTLP/HTTP traces only, MLflow >= 3.6).
 
     MLflow ingests spans at ``/v1/traces`` and routes them by the mandatory
@@ -1073,36 +750,19 @@ def _resolve_mlflow(bc: BackendConfig) -> _ResolvedBackend:
     router (404), so both default off; MLflow derives token usage and cost
     from the span attributes itself.
     """
-    ep = (bc.endpoint or os.getenv("OTEL_MLFLOW_ENDPOINT", "")).strip()
-    if not ep:
-        raise ValueError("mlflow requires endpoint (or set OTEL_MLFLOW_ENDPOINT)")
-    ep = traces_url(ep)
-
-    experiment = _resolve_secret(
-        bc.experiment_id,
-        bc.experiment_id_env,
-        ["OTEL_MLFLOW_EXPERIMENT_ID", "MLFLOW_EXPERIMENT_ID"],
-    )
+    ep = traces_url(_required_endpoint(bc, spec))
+    experiment = _secret(bc, spec, "experiment_id")
     headers: Dict[str, str] = {"x-mlflow-experiment-id": str(experiment or "0").strip()}
     workspace = (bc.workspace or "").strip()
     if workspace:
         headers["X-MLFLOW-WORKSPACE"] = workspace
-    token = _resolve_secret(
-        bc.api_key, bc.api_key_env, ["OTEL_MLFLOW_API_KEY", "MLFLOW_TRACKING_TOKEN"]
-    )
+    token = _secret(bc, spec, "api_key")
     if token:
         headers["Authorization"] = f"Bearer {token}"
     headers.update(bc.headers or {})
-
-    return _ResolvedBackend(
-        type="mlflow",
-        endpoint=ep,
-        display_name=_display(bc, "mlflow"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
 
 
-_OPIK_CLOUD = "https://www.comet.com/opik"
 _OPIK_OTEL_PATH = "/api/v1/private/otel"
 
 
@@ -1123,7 +783,7 @@ def _opik_traces_url(endpoint: str) -> str:
     return ep + _OPIK_OTEL_PATH + "/v1/traces"
 
 
-def _resolve_opik(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_opik(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve Comet Opik (cloud or self-hosted, OTLP/HTTP traces only).
 
     Endpoint: the Opik base URL (self-host ``http://localhost:5173``, cloud
@@ -1142,80 +802,21 @@ def _resolve_opik(bc: BackendConfig) -> _ResolvedBackend:
     Signals: traces only. The backend resource declares ``/traces`` alone;
     ``/metrics`` and ``/logs`` under the same prefix answer 404.
     """
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_OPIK_ENDPOINT", "")
-        or os.getenv("OPIK_URL_OVERRIDE", "")
-        or _OPIK_CLOUD
-    ).strip()
-    ep = _opik_traces_url(ep)
-
+    ep = _opik_traces_url(_endpoint(bc, spec))
     headers: Dict[str, str] = {}
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_OPIK_API_KEY", "OPIK_API_KEY"])
+    key = _secret(bc, spec, "api_key")
     if key:
         headers["Authorization"] = key
-    workspace = (bc.workspace or os.getenv("OPIK_WORKSPACE", "")).strip()
+    workspace = _secret(bc, spec, "workspace")
     if workspace:
         headers["Comet-Workspace"] = workspace
-    project = _resolve_secret(bc.project, bc.project_env, ["OPIK_PROJECT_NAME"])
+    project = _secret(bc, spec, "project")
     if project:
         headers["projectName"] = project
     headers.update(bc.headers or {})
-
-    return _ResolvedBackend(
-        type="opik",
-        endpoint=ep,
-        display_name=_display(bc, "opik"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
 
 
-_LAMINAR_CLOUD = "https://api.lmnr.ai"
-
-
-def _resolve_laminar(bc: BackendConfig) -> _ResolvedBackend:
-    """Resolve Laminar (cloud or self-hosted app-server, OTLP/HTTP).
-
-    Endpoint: the app-server base, ``http://localhost:8100`` for the bundled
-    stack (upstream publishes 8000; the frontend on 5667 does not ingest), or
-    the cloud ``https://api.lmnr.ai``, which is the default. Also via
-    ``OTEL_LAMINAR_ENDPOINT`` or the SDK's ``LMNR_BASE_URL``. A bare base gets
-    ``/v1/traces``; ``/v1/logs`` is derived from it.
-
-    Auth: a project API key is required on both editions (the key is what
-    names the project) and travels as ``Authorization: Bearer <key>``, from
-    ``api_key`` / ``api_key_env`` / ``OTEL_LAMINAR_API_KEY`` /
-    ``LMNR_PROJECT_API_KEY``.
-
-    Signals: traces and logs on (verified: log records are stored); metrics
-    OFF by default because ``/v1/metrics`` answers 200 and drops the payload.
-    """
-    key = _resolve_secret(
-        bc.api_key, bc.api_key_env, ["OTEL_LAMINAR_API_KEY", "LMNR_PROJECT_API_KEY"]
-    )
-    if not key:
-        raise ValueError(
-            "laminar requires api_key (or set OTEL_LAMINAR_API_KEY / LMNR_PROJECT_API_KEY)"
-        )
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_LAMINAR_ENDPOINT", "")
-        or os.getenv("LMNR_BASE_URL", "")
-        or _LAMINAR_CLOUD
-    ).strip()
-    ep = traces_url(ep)
-
-    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
-    headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="laminar",
-        endpoint=ep,
-        display_name=_display(bc, "laminar"),
-        headers=headers,
-    )
-
-
-_LANGWATCH_CLOUD = "https://app.langwatch.ai"
 _LANGWATCH_OTEL_PATH = "/api/otel"
 
 
@@ -1233,7 +834,7 @@ def _langwatch_traces_url(endpoint: str) -> str:
     return ep + "/v1/traces"
 
 
-def _resolve_langwatch(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_langwatch(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve LangWatch (cloud or self-hosted, OTLP/HTTP, all three signals).
 
     Endpoint: the LangWatch base (self-host ``http://localhost:5560``, cloud
@@ -1250,38 +851,21 @@ def _resolve_langwatch(bc: BackendConfig) -> _ResolvedBackend:
     Signals: traces, metrics and logs all on (``/api/otel/v1/{traces,metrics,
     logs}`` exist and store; verified against the compose stack).
     """
-    key = _resolve_secret(
-        bc.api_key, bc.api_key_env, ["OTEL_LANGWATCH_API_KEY", "LANGWATCH_API_KEY"]
-    )
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError(
             "langwatch requires api_key (or set OTEL_LANGWATCH_API_KEY / LANGWATCH_API_KEY)"
         )
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_LANGWATCH_ENDPOINT", "")
-        or os.getenv("LANGWATCH_ENDPOINT", "")
-        or _LANGWATCH_CLOUD
-    ).strip()
-    ep = _langwatch_traces_url(ep)
-
-    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
-    project = _resolve_secret(bc.project, bc.project_env, ["LANGWATCH_PROJECT_ID"])
+    ep = _langwatch_traces_url(_endpoint(bc, spec))
+    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"} if key else {}
+    project = _secret(bc, spec, "project")
     if project:
         headers["X-Project-Id"] = project
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="langwatch",
-        endpoint=ep,
-        display_name=_display(bc, "langwatch"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
 
 
-_LATITUDE_CLOUD = "https://ingest.latitude.so"
-
-
-def _resolve_latitude(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_latitude(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve Latitude (cloud ingest or self-hosted ingest service, traces only).
 
     Endpoint: the ingest service base, ``http://localhost:3002`` for the
@@ -1299,36 +883,26 @@ def _resolve_latitude(bc: BackendConfig) -> _ResolvedBackend:
     Signals: traces only (the ingest service has /v1/traces and health
     routes only).
     """
-    key = _resolve_secret(bc.api_key, bc.api_key_env, ["OTEL_LATITUDE_API_KEY", "LATITUDE_API_KEY"])
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError(
             "latitude requires api_key (or set OTEL_LATITUDE_API_KEY / LATITUDE_API_KEY)"
         )
-    project = _resolve_secret(bc.project, bc.project_env, ["LATITUDE_PROJECT"])
+    project = _secret(bc, spec, "project")
     if not project:
         raise ValueError(
             "latitude requires project (the project slug for X-Latitude-Project; "
             "or set LATITUDE_PROJECT)"
         )
-    ep = (
-        bc.endpoint
-        or os.getenv("OTEL_LATITUDE_ENDPOINT", "")
-        or os.getenv("LATITUDE_INGEST_URL", "")
-        or _LATITUDE_CLOUD
-    ).strip()
-    ep = traces_url(ep)
-
-    headers: Dict[str, str] = {
-        "Authorization": f"Bearer {key}",
-        "X-Latitude-Project": project,
-    }
+    ep = traces_url(_endpoint(bc, spec))
+    headers: Dict[str, str] = {"X-Latitude-Project": project}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     headers.update(bc.headers or {})
-    return _ResolvedBackend(
-        type="latitude",
-        endpoint=ep,
-        display_name=_display(bc, "latitude"),
-        headers=headers,
-    )
+    return _Wire(ep, headers)
+
+
+_WEAVE_DEFAULT_ENDPOINT = "https://trace.wandb.ai/otel/v1/traces"
 
 
 def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
@@ -1346,7 +920,7 @@ def _weave_endpoint_from_base(base_url: Optional[str]) -> str:
     return f"{base}/traces/otel/v1/traces"
 
 
-def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
+def _resolve_weave(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve W&B Weave's dedicated OTLP trace ingest endpoint.
 
     Weave authenticates trace ingest with the ``wandb-api-key`` header and
@@ -1354,76 +928,41 @@ def _resolve_weave(bc: BackendConfig) -> _ResolvedBackend:
     ``wandb.project``. The latter can be supplied either on this backend entry
     (``entity`` / ``project``) or globally via ``resource_attributes``.
     """
-    key = _resolve_secret(
-        bc.api_key,
-        bc.api_key_env,
-        ["OTEL_WEAVE_API_KEY", "WANDB_API_KEY"],
-    )
-    if not key:
+    key = _secret(bc, spec, "api_key")
+    if not key and not _has_helper(bc):
         raise ValueError("weave requires api_key (or set OTEL_WEAVE_API_KEY / WANDB_API_KEY)")
-
-    ep = (
-        bc.endpoint or os.getenv("OTEL_WEAVE_ENDPOINT", "") or os.getenv("WANDB_OTLP_ENDPOINT", "")
-    ).strip()
+    ep = _endpoint(bc, spec)
     if not ep:
         ep = _weave_endpoint_from_base(
             bc.base_url or os.getenv("OTEL_WEAVE_BASE_URL", "") or os.getenv("WANDB_BASE_URL", "")
         )
-
-    headers: Dict[str, str] = {"wandb-api-key": key}
+    headers: Dict[str, str] = {"wandb-api-key": key} if key else {}
     headers.update(bc.headers or {})
 
     resource_attrs: Dict[str, str] = {}
-    entity = _resolve_secret(
-        bc.entity,
-        bc.entity_env,
-        ["WANDB_ENTITY", "DEFAULT_WANDB_ENTITY"],
-    )
-    project = _resolve_secret(
-        bc.project,
-        bc.project_env,
-        ["WANDB_PROJECT", "DEFAULT_WANDB_PROJECT"],
-    )
+    entity = _secret(bc, spec, "entity")
+    project = _secret(bc, spec, "project")
     if entity:
         resource_attrs["wandb.entity"] = entity
     if project:
         resource_attrs["wandb.project"] = project
-
-    return _ResolvedBackend(
-        type="weave",
-        endpoint=ep,
-        display_name=_display(bc, "weave"),
-        headers=headers,
-        resource_attributes=resource_attrs or None,
-    )
+    return _Wire(ep, headers, resource_attributes=resource_attrs or None)
 
 
-_RESOLVERS: Dict[str, Callable[[BackendConfig], _ResolvedBackend]] = {
+#: Types with bespoke URL or header rules; every other type is ``_resolve_plain``.
+_RESOLVERS: Dict[str, Callable[[BackendConfig, BackendSpec], _Wire]] = {
     "langsmith": _resolve_langsmith,
-    "phoenix": _resolve_phoenix,
     "langfuse": _resolve_langfuse,
-    "signoz": _resolve_signoz,
-    "jaeger": _resolve_jaeger,
-    "zipkin": _resolve_zipkin,
     "greptime": _resolve_greptime,
-    "clickstack": _resolve_clickstack,
     "victoria": _resolve_victoria,
-    "aspire": _resolve_aspire,
-    "gigapipe": _resolve_gigapipe,
     "agenta": _resolve_agenta,
-    "tempo": _resolve_tempo,
-    "otlp": _resolve_otlp,
-    "lgtm": _resolve_lgtm,
-    "uptrace": _resolve_uptrace,
     "openobserve": _resolve_openobserve,
     "parseable": _resolve_parseable,
     "honeycomb": _resolve_honeycomb,
     "weave": _resolve_weave,
     "elastic": _resolve_elastic,
-    "openlit": _resolve_openlit,
     "mlflow": _resolve_mlflow,
     "opik": _resolve_opik,
-    "laminar": _resolve_laminar,
     "langwatch": _resolve_langwatch,
     "latitude": _resolve_latitude,
 }
@@ -1448,13 +987,11 @@ def display_name(backend_type: str) -> str:
 
 
 def signal_support(backend_type: str) -> Dict[str, bool]:
-    """Which OTLP signals a backend type accepts when the entry sets no override.
-
-    Mirrors :func:`_traces_for`, :func:`_metrics_for` and :func:`_logs_for`:
-    every type takes traces; the ``_TRACES_ONLY`` and ``_NO_METRICS`` types
-    refuse metrics; only the ``_LOGS_CAPABLE`` types take logs. An explicit ``traces`` / ``metrics`` /
-    ``logs`` on the entry still wins over this table, which is what the
-    Settings tab uses to tell "off because unsupported" from "off by choice".
+    """Which OTLP signals a backend type accepts when the entry sets no override:
+    every type takes traces; ``metrics`` and ``logs`` are the spec's. An explicit
+    ``traces`` / ``metrics`` / ``logs`` on the entry still wins over this table,
+    which is what the Settings tab uses to tell "off because unsupported" from
+    "off by choice".
     """
     spec = spec_for(backend_type)
     if spec is None:
@@ -1462,10 +999,22 @@ def signal_support(backend_type: str) -> Dict[str, bool]:
     return {"traces": True, "metrics": spec.metrics, "logs": spec.logs}
 
 
-def preset_temporality(backend_type: str) -> Optional[str]:
-    """The metric temporality a type's docs ask for, if any (the spec's preset)."""
-    spec = spec_for(backend_type)
-    return spec.temporality if spec is not None else None
+def _signals(
+    bc: BackendConfig, spec: Optional[BackendSpec], wire: Optional[_Wire]
+) -> Dict[str, bool]:
+    """The entry's ``traces`` / ``metrics`` / ``logs`` when set, else the type's
+    support. For a ``signals_from_resolver`` type a signal is also off when the
+    resolver named no endpoint for it (Victoria: the store is not configured)."""
+    support = signal_support(spec.type if spec is not None else bc.type or "")
+    metrics = support["metrics"] if bc.metrics is None else bc.metrics
+    logs = support["logs"] if bc.logs is None else bc.logs
+    if wire is not None and spec is not None and spec.signals_from_resolver:
+        metrics = metrics and wire.metrics_endpoint is not None
+        logs = logs and wire.logs_endpoint is not None
+    # Traces are the primary signal for every backend. ``False`` is opt-in for
+    # query-only/dashboard-only entries that should not receive span exports
+    # (for example, querying Tempo directly while exporting through a Collector).
+    return {"traces": True if bc.traces is None else bc.traces, "metrics": metrics, "logs": logs}
 
 
 def signals_for(bc: BackendConfig) -> Dict[str, bool]:
@@ -1474,22 +1023,13 @@ def signals_for(bc: BackendConfig) -> Dict[str, bool]:
     (Victoria: a signal is on only when its store is named) is asked; if that
     entry cannot resolve, the plain rule answers."""
     spec = spec_for(bc.type)
-    t = spec.type if spec is not None else (bc.type or "").strip().lower()
+    wire = None
     if spec is not None and spec.signals_from_resolver:
         try:
-            rb = _RESOLVERS[t](bc)
-            return {
-                "traces": rb.supports_traces,
-                "metrics": rb.supports_metrics,
-                "logs": rb.supports_logs,
-            }
+            wire = _RESOLVERS.get(spec.type, _resolve_plain)(bc, spec)
         except ValueError:
             pass
-    return {
-        "traces": _traces_for(bc.traces),
-        "metrics": _metrics_for(t, bc.metrics),
-        "logs": _logs_for(t, bc.logs),
-    }
+    return _signals(bc, spec, wire)
 
 
 _SDK_TEMPORALITY_ENV = "OTEL_EXPORTER_OTLP_METRICS_TEMPORALITY_PREFERENCE"
@@ -1503,9 +1043,9 @@ def _entry_temporality(bc: BackendConfig, *, warn: bool = True) -> Tuple[Optiona
     )
     if entry:
         return entry, "entry"
-    preset = preset_temporality(t)
-    if preset:
-        return preset, "type preset"
+    spec = spec_for(t)
+    if spec is not None and spec.temporality:
+        return spec.temporality, "type preset"
     return None, ""
 
 
@@ -1528,40 +1068,42 @@ def temporality_for(bc: BackendConfig, top_level: Optional[str]) -> Tuple[str, s
 def resolve(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve a declared ``BackendConfig`` into a ready-to-wire backend.
 
-    The resolver builds the endpoint and headers; the signals, temporality
-    and root-usage presets come from the type's :class:`BackendSpec` (an
-    explicit field on the entry wins). An alias (``hyperdx``) resolves as its
-    canonical type. Raises :class:`ValueError` if required fields are missing
-    or the backend type is unknown.
+    The resolver builds the endpoint and headers; the display name, signals,
+    temporality and root-usage presets come from the type's
+    :class:`BackendSpec` (an explicit field on the entry wins). An alias
+    (``hyperdx``) resolves as its canonical type. Raises :class:`ValueError`
+    if required fields are missing or the backend type is unknown.
     """
     spec = spec_for(bc.type)
     if spec is None:
         raise ValueError(f"unknown backend type {bc.type!r}")
-    t = spec.type
     if bc.protocol not in ("http/protobuf", "grpc"):
         raise ValueError(f"unsupported OTLP protocol {bc.protocol!r}; use http/protobuf or grpc")
-    if bc.protocol == "grpc" and t != "otlp":
+    if bc.protocol == "grpc" and spec.type != "otlp":
         raise ValueError("protocol: grpc requires a generic type: otlp backend")
-    resolver = _RESOLVERS[t]
-    rb = resolver(bc)
-    if not spec.signals_from_resolver:
-        signals = signals_for(bc)
-        rb = dataclasses.replace(
-            rb,
-            supports_traces=signals["traces"],
-            supports_metrics=signals["metrics"],
-            supports_logs=signals["logs"],
-        )
-    temporality, _ = _entry_temporality(bc)
-    if temporality and rb.metrics_temporality != temporality:
-        rb = dataclasses.replace(rb, metrics_temporality=temporality)
-    if bc.log_overrides:
-        rb = dataclasses.replace(rb, log_overrides=dict(bc.log_overrides))
-    root_usage = bc.root_usage if bc.root_usage is not None else spec.root_usage
-    if rb.root_usage != root_usage:
-        rb = dataclasses.replace(rb, root_usage=root_usage)
-    return dataclasses.replace(
-        rb,
+    if bc.protocol == "grpc" and (bc.headers_helper or "").strip():
+        # The 401/403 re-mint rides the HTTP exporter's requests session;
+        # a gRPC channel has none, so a helper's token would silently expire.
+        raise ValueError("headers_helper needs protocol: http/protobuf; gRPC cannot refresh it")
+    wire = _RESOLVERS.get(spec.type, _resolve_plain)(bc, spec)
+    signals = _signals(bc, spec, wire)
+    return _ResolvedBackend(
+        type=spec.type,
+        endpoint=wire.endpoint,
+        display_name=bc.name or spec.display_name,
+        headers=wire.headers,
+        metrics_headers=wire.metrics_headers,
+        logs_headers=wire.logs_headers,
+        metrics_endpoint=wire.metrics_endpoint,
+        logs_endpoint=wire.logs_endpoint,
+        supports_traces=signals["traces"],
+        supports_metrics=signals["metrics"],
+        supports_logs=signals["logs"],
+        resource_attributes=wire.resource_attributes,
+        log_overrides=dict(bc.log_overrides) if bc.log_overrides else None,
+        metrics_temporality=_entry_temporality(bc)[0],
+        root_usage=bc.root_usage if bc.root_usage is not None else spec.root_usage,
+        headers_helper=headers_helper_for(bc),
         protocol=bc.protocol,
         insecure=bc.insecure,
         certificate_file=bc.certificate_file,
@@ -1570,29 +1112,22 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
     )
 
 
-# Views over the manifest, kept under their old names for the tests and the
-# settings report: the backends that sum usage over every span (#327) and the
-# ones whose docs ask for delta temporality (#233).
-_NO_ROOT_USAGE_PRESETS = frozenset(s.type for s in SPECS if not s.root_usage)
-_TEMPORALITY_PRESETS: Dict[str, str] = {s.type: s.temporality for s in SPECS if s.temporality}
-
-
 def resolve_from_env() -> Optional[_ResolvedBackend]:
-    """Try each backend in priority order; return the first one whose
-    required env vars are fully satisfied. Returns ``None`` when no
-    backend qualifies — the caller should then log a helpful message.
+    """Try each backend in ``ENV_PRIORITY`` order; return the first one whose
+    required env vars are fully satisfied (a type with an ``env_opt_in`` needs
+    one of those variables set first, #255). Returns ``None`` when no backend
+    qualifies — the caller should then log a helpful message.
     """
-    for backend_type in _ENV_PRIORITY:
-        opt_in = _ENV_OPT_IN.get(backend_type)
-        if opt_in and not any(os.getenv(name, "").strip() for name in opt_in):
+    for backend_type in ENV_PRIORITY:
+        spec = BY_TYPE[backend_type]
+        if spec.env_opt_in and not any(_set(name) for name in spec.env_opt_in):
             continue
         try:
             rb = resolve(BackendConfig(type=backend_type))
-            if backend_type == "weave":
-                attrs = rb.resource_attributes or {}
-                if not (attrs.get("wandb.entity") and attrs.get("wandb.project")):
-                    continue
-            return rb
         except ValueError:
             continue
+        # No ``resource_attributes`` overlay in env-var mode: a type that routes
+        # by resource attributes must find them in the environment too.
+        if not spec.missing_resource_attributes(rb.resource_attributes or {}):
+            return rb
     return None

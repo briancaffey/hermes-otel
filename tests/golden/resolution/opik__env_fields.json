@@ -54,6 +54,12 @@
     "value": "••••••"
    },
    {
+    "field": "workspace",
+    "set": true,
+    "source": "file (inline)",
+    "value": "<secret>"
+   },
+   {
     "field": "project",
     "set": true,
     "source": "env HO_TEST_PROJECT",

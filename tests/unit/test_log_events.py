@@ -13,6 +13,7 @@ from hermes_otel import hooks
 from hermes_otel import log_events as EV
 from hermes_otel import log_handler as lh
 from hermes_otel.plugin_config import HermesOtelConfig
+from hermes_otel.testing import attach_logs
 
 
 def _api_kwargs(session_id, task, **extra):
@@ -52,7 +53,7 @@ def _post_api_kwargs(session_id, task, **extra):
         finish_reason="stop",
         assistant_content_chars=5,
         assistant_tool_call_count=0,
-        response_content="hello",
+        response={"assistant_message": {"role": "assistant", "content": "hello"}},
     )
     base.update(extra)
     return base
@@ -78,8 +79,8 @@ def events(inmemory_otel_setup, monkeypatch):
             "build_log_processors",
             return_value=[(SimpleLogRecordProcessor(log_exporter), object())],
         ):
-            plugin._init_logs_pipeline(Resource.create({"service.name": "t"}), [])
-        assert plugin._logger_provider is not None
+            attach_logs(plugin, [], resource=Resource.create({"service.name": "t"}))
+        assert plugin.pipeline.logger_provider is not None
         return log_exporter
 
     try:
@@ -149,14 +150,14 @@ class TestSwitchAndScope:
     def test_emit_is_a_no_op_without_a_pipeline_and_never_raises(self, inmemory_otel_setup):
         _exporter, plugin = inmemory_otel_setup
         plugin.config = HermesOtelConfig(log_events=True)
-        plugin._logger_provider = None
+        plugin.pipeline.logger_provider = None
         assert plugin.emit_event("x", "y", {}) is False
 
         class Broken:
             def get_logger(self, *a, **k):
                 raise RuntimeError("boom")
 
-        plugin._logger_provider = Broken()
+        plugin.pipeline.logger_provider = Broken()
         assert plugin.emit_event("x", "y", {"a": None}) is False
 
 
@@ -199,6 +200,53 @@ class TestEventCatalogue:
             recs[0].log_record.trace_id
             == plugin.spans.get_session_root("s").get_span_context().trace_id
         )
+
+    def _commit(self, task, command="git commit -m 'add note'", exit_code=0, status="ok"):
+        hooks.on_pre_tool_call(
+            tool_name="terminal", args={"command": command}, task_id=task, session_id="s"
+        )
+        hooks.on_post_tool_call(
+            tool_name="terminal",
+            args={"command": command},
+            result=json.dumps(
+                {"output": "[main 1234abc] add note\n 1 file changed", "exit_code": exit_code}
+            ),
+            task_id=task,
+            status=status,
+            session_id="s",
+        )
+
+    def test_commit_event_on_a_successful_git_commit(self, events):
+        plugin, build = events
+        exporter = build(HermesOtelConfig(log_events=True))
+        hooks.on_session_start(session_id="s", model="m", platform="cli")
+        self._commit("t1")
+        self._commit("t2", exit_code=1)  # nothing to commit: no event
+        self._commit("t3", command="git commit-tree HEAD^{tree}")  # not a commit
+        self._commit("t4", command="git status")
+        recs = _events(exporter, EV.COMMIT)
+        assert [(r.log_record.body, r.log_record.severity_text) for r in recs] == [
+            ("commit", "INFO")
+        ]
+        attrs = recs[0].log_record.attributes
+        assert attrs["event.name"] == "commit"
+        assert attrs["hermes.session_id"] == "s"
+        assert attrs["gen_ai.tool.name"] == "terminal"
+        assert attrs["gen_ai.tool.call.id"] == "t1"
+        assert attrs[EV.ATTR_COMMIT_SUBJECT] == "add note"
+        # one tool.call event per call still, the commit event next to the first
+        assert len(_events(exporter, EV.TOOL_CALL)) == 4
+        root_trace = plugin.spans.get_session_root("s").get_span_context().trace_id
+        assert recs[0].log_record.trace_id == root_trace
+
+    def test_commit_subject_is_content_gated(self, events):
+        plugin, build = events
+        exporter = build(HermesOtelConfig(log_events=True, log_events_content="off"))
+        hooks.on_session_start(session_id="s", model="m", platform="cli")
+        self._commit("t1")
+        (rec,) = _events(exporter, EV.COMMIT)
+        assert EV.ATTR_COMMIT_SUBJECT not in rec.log_record.attributes
+        assert rec.log_record.attributes["gen_ai.tool.call.id"] == "t1"
 
     def test_turn_end_severity_follows_final_status(self, events):
         plugin, build = events
@@ -384,7 +432,13 @@ class TestContentGating:
         hooks.on_pre_api_request(
             **_api_kwargs(sid, t1, messages=[{"role": "user", "content": "x" * 3000}])
         )
-        hooks.on_post_api_request(**_post_api_kwargs(sid, t1, response_content="y" * 3000))
+        hooks.on_post_api_request(
+            **_post_api_kwargs(
+                sid,
+                t1,
+                response={"assistant_message": {"role": "assistant", "content": "y" * 3000}},
+            )
+        )
         hooks.on_pre_tool_call(tool_name="bash", args={"cmd": "ls"}, task_id=t2, session_id=sid)
         hooks.on_post_tool_call(
             tool_name="bash",

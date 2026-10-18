@@ -19,7 +19,8 @@ This module holds the adapter ABC, the structured and log filters, the
 error taxonomy and the HTTP core. The rest is split by concern (#403):
 ``shapes`` (card rows, OTLP spans and batches), ``paging`` (trace and log
 pages, cursor bounds), ``metrics_math`` (name mapping, counter increases,
-bucketing), ``severity`` (level tables) and ``timeconv`` (timestamps to ns).
+bucketing) and ``timeconv`` (timestamps to ns); the level tables are the
+package's :mod:`hermes_otel.severity`.
 No side effects at import time.
 """
 
@@ -28,17 +29,16 @@ from __future__ import annotations
 import json
 import os
 import re
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, fields
 from pathlib import Path
-from typing import Any, Callable, Dict, List, Optional, Sequence, Tuple
+from typing import Any, Callable, Dict, FrozenSet, List, Optional, Sequence, Tuple, Union
 from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
-# The OTLP attribute / status builders live in ``shapes`` (#403) and are
-# re-exported here because every adapter imports them from ``base``.
-from .severity import severity_number_for  # noqa: F401  (finish_log_row; re-exported)
-from .shapes import otlp_attr, otlp_attrs_from_dict, otlp_status  # noqa: F401
+from hermes_otel.severity import severity_number
+
+from .shapes import to_int
 
 try:  # the dashboard process has FastAPI; the skill's terminal tool (#215) may not
     from fastapi import HTTPException
@@ -100,6 +100,24 @@ def rejected_request(exc: BaseException) -> bool:
     return 400 <= status < 500
 
 
+def first_accepted(*attempts: Callable[[], Any]) -> Any:
+    """Run ``attempts`` in order and answer with the first that the backend
+    accepts. A refused request shape (:func:`rejected_request`) moves on to
+    the next spelling; any other failure (unreachable, auth, not found, 5xx)
+    is raised at once, and when every spelling was refused the last refusal
+    is (#519)."""
+    last: Optional[BackendError] = None
+    for attempt in attempts:
+        try:
+            return attempt()
+        except BackendError as exc:
+            if not rejected_request(exc):
+                raise
+            last = exc
+    assert last is not None  # at least one attempt was given
+    raise last
+
+
 class ConfigError(BackendError):
     """The backend entry is incomplete (a missing credential, no URL): a 503 the
     user fixes in ``hermes_otel.yaml``, not a backend failure."""
@@ -146,7 +164,7 @@ def rewrite_host_for_docker(host: str) -> str:
 def resolve_env_or_literal(cfg: Dict[str, Any], literal_key: str, env_key: str) -> Optional[str]:
     """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]`` names.
 
-    The same precedence as the exporter's ``backends._resolve_secret`` (inline
+    The same precedence as the exporter's ``backends.choose_secret`` (inline
     > named env), so an entry that sets both queries with the key it exports
     with (#413). ``*_env`` keeps secrets out of yaml; inline stays for
     convenience.
@@ -328,19 +346,26 @@ def filter_support_of(adapter: Any) -> Dict[str, str]:
     }
 
 
+def effective_filter_support(adapter: Any, f: StructuredFilter) -> Dict[str, str]:
+    """The declaration, with an instance's per-request override on top: an
+    adapter may honour fewer fields for this particular filter (a raw query
+    that replaces the structured predicates, #296) or more for the server it
+    talks to (Langfuse v4 vs v3). A class declares only; ``/status`` and the
+    search agree because both read this (#519)."""
+    support = filter_support_of(adapter)
+    per_request = getattr(adapter, "filter_support_for", None)
+    if not callable(per_request) or isinstance(adapter, type):
+        return support
+    override = per_request(f) or {}
+    return {
+        k: (override.get(k) if override.get(k) in FILTER_LEVELS else support[k]) for k in support
+    }
+
+
 def split_applied_filters(adapter: Any, f: StructuredFilter) -> Tuple[List[str], List[str]]:
     """``(applied, ignored)``: which of the filter's set fields the adapter honours
     (server- or client-side) and which it drops."""
-    support = filter_support_of(adapter)
-    per_request = getattr(adapter, "filter_support_for", None)
-    if callable(per_request) and not isinstance(adapter, type):
-        # An adapter may honour fewer fields for this particular filter (a
-        # raw query that replaces the structured predicates, #296).
-        override = per_request(f) or {}
-        support = {
-            k: (override.get(k) if override.get(k) in FILTER_LEVELS else support[k])
-            for k in support
-        }
+    support = effective_filter_support(adapter, f)
     used = f.set_fields()
     applied = [k for k in used if support.get(k) != "none"]
     ignored = [k for k in used if support.get(k) == "none"]
@@ -490,7 +515,7 @@ class BackendAdapter:
             "raw_placeholder": self.raw_placeholder,
             "metrics": self.supports_metrics,
             "logs": self.supports_logs,
-            "filters": filter_support_of(self),
+            "filters": effective_filter_support(self, StructuredFilter()),
         }
         if self.query_url:
             out["query_url"] = self.query_url
@@ -511,6 +536,12 @@ class BackendAdapter:
         """Link to this trace in the backend's own UI, when the adapter knows
         the route (#185). ``None`` means no link is offered; never a guess."""
         return None
+
+    def _headers(self) -> Dict[str, str]:
+        """The HTTP headers every read carries (auth, mostly): none by default.
+        An adapter with credentials overrides this; the shared readers
+        (``_prometheus``, ``_loki``) call it."""
+        return {}
 
     # ── metrics (same shapes as the live store's endpoints) ───────────
     def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
@@ -585,7 +616,7 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     level = {"WARNING": "WARN", "CRITICAL": "FATAL"}.get(level, level)
     row["level"] = level
     if row.get("severity_number") is None:
-        row["severity_number"] = severity_number_for(level)
+        row["severity_number"] = severity_number(level)
     attrs: Dict[str, Any] = dict(row.get("attributes") or {})
     for k, v in (extra or {}).items():
         if v is None or v == "" or k in LOG_ROW_KEYS:
@@ -598,6 +629,71 @@ def finish_log_row(row: Dict[str, Any], extra: Optional[Dict[str, Any]] = None) 
     row["attributes"] = attrs
     row.setdefault("span_id", None)
     return row
+
+
+# One column name, or the names tried in order (Loki's ``severity_text``,
+# then its ``detected_level``); ``""`` when the backend has no such column.
+Column = Union[str, Tuple[str, ...]]
+
+
+@dataclass(frozen=True)
+class LogColumns:
+    """Which columns of a backend's raw log row fill the record's fields (#514).
+
+    A column defaults to the record key it fills: that is where a caller puts
+    a value the backend hands over beside its row (Loki's line, Uptrace's
+    ids). ``time`` only names the column (the caller converts it and passes
+    ``time_ns``). The named columns plus ``drop`` (the backend's bookkeeping,
+    ``flags``) are the row; the rest of a raw row lands under ``attributes``,
+    each key through ``attr_key`` (``_attrs.dotted`` where names were
+    flattened).
+    """
+
+    body: Column = "body"
+    time: Column = ""
+    level: Column = "level"
+    severity_number: Column = "severity_number"
+    logger: Column = "logger"
+    trace_id: Column = "trace_id"
+    span_id: Column = "span_id"
+    session_id: Column = "session_id"
+    event_name: Column = "event_name"
+    drop: Tuple[str, ...] = ()
+    attr_key: Callable[[str], str] = str
+    known: FrozenSet[str] = field(init=False)
+
+    def __post_init__(self) -> None:
+        columns = [getattr(self, f.name) for f in fields(self) if f.type == "Column"]
+        names = {n for c in columns for n in ((c,) if isinstance(c, str) else c) if n}
+        object.__setattr__(self, "known", frozenset(names | set(self.drop)))
+
+
+def log_row(raw: Dict[str, Any], cols: LogColumns, *, time_ns: int) -> Dict[str, Any]:
+    """One raw backend log row → the live store's record shape (#514): the
+    fields from the columns ``cols`` names (the first non-empty of a fallback
+    tuple), ``time_ns`` as the time, and every other key of ``raw`` through
+    :func:`finish_log_row`, which spells the level the OTel way, fills a
+    missing severity number and keeps the leftovers under ``attributes``."""
+
+    def col(column: Column) -> Any:
+        for name in (column,) if isinstance(column, str) else column:
+            value = raw.get(name) if name else None
+            if value:
+                return value
+        return None
+
+    row = {
+        "level": col(cols.level),
+        "severity_number": to_int(col(cols.severity_number)) or None,
+        "logger": col(cols.logger) or "",
+        "body": col(cols.body) or "",
+        "time_unix_nano": time_ns,
+        "trace_id": col(cols.trace_id) or None,
+        "span_id": col(cols.span_id) or None,
+        "session_id": col(cols.session_id) or None,
+        "event_name": col(cols.event_name) or None,
+    }
+    return finish_log_row(row, {cols.attr_key(k): v for k, v in raw.items() if k not in cols.known})
 
 
 # ── HTTP helpers (stdlib only to avoid extra deps in the dashboard venv) ──

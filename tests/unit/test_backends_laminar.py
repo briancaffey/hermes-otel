@@ -3,7 +3,8 @@
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 
 class TestLaminarBackendType:
@@ -82,13 +83,13 @@ class TestLaminarBackendType:
         assert rb.supports_metrics is True and rb.supports_logs is False
 
     def test_no_temporality_preset(self):
-        assert backends.preset_temporality("laminar") is None
+        assert spec_for("laminar").temporality is None
 
-    def test_no_metrics_set_is_separate_from_traces_only(self):
-        # Laminar keeps logs, so it must not sit in _TRACES_ONLY.
-        assert "laminar" in backends._NO_METRICS
-        assert "laminar" not in backends._TRACES_ONLY
-        assert "laminar" in backends._LOGS_CAPABLE
+    def test_no_metrics_is_separate_from_traces_only(self):
+        # Laminar keeps logs, so it is not a traces-only type.
+        spec = spec_for("laminar")
+        assert spec.metrics is False and spec.logs is True
+        assert spec.traces_only is False
 
 
 class TestLaminarEnvMode:
@@ -128,7 +129,7 @@ class TestLaminarEnvMode:
 
 class TestSignalSupportTable:
     def test_signal_support_refuses_metrics_like_the_resolver(self):
-        # ``signal_support`` read only _TRACES_ONLY, so the Settings tab showed
+        # ``signal_support`` once read a traces-only table, so the Settings tab showed
         # Laminar metrics as exported while the resolver skipped them (#413).
         assert backends.signal_support("laminar") == {
             "traces": True,
@@ -136,8 +137,8 @@ class TestSignalSupportTable:
             "logs": True,
         }
 
-    def test_signal_support_agrees_with_the_resolver_defaults_for_every_type(self):
+    def test_signal_support_agrees_with_signals_for_on_a_bare_entry(self):
+        # ``signals_for`` (what the exporter does) and ``signal_support`` (what
+        # the Settings tab shows) read the same spec; a bare entry has no override.
         for t in sorted(backends.KNOWN_TYPES):
-            support = backends.signal_support(t)
-            assert support["metrics"] == backends._metrics_for(t, None), t
-            assert support["logs"] == backends._logs_for(t, None), t
+            assert backends.signals_for(BackendConfig(type=t)) == backends.signal_support(t), t

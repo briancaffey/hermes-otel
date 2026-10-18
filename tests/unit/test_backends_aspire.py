@@ -3,7 +3,8 @@
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 EP = "http://localhost:4418"
 
@@ -13,7 +14,7 @@ class TestAspireBackendType:
         rb = backends.resolve(BackendConfig(type="aspire", endpoint=EP))
         assert rb.type == "aspire" and rb.display_name == "Aspire Dashboard"
         assert rb.endpoint == "http://localhost:4418/v1/traces"
-        assert rb.headers == {}
+        assert rb.headers is None
         assert (rb.supports_traces, rb.supports_metrics, rb.supports_logs) == (True, True, True)
 
     @pytest.mark.parametrize("suffix", ["/v1/traces", "/v1/metrics", "/v1/logs", "/"])
@@ -44,7 +45,7 @@ class TestAspireBackendType:
     def test_signal_overrides_and_presets(self):
         rb = backends.resolve(BackendConfig(type="aspire", endpoint=EP, metrics=False, logs=False))
         assert rb.supports_metrics is False and rb.supports_logs is False
-        assert backends.preset_temporality("aspire") is None
+        assert spec_for("aspire").temporality is None
         assert backends.signal_support("aspire") == {"traces": True, "metrics": True, "logs": True}
 
     def test_endpoint_from_env(self, monkeypatch):
@@ -60,7 +61,7 @@ class TestAspireEnvMode:
         clear_backend_env(monkeypatch)
         monkeypatch.setenv("OTEL_ASPIRE_ENDPOINT", EP)
         rb = backends.resolve_from_env()
-        assert rb is not None and rb.type == "aspire" and rb.headers == {}
+        assert rb is not None and rb.type == "aspire" and rb.headers is None
 
     def test_key_alone_selects_nothing(self, monkeypatch):
         from _helpers import clear_backend_env

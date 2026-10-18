@@ -18,7 +18,9 @@ Only the standard library is needed for the live store. The adapters need
 (``dashboard/backends/base.py`` falls back to a stdlib exception).
 
 Everything is a plain function over dicts so it is unit-testable without a
-terminal; output goes to a ``TextIO`` the caller passes in.
+terminal; output goes to a ``TextIO`` the caller passes in. The sources live
+in :mod:`hermes_otel.query_sources`, the formatters and the span tree in
+:mod:`hermes_otel.query_render`; this module is the commands and the parser.
 """
 
 from __future__ import annotations
@@ -34,44 +36,29 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Sequence, TextIO, Tuple
 
+from . import query_sources
 from . import semconv as _sc
-from .live_store import (
-    LiveStore,
-    _default_db_path,
-    span_kind,
-    summarize_trace,
-    trace_totals,
+from .coerce import optional_number
+from .live_store import LiveStore, _default_db_path
+from .live_summary import summarize_trace
+from .query_render import (
+    TURN_KINDS,
+    fmt_cost,
+    fmt_ms,
+    fmt_num,
+    fmt_when,
+    log_line,
+    one_line,
+    render_sessions,
+    render_table,
+    render_traces,
+    render_tree,
 )
-
-_PKG_DIR = Path(__file__).resolve().parent
-
-# ── attribute keys, both conventions ─────────────────────────────────────
-# The vocabulary lives in ``semconv`` (#404); these names stay for the readers below.
-_SESSION_KEYS = _sc.SESSION_KEYS
-_MODEL_KEYS = _sc.MODEL_KEYS
-_PROVIDER_KEYS = _sc.PROVIDER_KEYS
-_IN_TOK_KEYS = _sc.INPUT_TOKEN_KEYS
-_OUT_TOK_KEYS = _sc.OUTPUT_TOKEN_KEYS
-_TOTAL_TOK_KEYS = _sc.TOTAL_TOKEN_KEYS
-_REASON_TOK_KEYS = _sc.REASONING_TOKEN_KEYS
-_CACHE_READ_KEYS = _sc.CACHE_READ_TOKEN_KEYS
-_FINISH_KEYS = _sc.FINISH_REASON_KEYS
-_INPUT_KEYS = _sc.INPUT_CONTENT_KEYS
-_OUTPUT_KEYS = _sc.OUTPUT_CONTENT_KEYS
-_COST_KEY = _sc.COST_KEY
+from .query_sources import CliError, LiveSource, resolve_source
 
 _READ_ONLY_SQL = re.compile(r"^\s*(select|with|explain|pragma)\b", re.IGNORECASE)
 _SINCE_RE = re.compile(r"^(\d+(?:\.\d+)?)\s*([smhdw])$")
 _UNIT_S = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
-
-TREE_BAR_WIDTH = 16
-
-
-class CliError(Exception):
-    """A user-facing failure; :func:`main` prints it and returns 1."""
-
-
-# ── small formatters (pure) ───────────────────────────────────────────────
 
 
 def parse_since(text: Optional[str], now_s: Optional[float] = None) -> Optional[int]:
@@ -100,653 +87,6 @@ def parse_since(text: Optional[str], now_s: Optional[float] = None) -> Optional[
             continue
         return int(dt.replace(tzinfo=timezone.utc).timestamp())
     raise CliError(f"--since {text!r}: use 30m / 2h / 3d / 1w or an ISO date (2026-09-20T10:00)")
-
-
-def fmt_when(ns: Optional[float]) -> str:
-    if not ns:
-        return "-"
-    return datetime.fromtimestamp(int(ns) / 1e9, tz=timezone.utc).strftime("%Y-%m-%d %H:%M:%S")
-
-
-def fmt_ms(ms: Optional[float]) -> str:
-    if ms is None:
-        return "-"
-    ms = float(ms)
-    if ms < 1000:
-        return f"{ms:.0f} ms"
-    s = ms / 1000
-    if s < 60:
-        return f"{s:.2f} s"
-    m, rem = divmod(s, 60)
-    if m < 60:
-        return f"{int(m)}m {rem:02.0f}s"
-    h, m = divmod(int(m), 60)
-    return f"{h}h {m:02d}m"
-
-
-def fmt_num(n: Optional[float]) -> str:
-    if n is None:
-        return "-"
-    try:
-        f = float(n)
-    except (TypeError, ValueError):
-        return str(n)
-    if f == int(f):
-        return f"{int(f):,}"
-    return f"{f:,.2f}"
-
-
-def fmt_cost(c: Optional[float]) -> str:
-    if c is None:
-        return "-"
-    try:
-        f = float(c)
-    except (TypeError, ValueError):
-        return str(c)
-    if f == 0:
-        return "$0"
-    if f < 0.01:
-        return f"${f:.4f}"
-    return f"${f:.2f}"
-
-
-def one_line(value: Any, limit: int = 80) -> str:
-    """A value as one clipped line for a table cell."""
-    if value is None:
-        return "-"
-    text = value if isinstance(value, str) else json.dumps(value, default=str)
-    text = text.replace("\r", "").replace("\n", "⏎")
-    if len(text) > limit:
-        return text[: max(0, limit - 1)] + "…"
-    return text
-
-
-def _first(attrs: Dict[str, Any], keys: Sequence[str]) -> Any:
-    for k in keys:
-        v = attrs.get(k)
-        if v is not None and v != "":
-            return v
-    return None
-
-
-def _num(v: Any) -> Optional[float]:
-    try:
-        if v is None or isinstance(v, bool):
-            return None
-        return float(v)
-    except (TypeError, ValueError):
-        return None
-
-
-def _listish(v: Any) -> Any:
-    """``["stop"]`` stored as a JSON string comes back as a list."""
-    if isinstance(v, str) and v.startswith("[") and v.endswith("]"):
-        try:
-            return json.loads(v)
-        except ValueError:
-            return v
-    return v
-
-
-def _short_id(value: Any, n: int = 8) -> str:
-    s = str(value or "")
-    return s[:n] if len(s) > n else s
-
-
-def render_table(rows: List[Dict[str, Any]], columns: List[Tuple[str, str]], out: TextIO) -> None:
-    """``columns`` is ``[(key, header)]``; every cell is already a string."""
-    if not rows:
-        out.write("(no rows)\n")
-        return
-    widths = {k: len(h) for k, h in columns}
-    for r in rows:
-        for k, _ in columns:
-            widths[k] = max(widths[k], len(str(r.get(k, ""))))
-    line = "  ".join(h.ljust(widths[k]) for k, h in columns)
-    out.write(line.rstrip() + "\n")
-    out.write("  ".join("-" * widths[k] for k, _ in columns) + "\n")
-    for r in rows:
-        out.write("  ".join(str(r.get(k, "")).ljust(widths[k]) for k, _ in columns).rstrip() + "\n")
-
-
-# ── span normalisation ────────────────────────────────────────────────────
-
-
-def _otlp_value(v: Dict[str, Any]) -> Any:
-    if not isinstance(v, dict) or not v:
-        return None
-    if "stringValue" in v:
-        return v["stringValue"]
-    if "intValue" in v:
-        try:
-            return int(v["intValue"])
-        except (TypeError, ValueError):
-            return v["intValue"]
-    if "doubleValue" in v:
-        return v["doubleValue"]
-    if "boolValue" in v:
-        return v["boolValue"]
-    if "arrayValue" in v:
-        return [_otlp_value(x) for x in (v["arrayValue"].get("values") or [])]
-    return None
-
-
-def otlp_attrs_to_dict(attrs: Any) -> Dict[str, Any]:
-    if isinstance(attrs, dict):
-        return dict(attrs)
-    out: Dict[str, Any] = {}
-    for a in attrs or []:
-        if isinstance(a, dict) and a.get("key"):
-            out[a["key"]] = _otlp_value(a.get("value") or {})
-    return out
-
-
-def _status_code(code: Any) -> Optional[int]:
-    """OTLP status code as an int: Tempo returns the enum name (``STATUS_CODE_OK``)."""
-    if isinstance(code, bool):
-        return None
-    if isinstance(code, int):
-        return code
-    text = str(code or "").strip().upper()
-    if text.endswith("ERROR"):
-        return 2
-    if text.endswith("OK"):
-        return 1
-    if text.isdigit():
-        return int(text)
-    return None
-
-
-def spans_from_otlp(payload: Dict[str, Any]) -> List[Dict[str, Any]]:
-    """The adapters' ``{"batches": [...]}`` trace → live-store-shaped span dicts."""
-    spans: List[Dict[str, Any]] = []
-    for batch in payload.get("batches") or payload.get("resourceSpans") or []:
-        resource = otlp_attrs_to_dict((batch.get("resource") or {}).get("attributes"))
-        for scope in batch.get("scopeSpans") or []:
-            for sp in scope.get("spans") or []:
-                start = int(sp.get("startTimeUnixNano") or 0)
-                end = int(sp.get("endTimeUnixNano") or 0)
-                status = sp.get("status") or {}
-                code = _status_code(status.get("code") if isinstance(status, dict) else None)
-                attrs = otlp_attrs_to_dict(sp.get("attributes"))
-                if resource.get("service.name") and "service.name" not in attrs:
-                    attrs["service.name"] = resource["service.name"]
-                spans.append(
-                    {
-                        "trace_id": sp.get("traceId"),
-                        "span_id": sp.get("spanId"),
-                        "parent_span_id": sp.get("parentSpanId") or None,
-                        "name": sp.get("name") or "",
-                        "start_time_unix_nano": start,
-                        "end_time_unix_nano": end,
-                        "duration_ms": (end - start) / 1e6 if start and end else None,
-                        "status": {2: "ERROR", 1: "OK"}.get(code, "UNSET"),
-                        "status_message": (
-                            status.get("message") if isinstance(status, dict) else None
-                        ),
-                        "attributes": attrs,
-                    }
-                )
-    return spans
-
-
-def trace_row_from_card(card: Dict[str, Any]) -> Dict[str, Any]:
-    """A search card (``{"traces": [...]}`` item) → the ``summarize_trace`` shape."""
-    attrs: Dict[str, Any] = {}
-    for ss in card.get("spanSets") or []:
-        for sp in ss.get("spans") or []:
-            attrs.update(otlp_attrs_to_dict(sp.get("attributes")))
-    start = int(card.get("startTimeUnixNano") or 0)
-    dur = _num(card.get("durationMs")) or 0.0
-    return {
-        "traceId": card.get("traceID") or card.get("traceId"),
-        "rootName": card.get("rootTraceName") or "",
-        "rootKind": span_kind(card.get("rootTraceName") or "", attrs),
-        "service": card.get("rootServiceName") or attrs.get("service.name") or "hermes",
-        "startNs": start,
-        "endNs": start + int(dur * 1e6),
-        "durationMs": dur,
-        "spanCount": card.get("spanCount"),
-        "model": _first(attrs, _MODEL_KEYS),
-        "tokens": _num(_first(attrs, _TOTAL_TOK_KEYS)),
-        "cost": _num(attrs.get(_COST_KEY)),
-        "error": str(attrs.get("status") or "").lower() == "error" or bool(attrs.get("error")),
-        "session": _first(attrs, _SESSION_KEYS),
-        "turn": _num(attrs.get("hermes.turn.number")),
-        "platform": attrs.get("hermes.platform"),
-    }
-
-
-# ── sources ───────────────────────────────────────────────────────────────
-
-
-class LiveSource:
-    """Queries over the SQLite live store."""
-
-    label = "live"
-
-    def __init__(self, store: LiveStore):
-        self.store = store
-
-    def traces(
-        self, f: argparse.Namespace, start_ns: Optional[int], end_ns: Optional[int]
-    ) -> List[Dict[str, Any]]:
-        res = self.store.query_traces(
-            start_ns=start_ns,
-            end_ns=end_ns,
-            session=f.session or None,
-            status=f.status or None,
-            name=f.name or None,
-            text=f.text or None,
-            limit=f.limit,
-            min_duration_ms=f.min_duration or None,
-            model=f.model or None,
-            tool=f.tool or None,
-        )
-        return res.get("traces") or []
-
-    def trace_spans(self, trace_id: str) -> List[Dict[str, Any]]:
-        return self.store.trace(trace_id).get("spans") or []
-
-    def spans_for_traces(self, ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
-        return self.store.spans_for_traces(list(ids))
-
-    def sessions(
-        self, start_ns: Optional[int], end_ns: Optional[int], limit: int
-    ) -> List[Dict[str, Any]]:
-        return (
-            self.store.sessions(start_ns=start_ns, end_ns=end_ns, limit=limit).get("sessions") or []
-        )
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        return self.store.metric_names()
-
-    def metric_buckets(
-        self, name: str, start_s: int, end_s: int, bucket_s: int, group_by: Optional[str], agg: str
-    ) -> Dict[str, Any]:
-        return self.store.metric_buckets(
-            name, int(start_s * 1e9), int(end_s * 1e9), bucket_s, group_by, agg
-        )
-
-    def logs(
-        self, f: argparse.Namespace, start_ns: Optional[int], end_ns: Optional[int]
-    ) -> List[Dict[str, Any]]:
-        return self.store.query_logs(
-            trace_id=f.trace or None,
-            session=f.session or None,
-            level_min=_LEVELS.get((f.level or "").lower()) or None,
-            logger=f.logger or None,
-            text=f.text or None,
-            start_ns=start_ns,
-            end_ns=end_ns,
-            limit=f.limit,
-            event_name=getattr(f, "event", None) or None,
-            events_only=bool(getattr(f, "events_only", False)),
-        )
-
-
-_LEVELS = {
-    "debug": 10,
-    "info": 20,
-    "warning": 30,
-    "warn": 30,
-    "error": 40,
-    "critical": 50,
-    "fatal": 50,
-}
-
-
-def _import_backends():
-    """The dashboard's ``backends`` package, imported the way ``plugin_api.py`` does."""
-    try:
-        import yaml  # noqa: F401  (the adapters read the config file with it)
-    except ImportError:
-        raise CliError(
-            "backend queries read the config file with pyyaml, which this interpreter lacks. "
-            "Run the script with the interpreter Hermes uses (`hermes --version` prints the "
-            "install directory; use its venv/bin/python) or `pip install pyyaml`."
-        )
-    # Relative to this package, never as a top-level ``backends`` module.
-    from .dashboard import backends
-
-    return backends
-
-
-class BackendSource:
-    """Queries through a dashboard adapter (Phoenix, Langfuse, Jaeger, …)."""
-
-    def __init__(self, adapter: Any, label: str):
-        self.adapter = adapter
-        self.label = label
-
-    def traces(
-        self, f: argparse.Namespace, start_ns: Optional[int], end_ns: Optional[int]
-    ) -> List[Dict[str, Any]]:
-        backends = _import_backends()
-        attr_equals: Dict[str, str] = {}
-        if f.model:
-            attr_equals["llm.model_name"] = f.model
-        if f.session:
-            attr_equals["hermes.session_id"] = f.session
-        if f.tool:
-            attr_equals["tool.name"] = f.tool
-        sf = backends.base.StructuredFilter(
-            name_regex=f.name or None,
-            attr_equals=attr_equals,
-            min_duration_ms=int(f.min_duration) if f.min_duration else None,
-            status=f.status or None,
-            free_text=f.text or None,
-            roots_only=not f.tool,
-        )
-        start_s = int((start_ns or 0) / 1e9) or int(time.time() - 3600)
-        end_s = int((end_ns or 0) / 1e9) or int(time.time())
-        res = self.adapter.search(sf, start_s, end_s, f.limit)
-        return [trace_row_from_card(c) for c in (res.get("traces") or [])]
-
-    def trace_spans(self, trace_id: str) -> List[Dict[str, Any]]:
-        return spans_from_otlp(self.adapter.get_trace(trace_id) or {})
-
-    def spans_for_traces(self, ids: Sequence[str]) -> Dict[str, List[Dict[str, Any]]]:
-        return {t: self.trace_spans(t) for t in ids}
-
-    def sessions(
-        self, start_ns: Optional[int], end_ns: Optional[int], limit: int
-    ) -> List[Dict[str, Any]]:
-        raise CliError(
-            f"sessions is a live-store view; {self.label} has no session index (use traces --session)"
-        )
-
-    def metric_names(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:
-        if not getattr(self.adapter, "supports_metrics", False):
-            raise CliError(f"backend {self.label!r} does not serve metrics; use the live store")
-        return self.adapter.metric_names(start_s, end_s)
-
-    def metric_buckets(
-        self, name: str, start_s: int, end_s: int, bucket_s: int, group_by: Optional[str], agg: str
-    ) -> Dict[str, Any]:
-        if not getattr(self.adapter, "supports_metrics", False):
-            raise CliError(f"backend {self.label!r} does not serve metrics; use the live store")
-        return self.adapter.metrics_query(name, start_s, end_s, bucket_s, group_by, agg)
-
-    def logs(
-        self, f: argparse.Namespace, start_ns: Optional[int], end_ns: Optional[int]
-    ) -> List[Dict[str, Any]]:
-        if not getattr(self.adapter, "supports_logs", False):
-            raise CliError(f"backend {self.label!r} does not serve logs; use the live store")
-        backends = _import_backends()
-        lf = backends.base.LogFilter(
-            trace_id=f.trace or None,
-            session=f.session or None,
-            min_level=_LEVELS.get((f.level or "").lower(), 0),
-            logger=f.logger or None,
-            text=f.text or None,
-            event_name=getattr(f, "event", None) or None,
-            events_only=bool(getattr(f, "events_only", False)),
-        )
-        start_s = int((start_ns or 0) / 1e9) or int(time.time() - 3600)
-        end_s = int((end_ns or 0) / 1e9) or int(time.time())
-        return self.adapter.logs_search(lf, start_s, end_s, f.limit)
-
-
-def open_live_store(db_path: Optional[str]) -> LiveStore:
-    path = db_path or _default_db_path()
-    if not Path(path).exists():
-        raise CliError(
-            f"no live store at {path}. Run one Hermes turn with the plugin enabled, or set "
-            "HERMES_OTEL_LIVE_DB / --db to the file (dashboard_live must be true)."
-        )
-    return LiveStore(db_path=path)
-
-
-def resolve_source(args: argparse.Namespace) -> Any:
-    """``--source live`` (default) → :class:`LiveSource`, else a backend adapter."""
-    wanted = (getattr(args, "source", None) or "live").strip()
-    if wanted.lower() == "live":
-        return LiveSource(open_live_store(getattr(args, "db", None)))
-    backends = _import_backends()
-    try:
-        adapter, configured, cfg_path, _pin = backends.resolve_adapter(wanted)
-    except KeyError as e:
-        raise CliError(f"no configured backend named {wanted!r}; configured: {e.args[0]}")
-    if adapter is None:
-        raise CliError(
-            f"backend {wanted!r} has no query adapter; the live store or the backend UI are the options"
-        )
-    return BackendSource(adapter, wanted)
-
-
-# ── tree rendering ────────────────────────────────────────────────────────
-
-
-def _kind_of(name: str) -> str:
-    return name.split(".", 1)[0] if name else ""
-
-
-def span_summary(span: Dict[str, Any], totals: Optional[Dict[str, Optional[float]]] = None) -> str:
-    """The per-kind one-liner shown to the right of a tree node."""
-    a = span.get("attributes") or {}
-    kind = _kind_of(span.get("name") or "")
-    parts: List[str] = []
-    if kind in ("agent", "cron", "session"):
-        sk = a.get("hermes.session.kind")
-        if sk and sk not in (kind, "session", "agent", "cron", a.get("hermes.platform")):
-            parts.append(str(sk))
-        t = a.get("hermes.turn.number")
-        if t is not None:
-            parts.append(f"turn {fmt_num(t)}")
-        tc = a.get("hermes.turn.tool_count")
-        if tc is not None:
-            parts.append(f"{fmt_num(tc)} tools")
-        ac = a.get("hermes.turn.api_call_count")
-        if ac is not None:
-            parts.append(f"{fmt_num(ac)} api calls")
-        if totals:
-            if totals.get("tokens"):
-                parts.append(f"{fmt_num(totals['tokens'])} tok")
-            if totals.get("cost"):
-                parts.append(fmt_cost(totals["cost"]))
-        fs = a.get("hermes.turn.final_status") or a.get("hermes.turn.exit_reason")
-        if fs:
-            parts.append(str(fs))
-        if a.get("hermes.session.interrupted"):
-            parts.append("interrupted")
-        p = a.get("hermes.platform")
-        if p:
-            parts.append(str(p))
-    elif kind == "llm":
-        prov = _first(a, _PROVIDER_KEYS)
-        if prov:
-            parts.append(str(prov))
-        mc = a.get("llm.request.message_count") or a.get("hermes.conversation.message_count")
-        if mc is not None:
-            parts.append(f"{fmt_num(mc)} msgs")
-    elif kind == "api":
-        i, o = _num(_first(a, _IN_TOK_KEYS)), _num(_first(a, _OUT_TOK_KEYS))
-        if i is not None or o is not None:
-            parts.append(f"{fmt_num(i)} → {fmt_num(o)} tok")
-        r = _num(_first(a, _REASON_TOK_KEYS))
-        if r:
-            parts.append(f"{fmt_num(r)} reasoning")
-        cr = _num(_first(a, _CACHE_READ_KEYS))
-        if cr:
-            parts.append(f"{fmt_num(cr)} cached")
-        c = _num(a.get(_COST_KEY))
-        if c is not None:
-            parts.append(fmt_cost(c))
-        fin = _listish(_first(a, _FINISH_KEYS))
-        if isinstance(fin, list):
-            fin = ",".join(str(x) for x in fin)
-        if fin:
-            parts.append(str(fin))
-        tc = _num(a.get("llm.response.tool_calls"))
-        if tc:
-            parts.append(f"{fmt_num(tc)} tool calls")
-        rc = _num(a.get("hermes.retry.count"))
-        if rc:
-            parts.append(f"retry {fmt_num(rc)}")
-    elif kind == "tool":
-        oc = a.get("hermes.tool.outcome")
-        if oc:
-            parts.append(str(oc))
-        tgt = a.get("hermes.tool.command") or a.get("hermes.tool.target")
-        if tgt:
-            parts.append(one_line(tgt, 48))
-        bb = a.get("hermes.tool.blocked_by")
-        if bb:
-            parts.append(f"blocked by {bb}")
-    elif kind == "approval":
-        ch = a.get("hermes.approval.choice")
-        if ch:
-            parts.append(str(ch))
-        by = a.get("hermes.approval.decided_by")
-        if by:
-            parts.append(f"by {by}")
-        if a.get("hermes.approval.timed_out"):
-            parts.append("timed out")
-    elif kind == "subagent":
-        role = a.get("hermes.subagent.role")
-        if role:
-            parts.append(str(role))
-        st = a.get("hermes.subagent.status")
-        if st:
-            parts.append(str(st))
-        goal = a.get("hermes.subagent.goal")
-        if goal:
-            parts.append(one_line(goal, 48))
-    elif kind == "skill":
-        src = a.get("hermes.skill.source")
-        if src:
-            parts.append(str(src))
-        rs = a.get("hermes.skill.result_status")
-        if rs and rs != "success":
-            parts.append(str(rs))
-    if span.get("status") == "ERROR":
-        msg = span.get("status_message") or a.get("exception.message") or a.get("error.message")
-        parts.append("ERROR" + (f": {one_line(msg, 60)}" if msg else ""))
-    return " · ".join(parts)
-
-
-def build_tree(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
-    """Roots (spans whose parent is absent) with ``children`` nested, start-ordered."""
-    by_id = {s.get("span_id"): dict(s, children=[]) for s in spans if s.get("span_id")}
-    roots: List[Dict[str, Any]] = []
-    for node in by_id.values():
-        parent = node.get("parent_span_id")
-        if parent and parent in by_id and parent != node.get("span_id"):
-            by_id[parent]["children"].append(node)
-        else:
-            roots.append(node)
-
-    def key(n: Dict[str, Any]) -> Tuple[int, str]:
-        return (int(n.get("start_time_unix_nano") or 0), str(n.get("name") or ""))
-
-    def sort(nodes: List[Dict[str, Any]]) -> None:
-        nodes.sort(key=key)
-        for n in nodes:
-            sort(n["children"])
-
-    sort(roots)
-    return roots
-
-
-def _bar(span: Dict[str, Any], t0: int, t1: int, width: int) -> str:
-    if t1 <= t0:
-        return "▇" * width
-    s = int(span.get("start_time_unix_nano") or t0)
-    e = int(span.get("end_time_unix_nano") or s)
-    span_w = max(t1 - t0, 1)
-    a = int((s - t0) / span_w * width)
-    b = int((e - t0) / span_w * width)
-    a = min(max(a, 0), width - 1)
-    b = min(max(b, a + 1), width)
-    return " " * a + "▇" * (b - a) + " " * (width - b)
-
-
-def render_tree(
-    spans: List[Dict[str, Any]],
-    out: TextIO,
-    width: int = 110,
-    show_attrs: bool = False,
-    show_io: bool = False,
-    io_chars: int = 400,
-    bars: bool = True,
-) -> None:
-    """The README-style tree: ``├──``/``└──`` guides, duration, waterfall bar, summary."""
-    if not spans:
-        out.write("(trace has no spans)\n")
-        return
-    roots = build_tree(spans)
-    totals = trace_totals(spans)
-    t0 = min(int(s.get("start_time_unix_nano") or 0) for s in spans)
-    t1 = max(int(s.get("end_time_unix_nano") or s.get("start_time_unix_nano") or 0) for s in spans)
-
-    rows: List[Tuple[str, Dict[str, Any]]] = []
-
-    def walk(node: Dict[str, Any], prefix: str, is_last: bool, is_root: bool) -> None:
-        if is_root:
-            label = str(node.get("name") or "")
-            child_prefix = ""
-        else:
-            label = prefix + ("└── " if is_last else "├── ") + str(node.get("name") or "")
-            child_prefix = prefix + ("    " if is_last else "│   ")
-        rows.append((label, node))
-        kids = node["children"]
-        for i, k in enumerate(kids):
-            walk(k, child_prefix, i == len(kids) - 1, False)
-
-    for i, r in enumerate(roots):
-        walk(r, "", i == len(roots) - 1, True)
-
-    label_w = min(max(len(lbl) for lbl, _ in rows), max(24, width - 48))
-    dur_w = 9
-    for label, node in rows:
-        dur = node.get("duration_ms")
-        if dur is None:
-            s, e = node.get("start_time_unix_nano"), node.get("end_time_unix_nano")
-            dur = (int(e) - int(s)) / 1e6 if s and e else None
-        lbl = label if len(label) <= label_w else label[: label_w - 1] + "…"
-        summary = span_summary(node, totals if node is roots[0] else None)
-        parts = [lbl.ljust(label_w), fmt_ms(dur).rjust(dur_w)]
-        if bars:
-            parts.append(_bar(node, t0, t1, TREE_BAR_WIDTH))
-        line = "  ".join(parts)
-        # The guide prefix of this node's children, so continuation lines
-        # (summary overflow, --io, --attrs) sit inside the tree.
-        guide_len = len(label) - len(label.lstrip("│ ├└─"))
-        indent = " " * (guide_len + 4)
-        if summary and len(line) + 2 + len(summary) <= width:
-            out.write((line + "  " + summary).rstrip() + "\n")
-        else:
-            out.write(line.rstrip() + "\n")
-            if summary:
-                out.write(f"{indent}↳ {summary}\n")
-        a = node.get("attributes") or {}
-        if show_io:
-            for key_set, tag in ((_INPUT_KEYS, "in "), (_OUTPUT_KEYS, "out")):
-                v = _first(a, key_set)
-                if v is not None:
-                    text = v if isinstance(v, str) else json.dumps(v, default=str)
-                    clipped = (
-                        text
-                        if len(text) <= io_chars
-                        else text[:io_chars] + f"… (+{len(text) - io_chars} chars)"
-                    )
-                    for j, ln in enumerate(clipped.splitlines() or [""]):
-                        out.write(f"{indent}{tag if j == 0 else '   '} │ {ln}\n")
-        if show_attrs:
-            for k in sorted(a):
-                out.write(f"{indent}{k} = {one_line(a[k], 160)}\n")
-
-    tok, cost = totals.get("tokens"), totals.get("cost")
-    tail = [f"{len(spans)} spans", fmt_ms((t1 - t0) / 1e6 if t1 > t0 else None)]
-    if tok:
-        tail.append(f"{fmt_num(tok)} tokens")
-    if cost:
-        tail.append(fmt_cost(cost))
-    errors = sum(1 for s in spans if s.get("status") == "ERROR")
-    if errors:
-        tail.append(f"{errors} error{'s' if errors != 1 else ''}")
-    out.write("── " + " · ".join(tail) + "\n")
 
 
 # ── commands ──────────────────────────────────────────────────────────────
@@ -794,7 +134,7 @@ def cmd_status(args: argparse.Namespace, out: TextIO) -> int:
         finally:
             store.close()
     try:
-        backends = _import_backends()
+        backends = query_sources._import_backends()
         cfg_path, configured, pin = backends.load_config()
         info["config_file"] = str(cfg_path) if cfg_path else None
         info["query_backend_pin"] = pin
@@ -864,26 +204,6 @@ def _reachability(endpoint: Any) -> str:
     return f"reachable ({ms:.0f} ms)" if ok else f"unreachable: {error}"
 
 
-def _trace_rows(rows: List[Dict[str, Any]]) -> List[Dict[str, str]]:
-    out = []
-    for t in rows:
-        out.append(
-            {
-                "when": fmt_when(t.get("startNs")),
-                "trace": _short_id(t.get("traceId"), 12),
-                "root": one_line(t.get("rootName"), 24),
-                "session": _short_id(t.get("session"), 10),
-                "model": one_line(t.get("model"), 28),
-                "duration": fmt_ms(t.get("durationMs")),
-                "spans": fmt_num(t.get("spanCount")),
-                "tokens": fmt_num(t.get("tokens")),
-                "cost": fmt_cost(t.get("cost")),
-                "status": "ERROR" if t.get("error") else "ok",
-            }
-        )
-    return out
-
-
 def cmd_traces(args: argparse.Namespace, out: TextIO) -> int:
     src = resolve_source(args)
     start_ns, end_ns = _window(args)
@@ -891,27 +211,26 @@ def cmd_traces(args: argparse.Namespace, out: TextIO) -> int:
     if args.json:
         _emit_json(rows, out)
         return 0
-    render_table(
-        _trace_rows(rows),
-        [
-            ("when", "when (UTC)"),
-            ("trace", "trace"),
-            ("root", "root"),
-            ("session", "session"),
-            ("model", "model"),
-            ("duration", "duration"),
-            ("spans", "spans"),
-            ("tokens", "tokens"),
-            ("cost", "cost"),
-            ("status", "status"),
-        ],
-        out,
-    )
+    render_traces(rows, out)
     if rows:
         out.write(
             f"{len(rows)} trace(s), newest first; full ids with --json; `trace <id>` for the tree\n"
         )
     return 0
+
+
+def _trace_filter(session: Optional[str], limit: int) -> argparse.Namespace:
+    """The ``traces`` filters with only a session and a limit set (``trace last``, ``stats``)."""
+    return argparse.Namespace(
+        session=session,
+        status=None,
+        name=None,
+        text=None,
+        limit=limit,
+        min_duration=None,
+        model=None,
+        tool=None,
+    )
 
 
 def _pick_trace_id(src: Any, ref: str, args: argparse.Namespace) -> str:
@@ -920,18 +239,8 @@ def _pick_trace_id(src: Any, ref: str, args: argparse.Namespace) -> str:
     if not m:
         return ref.strip()
     n = int(m.group(1) or 1)
-    ns = argparse.Namespace(
-        session=getattr(args, "session", None),
-        status=None,
-        name=None,
-        text=None,
-        limit=n,
-        min_duration=None,
-        model=None,
-        tool=None,
-    )
     start_ns, end_ns = _window(args)
-    rows = src.traces(ns, start_ns, end_ns)
+    rows = src.traces(_trace_filter(getattr(args, "session", None), n), start_ns, end_ns)
     if len(rows) < n:
         raise CliError(f"only {len(rows)} trace(s) in the window; cannot pick {ref}")
     return str(rows[n - 1]["traceId"])
@@ -1020,39 +329,7 @@ def cmd_sessions(args: argparse.Namespace, out: TextIO) -> int:
     if args.json:
         _emit_json(rows, out)
         return 0
-    table = [
-        {
-            "session": str(r.get("session") or ""),
-            "turns": fmt_num(r.get("turns")),
-            "spans": fmt_num(r.get("spans")),
-            "tools": fmt_num(r.get("toolCalls")),
-            "errors": fmt_num(r.get("errors")),
-            "tokens": fmt_num(r.get("tokens")),
-            "cost": fmt_cost(r.get("cost")),
-            "model": one_line(r.get("model"), 28),
-            "platform": one_line(r.get("platform"), 10),
-            "first": fmt_when(r.get("startNs")),
-            "last": fmt_when(r.get("endNs")),
-        }
-        for r in rows
-    ]
-    render_table(
-        table,
-        [
-            ("session", "session"),
-            ("turns", "turns"),
-            ("spans", "spans"),
-            ("tools", "tools"),
-            ("errors", "errors"),
-            ("tokens", "tokens"),
-            ("cost", "cost"),
-            ("model", "model"),
-            ("platform", "platform"),
-            ("first", "first (UTC)"),
-            ("last", "last (UTC)"),
-        ],
-        out,
-    )
+    render_sessions(rows, out)
     return 0
 
 
@@ -1073,9 +350,7 @@ def compute_stats(by_trace: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
         if not spans:
             continue
         s = summarize_trace(spans)
-        if s.get("rootKind") in ("agent", "cron", "session") or str(s.get("rootName", "")).split(
-            "."
-        )[0] in ("agent", "cron"):
+        if s.get("rootKind") in TURN_KINDS:
             turns += 1
         spans_n += len(spans)
         tokens += s.get("tokens") or 0
@@ -1093,12 +368,13 @@ def compute_stats(by_trace: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
         for sp in spans:
             a = sp.get("attributes") or {}
             name = str(sp.get("name") or "")
-            kind = _kind_of(name)
+            kind = _sc.span_kind(name, a)
+            short = name.partition(".")[2]  # ``tool.bash`` → ``bash``
             if sp.get("status") == "ERROR":
                 errors += 1
             if kind == "tool":
                 row = tools.setdefault(
-                    name[5:] or name, {"calls": 0, "errors": 0, "completed": 0, "ms": 0.0}
+                    short or name, {"calls": 0, "errors": 0, "completed": 0, "ms": 0.0}
                 )
                 row["calls"] += 1
                 oc = str(a.get("hermes.tool.outcome") or "")
@@ -1106,21 +382,21 @@ def compute_stats(by_trace: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
                     row["completed"] += 1
                 if sp.get("status") == "ERROR" or oc in ("error", "timeout"):
                     row["errors"] += 1
-                row["ms"] += _num(sp.get("duration_ms")) or 0.0
+                row["ms"] += optional_number(sp.get("duration_ms")) or 0.0
             elif kind == "api":
-                model = str(_first(a, _MODEL_KEYS) or name[4:] or "?")
+                model = str(_sc.first(a, _sc.MODEL_KEYS) or short or "?")
                 row = models.setdefault(
                     model, {"calls": 0, "in": 0.0, "out": 0.0, "cost": 0.0, "errors": 0, "ms": 0.0}
                 )
                 row["calls"] += 1
-                row["in"] += _num(_first(a, _IN_TOK_KEYS)) or 0.0
-                row["out"] += _num(_first(a, _OUT_TOK_KEYS)) or 0.0
-                row["cost"] += _num(a.get(_COST_KEY)) or 0.0
-                row["ms"] += _num(sp.get("duration_ms")) or 0.0
+                row["in"] += optional_number(_sc.first(a, _sc.INPUT_TOKEN_KEYS)) or 0.0
+                row["out"] += optional_number(_sc.first(a, _sc.OUTPUT_TOKEN_KEYS)) or 0.0
+                row["cost"] += optional_number(a.get(_sc.COST_KEY)) or 0.0
+                row["ms"] += optional_number(sp.get("duration_ms")) or 0.0
                 if sp.get("status") == "ERROR":
                     row["errors"] += 1
             elif kind == "skill":
-                skills[name[6:] or name] = skills.get(name[6:] or name, 0) + 1
+                skills[short or name] = skills.get(short or name, 0) + 1
             elif kind == "approval":
                 ch = str(a.get("hermes.approval.choice") or "?")
                 approvals[ch] = approvals.get(ch, 0) + 1
@@ -1144,17 +420,7 @@ def compute_stats(by_trace: Dict[str, List[Dict[str, Any]]]) -> Dict[str, Any]:
 def cmd_stats(args: argparse.Namespace, out: TextIO) -> int:
     src = resolve_source(args)
     start_ns, end_ns = _window(args)
-    ns = argparse.Namespace(
-        session=args.session,
-        status=None,
-        name=None,
-        text=None,
-        limit=args.limit,
-        min_duration=None,
-        model=None,
-        tool=None,
-    )
-    rows = src.traces(ns, start_ns, end_ns)
+    rows = src.traces(_trace_filter(args.session, args.limit), start_ns, end_ns)
     by_trace = src.spans_for_traces([r["traceId"] for r in rows if r.get("traceId")])
     st = compute_stats(by_trace)
     st["window"] = {
@@ -1345,21 +611,6 @@ def cmd_metrics(args: argparse.Namespace, out: TextIO) -> int:
     return 0
 
 
-def _log_line(r: Dict[str, Any]) -> str:
-    """One record as a terminal line: time, level, event or logger, body, ids."""
-    name = r.get("event_name") or r.get("logger") or ""
-    marker = "⚡" if r.get("event_name") else " "
-    tail = ""
-    if r.get("session_id"):
-        tail += f"  [session {_short_id(r.get('session_id'), 16)}]"
-    if r.get("trace_id"):
-        tail += f"  [trace {_short_id(r.get('trace_id'), 12)}]"
-    return (
-        f"{fmt_when(r.get('time_unix_nano'))}  {str(r.get('level') or ''):<5} {marker} {str(name):<34} "
-        f"{one_line(r.get('body'), 200)}{tail}\n"
-    )
-
-
 def cmd_logs(args: argparse.Namespace, out: TextIO) -> int:
     src = resolve_source(args)
     if getattr(args, "follow", False):
@@ -1375,7 +626,7 @@ def cmd_logs(args: argparse.Namespace, out: TextIO) -> int:
         )
         return 0
     for r in rows:
-        out.write(_log_line(r))
+        out.write(log_line(r))
     events = sum(1 for r in rows if r.get("event_name"))
     out.write(
         f"{len(rows)} record(s), newest first"
@@ -1404,7 +655,7 @@ def _follow_logs(src: Any, args: argparse.Namespace, out: TextIO) -> int:
                 seen.add(key)
                 fresh.append(r)
             for r in sorted(fresh, key=lambda x: int(x.get("time_unix_nano") or 0)):
-                out.write(_emit_follow_line(r, args))
+                out.write(json.dumps(r, default=str) + "\n" if args.json else log_line(r))
             out.flush()
             if rows:
                 newest = max(int(r.get("time_unix_nano") or 0) for r in rows)
@@ -1415,12 +666,6 @@ def _follow_logs(src: Any, args: argparse.Namespace, out: TextIO) -> int:
     except KeyboardInterrupt:
         out.write("\n")
         return 0
-
-
-def _emit_follow_line(r: Dict[str, Any], args: argparse.Namespace) -> str:
-    if getattr(args, "json", False):
-        return json.dumps(r, default=str) + "\n"
-    return _log_line(r)
 
 
 def cmd_sql(args: argparse.Namespace, out: TextIO) -> int:
@@ -1466,7 +711,7 @@ def cmd_mcp_config(args: argparse.Namespace, out: TextIO) -> int:
     from . import mcp_config as mc
     from .hermes_home import resolve_hermes_home
 
-    backends = _import_backends()
+    backends = query_sources._import_backends()
     cfg_path, configured, pin = backends.load_config()
     results = mc.classify(configured)
     wanted = (getattr(args, "source", None) or "").strip() or None
@@ -1655,7 +900,11 @@ def build_parser() -> argparse.ArgumentParser:
 
     s = sub.add_parser("logs", help="captured log records")
     _add_common(s, limit=100)
-    s.add_argument("--level", default=None, help="minimum level: debug, info, warning, error")
+    s.add_argument(
+        "--level",
+        default=None,
+        help="minimum level: trace, debug, info, warn/warning, error, critical/fatal, or a number",
+    )
     s.add_argument("--logger", default=None)
     s.add_argument("--text", default=None)
     s.add_argument("--trace", default=None)

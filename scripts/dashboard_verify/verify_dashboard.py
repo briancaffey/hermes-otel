@@ -19,7 +19,6 @@ from __future__ import annotations
 import argparse
 import json
 import math
-import os
 import re
 import subprocess
 import sys
@@ -36,9 +35,10 @@ from typing import Any, Dict, List, Optional, Tuple
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent.parent
 SCENARIOS = ROOT / "scripts" / "scenarios"
-sys.path.insert(0, str(ROOT))
-from hermes_otel import semconv  # noqa: E402
-from hermes_otel.query_cli import otlp_attrs_to_dict  # noqa: E402
+sys.path[:0] = [str(ROOT), str(ROOT / "scripts")]
+from _common import hermes_root  # noqa: E402
+
+from hermes_otel.query_sources import spans_from_otlp, trace_row_from_card  # noqa: E402
 
 DEFAULT_PROMPTS = ["shell-echo", "no-tools", "missing-file", "multi-tool"]
 SETTLE_S = 120
@@ -131,12 +131,7 @@ def load_prompts() -> Dict[str, Dict[str, Any]]:
 
 
 def batch_dir(token: str) -> Path:
-    base = (
-        Path(os.environ.get("HERMES_HOME", "")).expanduser()
-        if os.environ.get("HERMES_HOME")
-        else Path.home() / ".hermes"
-    )
-    return base / "scenario_runs" / token
+    return hermes_root() / "scenario_runs" / token
 
 
 def run_batch(profile: str, only: List[str], token: str) -> Path:
@@ -179,7 +174,10 @@ def batch_window(runs: List[Dict[str, Any]]) -> Tuple[int, int]:
     return int(min(starts)) - 30, int(max(ends)) + 90
 
 
-# ── row normalisation (mirrors dashboard-ui/src/lib.ts rowFromBackend) ───
+# ── row normalisation ────────────────────────────────────────────────────
+# A backend's cards and details are decoded by the package (query_sources:
+# the same functions `hermes-otel query` renders through), so the harness
+# proves what the product decodes, not a copy of it.
 
 
 def norm_tid(tid: Any) -> str:
@@ -188,55 +186,20 @@ def norm_tid(tid: Any) -> str:
     return t.zfill(32) if t and len(t) < 32 and all(c in "0123456789abcdef" for c in t) else t
 
 
-def attrs_of(span: Dict[str, Any]) -> Dict[str, Any]:
-    """OTLP attribute list (or a plain dict) → dict, the query CLI's decoder."""
-    return otlp_attrs_to_dict(span.get("attributes"))
-
-
 def row_from_backend(t: Dict[str, Any]) -> Dict[str, Any]:
-    sets = t.get("spanSets") or ([t["spanSet"]] if t.get("spanSet") else [])
-    spans = (sets[0].get("spans") or []) if sets else []
-    attrs: Dict[str, Any] = {}
-    for s in spans:
-        for k, v in attrs_of(s).items():
-            attrs.setdefault(k, v)
-    start_ns = int(t.get("startTimeUnixNano") or 0)
-    dur = float(t.get("durationMs") or 0)
-    name = t.get("rootTraceName") or ""
-    return {
-        "traceId": norm_tid(t.get("traceID") or t.get("traceId")),
-        "rootName": name,
-        "startNs": start_ns,
-        "durationMs": dur,
-        "model": semconv.first(attrs, semconv.MODEL_KEYS),
-        "tokens": semconv.first(attrs, semconv.TOTAL_TOKEN_KEYS),
-        "error": attrs.get("status") == "error" or bool(attrs.get(semconv.ERROR_TYPE_KEY)),
-        "session": semconv.first(attrs, semconv.SESSION_KEYS),
-        "matched": [s.get("name") for s in spans],
-        "attrs": attrs,
-    }
+    """The package's list row, its trace id normalised, plus the names of the
+    spans the backend matched (the tool-search check reads them)."""
+    row = trace_row_from_card(t)
+    row["traceId"] = norm_tid(row["traceId"])
+    row["matched"] = [
+        s.get("name") for ss in t.get("spanSets") or [] for s in ss.get("spans") or []
+    ]
+    return row
 
 
-def spans_from_detail(d: Dict[str, Any]) -> List[Dict[str, Any]]:
-    out: List[Dict[str, Any]] = []
-    for b in d.get("batches") or d.get("resourceSpans") or []:
-        for ss in b.get("scopeSpans") or b.get("instrumentationLibrarySpans") or []:
-            for s in ss.get("spans") or []:
-                st = s.get("status") or {}
-                code = st.get("code") if isinstance(st, dict) else st
-                out.append(
-                    {
-                        "span_id": s.get("spanId") or s.get("span_id"),
-                        "parent": s.get("parentSpanId") or s.get("parent_span_id") or "",
-                        "name": s.get("name"),
-                        "error": code in (2, "2", "STATUS_CODE_ERROR", "ERROR", "error"),
-                        "attrs": attrs_of(s),
-                    }
-                )
-    return out
-
-
-def live_spans(d: Dict[str, Any]) -> List[Dict[str, Any]]:
+def span_facts(spans: List[Dict[str, Any]]) -> List[Dict[str, Any]]:
+    """Live-store-shaped spans (the live API's, or a backend detail through
+    ``spans_from_otlp``) → the facts the T3 checks compare."""
     return [
         {
             "span_id": s.get("span_id"),
@@ -245,7 +208,7 @@ def live_spans(d: Dict[str, Any]) -> List[Dict[str, Any]]:
             "error": str(s.get("status") or "").upper() == "ERROR",
             "attrs": s.get("attributes") or {},
         }
-        for s in d.get("spans") or []
+        for s in spans
     ]
 
 
@@ -432,7 +395,7 @@ class Verifier:
             tid = norm_tid(row["traceId"])
             row["traceId"] = tid
             _, det = self.h.get(f"/live/traces/{tid}")
-            spans = live_spans(det or {})
+            spans = span_facts((det or {}).get("spans") or [])
             root = next((s for s in spans if not s["parent"]), None)
             _, logs = self.h.get(
                 "/live/logs/search", {"trace_id": tid, "limit": 2000, **self.window()}
@@ -549,7 +512,7 @@ class Verifier:
             )
             # T3: detail parity
             code, det = self.api(f"/traces/{tid}")
-            spans = spans_from_detail(det or {}) if code == 200 else []
+            spans = span_facts(spans_from_otlp(det or {})) if code == 200 else []
             probs = []
             if code != 200:
                 probs.append(f"detail answered {code}: {str(det)[:120]}")

@@ -7,7 +7,8 @@ The live path is verified against the compose stack in docker-compose/openlit.
 import pytest
 
 from hermes_otel import backends
-from hermes_otel.plugin_config import BackendConfig
+from hermes_otel.backend_config import BackendConfig
+from hermes_otel.backend_specs import spec_for
 
 
 class TestOpenlitBackendType:
@@ -44,7 +45,7 @@ class TestOpenlitBackendType:
 
     def test_no_key_omits_authorization_header(self):
         rb = backends.resolve(BackendConfig(type="openlit", endpoint="http://localhost:4318"))
-        assert rb.headers == {}
+        assert rb.headers is None
 
     def test_inline_api_key_is_a_bearer_token(self):
         rb = backends.resolve(
@@ -111,7 +112,7 @@ class TestOpenlitBackendType:
 
     def test_no_temporality_preset(self):
         # OpenLIT stores cumulative metrics as-is; the global default applies.
-        assert backends.preset_temporality("openlit") is None
+        assert spec_for("openlit").temporality is None
 
     def test_endpoint_from_env(self, monkeypatch):
         monkeypatch.setenv("OTEL_OPENLIT_ENDPOINT", "http://openlit:4318")
@@ -139,7 +140,7 @@ class TestOpenlitEnvMode:
         rb = backends.resolve_from_env()
         assert rb is not None
         assert rb.type == "openlit"
-        assert rb.headers == {}
+        assert rb.headers is None
 
     def test_endpoint_and_key_select_openlit_with_bearer(self, monkeypatch):
         from _helpers import clear_backend_env

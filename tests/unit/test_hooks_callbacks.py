@@ -39,7 +39,13 @@ class TestOnSessionStart:
 
     def test_records_session_count_metric(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4", platform="cli")
-        mock_tracer.record_metric.assert_called_once_with("session_count", 1, {"platform": "cli"})
+        mock_tracer.record_metric.assert_any_call("session_count", 1, {"platform": "cli"})
+        # The Claude Code twin (#485) rides on the same decision; record_metric
+        # drops it unless metric_name_compat is on.
+        mock_tracer.record_metric.assert_any_call(
+            "claude_code.session.count", 1, {"start_type": "fresh", "session.id": "s1"}
+        )
+        assert mock_tracer.record_metric.call_count == 2
 
     def test_includes_session_attributes(self, mock_tracer):
         on_session_start(session_id="s1", model="gpt-4o", platform="telegram")
@@ -161,6 +167,28 @@ class TestOnSessionEnd:
         assert attrs["output.value"] == "world"
         assert mock_tracer.sessions.peek("s1") is None
 
+    def test_a_never_buffered_session_ends_like_an_empty_one(self, mock_tracer):
+        """First no hook buffered anything for ``s1``, then it holds an untouched
+        PerSession. Both roots get the same attributes (#509): the empty
+        aggregator is the null object the end drains when none exists."""
+        for _ in range(2):
+            on_session_end(
+                session_id="s1",
+                completed=False,
+                interrupted=False,
+                model="gpt-4",
+                platform="cli",
+                failed=True,
+                turn_exit_reason="error",
+            )
+            mock_tracer.sessions.get_or_create("s1")
+        first, second = (c[1]["attributes"] for c in mock_tracer.end_span.call_args_list)
+        assert first == second
+        assert first["hermes.turn.final_status"] == "failed"
+        assert first["hermes.session.failed"] is True
+        assert first["hermes.turn.exit_reason"] == "error"
+        assert not {k for k in first if k.startswith(("gen_ai.usage.", "hermes.cost."))}
+
     def test_noop_when_disabled(self, disabled_tracer):
         on_session_end(
             session_id="s1", completed=True, interrupted=False, model="gpt-4", platform="cli"
@@ -202,13 +230,13 @@ class TestOnPreToolCall:
 
     def test_records_start_time(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
-        assert mock_tracer.sessions.has_tool_start("bash:t1")
+        assert mock_tracer.spans.has_started("bash:t1")
 
     def test_uses_tool_call_id_for_key_and_attribute(self, mock_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="task-1", tool_call_id="call-1")
         assert mock_tracer.start_span.call_args[1]["key"] == "bash:call-1"
         assert mock_tracer.start_span.call_args[1]["attributes"]["gen_ai.tool.call.id"] == "call-1"
-        assert mock_tracer.sessions.has_tool_start("bash:call-1")
+        assert mock_tracer.spans.has_started("bash:call-1")
 
     def test_noop_when_disabled(self, disabled_tracer):
         on_pre_tool_call(tool_name="bash", args={}, task_id="t1")
@@ -217,13 +245,13 @@ class TestOnPreToolCall:
 
 class TestOnPostToolCall:
     def test_ends_tool_span(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="output", task_id="t1")
         mock_tracer.end_span.assert_called_once()
         assert mock_tracer.end_span.call_args[0][0] == "bash:t1"
 
     def test_sets_output_attribute(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="file.txt", task_id="t1")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == "file.txt"
@@ -235,7 +263,7 @@ class TestOnPostToolCall:
             capture_previews=False,
             capture_full_responses=True,
         )
-        mock_tracer.sessions.record_tool_start("mcp_honeycomb_run_query:t1", 1000.0)
+        mock_tracer.spans.mark_started("mcp_honeycomb_run_query:t1", 1000.0)
         on_post_tool_call(
             tool_name="mcp_honeycomb_run_query",
             args={},
@@ -247,20 +275,20 @@ class TestOnPostToolCall:
         assert "gen_ai.tool.call.result" not in attrs
 
     def test_status_ok_on_success(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "ok"
 
     def test_status_error_on_error_result(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result='{"error": "boom"}', task_id="t1")
         kw = mock_tracer.end_span.call_args[1]
         assert kw["status"] == "error"
         assert "boom" in (kw.get("error_message") or "")
 
     def test_records_tool_duration_metric(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
         # The deprecated ms histogram and its seconds successor (#233).
         calls = {c.args[0]: c.args for c in mock_tracer.record_metric.call_args_list}
@@ -270,9 +298,9 @@ class TestOnPostToolCall:
         assert calls["tool_duration_s"][1] == pytest.approx(calls["tool_duration"][1] / 1000.0)
 
     def test_cleans_up_start_time(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="ok", task_id="t1")
-        assert not mock_tracer.sessions.has_tool_start("bash:t1")
+        assert not mock_tracer.spans.has_started("bash:t1")
 
     @pytest.mark.parametrize(
         "hook_status, expected",
@@ -436,7 +464,7 @@ class TestOnPostToolCall:
         assert attrs["hermes.tool.outcome"] == "timeout"
 
     def test_uses_tool_call_id_to_end_matching_span(self, mock_tracer):
-        mock_tracer.sessions.record_tool_start("bash:call-1", 1000.0)
+        mock_tracer.spans.mark_started("bash:call-1", 1000.0)
         on_post_tool_call(
             tool_name="bash",
             args={},
@@ -489,8 +517,9 @@ class TestOnPreLlmCall:
         assert attrs["correlation.id"] == "corr-123"
 
     def test_session_state_uses_full_session_id_for_correlation(self, mock_tracer):
+        # No root yet, so pre_llm_call synthesizes one: _start_session_span is
+        # the one writer of correlation_id, keyed by the full session id.
         long_session_id = "s" * 250
-        mock_tracer.spans._active_spans[f"session:{long_session_id}"] = MagicMock()
 
         on_pre_llm_call(
             session_id=long_session_id,
@@ -706,7 +735,7 @@ class TestPerCategoryPreviewCaps:
         from hermes_otel.plugin_config import HermesOtelConfig
 
         mock_tracer.config = HermesOtelConfig(tool_output_preview_max_chars=15)
-        mock_tracer.sessions.record_tool_start("bash:t1", 1000.0)
+        mock_tracer.spans.mark_started("bash:t1", 1000.0)
         on_post_tool_call(tool_name="bash", args={}, result="y" * 200, task_id="t1")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert len(attrs["output.value"]) <= 15
@@ -756,7 +785,7 @@ class TestPerCategoryPreviewCaps:
         mock_tracer.config = HermesOtelConfig(
             preview_max_chars=50, tool_output_preview_max_chars=5000
         )
-        mock_tracer.sessions.record_tool_start("bash:t3", 1000.0)
+        mock_tracer.spans.mark_started("bash:t3", 1000.0)
         long_result = "w" * 200
         on_post_tool_call(tool_name="bash", args={}, result=long_result, task_id="t3")
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
@@ -1019,6 +1048,11 @@ class TestOnPostApiRequest:
         disabled_tracer.end_span.assert_not_called()
 
 
+def _reply(content: str) -> dict:
+    """``response`` as Hermes sends it: the sanitised assistant message inside."""
+    return {"assistant_message": {"role": "assistant", "content": content, "tool_calls": []}}
+
+
 class TestFullCaptureFlags:
     """content_capture: full (the default) writes the whole prompt and response,
     once per convention, onto the api.* span; preview mode writes nothing there."""
@@ -1201,18 +1235,14 @@ class TestFullCaptureFlags:
 
     def test_post_skips_response_attrs_in_preview_mode(self, mock_tracer):
         mock_tracer.config = self._preview_mode()
-        on_post_api_request(
-            **self._post_kwargs(response_content="the full response", response_tool_calls=[])
-        )
+        on_post_api_request(**self._post_kwargs(response=_reply("the full response")))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.output.messages" not in attrs
         assert "output.value" not in attrs
 
     def test_post_writes_full_response_by_default(self, mock_tracer):
         big_response = "answer " * 500  # > preview_max_chars
-        on_post_api_request(
-            **self._post_kwargs(response_content=big_response, response_tool_calls=[])
-        )
+        on_post_api_request(**self._post_kwargs(response=_reply(big_response)))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.value"] == big_response
         assert "gen_ai.output.messages" in attrs
@@ -1227,7 +1257,9 @@ class TestFullCaptureFlags:
             type="function",
             function=SimpleNamespace(name="web_search", arguments='{"q":"x"}'),
         )
-        on_post_api_request(**self._post_kwargs(response_content="", response_tool_calls=[tc]))
+        on_post_api_request(
+            **self._post_kwargs(assistant_message=SimpleNamespace(content="", tool_calls=[tc]))
+        )
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert attrs["output.mime_type"] == "application/json"
         assert _json.loads(attrs["output.value"])[0]["function"]["name"] == "web_search"
@@ -1239,6 +1271,6 @@ class TestFullCaptureFlags:
         from hermes_otel.plugin_config import HermesOtelConfig
 
         mock_tracer.config = HermesOtelConfig(capture_full_responses=False)
-        on_post_api_request(**self._post_kwargs(response_content="hi", response_tool_calls=[]))
+        on_post_api_request(**self._post_kwargs(response=_reply("hi")))
         attrs = mock_tracer.end_span.call_args[1]["attributes"]
         assert "gen_ai.output.messages" not in attrs

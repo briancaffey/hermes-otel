@@ -51,6 +51,25 @@ class TestCli:
         assert data["hermes_otel/x.py"] == 93 and data["hermes_otel/y.py"] == 100
         assert data["_comment"].startswith("Per-module coverage floors")
 
+    def test_add_missing_inserts_new_modules_and_touches_nothing_else(self, floor, tmp_path):
+        floors = tmp_path / "floors.json"
+        before = {"_comment": "kept verbatim", "hermes_otel/x.py": 93, "hermes_otel/gone.py": 50}
+        floors.write_text(json.dumps(before, indent=2) + "\n")
+        report = _report(tmp_path, {"hermes_otel/x.py": 60.0, "hermes_otel/new.py": 71.9})
+        args = ["--report", str(report), "--floors", str(floors), "--add-missing"]
+        assert floor.main(args) == 0
+        after = json.loads(floors.read_text())
+        # x.py keeps its floor although the report is lower; gone.py is not dropped.
+        assert after == {**before, "hermes_otel/new.py": 71}
+        # Nothing missing: the file is left byte-identical.
+        text = floors.read_text()
+        assert floor.main(args) == 0 and floors.read_text() == text
+
+    def test_add_missing_and_update_are_exclusive(self, floor, tmp_path):
+        report = _report(tmp_path, {"hermes_otel/x.py": 1.0})
+        with pytest.raises(SystemExit):
+            floor.main(["--report", str(report), "--update", "--add-missing"])
+
     def test_check_passes_within_tolerance_and_fails_beyond(self, floor, tmp_path, capsys):
         floors = tmp_path / "floors.json"
         floors.write_text(json.dumps({"hermes_otel/x.py": 93}))

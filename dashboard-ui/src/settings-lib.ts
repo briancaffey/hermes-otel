@@ -113,6 +113,8 @@ export type SettingsReport = {
     legacy_path: string;
     unknown_keys: { key: string; note: string | null }[];
     deprecated_keys?: { key: string; note: string | null }[];
+    /** Short fingerprint of the resolved configuration; the plugin logs the same value at init (#484). */
+    fingerprint?: string;
   };
   counts: { env: number; file: number; default: number; changed: number };
   groups: string[];

@@ -8,6 +8,7 @@ from hermes_otel import backends as be
 from hermes_otel import log_handler as lh
 from hermes_otel import plugin_config as pc
 from hermes_otel.plugin_config import HermesOtelConfig, load_config
+from hermes_otel.severity import python_level, severity_number
 
 
 def _write(tmp_path, text):
@@ -361,20 +362,18 @@ class TestBuildWithKnobs:
         assert not f.filter(rec("httpx.client", logging.ERROR))
         assert not f.filter(rec("gateway.run", logging.INFO))
         assert f.filter(rec("gateway.run", logging.WARNING))
-        assert lh._ExcludeOTelInternal().filter(rec("opentelemetry.sdk", logging.ERROR)) is False
+        assert lh._LoggerRulesFilter().filter(rec("opentelemetry.sdk", logging.ERROR)) is False
 
-    def test_level_to_severity_spellings(self):
-        assert lh._level_to_severity("WARN", 1) == 13 == lh._level_to_severity("warning", 1)
-        assert lh._level_to_severity("FATAL", 1) == 21 and lh._level_to_severity("30", 1) == 13
-        assert lh._level_to_severity("nope", 7) == 7 and lh._level_to_severity(None, 7) == 7
+    def test_severity_number_spellings(self):
+        assert severity_number("WARN", 1) == 13 == severity_number("warning", 1)
+        assert severity_number("FATAL", 1) == 21 and severity_number("30", 1) == 13
+        assert severity_number("nope", 7) == 7 and severity_number(None, 7) == 7
 
 
 class TestSeveritySpelling:
     def test_store_level_map_knows_otel_spellings(self):
-        from hermes_otel.live_store import level_no
-
-        assert level_no("WARN") == 30 == level_no("WARNING")
-        assert level_no("FATAL") == 50 == level_no("CRITICAL")
+        assert python_level("WARN") == 30 == python_level("WARNING")
+        assert python_level("FATAL") == 50 == python_level("CRITICAL")
 
     def test_store_schema_is_v3(self, tmp_path):
         import sqlite3

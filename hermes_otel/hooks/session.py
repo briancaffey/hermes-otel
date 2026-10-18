@@ -2,14 +2,20 @@
 
 from __future__ import annotations
 
+import contextlib
+import re
 import time
 from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log, logger
-from ..helpers import cron_job_id_from_session, detect_session_kind, truncate_string
-from ._common import _emit_event, _fail_open, get_tracer
+from ..flush import flush_turn_end
+from ..helpers import truncate_string
+from ..instruments import COMPAT_SESSION_LABEL
+from ..session_state import PerSession
+from ._common import _emit_event, _fail_open, get_tracer, set_span_attributes, span_context_of
 from .attributes import (
+    _ID_MAX,
     _extract_correlation_id,
     _gen_ai_attributes,
     _model_attributes,
@@ -35,16 +41,66 @@ except ImportError:  # pragma: no cover — plugin is unusable without OTel
     Link = None  # type: ignore[assignment]
 
 
+def detect_session_kind(platform: Any, kwargs: Dict[str, Any]) -> str:
+    """Classify a run as ``session``, ``cron`` or a host-supplied kind.
+
+    First non-empty of ``session_type`` / ``origin`` / ``run_type`` wins;
+    otherwise ``cron`` when the platform, source or trigger mentions cron or a
+    cron job id is present; else ``session``.
+    """
+    for key in ("session_type", "origin", "run_type"):
+        value = kwargs.get(key)
+        if value:
+            return str(value)
+    for candidate in (platform, kwargs.get("source"), kwargs.get("trigger")):
+        if candidate and "cron" in str(candidate).lower():
+            return "cron"
+    if kwargs.get("job_id") or kwargs.get("cron_job_id"):
+        return "cron"
+    return "session"
+
+
+# Hermes's scheduler names a cron run's session ``cron_<job id>_<YYYYmmdd>_<HHMMSS>``
+# (cron/scheduler.py) and passes no job id on on_session_start.
+_CRON_SESSION_RE = re.compile(r"^cron_(?P<job>.+)_\d{8}_\d{6}$")
+
+
+def cron_job_id_from_session(session_id: Any) -> str:
+    """The cron job id embedded in a cron run's session id, or ``""``."""
+    m = _CRON_SESSION_RE.match(str(session_id or ""))
+    return m.group("job") if m else ""
+
+
 def _annotate_delegation_model(span: Any, model: Any, parent_model: Any) -> None:
-    text = truncate_string(model, 200) if model else ""
+    text = truncate_string(model, _ID_MAX) if model else ""
     if not text:
         return
-    try:
-        span.set_attribute("gen_ai.request.model", text)
-        if parent_model:
-            span.set_attribute("hermes.subagent.model_inherited", text == str(parent_model))
-    except Exception:
-        pass
+    set_span_attributes(
+        span,
+        {
+            "gen_ai.request.model": text,
+            "hermes.subagent.model_inherited": text == str(parent_model) if parent_model else None,
+        },
+    )
+
+
+def _root_attributes(
+    tracer, session_id: str, model: str, platform: str, provider: Any, kwargs: dict
+) -> Dict[str, Any]:
+    """The root attributes a turn's start and end both set: platform, profile,
+    model and provider, GenAI operation, Weave turn and correlation. The end
+    sets them again on purpose: the provider is usually known only once the
+    turn's API calls have reported it (#153)."""
+    attributes: Dict[str, Any] = {}
+    attributes.update(_platform_attributes(platform))
+    attributes.update(profile_attributes(tracer))
+    attributes.update(_model_attributes(model, provider))
+    attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
+    attributes.update(
+        _weave_turn_attributes(session_id, kwargs, getattr(tracer, "profile_name", None))
+    )
+    attributes.update(correlation_attributes(tracer, session_id, kwargs))
+    return attributes
 
 
 def _start_session_span(
@@ -72,6 +128,7 @@ def _start_session_span(
     # host-supplied correlation id (if any) so every later span reuses it.
     ps = tracer.sessions.get_or_create(session_id)
     ps.model = str(model or "")
+    ps.platform = str(platform or "")
     gateway_key = session_env("HERMES_SESSION_KEY").strip()
     if gateway_key:
         tracer.sessions.remember_session_key(gateway_key, session_id)
@@ -82,21 +139,26 @@ def _start_session_span(
     # on_session_start in this process and used to go uncounted.
     if tracer.sessions.first_root(session_id):
         tracer.record_metric("session_count", 1, {"platform": platform or "unknown"})
+        # Claude Code's twin (#485): its ``start_type`` is ``fresh`` for a new
+        # session and ``resume`` for one picked up again; a root this process
+        # had to synthesise is a session it did not start.
+        tracer.record_metric(
+            "claude_code.session.count",
+            1,
+            {"start_type": "resume" if synthesized else "fresh", COMPAT_SESSION_LABEL: session_id},
+        )
 
     attributes: Dict[str, Any] = {"hermes.session.kind": kind}
     attributes.update(_session_identity_attributes(session_id, root=True))
-    attributes.update(_platform_attributes(platform))
-    attributes.update(profile_attributes(tracer))
     # Hermes passes no provider on on_session_start; a host that does is honoured.
     # Otherwise the provider lands on the root at on_session_end, once the
     # turn's API calls have reported it (#153).
-    attributes.update(_model_attributes(model, extra_kwargs.get("provider")))
-    attributes.update(model_override_attributes(model))
-    attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
     attributes.update(
-        _weave_turn_attributes(session_id, extra_kwargs, getattr(tracer, "profile_name", None))
+        _root_attributes(
+            tracer, session_id, model, platform, extra_kwargs.get("provider"), extra_kwargs
+        )
     )
-    attributes.update(correlation_attributes(tracer, session_id, extra_kwargs))
+    attributes.update(model_override_attributes(model))
     if synthesized:
         attributes["hermes.session.synthesized"] = True
 
@@ -106,7 +168,7 @@ def _start_session_span(
         or cron_job_id_from_session(session_id)
     )
     if cron_job_id:
-        attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, 200)
+        attributes["hermes.cron.job_id"] = truncate_string(cron_job_id, _ID_MAX)
 
     # Sub-agent rejoin: if this session is a delegated child (its session_id was
     # registered by on_subagent_start in the parent), nest its root span under
@@ -118,15 +180,15 @@ def _start_session_span(
     record = tracer.spans.get_subagent(session_id)
     if record:
         attributes["hermes.session.is_subagent"] = True
-        tracer.sessions.get_or_create(session_id).is_subagent = True
+        ps.is_subagent = True
         if record.get("role"):
-            attributes["hermes.subagent.role"] = truncate_string(record["role"], 200)
+            attributes["hermes.subagent.role"] = truncate_string(record["role"], _ID_MAX)
         if record.get("parent_session_id"):
             attributes["hermes.subagent.parent_session_id"] = truncate_string(
                 record["parent_session_id"], 200
             )
         span_obj = record.get("span")
-        if span_obj is not None and hasattr(span_obj, "get_span_context"):
+        if span_context_of(span_obj) is not None:
             parent_override = span_obj
             # subagent_start does not carry the child's model; its root does.
             # Put it on the delegation span so the agent-level span says which
@@ -151,7 +213,7 @@ def _start_session_span(
     # ``/reset``, expiry) names it and links to its last root span.
     previous = tracer.sessions.previous_session(session_id)
     if previous:
-        attributes["hermes.session.previous_id"] = truncate_string(previous, 200)
+        attributes["hermes.session.previous_id"] = truncate_string(previous, _ID_MAX)
         prev_ctx = tracer.sessions.root_context(previous)
         if prev_ctx is not None and Link is not None:
             links = list(links or []) + [
@@ -187,6 +249,64 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     _start_session_span(session_id, model, platform, kwargs, synthesized=False)
 
 
+def _turn_end_attributes(
+    tracer, ps: PerSession, session_id: str, model: str, platform: str, hook_args: dict
+) -> Dict[str, Any]:
+    """What the root learns when the turn ends: the outcome Hermes reported in
+    ``hook_args`` (``on_session_end``'s arguments) and everything the turn
+    buffered in ``ps`` (I/O, usage, cost, the last API error, the sender, the
+    summary). Reads only; records nothing. ``hermes.turn.final_status`` is
+    always among the result."""
+    completed, interrupted = hook_args["completed"], hook_args["interrupted"]
+    # Hermes reports these on the same hook; the plugin used to ignore them and
+    # compute its own status (#156).
+    failed = bool(hook_args.get("failed"))
+    if failed:
+        final_status = "failed"
+    elif completed:
+        final_status = "completed"
+    elif interrupted:
+        final_status = "interrupted"
+    else:
+        final_status = "incomplete"
+    attributes: Dict[str, Any] = {
+        "hermes.session.completed": bool(completed),
+        "hermes.session.interrupted": bool(interrupted),
+        "hermes.session.failed": failed,
+    }
+    exit_reason = hook_args.get("turn_exit_reason")
+    if exit_reason:
+        attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
+    # Provider: what this turn's API calls reported, else what the host passed.
+    provider = ps.provider or hook_args.get("provider")
+    attributes.update(_root_attributes(tracer, session_id, model, platform, provider, hook_args))
+    attributes.update(_response_model_attributes(ps.response_model))
+    if ps.io_captured:
+        if ps.io.get("input"):
+            attributes["input.value"] = ps.io["input"]
+        if ps.io.get("output"):
+            attributes["output.value"] = ps.io["output"]
+    if ps.usage_updated:
+        attributes.update(usage_attributes(ps.usage))
+    attributes.update(ps.cost_rollup())
+    # Auxiliary calls (#389) are reported beside, never inside, the turn
+    # totals: see PerSession.add_auxiliary for why.
+    attributes.update(ps.auxiliary_rollup())
+    # Surface the last API error's type on the root so a failed turn shows why.
+    if ps.last_error_type:
+        attributes["error.type"] = ps.last_error_type
+    attributes.update(_per_session_sender_attributes(ps))
+    if ps.turn_number:
+        attributes["hermes.turn.number"] = ps.turn_number
+    if ps.verify_nudges:
+        attributes["hermes.turn.verify_nudges"] = ps.verify_nudges
+    if ps.stop_reason:
+        attributes["hermes.turn.stop_reason"] = ps.stop_reason
+    attributes.update(_summary_attributes(ps.turn_summary))
+    attributes["hermes.turn.final_status"] = final_status
+    return attributes
+
+
 @_fail_open
 def on_session_end(
     session_id: str, completed: bool, interrupted: bool, model: str, platform: str, **kwargs
@@ -200,42 +320,18 @@ def on_session_end(
         return
 
     key = f"session:{session_id}"
-    # Hermes reports these on the same hook; the plugin used to ignore them and
-    # compute its own status (#156).
-    failed = bool(kwargs.get("failed"))
-    exit_reason = kwargs.get("turn_exit_reason")
+    # Drain the aggregators in one shot: everything this session buffered
+    # (I/O, usage totals, turn summary) comes back in a single PerSession. A
+    # turn nothing was buffered for drains an empty one, which adds nothing.
+    ps = tracer.sessions.pop(session_id) or PerSession()
+    hook_args = dict(kwargs, completed=completed, interrupted=interrupted)
+    attributes = _turn_end_attributes(tracer, ps, session_id, model, platform, hook_args)
+    final_status = attributes["hermes.turn.final_status"]
+    # Only failures are ERROR: a reported failure, or a turn that neither
+    # completed nor was interrupted. Interruptions are user actions.
+    status = "error" if final_status in ("failed", "incomplete") else "ok"
 
-    # Drain the aggregators in one shot. Everything this session buffered
-    # — I/O, usage totals, turn summary — comes back in a single PerSession.
-    ps = tracer.sessions.pop(session_id)
-
-    attributes: Dict[str, Any] = {
-        "hermes.session.completed": bool(completed),
-        "hermes.session.interrupted": bool(interrupted),
-        "hermes.session.failed": failed,
-    }
-    if exit_reason:
-        attributes["hermes.turn.exit_reason"] = truncate_string(exit_reason, 120)
-    attributes.update(_platform_attributes(platform))
-    attributes.update(profile_attributes(tracer))
-    # Provider: what this turn's API calls reported, else what the host passed.
-    provider = (ps.provider if ps is not None else "") or kwargs.get("provider")
-    attributes.update(_model_attributes(model, provider))
-    attributes.update(_response_model_attributes(ps.response_model if ps is not None else ""))
-    attributes.update(_gen_ai_attributes(session_id, "invoke_agent"))
-    attributes.update(
-        _weave_turn_attributes(session_id, kwargs, getattr(tracer, "profile_name", None))
-    )
-    attributes.update(correlation_attributes(tracer, session_id, kwargs))
-
-    if ps is not None and ps.io_captured:
-        if ps.io.get("input"):
-            attributes["input.value"] = ps.io["input"]
-        if ps.io.get("output"):
-            attributes["output.value"] = ps.io["output"]
-
-    if ps is not None and ps.usage_updated:
-        attributes.update(usage_attributes(ps.usage))
+    if ps.usage_updated:
         # OTel GenAI agent-level token-usage histogram (per-turn/session rollup).
         # Prefer the provider captured from this session's API calls over the
         # platform, so the dimension matches the gen_ai.client.* metrics.
@@ -246,68 +342,32 @@ def on_session_end(
             ps.usage,
             genai_metric_dims(model, agent_provider, model, operation="invoke_agent"),
         )
-
-    if ps is not None and ps.is_subagent:
+    if ps.is_subagent:
         # A delegated child's turn counts toward its delegation span (#390).
         tracer.sessions.add_delegation_turn(session_id, ps)
 
-    if ps is not None:
-        attributes.update(ps.cost_rollup())
-        # Auxiliary calls (#389) are reported beside, never inside, the turn
-        # totals: see PerSession.add_auxiliary for why.
-        attributes.update(ps.auxiliary_rollup())
-
-    # Surface the last API error's type on the root so a failed turn shows why.
-    if ps is not None and ps.last_error_type:
-        attributes["error.type"] = ps.last_error_type
-
-    attributes.update(_per_session_sender_attributes(ps))
-    if ps is not None and ps.turn_number:
-        attributes["hermes.turn.number"] = ps.turn_number
-    if ps is not None and ps.verify_nudges:
-        attributes["hermes.turn.verify_nudges"] = ps.verify_nudges
-    if ps is not None and ps.stop_reason:
-        attributes["hermes.turn.stop_reason"] = ps.stop_reason
-
-    if failed:
-        final_status = "failed"
-    elif completed:
-        final_status = "completed"
-    elif interrupted:
-        final_status = "interrupted"
-    else:
-        final_status = "incomplete"
-    if ps is not None:
-        summary = ps.turn_summary
-        if summary.final_status is None:
-            summary.final_status = final_status
-        attributes.update(_summary_attributes(summary))
-    else:
-        attributes["hermes.turn.final_status"] = final_status
-
-    # Only failures are ERROR: a reported failure, or a turn that neither
-    # completed nor was interrupted. Interruptions are user actions.
-    status = "error" if failed or not (completed or interrupted) else "ok"
-
-    # Close any skill execution-window spans opened this turn. Done before the
-    # root is popped/ended so they close as children of the still-open root.
-    # Overlapping skills each get their own close. Status is OK — a skill being
-    # active is never itself an error; the turn outcome rides on result_status.
-    if tracer.config.skill_spans:
-        for _skill_name, skill_key in tracer.spans.pop_skill_spans(session_id).items():
-            tracer.end_span(
-                skill_key,
-                attributes={"hermes.skill.result_status": final_status},
-                status="ok",
-            )
+    # Skill windows close first, as children of the still-open root.
+    tracer.end_skill_spans(session_id, final_status)
 
     root_span = tracer.spans.get_span(key)
     started_at = tracer.spans.turn_started_at(session_id)
-    final = attributes.get("hermes.turn.final_status") or "incomplete"
+    if isinstance(started_at, (int, float)):
+        # The turn's wall-clock is the agent loop's active time: Claude
+        # Code's ``active_time.total{type=cli}``; ``user`` (typing time) has
+        # no Hermes signal and is never recorded (#485).
+        active_s = max(0.0, time.perf_counter() - started_at)
+        tracer.record_metric(
+            "active_time", active_s, {"type": "cli", "platform": platform or "unknown"}
+        )
+        tracer.record_metric(
+            "claude_code.active_time.total",
+            active_s,
+            {"type": "cli", COMPAT_SESSION_LABEL: session_id},
+        )
     _emit_event(
         tracer,
         EV.TURN_END,
-        f"turn {attributes.get('hermes.turn.number') or '?'} {final}",
+        f"turn {attributes.get('hermes.turn.number') or '?'} {final_status}",
         {
             **{
                 k: v
@@ -318,7 +378,11 @@ def on_session_end(
                 round(time.perf_counter() - started_at, 3) if started_at is not None else None
             ),
         },
-        severity="ERROR" if final == "failed" else ("WARN" if final == "interrupted" else "INFO"),
+        severity=(
+            "ERROR"
+            if final_status == "failed"
+            else ("WARN" if final_status == "interrupted" else "INFO")
+        ),
         session_id=session_id,
         span=root_span,
         content=False,
@@ -337,13 +401,7 @@ def on_session_end(
     # Honors config.force_flush_on_session_end for users who'd rather let
     # the batcher do its thing even at turn boundaries.
     if tracer.config.force_flush_on_session_end:
-        # From a background thread, waited on for at most force_flush_wait_ms:
-        # a healthy collector gets the turn before the hook returns (a one-shot
-        # run may exit right after), a stuck one costs a bounded wait (#91).
-        tracer.flush_async()
-        wait_ms = tracer.config.force_flush_wait_ms
-        if wait_ms and wait_ms > 0:
-            tracer.flush_wait(timeout_s=wait_ms / 1000.0)
+        flush_turn_end(tracer)
 
     debug_log(f"  session span ended: key={key}, status={status}")
 
@@ -362,12 +420,9 @@ def on_session_end(
 
 def _remember_root(tracer, session_id: str) -> None:
     """Keep the root span's context so a replacing session can link to it."""
-    try:
+    with contextlib.suppress(Exception):
         root = tracer.spans.get_session_root(session_id)
-        if root is not None and hasattr(root, "get_span_context"):
-            tracer.sessions.remember_root_context(session_id, root.get_span_context())
-    except Exception:
-        pass
+        tracer.sessions.remember_root_context(session_id, span_context_of(root))
 
 
 _FINAL_STATUS = {"finalize": "finalized", "reset": "reset"}
@@ -381,25 +436,12 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
     if closed_root:
         tracer.end_leftover_children(session_id, "session_end")
         # A turn still in flight (or an orphan) at the session's end: close it
-        # as finalized rather than leaving it to the TTL sweep.
-        if tracer.config.skill_spans:
-            for _name, skill_key in tracer.spans.pop_skill_spans(session_id).items():
-                tracer.end_span(
-                    skill_key, attributes={"hermes.skill.result_status": event}, status="ok"
-                )
-        attributes = {
-            _REASON_KEY[event]: truncate_string(reason, 120),
-            "hermes.turn.final_status": _FINAL_STATUS[event],
-        }
-        status, error_message = "ok", None
-        # Every API attempt of this turn failed and Hermes skipped
-        # on_session_end (#467): the turn failed, it was not just finalized.
-        ps = tracer.sessions.peek(session_id)
-        failure = ps.api_failure_close() if ps is not None else None
-        if failure:
-            attributes.update(failure)
-            status = "error"
-            error_message = f"turn failed: {failure.get('error.type') or 'API request failed'}"
+        # as finalized rather than leaving it to the TTL sweep; as failed when
+        # every API attempt failed and Hermes skipped on_session_end (#467).
+        tracer.end_skill_spans(session_id, event)
+        ps = tracer.sessions.peek(session_id) or PerSession()
+        attributes, status, error_message = ps.api_failure_close(_FINAL_STATUS[event])
+        attributes[_REASON_KEY[event]] = truncate_string(reason, 120)
         _remember_root(tracer, session_id)
         tracer.spans.pop_parent(session_id=session_id)
         tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)
@@ -453,10 +495,7 @@ def _finalize_session(tracer, session_id: str, platform: str, reason: str, *, ev
     # The authoritative flush: nothing of this session should wait for the
     # batcher after its end. Background, like the turn-end flush; process
     # exit still flushes synchronously through atexit.
-    tracer.flush_async()
-    wait_ms = tracer.config.force_flush_wait_ms
-    if wait_ms and wait_ms > 0:
-        tracer.flush_wait(timeout_s=wait_ms / 1000.0)
+    flush_turn_end(tracer)
 
 
 @_fail_open
@@ -535,13 +574,10 @@ def on_agent_loop_stopped(
     text = truncate_string(str(reason or invalidation_reason or "stopped"), 120)
     ps = tracer.sessions.peek(session_id)
     if ps is not None:
-        ps.stop_reason = text
-    root = tracer.spans.get_span(f"session:{session_id}")
-    if root is not None and hasattr(root, "set_attribute"):
-        try:
-            root.set_attribute("hermes.turn.stop_reason", text)
-        except Exception:
-            pass
+        ps.note_stop(text)
+    set_span_attributes(
+        tracer.spans.get_span(f"session:{session_id}"), {"hermes.turn.stop_reason": text}
+    )
 
 
 @_fail_open
@@ -558,5 +594,5 @@ def on_pre_verify(session_id: Any = None, **kwargs: Any) -> None:
         return None
     ps = tracer.sessions.peek(str(session_id))
     if ps is not None:
-        ps.verify_nudges += 1
+        ps.note_verify()
     return None

@@ -15,6 +15,14 @@ has in flight (or its own root when there is no turn), with the same token,
 cost and duration attributes as a main-loop API call (``api_call.py`` builds
 them for both). Usage is accounted on the turn separately from the main-loop
 totals (see ``PerSession.add_auxiliary``).
+
+An attempt that starts after its session's turn root has ended (Hermes's
+title generation can fire after ``on_session_end``) is not parented under the
+ended root, which would show a child outliving its parent: it stays its own
+root, tagged ``hermes.span.after_turn=true``, with a span link
+(``hermes.link=turn_root``) to the root it followed, and its usage is not
+accounted on any turn: that turn's roll-up is already exported, and the next
+turn's must not absorb it (#588).
 """
 
 from __future__ import annotations
@@ -23,13 +31,9 @@ from typing import Any, Dict, Optional
 
 from .. import log_events as EV
 from ..debug_utils import debug_log
-from ..helpers import (
-    QUERY_SOURCE_AUXILIARY,
-    auxiliary_span_key,
-    auxiliary_task_name,
-    serialize_full,
-    truncate_string,
-)
+from ..helpers import truncate_string
+from ..instruments import COMPAT_SESSION_LABEL
+from ..semconv import QUERY_SOURCE_AUXILIARY
 from ._common import _emit_event, _fail_open, as_dict, get_tracer
 from .api_call import (
     HookPayload,
@@ -37,12 +41,14 @@ from .api_call import (
     apply_usage,
     duration_seconds,
     ensure_span,
+    full_response_attributes,
     record_operation_duration,
     request_attributes,
     response_attributes,
     token_suffix,
 )
 from .attributes import (
+    _ID_MAX,
     _gen_ai_attributes,
     _metric_model_labels,
     _model_attributes,
@@ -50,6 +56,33 @@ from .attributes import (
     _response_model_attributes,
 )
 from .usage import genai_metric_dims
+
+try:
+    from opentelemetry.trace import Link
+except ImportError:  # pragma: no cover - opentelemetry is a hard dependency
+    Link = None  # type: ignore[assignment]
+
+
+def auxiliary_span_key(api_request_id: Any, aux_task: Any, started_at: Any) -> str:
+    """Build the span-tracking key for one auxiliary provider attempt.
+
+    ``pre_auxiliary_call`` and ``post_auxiliary_call`` share one base payload
+    (``agent/auxiliary_hooks.py`` builds it once per attempt), so the
+    ``api_request_id`` Hermes assigns is the natural key. Hermes leaves it
+    empty for callers that pass no request metadata; then the task name plus
+    the attempt's ``started_at`` (identical on both hooks) still pairs them.
+    """
+    request_id = str(api_request_id or "").strip()
+    if request_id:
+        return f"aux:{request_id}"
+    task = str(aux_task or "").strip() or "unknown"
+    return f"aux:{task}:{started_at if started_at is not None else ''}"
+
+
+def auxiliary_task_name(aux_task: Any) -> str:
+    """The auxiliary task as a bounded label (``unknown`` when Hermes sent none)."""
+    text = str(aux_task or "").strip().lower()
+    return truncate_string(text, 80) if text else "unknown"
 
 
 def _owning_session(session_id: Any) -> Optional[str]:
@@ -60,6 +93,28 @@ def _owning_session(session_id: Any) -> Optional[str]:
 
 def _span_name(model: Any) -> str:
     return f"api.{model}" if model else "api.auxiliary"
+
+
+def after_turn_links(tracer, owner: Optional[str], turn_id: Any = "") -> Optional[list]:
+    """A link to the session's last root when the attempt belongs to the
+    turn that root closed.
+
+    ``None`` while the owning turn is open (the attempt nests under it), for
+    a turn-less caller, for a session whose root this process never closed
+    (nothing to link to), and for an attempt whose ``turn_id`` names a newer
+    turn than the last one ``pre_llm_call`` reported: preflight compression
+    runs before the next turn's root opens and belongs to that turn.
+    """
+    if not owner or Link is None or tracer.spans.get_session_root(owner) is not None:
+        return None
+    current = str(turn_id or "").strip()
+    last = tracer.sessions.last_turn_id(owner)
+    if current and last and current != last:
+        return None
+    root_ctx = tracer.sessions.root_context(owner)
+    if root_ctx is None:
+        return None
+    return [Link(root_ctx, attributes={"hermes.link": "turn_root"})]
 
 
 @_fail_open
@@ -108,15 +163,22 @@ def on_pre_auxiliary_call(
         attributes["llm.request.tool_count"] = tool_count
     if streaming:
         attributes["gen_ai.request.stream"] = True
+    links = after_turn_links(tracer, owner, kwargs.get("turn_id"))
+    if links:
+        attributes["hermes.span.after_turn"] = True
 
     # Not pushed as a parent: nothing runs *inside* an auxiliary attempt. The
-    # MoA aggregator's tool calls belong to the main loop's api span.
+    # MoA aggregator's tool calls belong to the main loop's api span. Named
+    # ``api.*`` like the main loop's, so its ``disable_spans`` family is
+    # explicit (#479).
     tracer.start_span(
         name=_span_name(model),
         key=key,
         kind="llm",
         attributes=attributes,
         session_id=owner,
+        links=links,
+        family="auxiliary",
     )
     debug_log(f"  auxiliary span started: key={key}")
 
@@ -152,7 +214,7 @@ def on_post_auxiliary_call(
     owner = _owning_session(session_id)
     key = auxiliary_span_key(api_request_id, task, started_at)
     failed = error is not None or bool(error_type)
-    err_type = truncate_string(error_type, 200) if error_type else ("error" if failed else "")
+    err_type = truncate_string(error_type, _ID_MAX) if error_type else ("error" if failed else "")
     err_message = truncate_string(error, 500) if error else ""
 
     attributes: Dict[str, Any] = {
@@ -165,7 +227,11 @@ def on_post_auxiliary_call(
     if err_type:
         attributes["error.type"] = err_type
 
-    model_labels = {**_metric_model_labels(model, provider), "query_source": QUERY_SOURCE_AUXILIARY}
+    model_labels = {
+        **_metric_model_labels(model, provider),
+        "query_source": QUERY_SOURCE_AUXILIARY,
+        COMPAT_SESSION_LABEL: owner,  # kept only on the opt-in claude_code.* instruments (#485)
+    }
     totals, cost = apply_usage(
         tracer,
         as_dict(usage),
@@ -177,7 +243,12 @@ def on_post_auxiliary_call(
         model_labels=model_labels,
         cache_labels={**_metric_model_labels(model, provider), "api_mode": api_mode},
     )
-    if owner:
+    # After the turn the roll-up is already exported: accounting it would
+    # recreate a finalized session's entry or bleed into the next turn.
+    links = after_turn_links(tracer, owner, kwargs.get("turn_id"))
+    if links:
+        attributes["hermes.span.after_turn"] = True
+    elif owner:
         tracer.sessions.get_or_create(owner).add_auxiliary(totals, cost, failed=failed)
 
     duration = duration_seconds(api_duration)
@@ -197,18 +268,7 @@ def on_post_auxiliary_call(
     )
     if streaming:
         attributes["gen_ai.request.stream"] = True
-
-    if tracer.config.captures_full_responses():
-        response = as_dict(kwargs.get("response"))
-        message = as_dict(response.get("assistant_message")) if response else {}
-        content = message.get("content")
-        if isinstance(content, str) and content:
-            attributes["output.value"] = content
-            attributes["output.mime_type"] = "text/plain"
-            attributes["gen_ai.output.messages"] = serialize_full(
-                [{"role": "assistant", "content": content}]
-            )
-            attributes["hermes.content.output_chars"] = len(content)
+    attributes.update(full_response_attributes(tracer, HookPayload(kwargs)))
 
     tracer.record_metric(
         "auxiliary_count",
@@ -224,7 +284,13 @@ def on_post_auxiliary_call(
     # loaded, or the attempt outlived the orphan sweep) a fresh one so the
     # spend is still visible with the identity the pre hook would have set.
     span, created = ensure_span(
-        tracer, key, name=_span_name(model), session_id=owner, model=model, provider=provider
+        tracer,
+        key,
+        name=_span_name(model),
+        session_id=owner,
+        model=model,
+        provider=provider,
+        links=links,
     )
     if not created and failed:
         add_exception_event(span, err_type or "error", err_message, keep_empty_message=True)

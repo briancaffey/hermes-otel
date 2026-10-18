@@ -68,7 +68,7 @@ export function lookbackLabel(hours: number): string {
   return `${hours}h`;
 }
 
-export const KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "skill", "session", "other"];
+export const KINDS = ["agent", "cron", "subagent", "tool", "llm", "api", "approval", "human_input", "skill", "session", "other"];
 // A kind is a span-name prefix. The API takes `name_prefix` (contract §2);
 // the live store takes `kind` directly.
 export const KIND_PREFIX: Record<string, string> = {
@@ -79,6 +79,7 @@ export const KIND_PREFIX: Record<string, string> = {
   llm: "llm.",
   api: "api.",
   approval: "approval",
+  human_input: "human_input.",
   skill: "skill.",
   session: "session",
 };

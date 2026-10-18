@@ -28,29 +28,30 @@ image's ``default`` user only answers from inside the container; its ``api`` /
 
 from __future__ import annotations
 
-import json
 import re
 from typing import Any, Dict, List, Optional, Tuple
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.severity import otel_severity
+
 from . import default_service_name, register
 from .base import (
     BackendAdapter,
     BackendError,
+    LogColumns,
     LogFilter,
     StructuredFilter,
     _execute,
     basic_auth,
-    finish_log_row,
+    log_row,
     not_found,
-    otlp_status,
     query_origin,
     resolve_env_or_literal,
     validate_label_name,
     validate_metric_name,
 )
-from .metrics_math import bucketize, counter_increases
+from .metrics_math import LOOKBEHIND_S, fold_samples, series_ident
 from .paging import (
     LOG_PAGE_SLACK,
     log_end_ns,
@@ -61,21 +62,23 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .severity import otel_severity_for
-from .shapes import card_attrs, card_row, otlp_batch, otlp_event, otlp_span, to_int
-from .zipkin import coerce_tag
+from .shapes import (
+    SpanRow,
+    coerce_tag,
+    otlp_event,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    to_int,
+    trace_detail,
+)
 
 _DEFAULT_CLICKHOUSE_PORT = 8123
 _DEFAULT_DATABASE = "default"
 _DEFAULT_METRICS_MATCH = r"^(hermes|gen_ai|process|system|hw)[._]"
-# Counters need the samples just before the window to tell a new series (its
-# first value counts) from a running one (#296); same look-behind as Prometheus.
-LOOKBEHIND_S = 300
 # A widened search (kind / tool filter) is built from span rows; several spans
 # of one trace share a page, so fetch a few rows per requested trace.
 _ROWS_PER_TRACE = 4
-
-_OTLP_KIND = {"Server": 2, "Client": 3, "Producer": 4, "Consumer": 5, "Internal": 1}
 
 _IDENT_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
 
@@ -98,6 +101,22 @@ def sql_ident(name: str) -> str:
     return f"`{name}`"
 
 
+# The ``otel_logs`` columns the search selects; session and event live in
+# the ``LogAttributes`` map, which is merged into the row before it is read.
+_LOG_COLUMNS = LogColumns(
+    body="Body",
+    time="ts_ns",
+    level="SeverityText",
+    severity_number="SeverityNumber",
+    logger="ScopeName",
+    trace_id="TraceId",
+    span_id="SpanId",
+    session_id="hermes.session_id",
+    event_name="event.name",
+    drop=("LogAttributes",),
+)
+
+
 def _coerce_map(attrs: Any) -> Dict[str, Any]:
     if not isinstance(attrs, dict):
         return {}
@@ -111,6 +130,41 @@ def _status_from(code: Any, message: Any) -> Dict[str, Any]:
     if text == "ok":
         return otlp_status("ok", str(message or ""))
     return {"code": 0, "message": str(message or "")}
+
+
+def _row(row: Dict[str, Any], trace_id: Any = None) -> SpanRow:
+    """One ``otel_traces`` row as a row: the maps coerced, ``Duration`` in ns,
+    the ``Events.*`` arrays zipped back into events. The resource is the whole
+    attribute map (plus ``service.name`` when the map lacks it), so two
+    processes of one service stay apart in the detail."""
+    start_ns = to_int(row.get("ts_ns"))
+    times = row.get("event_ts") or []
+    attrs_list = row.get("event_attrs") or []
+    resource = _coerce_map(row.get("ResourceAttributes"))
+    service = row.get("ServiceName") or ""
+    if service and "service.name" not in resource:
+        resource["service.name"] = service
+    return SpanRow(
+        row.get("TraceId") or trace_id,
+        row.get("SpanId"),
+        row.get("ParentSpanId"),
+        str(row.get("SpanName") or ""),
+        start_ns=start_ns,
+        end_ns=start_ns + to_int(row.get("Duration")) if start_ns else 0,
+        attrs=_coerce_map(row.get("SpanAttributes")),
+        service=str(service),
+        kind=otlp_kind(row.get("SpanKind")),
+        status=_status_from(row.get("StatusCode"), row.get("StatusMessage")),
+        events=[
+            otlp_event(
+                str(name),
+                to_int(times[i]) if i < len(times) else 0,
+                _coerce_map(attrs_list[i]) if i < len(attrs_list) else {},
+            )
+            for i, name in enumerate(row.get("event_names") or [])
+        ],
+        resource=resource,
+    )
 
 
 @register
@@ -232,16 +286,17 @@ class ClickstackAdapter(BackendAdapter):
             + f" ORDER BY Timestamp DESC LIMIT {fetch}"
         )
         rows = self._sql(sql)
-        cards: Dict[str, Dict[str, Any]] = {}
+        cards: Dict[str, SpanRow] = {}
         for row in rows:
-            tid = str(row.get("TraceId") or "")
+            r = _row(row)
+            tid = str(r.trace_id or "")
             if not tid:
                 continue
             # Several spans of one trace may come back on a widened search; the
             # card is the earliest matching span, as the other adapters show it.
             prev = cards.get(tid)
-            if prev is None or to_int(row.get("ts_ns")) < to_int(prev.get("ts_ns")):
-                cards[tid] = row
+            if prev is None or r.start_ns < prev.start_ns:
+                cards[tid] = r
         trace_ids = list(cards)
         counts: Dict[str, int] = {}
         if trace_ids:
@@ -251,24 +306,30 @@ class ClickstackAdapter(BackendAdapter):
                 f"WHERE TraceId IN ({in_list}) GROUP BY TraceId"
             ):
                 counts[str(r.get("TraceId"))] = to_int(r.get("n"))
-        traces: List[Dict[str, Any]] = []
-        for tid, row in cards.items():
-            name = row.get("SpanName") or ""
-            error = str(row.get("StatusCode") or "").lower() == "error"
-            traces.append(
-                card_row(
-                    tid,
-                    span_id=row.get("SpanId"),
-                    name=name,
-                    attrs=card_attrs(_coerce_map(row.get("SpanAttributes")), name, error),
-                    start_ns=to_int(row.get("ts_ns")),
-                    duration_ms=to_int(row.get("Duration")) // 1_000_000,
-                    service=row.get("ServiceName") or "",
-                    span_count=counts.get(tid, 1),
-                )
-            )
+        traces = [r.card(counts.get(tid, 1)) for tid, r in cards.items()]
         page = trace_page(strictly_older_traces(traces, f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            recard_roots(page, self._roots([t["traceID"] for t in page["traces"]]))
         return mark_full_fetch(page, len(rows), fetch, widened=not f.roots_only)
+
+    def _roots(self, trace_ids: List[str]) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id (one query)."""
+        if not trace_ids:
+            return {}
+        in_list = ", ".join(sql_str(t) for t in trace_ids)
+        sql = (
+            "SELECT TraceId, SpanId, SpanName, ServiceName, StatusCode, Duration, SpanAttributes, "
+            "toUnixTimestamp64Nano(Timestamp) AS ts_ns "
+            f"FROM {self._table(self.traces_table)} "
+            f"WHERE TraceId IN ({in_list}) AND ParentSpanId = ''"
+        )
+        out: Dict[str, SpanRow] = {}
+        for row in self._sql(sql):
+            r = _row(row)
+            out.setdefault(str(r.trace_id or ""), r)
+        return out
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # HyperDX's search page takes a trace id in its query; only offered
@@ -290,40 +351,7 @@ class ClickstackAdapter(BackendAdapter):
         rows = self._sql(sql)
         if not rows:
             raise not_found(trace_id, "ClickStack")
-        # One batch per distinct resource (the whole attribute map, not just
-        # the service): two processes of one service stay apart.
-        by_resource: Dict[str, Tuple[Dict[str, Any], List[Dict[str, Any]]]] = {}
-        for row in rows:
-            res_attrs = _coerce_map(row.get("ResourceAttributes"))
-            service = row.get("ServiceName") or ""
-            if service and "service.name" not in res_attrs:
-                res_attrs["service.name"] = service
-            key = json.dumps(res_attrs, sort_keys=True, default=str)
-            start_ns = to_int(row.get("ts_ns"))
-            times = row.get("event_ts") or []
-            attrs_list = row.get("event_attrs") or []
-            span = otlp_span(
-                row.get("TraceId") or trace_id,
-                row.get("SpanId"),
-                row.get("ParentSpanId"),
-                row.get("SpanName"),
-                start_ns=start_ns,
-                end_ns=start_ns + to_int(row.get("Duration")) if start_ns else 0,
-                attrs=_coerce_map(row.get("SpanAttributes")),
-                status=_status_from(row.get("StatusCode"), row.get("StatusMessage")),
-                kind=_OTLP_KIND.get(str(row.get("SpanKind") or ""), 1),
-                events=[
-                    otlp_event(
-                        str(name),
-                        to_int(times[i]) if i < len(times) else 0,
-                        _coerce_map(attrs_list[i]) if i < len(attrs_list) else {},
-                    )
-                    for i, name in enumerate(row.get("event_names") or [])
-                ],
-            )
-            by_resource.setdefault(key, (res_attrs, []))[1].append(span)
-        batches = [otlp_batch(attrs, spans) for attrs, spans in by_resource.values()]
-        return {"batches": batches, "span_count": len(rows), "truncated": False}
+        return trace_detail([_row(row, trace_id) for row in rows])
 
     # ── metrics (#194 shapes) ─────────────────────────────────────────
 
@@ -410,8 +438,7 @@ class ClickstackAdapter(BackendAdapter):
             except (TypeError, ValueError):
                 continue
             attrs = row.get("Attributes") if isinstance(row.get("Attributes"), dict) else {}
-            ident = "|".join(f"{k}={v}" for k, v in sorted(attrs.items()))
-            ident = f"{ident}|instance={row.get('inst') or ''}"
+            ident = series_ident(attrs, instance=row.get("inst") or "")
             if label:
                 # The plugin's metric attributes use both spellings
                 # (``gen_ai.tool.name`` and ``tool_name``); the UI asks with dots.
@@ -420,23 +447,9 @@ class ClickstackAdapter(BackendAdapter):
             else:
                 labels_of[ident] = "_"
             samples.append((ts_ns, value, ident))
-        if cumulative:
-            increases = counter_increases(samples, window_start_ns=start_ns)
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in increases]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg if agg != "last" else "sum")
-            out["cumulative"] = True
-            out["agg"] = "sum" if agg == "last" else agg
-            out["series_start_rule"] = (
-                f"a series with no sample in the {LOOKBEHIND_S}s before the window "
-                "counts its first value"
-            )
-        else:
-            points = [(ts, v, labels_of.get(ident, "_")) for ts, v, ident in samples]
-            out = bucketize(points, start_ns, end_ns, bucket_s, agg)
-            out["agg"] = agg
-        out["agg_requested"] = agg
-        out["name"] = name
-        return out
+        return fold_samples(
+            samples, labels_of, start_ns, end_ns, bucket_s, agg, name=name, cumulative=cumulative
+        )
 
     # ── logs (#268 shapes) ────────────────────────────────────────────
 
@@ -454,7 +467,7 @@ class ClickstackAdapter(BackendAdapter):
         if f.logger:
             preds.append(f"ScopeName = {sql_str(f.logger)}")
         if f.min_level:
-            preds.append(f"SeverityNumber >= {otel_severity_for(f.min_level)}")
+            preds.append(f"SeverityNumber >= {otel_severity(f.min_level)}")
         if f.event_name:
             preds.append(f"LogAttributes['event.name'] = {sql_str(f.event_name)}")
         elif f.events_only:
@@ -476,19 +489,8 @@ class ClickstackAdapter(BackendAdapter):
         )
         records: List[Dict[str, Any]] = []
         for row in self._sql(sql):
-            attrs = _coerce_map(row.get("LogAttributes"))
-            record = {
-                "level": str(row.get("SeverityText") or "INFO").upper(),
-                "severity_number": to_int(row.get("SeverityNumber")) or None,
-                "logger": row.get("ScopeName") or "",
-                "body": row.get("Body") or "",
-                "time_unix_nano": to_int(row.get("ts_ns")),
-                "trace_id": row.get("TraceId") or None,
-                "span_id": row.get("SpanId") or None,
-                "session_id": attrs.pop("hermes.session_id", None),
-                "event_name": attrs.pop("event.name", None),
-            }
-            records.append(finish_log_row(record, attrs))
+            raw = {**_coerce_map(row.get("LogAttributes")), **row}
+            records.append(log_row(raw, _LOG_COLUMNS, time_ns=to_int(row.get("ts_ns"))))
         return strictly_older(records, f)
 
     def loggers(self, start_s: int, end_s: int) -> List[Dict[str, Any]]:

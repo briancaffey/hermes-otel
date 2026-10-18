@@ -18,23 +18,20 @@ from pathlib import Path
 
 import pytest
 
-from hermes_otel import query_cli
+from hermes_otel import query_cli, query_sources
 from hermes_otel.live_store import LiveStore
-from hermes_otel.query_cli import (
-    CliError,
+from hermes_otel.query_cli import compute_stats, main, parse_since
+from hermes_otel.query_render import (
+    TREE_BAR_WIDTH,
     build_tree,
-    compute_stats,
     fmt_cost,
     fmt_ms,
     fmt_num,
-    main,
     one_line,
-    parse_since,
     render_tree,
     span_summary,
-    spans_from_otlp,
-    trace_row_from_card,
 )
+from hermes_otel.query_sources import CliError, spans_from_otlp, trace_row_from_card
 
 NOW = time.time_ns()
 S = 1_000_000_000
@@ -346,8 +343,8 @@ class TestTree:
         assert "ERROR: boom" in lines[10]
         assert lines[-1].startswith("── 11 spans · 40.00 s · 300 tokens · $0.03 · 1 error")
         # the waterfall column: the root fills the bar, a short child does not
-        assert "▇" * query_cli.TREE_BAR_WIDTH in lines[0]
-        assert "▇" * query_cli.TREE_BAR_WIDTH not in lines[4]
+        assert "▇" * TREE_BAR_WIDTH in lines[0]
+        assert "▇" * TREE_BAR_WIDTH not in lines[4]
 
     def test_render_tree_wraps_summary_when_narrow(self):
         out = io.StringIO()
@@ -372,6 +369,34 @@ class TestTree:
     def test_span_summary_ignores_unknown_kinds(self):
         assert span_summary({"name": "mystery", "attributes": {"x": 1}}) == ""
         assert span_summary({"name": "tool.x", "status": "ERROR", "attributes": {}}) == "ERROR"
+
+    def test_span_summary_follows_the_registry_kind(self):
+        # One classifier (semconv.span_kind): the hermes.span_kind override and the
+        # ``session:<id>`` root read their own kind's fields, not the name prefix's.
+        skill = {
+            "name": "tool.skill_view",
+            "attributes": {
+                "hermes.span_kind": "skill",
+                "hermes.skill.source": "skill_view",
+                "hermes.tool.outcome": "completed",
+            },
+        }
+        assert span_summary(skill) == "skill_view"
+        root = {
+            "name": "session:abc",
+            "attributes": {"hermes.turn.number": 7, "hermes.platform": "x"},
+        }
+        assert span_summary(root, {"tokens": 300, "cost": 0.03}) == "turn 7 · 300 tok · $0.03 · x"
+        human = {
+            "name": "human_input.clarify",
+            "attributes": {
+                "hermes.span_kind": "human_input",
+                "hermes.human_input.kind": "clarify",
+                "hermes.human_input.outcome": "answered",
+                "hermes.human_input.wait_s": 4.2,
+            },
+        }
+        assert span_summary(human) == "clarify · answered · waited 4.20 s"
 
 
 # ── commands against the live store ───────────────────────────────────────
@@ -423,7 +448,7 @@ class TestStatus:
             def backend_label(b):
                 return b.get("name") or b["type"]
 
-        monkeypatch.setattr(query_cli, "_import_backends", lambda: FakeBackends)
+        monkeypatch.setattr(query_sources, "_import_backends", lambda: FakeBackends)
         code, out, _ = run("status", db=db)
         assert code == 0
         assert "phoenix        phoenix      http://p:6006/v1/traces" in out
@@ -842,7 +867,7 @@ def fake_backends(monkeypatch):
                 return None, [{"type": "honeycomb"}], Path("/cfg"), None
             raise KeyError("phoenix, honeycomb")
 
-    monkeypatch.setattr(query_cli, "_import_backends", lambda: Backends)
+    monkeypatch.setattr(query_sources, "_import_backends", lambda: Backends)
     return adapter
 
 

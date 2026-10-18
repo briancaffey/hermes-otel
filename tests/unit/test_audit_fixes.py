@@ -9,6 +9,7 @@ import pytest
 from _helpers import clear_backend_env
 
 from hermes_otel import backends
+from hermes_otel.backend_specs import ENV_PRIORITY
 from hermes_otel.dashboard.backends import langfuse, openobserve, phoenix
 from hermes_otel.dashboard.backends.base import (
     BackendError,
@@ -20,7 +21,7 @@ from hermes_otel.tracer import HermesOTelPlugin
 
 
 class TestSecretPrecedence:
-    """The exporter (``backends._resolve_secret``) and the dashboard adapters
+    """The exporter (``backends.choose_secret``) and the dashboard adapters
     (``resolve_env_or_literal``) must pick the same key when an entry sets
     both the inline value and a ``*_env`` name."""
 
@@ -28,7 +29,7 @@ class TestSecretPrecedence:
         monkeypatch.setenv("K", "from-env")
         cfg = {"api_key": "inline", "api_key_env": "K"}
         assert resolve_env_or_literal(cfg, "api_key", "api_key_env") == "inline"
-        assert backends._resolve_secret("inline", "K", []) == "inline"
+        assert backends.choose_secret("inline", "K", []).value == "inline"
 
     def test_named_env_when_no_inline(self, monkeypatch):
         monkeypatch.setenv("K", "from-env")
@@ -131,8 +132,8 @@ class TestNoBackendMessage:
         monkeypatch.delenv("LANGSMITH_TRACING", raising=False)
         plugin = HermesOTelPlugin(config=HermesOtelConfig(dashboard_live=False))
         with caplog.at_level(logging.WARNING, logger="hermes_otel"):
-            assert plugin._init_otlp_from_env() is False
+            assert plugin._backends_from_env() is None
         text = " ".join(r.getMessage() for r in caplog.records)
         assert "No backend configured" in text
-        for backend_type in backends._ENV_PRIORITY:
+        for backend_type in ENV_PRIORITY:
             assert backend_type in text
