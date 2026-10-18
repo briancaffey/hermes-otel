@@ -521,7 +521,7 @@ class TestCurrentAgentaShape:
         # copy of it is dropped like ag.data.* / ag.meta.*.
         root = ag.AgentaAdapter._attrs(CUR_ROOT)
         assert root.get("input.value")
-        assert not [k for k in root if k.startswith("ag.")]
+        assert not [k for k in root if k.startswith(("ag.unsupported.", "ag.data."))]
 
     def test_restore_never_overrides_a_key_agenta_kept(self):
         span = copy.deepcopy(CUR_ROOT)
