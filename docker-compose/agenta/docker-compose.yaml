@@ -170,7 +170,7 @@ services:
     container_name: hermes-otel-agenta-api
     restart: unless-stopped
     command: >
-      newrelic-admin run-program gunicorn entrypoints.routers:app
+      gunicorn entrypoints.routers:app
       --bind ${AGENTA_BIND_HOST:-0.0.0.0}:8000
       --worker-class entrypoints.uvicorn_worker.DrainingUvicornWorker
       --workers 2 --worker-connections 1000 --backlog 2048 --keep-alive 5
@@ -197,7 +197,7 @@ services:
     image: ghcr.io/agenta-ai/agenta-api:${AGENTA_VERSION:-latest}
     container_name: hermes-otel-agenta-worker-streams
     restart: unless-stopped
-    command: ["newrelic-admin", "run-program", "python", "-m", "entrypoints.worker_streams"]
+    command: ["python", "-m", "entrypoints.worker_streams"]
     environment:
       <<: *agenta-env
       AGENTA_WORKER_STREAMS: ""
@@ -215,7 +215,7 @@ services:
     image: ghcr.io/agenta-ai/agenta-api:${AGENTA_VERSION:-latest}
     container_name: hermes-otel-agenta-worker-queues
     restart: unless-stopped
-    command: ["newrelic-admin", "run-program", "python", "-m", "entrypoints.worker_queues"]
+    command: ["python", "-m", "entrypoints.worker_queues"]
     environment:
       <<: *agenta-env
       AGENTA_WORKER_QUEUES: ""
