@@ -332,16 +332,13 @@ def card_row(
     duration_ms: int,
     service: Any = "",
     span_count: Optional[int] = None,
-    span_name: Any = None,
 ) -> Dict[str, Any]:
     """One trace-list row from its card span.
 
     ``attrs`` is the card's attribute dict (see :func:`card_attrs`: the known
     keys plus ``name`` and ``status``); ``span_count`` the whole trace's span
     count when the backend told it, else ``None`` (the key is then absent and
-    ``matched`` is 1). ``span_name`` names the span-set span when it is not
-    the card span (``span_id`` and ``attrs`` are then that span's, see
-    :meth:`SpanRow.card`); ``None`` means ``name``.
+    ``matched`` is 1).
     """
     row: Dict[str, Any] = {"traceID": trace_id}
     if span_count is not None:
@@ -352,9 +349,7 @@ def card_row(
             "rootTraceName": name or "",
             "startTimeUnixNano": str(start_ns) if start_ns else "0",
             "durationMs": int(duration_ms),
-            "spanSets": [
-                card_span_set(span_id, name if span_name is None else span_name, attrs, span_count)
-            ],
+            "spanSets": [card_span_set(span_id, name, attrs, span_count)],
         }
     )
     return row
@@ -470,22 +465,13 @@ class SpanRow:
     def duration_ns(self) -> int:
         return max(0, self.end_ns - self.start_ns)
 
-    def card(
-        self, span_count: Optional[int] = None, matched: Optional["SpanRow"] = None
-    ) -> Dict[str, Any]:
-        """This span as its trace's list row (see :func:`card_row`).
-
-        ``matched`` is the span the filter matched when it is not this one
-        (the root carded for a matching child, #558): the row's name, start,
-        duration and service stay this span's, its span set names ``matched``,
-        the reason the row is in the list."""
-        shown = matched if matched is not None else self
+    def card(self, span_count: Optional[int] = None) -> Dict[str, Any]:
+        """This span as its trace's list row (see :func:`card_row`)."""
         return card_row(
             self.trace_id,
-            span_id=shown.span_id,
+            span_id=self.span_id,
             name=self.name,
-            span_name=shown.name,
-            attrs=card_attrs(shown.attrs, shown.name, shown.error),
+            attrs=card_attrs(self.attrs, self.name, self.error),
             start_ns=self.start_ns,
             duration_ms=self.duration_ns // 1_000_000,
             service=self.service,
@@ -558,24 +544,38 @@ def card_from_trace(
         return None
     if f.name_prefix:
         return matched.card(len(rows))
-    return root.card(len(rows), matched=matched)
+    return as_root_row(matched.card(len(rows)), root)
 
 
-def recard_roots(
-    page: Dict[str, Any], matched: Dict[str, SpanRow], roots: Dict[str, SpanRow]
-) -> Dict[str, Any]:
-    """A widened page of a span-level search (each row the trace's earliest
-    matched span) re-carded as the traces' roots, for a filter without a
-    kind (see :func:`card_from_trace`, #558): the root's row, the matched
-    span its span set. ``matched`` and ``roots`` are by trace id; a trace
-    without a known root keeps its matched card. The page was cut and its
-    cursor taken on the matched spans, which is what the next query bounds,
-    so only the rows change; they are re-sorted newest root first."""
+def as_root_row(row: Dict[str, Any], root: SpanRow) -> Dict[str, Any]:
+    """A card row built from a matched span, carded as its trace's ``root``
+    (#558): the root's name, start, duration and service (the row's own when
+    the root names none); the span set, the span count and everything else
+    the row's own, the reason it matched."""
+    out = dict(row)
+    out.update(
+        {
+            "rootTraceName": root.name or "",
+            "startTimeUnixNano": str(root.start_ns) if root.start_ns else "0",
+            "durationMs": root.duration_ns // 1_000_000,
+            "rootServiceName": str(root.service or row.get("rootServiceName") or ""),
+        }
+    )
+    return out
+
+
+def recard_roots(page: Dict[str, Any], roots: Dict[str, SpanRow]) -> Dict[str, Any]:
+    """A widened page of a span-level search (each row a matched span)
+    re-carded as the traces' roots, for a filter without a kind (see
+    :func:`card_from_trace` and :func:`as_root_row`, #558). ``roots`` is by
+    trace id; a trace without a known root keeps its matched card. The page
+    was cut and its cursor taken on the matched spans, which is what the
+    next query bounds, so only the rows change; they are re-sorted newest
+    root first."""
     rows = []
     for t in page.get("traces") or []:
-        tid = str(t.get("traceID") or "")
-        root, hit = roots.get(tid), matched.get(tid)
-        rows.append(t if root is None or hit is None else root.card(t.get("spanCount"), hit))
+        root = roots.get(str(t.get("traceID") or ""))
+        rows.append(t if root is None else as_root_row(t, root))
     rows.sort(key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
     page["traces"] = rows
     return page

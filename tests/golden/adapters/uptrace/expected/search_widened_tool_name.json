@@ -9,6 +9,11 @@
    "body": null,
    "method": "GET",
    "url": "http://localhost:14318/internal/v1/spans/1?time_start=1791746400000&time_end=1791750060000&system%5B%5D=spans%3Aall&query=where+service_name+%3D+%22hermes-agent%22+%7C+where+tool_name+%3D+%22terminal%22&sort_by=_time&sort_dir=desc&limit=21"
+  },
+  {
+   "body": null,
+   "method": "GET",
+   "url": "http://localhost:14318/internal/v1/spans/1?time_start=1791746400000&time_end=1791750060000&system%5B%5D=spans%3Aall&query=where+_parent_id+%3D+%22%22+%7C+where+_trace_id+in+%28%22ab43116e1d6d4a1a449db547c36ca808%22%2C+%225e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1%22%29&sort_by=_time&sort_dir=desc&limit=2"
   }
  ],
  "result": {

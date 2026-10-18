@@ -31,11 +31,13 @@ from .base import (
 from .paging import strictly_older_traces, trace_end_bound, trace_page, widened_fetch
 from .shapes import (
     CARD_ATTRIBUTE_SET,
+    SpanRow,
     card_row,
     flatten_dotted,
     otlp_batches,
     otlp_span,
     otlp_status,
+    recard_roots,
 )
 from .timeconv import iso_to_ns
 
@@ -450,7 +452,68 @@ class PhoenixAdapter(BackendAdapter):
             ]
             if shown:
                 page["next_before_ns"] = min(int(page["next_before_ns"] or 0) or min(shown), *shown)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            ids = [t["traceID"] for t in page["traces"]]
+            recard_roots(page, self._roots(project_id, project_name, ids, time_range))
         return page
+
+    def _roots(
+        self,
+        project_id: str,
+        project_name: str,
+        trace_ids: List[str],
+        time_range: Dict[str, str],
+    ) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id: one span query, the
+        roots-only clause plus ``trace_id in [...]``. A root outside the
+        window, or a failed query, leaves its trace's matched card."""
+        if not trace_ids:
+            return {}
+        root_vars, root_args, root_variables, root_predicate = _root_clause(
+            self._supports_root_args(), True
+        )
+        ids = ", ".join(f"'{_esc(t)}'" for t in trace_ids)
+        fc = f"trace_id in [{ids}]"
+        if root_predicate:
+            fc = f"{root_predicate} and {fc}"
+        try:
+            data = self._gql(
+                _SEARCH_QUERY.format(root_vars=root_vars, root_args=root_args),
+                {
+                    "projectId": project_id,
+                    "first": len(trace_ids),
+                    "timeRange": time_range,
+                    "filterCondition": fc,
+                    **root_variables,
+                    "sort": {"col": "startTime", "dir": "desc"},
+                },
+            )
+        except BackendError:
+            return {}
+        edges = (((data.get("node") or {}).get("spans") or {}).get("edges")) or []
+        out: Dict[str, SpanRow] = {}
+        for e in edges:
+            span = e.get("node") or {}
+            tid = (span.get("context") or {}).get("traceId")
+            if not tid or span.get("parentId"):
+                continue
+            start = iso_to_ns(span.get("startTime")) or 0
+            out.setdefault(
+                tid,
+                SpanRow(
+                    tid,
+                    span.get("spanId"),
+                    None,
+                    str(span.get("name") or ""),
+                    start_ns=start,
+                    end_ns=start + int(span.get("latencyMs") or 0) * 1_000_000,
+                    attrs={},
+                    service=project_name,
+                ),
+            )
+        return out
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         """The trace's page in the project, once a search or detail has

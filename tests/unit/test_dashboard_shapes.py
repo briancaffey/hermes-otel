@@ -162,7 +162,7 @@ class TestRecardRoots:
             "t2", "c3", "r2", "tool.terminal", start_ns=30 * NS, end_ns=31 * NS, attrs={}
         )
         page = {"traces": [hit2.card(2), TOOL.card(3)], "next_before_ns": 11 * NS, "has_more": True}
-        recard_roots(page, {"t1": TOOL, "t2": hit2}, {"t1": ROOT, "t2": root2})
+        recard_roots(page, {"t1": ROOT, "t2": root2})
         assert [(t["traceID"], _card_name(t), _shown(t)) for t in page["traces"]] == [
             ("t1", "agent", ("c1", "tool.terminal")),  # newest root first
             ("t2", "agent", ("c3", "tool.terminal")),
@@ -172,7 +172,7 @@ class TestRecardRoots:
 
     def test_a_trace_without_a_known_root_keeps_its_matched_card(self):
         page = {"traces": [TOOL.card(3)], "next_before_ns": None, "has_more": False}
-        recard_roots(page, {"t1": TOOL}, {})
+        recard_roots(page, {})
         assert _card_name(page["traces"][0]) == "tool.terminal"
 
 

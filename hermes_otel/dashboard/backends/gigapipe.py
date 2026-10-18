@@ -51,6 +51,7 @@ from .metrics_math import LOOKBEHIND_S
 from .paging import log_end_ns, strictly_older
 from .shapes import (
     SpanRow,
+    as_root_row,
     card_from_trace,
     coerce_tag,
     dedupe_spans,
@@ -246,8 +247,9 @@ class GigapipeAdapter(TempoAdapter):
                 wanted = spans[0].get("spanID") if spans else None
                 named = next((r for r in rows if r.span_id == wanted), None)
                 if named is not None:
-                    shown = named if f.name_prefix else _root(rows)
-                    card = shown.card(len(rows), matched=named)
+                    card = named.card(len(rows))
+                    if not f.name_prefix:
+                        card = as_root_row(card, _root(rows))
             if card is None:
                 continue
             row.update({k: card[k] for k in ("spanSets", "spanCount", "rootTraceName")})

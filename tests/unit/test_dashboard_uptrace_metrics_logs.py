@@ -361,7 +361,9 @@ class TestTraces:
         seen = {}
 
         def fake_get(path, start_s, end_s, params=(), end_ms=None):
-            seen["params"] = dict(params)
+            # the search's own request, not the root lookup that follows (#558)
+            if "_trace_id in" not in dict(params).get("query", ""):
+                seen["params"] = dict(params)
             rows = [
                 {
                     "id": f"s{i}",

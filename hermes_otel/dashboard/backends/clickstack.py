@@ -311,7 +311,7 @@ class ClickstackAdapter(BackendAdapter):
         if not f.roots_only and not f.name_prefix:
             # A tool filter widens to any span, but the row stands for the
             # trace: its root, the matched span its span set (#558).
-            recard_roots(page, cards, self._roots([t["traceID"] for t in page["traces"]]))
+            recard_roots(page, self._roots([t["traceID"] for t in page["traces"]]))
         return mark_full_fetch(page, len(rows), fetch, widened=not f.roots_only)
 
     def _roots(self, trace_ids: List[str]) -> Dict[str, SpanRow]:

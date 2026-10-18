@@ -259,7 +259,7 @@ class AgentaAdapter(BackendAdapter):
             # A tool filter widens to any span, but the row stands for the
             # trace: its root, the matched span its span set (#558).
             roots = {r.trace_id: r for spans in by_trace.values() for r in spans if not r.parent_id}
-            recard_roots(page, cards, roots)
+            recard_roots(page, roots)
         return mark_full_fetch(page, len(spans), fetch, widened=not f.roots_only)
 
     def trace_url(self, trace_id: str) -> Optional[str]:
