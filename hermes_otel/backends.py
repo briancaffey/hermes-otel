@@ -119,8 +119,9 @@ class _ResolvedBackend:
     metrics_headers: Optional[Dict[str, str]] = None
     logs_headers: Optional[Dict[str, str]] = None
     # Full per-signal URLs when a backend keeps its signals on different
-    # hosts or paths (VictoriaMetrics' three stores, #366); ``None`` means
-    # derive ``/v1/metrics`` / ``/v1/logs`` from the traces URL.
+    # hosts or paths (VictoriaMetrics' three stores, #366, or an entry's own
+    # ``metrics_endpoint`` / ``logs_endpoint``, #607); ``None`` means derive
+    # ``/v1/metrics`` / ``/v1/logs`` from the traces URL (gRPC: the one target).
     metrics_endpoint: Optional[str] = None
     logs_endpoint: Optional[str] = None
     supports_traces: bool = True
@@ -1065,10 +1066,20 @@ def temporality_for(bc: BackendConfig, top_level: Optional[str]) -> Tuple[str, s
     return "cumulative", "SDK default"
 
 
+def _entry_endpoint(raw: Optional[str]) -> Optional[str]:
+    """An entry's ``metrics_endpoint`` / ``logs_endpoint``, stripped; ``None``
+    when unset or blank."""
+    value = (raw or "").strip()
+    return value or None
+
+
 def resolve(bc: BackendConfig) -> _ResolvedBackend:
     """Resolve a declared ``BackendConfig`` into a ready-to-wire backend.
 
-    The resolver builds the endpoint and headers; the display name, signals,
+    The resolver builds the endpoint and headers; an entry's own
+    ``metrics_endpoint`` / ``logs_endpoint`` is used verbatim for that signal
+    when the resolver sets none (every type but Victoria, gRPC included, #607).
+    The display name, signals,
     temporality and root-usage presets come from the type's
     :class:`BackendSpec` (an explicit field on the entry wins). An alias
     (``hyperdx``) resolves as its canonical type. Raises :class:`ValueError`
@@ -1094,8 +1105,8 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
         headers=wire.headers,
         metrics_headers=wire.metrics_headers,
         logs_headers=wire.logs_headers,
-        metrics_endpoint=wire.metrics_endpoint,
-        logs_endpoint=wire.logs_endpoint,
+        metrics_endpoint=wire.metrics_endpoint or _entry_endpoint(bc.metrics_endpoint),
+        logs_endpoint=wire.logs_endpoint or _entry_endpoint(bc.logs_endpoint),
         supports_traces=signals["traces"],
         supports_metrics=signals["metrics"],
         supports_logs=signals["logs"],
