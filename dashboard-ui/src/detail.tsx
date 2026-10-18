@@ -384,17 +384,39 @@ export function SpanSummary({ span, source }: { span: TreeSpan; source?: string 
         {errorBlock}
         <Attr a={a} label="user message" keys={["input.value", "gen_ai.input.messages"]} source={source} />
         <Attr a={a} label="final response" keys={["output.value", "gen_ai.output.messages"]} />
-        {tools.length ? (
-          <Block label={`tools · ${tools.length}`}>
+        {tools.tools.length || tools.commands.length || tools.targets.length ? (
+          <Block label={tools.tools.length ? `tools · ${tools.tools.length}` : "tools"}>
             <dl className="otel-attr-table otel-kv-table text-xs">
-              {tools.map((t, i) => (
-                <React.Fragment key={i}>
-                  <dt className="font-mono">{t.tool || "·"}</dt>
+              {tools.tools.length ? (
+                <>
+                  <dt>used</dt>
                   <dd className="min-w-0 break-words">
-                    <StatusBadge value={t.outcome} />
-                    {t.command ? <code className="otel-code ml-1">{t.command}</code> : null}
-                    {t.target ? <span className="ml-1 font-mono text-muted-foreground">{t.target}</span> : null}
+                    <Chips items={tools.tools} mono />
                   </dd>
+                </>
+              ) : null}
+              {tools.outcomes.length ? (
+                <>
+                  <dt>outcomes</dt>
+                  <dd className="flex min-w-0 flex-wrap gap-1">
+                    {tools.outcomes.map((o) => (
+                      <StatusBadge key={o} value={o} />
+                    ))}
+                  </dd>
+                </>
+              ) : null}
+              {tools.commands.map((c, i) => (
+                <React.Fragment key={`c${i}`}>
+                  <dt>command</dt>
+                  <dd className="min-w-0 break-words">
+                    <code className="otel-code">{c}</code>
+                  </dd>
+                </React.Fragment>
+              ))}
+              {tools.targets.map((t, i) => (
+                <React.Fragment key={`t${i}`}>
+                  <dt>target</dt>
+                  <dd className="min-w-0 break-words font-mono text-muted-foreground">{t}</dd>
                 </React.Fragment>
               ))}
             </dl>

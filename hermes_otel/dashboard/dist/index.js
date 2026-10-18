@@ -1435,7 +1435,7 @@
   var LIST_KEYS = {
     "hermes.turn.tools": ",",
     "hermes.turn.tool_outcomes": ",",
-    "hermes.turn.tool_targets": ",",
+    "hermes.turn.tool_targets": "|",
     "hermes.turn.skills": ",",
     "hermes.turn.tool_commands": "|",
     "hermes.approval.pattern_keys": ",",
@@ -1505,23 +1505,12 @@
     };
   }
   function turnTools(a) {
-    var _a, _b, _c, _d;
-    const tools = splitList("hermes.turn.tools", a["hermes.turn.tools"]) || [];
-    const outcomes = splitList("hermes.turn.tool_outcomes", a["hermes.turn.tool_outcomes"]) || [];
-    const commands = splitList("hermes.turn.tool_commands", a["hermes.turn.tool_commands"]) || [];
-    const targets = splitList("hermes.turn.tool_targets", a["hermes.turn.tool_targets"]) || [];
-    const count = Number(a["hermes.turn.tool_count"]) || 0;
-    const rows = Math.max(tools.length, outcomes.length, commands.length, targets.length, count);
-    const out = [];
-    for (let i = 0; i < rows; i++) {
-      out.push({
-        tool: (_a = tools[i]) != null ? _a : tools.length === 1 ? tools[0] : null,
-        outcome: (_b = outcomes[i]) != null ? _b : outcomes.length === 1 ? outcomes[0] : null,
-        command: (_c = commands[i]) != null ? _c : null,
-        target: (_d = targets[i]) != null ? _d : null
-      });
-    }
-    return out;
+    return {
+      tools: splitList("hermes.turn.tools", a["hermes.turn.tools"]) || [],
+      outcomes: splitList("hermes.turn.tool_outcomes", a["hermes.turn.tool_outcomes"]) || [],
+      commands: splitList("hermes.turn.tool_commands", a["hermes.turn.tool_commands"]) || [],
+      targets: splitList("hermes.turn.tool_targets", a["hermes.turn.tool_targets"]) || []
+    };
   }
   var MODE_KEY = "hermes_otel.attr_view";
   function readViewMode() {
@@ -2757,7 +2746,7 @@
             { label: "previous session", value: a["hermes.session.previous_id"], mono: true }
           ]
         }
-      ), errorBlock, /* @__PURE__ */ React.createElement(Attr, { a, label: "user message", keys: ["input.value", "gen_ai.input.messages"], source }), /* @__PURE__ */ React.createElement(Attr, { a, label: "final response", keys: ["output.value", "gen_ai.output.messages"] }), tools.length ? /* @__PURE__ */ React.createElement(Block2, { label: `tools \xB7 ${tools.length}` }, /* @__PURE__ */ React.createElement("dl", { className: "otel-attr-table otel-kv-table text-xs" }, tools.map((t, i) => /* @__PURE__ */ React.createElement(React.Fragment, { key: i }, /* @__PURE__ */ React.createElement("dt", { className: "font-mono" }, t.tool || "\xB7"), /* @__PURE__ */ React.createElement("dd", { className: "min-w-0 break-words" }, /* @__PURE__ */ React.createElement(StatusBadge, { value: t.outcome }), t.command ? /* @__PURE__ */ React.createElement("code", { className: "otel-code ml-1" }, t.command) : null, t.target ? /* @__PURE__ */ React.createElement("span", { className: "ml-1 font-mono text-muted-foreground" }, t.target) : null))))) : null, skills && skills.length ? /* @__PURE__ */ React.createElement(Block2, { label: "skills" }, /* @__PURE__ */ React.createElement(Chips, { items: skills, mono: true })) : null);
+      ), errorBlock, /* @__PURE__ */ React.createElement(Attr, { a, label: "user message", keys: ["input.value", "gen_ai.input.messages"], source }), /* @__PURE__ */ React.createElement(Attr, { a, label: "final response", keys: ["output.value", "gen_ai.output.messages"] }), tools.tools.length || tools.commands.length || tools.targets.length ? /* @__PURE__ */ React.createElement(Block2, { label: tools.tools.length ? `tools \xB7 ${tools.tools.length}` : "tools" }, /* @__PURE__ */ React.createElement("dl", { className: "otel-attr-table otel-kv-table text-xs" }, tools.tools.length ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("dt", null, "used"), /* @__PURE__ */ React.createElement("dd", { className: "min-w-0 break-words" }, /* @__PURE__ */ React.createElement(Chips, { items: tools.tools, mono: true }))) : null, tools.outcomes.length ? /* @__PURE__ */ React.createElement(React.Fragment, null, /* @__PURE__ */ React.createElement("dt", null, "outcomes"), /* @__PURE__ */ React.createElement("dd", { className: "flex min-w-0 flex-wrap gap-1" }, tools.outcomes.map((o) => /* @__PURE__ */ React.createElement(StatusBadge, { key: o, value: o })))) : null, tools.commands.map((c, i) => /* @__PURE__ */ React.createElement(React.Fragment, { key: `c${i}` }, /* @__PURE__ */ React.createElement("dt", null, "command"), /* @__PURE__ */ React.createElement("dd", { className: "min-w-0 break-words" }, /* @__PURE__ */ React.createElement("code", { className: "otel-code" }, c)))), tools.targets.map((t, i) => /* @__PURE__ */ React.createElement(React.Fragment, { key: `t${i}` }, /* @__PURE__ */ React.createElement("dt", null, "target"), /* @__PURE__ */ React.createElement("dd", { className: "min-w-0 break-words font-mono text-muted-foreground" }, t))))) : null, skills && skills.length ? /* @__PURE__ */ React.createElement(Block2, { label: "skills" }, /* @__PURE__ */ React.createElement(Chips, { items: skills, mono: true })) : null);
     }
     if (kind === "skill") {
       return /* @__PURE__ */ React.createElement("div", { className: "space-y-2" }, /* @__PURE__ */ React.createElement("div", { className: "flex flex-wrap items-center gap-2 text-xs" }, first(a, "hermes.skill.name", "gen_ai.skill.name") ? /* @__PURE__ */ React.createElement(Badge, { variant: "secondary", className: "font-mono text-[10px]" }, String(first(a, "hermes.skill.name", "gen_ai.skill.name"))) : null, /* @__PURE__ */ React.createElement(StatusBadge, { value: a["hermes.skill.result_status"] }), a["hermes.skill.source"] ? /* @__PURE__ */ React.createElement("span", { className: "text-muted-foreground" }, "loaded via ", String(a["hermes.skill.source"])) : null), /* @__PURE__ */ React.createElement(Facts, { items: [{ label: "path", value: a["hermes.skill.path"], mono: true }] }), errorBlock);
