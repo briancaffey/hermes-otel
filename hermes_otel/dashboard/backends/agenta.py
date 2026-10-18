@@ -14,6 +14,17 @@ so every search-bar field is a server predicate except the duration (no
 field). Ingest is asynchronous (a Redis stream), so a span appears a few
 seconds after export.
 
+Current Agenta (``agenta-api:latest``, 2026-10-18) folds some keys the plugin
+sends into its own namespace instead of storing them as sent (#630):
+``llm.model_name`` is gone (``gen_ai.request.model`` stays), ``tool.name`` is
+gone (``gen_ai.tool.name`` and the span name stay), and a root's
+``input.value`` / ``output.value`` survive only as
+``ag.unsupported.data.inputs`` / ``ag.data.outputs``. So the model filter asks
+both model keys, the tool filter matches the span name (``tool.<name>``, which
+both versions keep), free text asks the old and the new text keys, and
+:meth:`AgentaAdapter._attrs` puts a moved value back under the key the plugin
+sent it as when that key is missing.
+
 The read side uses the same ``Authorization: ApiKey`` the exporter uses; the
 key scopes everything to one project, which is why ``service`` is not a
 filter. Resource attributes are not stored, so the detail's resource is the
@@ -23,6 +34,7 @@ plugin's default service name.
 from __future__ import annotations
 
 import copy
+import itertools
 from typing import Any, Dict, List, Optional
 
 from . import default_service_name, register
@@ -51,9 +63,30 @@ _CLOUD = {"us": "https://us.cloud.agenta.ai", "eu": "https://eu.cloud.agenta.ai"
 _ROWS_PER_TRACE = 4
 _MAX_TRACE_SPANS = 2000
 
+# The roots' prompt and answer: as sent (v0.122), then where current Agenta
+# keeps them (#630). One query each, merged client-side (see ``_bodies``).
+_FREE_TEXT_KEYS = (
+    "input.value",
+    "output.value",
+    "ag.data.outputs",
+    "ag.unsupported.data.inputs",
+)
+# An equality filter on the key also asks the others, one query each: current
+# Agenta drops ``llm.model_name`` but keeps the plugin's
+# ``gen_ai.request.model``, which carries the same value.
+_EQUAL_ALIASES = {"llm.model_name": ("llm.model_name", "gen_ai.request.model")}
+# A key current Agenta may have moved, and where its value is instead, in
+# order (#630). Only a non-empty string is restored, and only when the key
+# itself is missing.
+_RESTORE = (
+    ("llm.model_name", ("gen_ai.request.model", "ag.meta.request.model")),
+    ("tool.name", ("gen_ai.tool.name",)),
+    # A root's prompt; a tool span's arguments (the JSON the plugin sent).
+    ("input.value", ("ag.unsupported.data.inputs", "ag.data.inputs", "gen_ai.tool.call.arguments")),
+    ("output.value", ("ag.data.outputs",)),
+)
 # Agenta's derived copies of the inputs and outputs; the plugin's own
 # ``input.value`` / ``gen_ai.input.messages`` already carry them.
-_FREE_TEXT_KEYS = ("input.value", "output.value")  # the roots' prompt and answer
 _DROP_PREFIXES = ("ag.data.", "ag.meta.")
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
 
@@ -130,44 +163,53 @@ class AgentaAdapter(BackendAdapter):
 
     # ── filter translation ───────────────────────────────────────────
 
-    def _conditions(self, f: StructuredFilter) -> List[Dict[str, Any]]:
-        conds: List[Dict[str, Any]] = []
+    def _conditions(self, f: StructuredFilter) -> List[List[Dict[str, Any]]]:
+        """The filter as an ``and`` of groups. A group of several conditions
+        is an ``or``, which :meth:`_bodies` runs as one query per member."""
+        conds: List[List[Dict[str, Any]]] = []
         if f.roots_only:
-            conds.append(_cond("parent_id", "is", None))
+            conds.append([_cond("parent_id", "is", None)])
         if f.name_regex:
-            conds.append(_cond("span_name", "is", f.name_regex))
+            conds.append([_cond("span_name", "is", f.name_regex)])
         if f.name_prefix:
-            conds.append(_cond("span_name", "startswith", f.name_prefix))
+            conds.append([_cond("span_name", "startswith", f.name_prefix)])
         for k, v in {**f.attr_equals, **parse_kv_tokens(f.raw)}.items():
-            conds.append(_cond("attributes", "eq", v, key=k))
+            if k == "tool.name":
+                # Current Agenta drops ``tool.name``; every version keeps the
+                # name the plugin gives a tool span (#630).
+                conds.append([_cond("span_name", "is", f"tool.{v}")])
+                continue
+            conds.append([_cond("attributes", "eq", v, key=a) for a in _EQUAL_ALIASES.get(k, (k,))])
         if f.status == "error":
-            conds.append(_cond("status_code", "is", "STATUS_CODE_ERROR"))
+            conds.append([_cond("status_code", "is", "STATUS_CODE_ERROR")])
         elif f.status == "ok":
-            conds.append(_cond("status_code", "is_not", "STATUS_CODE_ERROR"))
+            conds.append([_cond("status_code", "is_not", "STATUS_CODE_ERROR")])
+        if f.free_text:
+            conds.append(
+                [_cond("attributes", "contains", f.free_text, key=k) for k in _FREE_TEXT_KEYS]
+            )
         return conds
 
     def _bodies(
         self, f: StructuredFilter, start_s: int, end_s: int, limit: int
     ) -> List[Dict[str, Any]]:
-        """One query per free-text target. A nested ``{"operator": "or",
-        "conditions": [...]}`` group is accepted by the API but parsed as an
-        empty leaf condition and dropped (v0.122: a free-text search returned
-        every root), so "input OR output contains" is two flat ``and`` queries
-        merged client-side."""
-        base = self._body(f, start_s, end_s, limit)
-        if not f.free_text:
-            return [base]
+        """One query per pick of one member from each ``or`` group (the
+        free-text keys, a model filter's two keys). A nested ``{"operator":
+        "or", "conditions": [...]}`` group is accepted by the API but parsed
+        as an empty leaf condition and dropped (v0.122: a free-text search
+        returned every root), so each "A OR B" is flat ``and`` queries merged
+        client-side."""
         bodies = []
-        for key in _FREE_TEXT_KEYS:
-            body = copy.deepcopy(base)
-            conds = list(body.get("filtering", {}).get("conditions", []))
-            conds.append(_cond("attributes", "contains", f.free_text, key=key))
-            body["filtering"] = {"operator": "and", "conditions": conds}
+        for conds in itertools.product(*self._conditions(f)):
+            body = self._body(f, start_s, end_s, limit)
+            if conds:
+                body["filtering"] = {"operator": "and", "conditions": copy.deepcopy(list(conds))}
             bodies.append(body)
         return bodies
 
     def _body(self, f: StructuredFilter, start_s: int, end_s: int, limit: int) -> Dict[str, Any]:
-        body: Dict[str, Any] = {
+        """The formatting and windowing every search query shares."""
+        return {
             "formatting": {"focus": "span", "format": "agenta"},
             "windowing": {
                 "oldest": ns_to_rfc3339(ns_from_s(start_s), digits=6),
@@ -176,10 +218,6 @@ class AgentaAdapter(BackendAdapter):
                 "order": "descending",
             },
         }
-        conds = self._conditions(f)
-        if conds:
-            body["filtering"] = {"operator": "and", "conditions": conds}
-        return body
 
     # ── shapes ───────────────────────────────────────────────────────
 
@@ -188,7 +226,14 @@ class AgentaAdapter(BackendAdapter):
         # An empty nested object stays (``{}``): Agenta writes one for a
         # namespace it knows but the span did not fill.
         flat = flatten_dotted(span.get("attributes") or {}, keep_empty=True)
-        return {k: v for k, v in flat.items() if not k.startswith(_DROP_PREFIXES)}
+        out = {k: v for k, v in flat.items() if not k.startswith(_DROP_PREFIXES)}
+        # A value current Agenta moved goes back under the key the plugin sent.
+        for key, sources in _RESTORE:
+            if key not in out:
+                found = next((flat[s] for s in sources if isinstance(flat.get(s), str)), "")
+                if found:
+                    out[key] = found
+        return out
 
     def _row(self, span: Dict[str, Any], trace_id: Any = None) -> SpanRow:
         """An Agenta span as a row. A missing end is the start; resource

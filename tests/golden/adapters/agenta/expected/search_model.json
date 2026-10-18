@@ -37,6 +37,38 @@
     "filtering": {
      "conditions": [
       {
+       "field": "parent_id",
+       "operator": "is",
+       "value": null
+      },
+      {
+       "field": "attributes",
+       "key": "gen_ai.request.model",
+       "operator": "eq",
+       "value": "nvidia/nemotron-3-super-120b-a12b"
+      }
+     ],
+     "operator": "and"
+    },
+    "formatting": {
+     "focus": "span",
+     "format": "agenta"
+    },
+    "windowing": {
+     "limit": 6,
+     "newest": "2026-10-11T20:21:00.000000Z",
+     "oldest": "2026-10-11T19:20:00.000000Z",
+     "order": "descending"
+    }
+   },
+   "method": "POST",
+   "url": "http://localhost:3060/api/spans/query"
+  },
+  {
+   "body": {
+    "filtering": {
+     "conditions": [
+      {
        "field": "trace_id",
        "operator": "in",
        "value": [
