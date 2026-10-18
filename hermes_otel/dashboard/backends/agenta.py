@@ -87,7 +87,7 @@ _RESTORE = (
 )
 # Agenta's derived copies of the inputs and outputs; the plugin's own
 # ``input.value`` / ``gen_ai.input.messages`` already carry them.
-_DROP_PREFIXES = ("ag.data.", "ag.meta.")
+_DROP_PREFIXES = ("ag.data.", "ag.meta.", "ag.unsupported.")
 _STATUS = {"STATUS_CODE_OK": 1, "STATUS_CODE_ERROR": 2}
 
 

@@ -516,6 +516,13 @@ class TestCurrentAgentaShape:
         assert tool["input.value"] == '{"command": "echo B261018-165942-multi-tool-one"}'
         assert "llm.model_name" not in tool
 
+    def test_the_moved_copy_is_not_shown_twice(self):
+        # The prompt is restored as input.value; Agenta's ag.unsupported.*
+        # copy of it is dropped like ag.data.* / ag.meta.*.
+        root = ag.AgentaAdapter._attrs(CUR_ROOT)
+        assert root.get("input.value")
+        assert not [k for k in root if k.startswith("ag.")]
+
     def test_restore_never_overrides_a_key_agenta_kept(self):
         span = copy.deepcopy(CUR_ROOT)
         span["attributes"]["llm"]["model_name"] = "sent"
