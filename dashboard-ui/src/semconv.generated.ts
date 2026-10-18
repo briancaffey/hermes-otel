@@ -343,6 +343,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "hermes.conversation.message_count",
   "hermes.query_source",
   "hermes.auxiliary.task",
+  "hermes.span.after_turn",
   "llm.api_mode",
   "llm.request.message_count",
   "llm.request.approx_input_tokens",

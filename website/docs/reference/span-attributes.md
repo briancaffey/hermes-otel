@@ -83,7 +83,7 @@ The root span is named `agent`, or `cron` when the session kind is a cron job. S
 | `hermes.session.synthesized` | hermes | bool | `true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hook of the turn (optional) |
 | `hermes.session.previous_id` | hermes | string | The session this one replaced (`/new`, `/reset`); the root also carries a span link (`hermes.link=previous_session`) to that session's last root (optional) |
 | `hermes.session.finalize_reason`, `hermes.session.reset_reason` | hermes | string | Set when a still-open root was closed by `on_session_finalize` / `on_session_reset`, with `hermes.turn.final_status` `finalized` / `reset` (optional) |
-| `hermes.link` | hermes | string | On the span **link** from a replacing session's first root to the old session's last root: `previous_session` |
+| `hermes.link` | hermes | string | On a span **link**: `previous_session` on the link from a replacing session's first root to the old session's last root; `turn_root` on the link from an auxiliary `api.*` span that started after its turn's root ended to that root |
 | `hermes.session_id`, `hermes.session.turn_count`, `hermes.session.duration_s`, `hermes.session.finalize_reason`, `hermes.session.reset_reason` | hermes | mixed | On the **log record** `on_session_finalize` / `on_session_reset` emit (exported with `capture_logs`), not on a span |
 | `hermes.cron.job_id` | hermes | string | Cron job id, `cron` roots only: from the hook payload, else parsed from the scheduler's `cron_<job id>_<timestamp>` session id (optional) |
 | `hermes.session.is_subagent` | hermes | bool | `true` on a delegated child's own root (optional) |
@@ -154,6 +154,7 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
 | `hermes.query_source` | hermes | string | Which loop the call belongs to: `main` (the agent loop), `subagent` (a delegated child's own loop), `auxiliary` (a call Hermes made on the agent's behalf: titling, compression, MoA reference models and aggregator, vision, approval, the kanban decomposer, the `/goal` judge, …; [hooks](/reference/hooks#pre_auxiliary_call--post_auxiliary_call)) |
 | `hermes.auxiliary.task` | hermes | string | The auxiliary task, as Hermes names it (`title_generation`, `compression`, `moa_reference`, `moa_aggregator`, `vision`, `approval`, `kanban_decomposer`, `triage_specifier`, `goal_judge`, …); `unknown` when it sent none. Auxiliary spans only |
+| `hermes.span.after_turn` | hermes | bool | `true` on an auxiliary span that started after its session's turn root had ended (title generation can fire after `on_session_end`): the span is its own root, with a span link (`hermes.link=turn_root`) to the root it followed rather than a parent that ended first (optional; auxiliary spans only) |
 | `llm.api_mode` | hermes | string | `chat_completions` · `anthropic_messages` · `codex_responses` · … |
 | `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
 | `llm.request.tool_count` | hermes | int | Tools offered on an auxiliary call, when any (optional; auxiliary spans only) |

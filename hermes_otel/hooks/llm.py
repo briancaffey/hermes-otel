@@ -112,6 +112,7 @@ def on_pre_llm_call(
     # close it so this turn gets its own root instead of joining that trace.
     if session_id:
         tracer.close_failed_turn(session_id)
+        tracer.sessions.remember_turn_id(session_id, kwargs.get("turn_id"))
 
     # hermes fires on_session_start only on the very first turn, but
     # on_session_end fires per turn. On continuation turns (2+) we arrive
