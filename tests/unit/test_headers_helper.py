@@ -652,6 +652,7 @@ class TestHelperOnlyEntries:
             self._entry(
                 "openobserve",
                 headers_helper=script(tmp_path, 'print("Authorization=Basic bWludDpwdw==")\n'),
+                headers_helper_timeout_ms=SLOW_START_MS,
             )
         )
         target = rb.target("traces")
