@@ -131,6 +131,11 @@ class TestSetup:
             and st["logs_url"] == "http://localhost:9428"
         )
 
+    def test_query_url_falls_back_to_the_endpoint_port(self):
+        # The Jaeger-compatible API shares the OTLP port (unlike Jaeger, #605).
+        a = vt.VictoriaAdapter({"type": "victoria", "endpoint": "http://vt:11428/insert/otlp"})
+        assert a.query_url == "http://vt:11428"
+
     def test_unnamed_stores_switch_capabilities_off(self):
         a = vt.VictoriaAdapter({"type": "victoria", "endpoint": "http://localhost:10428"})
         assert a.supports_metrics is False and a.supports_logs is False

@@ -76,6 +76,18 @@ class TestJaeger:
             "processes": {"p1": {"serviceName": "hermes-agent", "tags": []}},
         }
 
+    def test_query_url_defaults_to_16686_not_the_otlp_port(self):
+        # #605: the OTLP receiver's port is never Jaeger's query API.
+        a = jaeger.JaegerAdapter({"type": "jaeger", "endpoint": "http://localhost:4318/v1/traces"})
+        assert a.query_url == "http://localhost:16686"
+        assert a.api_base == "http://localhost:16686"
+
+    def test_explicit_query_port_wins(self):
+        a = jaeger.JaegerAdapter(
+            {"type": "jaeger", "endpoint": "http://jaeger:4318/v1/traces", "query_port": 26686}
+        )
+        assert a.query_url == "http://jaeger:26686"
+
     def test_roots_only_requires_the_root_itself_to_match(self, monkeypatch):
         data = {
             "data": [

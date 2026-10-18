@@ -251,6 +251,11 @@ class JaegerAdapter(BackendAdapter):
     query_lang_label = "Jaeger tags (key=value)"
     default_query_port = _DEFAULT_JAEGER_QUERY_PORT
     default_query_path = ""
+    # How ``query_origin`` treats the endpoint's port when ``query_port`` is
+    # unset: Jaeger's query API is never on its OTLP port, so ``16686``
+    # (#605); the stores that embed this API on their OTLP port say
+    # ``"fallback"``.
+    query_endpoint_port = "ignore"
     # How many traces a search asks the server for. Jaeger returns the newest
     # ``limit`` traces, so one beyond the page is enough (``None``); a store
     # whose ``limit`` keeps arbitrary traces sets a fetch size and the page is
@@ -273,9 +278,9 @@ class JaegerAdapter(BackendAdapter):
 
     def __init__(self, cfg: Dict[str, Any]):
         super().__init__(cfg)
-        # The endpoint's own port stands in for a missing ``query_port``: the
-        # stores that embed this API serve it on their OTLP port.
-        self.query_url = query_origin(cfg, self.default_query_port, endpoint_port="fallback")
+        self.query_url = query_origin(
+            cfg, self.default_query_port, endpoint_port=self.query_endpoint_port
+        )
         # Where ``/api/...`` hangs: the origin for Jaeger itself, a prefix for
         # stores that embed a Jaeger-compatible API (GreptimeDB's
         # ``/v1/jaeger``, #363). ``query_path`` on the entry overrides.

@@ -192,7 +192,7 @@ def query_origin(
       of its own: Phoenix 6006, SigNoz 3301, the Aspire UI 18888, ...);
     * ``endpoint_port="fallback"`` — the endpoint's own port, then the default
       (stores whose read API shares the OTLP port: GreptimeDB's 4000,
-      VictoriaTraces' 10428, Gigapipe's 3100, a Jaeger behind one gateway);
+      VictoriaTraces' 10428, Gigapipe's 3100, Zipkin's 9411);
     * ``endpoint_port="first"`` — the endpoint's port even over ``query_port``
       (Langfuse, whose base URL is the UI).
 
