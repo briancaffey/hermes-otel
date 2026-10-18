@@ -463,7 +463,9 @@ class TestRedaction:
         monkeypatch.setattr(du, "_DEBUG_ENABLED", True)
         du.close_debug_log()
         try:
-            HeadersHelper(script(tmp_path, PRINTS_KV), label="oo").headers()
+            HeadersHelper(
+                script(tmp_path, PRINTS_KV), label="oo", timeout_ms=SLOW_START_MS
+            ).headers()
             du.close_debug_log()
             log = (tmp_path / "home" / "plugins" / "hermes_otel" / "debug.log").read_text()
         finally:
@@ -542,7 +544,7 @@ class TestResolveAndTarget:
         assert target.headers == {"x-g": "1"} and target.headers_helper is None
 
     def test_target_merges_minted_over_static_for_every_signal(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV), label="t")
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), label="t", timeout_ms=SLOW_START_MS)
         rb = _ResolvedBackend(
             type="otlp",
             endpoint="http://x/v1/traces",
@@ -568,6 +570,7 @@ class TestResolveAndTarget:
             user="root@example.com",
             password="initial",
             headers_helper=script(tmp_path, 'print("Authorization=Basic bmV3OnBhc3M=")\n'),
+            headers_helper_timeout_ms=SLOW_START_MS,
         )
         rb = resolve(bc)
         target = rb.target("logs")
@@ -583,6 +586,7 @@ class TestResolveAndTarget:
                 type="otlp",
                 endpoint="http://127.0.0.1:4318/v1/traces",
                 headers_helper=script(tmp_path, "import sys\nsys.exit(2)\n"),
+                headers_helper_timeout_ms=SLOW_START_MS,
             )
         )
         cfg = HermesOtelConfig(dashboard_live=False, probe_backends=False)
@@ -673,7 +677,7 @@ class TestExporterKwargs:
         from hermes_otel.headers_helper import RefreshingSession
         from hermes_otel.pipeline import exporter_kwargs
 
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV))
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), timeout_ms=SLOW_START_MS)
         kwargs = exporter_kwargs(SignalTarget("http://x", helper.headers(), helper), "L")
         session = kwargs["session"]
         assert isinstance(session, RefreshingSession)
@@ -691,6 +695,7 @@ class TestExporterKwargs:
                 type="otlp",
                 endpoint="http://127.0.0.1:4318/v1/traces",
                 headers_helper=helper_cmd,
+                headers_helper_timeout_ms=SLOW_START_MS,
                 metrics=True,
                 logs=True,
             )
