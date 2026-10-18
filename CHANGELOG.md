@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.0...hermes-otel-v1.32.1) (2026-10-18)
+
+
+### Bug Fixes
+
+* **otlp:** SDK TLS variables no longer refuse a plaintext http:// backend ([#602](https://github.com/briancaffey/hermes-otel/issues/602)) ([8dda876](https://github.com/briancaffey/hermes-otel/commit/8dda87608461301f5c2dc1d878781691274fe3dd))
+
 ## [1.32.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.31.0...hermes-otel-v1.32.0) (2026-10-18)
 
 
