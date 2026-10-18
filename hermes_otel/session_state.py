@@ -393,6 +393,10 @@ class SessionState:
         self._first_seen: "OrderedDict[str, float]" = OrderedDict()
         self._last_root_context: "OrderedDict[str, Any]" = OrderedDict()
         self._previous_session: "OrderedDict[str, str]" = OrderedDict()
+        # The Hermes ``turn_id`` of each session's latest turn (from
+        # ``pre_llm_call``): tells an auxiliary call of the turn that just
+        # ended from one of the next turn that has no root yet (#588).
+        self._last_turn_id: "OrderedDict[str, str]" = OrderedDict()
         # The session most recently finalized; a reset that names no old
         # session (the CLI) is taken to replace it.
         self.last_finalized: Optional[str] = None
@@ -535,6 +539,19 @@ class SessionState:
                 return self._last_root_context.pop(session_id, None)
             return self._last_root_context.get(session_id)
 
+    def remember_turn_id(self, session_id: str, turn_id: Any) -> None:
+        """Keep the Hermes ``turn_id`` of the session's latest turn. Bounded."""
+        text = str(turn_id or "").strip()
+        if not session_id or not text:
+            return
+        with self._lock:
+            self._remember(self._last_turn_id, session_id, text)
+
+    def last_turn_id(self, session_id: str) -> str:
+        """The latest turn's Hermes ``turn_id``, or ``""`` when none was seen."""
+        with self._lock:
+            return self._last_turn_id.get(session_id, "")
+
     def set_previous(self, new_session_id: str, old_session_id: str) -> None:
         """Record that ``new_session_id`` replaced ``old_session_id`` (a reset)."""
         if not new_session_id or not old_session_id or new_session_id == old_session_id:
@@ -582,4 +599,5 @@ class SessionState:
             self._first_seen.clear()
             self._last_root_context.clear()
             self._previous_session.clear()
+            self._last_turn_id.clear()
             self.last_finalized = None

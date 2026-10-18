@@ -116,6 +116,18 @@ class TestAfterTurnLinks:
         tracer.spans.push_parent(object(), session_id="s1")
         assert after_turn_links(tracer, "s1") is None
 
+    def test_turn_id_of_a_newer_turn_is_not_after_the_turn(self):
+        tracer = self._tracer()
+        tracer.sessions.remember_root_context("s1", self.CTX)
+        tracer.sessions.remember_turn_id("s1", "s1:t:1")
+        assert after_turn_links(tracer, "s1", "s1:t:1") is not None
+        assert after_turn_links(tracer, "s1", "s1:t:2") is None
+        # No turn_id on either side: the open-turn check alone decides.
+        assert after_turn_links(tracer, "s1") is not None
+        tracer.sessions.remember_turn_id("s1", "")  # ignored
+        assert tracer.sessions.last_turn_id("s1") == "s1:t:1"
+        assert tracer.sessions.last_turn_id("s-unknown") == ""
+
     def test_none_without_a_session_or_a_remembered_root(self):
         tracer = self._tracer()
         assert after_turn_links(tracer, None) is None

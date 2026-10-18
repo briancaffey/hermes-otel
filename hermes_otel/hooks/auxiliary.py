@@ -20,7 +20,9 @@ An attempt that starts after its session's turn root has ended (Hermes's
 title generation can fire after ``on_session_end``) is not parented under the
 ended root, which would show a child outliving its parent: it stays its own
 root, tagged ``hermes.span.after_turn=true``, with a span link
-(``hermes.link=turn_root``) to the root it followed (#588).
+(``hermes.link=turn_root``) to the root it followed, and its usage is not
+accounted on any turn: that turn's roll-up is already exported, and the next
+turn's must not absorb it (#588).
 """
 
 from __future__ import annotations
@@ -93,14 +95,21 @@ def _span_name(model: Any) -> str:
     return f"api.{model}" if model else "api.auxiliary"
 
 
-def after_turn_links(tracer, owner: Optional[str]) -> Optional[list]:
-    """A link to the session's last root when no turn of it is in flight.
+def after_turn_links(tracer, owner: Optional[str], turn_id: Any = "") -> Optional[list]:
+    """A link to the session's last root when the attempt belongs to the
+    turn that root closed.
 
     ``None`` while the owning turn is open (the attempt nests under it), for
-    a turn-less caller, and for a session whose root this process never
-    closed (nothing to link to).
+    a turn-less caller, for a session whose root this process never closed
+    (nothing to link to), and for an attempt whose ``turn_id`` names a newer
+    turn than the last one ``pre_llm_call`` reported: preflight compression
+    runs before the next turn's root opens and belongs to that turn.
     """
     if not owner or Link is None or tracer.spans.get_session_root(owner) is not None:
+        return None
+    current = str(turn_id or "").strip()
+    last = tracer.sessions.last_turn_id(owner)
+    if current and last and current != last:
         return None
     root_ctx = tracer.sessions.root_context(owner)
     if root_ctx is None:
@@ -154,7 +163,7 @@ def on_pre_auxiliary_call(
         attributes["llm.request.tool_count"] = tool_count
     if streaming:
         attributes["gen_ai.request.stream"] = True
-    links = after_turn_links(tracer, owner)
+    links = after_turn_links(tracer, owner, kwargs.get("turn_id"))
     if links:
         attributes["hermes.span.after_turn"] = True
 
@@ -234,7 +243,12 @@ def on_post_auxiliary_call(
         model_labels=model_labels,
         cache_labels={**_metric_model_labels(model, provider), "api_mode": api_mode},
     )
-    if owner:
+    # After the turn the roll-up is already exported: accounting it would
+    # recreate a finalized session's entry or bleed into the next turn.
+    links = after_turn_links(tracer, owner, kwargs.get("turn_id"))
+    if links:
+        attributes["hermes.span.after_turn"] = True
+    elif owner:
         tracer.sessions.get_or_create(owner).add_auxiliary(totals, cost, failed=failed)
 
     duration = duration_seconds(api_duration)
@@ -270,7 +284,13 @@ def on_post_auxiliary_call(
     # loaded, or the attempt outlived the orphan sweep) a fresh one so the
     # spend is still visible with the identity the pre hook would have set.
     span, created = ensure_span(
-        tracer, key, name=_span_name(model), session_id=owner, model=model, provider=provider
+        tracer,
+        key,
+        name=_span_name(model),
+        session_id=owner,
+        model=model,
+        provider=provider,
+        links=links,
     )
     if not created and failed:
         add_exception_event(span, err_type or "error", err_message, keep_empty_message=True)

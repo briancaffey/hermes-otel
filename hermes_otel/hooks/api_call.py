@@ -361,6 +361,7 @@ def ensure_span(
     session_id: Optional[str],
     model: Any,
     provider: Any,
+    links: Optional[list] = None,
 ) -> Tuple[Any, bool]:
     """The in-flight span for ``key``, or a fresh one carrying the identity
     the start hook would have set. Returns ``(span, created)``.
@@ -377,7 +378,7 @@ def ensure_span(
     identity.update(_session_identity_attributes(session_id))
     identity.update(_model_attributes(model, provider))
     span = tracer.start_span(
-        name=name, key=key, kind="llm", attributes=identity, session_id=session_id
+        name=name, key=key, kind="llm", attributes=identity, session_id=session_id, links=links
     )
     return span, True
 

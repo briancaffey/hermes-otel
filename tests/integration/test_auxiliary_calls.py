@@ -22,6 +22,7 @@ from hermes_otel.hooks import (
     on_pre_auxiliary_call,
     on_pre_llm_call,
     on_session_end,
+    on_session_finalize,
     on_session_start,
     on_subagent_start,
 )
@@ -29,15 +30,17 @@ from hermes_otel.hooks import (
 SID = "s-aux"
 
 
-def _open_turn(session_id=SID, model="gpt-4"):
-    on_session_start(session_id=session_id, model=model, platform="cli")
+def _open_turn(session_id=SID, model="gpt-4", turn_id=None, first=True):
+    if first:
+        on_session_start(session_id=session_id, model=model, platform="cli")
     on_pre_llm_call(
         session_id=session_id,
         user_message="hello",
         conversation_history=[],
-        is_first_turn=True,
+        is_first_turn=first,
         model=model,
         platform="cli",
+        **({"turn_id": turn_id} if turn_id else {}),
     )
 
 
@@ -218,6 +221,21 @@ class TestSpanShape:
         assert "hermes.span.after_turn" not in aux.attributes
         assert not aux.links
 
+    def test_post_without_pre_after_the_turn_is_linked_too(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _open_turn()
+        _close_turn()
+        _post(_base(request_id="late-title"))
+
+        spans = exporter.get_finished_spans()
+        aux = _span_by_name(spans, "api.gpt-4o-mini")
+        root = _span_by_name(spans, "agent")
+        assert _parent_span_id(aux) is None
+        assert aux.attributes["hermes.span.after_turn"] is True
+        assert aux.attributes["hermes.query_source"] == "auxiliary"
+        assert [ln.context.span_id for ln in aux.links] == [root.context.span_id]
+        assert aux.links[0].attributes["hermes.link"] == "turn_root"
+
     def test_full_prompt_and_response_capture(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         _open_turn()
@@ -393,6 +411,56 @@ class TestTurnRollup:
         assert a["hermes.turn.auxiliary.input_tokens"] == 36
         assert a["hermes.turn.auxiliary.output_tokens"] == 9
         assert "hermes.turn.auxiliary.error_count" not in a
+
+    def test_after_turn_call_does_not_bleed_into_the_next_turn(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        T1 = f"{SID}:t:1"
+        _open_turn(turn_id=T1)
+        _close_turn()
+        _post(_pre(request_id="req-title", turn_id=T1))
+        # Accounted nowhere: turn 1's roll-up is exported, turn 2 is not its owner.
+        assert plugin.sessions.peek(SID) is None
+        _open_turn(turn_id=f"{SID}:t:2", first=False)
+        _close_turn()
+
+        roots = [s for s in exporter.get_finished_spans() if s.name == "agent"]
+        assert len(roots) == 2
+        for root in roots:
+            assert "hermes.turn.auxiliary.api_call_count" not in root.attributes
+        aux = _span_by_name(exporter.get_finished_spans(), "api.gpt-4o-mini")
+        assert aux.attributes["hermes.span.after_turn"] is True
+
+    def test_after_finalize_call_does_not_recreate_the_session(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        _open_turn()
+        _close_turn()
+        on_session_finalize(session_id=SID, platform="cli", reason="shutdown")
+        before = plugin.sessions.active_count()
+        _post(_pre(request_id="req-late"))
+        _post(_base(request_id="req-late-post-only"))
+        assert plugin.sessions.peek(SID) is None
+        assert plugin.sessions.active_count() == before
+        aux = [s for s in _aux_spans(exporter)]
+        assert len(aux) == 2
+        assert all(s.attributes["hermes.span.after_turn"] is True for s in aux)
+
+    def test_next_turns_preflight_compression_counts_on_that_turn(self, inmemory_otel_setup):
+        """Preflight compression runs before the next turn's root opens; its
+        turn_id names the new turn, so it is not an after-turn call."""
+        exporter, _ = inmemory_otel_setup
+        _open_turn(turn_id=f"{SID}:t:1")
+        _close_turn()
+        T2 = f"{SID}:t:2"
+        _post(_pre(task="compression", request_id="req-compress", turn_id=T2))
+        _open_turn(turn_id=T2, first=False)
+        _close_turn()
+
+        aux = _span_by_name(exporter.get_finished_spans(), "api.gpt-4o-mini")
+        assert "hermes.span.after_turn" not in aux.attributes
+        assert not aux.links
+        roots = [s for s in exporter.get_finished_spans() if s.name == "agent"]
+        turn2 = max(roots, key=lambda r: r.attributes["hermes.turn.number"])
+        assert turn2.attributes["hermes.turn.auxiliary.api_call_count"] == 1
 
     def test_moa_fan_out_lands_under_one_turn(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
