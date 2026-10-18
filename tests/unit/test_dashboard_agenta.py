@@ -193,12 +193,9 @@ class TestQuery:
             "key": "hermes.session_id",
             "value": "s1",
         } in conds
-        assert {
-            "field": "attributes",
-            "operator": "eq",
-            "key": "tool.name",
-            "value": "terminal",
-        } in conds
+        # The tool filter is the span name, which every Agenta version keeps (#630).
+        assert {"field": "span_name", "operator": "is", "value": "tool.terminal"} in conds
+        assert not any(c.get("key") == "tool.name" for c in conds)
         assert {
             "field": "attributes",
             "operator": "eq",
@@ -221,6 +218,38 @@ class TestQuery:
             "value": "hello",
         } in conds2
         assert conds2[:-1] == conds[:-1]
+        # Then where current Agenta keeps a root's text (#630), one query per key.
+        assert len(calls) == 4
+        assert [c["body"]["filtering"]["conditions"][-1]["key"] for c in calls] == [
+            "input.value",
+            "output.value",
+            "ag.data.outputs",
+            "ag.unsupported.data.inputs",
+        ]
+        assert all(c["body"]["filtering"]["conditions"][:-1] == conds[:-1] for c in calls)
+
+    def test_model_filter_asks_both_model_keys(self, monkeypatch):
+        calls = _capture(monkeypatch, [])
+        f = StructuredFilter(attr_equals={"llm.model_name": "m"}, status="ok")
+        _adapter().search(f, T0 - 60, T0 + 60, 10)
+        assert [c["body"]["filtering"]["conditions"] for c in calls] == [
+            [
+                {"field": "parent_id", "operator": "is", "value": None},
+                {"field": "attributes", "operator": "eq", "key": key, "value": "m"},
+                {"field": "status_code", "operator": "is_not", "value": "STATUS_CODE_ERROR"},
+            ]
+            for key in ("llm.model_name", "gen_ai.request.model")
+        ]
+
+    def test_model_and_free_text_run_every_combination(self, monkeypatch):
+        calls = _capture(monkeypatch, [])
+        f = StructuredFilter(attr_equals={"llm.model_name": "m"}, free_text="x")
+        _adapter().search(f, T0 - 60, T0 + 60, 10)
+        picks = [
+            tuple(c["key"] for c in call["body"]["filtering"]["conditions"][1:]) for call in calls
+        ]
+        assert len(picks) == 8 and len(set(picks)) == 8
+        assert ("gen_ai.request.model", "ag.data.outputs") in picks
 
     def test_free_text_merges_both_targets(self, monkeypatch):
         other = copy.deepcopy(ROOT)
@@ -233,12 +262,14 @@ class TestQuery:
             [
                 {"count": 1, "spans": [ROOT]},
                 {"count": 2, "spans": [ROOT, other]},
+                {"count": 0, "spans": []},
+                {"count": 1, "spans": [other]},
                 {"count": 2, "spans": [ROOT, other]},
             ],
         )
         rows = _adapter().search(StructuredFilter(free_text="big"), T0 - 60, T0 + 60, 10)["traces"]
         assert [r["traceID"] for r in rows] == ["2" * 32, TRACE]  # newest first, ROOT counted once
-        assert calls[2]["body"]["filtering"]["conditions"][0]["field"] == "trace_id"
+        assert calls[4]["body"]["filtering"]["conditions"][0]["field"] == "trace_id"
 
     def test_status_ok_and_widened_fetch(self, monkeypatch):
         calls = _capture(monkeypatch, [{"count": 0, "spans": []}])
@@ -376,3 +407,197 @@ class TestDetail:
         with pytest.raises(BackendError) as ei:
             _adapter().get_trace(TRACE)
         assert ei.value.kind == "auth"
+
+
+# Current Agenta (agenta-api:latest, 2026-10-18): the root and one tool span of
+# trace aa333be79b2530c0c0c4f722b7aa19ad as /api/spans/query answered them,
+# trimmed (metrics, usage and most hermes.* keys left out, the prompt cut). No
+# ``llm.model_name``, no ``tool.name``, and the root's prompt and answer only
+# under ``ag.*`` (#630).
+CUR_TRACE = "aa333be79b2530c0c0c4f722b7aa19ad"
+CUR_ROOT: Dict[str, Any] = {
+    "trace_id": CUR_TRACE,
+    "span_id": "86874eb2f032676f",
+    "trace_type": "invocation",
+    "span_type": "agent",
+    "span_kind": "SPAN_KIND_INTERNAL",
+    "span_name": "agent",
+    "start_time": "2026-10-18T21:01:17.068811Z",
+    "end_time": "2026-10-18T21:01:28.008327Z",
+    "status_code": "STATUS_CODE_OK",
+    "session_id": "20261018_170112_0537c1",
+    "attributes": {
+        "ag": {
+            "data": {
+                "outputs": "B261018-165942-multi-tool-one B261018-165942-multi-tool-two "
+                "B261018-165942-multi-tool-three"
+            },
+            "meta": {
+                "system": "nvidia",
+                "request": {"model": "nvidia/nemotron-3-super-120b-a12b"},
+                "provider": "nvidia",
+                "response": {"model": "nvidia/nemotron-3-super-120b-a12b"},
+            },
+            "type": {"span": "agent", "trace": "invocation"},
+            "session": {"id": "20261018_170112_0537c1"},
+            "unsupported": {
+                "data": {
+                    "inputs": "Run these three shell commands one at a time, each as its own "
+                    "separate tool call, ... (scenario marker: B261018-165942-multi-tool)"
+                }
+            },
+        },
+        "llm": {"provider": "nvidia"},
+        "gen_ai": {
+            "usage": {"input_tokens": 23700, "total_tokens": 24147, "output_tokens": 447},
+            "request": {"model": "nvidia/nemotron-3-super-120b-a12b"},
+            "response": {"model": "nvidia/nemotron-3-super-120b-a12b"},
+            "operation": {"name": "invoke_agent"},
+        },
+        "hermes": {
+            "turn": {"tools": "terminal", "number": 1},
+            "session_id": "20261018_170112_0537c1",
+        },
+        "openinference": {"span": {"kind": "AGENT"}},
+    },
+}
+CUR_TOOL: Dict[str, Any] = {
+    "trace_id": CUR_TRACE,
+    "span_id": "e9d03dbc43b064bd",
+    "parent_id": "2556ca32db26bcb7",
+    "trace_type": "invocation",
+    "span_type": "tool",
+    "span_kind": "SPAN_KIND_INTERNAL",
+    "span_name": "tool.terminal",
+    "start_time": "2026-10-18T21:01:21.821168Z",
+    "end_time": "2026-10-18T21:01:23.413995Z",
+    "status_code": "STATUS_CODE_OK",
+    "attributes": {
+        "ag": {
+            "data": {
+                "inputs": {"command": "echo B261018-165942-multi-tool-one"},
+                "outputs": '{"output": "B261018-165942-multi-tool-one", "exit_code": 0, '
+                '"error": null}',
+            },
+            "meta": {"tool": {"name": "terminal"}},
+            "type": {"span": "tool", "trace": "invocation"},
+        },
+        "gen_ai": {
+            "tool": {
+                "call": {"arguments": '{"command": "echo B261018-165942-multi-tool-one"}'},
+                "name": "terminal",
+            },
+            "operation": {"name": "execute_tool"},
+        },
+        "hermes": {"tool": {"command": "echo B261018-165942-multi-tool-one"}},
+        "openinference": {"span": {"kind": "TOOL"}},
+    },
+}
+CUR_T0 = 1_792_357_277  # 2026-10-18T21:01:17Z
+MODEL = "nvidia/nemotron-3-super-120b-a12b"
+
+
+def _card_attrs(row: Dict[str, Any]) -> Dict[str, Any]:
+    return {x["key"]: x["value"] for x in row["spanSets"][0]["spans"][0]["attributes"]}
+
+
+class TestCurrentAgentaShape:
+    def test_attrs_put_moved_values_back_under_the_plugin_keys(self):
+        root = ag.AgentaAdapter._attrs(CUR_ROOT)
+        assert root["llm.model_name"] == MODEL
+        assert root["input.value"].endswith("(scenario marker: B261018-165942-multi-tool)")
+        assert root["output.value"].startswith("B261018-165942-multi-tool-one")
+        assert "tool.name" not in root
+        assert not any(k.startswith(("ag.data", "ag.meta")) for k in root)
+        tool = ag.AgentaAdapter._attrs(CUR_TOOL)
+        assert tool["tool.name"] == "terminal"
+        assert tool["output.value"].startswith('{"output": "B261018-165942-multi-tool-one"')
+        # ag.data.inputs is a dict here, so the arguments string stands in.
+        assert tool["input.value"] == '{"command": "echo B261018-165942-multi-tool-one"}'
+        assert "llm.model_name" not in tool
+
+    def test_the_moved_copy_is_not_shown_twice(self):
+        # The prompt is restored as input.value; Agenta's ag.unsupported.*
+        # copy of it is dropped like ag.data.* / ag.meta.*.
+        root = ag.AgentaAdapter._attrs(CUR_ROOT)
+        assert root.get("input.value")
+        assert not [k for k in root if k.startswith(("ag.unsupported.", "ag.data."))]
+
+    def test_restore_never_overrides_a_key_agenta_kept(self):
+        span = copy.deepcopy(CUR_ROOT)
+        span["attributes"]["llm"]["model_name"] = "sent"
+        span["attributes"]["input"] = {"value": "as sent"}
+        attrs = ag.AgentaAdapter._attrs(span)
+        assert attrs["llm.model_name"] == "sent" and attrs["input.value"] == "as sent"
+        # The v0.122 shape keeps its own keys.
+        old = ag.AgentaAdapter._attrs(ROOT)
+        assert old["llm.model_name"] == MODEL and old["input.value"] == "read hermes_otel.yaml"
+
+    def test_agenta_meta_model_when_gen_ai_is_missing(self):
+        span = copy.deepcopy(CUR_ROOT)
+        del span["attributes"]["gen_ai"]["request"]
+        assert ag.AgentaAdapter._attrs(span)["llm.model_name"] == MODEL
+
+    def test_card_carries_model_and_text(self, monkeypatch):
+        _capture(
+            monkeypatch,
+            [{"count": 1, "spans": [CUR_ROOT]}, {"count": 2, "spans": [CUR_ROOT, CUR_TOOL]}],
+        )
+        row = _adapter().search(StructuredFilter(), CUR_T0 - 60, CUR_T0 + 60, 10)["traces"][0]
+        attrs = _card_attrs(row)
+        assert attrs["llm.model_name"] == {"stringValue": MODEL}
+        assert "B261018-165942-multi-tool" in attrs["input.value"]["stringValue"]
+        assert "B261018-165942-multi-tool-one" in attrs["output.value"]["stringValue"]
+        assert row["spanCount"] == 2
+
+    def test_tool_filter_cards_the_root_of_a_current_trace(self, monkeypatch):
+        calls = _capture(
+            monkeypatch,
+            [{"count": 1, "spans": [CUR_TOOL]}, {"count": 2, "spans": [CUR_ROOT, CUR_TOOL]}],
+        )
+        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = _adapter().search(f, CUR_T0 - 60, CUR_T0 + 60, 10)["traces"][0]
+        assert calls[0]["body"]["filtering"]["conditions"] == [
+            {"field": "span_name", "operator": "is", "value": "tool.terminal"}
+        ]
+        assert row["traceID"] == CUR_TRACE and row["rootTraceName"] == "agent"
+        assert _card_attrs(row)["tool.name"] == {"stringValue": "terminal"}
+
+    def test_free_text_finds_a_current_root(self, monkeypatch):
+        # Only the ag.* keys hit on current Agenta; the merged page has the turn once.
+        _capture(
+            monkeypatch,
+            [
+                {"count": 0, "spans": []},
+                {"count": 0, "spans": []},
+                {"count": 1, "spans": [CUR_ROOT]},
+                {"count": 1, "spans": [CUR_ROOT]},
+                {"count": 2, "spans": [CUR_ROOT, CUR_TOOL]},
+            ],
+        )
+        f = StructuredFilter(free_text="B261018-165942-multi-tool")
+        rows = _adapter().search(f, CUR_T0 - 60, CUR_T0 + 60, 10)["traces"]
+        assert [r["traceID"] for r in rows] == [CUR_TRACE]
+
+    def test_model_filter_finds_a_current_root(self, monkeypatch):
+        _capture(
+            monkeypatch,
+            [
+                {"count": 0, "spans": []},  # llm.model_name: gone on current Agenta
+                {"count": 1, "spans": [CUR_ROOT]},  # gen_ai.request.model
+                {"count": 2, "spans": [CUR_ROOT, CUR_TOOL]},
+            ],
+        )
+        f = StructuredFilter(attr_equals={"llm.model_name": MODEL})
+        rows = _adapter().search(f, CUR_T0 - 60, CUR_T0 + 60, 10)["traces"]
+        assert [r["traceID"] for r in rows] == [CUR_TRACE]
+        assert _card_attrs(rows[0])["llm.model_name"] == {"stringValue": MODEL}
+
+    def test_detail_of_a_current_trace(self, monkeypatch):
+        _capture(monkeypatch, [{"count": 2, "spans": [CUR_ROOT, CUR_TOOL]}])
+        d = _adapter().get_trace(CUR_TRACE)
+        spans = {s["spanId"]: s for s in d["batches"][0]["scopeSpans"][0]["spans"]}
+        root = {x["key"]: x["value"] for x in spans["86874eb2f032676f"]["attributes"]}
+        assert root["llm.model_name"] == {"stringValue": MODEL}
+        tool = {x["key"]: x["value"] for x in spans["e9d03dbc43b064bd"]["attributes"]}
+        assert tool["tool.name"] == {"stringValue": "terminal"}

@@ -5,10 +5,9 @@
     "filtering": {
      "conditions": [
       {
-       "field": "attributes",
-       "key": "tool.name",
-       "operator": "eq",
-       "value": "terminal"
+       "field": "span_name",
+       "operator": "is",
+       "value": "tool.terminal"
       }
      ],
      "operator": "and"
