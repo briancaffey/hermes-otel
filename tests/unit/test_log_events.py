@@ -359,6 +359,20 @@ class TestEventCatalogue:
         )
         assert stop[0].log_record.severity_text == "ERROR"
         assert stop[0].log_record.attributes["hermes.subagent.child_session_id"] == "c1"
+        # Attributed to the parent session, like the start event (#613).
+        assert start[0].log_record.attributes["hermes.session_id"] == "p"
+        assert stop[0].log_record.attributes["hermes.session_id"] == "p"
+        assert stop[0].log_record.attributes["gen_ai.conversation.id"] == "p"
+
+    def test_subagent_stop_falls_back_to_recorded_parent(self, events):
+        plugin, build = events
+        exporter = build(HermesOtelConfig(log_events=True))
+        hooks.on_session_start(session_id="p", model="m", platform="cli")
+        hooks.on_subagent_start(child_session_id="c1", parent_session_id="p")
+        hooks.on_subagent_stop(child_session_id="c1", child_status="completed")
+        stop = _events(exporter, EV.SUBAGENT_STOP)
+        assert len(stop) == 1
+        assert stop[0].log_record.attributes["hermes.session_id"] == "p"
 
     def test_session_finalize(self, events):
         plugin, build = events

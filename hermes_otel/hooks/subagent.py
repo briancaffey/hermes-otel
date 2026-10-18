@@ -227,15 +227,14 @@ def on_subagent_stop(
     _emit_event(
         tracer,
         EV.SUBAGENT_STOP,
-        f"sub-agent {attributes.get('hermes.subagent.role') or 'worker'} "
+        f"sub-agent {role or attributes.get('hermes.subagent.role') or 'worker'} "
         f"{attributes.get('hermes.subagent.status') or status}",
         {
             **{k: v for k, v in attributes.items() if k.startswith(EV.SUBAGENT_PREFIXES)},
             "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
         },
         severity="ERROR" if status == "error" else "INFO",
-        session_id=kwargs.get("parent_session_id")
-        or attributes.get("hermes.subagent.parent_session_id"),
+        session_id=parent_session_id or (record.get("parent_session_id") if record else None),
         span=child_span,
     )
     tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)

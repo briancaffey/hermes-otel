@@ -116,7 +116,10 @@
   {
    "attributes": {
     "event.name": "hermes.subagent.stop",
+    "gen_ai.conversation.id": "parent",
     "hermes.log.attribution": "context",
+    "hermes.platform": "cli",
+    "hermes.session_id": "parent",
     "hermes.subagent.api_call_count": 1,
     "hermes.subagent.child_session_id": "child-1",
     "hermes.subagent.duration_ms": "<num>",
@@ -126,7 +129,7 @@
     "hermes.subagent.usage.output_tokens": 50,
     "hermes.subagent.usage.total_tokens": 150
    },
-   "body": "sub-agent worker completed",
+   "body": "sub-agent researcher completed",
    "event_name": "hermes.subagent.stop",
    "severity": "INFO",
    "span": "S5",
