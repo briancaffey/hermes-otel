@@ -1,7 +1,7 @@
 """Phoenix (Arize) adapter — GraphQL at ``/graphql``.
 
 Phoenix stores spans per-project. The adapter honours ``project_name``
-from the backend cfg (or the top-level plugin config) and falls back
+from the backend cfg (or the project the exporter stamps) and falls back
 to the first project that has traces. Attributes come back as a
 nested JSON string; we parse + flatten to dot-notation keys
 (``llm.model_name``) so the frontend renderer can use them unchanged.
@@ -13,8 +13,11 @@ syntax — same one the Phoenix UI uses in its filter bar.
 from __future__ import annotations
 
 import json
+import os
 from datetime import datetime, timezone
 from typing import Any, Dict, List, Optional, Tuple
+
+from hermes_otel.plugin_config import ENV_PREFIX
 
 from . import register
 from .base import (
@@ -135,6 +138,22 @@ def _root_clause(legacy: bool, roots_only: bool) -> Tuple[str, str, Dict[str, An
     return "", "", {}, ("parent_id is None" if roots_only else None)
 
 
+def _exported_project() -> Optional[str]:
+    """The project the exporter stamps as ``openinference.project.name``: the
+    plugin's ``project_name`` (its env override, else the file), else
+    ``OTEL_PROJECT_NAME``; ``None`` when nothing names one."""
+    from . import top_level_config
+
+    for value in (
+        os.getenv(ENV_PREFIX + "PROJECT_NAME"),
+        top_level_config().get("project_name"),
+        os.getenv("OTEL_PROJECT_NAME"),
+    ):
+        if isinstance(value, str) and value.strip():
+            return value.strip()
+    return None
+
+
 @register
 class PhoenixAdapter(BackendAdapter):
     handles = frozenset({"phoenix"})
@@ -158,15 +177,10 @@ class PhoenixAdapter(BackendAdapter):
         super().__init__(cfg)
         self.query_url = query_origin(cfg, _DEFAULT_PHOENIX_PORT)
         self.graphql_url = f"{self.query_url}/graphql"
-        # Precedence: backend-entry override > top-level project_name.
-        # The top-level key matches the key the plugin uses elsewhere for
-        # its OTel resource ``service.name``, so Phoenix's "project"
-        # lines up with the rest of the stack.
-        self.project_name = cfg.get("project_name") or cfg.get("project")
-        if not self.project_name:
-            from . import top_level_config
-
-            self.project_name = top_level_config().get("project_name")
+        # Precedence: backend-entry override > the project the exporter
+        # stamps (``openinference.project.name``): ``HERMES_OTEL_PROJECT_NAME``
+        # > top-level ``project_name`` > ``OTEL_PROJECT_NAME`` (#614).
+        self.project_name = cfg.get("project_name") or cfg.get("project") or _exported_project()
         # Optional bearer token for self-hosted Phoenix with auth.
         self.api_key = resolve_env_or_literal(cfg, "api_key", "api_key_env")
         self._project_id_cache: Optional[str] = None

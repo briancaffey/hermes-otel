@@ -36,6 +36,8 @@ from urllib import error as _urlerror
 from urllib import parse as _urlparse
 from urllib import request as _urlrequest
 
+from hermes_otel.backend_specs import spec_for
+from hermes_otel.backends import choose_secret
 from hermes_otel.severity import severity_number
 
 from .shapes import to_int
@@ -162,22 +164,25 @@ def rewrite_host_for_docker(host: str) -> str:
 
 
 def resolve_env_or_literal(cfg: Dict[str, Any], literal_key: str, env_key: str) -> Optional[str]:
-    """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]`` names.
+    """``cfg[literal_key]`` when set, else the value of the env var ``cfg[env_key]``
+    names, else the vendor variables the exporter falls back to for that field
+    of the entry's type (``BackendSpec.fallback_envs``: ``OTEL_OPENOBSERVE_USER``,
+    ``OTEL_GREPTIME_DB``, ...).
 
-    The same precedence as the exporter's ``backends.choose_secret`` (inline
-    > named env), so an entry that sets both queries with the key it exports
-    with (#413). ``*_env`` keeps secrets out of yaml; inline stays for
-    convenience.
+    The exporter's own rule (``backends.choose_secret``, inline > named env >
+    fallbacks), so an entry queries with the credential it exports with
+    (#413, #614). ``*_env`` keeps secrets out of yaml; inline stays for
+    convenience. ``${VAR}`` in the entry is expanded before the adapter is
+    built (``_instantiate``).
     """
     lit = cfg.get(literal_key)
-    if isinstance(lit, str) and lit.strip():
-        return lit.strip()
     env_name = cfg.get(env_key)
-    if isinstance(env_name, str) and env_name.strip():
-        v = os.environ.get(env_name.strip(), "").strip()
-        if v:
-            return v
-    return None
+    spec = spec_for(cfg.get("type") if isinstance(cfg.get("type"), str) else None)
+    return choose_secret(
+        lit if isinstance(lit, str) else None,
+        env_name.strip() if isinstance(env_name, str) else None,
+        spec.fallback_envs(literal_key) if spec is not None else (),
+    ).value
 
 
 def query_origin(
