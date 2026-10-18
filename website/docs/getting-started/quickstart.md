@@ -27,20 +27,20 @@ Either way the plugin lands at `~/.hermes/plugins/hermes_otel/`, Hermes auto-dis
 
 ## 2. Start a local Phoenix
 
-Phoenix is the fastest backend to spin up — a single container.
+Phoenix is the fastest backend to start: one container, no login.
 
 The Compose file lives in the repository, not in the installed plugin, so fetch it first:
 
 ```bash
 mkdir -p ~/hermes-otel-backends && cd ~/hermes-otel-backends
 curl -fsSLO https://raw.githubusercontent.com/briancaffey/hermes-otel/main/docker-compose/phoenix/docker-compose.yaml
-docker compose -f phoenix.yaml up -d
+docker compose -f docker-compose.yaml up -d
 ```
 
 Phoenix is now listening at:
 
 - UI: http://localhost:6006
-- OTLP/HTTP: http://localhost:6006/v1/traces
+- OTLP/HTTP: http://localhost:6006/v1/traces (Phoenix takes traces only)
 
 ## 3. Point the plugin at Phoenix
 
@@ -51,7 +51,7 @@ export OTEL_PHOENIX_ENDPOINT="http://localhost:6006/v1/traces"
 export OTEL_PROJECT_NAME="hermes-agent"
 ```
 
-That's the entire configuration. No YAML needed for the single-backend case.
+That's the entire configuration: one endpoint variable selects one backend, no YAML needed. `OTEL_PROJECT_NAME` names the Phoenix project. To send to several backends, use a `backends:` list in `~/.hermes/hermes_otel.yaml` instead ([Multi-backend fan-out](/backends/multi-backend)).
 
 ## 4. Run Hermes
 
@@ -65,11 +65,13 @@ The plugin prints a connection banner on startup:
 
 ```text
 [hermes-otel] ✓ Phoenix at http://localhost:6006/v1/traces (traces only)
+[hermes-otel] ✓ content_capture=full — complete prompts and responses on every api.* span (set content_capture: preview or off to reduce)
 [hermes-otel] ✓ Live dashboard store active
-[hermes-otel] Registered 23 hooks
+[hermes-otel] ✓ Phoenix reachable at localhost:6006 (<n> ms)
+[hermes-otel] Registered 34 hooks
 ```
 
-(The hook count depends on the Hermes version; 13 on Hermes 0.21.)
+If the third-from-last line says `⚠ Phoenix unreachable`, the container is not up yet. The hook count depends on the Hermes version; see [Installation](/getting-started/installation#verifying-the-install).
 
 ## 5. See the trace
 
@@ -87,7 +89,8 @@ Each span carries:
 
 - User message on `llm.*` as `input.value`
 - Assistant response on `llm.*` as `output.value`
-- Tool arguments + result on `tool.*`
+- The complete request and response on each `api.*` span (the default `content_capture: full`; see [Conversation capture](/configuration/conversation-capture))
+- Tool arguments + result previews on `tool.*`
 - Token counts on `api.*`
 - Per-turn summary (tool count, tool names, final status) on the `agent` root
 
@@ -99,5 +102,5 @@ Each span carries:
 - **Understand what each span means?** → [Architecture](/architecture/overview)
 
 :::info Something not showing up?
-Enable debug logging — `export HERMES_OTEL_DEBUG=true` — and check `~/.hermes/plugins/hermes_otel/debug.log`. Hook firings, span start/end, token counts, one `export <backend>: … -> SUCCESS|FAILURE` line per batch and the SDK's export errors (`[sdk] …`) all land there.
+Enable debug logging (`HERMES_OTEL_DEBUG=true`) and check `~/.hermes/plugins/hermes_otel/debug.log`. If `~/.hermes/.env` already sets `HERMES_OTEL_DEBUG`, change it there: Hermes loads that file over the shell's values. Hook firings, span start/end, token counts, one `export <backend>: … -> SUCCESS|FAILURE` line per batch and the SDK's export errors (`[sdk] …`) all land there.
 :::

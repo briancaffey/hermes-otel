@@ -3,9 +3,8 @@
 [Agenta](https://github.com/Agenta-AI/agenta) (MIT outside `ee/`, v0.122.x on
 2026-10-11) is an open-source LLMOps platform with native OTLP trace ingest and
 server-side adapters for the OpenInference, OpenLLMetry and OTel GenAI
-conventions. It is the one OSS LLM platform with OTLP ingest that the #232
-sweep did not cover. Traces only, like Opik, MLflow and Latitude. Explicit
-plugin type: `agenta` (#371).
+conventions. It takes traces only, like Opik, MLflow and Latitude. The plugin
+has a dedicated type for it: `agenta` (#371).
 
 ## Why pick it
 - An LLM platform view (sessions, span types, token roll-ups, cost when the

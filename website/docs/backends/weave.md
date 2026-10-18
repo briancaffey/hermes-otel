@@ -18,7 +18,7 @@ Create a W&B API key, then set it in your shell:
 export WANDB_API_KEY="..."
 ```
 
-Declare the backend in `config.yaml`:
+Declare the backend in `hermes_otel.yaml`:
 
 ```yaml
 backends:
@@ -40,22 +40,22 @@ You should see `✓ W&B Weave at https://trace.wandb.ai/otel/v1/traces` in start
 
 Trace export can be hand-written with `type: otlp`, but Weave needs a specific authentication and routing shape. Declaring `type: weave` asks the plugin to:
 
-1. Read the W&B API key from `api_key`, `api_key_env`, or `WANDB_API_KEY`.
+1. Read the W&B API key from `api_key`, else the variable `api_key_env` names, else `OTEL_WEAVE_API_KEY`, else `WANDB_API_KEY`. Without a key the entry is skipped at startup.
 2. Set the `wandb-api-key` request header.
 3. Route spans with `wandb.entity` and `wandb.project` resource attributes.
 4. Default the endpoint for W&B Cloud, while supporting Dedicated Cloud and Self-Managed base URLs.
 5. Disable metrics and logs by default because W&B documents this endpoint for OTLP traces.
 
-Keep the key out of `config.yaml`; use `api_key_env`.
+Keep the key out of `hermes_otel.yaml`; use `api_key_env`.
 
 ## Configuration reference
 
 | Field | Meaning |
 |---|---|
-| `api_key` / `api_key_env` | W&B API key. Prefer `api_key_env`; falls back to `WANDB_API_KEY`. |
+| `api_key` / `api_key_env` | W&B API key. Prefer `api_key_env`; falls back to `OTEL_WEAVE_API_KEY`, then `WANDB_API_KEY`. |
 | `entity` / `entity_env` | W&B team or user name. Falls back to `WANDB_ENTITY` / `DEFAULT_WANDB_ENTITY`. |
 | `project` / `project_env` | W&B project name. Falls back to `WANDB_PROJECT` / `DEFAULT_WANDB_PROJECT`. |
-| `base_url` | W&B base URL. `https://trace.wandb.ai` becomes `/otel/v1/traces`; Dedicated Cloud such as `https://acme.wandb.io` becomes `/traces/otel/v1/traces`. |
+| `base_url` | W&B base URL. `https://trace.wandb.ai` becomes `/otel/v1/traces`; Dedicated Cloud such as `https://acme.wandb.io` becomes `/traces/otel/v1/traces`. Falls back to `OTEL_WEAVE_BASE_URL`, then `WANDB_BASE_URL`. |
 | `endpoint` | Optional full OTLP traces endpoint; overrides `base_url`. Also settable via `OTEL_WEAVE_ENDPOINT` / `WANDB_OTLP_ENDPOINT`. |
 | `metrics` / `logs` / `traces` | Per-signal toggles. Traces default on; metrics and logs default off. |
 | `headers` | Extra headers, merged on top of the generated `wandb-api-key` header. |
@@ -72,11 +72,11 @@ backends:
     api_key_env: WANDB_API_KEY
 ```
 
-If both places set `wandb.entity` or `wandb.project`, the values must match.
+If both places set `wandb.entity` or `wandb.project`, the values must match: a mismatch, or a missing value, stops the plugin's pipeline at startup with `✗ pipeline init failed: …`.
 
 ## Single backend (env vars)
 
-Without a `config.yaml` `backends:` list, env-var mode selects Weave when `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) and all routing values are present. `WANDB_API_KEY` alone is used as a credential fallback but does not turn export on:
+Without a `backends:` list in `hermes_otel.yaml`, env-var mode selects Weave when `OTEL_WEAVE_API_KEY` (or `OTEL_WEAVE_ENDPOINT` / `OTEL_WEAVE_BASE_URL`) and all routing values are present. `WANDB_API_KEY` alone is used as a credential fallback but does not turn export on:
 
 ```bash
 export OTEL_WEAVE_API_KEY="..."
@@ -101,7 +101,7 @@ The plugin emits Weave-friendly GenAI attributes while preserving Phoenix/OpenIn
 - Tool spans: `gen_ai.operation.name=execute_tool`, `gen_ai.tool.name`, `gen_ai.tool.call.id`, and privacy-gated tool arguments/results.
 - Sub-agent spans: `gen_ai.operation.name=invoke_agent` and `gen_ai.agent.name=<role>`.
 
-`capture_previews: false` suppresses message bodies, tool arguments, and tool results, but keeps structural attributes so traces remain useful.
+`content_capture: off` (the older spelling is `capture_previews: false`) suppresses message bodies, tool arguments, and tool results, but keeps structural attributes so traces remain useful.
 
 ## Multi-backend fan-out
 

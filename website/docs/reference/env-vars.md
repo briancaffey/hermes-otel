@@ -121,7 +121,7 @@ Generated from `hermes_otel/backend_specs.py` by `scripts/gen_config_docs.py`; a
 
 ## `HERMES_OTEL_*` overrides
 
-Every scalar or list field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). A list field takes a comma-separated value (`HERMES_OTEL_DISABLE_SPANS=tool,approval`); whitespace around each entry is stripped and empty entries are dropped. Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`) and `backends` are yaml-only. An env var that cannot be parsed as the field's type logs a warning and is ignored.
+Every scalar or list field of the config file can be overridden by `HERMES_OTEL_<FIELD>` (upper-case field name). A list field takes a comma-separated value (`HERMES_OTEL_DISABLE_SPANS=tool,approval`); whitespace around each entry is stripped and empty entries are dropped. Maps (`headers`, `global_tags`, `resource_attributes`, `common_attributes`, `log_logger_levels`) and `backends` are yaml-only. An empty variable counts as unset. A value that cannot be parsed as the field's type logs a warning and is ignored.
 
 [//]: # (generated:env-overrides:start)
 
@@ -214,12 +214,12 @@ Every scalar or list field of the config file can be overridden by `HERMES_OTEL_
 
 | Var | Value | Effect |
 |---|---|---|
-| `HERMES_OTEL_DEBUG` | `true`/`false` | Enables the debug log at `$HERMES_HOME/plugins/hermes_otel/debug.log` (`~/.hermes` by default) |
+| `HERMES_OTEL_DEBUG` | `true` / `1` / `yes` / `on` | Writes a verbose debug log to `$HERMES_HOME/plugins/hermes_otel/debug.log` (`~/.hermes` by default). Any other value leaves it off |
 
 ## Boolean accepted values
 
 | True | False |
 |---|---|
-| `true` / `1` / `yes` / `on` | `false` / `0` / `no` / `off` / `""` |
+| `true` / `1` / `yes` / `on` | `false` / `0` / `no` / `off` |
 
-Case-insensitive. Anything else logs a warning naming the variable and is ignored (the yaml value or default is kept).
+Case-insensitive. An empty value counts as unset. Anything else logs a warning naming the variable and is ignored (the yaml value or default is kept).

@@ -38,6 +38,8 @@ The plugin sends `x-api-key: <key>` and, when a project is set, `Langsmith-Proje
 
 Each Hermes turn is one trace rooted at the `agent` (or `cron`) span with `llm.*`, `api.*` and `tool.*` children, carrying the OTel GenAI attributes (`gen_ai.usage.*` token counts, `gen_ai.request.model`, the conversation id) that LangSmith's OpenTelemetry ingest maps onto its run fields. See LangSmith's OpenTelemetry documentation for the exact attribute mapping its ingest applies.
 
+The [Hermes dashboard's OTel tab](/dashboard) has no query adapter for `langsmith`, so the entry exports only; read the traces in LangSmith's UI.
+
 ## Migrating from `LANGSMITH_TRACING`
 
 | Before (run-tree client, up to 1.25) | Now (OTLP preset) |

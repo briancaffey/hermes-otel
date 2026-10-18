@@ -22,10 +22,11 @@ status fields and the free text are declared unsupported in
 duration is applied to the rows the list returned, fetching further pages
 until the page is full or ``_MAX_PAGES`` is reached.
 
-Search enrichment: the Langfuse list endpoint doesn't include
-per-trace observations, so the trace list shows trace-level metadata
-only (name, timestamp, latency, user/session). Full observation
-attributes appear in the detail view.
+Search enrichment: the Langfuse 3 trace list carries no observations, but
+each item's ``metadata.attributes`` holds the root span's attributes, so a
+card shows the model, the turn's token totals and the session id from there
+plus the trace's own facts (name, timestamp, latency, cost, user/session).
+Every observation's attributes appear in the detail view.
 """
 
 from __future__ import annotations
@@ -737,8 +738,7 @@ class LangfuseAdapter(BackendAdapter):
         self.public_key = resolve_env_or_literal(cfg, "public_key", "public_key_env")
         self.secret_key = resolve_env_or_literal(cfg, "secret_key", "secret_key_env")
         # Langfuse keeps no resource attributes: the service a trace is shown
-        # under is the one the plugin exports (the entry's ``service_name``,
-        # else the plugin's ``service.name``, else ``hermes-agent``).
+        # under is the one the plugin exports (see ``default_service_name``).
         self.default_service = default_service_name(cfg)
         self._project_id_cache: Optional[str] = None
         api = str(cfg.get("query_api") or "auto").strip().lower()

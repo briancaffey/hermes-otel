@@ -43,7 +43,8 @@ backends:
     metrics_dataset: hermes-metrics
     logs_dataset: hermes-logs
 
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ```bash
@@ -63,8 +64,10 @@ plugin adds these headers automatically:
 | Metrics | `X-P-Stream: hermes-metrics` | `X-P-Log-Source: otel-metrics` |
 | Logs    | `X-P-Stream: hermes-logs`    | `X-P-Log-Source: otel-logs`    |
 
-All three exporters authenticate with `X-API-Key`. Prefer `api_key_env` over
-an inline key so credentials do not enter source control.
+All three exporters authenticate with `X-API-Key`. The key comes from
+`api_key`, else the variable `api_key_env` names, else `OTEL_PARSEABLE_API_KEY`,
+else `PARSEABLE_API_KEY`; without one the entry is skipped at startup. Prefer
+`api_key_env` over an inline key so credentials do not enter source control.
 
 ## Environment-only setup
 
@@ -72,7 +75,7 @@ Without a `backends:` list, hermes-otel can detect Parseable from:
 
 ```bash
 export OTEL_PARSEABLE_ENDPOINT="https://parseable.example.com/v1/traces"
-export PARSEABLE_API_KEY="<parseable-api-key>"
+export OTEL_PARSEABLE_API_KEY="<parseable-api-key>"   # or PARSEABLE_API_KEY
 ```
 
 Optional dataset overrides are `PARSEABLE_TRACES_DATASET`,

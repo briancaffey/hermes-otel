@@ -11,8 +11,8 @@ a single sampler per Hermes process takes one reading per ``interval_ms`` of
 * every AMD/NVIDIA GPU's busy ratio, memory in use, and power draw, through
   :mod:`hermes_otel.gpu_probe`.
 
-Readings land in a bounded ring buffer. The tracer exposes the latest reading
-through OTel observable instruments (``process.cpu.utilization``,
+Readings land in a bounded ring buffer. :class:`hermes_otel.host_bridge.HostMetrics`
+exposes the latest reading through OTel observable instruments (``process.cpu.utilization``,
 ``system.cpu.utilization``, ``hw.gpu.utilization``, ``hw.gpu.memory.usage``,
 ``hw.power``), so they reach every backend that receives metrics, and the tool
 hooks slice the ring by a tool call's window to stamp average / peak utilization
@@ -31,15 +31,15 @@ Design notes
   excluded: those counters credit a child's entire lifetime to the parent at
   reap time and would show up as a spurious spike. Live descendants are
   measured directly, tick by tick.
-* The sampler is a daemon thread, started lazily by the tracer and stopped at
-  tracer shutdown. The plugin already runs the SDK's exporter threads, so this
+* The sampler is a daemon thread, started by the tracer's init (through
+  ``host_bridge.HostMetrics``) and stopped at tracer shutdown. The plugin already runs the SDK's exporter threads, so this
   adds no new kind of resource; there is one sampler per process, never per
   session, so a long-lived gateway pays a fixed cost.
 * ``psutil`` is imported lazily and the sampler degrades to "unavailable"
   without it; the GPU SDKs are optional in the same way (see gpu_probe).
 
 Timestamps use ``time.perf_counter()`` so windows line up with the tool
-timings the hooks already keep on ``SessionState`` (same clock).
+timings the hooks already keep on ``SpanTracker`` (same clock).
 """
 
 from __future__ import annotations

@@ -24,7 +24,8 @@ backends:
   - type: openlit
     endpoint: http://localhost:4338
     # api_key_env: OTEL_OPENLIT_API_KEY   # optional org/project scoping (Bearer header)
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ## Verify

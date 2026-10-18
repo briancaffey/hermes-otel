@@ -26,7 +26,8 @@ backends:
   - type: otlp
     name: parseable
     endpoint: http://localhost:4348/v1/traces     # the collector, not Parseable
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 ## Verify

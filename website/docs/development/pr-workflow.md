@@ -38,15 +38,18 @@ merged PR. It's written down in two places that stay in sync:
    [Testing](/development/testing)).
 4. **Run the exact CI checks locally** before pushing:
    ```bash
-   uv run --extra dev ruff check .
-   uv run --extra dev black --check .
-   uv run --extra dev pytest --cov=hermes_otel --cov-fail-under=85
+   make ci        # every job of .github/workflows/test.yml, in order
+   make ci-fast   # lint, scan, vocabulary check and tests; skips the npm builds
    ```
-   The coverage gate is 85%. `black --check` is part of CI — don't skip it.
+   `make ci` covers the lockfile check, ruff, black, the plugin scan, the
+   telemetry vocabulary check, the tests with the 85% coverage gate and the
+   per-module floors, the dashboard bundle, the docs build and the wheel. Use
+   `make ci-fast` only when you did not touch `dashboard-ui/` or `website/`.
+   See [Testing](/development/testing#ci-behavior) for what `make ci` does not run.
 5. **Update docs in the same PR** (they're acceptance criteria): the relevant
    pages under `website/docs/` (hooks, span-attributes, span-hierarchy,
-   limitations) plus `README.md`. Then `cd website && npm run build` and confirm
-   it's clean.
+   limitations) plus `README.md`. `make ci` builds the site; `cd website && npm run build`
+   does it on its own.
 6. **(Observability changes) verify against a real backend** — capture a
    before/after in Phoenix or Langfuse to prove the change does what it claims.
 7. **Open the PR** with a body that starts with `Closes #<issue>`, using

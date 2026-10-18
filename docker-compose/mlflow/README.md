@@ -37,7 +37,8 @@ curl -s -X POST http://localhost:5001/api/3.0/mlflow/traces/search -H 'content-t
 ```
 
 ## Caveats
-- Traces only: `/v1/metrics` and `/v1/logs` are 404, so set both signals off.
+- Traces only: `/v1/metrics` and `/v1/logs` are 404. The `mlflow` type
+  leaves both signals off by default; do not turn them on.
 - The `x-mlflow-experiment-id` header is mandatory (400 without it).
 - Host port is **5001**: macOS AirPlay Receiver owns 5000.
 - About 1.2 GB resident at idle (MLflow's default four uvicorn workers); the

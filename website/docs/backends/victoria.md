@@ -28,7 +28,8 @@ backends:
     endpoint: http://localhost:10428          # VictoriaTraces → /insert/opentelemetry/v1/traces
     metrics_endpoint: http://localhost:8428   # VictoriaMetrics → /opentelemetry/v1/metrics
     logs_endpoint: http://localhost:9428      # VictoriaLogs → /insert/opentelemetry/v1/logs
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 The startup banner reads `✓ Victoria at http://localhost:10428/insert/opentelemetry/v1/traces`. The UIs are `vmui` on each store: traces at http://localhost:10428/select/vmui (Trace Explorer), logs at http://localhost:9428/select/vmui/, metrics at http://localhost:8428/vmui. Metrics show up about 30 s after export (`-search.latencyOffset`).
@@ -77,7 +78,8 @@ export OTEL_PROJECT_NAME=hermes-otel-victoria
 - **Traces** through the Jaeger-compatible API under `/select/jaeger` (`query_path`), the Jaeger v1 grammar: `service` required, `tags` as JSON, `operation` exact, `minDuration` with a unit, `start` / `end` in µs. The adapter coerces the string-typed tags back and reads the status from the `error` tag, so `error="false"` is not an error. Whether `limit=N` keeps the newest traces is not documented, so the adapter asks for `search_fetch` (default 500) and cuts the page itself.
 - **Metrics** through the shared Prometheus reader on VictoriaMetrics (`prometheus_url`, default the `metrics_endpoint` origin): range-vector instant queries work, so counters are read as raw cumulative samples with first-sample counting. It expects the Prometheus spelling; a VictoriaMetrics started without the naming flag lists dotted names the curated panels do not match.
 - **Logs** through LogsQL on VictoriaLogs (`logs_url`, default the `logs_endpoint` origin): `_time:[start, end)`, `trace_id:"…"`, `span_id:"…"`, `hermes.session_id:"…"`, `scope.name:"…"`, `severity_number:>=N`, `event.name:"…"` / `event.name:*` and `_msg:~"…"` for text, then `| sort by (_time desc) | limit N`; loggers from `| stats by (scope.name) count()`. The Loki helper does not apply: VictoriaLogs has no Loki query API.
-- `status = ok` and free text are not expressible on the trace search (the Jaeger grammar has no negative or body search). No "open in" link: vmui's TraceID mode has no documented deep link; set `ui_url` on the entry to offer one.
+- `status = ok` and free text are not expressible on the trace search (the Jaeger grammar has no negative or body search). No "open in" link per trace: vmui's TraceID mode has no documented deep link, and the adapter ignores `ui_url` for trace links (`ui_url` still sets where the Settings card's backend name points).
+- The adapter reads `user` / `password` from the entry (inline or `user_env` / `password_env`); it does not read the `OTEL_VICTORIA_USER` / `OTEL_VICTORIA_PASSWORD` fallbacks the exporter uses.
 
 ## Verified behavior
 

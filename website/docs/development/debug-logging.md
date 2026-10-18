@@ -6,7 +6,7 @@ description: "Turn on HERMES_OTEL_DEBUG=true for hook firings, span start/end, t
 
 # Debug logging
 
-The plugin prints only essential startup messages (backend connected / failed, hook count) to stdout. Everything else goes to a debug log file that's off by default.
+Without debug mode the plugin logs only a few startup lines through Hermes's logger: one per configured backend, whether each backend's endpoint answered a TCP connect (`probe_backends`), the content-capture mode and the hook count. Everything else goes to a debug log file that is off by default.
 
 The path follows `HERMES_HOME` (default `~/.hermes`). The file is opened once per process, line-buffered, and closed when the tracer shuts down.
 
@@ -26,7 +26,7 @@ The file is created owner-only (`0600`; an existing file is tightened on first w
 
 ## What gets logged
 
-Lines have no timestamps and no log levels; they are written in the order things happen. Four kinds:
+Lines have no timestamps and no log levels; they are written in the order things happen. Five kinds:
 
 **Hook firings and span lifecycle**, one block per hook (indented lines belong to the hook above them):
 
@@ -59,11 +59,13 @@ export SigNoz logs: 4 record(s) -> SUCCESS
 
 Metric batches have no `export …` line of their own; a failing metrics endpoint shows up here as `Failed to export metrics batch …`.
 
+**Startup and credential lines**: the reachability probe's result per backend (`[hermes-otel] ✓ Phoenix reachable at localhost:6006 (2 ms)` or `⚠ … unreachable at …`), and for an entry with a `headers_helper`, one line per run naming the headers it printed (`headers_helper <entry>: run 1 (40 ms) -> …`). Values that look like credentials are masked.
+
 **Fail-open reports**: a hook that raised is caught, and the line `<hook> failed open: <exception>` records it (the same event is logged once per hook and exception type at WARNING on the `hermes_otel` logger).
 
 ## What is not in the file
 
-- **No HTTP bodies or headers.** The plugin never writes the OTLP payload, the endpoint's response body, or any header. There is therefore nothing to redact: API keys and tokens cannot appear in this file.
+- **No HTTP bodies or header values.** The plugin never writes the OTLP payload or the endpoint's response body. `headers_helper` lines name the headers a helper printed, but a header whose name or value looks like a credential is masked whole, and other values go through the redactor.
 - **No prompt, tool-argument or tool-result text.** Hook lines carry tool names, model names, ids, statuses and token counts (`usage={...}` on `post_api_request` is the token dict). The one way user text can enter the file is inside an exception's message when a hook fails open.
 - **No queue depths.** The batch queue is internal to the SDK's `BatchSpanProcessor`; when it overflows, the SDK logs a warning, which arrives as an `[sdk] … WARNING` line.
 

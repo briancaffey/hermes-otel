@@ -10,40 +10,40 @@ What happens if Hermes crashes mid-turn, or the host is power-cycled, or the ses
 
 Without cleanup, the root `agent` / `cron` span would stay open forever in the plugin's in-memory state, and in the backend UI you'd see a trace that starts but never ends. That's bad both operationally (active-span state leak) and visually (every orphaned turn is a "what's still running??" red herring).
 
-The orphan sweep is a simple TTL-based cleanup that runs at the top of **every** `pre_*` hook.
+The orphan sweep is a simple TTL-based cleanup that runs at the start of the hooks that begin work: `on_session_start`, `pre_llm_call`, `pre_api_request`, `api_request_error`, `pre_tool_call`, `pre_approval_request`, `subagent_start` and `pre_auxiliary_call`.
 
 ## How it works
 
-The `SpanTracker` keeps a dict of open root spans, each with its start timestamp. On every `pre_*` hook (there's always at least one per turn), the tracker scans the dict:
+`SpanTracker` keeps a turn registry: each open turn's session id and the time it started. Each of those hooks calls `sweep_expired_turns()` (in `tracer.py`), which asks the registry for every turn older than `root_span_ttl_ms` and finalizes it:
 
 ```python
-for session_id, span_info in list(self._roots.items()):
-    age_ms = now_ms() - span_info.started_at_ms
-    if age_ms > self.root_span_ttl_ms:
-        # Finalize this orphan
-        span_info.span.set_attribute("hermes.turn.final_status", "timed_out")
-        span_info.span.end()
-        del self._roots[session_id]
+# tracer.py (simplified)
+def sweep_expired_turns(self):
+    expired = self.spans.expired_turns(self.config.root_span_ttl_ms / 1000.0)
+    for sid in expired:
+        self._finalize_orphan(sid)   # ends open children, then the root
+    self.sweep_expired_delegations()
+    return expired
 ```
 
-Any root older than `root_span_ttl_ms` (default: 10 minutes) gets:
+Any turn older than `root_span_ttl_ms` (default: 10 minutes) gets its open children ended first (see [below](#children-the-turn-left-open-477)), then its root gets:
 
 1. `hermes.turn.final_status = "timed_out"` attribute
 2. `StatusCode.OK` (not `ERROR` — timeouts shouldn't pollute error dashboards)
 3. `span.end()` called, which enqueues it for export
 
-The exception is a turn whose last API attempt failed (`api_request_error` with no success after it): Hermes ends that turn without `on_session_end`, so the sweep closes it as `final_status = "failed"` with `StatusCode.ERROR` and the attempt's `error.type` (#467).
+Two exceptions: a turn the gateway stopped (`agent_loop_stopped`) is closed as `interrupted`, and a turn whose last API attempt failed (`api_request_error` with no success after it): Hermes ends that turn without `on_session_end`, so the sweep closes it as `final_status = "failed"` with `StatusCode.ERROR` and the attempt's `error.type` (#467).
 
 Delegation spans (`subagent.*`) are the exception: they are not part of the turn and the turn sweep leaves them open, because Hermes delivers background delegations' results turns later. They have their own TTL, `subagent_span_ttl_ms` (default 24 hours), after which a delegation whose `subagent_stop` never arrived is ended with `hermes.subagent.swept=true` and `StatusCode.OK`.
 
 Finalizing a session also drops everything the plugin buffered for it: its parent stack, open skill spans, delegation record and the per-session aggregator (token totals, previews, turn summary), so a crashed turn cannot pin memory for the life of a gateway process. The sweep never touches the parent stack of the session that happened to trigger it.
 
-The sweep runs on the hot path but is O(n) in the number of currently-open sessions, which is typically ~1.
+The sweep runs on the hot path but is O(n) in the number of currently-open turns, which is typically ~1.
 
 ## Configuration
 
 ```yaml
-# config.yaml
+# ~/.hermes/hermes_otel.yaml
 root_span_ttl_ms: 600000   # 10 minutes (default)
 ```
 
@@ -57,7 +57,7 @@ Pick a TTL longer than your longest reasonable turn. A cron job that walks a lar
 
 ## Children the turn left open (#477)
 
-A root's children can outlive their own end hook: a tool whose `post_tool_call` never fires (the turn was interrupted mid-tool), an `api.*` span cut by a stream abort, an approval that timed out. Until 1.30.1 such a span stayed open past `on_session_end`, was never exported until the process shut down, and then carried no trace of what had happened. Now every path that closes a root first ends the children still open under it, before the root so the root still contains them, with `StatusCode.OK` (the sweep is not an error of the operation) and two attributes:
+A root's children can outlive their own end hook: a tool whose `post_tool_call` never fires (the turn was interrupted mid-tool), an `api.*` span cut by a stream abort, an approval that timed out. Before 1.31.0 such a span stayed open past `on_session_end`, was never exported until the process shut down, and then carried no trace of what had happened. Now every path that closes a root first ends the children still open under it, before the root so the root still contains them, with `StatusCode.OK` (the sweep is not an error of the operation) and two attributes:
 
 | Attribute | Value |
 |---|---|
@@ -69,8 +69,8 @@ Each swept span adds one to `hermes.span.swept.count` (labels `span_kind` = the 
 ## What it's NOT
 
 - **Not a liveness check.** The sweep only triggers when another turn fires a hook. If Hermes is completely idle, a stale span stays open until the next user interaction wakes the sweeper.
-- **Not a heartbeat.** There's no background thread polling for expiry. Keeps the plugin simple; the latency is bounded by the next-hook cadence which is at most a few seconds under real load.
-- **Not a replacement for crash handling.** Buffered spans in the `BatchSpanProcessor` queue are lost on a hard crash (SIGKILL, OOM) — `atexit` doesn't run. The orphan sweep finalizes the root *once a later process reboots* and a new hook fires, so if you process-restart, the previous process's orphan gets cleaned up by the new one — but its span is already gone with the queue.
+- **Not a heartbeat.** There's no background thread polling for expiry. Keeps the plugin simple; the delay is bounded by how often hooks fire.
+- **Not a replacement for crash handling.** The open spans live in the process's memory. On a hard crash (SIGKILL, OOM) `atexit` does not run, so the open root and everything still buffered in the `BatchSpanProcessor` queue are lost; a restarted process has no record of them and cannot close them. The sweep only helps a process that keeps running, such as a gateway, when a turn's end hook never arrives.
 
 ## Interaction with graceful shutdown
 
@@ -83,10 +83,10 @@ The orphan sweep isn't involved in graceful shutdown — it only runs on the hoo
 
 ## Seeing it in action
 
-The simplest way to verify: start Hermes, begin a turn that does nothing (just sits at a prompt), hard-kill the process, restart Hermes, start a new turn. A few seconds after the new turn's first hook fires, check the backend UI — you should see the previous orphan showing up as `timed_out` with a ~TTL-ish duration.
+In a long-running process (a gateway), a turn whose `on_session_end` never arrives shows up in the backend as a root with `hermes.turn.final_status = "timed_out"` and a duration a little over `root_span_ttl_ms`, once another turn fires one of the hooks above. Its leftover children carry `hermes.span.ended_by=sweep` and `hermes.span.sweep_reason=ttl`.
 
-If it's showing up as indefinitely open, either:
+If it still shows as open:
 
-- The new turn hasn't fired a `pre_*` hook yet (wait a moment, do something)
-- The TTL is too long (the orphan is still within the grace window)
-- Debug log will show the sweep output: `[hermes-otel] swept 1 orphan root(s)`
+- No hook has fired since the TTL passed (the sweep waits for the next one).
+- The TTL is longer than the time since the turn started.
+- With `HERMES_OTEL_DEBUG=true`, the debug log shows `swept <n> leftover span(s) of session=<id>: ttl` when the sweep ended children.

@@ -363,7 +363,8 @@ class DelegationTotals:
 
 
 class SessionState:
-    """Per-session aggregators + a flat tool-timing registry.
+    """Per-session aggregators plus the session-level bookkeeping that
+    outlives one turn (turn counters, root contexts, delegation totals).
 
     Held by :class:`HermesOTelPlugin` so test reset is just singleton
     re-creation — tests never need to reach into module globals.
@@ -590,7 +591,7 @@ class SessionState:
                 return ps.turn_number
             return self._turn_counters.get(session_id, 0)
 
-    # ── Bulk reset (used by tests via singleton re-creation) ─────────────
+    # ── Bulk reset (tracer shutdown) ─────────────────────────────────────
 
     def clear(self) -> None:
         with self._lock:

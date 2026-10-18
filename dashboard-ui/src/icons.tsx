@@ -68,7 +68,8 @@ export const IconList = (p: IP) =>
     <line key="f" x1={3} x2={3.01} y1={18} y2={18} />,
   ]);
 
-// Category → icon + Tailwind text-color, by root span name (trace cards).
+// Category → icon + text-colour class (otel-c-*, dist/style.css), by span
+// kind (kindIcon) or root span name (categorize).
 export const CATEGORY: Record<string, { Icon: (p: IP) => any; color: string; label: string | null }> = {
   llm: { Icon: IconZap, color: "otel-c-llm", label: "llm" },
   tool: { Icon: IconWrench, color: "otel-c-tool", label: "tool" },

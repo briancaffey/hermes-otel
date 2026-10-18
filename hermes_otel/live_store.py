@@ -591,7 +591,7 @@ class LiveStore:
 
     @staticmethod
     def _kind_sql(kind: str, args: List[Any]) -> str:
-        """SQL for one span kind, mirroring :func:`span_kind` (prefix or
+        """SQL for one span kind, mirroring :func:`semconv.span_kind` (prefix or
         ``hermes.span_kind`` attribute); ``other`` is none of the known kinds."""
         # COALESCE: a missing attribute is NULL, and NOT (NULL OR …) would be
         # NULL rather than true, hiding every row from ``kind=other``.

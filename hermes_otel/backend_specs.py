@@ -92,7 +92,8 @@ class ProjectPage:
 class BackendSpec:
     type: str
     display_name: str
-    #: Dashboard-only spellings of the type (``hyperdx`` for ``clickstack``).
+    #: Other spellings of the type (``hyperdx`` for ``clickstack``), accepted by
+    #: the exporter and the dashboard alike.
     aliases: Tuple[str, ...] = ()
     #: Which OTLP signals the backend accepts by default. Every type takes
     #: traces; an explicit ``traces`` / ``metrics`` / ``logs`` on the entry wins.

@@ -45,10 +45,10 @@ services. This compose file remaps them by default (override with env vars):
   servers, Spring Boot, Tomcat, Jenkins, old proxies, etc.). Moved to `3301`,
   which is SigNoz's historical UI port and unlikely to conflict.
 - **`4317` / `4318`** are the OpenTelemetry OTLP standard ports, so **any other
-  OTel collector on the host will conflict**, including the Phoenix container
-  in `docker-compose/phoenix/docker-compose.yaml` (it binds `4317`). Moving SigNoz's OTLP
-  receivers up by ten lets both stacks run side by side, which is useful when
-  comparing backends.
+  OTel collector on the host will conflict**, for example the LGTM stack in
+  `docker-compose/lgtm/`, which binds both. Moving SigNoz's OTLP receivers up
+  by ten lets the stacks run side by side, which is useful when comparing
+  backends.
 
 ### Overriding
 
@@ -163,13 +163,12 @@ loads at startup):
 ```bash
 # SigNoz self-hosted (this docker-compose stack)
 OTEL_SIGNOZ_ENDPOINT=http://localhost:4328/v1/traces
-OTEL_PROJECT_NAME=hermes-agent
 ```
 
-Make sure none of the higher-priority backends are also configured in the
-same file — the plugin's detection order is LangSmith > Langfuse > SigNoz >
-Phoenix, so comment out `OTEL_LANGSMITH_*`, `OTEL_LANGFUSE_*`, and `LANGFUSE_*`
-vars if you want hermes-otel to pick SigNoz.
+Env-var mode picks one backend, and SigNoz comes third, after LangSmith and
+Langfuse. Comment out any `OTEL_LANGSMITH_*` and `OTEL_LANGFUSE_*` variables if
+you want hermes-otel to pick SigNoz. (A `backends:` list in `hermes_otel.yaml`
+replaces env-var mode entirely.)
 
 Restart `hermes gateway` and confirm:
 
@@ -181,6 +180,26 @@ The plugin sends traces, metrics and logs to the SigNoz otel-collector over
 OTLP/HTTP (metrics as delta, the type's preset). No ingestion key is required
 for the self-hosted stack.
 
+### A key for the dashboard tab
+
+Exporting needs no key, but reading traces back (the Hermes dashboard's OTel
+tab) does, even on localhost. The OSS build has no API-key page, so use a
+session token: it lasts 30 minutes. Logging in takes the organisation id, which
+a second call looks up. With the account from Option B:
+
+```bash
+ORG=$(curl -s "http://localhost:3301/api/v2/sessions/context?email=admin@signoz.local" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["orgs"][0]["id"])')
+export SIGNOZ_API_KEY=$(curl -s -X POST http://localhost:3301/api/v2/sessions/email_password \
+  -H 'Content-Type: application/json' \
+  -d "{\"email\":\"admin@signoz.local\",\"password\":\"HermesOtel#local-2026\",\"orgId\":\"$ORG\"}" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["data"]["accessToken"])')
+```
+
+Then point the entry at it with `api_key_env: SIGNOZ_API_KEY` and
+`query_port: 3301`. The dashboard does not read `~/.hermes/.env`, so export
+the variable in the shell that starts `hermes dashboard`.
+
 ### SigNoz Cloud
 
 For **SigNoz Cloud** (no local compose needed), use the regional ingest URL
@@ -189,19 +208,18 @@ plus the ingestion key from the cloud UI:
 ```bash
 OTEL_SIGNOZ_ENDPOINT=https://ingest.us.signoz.cloud:443/v1/traces
 OTEL_SIGNOZ_INGESTION_KEY=sz-...
-OTEL_PROJECT_NAME=hermes-agent
 ```
 
-The plugin sets the `signoz-ingestion-key` header automatically on both the
-trace and metric exporters.
+The plugin sets the `signoz-ingestion-key` header automatically on the trace,
+metric and log exporters.
 
 ## Notes
 
 - The stack includes a one-shot `signoz-telemetrystore-migrator` container that
   bootstraps ClickHouse schemas. It is expected to exit after migrations
   complete — don't treat its `Exited` status as an error.
-- SigNoz provisions a default admin on first boot via the UI setup flow at
-  `http://localhost:3301`. The JWT secret is pinned to `secret` in the compose
+- There is no default admin: you create the first one through the setup flow
+  at `http://localhost:3301` (see *First-run setup*). The JWT secret is pinned to `secret` in the compose
   file for local use — do not expose this stack to the public internet.
 - `VERSION` and `OTELCOL_TAG` env vars pin the SigNoz image and collector
   versions (`v0.119.0` / `v0.144.2` at time of import).

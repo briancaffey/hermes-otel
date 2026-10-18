@@ -8,10 +8,10 @@ description: "How to configure hermes-otel: env vars for backends, config.yaml f
 
 hermes-otel has two configuration surfaces:
 
-1. **Environment variables** — for backend selection + secrets.
-2. **`config.yaml`** — for telemetry shaping (sampling, preview size, resource attributes, batch tuning, multi-backend fan-out).
+1. **Environment variables**: pick a single backend, hold secrets, and override any scalar setting (`HERMES_OTEL_*`).
+2. **`config.yaml`** (the file is `hermes_otel.yaml`): shape the telemetry (content capture, sampling, resource attributes, batch tuning) and list several backends.
 
-Both are optional. The plugin ships with sensible defaults and will run with no config at all if you set a single backend env var (e.g. `OTEL_PHOENIX_ENDPOINT`).
+Both are optional. With nothing set, the plugin runs with its defaults and keeps telemetry in the local live store for the dashboard. One backend variable (for example `OTEL_PHOENIX_ENDPOINT`) is enough to export.
 
 ## Precedence
 
@@ -21,7 +21,7 @@ Per-field precedence, highest → lowest:
 2. **`config.yaml` value**
 3. **Built-in default**
 
-So a value set in the env var always wins over `config.yaml`, which always wins over the default.
+So a value set in the env var always wins over `config.yaml`, which always wins over the default. An env value that does not parse is ignored with a warning. Maps and the `backends:` list have no env var; see [Environment variables](/configuration/environment-variables).
 
 ## Where does `config.yaml` live?
 
@@ -48,6 +48,8 @@ Already have one in the plugin directory? Move it somewhere durable:
 mv ~/.hermes/plugins/hermes_otel/config.yaml ~/.hermes/hermes_otel.yaml
 ```
 
+In string values, `${VAR}` is replaced with the environment variable's value when the file loads. An unset variable stays as the literal text and logs one warning.
+
 `config.yaml` is gitignored in the plugin repo (so local endpoints and any inline secrets don't get committed). Only `config.yaml.example` is tracked.
 
 ## Requires `PyYAML`
@@ -59,7 +61,7 @@ Malformed YAML logs a single warning at startup and falls back to defaults — i
 ## The two modes
 
 **Single-backend (env-var-driven):**
-Set exactly one of the backend env vars. First match wins. No `config.yaml` needed for the backend; optional `config.yaml` shapes telemetry.
+Set one backend's env vars. If several are set, the first match in a fixed order wins (LangSmith first, Phoenix last; the order is `ENV_PRIORITY` in `hermes_otel/backend_specs.py`). No `config.yaml` needed for the backend; an optional `config.yaml` shapes telemetry.
 
 **Multi-backend (YAML-driven):**
 Set `backends:` in `config.yaml` with one or more entries. Env-var detection is **skipped**. An invalid entry is skipped with a warning; when every entry is invalid the plugin runs live-only (the in-process dashboard store, as with no backend configured) unless `dashboard_live` is off. See [Multi-backend fan-out](/backends/multi-backend).
@@ -100,4 +102,4 @@ Or in `config.yaml`:
 enabled: false
 ```
 
-Either way, `register()` returns early after the kill-switch check. No spans are created, no hooks are attached, no OTel SDK is loaded. Flip it back on to restart.
+Either way, the plugin logs `Disabled via config (enabled=false)` and stops: no pipeline or exporters are built, no hooks are registered, no spans are created. The plugin module still imports the OTel packages. Set it back to `true` and restart Hermes to turn it on.

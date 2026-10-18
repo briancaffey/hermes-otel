@@ -1,7 +1,7 @@
 ---
 sidebar_position: 7
 title: "Kanban demo"
-description: "One command that works three cards on a scratch kanban board and reads every kanban span, metric point and event back from the live store and Jaeger."
+description: "One command that works four cards on a scratch kanban board and reads every kanban span, metric point and event back from the live store and Jaeger."
 ---
 
 # Kanban demo
@@ -39,4 +39,4 @@ uv run --extra dev python scripts/kanban_demo/run_demo.py --profile minimal \
 
 Filter on `hermes.kanban.task_id`: it is a Resource attribute on every worker span and a span attribute on every `kanban.*` span, so one card's story is the dispatcher's claim and spawn, the worker's `agent → llm → api → tool.kanban_*` turn with its `kanban.complete` or `kanban.block`, and, for a killed worker, the dispatcher's `kanban.worker_exit`. A card attempted several times has one `hermes.kanban.run_id` per attempt.
 
-The scratch board's SQLite file stays in the output directory; `HERMES_KANBAN_DB=<out>/board/kanban.db hermes kanban show <id>` reads a card's full event history. Options: `--runaway-seconds` (default 45), `--tick-seconds`, `--max-wait`, `--hermes-home`.
+The scratch board's SQLite file stays in the output directory; `HERMES_KANBAN_DB=<out>/board/kanban.db hermes kanban show <id>` reads a card's full event history. Options: `--runaway-seconds` (the runaway card's runtime cap, default 45), `--tick-seconds` (between dispatcher passes, default 8), `--max-wait` (give up after this many seconds, default 600), `--hermes-home` (default `~/.hermes/profiles/<profile>`), `--out` and `--token`.

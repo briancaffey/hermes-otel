@@ -31,15 +31,17 @@ UI at http://localhost:16686.
 That file runs `jaegertracing/all-in-one`, the v1 line that ended with 1.76.0. For the
 OpenTelemetry-Collector-based **Jaeger v2** (what the Helm chart deploys) use
 `docker-compose/jaeger-v2/docker-compose.yaml`: UI on http://localhost:16696, OTLP/HTTP on
-`http://localhost:4368/v1/traces`. Export works the same. On the read side v2 serves only
-`/api/v3/...` on the UI port (the classic `/api/traces` is 404, #245); the dashboard's
-Jaeger adapter probes once per query URL (the classic `/api/services` first, which wins
-when it answers, then `/api/v3/services`) and speaks whichever API the server has, so a
-v1 and a v2 entry need the same two keys (`endpoint`, `query_port`). The classic API is
-preferred because Jaeger 1.x's `all-in-one` also exposes an `/api/v3` gateway, with
-snake_case parameters that differ from v2's.
-`query_api: v1` or `v3` on the entry pins it. Verified on 2.21.0 (2026-10-09): search,
-filters, keyset paging and the trace detail all come from `/api/v3/traces`.
+`http://localhost:4368/v1/traces`. Export works the same.
+
+On the read side, v2 serves only `/api/v3/...` on the UI port; the classic `/api/traces`
+answers 404 ([#245](https://github.com/briancaffey/hermes-otel/issues/245)). The
+dashboard's Jaeger adapter probes once per query URL, trying the classic `/api/services`
+first and then `/api/v3/services`, and speaks whichever API the server has. So a v1 and a
+v2 entry need the same two keys, `endpoint` and `query_port`. The classic API is tried
+first because Jaeger 1.x's `all-in-one` also exposes an `/api/v3` gateway whose
+snake_case parameters differ from v2's. `query_api: v1` or `v3` on the entry skips the
+probe. Verified on 2.21.0 (2026-10-09): search, filters, keyset paging and the trace
+detail all come from `/api/v3/traces`.
 
 ## Multi-backend config
 
@@ -47,15 +49,19 @@ filters, keyset paging and the trace detail all come from `/api/v3/traces`.
 backends:
   - type: jaeger
     endpoint: http://localhost:4318/v1/traces
+    query_port: 16686          # dashboard read path: the UI / query port (16696 for the v2 stack)
 ```
+
+Set `query_port` whenever the dashboard should read this entry. Without it the adapter
+uses the port in `endpoint`, which is the OTLP port, not the query API.
 
 ## What you'll see
 
-Jaeger shows the plugin's spans as a standard trace tree — the service-map view picks up the parent/child relationships between `session`, `llm`, `api`, and `tool` spans. Each span's attributes are rendered in the "Tags" panel (a long list with everything the plugin emitted).
+Jaeger shows the plugin's spans as a standard trace tree — the service-map view picks up the parent/child relationships between the `agent` root and its `llm.*`, `api.*` and `tool.*` spans. Each span's attributes are rendered in the "Tags" panel (a long list with everything the plugin emitted).
 
 Jaeger is not LLM-specific, so:
 
-- Message content appears as the raw `input.value` / `gen_ai.content.prompt` tag rather than pretty-printed.
+- Message content appears as the raw `input.value` / `gen_ai.input.messages` tag rather than pretty-printed.
 - Token counts are tags, not first-class fields — look for `gen_ai.usage.input_tokens` / `llm.token_count.prompt`.
 - Tool args / results are JSON in the `input.value` / `output.value` tags.
 
@@ -67,7 +73,7 @@ Traceloop's `opentelemetry-mcp` server reads this stack with `BACKEND_TYPE=jaege
 
 ## Metrics caveat
 
-Jaeger is **traces-only** — no OTLP metrics ingest. The plugin auto-detects this and skips the metrics exporter when Jaeger is the only backend.
+Jaeger is **traces-only** — no OTLP metrics or logs ingest. The `jaeger` type turns metrics and logs off by default, so the plugin builds no metrics exporter for this entry.
 
 If you want the plugin's token / tool / cost metrics alongside Jaeger traces, route metrics to a Prometheus-compatible sink via a separate backend entry, or fan out to Phoenix / SigNoz in parallel.
 
@@ -75,7 +81,7 @@ If you want the plugin's token / tool / cost metrics alongside Jaeger traces, ro
 
 **"Spans are arriving but the service-map is empty"**
 
-- Jaeger builds the service-map from `service.name` on the resource. The plugin sets this from `OTEL_PROJECT_NAME`. If it's unset, every span ends up on an "unknown-service" node — set the env var and restart.
+- Jaeger builds the service map from `service.name` on the resource. The plugin sets it to `hermes-agent` (or the profile name with `service_name_from_profile`, or your `resource_attributes.service.name`), so every Hermes span lands on one service node. The map needs spans from more than one service to draw edges; a single Hermes process shows one node. `OTEL_PROJECT_NAME` sets `openinference.project.name`, not the service name.
 
 **"OTLP export 404s"**
 

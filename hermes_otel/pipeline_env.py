@@ -2,9 +2,10 @@
 and header environment the exporters see, the host platform the Resource
 describes, and the token-usage attribute filter the root roll-up applies.
 
-A leaf module (imports nothing from the package) because ``backends.py`` and
-``log_handler.py`` build exporters too and ``pipeline.py`` imports both, so
-these cannot live in ``pipeline.py`` without a cycle (#522).
+A leaf module (imports nothing from the package) because ``backends.py``
+needs the endpoint rule and ``pipeline.py`` imports ``backends.py``, so these
+cannot live in ``pipeline.py`` without a cycle (#522). ``log_handler.py``
+builds its exporters under the same header guard.
 """
 
 from __future__ import annotations

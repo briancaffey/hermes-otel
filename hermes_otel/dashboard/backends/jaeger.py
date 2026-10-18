@@ -13,9 +13,11 @@ matches ANY span of a trace, so with ``roots_only`` the adapter re-checks
 the filter against the root span of every returned trace (#295).
 
 Every query names a service: ``service_name`` on the entry, else the
-plugin's own ``resource_attributes.service.name``, else ``hermes-agent``.
+plugin's own ``resource_attributes.service.name``, else the service the
+plugin reports for the viewed profile (``hermes-agent``, or the profile's
+name with ``service_name_from_profile``; see ``default_service_name``).
 
-The two APIs ask for the same five facts under two spellings and answer in
+The two APIs ask for the same seven facts under two spellings and answer in
 two shapes; :data:`_JAEGER_DIALECTS` holds both spellings and the decoder
 of each shape, and the adapter speaks whichever the probe (or the entry's
 ``query_api`` pin) selects.

@@ -8,6 +8,9 @@
 // Host facts the tab relies on (hermes-agent web/src/plugins/sdk.d.ts and the
 // compiled registry, checked against v0.21.5):
 //   - fetchJSON handles auth and throws Error("<status>: <body>") on a non-2xx.
+//     From v0.22.0 it throws an ApiError instead: `message` is the body's
+//     `detail` (or a sentence for the status), `status` holds the code and
+//     `body` the raw body (web/src/lib/api-error.ts).
 //   - It appends ?profile= only for the host's own route families, never for
 //     /api/plugins/*, so the tab adds the page's profile itself (#287).
 //   - Select reads only `value` and a STRING `children` from each SelectOption;

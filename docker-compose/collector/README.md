@@ -11,7 +11,9 @@ for two things the plugin alone cannot do (#368):
   default target prints every span, metric and log record to `docker logs`.
 
 Parseable OSS already uses the same pattern (`parseable/`), because it refuses
-protobuf; this folder makes "Collector in front" a first-class, tested path.
+protobuf; this folder makes "Collector in front" a supported, tested path.
+Only the OTLP/HTTP receiver is published; the plugin's `protocol: grpc` has no
+port to reach here.
 
 ## Start / stop
 ```bash

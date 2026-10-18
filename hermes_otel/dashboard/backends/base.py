@@ -1,13 +1,14 @@
 """Core abstractions for dashboard backend adapters.
 
-Each adapter is a subclass of :class:`BackendAdapter` and uses
-:func:`register` to advertise which ``type:`` values in
-``config.yaml`` it handles.
+Each adapter is a subclass of :class:`BackendAdapter`, lists the backend
+``type:`` values it handles in ``handles``, and registers itself with the
+package's ``register`` decorator.
 
 Adapters return data in two normalized shapes:
 
 * ``search()`` → Tempo-style ``{traces: [{traceID, rootServiceName,
-  rootTraceName, startTimeUnixNano, durationMs, spanSets: [...]}]}``
+  rootTraceName, startTimeUnixNano, durationMs, spanSets: [...]}],
+  has_more, next_before_ns}``
   where ``spanSets[0].spans[].attributes`` carries card-relevant
   attributes (model, provider, tokens, input/output previews, status).
 
@@ -486,8 +487,8 @@ def validate_label_name(label: Optional[str]) -> Optional[str]:
 class BackendAdapter:
     """Abstract base for a trace-query backend.
 
-    Subclasses set ``handles`` (frozenset of ``type`` values from
-    ``config.yaml``) and implement :meth:`search` / :meth:`get_trace`.
+    Subclasses set ``handles`` (frozenset of backend ``type`` values from
+    the plugin config) and implement :meth:`search` / :meth:`get_trace`.
     """
 
     handles: "frozenset[str]" = frozenset()
@@ -507,7 +508,7 @@ class BackendAdapter:
         self.cfg = cfg
 
     # Reported in /status so the frontend can label the raw input and
-    # show the active backend URL. Subclasses typically add ``query_url``.
+    # show the active backend URL.
     # The read API's origin (see :func:`query_origin`); every adapter sets it
     # in ``__init__`` and ``status()`` reports it.
     query_url: str = ""

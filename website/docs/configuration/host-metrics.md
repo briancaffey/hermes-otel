@@ -11,7 +11,8 @@ pegged by inference?"*. When enabled, the plugin samples the Hermes process
 tree, the whole host, and any AMD / NVIDIA GPU on a fixed interval and exports
 the readings **through the same OTel pipeline as everything else**: as
 metrics on every backend that receives metrics, and as average / peak
-utilization attributes on each `tool.*` span. Nothing is written to disk.
+utilization attributes on each `tool.*` span. Nothing is written to disk
+except the copy in the dashboard's live store.
 
 **Off by default.** It costs one daemon thread per Hermes process (not per
 session) and, at the default one-second interval, well under a percent of a
@@ -23,7 +24,7 @@ core.
 # hermes_otel.yaml
 host_metrics: true
 host_metrics_gpu: auto          # auto | amd | nvidia | off
-host_metrics_interval_ms: 1000  # sampling cadence; 100–250 for fine-grained tool windows
+host_metrics_interval_ms: 1000  # sampling cadence (floor 50); 100–250 for fine-grained tool windows
 ```
 
 Or via env vars:
@@ -34,13 +35,13 @@ export HERMES_OTEL_HOST_METRICS_GPU=auto
 export HERMES_OTEL_HOST_METRICS_INTERVAL_MS=1000
 ```
 
-The startup banner confirms it: `✓ Host metrics sampler on (every 1000 ms, gpu=nvidia)`.
+The startup banner confirms it: `✓ Host metrics sampler on (every 1000 ms, gpu=nvidia)` (`gpu=none` when no GPU SDK answered).
 
 ## Requirements
 
 | Signal | Needs | Notes |
 |---|---|---|
-| CPU (process tree + host) | `psutil` | Ships with hermes-agent, so it is already in the venv that runs `hermes`. Without it the sampler logs a warning and stays off. |
+| CPU (process tree + host) | `psutil` | Ships with hermes-agent, so it is already in the venv that runs `hermes`. Without it the plugin logs `⚠ host_metrics=true but psutil is not importable` and the sampler stays off. |
 | NVIDIA GPU | `pynvml` | `pip install pynvml` into the Hermes venv. |
 | AMD GPU | `amdsmi` | Install the version that matches your ROCm stack (AMD recommends the copy under `/opt/rocm/share/amd_smi`). A `rocm-smi` CLI fallback covers SR-IOV VF partitions where the Python API raises. |
 
@@ -70,7 +71,7 @@ core busy), as the conventions specify — a single fully-busy core on an
 **plus every child it spawned** (tool subprocesses, MCP servers it launched);
 an external inference server is not a child and is excluded by construction.
 
-The readings are also mirrored into the [live dashboard](/getting-started/installation) store.
+The readings are also copied into the [live store](/dashboard#the-live-store) behind the dashboard.
 
 ### Span attributes
 

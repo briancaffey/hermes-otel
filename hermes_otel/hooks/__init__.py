@@ -21,17 +21,24 @@ Modules:
 
 * ``_common``      — tracer lookup, ``_fail_open``, previews, session resolution
 * ``attributes``   — the attribute builders every hook shares
+* ``api_call``     — the ``api.<model>`` attribute and metric builders shared by
+                     the main-loop, auxiliary and error hooks
 * ``usage``        — token-usage normalization, attributes and metrics
 * ``session``      — ``on_session_start`` / ``on_session_end`` (the turn root),
-                     ``on_session_finalize`` / ``on_session_reset`` (session boundaries)
+                     ``on_session_finalize`` / ``on_session_reset`` (session boundaries),
+                     ``agent_loop_stopped`` / ``pre_verify``
 * ``tools``        — ``pre_tool_call`` / ``post_tool_call`` and skill spans
+* ``skills``       — which skill a tool call loaded (pure functions for ``tools``)
 * ``approval``     — ``pre_approval_request`` / ``post_approval_response``
 * ``llm``          — ``pre/post_llm_call``, ``pre/post_api_request``, ``api_request_error``
 * ``auxiliary``    — ``pre/post_auxiliary_call`` (titling, compression, MoA, vision, ...)
 * ``subagent``     — ``subagent_start`` / ``subagent_stop``
 * ``propagation``  — W3C ``traceparent`` (``get_current_traceparent``, ``mcp_request_headers``)
 * ``transforms``   — observers on ``transform_terminal_output`` / ``transform_llm_output``
-* ``kanban``       — ``kanban_task_*`` / ``on_kanban_worker_*`` board transitions
+* ``kanban``       — ``kanban_task_*`` / ``on_kanban_worker_*`` board transitions and
+                     ``on_kanban_dispatch_tick`` / ``on_kanban_task_updated``
+* ``observers``    — ``pre_command``, human-input waits, ``on_skill_lifecycle``,
+                     ``pre_transcription``
 """
 
 from __future__ import annotations

@@ -39,9 +39,10 @@ backends:
     endpoint: http://localhost:4428/v1/traces
     metrics: true
     logs: true
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
-The startup banner reads `✓ otel-desktop-viewer connected`; with
+The startup banner reads `✓ otel-desktop-viewer at http://localhost:4428/v1/traces`; with
 `HERMES_OTEL_DEBUG=true` the plugin's `debug.log` shows
 `export otel-desktop-viewer: N span(s) -> SUCCESS` and the same for logs.
 

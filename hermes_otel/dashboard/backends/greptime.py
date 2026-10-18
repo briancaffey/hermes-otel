@@ -148,7 +148,7 @@ class GreptimeAdapter(PrometheusMetrics, JaegerAdapter):
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         # The embedded dashboard has a Traces view but no documented deep link
-        # to one trace; ``ui_url`` on the entry is the way to offer one.
+        # to one trace, so none is offered (``ui_url`` is not read here).
         return None
 
     # ── SQL over HTTP ─────────────────────────────────────────────────

@@ -43,7 +43,7 @@ _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")
 
 # Default Tempo HTTP API port in the otel-lgtm and standalone tempo
 # images. Override per deployment by adding ``query_port`` to the
-# backend entry in config.yaml.
+# backend entry in hermes_otel.yaml.
 _DEFAULT_TEMPO_QUERY_PORT = 3200
 # The otel-lgtm image's Prometheus and Loki ports, used when the entry does
 # not name ``prometheus_url`` / ``loki_url`` explicitly.

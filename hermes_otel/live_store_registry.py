@@ -120,7 +120,7 @@ def get_live_store(
 ) -> Optional[LiveStore]:
     """Return the process-wide :class:`LiveStore`.
 
-    ``create=True`` lazily builds it (the tracer, when ``dashboard_live`` is on).
+    ``create=True`` lazily builds it (``build_pipeline``, when ``dashboard_live`` is on).
     The dashboard API calls with ``create=True`` too (read side) so the file is
     opened even if the dashboard process started first. ``None`` only when the
     SQLite backend can't be opened at all.

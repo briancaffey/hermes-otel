@@ -14,27 +14,27 @@ Every Hermes turn produces a nested tree of spans. This page documents what each
 agent / cron                                  [AGENT]
 ├── skill.{name}                              [SKILL] (load → turn end; overlaps OK)
 └── llm.{model}                               [LLM]
-    ├── api.{model}                           [LLM]
-    │   ├── tool.{name}                       [TOOL]
-    │   ├── tool.skill_view                   [TOOL] (the call that *loads* skill.{name})
-    │   ├── tool.{name}                       [TOOL] (parallel tool calls — siblings)
-    │   ├── approval.{pattern_key}            [APPROVAL] (human-in-the-loop wait; gen_ai.tool.call.id → the gated tool)
-    │   ├── tool.delegate_task                [TOOL] (the tool call that delegates)
-    │   └── subagent.{role}                   [AGENT] (delegation span)
-    │       └── agent (child session root)    [AGENT] (the child rejoins this trace)
-    │           └── llm.{model} → api.{model} → tool.{name} ...   (child's own work)
+    ├── api.{model}                           [LLM]  (the response that asked for the tools)
+    ├── tool.{name}                           [TOOL]
+    ├── tool.skill_view                       [TOOL] (the call that *loads* skill.{name})
+    ├── tool.{name}                           [TOOL] (parallel tool calls — siblings)
+    ├── approval.{pattern_key}                [APPROVAL] (human-in-the-loop wait; gen_ai.tool.call.id → the gated tool)
+    ├── tool.delegate_task                    [TOOL] (the tool call that delegates)
+    ├── subagent.{role}                       [AGENT] (delegation span)
+    │   └── agent (child session root)        [AGENT] (the child rejoins this trace)
+    │       └── llm.{model} → api.{model}, tool.{name} ...   (child's own work)
     └── api.{model}                           [LLM]  (second round-trip after tool results)
 ```
 
 - **`agent` / `cron`** — the root for each turn. Present when session hooks are available in the Hermes build; absent on older versions (the `llm.*` span becomes the root).
 - **`skill.*`** — one per skill loaded during the turn. Spans from the load (a `skill_view` call or a `/skills/` read) to the turn boundary, nested under the turn root. Skills overlap freely — two loaded in one turn are two concurrent siblings. See [`skill.*`](#skill) below.
 - **`llm.*`** — one per logical model turn. Wraps one or more HTTP round-trips to the provider.
-- **`api.*`** — one per HTTP round-trip. Tools run during a round-trip, so their parent is `api.*`, not `llm.*`.
-- **`tool.*`** — one per tool invocation. Parallel tool calls are siblings under the same `api.*`.
+- **`api.*`** — one per HTTP round-trip. Hermes ends it when the response arrives, before it runs the tools that response asked for.
+- **`tool.*`** — one per tool invocation, a child of `llm.*` and a sibling of the `api.*` spans. Parallel tool calls are siblings too; the order of the spans shows which response they followed.
 - **`approval.*`** — one per dangerous-command approval prompt. Spans the time the agent blocks waiting for a human to approve/deny, correlated to the gated tool via `gen_ai.tool.call.id`. See [`approval.*`](#approval) below.
 - **`subagent.*`** — one per delegated child agent. The child's own root span nests under it so a multi-agent run is one connected trace. See [`subagent.*`](#subagent) below.
 
-Every family but the root can be switched off with [`disable_spans`](/configuration/yaml#disable) (#479). A disabled span is a non-recording stand-in carrying its parent's context, so the tree closes over it: with `llm` disabled the `api.*` spans parent to `agent`, with `api` disabled the `tool.*` spans parent to `llm.*`. The hooks still run and still record the family's metrics.
+Every family but the root can be switched off with [`disable_spans`](/configuration/yaml#disable) (#479). A disabled span is a non-recording stand-in carrying its parent's context, so the tree closes over it: with `llm` disabled the `api.*` and `tool.*` spans parent to `agent`. The hooks still run and still record the family's metrics.
 
 ## `agent` / `cron`
 
@@ -46,11 +46,12 @@ Key attributes, set at start:
 
 | Attribute | Source |
 |---|---|
-| `openinference.project.name` | `OTEL_PROJECT_NAME` / `HERMES_OTEL_PROJECT_NAME` |
 | `hermes.session.kind` | From Hermes (`cli`, `telegram`, `cron`, etc.) |
 | `hermes.session.id` | Hermes session ID |
 | `session.id` | Same as above, standard OTel naming |
-| `user.id` | Hermes user ID (when available) |
+| `user.id` | `platform:sender` on gateway sessions, only with `capture_sender_id: true` |
+
+The project name (`project_name`, `HERMES_OTEL_PROJECT_NAME` or `OTEL_PROJECT_NAME`) is the Resource attribute `openinference.project.name`, so it is on every span of the process rather than set on the root.
 
 Key attributes, set at end (the **turn summary**):
 
@@ -64,7 +65,7 @@ Key attributes, set at end (the **turn summary**):
 | `hermes.turn.skill_count` | int | Distinct skills inferred |
 | `hermes.turn.skills` | string | Sorted CSV of distinct skill names |
 | `hermes.turn.api_call_count` | int | Number of `pre_api_request` hooks fired |
-| `hermes.turn.final_status` | string | `completed` · `interrupted` · `incomplete` · `timed_out` |
+| `hermes.turn.final_status` | string | `completed` · `interrupted` · `failed` · `incomplete` · `timed_out` · `finalized` · `reset` |
 
 See [Turn summary](/architecture/turn-summary) for why these exist.
 
@@ -83,8 +84,8 @@ One per logical model turn. Name is `llm.{model}` (e.g. `llm.claude-sonnet-4-6`)
 | `output.value` | OpenInference | Final assistant response |
 | `output.mime_type` | OpenInference | `text/plain` |
 | `gen_ai.request.model` | gen_ai | Model name (for Langfuse / SigNoz) |
-| `gen_ai.content.prompt` | gen_ai | User message (same content as `input.value` when both are strings) |
-| `gen_ai.content.completion` | gen_ai | Assistant response |
+| `gen_ai.input.messages` | gen_ai | User message (or the conversation history) as GenAI message JSON |
+| `gen_ai.output.messages` | gen_ai | Assistant response as GenAI message JSON |
 | `hermes.conversation.message_count` | hermes-specific | When `capture_conversation_history: true` |
 
 By default `input.value` is the latest user turn only. To see the full message list the model saw, enable [conversation capture](/configuration/conversation-capture).
@@ -100,15 +101,19 @@ One per HTTP round-trip to the provider. Name is `api.{model}`.
 | `llm.token_count.prompt` | OpenInference | Prompt tokens |
 | `llm.token_count.completion` | OpenInference | Completion tokens |
 | `llm.token_count.total` | OpenInference | Sum of the above |
-| `llm.token_count.cache_read` | OpenInference | Prompt tokens read from cache (if provider reports) |
-| `llm.token_count.cache_write` | OpenInference | Prompt tokens written to cache (if provider reports) |
+| `llm.token_count.prompt_details.cache_read` | OpenInference | Prompt tokens read from cache (if provider reports) |
+| `llm.token_count.prompt_details.cache_write` | OpenInference | Prompt tokens written to cache (if provider reports) |
+| `llm.token_count.completion_details.reasoning` | OpenInference | Reasoning tokens (if provider reports) |
 | `gen_ai.usage.input_tokens` | gen_ai | Prompt tokens (for Langfuse) |
 | `gen_ai.usage.output_tokens` | gen_ai | Completion tokens (for Langfuse) |
 | `gen_ai.usage.cache_read_input_tokens` | gen_ai | Cache read (if provider reports) |
 | `gen_ai.usage.cache_creation_input_tokens` | gen_ai | Cache write (if provider reports) |
-| `llm.invocation_parameters` | OpenInference | JSON of temperature, max_tokens, etc. |
-| `gen_ai.response.finish_reason` | gen_ai | `stop`, `tool_use`, `length`, etc. |
-| `http.duration_ms` | hermes-specific | Wall-clock duration of the HTTP call |
+| `gen_ai.usage.reasoning.output_tokens` | gen_ai | Reasoning tokens (if provider reports) |
+| `gen_ai.request.temperature`, `gen_ai.request.max_tokens`, `gen_ai.request.top_p`, … | gen_ai | Request parameters Hermes passed |
+| `llm.response.finish_reason` / `gen_ai.response.finish_reasons` | both | `stop`, `tool_calls`, `length`, etc. (the gen_ai one is an array) |
+| `llm.response.duration_ms` | OpenInference-style | Wall-clock duration of the HTTP call |
+
+The complete list is in the [span attribute reference](/reference/span-attributes).
 
 The `api.*` span is the right place to look for token counts — not the parent `llm.*` (which doesn't carry per-call counts, because a turn can have multiple `api.*` calls).
 
@@ -140,10 +145,10 @@ One per tool invocation. Name is `tool.{name}` (e.g. `tool.bash`, `tool.read_fil
 | `output.value` | OpenInference | Tool result |
 | `hermes.tool.target` | hermes-specific | Inferred file path / URL (see [Tool identity](/architecture/tool-identity)) |
 | `hermes.tool.command` | hermes-specific | Inferred shell command |
-| `hermes.tool.outcome` | hermes-specific | `completed` · `error` · `timeout` · `blocked` |
+| `hermes.tool.outcome` | hermes-specific | `completed` · `error` · `timeout` · `blocked` · `cancelled` |
 | `hermes.skill.name` | hermes-specific | Skill inferred from args paths (optional) |
 
-Errors: `hermes.tool.outcome=error` also maps the span's `StatusCode` to `ERROR`. Timeouts and blocked tools stay `OK` so dashboards don't count them as failures.
+Errors: `hermes.tool.outcome=error` also maps the span's `StatusCode` to `ERROR`. Timeouts and blocked tools stay `OK` so dashboards don't count them as failures. A successful `git commit` adds `hermes.tool.git_commit` (the commit's first line), a `hermes.commit.count` point and a `commit` event.
 
 ## `skill.*` {#skill}
 
@@ -166,7 +171,7 @@ are emitted regardless.
 | `gen_ai.skill.name` | gen_ai (ext.) | Skill name (GenAI-convention alias) |
 | `hermes.skill.source` | hermes-specific | `skill_view` (canonical) or `path_match` |
 | `hermes.skill.path` | hermes-specific | The skill directory Hermes reported or the read file resolved to (optional) |
-| `hermes.skill.result_status` | hermes-specific | Turn outcome: `completed` · `interrupted` · `incomplete` |
+| `hermes.skill.result_status` | hermes-specific | Turn outcome at close: the root's `hermes.turn.final_status` (`completed` · `interrupted` · …) |
 | `hermes.span_kind` | hermes-specific | `skill` (for UI grouping) |
 
 Status is always `OK` — a skill being active is never itself an error; the
@@ -181,7 +186,7 @@ that human-decision latency a first-class part of the trace, and records what
 was decided (an audit signal for allowlist tuning).
 
 The span opens on `pre_approval_request` and closes on `post_approval_response`,
-nested within the turn (under the active `api.*`/`agent` span) and correlated to
+nested within the turn (under the in-flight `llm.*` span, or the root) and correlated to
 the tool it gates via `gen_ai.tool.call.id`. It's keyed off the `turn_id` the
 hook carries (which embeds the session id), so it lands in the right trace even
 though the approval system runs on its own executor thread. Works on both the
@@ -191,12 +196,13 @@ Slack, …).
 | Attribute | Convention | Meaning |
 |---|---|---|
 | `hermes.approval.pattern_key` | hermes-specific | The matched approval rule (e.g. `rm_rf`) — also the span name |
-| `hermes.approval.choice` | hermes-specific | `once` · `session` · `always` · `deny` · `timeout` |
-| `hermes.approval.granted` | hermes-specific | `true` for once/session/always |
+| `hermes.approval.choice` | hermes-specific | `once` · `session` · `always` · `deny` · `timeout`, or a smart-guardian verdict `smart_approve` · `smart_deny` · `smart_escalate` |
+| `hermes.approval.granted` | hermes-specific | `true` for once/session/always and `smart_approve` |
+| `hermes.approval.decided_by` | hermes-specific | Who decided, as Hermes reports it (`aux_llm` for the smart guardian); omitted when unknown |
 | `hermes.approval.timed_out` | hermes-specific | `true` when the human never answered |
 | `hermes.approval.duration_ms` | hermes-specific | Human-decision wait time (ms) |
 | `hermes.approval.surface` | hermes-specific | `cli` or `gateway` |
-| `hermes.approval.command` | hermes-specific | The command awaiting approval (preview-clipped; suppressed when `capture_previews=false`) |
+| `hermes.approval.command` | hermes-specific | The command awaiting approval (preview-clipped; omitted when `content_capture: off`) |
 | `hermes.approval.description` | hermes-specific | Why approval is required (preview-clipped) |
 | `gen_ai.tool.call.id` | gen_ai | The gated tool call — correlates this approval to its `tool.*` span |
 
@@ -259,7 +265,7 @@ One per delegated child agent (when the parent calls the `delegate_task` tool). 
 
 **Span kind:** `AGENT` (OpenInference).
 
-The delegation span opens on `subagent_start` and nests under the parent turn's in-flight `api.*`/`llm.*` span. Crucially, the delegated child's **own root span rejoins this trace**: when the child runs in the same process (the default), its `agent` root nests directly under the `subagent.*` span, so a multi-agent run is a single connected tree instead of many disconnected traces.
+The delegation span opens on `subagent_start` and nests under the parent turn's in-flight span (normally its `llm.*` span). Crucially, the delegated child's **own root span rejoins this trace**: when the child runs in the same process (the default), its `agent` root nests directly under the `subagent.*` span, so a multi-agent run is a single connected tree instead of many disconnected traces.
 
 **It outlives the turn that opened it.** Hermes runs a top-level `delegate_task` in the background: the tool returns a handle at once, the parent's turn ends, and `subagent_stop` fires later, often during a following turn. The delegation span stays open across those turn boundaries and ends on `subagent_stop` with the reported status, so in a trace view it extends past the end of the turn root it hangs from. The parent's orphan sweep does not close it. A delegation whose `subagent_stop` never arrives is closed after `subagent_span_ttl_ms` (default 24 hours) with `hermes.subagent.swept=true`, and at process exit.
 
@@ -302,6 +308,6 @@ The tree mirrors the agent's execution structure:
 
 - **One root per turn** so you can filter "one user question worth of work" in the backend UI.
 - **`llm.*` as a logical parent of all `api.*`** because the conversation-with-the-model is one coherent thing even when it takes multiple HTTP calls.
-- **`tool.*` under `api.*`** because tools run *between* rounds of model inference, within a specific HTTP response's tool_calls. The `api.*` parent makes that explicit.
+- **`tool.*` beside `api.*`, under `llm.*`** because Hermes runs the tools *between* rounds of model inference: the `api.*` span that asked for them has already ended, and the next `api.*` span starts once their results are in.
 
 See [Attribute conventions](/architecture/attributes) for the dual-convention mapping side-by-side.

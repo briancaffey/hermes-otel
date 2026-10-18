@@ -34,7 +34,8 @@ backends:
     password_env: OPENOBSERVE_PASSWORD
     # stream_name: default          # optional; defaults to "default"
 
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 Then:
@@ -55,7 +56,7 @@ should appear in startup logs.
   indexes automatically.
 - **Metrics** — "Metrics" tab. Query `hermes_*` metrics the plugin
   emits (sessions, tokens, tool durations).
-- **Logs** — "Logs" tab. When `capture_logs` is on, every Python
+- **Logs** — "Logs" tab. When `logs: {capture: true}` is on, every Python
   `logger.info(...)` record lands here with the active span's
   `trace_id` / `span_id` attached; click to jump to the related trace.
 
@@ -96,7 +97,7 @@ docker compose -f docker-compose/openobserve/docker-compose.yaml down -v   # als
 - **Metrics:** yes — both gauges and counters, plus histograms.
 - **Logs:** yes — with automatic trace/span correlation.
 
-Set `metrics: false` or `logs: false` per-backend in `config.yaml` if
+Set `metrics: false` or `logs: false` per-backend in `hermes_otel.yaml` if
 you want a narrower fan-out.
 
 ## Disk vs production mode

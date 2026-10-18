@@ -6,8 +6,9 @@ description: "headers_helper: a command that mints the OTLP headers for a backen
 
 # Short-lived credentials (`headers_helper`)
 
-The plugin's headers are static: `headers:` on the entry, the `*_env` credential
-fields, the top-level `headers:` block. A token that expires cannot live there.
+Most of the plugin's headers are static: `headers:` on the entry, the `*_env`
+credential fields, the top-level `headers:` block. They are read once, when the
+exporters are built, so a token that expires cannot live there.
 A Google Cloud access token is good for an hour, an OIDC token from a vault for
 minutes, and a password someone rotates is wrong the moment they do; until now
 the answers were a restart or an [OpenTelemetry Collector](/backends/collector)
@@ -41,6 +42,7 @@ backends:
 | **Exit code** | Non-zero is a failure: the message carries the code and the first lines of stderr (redacted). |
 | **Precedence** | Minted headers sit on top of the entry's static `headers:` and of what the type's resolver built (an OpenObserve entry's `Authorization: Basic …`, Honeycomb's `x-honeycomb-team`). The helper is the live credential, so on the same name it wins. Print the full set every run: a header it stops printing is removed from the requests. |
 | **Static credential** | Optional when a helper is set. A type that otherwise refuses an entry without its credential (OpenObserve `user`/`password`, Langfuse `public_key`/`secret_key`, Uptrace `dsn`, Honeycomb, LangSmith, Laminar, LangWatch, Latitude, Weave, Agenta, Parseable and ClickStack `api_key`) accepts a helper in its place and leaves that header for the helper to mint (#583). Fields that are not the credential (Latitude's `project`) are still required. With neither, the entry is still skipped at startup. |
+| **Transport** | OTLP/HTTP only. An entry with `protocol: grpc` and a `headers_helper` is refused at startup (`headers_helper needs protocol: http/protobuf; gRPC cannot refresh it`): the refresh works through the HTTP exporter's requests, and a gRPC channel has no such hook. |
 | **Signals** | One helper process serves the entry's traces, metrics and logs exporters; each gets the same minted set. A refresh is shared: when one exporter's 401/403 re-runs the helper, the others send their next batch with the new set, and exporters refused at the same moment wait for that one run instead of starting their own (#584). A rotation costs one helper run and one refused batch per entry, not one per signal. |
 
 A helper that fails **at startup** skips that backend entry with the error in
@@ -55,8 +57,8 @@ entry's source for its headers, never what the helper printed. `debug.log`
 (`HERMES_OTEL_DEBUG=true`) records each run with the header **names** and
 redacted values: `headers_helper cloud-trace: run 1 (412 ms) ->
 Authorization=••••••, x-goog-user-project=my-project`, and
-`401 from the backend; re-ran the helper and retrying the batch once` when a
-refresh happens (`another exporter already re-ran the helper` when a
+`401 from the backend; re-ran the helper and retrying the batch once with …`
+(the new header names and masked values) when a refresh happens (`another exporter already re-ran the helper` when a
 concurrent refusal took the set that run minted). See [Privacy](/configuration/privacy) for what the redactor
 masks.
 

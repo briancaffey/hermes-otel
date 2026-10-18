@@ -11,7 +11,10 @@ Install the plugin instead:
 
 ```bash
 hermes plugins remove hermes-otel
+hermes plugins install hermes_otel                          # from the Hermes plugin catalog
+# or the newest main from this repository:
 hermes plugins install briancaffey/hermes-otel/hermes_otel
+hermes plugins enable hermes_otel
 ```
 
 Same destination as before — it unpacks to `~/.hermes/plugins/hermes_otel/`,
@@ -20,8 +23,8 @@ typed.
 
 Why the change: Hermes security-scans a plugin's whole file tree before
 installing it, and grades docs and test fixtures like executable code. Shipping
-only `hermes_otel/` keeps installs unblocked and drops the installed footprint
-from about 6 MB to under 500 KB. See
+only `hermes_otel/` keeps installs unblocked and keeps the install small (about
+1.7 MB, against more than 50 MB for the whole repository). See
 https://github.com/briancaffey/hermes-otel/issues/53
 
 Docs: https://briancaffey.github.io/hermes-otel/

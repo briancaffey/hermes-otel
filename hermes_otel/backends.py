@@ -8,8 +8,8 @@ endpoint URL, ready-to-send headers (with auth already baked in), and
 the display name used in startup logs.
 
 The module is intentionally stateless — no per-call cache, no mutation
-of the plugin, no OTel SDK imports. Tracer wiring happens in
-``tracer.py``; this module decides *what* to wire.
+of the plugin, no OTel SDK imports. The exporters are built in
+``pipeline.py``; this module decides *what* to wire.
 
 Every per-type fact (display name, signals, env opt-in, credentials and
 their fallback variables, endpoint variable and default host, auth header,
@@ -307,8 +307,8 @@ def _required_endpoint(bc: BackendConfig, spec: BackendSpec) -> str:
 
 
 def _auth_header(bc: BackendConfig, spec: BackendSpec) -> Dict[str, str]:
-    """The one header ``spec.auth`` describes, or ``{}`` when it is optional
-    and nothing resolves, or when the entry's ``headers_helper`` mints it."""
+    """The one header ``spec.auth`` describes, or ``{}`` when nothing resolves
+    and the header is optional or the entry's ``headers_helper`` mints it."""
     auth = spec.auth
     if auth is None:
         return {}
@@ -408,8 +408,8 @@ def _resolve_greptime(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     ``/v1/otlp/v1/metrics`` and ``/v1/otlp/v1/logs`` on its HTTP port (4000
     upstream, 4398 in the bundled stack). ``endpoint`` is required (no default
     host); a bare origin, the ``/v1/otlp`` prefix or any of the three full URLs
-    all resolve to the traces URL, and ``tracer.py`` / ``log_handler.py``
-    derive the other two from it.
+    all resolve to the traces URL, and :meth:`_ResolvedBackend.target`
+    derives the other two from it.
 
     Headers: traces **must** carry ``X-Greptime-Pipeline-Name:
     greptime_trace_v1`` (the only pipeline the trace model accepts; without it
@@ -627,16 +627,17 @@ def _resolve_honeycomb(bc: BackendConfig, spec: BackendSpec) -> _Wire:
 
     Endpoint: defaults to the US ingest host (or EU for ``region: eu``) with the
     ``/v1/traces`` suffix the OTLP pipeline expects (``spec.region_endpoints``).
-    ``tracer.py`` and ``log_handler.py`` rewrite that suffix to ``/v1/metrics``
-    and ``/v1/logs``, which matches Honeycomb's per-signal path scheme exactly.
+    :meth:`_ResolvedBackend.target` rewrites that suffix to ``/v1/metrics`` and
+    ``/v1/logs``, which matches Honeycomb's per-signal path scheme exactly.
 
     Dataset routing: ``x-honeycomb-dataset`` is honored only by Honeycomb
     Classic keys (where it's required for every signal). Modern "Environments"
     keys ignore it — traces route by ``service.name`` and metrics go to the
     environment's default ``Metrics`` dataset (verified live; see
-    ``HONEYCOMB.md``). The plugin sends ``dataset`` on all three exporters via
-    one merged header set, which is correct for Classic and a harmless no-op for
-    modern keys; leave ``dataset`` unset on a modern key.
+    ``website/docs/backends/honeycomb.md``). The plugin sends ``dataset`` on
+    all three exporters via one merged header set, which is correct for
+    Classic and a harmless no-op for modern keys; leave ``dataset`` unset on a
+    modern key.
     """
     key = _secret(bc, spec, "api_key")
     if not key and not _has_helper(bc):
@@ -715,7 +716,7 @@ def _resolve_elastic(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     mOTLP URL (``https://<hash>.apm.<region>.gcp.elastic-cloud.com:443``, one
     endpoint for all signals) or your EDOT Collector's OTLP/HTTP address. A
     bare base URL is given the ``/v1/traces`` suffix the pipeline expects;
-    ``tracer.py`` / ``log_handler.py`` derive the ``/v1/metrics`` and
+    :meth:`_ResolvedBackend.target` derives the ``/v1/metrics`` and
     ``/v1/logs`` variants from it. Endpoint and header are the plain rules
     (``spec.normalize_endpoint`` / ``spec.auth``).
 
@@ -980,7 +981,7 @@ _RESOLVERS: Dict[str, Callable[[BackendConfig, BackendSpec], _Wire]] = {
 # ── Public API ─────────────────────────────────────────────────────────────
 
 
-#: Canonical types and the dashboard-only aliases (``hyperdx`` → ``clickstack``).
+#: Canonical types and their aliases (``hyperdx`` → ``clickstack``).
 KNOWN_TYPES = SPEC_KNOWN_TYPES
 assert KNOWN_TYPES >= frozenset(_RESOLVERS), sorted(frozenset(_RESOLVERS) - KNOWN_TYPES)
 

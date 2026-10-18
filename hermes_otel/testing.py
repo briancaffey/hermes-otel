@@ -31,7 +31,8 @@ from .tracer import HermesOTelPlugin
 
 def reset_state() -> None:
     """Forget the plugin singleton, the parent-stack ContextVar, the live-store
-    singleton and the redaction cache. Shuts down a previous plugin's pipeline
+    singleton, the redaction cache and the ``TRACEPARENT`` the kanban hooks
+    set. Shuts down a previous plugin's pipeline
     (exporter threads, log handler) and host sampler so nothing retries
     against a dead endpoint."""
     from . import live_store_registry as _ls

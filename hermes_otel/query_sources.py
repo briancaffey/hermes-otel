@@ -1,7 +1,7 @@
 """Where the query CLI reads from: the live store or a dashboard adapter (#215).
 
 :class:`LiveSource` wraps the SQLite live store, :class:`BackendSource` a
-dashboard adapter (Phoenix, Langfuse, Jaeger, …) behind the same six methods,
+dashboard adapter (Phoenix, Langfuse, Jaeger, …) behind the same seven methods,
 so the commands in :mod:`hermes_otel.query_cli` do not care which one answers.
 A backend's OTLP JSON is turned into live-store-shaped span dicts here, with
 the package's decoders (``dashboard/backends/shapes.py``), so every command

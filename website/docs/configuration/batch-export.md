@@ -6,7 +6,7 @@ description: "Tune the BatchSpanProcessor — queue size, flush cadence, batch s
 
 # Batch export tuning
 
-hermes-otel uses OpenTelemetry's `BatchSpanProcessor` so `span.end()` is a non-blocking queue push. Each backend gets its own processor with its own worker thread and its own queue. The defaults are tuned for typical single-user agent traffic and rarely need tweaking — but for high-throughput deployments (cron jobs, many concurrent sessions, multi-tenant gateways), here are the knobs.
+hermes-otel uses OpenTelemetry's `BatchSpanProcessor`, so ending a span only puts it on a queue; nothing waits on the network. Each backend gets its own processor with its own worker thread and its own queue. The defaults suit typical single-user agent traffic. For high-throughput deployments (cron jobs, many concurrent sessions, multi-tenant gateways), these are the knobs.
 
 ## The defaults
 
@@ -14,22 +14,26 @@ hermes-otel uses OpenTelemetry's `BatchSpanProcessor` so `span.end()` is a non-b
 |---|---|---|
 | `span_batch_max_queue_size` | 2048 | `HERMES_OTEL_SPAN_BATCH_MAX_QUEUE_SIZE` |
 | `span_batch_schedule_delay_ms` | 1000 | `HERMES_OTEL_SPAN_BATCH_SCHEDULE_DELAY_MS` |
-| `span_batch_max_export_batch_size` | 512 | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` |
+| `span_batch_max_export_batch_size` | `null`: 512, or 64 when `content_capture` is `full` (the default) | `HERMES_OTEL_SPAN_BATCH_MAX_EXPORT_BATCH_SIZE` |
 | `span_batch_export_timeout_ms` | 30000 | `HERMES_OTEL_SPAN_BATCH_EXPORT_TIMEOUT_MS` |
+| `force_flush_on_session_end` | `true` | `HERMES_OTEL_FORCE_FLUSH_ON_SESSION_END` |
+| `force_flush_wait_ms` | 1500 | `HERMES_OTEL_FORCE_FLUSH_WAIT_MS` |
+
+A batch size above the queue size is lowered to the queue size with a warning, and a value out of range (a `0` queue, a negative timeout) falls back to the default with a warning.
 
 ## Mental model
 
-Every second (`schedule_delay_ms`), the worker drains up to `max_export_batch_size` spans from the queue and POSTs them to the backend. If the queue has more than `max_export_batch_size` spans, the rest wait for the next tick. If the queue has more than `max_queue_size`, the oldest spans get dropped (you'll see a warning in debug logs).
+Every second (`schedule_delay_ms`), the worker takes up to `max_export_batch_size` spans from the queue and sends them to the backend. The worker also wakes early once a full batch is waiting. When the queue is full, each new span pushes out the oldest one, and the SDK logs a warning (see [Verifying](#verifying)).
 
 ```text
-span.end() → [queue, up to 2048 spans] → worker (wakes every 1s) → batch (up to 512) → POST
+span.end() → [queue, up to 2048 spans] → worker (wakes every 1s) → batch (up to 64 or 512) → OTLP request
 ```
 
 ## When to tune
 
 ### "I'm losing spans"
 
-Symptoms: backend shows fewer traces than you expect, debug log shows `BatchSpanProcessor dropped N spans`.
+Symptoms: the backend shows fewer traces than you expect, and `debug.log` shows the SDK warning `Queue full, dropping …`.
 
 Causes, in order of likelihood:
 
@@ -55,11 +59,11 @@ span_batch_schedule_delay_ms: 250   # wake 4× per second
 force_flush_on_session_end: true     # already default — flushes at end-of-turn
 ```
 
-The `force_flush_on_session_end` path is the most impactful for UI latency: at `on_session_end` it flushes every backend's span queue so the full trace appears in the backend within a moment of the turn finishing. The flush runs on one background thread with a 500 ms timeout per backend and coalesces (a second turn ending while one flush is in progress does not queue another), so an unreachable collector costs nothing on the agent's thread. Metrics and logs are left to their periodic readers; process exit still flushes everything synchronously.
+`force_flush_on_session_end` matters most for UI latency. At `on_session_end` it flushes every backend's span queue, and then the metric and log providers, so the full trace appears in the backend a moment after the turn finishes. The flush runs on a background thread with a 500 ms timeout per backend. Requests coalesce: a turn that ends while a flush is still queued does not queue another. The turn waits at most `force_flush_wait_ms` (1500 ms by default) for the flush before returning to Hermes, so an unreachable collector costs a turn no more than that. A one-shot `hermes -z` run exits right after its turn and skips `atexit`, so this turn-end flush is the only export it gets; `0` stops the wait and can lose that run's telemetry.
 
 ### "Hermes shutdown takes forever"
 
-On graceful exit, the plugin registers an `atexit` handler that flushes each queue with the configured export timeout. If one backend is unreachable, Python waits up to 30s per queue before giving up.
+On a graceful exit, the plugin's `atexit` handler ends any open spans, flushes each backend (2 s per span processor), then shuts the processors down. An export already in flight to an unreachable backend can still hold the exit for up to `span_batch_export_timeout_ms` (30 s by default).
 
 Reduce the timeout if you'd rather lose some buffered spans than wait:
 
@@ -67,7 +71,7 @@ Reduce the timeout if you'd rather lose some buffered spans than wait:
 span_batch_export_timeout_ms: 5000
 ```
 
-Note that a hard crash (SIGKILL, OOM) doesn't run `atexit` handlers — up to `schedule_delay_ms` of spans can be lost then. This is the standard OTel trade-off and mirrors every production tracing stack.
+A hard crash (SIGKILL, OOM) doesn't run `atexit` handlers, so spans still in the queue are lost. This is the standard OpenTelemetry trade-off.
 
 ## Logs
 
@@ -83,7 +87,7 @@ logs:
   max_attribute_length: 4096       # longest exported string attribute
 ```
 
-The same mental model applies: a backend's rules filter sits in front of its batch processor, so a record a backend does not accept never occupies its queue. The live store is not batched by the SDK; it buffers rows itself and commits every 250 ms or 64 rows. The logger provider is flushed from the same turn-end and `atexit` paths as spans. In `debug.log` each log export writes `export <backend> logs: N record(s) -> SUCCESS|FAILURE`.
+The same model applies. Each backend's log filter runs before its batch processor, so a record that backend does not accept never takes a place in its queue. The live store is not batched by the SDK; it buffers rows itself and commits every 250 ms or every 64 rows. The logger provider is flushed from the same turn-end and `atexit` paths as spans. In `debug.log` each log export writes `export <backend> logs: N record(s) -> SUCCESS|FAILURE`.
 
 ## Multi-backend implications
 
@@ -99,7 +103,7 @@ Enable debug logging:
 export HERMES_OTEL_DEBUG=true
 ```
 
-With `HERMES_OTEL_DEBUG=true`, each batch a backend's exporter sends writes one line to `debug.log`:
+With `HERMES_OTEL_DEBUG=true`, each batch a backend's exporter sends writes one line to `$HERMES_HOME/plugins/hermes_otel/debug.log`:
 
 ```text
 export Phoenix: 487 span(s) -> SUCCESS
@@ -116,4 +120,4 @@ Nothing is printed to stdout for either; see [Debug logging](/development/debug-
 
 ## Don't tune what you don't need to
 
-The defaults are deliberately conservative and work for 99% of deployments. Start tuning only after debug logs show actual drops or UI latency becomes a concrete complaint.
+The defaults are conservative and work for most deployments. Start tuning only after the debug log shows real drops, or when UI latency is a concrete complaint.

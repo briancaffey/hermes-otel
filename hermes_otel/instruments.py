@@ -2,7 +2,7 @@
 ``HermesOTelPlugin.record_metric`` (#95), plus the Views, temporality and
 aggregation helpers the metric exporters need (#233).
 
-Split out of ``tracer.py`` in #405; ``tracer`` re-exports every public name.
+Split out of ``tracer.py`` in #405.
 """
 
 from __future__ import annotations
@@ -44,8 +44,8 @@ class InstrumentSpec:
     # millisecond-scale list, wrong for every seconds and token histogram.
     boundaries: Optional[Tuple[float, ...]] = None
     # The labels this instrument may carry; anything else is dropped by a
-    # View so a stray attribute can never fan a series out. ``profile`` is
-    # always allowed (added by record_metric).
+    # View so a stray attribute can never fan a series out. ``profile`` and
+    # the ``common_attributes`` keys are always allowed (added by record_metric).
     labels: Tuple[str, ...] = ()
     # Superseded by a seconds instrument; documented as deprecated.
     deprecated: bool = False
@@ -408,7 +408,7 @@ _INSTRUMENTS: Dict[str, InstrumentSpec] = {
         deprecated=True,
     ),
     # Seconds-based successors of the ``ms`` histograms above (#233). The
-    # ``ms`` ones stay for one minor release, marked deprecated, then go in 2.0.
+    # ``ms`` ones stay, marked deprecated, until they are removed in 2.0.
     "tool_duration_s": InstrumentSpec(
         "gen_ai.execute_tool.duration",
         "histogram",
@@ -723,7 +723,7 @@ _CAPPED_LABELS = frozenset(
 )
 
 
-# The observable instruments ``host_bridge.create_host_metric_instruments``
+# The observable instruments ``host_bridge.HostMetrics._create_instruments``
 # registers (semantic-convention names); the docs tests read this instead of
 # the source.
 HOST_METRIC_NAMES = (

@@ -666,8 +666,8 @@ def build_pipeline(
     if config.common_attributes:
         provider.add_span_processor(CommonAttributesProcessor(config.common_attributes))
 
-    # In-process live store for the zero-config dashboard. Added FIRST so
-    # the dashboard renders the agent's activity even with no OTLP
+    # In-process live store for the zero-config dashboard. Added ahead of
+    # the OTLP processors; it renders the agent's activity even with no OTLP
     # backend configured — install the plugin, open the tab, see traces.
     if config.dashboard_live and _LiveSpanProcessor is not None:
         from .live_store_registry import get_live_store
@@ -809,12 +809,13 @@ def init_logs_pipeline(
     tracker: Any = None,
     context_resolver: Any = None,
 ) -> None:
-    """Wire a :class:`LoggerProvider` + handler onto ``pipeline`` when ``capture_logs`` is on.
+    """Wire a :class:`LoggerProvider` onto ``pipeline`` when ``capture_logs`` or
+    ``log_events`` is on (the stdlib handler only with ``capture_logs``).
 
     One provider carries the enrichment processor, the live store sink
     (when ``pipeline.live_active``) and one exporter per log-capable
-    backend (#265). Skipped silently when ``capture_logs=false`` or the
-    SDK logs module is unavailable; with no log-capable backend the live
+    backend (#265). Skipped silently when both are off, with a warning when
+    the SDK logs module is unavailable; with no log-capable backend the live
     store alone still gets the records. Failures in individual backend
     exporters are logged but do not block pipeline init.
     """

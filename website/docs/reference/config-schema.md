@@ -6,9 +6,11 @@ description: "Complete config.yaml schema, field by field."
 
 # Config schema
 
-Complete schema for `~/.hermes/hermes_otel.yaml` (or a legacy `~/.hermes/plugins/hermes_otel/config.yaml`, or the file named by `HERMES_OTEL_CONFIG`). See [`config.yaml`](/configuration/yaml) for the narrative version.
+Every key of the plugin's config file. The plugin reads the first file it finds: the path in `HERMES_OTEL_CONFIG`, then `~/.hermes/hermes_otel.yaml`, then the legacy `~/.hermes/plugins/hermes_otel/config.yaml` (which a reinstall deletes). See [`config.yaml`](/configuration/yaml) for a guided tour.
 
-The field table below is generated from `HermesOtelConfig` by `scripts/gen_config_docs.py`; a test fails if it drifts. A numeric field's **Bounds** are enforced at load (#487): a value outside them, in the yaml or an env override, logs a warning naming the field and the default takes its place, and an export batch size larger than its queue size is clamped to the queue size. Before 1.30.1 such a value reached the SDK, which raised during pipeline init, so every backend logged `traces init failed` and the run exported nothing.
+The field table below is generated from `HermesOtelConfig` by `scripts/gen_config_docs.py`, and a test fails if it drifts from the code.
+
+A numeric field's **Bounds** are checked at load (#487). A value outside them, in the yaml or an env override, logs a warning naming the field, and the default is used instead. An export batch size larger than its queue size is lowered to the queue size. (Before 1.30.1 such a value reached the OpenTelemetry SDK, which raised during startup, so every backend logged `traces init failed` and nothing was exported.)
 
 ## Top level
 
@@ -16,7 +18,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 
 | Field | Type | Default | Description |
 |---|---|---|---|
-| `enabled` | bool | `true` | Master kill switch; `false` unloads every hook |
+| `enabled` | bool | `true` | Master switch; `false` registers no hooks and exports nothing |
 | `sample_rate` | float \| null | `null` | Parent-based trace-ID ratio 0.0–1.0; `null` = AlwaysOn (no sampling). Bounds: 0.0–1.0 |
 | `root_span_ttl_ms` | int | `600000` | Orphan-sweep TTL: a turn root older than this with no end hook is closed. Bounds: ≥ 1 |
 | `subagent_span_ttl_ms` | int | `86400000` | Delegation-span TTL: a `subagent.*` span whose `subagent_stop` never arrives is closed after this (it outlives the parent's turn by design). Bounds: ≥ 1 |
@@ -29,7 +31,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `llm_output_preview_max_chars` | int \| null | `null` | Per-category cap for LLM output previews; `null` = `preview_max_chars`. Bounds: ≥ 1 |
 | `headers` | map | *(unset)* | Extra HTTP headers on every OTLP request; per-backend `headers:` are merged onto these |
 | `global_tags` | map | *(unset)* | Deprecated: merged into `resource_attributes` at load (which wins on a key conflict) |
-| `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid` |
+| `resource_attributes` | map | *(unset)* | Merged into the Resource on top of the defaults `service.name=hermes-agent`, `service.instance.id` (per-process UUID), `service.version`, `process.pid`, `hermes.profile` |
 | `common_attributes` | map | *(unset)* | Stamped on every span, log record and metric point (not the Resource), for backends that do not index resource attributes per signal; scalar values, keys of at most 64 chars outside `hermes.` / `gen_ai.` / `service.`. A plugin attribute of the same name wins; changing a value starts new metric series |
 | `project_name` | string \| null | *(unset)* | `openinference.project.name` on the Resource (Phoenix project); overrides `OTEL_PROJECT_NAME` |
 | `service_name_from_profile` | bool | `false` | A named profile exports as `service.name=<profile>` with `service.namespace=hermes-agent`; the default profile stays `hermes-agent`. `resource_attributes.service.name` still wins |
@@ -57,7 +59,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 | `log_batch_max_export_batch_size` | int | `512` | Log batch processor: records per export request; `logs.batch.max_export_batch_size`. Bounds: ≥ 1 |
 | `log_batch_export_timeout_ms` | int | `30000` | Log batch processor: per-export timeout; `logs.batch.export_timeout_ms`. Bounds: ≥ 1 |
 | `log_live_min_level` | string | `"INFO"` | Floor for the dashboard's live Logs tab (`INFO` default; the OTLP path keeps `log_level`); `logs.live_min_level` |
-| `log_events` | bool | `false` | Emit structured `hermes.*` / GenAI events from the hooks (Phase 2); `logs.events.enabled` |
+| `log_events` | bool | `false` | Emit structured `hermes.*` / GenAI events (log records with an event name) from the hooks; `logs.events.enabled` |
 | `log_events_content` | string | `"inherit"` | Content on events: `inherit` (follow `content_capture`) / `full` / `preview` / `off`; `logs.events.content` |
 | `emit_genai_metrics` | bool | `true` | Also emit the OTel GenAI spec metrics (`gen_ai.client.*`, `gen_ai.agent.*`) |
 | `metrics_temporality` | string \| null | *(unset)* | Metric temporality for OTLP export: `cumulative` (Prometheus family) or `delta` (Datadog, New Relic, Logfire); unset = SDK default; a backend entry's own value wins |
@@ -82,7 +84,7 @@ The field table below is generated from `HermesOtelConfig` by `scripts/gen_confi
 
 [//]: # (generated:config-fields:end)
 
-When `backends:` is present and non-empty, single-backend env-var detection is skipped.
+When `backends:` holds at least one usable entry, single-backend env-var detection is skipped. If every entry is dropped while loading (an entry with no `type`, for example), env-var detection runs after all.
 
 ## `backends[]` entries
 
@@ -90,21 +92,21 @@ Shared fields (all optional unless noted):
 
 | Field | Type | Description |
 |---|---|---|
-| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
+| `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, `elastic`, `openlit`, `mlflow`, `opik`, `laminar`, `langwatch`, `latitude` (see [backends](/backends/overview)). Aliases: `hyperdx` (clickstack), `victoriatraces` (victoria), `qryn` (gigapipe), `openobserver` (openobserve) |
 | `name` | string | Friendly name shown in logs (default: `type`) |
-| `endpoint` | string | Full HTTP traces URL, or gRPC `host:port` / `https://host:port` origin (no signal path). **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
+| `endpoint` | string | Full HTTP traces URL, or gRPC `host:port` / `https://host:port` origin (no signal path). **Required**, either here or in the type's `OTEL_<TYPE>_ENDPOINT` variable, except for the types that have a default: `langfuse` and `weave` (built from `base_url`), `honeycomb`, `agenta` and `langsmith` (built from `region`), and `opik`, `laminar`, `langwatch` and `latitude` (their cloud hosts) |
 | `metrics_endpoint`, `logs_endpoint` | string | The full URL (gRPC: the target) for that signal, used as written instead of the one derived from `endpoint`; `victoria` reads them as its store origins (below) |
 | `protocol` | string | `http/protobuf` (default), or `grpc` for a generic `type: otlp` entry. Applies to traces, metrics and logs; `headers_helper` needs `http/protobuf` |
 | `insecure` | bool | gRPC only: `true` selects plaintext, `false` forces TLS. Unset: SDK INSECURE env vars, then the endpoint scheme (`http` is plaintext; HTTPS / bare targets are TLS). HTTPS cannot be combined with `true` |
 | `certificate_file` | string | PEM CA bundle for server verification; unset uses SDK CERTIFICATE env vars or system trust |
 | `client_certificate_file` | string | PEM client certificate chain for mTLS; gRPC requires `client_key_file` too |
 | `client_key_file` | string | PEM client private key for mTLS; requires `client_certificate_file` |
-| `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
+| `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional. Without it the tab works the link out from the type: the `endpoint` origin for types whose UI is served there, `query_port` for Jaeger and SigNoz, the known SaaS UI for Honeycomb, W&B Weave and LangSmith, and no link for `otlp` and `elastic`. It never guesses a port |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
 | `metrics` | bool | Override metrics-export default for this backend |
-| `metrics_temporality` | string | `cumulative` or `delta` for this backend's metric reader; overrides the top-level default and the type preset (`signoz`, `uptrace` → `delta`) |
+| `metrics_temporality` | string | `cumulative` or `delta` for this backend's metric reader; overrides the top-level default and the type preset (`signoz`, `uptrace`, `elastic` → `delta`) |
 | `root_usage` | bool | Send the turn's token roll-up (`gen_ai.usage.*` / `llm.token_count.*` on the `agent` / `cron` root) to this backend. Preset `false` for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); `true` everywhere else. Only this entry's exporter is affected: the span is rebuilt without those keys on its way out, the `api.*` spans and `hermes.cost.*` stay |
-| `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
+| `logs` | bool or map | Override the logs-export default. On for `signoz`, `greptime`, `clickstack`, `victoria` (with `logs_endpoint`), `aspire`, `gigapipe`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `elastic`, `openlit`, `laminar`, `langwatch`, `lgtm` and `otlp`; off for the rest. A mapping (`level`, `exclude_loggers`, `logger_levels`, `only_in_turn`, `events`) turns logs on with per-backend overrides |
 | `headers` | map | Per-backend HTTP headers / gRPC metadata (merged onto top-level `headers`; gRPC names are lowercased) |
 | `headers_helper` | string | A command (argv string, no shell) whose stdout, a JSON object or `Name=value` lines, mints headers merged over `headers` and the type's own auth header on every signal of this entry; on a 401/403 it is re-run once and the batch retried once ([short-lived credentials](/configuration/short-lived-credentials), [#483](https://github.com/briancaffey/hermes-otel/issues/483)) |
 | `headers_helper_timeout_ms` | int | How long one helper run may take; default `5000` |
@@ -112,6 +114,8 @@ Shared fields (all optional unless noted):
 TLS paths support `~` and `${VAR_NAME}`. Explicit paths override signal-specific SDK environment variables, then global variables. Invalid files or TLS credentials on a plaintext endpoint are rejected. See [gRPC and TLS](/backends/otlp#grpc-and-tls) for examples, environment variables and certificate rotation.
 
 ### Type-specific fields
+
+Keys marked "Dashboard read path" are read only by the dashboard tab and the query tool, never by the exporter. Where a `service_name` defaults to the plugin's `resource_attributes.service.name`, else `hermes-agent`, the named profile comes in between when `service_name_from_profile: true`.
 
 #### `phoenix`
 
@@ -127,11 +131,11 @@ TLS paths support `~` and `${VAR_NAME}`. Explicit paths override signal-specific
 | `public_key_env` | string | Env var name holding the public key |
 | `secret_key` | string | Langfuse secret key (inline; discouraged) |
 | `secret_key_env` | string | Env var name holding the secret key |
-| `base_url` | string | Langfuse base URL (e.g. `https://cloud.langfuse.com`); the plugin appends `/api/public/otel/v1/traces` |
+| `base_url` | string | Langfuse base URL; the plugin appends `/api/public/otel/v1/traces`. Default: `LANGFUSE_BASE_URL`, else `https://cloud.langfuse.com` |
 | `query_api` | string | Dashboard read path: `v3` (trace endpoints), `v4` (`events_only`: v2 observations + v2 metrics), or `auto` (default: probed once per query URL) |
 | `endpoint` | string | Override; skips `base_url` construction |
 
-Basic Auth header is constructed automatically from public + secret keys.
+Both keys are required (an entry with one is skipped with a warning). The plugin builds the Basic Auth header from them.
 
 #### `signoz`
 
@@ -150,7 +154,7 @@ When an ingestion key is set, the plugin adds the `signoz-ingestion-key` header.
 | Field | Type | Description |
 |---|---|---|
 | `endpoint` | string | **Required.** e.g. `http://localhost:4318/v1/traces`. Traces only (metrics/logs off) |
-| `query_port` | int | Dashboard read path: the Jaeger UI/query port (default `16686`) |
+| `query_port` | int | Dashboard read path: the Jaeger UI/query port. Default: the `endpoint`'s own port, else `16686`, so with an OTLP endpoint on `4318` set this to `16686` |
 | `query_api` | string | Dashboard read path: `v1` (classic `/api/traces`), `v3` (Jaeger v2's `/api/v3`), or `auto` (default: probed once per query URL) |
 | `service_name` | string | Dashboard read path: the service every search names (default: the plugin's `resource_attributes.service.name`, else `hermes-agent`) |
 
@@ -321,7 +325,7 @@ All three signals on by default. See [OpenObserve](/backends/openobserve).
 |---|---|---|
 | `endpoint` | string | **Required.** Parseable ingestor OTLP traces endpoint, ending in `/v1/traces` |
 | `api_key` | string | Parseable API key (inline; discouraged) |
-| `api_key_env` | string | Env var holding the key (falls back to `PARSEABLE_API_KEY` / `OTEL_PARSEABLE_API_KEY`) |
+| `api_key_env` | string | Env var holding the key (falls back to `OTEL_PARSEABLE_API_KEY`, then `PARSEABLE_API_KEY`). The key is required and is sent as `X-API-Key` |
 | `traces_dataset` | string | Traces dataset (default: `hermes-traces`) |
 | `metrics_dataset` | string | Metrics dataset (default: `hermes-metrics`) |
 | `logs_dataset` | string | Logs dataset (default: `hermes-logs`) |
@@ -354,6 +358,17 @@ The plugin sets `x-honeycomb-team` from the key automatically and enables all th
 | `endpoint` | string | Override; skips `base_url` construction. Also via `OTEL_WEAVE_ENDPOINT` / `WANDB_OTLP_ENDPOINT` |
 
 The plugin sets the `wandb-api-key` header automatically. Weave is traces-only by default; set `metrics: true` / `logs: true` only if W&B documents ingest for those signals or you are pointing at a compatible collector. `wandb.entity` and `wandb.project` may also be supplied via top-level `resource_attributes`; conflicting values fail startup.
+
+#### `langsmith`
+
+| Field | Type | Description |
+|---|---|---|
+| `api_key` / `api_key_env` | string | **Required.** LangSmith API key, sent as `x-api-key` (falls back to `OTEL_LANGSMITH_API_KEY` / `LANGSMITH_API_KEY`) |
+| `project` / `project_env` | string | Optional project, sent as the `Langsmith-Project` header (falls back to `OTEL_LANGSMITH_PROJECT` / `LANGSMITH_PROJECT`) |
+| `region` | string | `us` (default) or `eu`; picks the host when `endpoint` is unset |
+| `endpoint` | string | Override. An API base gets `/otel/v1/traces` appended. Also via `OTEL_LANGSMITH_ENDPOINT` / `LANGSMITH_ENDPOINT` |
+
+Traces only. See [LangSmith](/backends/langsmith).
 
 #### `elastic`
 
@@ -439,7 +454,7 @@ See [Latitude](/backends/latitude).
 
 ## Env var interpolation in `headers:`
 
-Inside any `headers:` value — and any other string field of a `backends:` entry, such as `api_key`, `dsn`, `password` or `endpoint` — `${VAR_NAME}` is replaced with the env var's value when the config is loaded:
+Inside any `headers:` value, and any other export field of a `backends:` entry such as `api_key`, `dsn`, `password` or `endpoint`, `${VAR_NAME}` is replaced with the env var's value when the config is loaded:
 
 ```yaml
 headers:
@@ -447,7 +462,9 @@ headers:
   x-honeycomb-team: ${HONEYCOMB_API_KEY}
 ```
 
-Missing env vars result in a startup warning and the literal `${VAR}` being sent (which will fail auth, but visibly so).
+A missing env var logs a startup warning and the literal `${VAR}` is sent (which fails auth, but visibly so).
+
+Two limits: header *names* are not expanded, and the dashboard reads the file without expansion, so its read-path keys (`query_port`, `user_token`, `prometheus_url`, …) and any value it reuses from the entry (`api_key`, `password`) reach it as the literal `${VAR}` text. Use the `*_env` keys for dashboard credentials.
 
 ## Precedence
 

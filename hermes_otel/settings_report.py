@@ -75,8 +75,8 @@ def _display_map(
 
 # Credential fields per backend type, with the env vars each resolver falls
 # back to when neither the inline value nor ``<field>_env`` is set
-# (backends.py). Types absent here (phoenix, jaeger, tempo, lgtm, otlp) take
-# credentials only through ``headers``.
+# (backends.py). Types absent here (phoenix, jaeger, zipkin, tempo, lgtm,
+# otlp) take credentials only through ``headers``.
 _TYPE_CREDENTIALS: Dict[str, Dict[str, Tuple[str, ...]]] = {
     s.type: {c.field: c.env for c in s.credentials} for s in SPECS if s.credentials
 }
@@ -143,11 +143,9 @@ def _credential_report(
     return out
 
 
-# Keys the dashboard's query adapters read from a backend entry that are not
-# ``BackendConfig`` fields (the loader drops them; the adapters read the raw
-# yaml). Shown on the Settings card so a ``query_port`` is not invisible.
 # The dashboard-only keys an entry may carry (what each adapter reads, from the
-# manifest), shown on the card so a query-side setting is never invisible.
+# manifest; the loader keeps them on ``BackendConfig.extra``), shown on the
+# card so a query-side setting such as ``query_port`` is never invisible.
 _QUERY_FIELDS: Tuple[str, ...] = tuple(
     dict.fromkeys(
         ("query_port", "project_name", "service_name", "project_id", "logs_stream")

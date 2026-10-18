@@ -22,6 +22,7 @@ UI: http://localhost:16696 (no login).
 backends:
   - type: jaeger
     endpoint: http://localhost:4368/v1/traces
+    query_port: 16696           # dashboard read path; without it the adapter reads the OTLP port
 ```
 
 ## Verify

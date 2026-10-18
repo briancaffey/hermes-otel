@@ -38,6 +38,13 @@ credentials by design.
   The SDK's `OTEL_EXPORTER_OTLP_*HEADERS` variables are ignored, so a
   token exported for another tool never reaches a backend that was not
   given it (#472).
+- A backend entry's `headers_helper:` runs a command you name to mint
+  short-lived headers (#483). It runs without a shell, with the plugin's
+  own environment, and debug lines name the headers it printed but never
+  their values.
+- TLS and client certificates (mTLS) for both OTLP/HTTP and OTLP/gRPC are
+  set per entry (`certificate_file`, `client_certificate_file`,
+  `client_key_file`, `insecure`) (#469).
 - Every release is checked by the Hermes plugin security scanner in CI
   (`scripts/scan_plugin_artifact.py`), which must report `safe` for the
   install artifact and the repository.

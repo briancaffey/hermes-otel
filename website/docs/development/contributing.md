@@ -23,7 +23,7 @@ The project uses [`uv`](https://github.com/astral-sh/uv) for dependency manageme
 git clone git@github.com:briancaffey/hermes-otel.git
 cd hermes-otel
 
-# Unit + integration (fast, no Docker needed, < 1s)
+# Unit + integration (no Docker, no network)
 uv run --extra dev pytest
 
 # Lint
@@ -51,7 +51,7 @@ Runtime code lives in `hermes_otel/`; everything else is development material.
 
 ```text
 hermes_otel/        ← the install artifact: modules, plugin.yaml, skill, dashboard
-tests/              unit / integration / e2e / smoke
+tests/              unit / integration / e2e_ci / e2e / smoke, plus golden/ and helpers/
 website/            Docusaurus docs site
 docker-compose/     example backend stacks
 scripts/            dev + CI utilities
@@ -100,32 +100,32 @@ will emit a warning and fall back to the default until the rename is applied.
 
 Before opening a PR:
 
-- `uv run --extra dev pytest` passes locally.
-- `uv run --extra dev ruff check .` passes.
-- `uv run --extra dev black --check .` passes.
+- `make ci` passes locally. It runs what GitHub Actions runs (lockfile check, ruff, black, plugin scan, telemetry vocabulary check, tests with the 85% coverage gate and the per-module floors, dashboard bundle, docs build, wheel). `make ci-fast` skips the two npm builds when you did not touch `dashboard-ui/` or `website/`.
 - Added / updated tests that prove the behavior change.
-- Updated README.md / docs/ if user-visible behavior changed.
+- Updated `README.md` / `website/docs/` if user-visible behavior changed.
 - Commit message follows Conventional Commits.
 - No secrets in the diff — `config.yaml` is gitignored; use `config.yaml.example` for documentation.
 
-GitHub Actions runs the unit + integration suite + ruff + black on every PR. E2E and smoke tiers are intentionally **not** run in CI (they need Docker / a real Hermes install); maintainers run those locally before releases.
+GitHub Actions runs those jobs on every PR, plus the OpenTelemetry-floor job and the credential-free `e2e_ci` tier against a pinned Hermes; [Testing](/development/testing#ci-behavior) lists every job. The Docker `e2e` and `smoke` tiers are **not** run in CI (they need containers or a running Hermes); maintainers run them locally before releases.
 
 ## Adding a new backend
 
-1. Add a `BackendSpec` in `backend_specs.py`; a plain OTLP type needs no code beyond it. Add a `_resolve_<type>(bc, spec)` in `backends.py` only for bespoke URL or header rules (see CONTRIBUTING.md).
-2. Add a `docker-compose/<backend>/` folder (compose file + README, see `docker-compose/README.md`) if the backend runs locally.
-3. Add a `docs/backends/<name>.md` page — follow the structure of `phoenix.md` / `signoz.md` (setup, multi-backend config, what you'll see, attribute convention, metrics note, troubleshooting).
-4. Add an entry under `backends:` in `config.yaml.example`.
-5. Add a unit test covering the resolver (env-var precedence, header construction).
-6. Integration tests via `InMemorySpanExporter` are encouraged; E2E tests are optional unless the backend has backend-specific attributes.
-7. Update the "Supported backends" table in `docs/backends/overview.md` and the README.
+The full checklist, including the optional dashboard adapter, is in [CONTRIBUTING.md](https://github.com/briancaffey/hermes-otel/blob/main/CONTRIBUTING.md#adding-a-new-backend). In short:
+
+1. Add a `BackendSpec` in `hermes_otel/backend_specs.py`; a plain OTLP type needs no code beyond it. Add a `_resolve_<type>(bc, spec)` in `hermes_otel/backends.py` only for bespoke URL or header rules.
+2. Run `uv run --extra dev python scripts/gen_config_docs.py --write` to regenerate the type list and the env-var reference.
+3. Add a unit test covering the resolver (`tests/unit/test_backends_<type>.py`: env-var precedence, header construction) and re-record the resolution snapshot (`UPDATE_GOLDEN=1 uv run --extra dev pytest tests/unit/test_golden_resolution.py`).
+4. Add a `docker-compose/<type>/` folder (compose file + README, see `docker-compose/README.md`) if the backend runs locally.
+5. Add a `website/docs/backends/<type>.md` page (follow the structure of `phoenix.md` / `signoz.md`: setup, multi-backend config, what you'll see, attribute convention, metrics note, troubleshooting) and list it in `website/sidebars.ts`.
+6. Add an entry under `backends:` in `config.yaml.example`.
+7. Update the backend table in `website/docs/backends/overview.md` and the backend list in `README.md`.
 
 ## Reporting bugs
 
 Please include:
 
 - Python version + OS.
-- `hermes-otel` version (`pip show hermes-otel`) and commit SHA if installed from source.
+- `hermes-otel` version (the `version:` line of `~/.hermes/plugins/hermes_otel/plugin.yaml`) and the commit SHA if installed from source.
 - Backend(s) configured.
 - A minimal repro — either a unit test or a snippet that calls the affected hook directly.
 - Output with `HERMES_OTEL_DEBUG=true` if the bug is about missing / wrong spans.

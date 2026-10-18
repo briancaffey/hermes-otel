@@ -39,10 +39,10 @@ Open the Honeycomb UI and your data lands in a dataset named after the agent's `
 
 Trace export also works through the [generic OTLP](/backends/otlp) type if you hand-write the endpoint and `x-honeycomb-team` header. Declaring `type: honeycomb` instead asks the plugin to:
 
-1. Read `api_key:` (or `api_key_env:` → env var → `HONEYCOMB_API_KEY` / `OTEL_HONEYCOMB_API_KEY`).
+1. Read `api_key:` (or the variable `api_key_env:` names, then `OTEL_HONEYCOMB_API_KEY`, then `HONEYCOMB_API_KEY`), and skip the entry at startup when no key resolves.
 2. Set the `x-honeycomb-team` request header automatically.
 3. Default the endpoint from `region` (US or EU) — no need to remember the URL.
-4. Enable all three signals (`supports_metrics=True`, `supports_logs=True`).
+4. Enable all three signals by default.
 5. Display `✓ Honeycomb at <endpoint>` in startup logs.
 
 Keep the key out of `config.yaml` — use `api_key_env` and set the variable in your shell.
@@ -51,18 +51,18 @@ Keep the key out of `config.yaml` — use `api_key_env` and set the variable in 
 
 | Field | Meaning |
 |---|---|
-| `region` | `us` (default) → `https://api.honeycomb.io`, `eu` → `https://api.eu1.honeycomb.io`. Ignored if `endpoint` is set. |
-| `api_key` / `api_key_env` | Honeycomb ingest key → `x-honeycomb-team` header. Prefer `api_key_env`. Falls back to `HONEYCOMB_API_KEY` / `OTEL_HONEYCOMB_API_KEY`. |
+| `region` | `us` (default) → `https://api.honeycomb.io/v1/traces`, `eu` → `https://api.eu1.honeycomb.io/v1/traces`. Ignored if `endpoint` or `OTEL_HONEYCOMB_ENDPOINT` is set; any other value is an error and the entry is skipped. |
+| `api_key` / `api_key_env` | **Required.** Honeycomb ingest key → `x-honeycomb-team` header. Prefer `api_key_env`. Falls back to `OTEL_HONEYCOMB_API_KEY`, then `HONEYCOMB_API_KEY`. |
 | `dataset` | Optional → `x-honeycomb-dataset` header. Only honored by Classic keys — see [Datasets](#datasets). |
 | `endpoint` | Optional full `/v1/traces` URL; overrides `region`. Also settable via `OTEL_HONEYCOMB_ENDPOINT`. |
 | `metrics` / `logs` / `traces` | Per-signal toggles. All default **on** for Honeycomb. |
 | `headers` | Extra headers, merged on top of the generated ones. |
 
-The plugin uses **OTLP/HTTP** (not gRPC). The metrics and logs endpoints are derived from the traces endpoint by rewriting the `/v1/traces` suffix to `/v1/metrics` and `/v1/logs`, which matches Honeycomb's per-signal path scheme.
+The plugin uses **OTLP/HTTP** (`protocol: grpc` is available only on a generic `type: otlp` entry). The metrics and logs endpoints are derived from the traces endpoint by rewriting the `/v1/traces` suffix to `/v1/metrics` and `/v1/logs`, which matches Honeycomb's per-signal path scheme.
 
 ## Single backend (env vars)
 
-Without a `config.yaml` `backends:` list, the env-var flow picks up Honeycomb when `OTEL_HONEYCOMB_API_KEY` (or `OTEL_HONEYCOMB_ENDPOINT`) is set (US endpoint by default). `HONEYCOMB_API_KEY` alone is used as a credential fallback but does not turn export on:
+Without a `config.yaml` `backends:` list, the env-var flow picks Honeycomb when `OTEL_HONEYCOMB_API_KEY` is set (US endpoint by default), or when `OTEL_HONEYCOMB_ENDPOINT` is set and a key resolves from `HONEYCOMB_API_KEY`. `HONEYCOMB_API_KEY` alone is used as a credential fallback but does not turn export on:
 
 ```bash
 export OTEL_HONEYCOMB_API_KEY="hcaik_..."
@@ -117,7 +117,7 @@ Traces fan out to both; metrics and logs go only to Honeycomb (Phoenix ingests t
 
 ## Limitations
 
-- **No bundled-dashboard query support (export-only).** The hermes-otel [dashboard](/backends/multi-backend) queries a backend to render traces (e.g. Phoenix via GraphQL). Honeycomb's [Query Data API](https://api-docs.honeycomb.io/api/query-data) is Enterprise-plan gated, asynchronous (create query → run → poll), oriented toward aggregated results rather than fetching raw spans by trace ID, and bounded to a 7-day window — a poor fit for the dashboard. Point `query_backend` at a local backend and explore Honeycomb data in Honeycomb's own UI.
+- **No bundled-dashboard query support (export-only).** The hermes-otel [dashboard](/dashboard) queries a backend to render traces (e.g. Phoenix via GraphQL). Honeycomb's [Query Data API](https://api-docs.honeycomb.io/api/query-data) is Enterprise-plan gated, asynchronous (create query → run → poll), oriented toward aggregated results rather than fetching raw spans by trace ID, and bounded to a 7-day window — a poor fit for the dashboard. Point `query_backend` at a local backend and explore Honeycomb data in Honeycomb's own UI.
 - **Dataset header ignored on modern keys** — control the trace dataset via `service.name`; see [Datasets](#datasets).
 
 ## Troubleshooting

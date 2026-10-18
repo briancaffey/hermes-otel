@@ -66,8 +66,8 @@ export function writeSource(v: string): void {
 export type SourceContextValue = {
   source: string;
   setSource: (s: string) => void;
+  /** The `/status` payload for the selected backend (filters, query_url, …); the same object for live. */
   status: SourceStatus | null;
-  /** The status payload for the selected backend (filters, query_url, …); the same object for live. */
   refresh: () => void;
   isLive: boolean;
   /** Filter support of the selected source (live: everything server-side). */

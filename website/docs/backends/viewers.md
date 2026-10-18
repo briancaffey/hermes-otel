@@ -37,7 +37,8 @@ backends:
     endpoint: http://localhost:4428/v1/traces   # /v1/metrics and /v1/logs are derived
     metrics: true
     logs: true
-capture_logs: true
+logs:
+  capture: true   # send Python log lines as OTel logs too
 ```
 
 One real `hermes` turn (2026-10-11, hermes-otel 1.24.0 branch) stored one trace

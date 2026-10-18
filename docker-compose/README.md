@@ -48,7 +48,7 @@ is driven through the generic one with the headers shown in its folder.
 | [Jaeger v2](jaeger-v2/) | 1 | :16696 | ✅ | ❌ | ❌ | `jaeger` | reproducing #245 (v2 has only `/api/v3`) |
 | [Tempo](tempo/) | 2 | :3020 | ✅ | ❌ | ❌ | `tempo` | standalone Tempo + Grafana, what `type: tempo` targets |
 | [Langfuse](langfuse/) 3 / 4 | 6 | :3000 | ✅ | ❌ | ❌ | `langfuse` | the polished LLM UI; `LANGFUSE_VERSION=4` for #246 |
-| [SigNoz](signoz/) | 5 | :3301 | ✅ | ✅ | ✅ | `signoz` | full APM with ClickHouse; heavy |
+| [SigNoz](signoz/) | 4 (+2 one-shot jobs) | :3301 | ✅ | ✅ | ✅ | `signoz` | full APM with ClickHouse; heavy |
 | [Uptrace](uptrace/) | 4 | :14318 | ✅ | ✅ | ✅ | `uptrace` | all three signals with a DSN-style setup |
 | [Elastic](elastic/) | 3 | :15602 | ✅ | ✅ | ✅ | `elastic` | you already run Elastic: EDOT Collector in front of Elasticsearch + Kibana (verified 2026-10-07, 1.21.0) |
 | [Parseable OSS](parseable/) | 2 | :8010 | ✅ | ✅ | ✅ | `otlp` | SQL over Parquet; shows the collector-in-front pattern |
@@ -82,8 +82,8 @@ are SaaS.
 3. **Run a turn.** `hermes chat -Q --yolo -q "list the files here, then read README.md"`
    exercises an `agent` span, an `llm.*` span, two `api.*` spans and two
    `tool.*` spans. Prefer a fast, cheap model in the scratch home. `hermes -z`
-   also works for traces and metrics but **exports no logs** (one-shot mode
-   disables logging).
+   (one-shot mode) works too, logs included: one-shot mode switches Python
+   logging off, and the plugin lifts that for its own handler.
 4. **Read the plugin's debug log first.** With `HERMES_OTEL_DEBUG=true` in the
    home's `.env`, `$HERMES_HOME/plugins/hermes_otel/debug.log` has one line per
    export: `export <name>: 3 span(s) -> SUCCESS` / `-> FAILURE (…)`. This tells
@@ -122,7 +122,8 @@ folder. The three stacks that keep 4318 or 3000 cannot run together.
 | 3110 | gigapipe | OTLP + Tempo/Prometheus/Loki APIs + UI (upstream 3100) |
 | 3210 | tempo | Tempo API |
 | 3301 | signoz | UI |
-| 4317, 4318 | lgtm, jaeger | OTLP gRPC / HTTP — one at a time |
+| 4317 | lgtm | OTLP gRPC |
+| 4318 | lgtm, jaeger | OTLP HTTP — one at a time |
 | 4327, 4328 | signoz | OTLP gRPC / HTTP |
 | 4337, 4338 | openlit | OTLP gRPC / HTTP |
 | 4348 | parseable | collector OTLP/HTTP |
@@ -189,14 +190,15 @@ and their failure modes, temporality, token maths, attribute limits, read APIs,
 footprint) is in [`QUIRKS.md`](QUIRKS.md). The ones below are the first you meet.
 
 - **Signals a backend silently drops.** Laminar answers 200 on `/v1/metrics`
-  and stores nothing; set `metrics: false`. MLflow, Opik and Latitude have no
-  metrics/logs routes at all (404) — the generic `otlp` type defaults both on,
-  so turn them off per entry or the debug log fills with failures.
+  and stores nothing; the `laminar` type keeps metrics off. MLflow, Opik and
+  Latitude have no metrics/logs routes at all (404); their explicit types keep
+  both off, but through the generic `otlp` type (which defaults both on) turn
+  them off per entry or the debug log fills with failures.
 - **Trace-level token totals used to double in Opik and LangWatch.** Both sum
   usage over every span and the plugin's `agent` span carries the turn's
-  roll-up. The `opik` and `langwatch` types send the root without that
-  roll-up (`root_usage: false` preset, #327; PR #353, open on 2026-10-10,
-  so 1.23 still doubles); set `root_usage: true` on the entry to keep it.
+  roll-up. Since 1.24 the `opik` and `langwatch` types send the root without
+  that roll-up (`root_usage: false` preset, #327); set `root_usage: true` on
+  the entry to keep it.
 - **Attribute truncation.** Tempo cuts attribute values at 2048 bytes by
   default (`tempo/tempo.yaml` raises it). Langtrace drops bool and double
   attributes outright.
@@ -207,8 +209,9 @@ footprint) is in [`QUIRKS.md`](QUIRKS.md). The ones below are the first you meet
 - **Read APIs differ from write APIs.** Jaeger v2 serves `/api/v3` only;
   Langfuse v4 removed `/api/public/traces` (use `/api/public/v2/observations`);
   Parseable OSS needs the collector because it refuses protobuf and has no API
-  keys. The plugin dashboard adapters for Jaeger and Langfuse are affected
-  (#245, #246).
+  keys. The plugin's Jaeger and Langfuse dashboard adapters handle the newer
+  APIs: Jaeger's probes for `/api/v3` (#245) and Langfuse's reads the v2
+  observations (#246).
 - **Released images that need help.** OpenLIT 2.1.0 needs the Collector config
   mounted or nothing listens on 4318; Laminar's published frontend skips
   creating its Quickwit indexes; Langtrace's upstream ClickHouse healthcheck
