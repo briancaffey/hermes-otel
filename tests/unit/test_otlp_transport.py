@@ -370,3 +370,79 @@ def test_http_never_warns_about_grpc(monkeypatch, caplog):
     backend = resolve(BackendConfig(type="otlp", endpoint="http://x:4318/v1/traces"))
     create_exporter(backend, "traces", Mock(), endpoint=backend.endpoint, headers=None)
     assert "grpc on macOS" not in caplog.text
+
+
+# ── SDK TLS variables apply to TLS destinations only ────────────────────────
+
+
+ENV_TLS = (
+    "OTEL_EXPORTER_OTLP_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_TRACES_CERTIFICATE",
+    "OTEL_EXPORTER_OTLP_CLIENT_KEY",
+    "OTEL_EXPORTER_OTLP_CLIENT_CERTIFICATE",
+)
+
+
+@pytest.mark.parametrize("name", ENV_TLS)
+@pytest.mark.parametrize("signal", ["traces", "metrics", "logs"])
+def test_env_tls_files_leave_a_plaintext_http_entry_alone(name, signal, monkeypatch, tmp_path):
+    # A global CA for one HTTPS collector (an mkcert root for https://phoenix.lan)
+    # must not refuse the http:// entries next to it, as 1.32.0 did. Even a
+    # path that does not exist is not read for a plaintext destination.
+    monkeypatch.setenv(name, str(tmp_path / "no-such.pem"))
+    backend = resolve(BackendConfig(type="jaeger", endpoint="http://localhost:4318/v1/traces"))
+    http = Mock()
+    target = backend.target(signal)
+    create_exporter(backend, signal, http, endpoint=target.endpoint, headers=None)
+    http.assert_called_once_with(endpoint=target.endpoint, headers=None)
+
+
+def test_env_ca_leaves_an_insecure_grpc_entry_alone(grpc_exporters, monkeypatch, tmp_path):
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(tmp_path / "no-such.pem"))
+    credentials = Mock()
+    monkeypatch.setattr("grpc.ssl_channel_credentials", credentials)
+    backend = resolve(BackendConfig(type="otlp", endpoint="http://localhost:4317", protocol="grpc"))
+    create_exporter(backend, "traces", Mock(), endpoint=backend.endpoint)
+    credentials.assert_not_called()
+    assert grpc_exporters["traces"].call_args.kwargs["insecure"] is True
+    assert "credentials" not in grpc_exporters["traces"].call_args.kwargs
+
+
+def test_env_ca_still_reaches_an_https_entry(monkeypatch, tmp_path):
+    ca = tmp_path / "ca.pem"
+    ca.write_bytes(b"CA")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(ca))
+    backend = resolve(BackendConfig(type="otlp", endpoint="https://phoenix.lan/v1/traces"))
+    http = Mock()
+    create_exporter(backend, "traces", http, endpoint=backend.endpoint)
+    http.assert_called_once_with(endpoint=backend.endpoint, certificate_file=str(ca))
+
+
+def test_entry_tls_file_on_plaintext_http_is_still_refused(tmp_path):
+    ca = tmp_path / "ca.pem"
+    ca.write_bytes(b"CA")
+    backend = resolve(
+        BackendConfig(type="otlp", endpoint="http://x:4318/v1/traces", certificate_file=str(ca))
+    )
+    with pytest.raises(ValueError, match="require an HTTPS endpoint"):
+        create_exporter(backend, "traces", Mock(), endpoint=backend.endpoint)
+
+
+def test_plugin_exports_to_http_with_a_global_ca_set(monkeypatch, tmp_path):
+    from hermes_otel.plugin_config import HermesOtelConfig
+    from hermes_otel.tracer import HermesOTelPlugin
+
+    ca = tmp_path / "rootCA.pem"
+    ca.write_bytes(b"CA")
+    monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(ca))
+    entry = BackendConfig(
+        type="jaeger", name="jaeger-local", endpoint="http://127.0.0.1:9/v1/traces"
+    )
+    plugin = HermesOTelPlugin(
+        config=HermesOtelConfig(backends=(entry,), dashboard_live=False, probe_backends=False)
+    )
+    try:
+        assert plugin.init()
+        assert len(plugin.pipeline.span_processors) == 1
+    finally:
+        plugin.shutdown()

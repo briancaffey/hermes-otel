@@ -59,7 +59,7 @@ TLS verifies the server certificate and hostname. `https://host:port` and bare `
 
 The TLS file settings also work with HTTPS/protobuf backends. HTTP additionally accepts a combined client certificate + key PEM in `client_certificate_file` without a separate `client_key_file`. Never put private-key contents in YAML; restrict file permissions on the machine running Hermes. `~` and `${VAR_NAME}` are supported in configured paths.
 
-When a TLS file is not configured on the entry, the corresponding standard SDK environment variable is used:
+When a TLS file is not configured on the entry, the corresponding standard SDK environment variable is used for a TLS destination (`https://`, or gRPC without `insecure`). A plaintext entry ignores these variables, as the SDK does, so a global CA for one HTTPS collector leaves `http://` entries exporting:
 
 | Setting | Global environment variable |
 |---|---|
