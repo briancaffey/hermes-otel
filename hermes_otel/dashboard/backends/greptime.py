@@ -114,6 +114,7 @@ class GreptimeAdapter(PrometheusMetrics, JaegerAdapter):
     raw_placeholder = "tool.name=terminal error=true"
     default_query_port = _DEFAULT_GREPTIME_PORT
     default_query_path = "/v1/jaeger"
+    query_endpoint_port = "fallback"  # the API shares the OTLP port
     default_search_fetch = _DEFAULT_SEARCH_FETCH
     supports_metrics = True
     supports_logs = True

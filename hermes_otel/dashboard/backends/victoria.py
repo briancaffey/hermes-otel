@@ -94,6 +94,7 @@ class VictoriaAdapter(PrometheusMetrics, JaegerAdapter):
     raw_placeholder = "tool.name=terminal error=true"
     default_query_port = _DEFAULT_TRACES_PORT
     default_query_path = "/select/jaeger"
+    query_endpoint_port = "fallback"  # the API shares the OTLP port
     default_search_fetch = _DEFAULT_SEARCH_FETCH
 
     def __init__(self, cfg: Dict[str, Any]):
