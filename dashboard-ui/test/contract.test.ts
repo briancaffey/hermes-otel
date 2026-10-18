@@ -219,6 +219,38 @@ describe("errors read the same way everywhere (#287)", () => {
     expect(describeError(new Error("The dashboard server is unreachable")).kind).toBe("network");
     expect(describeError("boom").detail).toBe("boom");
   });
+
+  // The Hermes 0.22+ host ApiError: message = detail sentence, status and body as fields (#611).
+  class HostApiError extends Error {
+    constructor(
+      message: string,
+      readonly status: number,
+      readonly body: string
+    ) {
+      super(message);
+    }
+  }
+  it("reads the host ApiError's status and body", () => {
+    const e = describeError(new HostApiError("Bad key", 503, '{"detail":"Bad key","kind":"auth"}'));
+    expect(e).toMatchObject({ status: 503, kind: "auth", detail: "Bad key", text: "The backend rejected the credentials" });
+    expect(e.hint).toMatch(/Settings/);
+    expect(describeError(new HostApiError("Trace not found", 404, '{"detail":"Trace not found","kind":"not_found"}')).kind).toBe("not_found");
+    expect(describeError(new HostApiError("down", 502, '{"detail":"down","kind":"backend"}')).kind).toBe("backend");
+    // A body that is not JSON keeps the host's sentence and falls back to the status.
+    const html = describeError(new HostApiError("The Hermes service took too long to respond.", 504, "<html>gateway</html>"));
+    expect(html).toMatchObject({ status: 504, kind: "backend", detail: "The Hermes service took too long to respond." });
+  });
+  it("gives the contract's request kind its own text", () => {
+    const e = describeError(new HostApiError("Invalid trace id", 400, '{"detail":"Invalid trace id","kind":"request"}'));
+    expect(e).toMatchObject({ status: 400, kind: "request", detail: "Invalid trace id", text: "The plugin rejected the request" });
+    expect(describeError(new Error('400: {"detail":"Unknown backend","kind":"request"}')).text).toBe("The plugin rejected the request");
+  });
+  it("treats status 0 and the host's unreachable sentence as network", () => {
+    const msg = "Hermes dashboard cannot reach the Hermes service. Is `hermes dashboard` still running?";
+    const e = describeError(new HostApiError(msg, 0, "TypeError: Failed to fetch"));
+    expect(e).toMatchObject({ status: 0, kind: "network", detail: msg, text: "The dashboard server is unreachable" });
+    expect(describeError(new Error(msg)).kind).toBe("network");
+  });
 });
 
 describe("shell helpers", () => {

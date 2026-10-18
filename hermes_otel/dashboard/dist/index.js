@@ -341,12 +341,12 @@
                 const c = m.content;
                 if (typeof c === "string") return c;
                 if (Array.isArray(c)) {
-                  const parts = [];
+                  const parts2 = [];
                   for (const p of c) {
-                    if (typeof p === "string") parts.push(p);
-                    else if (p && typeof p.text === "string") parts.push(p.text);
+                    if (typeof p === "string") parts2.push(p);
+                    else if (p && typeof p.text === "string") parts2.push(p.text);
                   }
-                  if (parts.length) return parts.join(" ");
+                  if (parts2.length) return parts2.join(" ");
                 }
                 if (c != null) return JSON.stringify(c);
               }
@@ -720,26 +720,37 @@
     not_found: "Not found",
     auth: "The backend rejected the credentials",
     config: "The backend entry is not configured for this",
+    request: "The plugin rejected the request",
     backend: "The backend did not answer",
     validation: "The request was rejected",
     network: "The dashboard server is unreachable",
     unknown: "Request failed"
   };
-  function describeError(e) {
+  var NETWORK_RE = /unreachable|cannot reach|failed to fetch|network|refused|offline/i;
+  function parts(e) {
     var _a, _b;
     const msg = String((_b = (_a = e == null ? void 0 : e.message) != null ? _a : e) != null ? _b : "").trim();
+    const status = e == null ? void 0 : e.status;
+    const body = e == null ? void 0 : e.body;
+    if (typeof status === "number" && Number.isFinite(status)) {
+      return { status, body: typeof body === "string" ? body : null, msg };
+    }
     const m = /^(\d{3}):\s*([\s\S]*)$/.exec(msg);
-    const status = m ? Number(m[1]) : null;
-    let detail = m ? m[2].trim() : msg;
+    if (m) return { status: Number(m[1]), body: m[2].trim(), msg: m[2].trim() };
+    return { status: null, body: null, msg };
+  }
+  function describeError(e) {
+    const { status, body, msg } = parts(e);
+    let detail = msg;
     let kind = "unknown";
-    if (m) {
+    if (status !== null && status !== 0) {
       try {
-        const body = JSON.parse(detail);
-        if (body && typeof body === "object") {
-          if (typeof body.detail === "string") detail = body.detail;
-          else if (Array.isArray(body.detail)) detail = body.detail.map((d) => (d == null ? void 0 : d.msg) || JSON.stringify(d)).join("; ");
-          else if (body.detail != null) detail = JSON.stringify(body.detail);
-          if (typeof body.kind === "string") kind = body.kind;
+        const parsed = JSON.parse(body != null ? body : "");
+        if (parsed && typeof parsed === "object") {
+          if (typeof parsed.detail === "string") detail = parsed.detail;
+          else if (Array.isArray(parsed.detail)) detail = parsed.detail.map((d) => (d == null ? void 0 : d.msg) || JSON.stringify(d)).join("; ");
+          else if (parsed.detail != null) detail = JSON.stringify(parsed.detail);
+          if (typeof parsed.kind === "string" && parsed.kind in KIND_TEXT) kind = parsed.kind;
         }
       } catch {
       }
@@ -750,10 +761,9 @@
         else if (status === 503) kind = "config";
         else if (status === 502 || status === 504) kind = "backend";
       }
-    } else if (/unreachable|failed to fetch|network|refused|offline/i.test(msg)) {
+    } else if (status === 0 || NETWORK_RE.test(msg)) {
       kind = "network";
     }
-    if (status === 0) kind = "network";
     const hint = kind === "auth" ? "Check the credential on the backend entry in the Settings tab." : kind === "config" ? "Check the backend entry in the Settings tab." : kind === "backend" ? "The Live source needs no backend and always works." : kind === "network" ? "Is the Hermes dashboard still running?" : null;
     return { status, kind, detail, text: KIND_TEXT[kind], hint };
   }
@@ -1370,17 +1380,17 @@
       if (!m || typeof m !== "object") return null;
       const role = (_a = m.role) != null ? _a : m["message.role"];
       if (typeof role !== "string") return null;
-      const parts = partsOfContent((_b = m.content) != null ? _b : m["message.content"]);
+      const parts2 = partsOfContent((_b = m.content) != null ? _b : m["message.content"]);
       const tcs = (_c = m.tool_calls) != null ? _c : m["message.tool_calls"];
       if (Array.isArray(tcs)) {
         for (const tc of tcs) {
           const call = toolCallOf(tc);
-          if (call) parts.push({ type: "tool_call", ...call });
+          if (call) parts2.push({ type: "tool_call", ...call });
         }
       }
       out.push({
         role,
-        parts,
+        parts: parts2,
         toolCallId: m.tool_call_id != null ? String(m.tool_call_id) : null,
         name: typeof m.name === "string" ? m.name : null
       });
@@ -2948,12 +2958,12 @@
     ))));
   }
   function SubagentChip({ s }) {
-    const parts = [
+    const parts2 = [
       s.tokens != null ? `+${fmtTokens(s.tokens)} tok` : null,
       s.cost != null ? `+${fmtCostExact(s.cost)}` : null,
       `${s.count} sub-agent${s.count === 1 ? "" : "s"}`
     ].filter(Boolean);
-    return /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "the turn's top-level delegations, on top of its own tokens and cost (each delegation's whole subtree)" }, parts.join(" \xB7 "));
+    return /* @__PURE__ */ React.createElement("span", { className: "tabular-nums", title: "the turn's top-level delegations, on top of its own tokens and cost (each delegation's whole subtree)" }, parts2.join(" \xB7 "));
   }
   function TraceCard({ row, onSelect }) {
     const Icon = kindIcon(row.rootKind);
