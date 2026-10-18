@@ -95,22 +95,27 @@ describe("lists, python reprs, tool results, turn tools", () => {
     });
     expect(splitToolResult("just text")).toEqual({ output: "just text", rest: null, error: null });
   });
-  it("zips the root span's tools with outcomes, commands and targets", () => {
-    expect(
-      turnTools({
-        "hermes.turn.tools": "terminal",
-        "hermes.turn.tool_count": "2",
-        "hermes.turn.tool_outcomes": "completed,error",
-        "hermes.turn.tool_commands": "echo a|ls /nope",
-      })
-    ).toEqual([
-      { tool: "terminal", outcome: "completed", command: "echo a", target: null },
-      { tool: "terminal", outcome: "error", command: "ls /nope", target: null },
-    ]);
-    expect(turnTools({ "hermes.turn.tools": "read_file,write_file", "hermes.turn.tool_outcomes": "completed" })).toEqual([
-      { tool: "read_file", outcome: "completed", command: null, target: null },
-      { tool: "write_file", outcome: "completed", command: null, target: null },
-    ]);
+  it("splits tool targets on the plugin's | separator (#612)", () => {
+    expect(splitList("hermes.turn.tool_targets", "/tmp/a,b.txt|https://x.test/?q=1,2")).toEqual(["/tmp/a,b.txt", "https://x.test/?q=1,2"]);
+    expect(classify("hermes.turn.tool_targets", "/a|/b")).toMatchObject({ kind: "list", value: ["/a", "/b"] });
+  });
+  it("keeps the turn's tool sets apart instead of pairing them by position (#612)", () => {
+    // Two calls: terminal "echo a" completed, read_file /etc/x errored. The plugin
+    // sorts the distinct outcomes, so index 0 of outcomes is not the first call's.
+    const t = turnTools({
+      "hermes.turn.tools": "read_file,terminal",
+      "hermes.turn.tool_count": "2",
+      "hermes.turn.tool_outcomes": "completed,error",
+      "hermes.turn.tool_commands": "echo a",
+      "hermes.turn.tool_targets": "/etc/x|/tmp/y",
+    });
+    expect(t).toEqual({
+      tools: ["read_file", "terminal"],
+      outcomes: ["completed", "error"],
+      commands: ["echo a"],
+      targets: ["/etc/x", "/tmp/y"],
+    });
+    expect(turnTools({})).toEqual({ tools: [], outcomes: [], commands: [], targets: [] });
   });
   it("formats counts and spots markdown", () => {
     expect(fmtCount(1234567)).toBe("1,234,567");

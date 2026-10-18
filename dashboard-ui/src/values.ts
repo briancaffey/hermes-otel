@@ -163,7 +163,7 @@ const PROSE_KEYS = new Set([
 const LIST_KEYS: Record<string, string> = {
   "hermes.turn.tools": ",",
   "hermes.turn.tool_outcomes": ",",
-  "hermes.turn.tool_targets": ",",
+  "hermes.turn.tool_targets": "|",
   "hermes.turn.skills": ",",
   "hermes.turn.tool_commands": "|",
   "hermes.approval.pattern_keys": ",",
@@ -245,26 +245,21 @@ export function splitToolResult(raw: any): { output: string | null; rest: Record
   };
 }
 
-/** The turn's tool calls: `hermes.turn.tools` holds the distinct tool names while
- *  the commands, outcomes and targets are per call, so the rows follow the longest
- *  list and a single tool name repeats. */
-export function turnTools(a: Record<string, any>): { tool: string | null; outcome: string | null; command: string | null; target: string | null }[] {
-  const tools = splitList("hermes.turn.tools", a["hermes.turn.tools"]) || [];
-  const outcomes = splitList("hermes.turn.tool_outcomes", a["hermes.turn.tool_outcomes"]) || [];
-  const commands = splitList("hermes.turn.tool_commands", a["hermes.turn.tool_commands"]) || [];
-  const targets = splitList("hermes.turn.tool_targets", a["hermes.turn.tool_targets"]) || [];
-  const count = Number(a["hermes.turn.tool_count"]) || 0;
-  const rows = Math.max(tools.length, outcomes.length, commands.length, targets.length, count);
-  const out: { tool: string | null; outcome: string | null; command: string | null; target: string | null }[] = [];
-  for (let i = 0; i < rows; i++) {
-    out.push({
-      tool: tools[i] ?? (tools.length === 1 ? tools[0] : null),
-      outcome: outcomes[i] ?? (outcomes.length === 1 ? outcomes[0] : null),
-      command: commands[i] ?? null,
-      target: targets[i] ?? null,
-    });
-  }
-  return out;
+/** The turn summary's tool lists (#612). The plugin keeps each as its own set
+ *  (hooks/attributes.py, session_state.TurnSummary): `tools` and `outcomes` are
+ *  the sorted distinct names and outcomes; `commands` and `targets` are the
+ *  distinct commands and paths/URLs in first-use order. Nothing ties the i-th
+ *  entry of one list to the i-th of another, so they are returned apart and
+ *  never zipped into per-call rows. */
+export type TurnTools = { tools: string[]; outcomes: string[]; commands: string[]; targets: string[] };
+
+export function turnTools(a: Record<string, any>): TurnTools {
+  return {
+    tools: splitList("hermes.turn.tools", a["hermes.turn.tools"]) || [],
+    outcomes: splitList("hermes.turn.tool_outcomes", a["hermes.turn.tool_outcomes"]) || [],
+    commands: splitList("hermes.turn.tool_commands", a["hermes.turn.tool_commands"]) || [],
+    targets: splitList("hermes.turn.tool_targets", a["hermes.turn.tool_targets"]) || [],
+  };
 }
 
 export type ViewMode = "structured" | "raw";
