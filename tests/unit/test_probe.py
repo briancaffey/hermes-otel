@@ -61,12 +61,18 @@ class TestParse:
             ("grpc://otel:4317", ("otel", 4317)),
             ("http://[::1]:4318/v1/traces", ("::1", 4318)),
             ("  http://x:1/  ", ("x", 1)),
+            # A gRPC target is a bare host:port (#469).
+            ("localhost:4317", ("localhost", 4317)),
+            ("telemetry.example:443", ("telemetry.example", 443)),
+            ("[::1]:4317", ("::1", 4317)),
         ],
     )
     def test_host_and_port(self, url, expected):
         assert parse_host_port(url) == expected
 
-    @pytest.mark.parametrize("url", ["", None, "nonsense", "http://", "http://host:notaport/"])
+    @pytest.mark.parametrize(
+        "url", ["", None, "nonsense", "http://", "http://host:notaport/", "host:notaport"]
+    )
     def test_no_host_is_none(self, url):
         assert parse_host_port(url) is None
 
