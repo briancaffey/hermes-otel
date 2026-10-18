@@ -1,5 +1,5 @@
 version = 1
-revision = 3
+revision = 5
 requires-python = ">=3.9"
 resolution-markers = [
     "python_full_version >= '3.14'",
@@ -804,7 +804,7 @@ wheels = [
 
 [[package]]
 name = "hermes-otel"
-version = "1.31.0"
+version = "1.32.0"
 source = { editable = "." }
 dependencies = [
     { name = "opentelemetry-api" },
