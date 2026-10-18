@@ -252,7 +252,23 @@ class GigapipeAdapter(TempoAdapter):
                         card = as_root_row(card, _root(rows))
             if card is None:
                 continue
-            row.update({k: card[k] for k in ("spanSets", "spanCount", "rootTraceName")})
+            # The whole card, timing included: a kind's card is the matched
+            # span, and keeping the trace's start and duration under its name
+            # made a tool read as long as the whole turn (#598).
+            row.update(
+                {
+                    k: card[k]
+                    for k in (
+                        "spanSets",
+                        "spanCount",
+                        "rootTraceName",
+                        "startTimeUnixNano",
+                        "durationMs",
+                    )
+                }
+            )
+            if card.get("rootServiceName"):
+                row["rootServiceName"] = card["rootServiceName"]
             if not row.get("rootServiceName"):
                 for b in detail["batches"]:
                     service = otlp_attrs_to_dict((b.get("resource") or {}).get("attributes")).get(
@@ -261,6 +277,14 @@ class GigapipeAdapter(TempoAdapter):
                     if service:
                         row["rootServiceName"] = service
                         break  # the first batch's service, not the last one's
+        # The page was cut and its cursor taken on the rows as Tempo's search
+        # answered them, which is what the next query bounds; only the order
+        # follows the re-timed cards (as ``recard_roots`` does).
+        page["traces"] = sorted(
+            page.get("traces") or [],
+            key=lambda t: int(t.get("startTimeUnixNano") or 0),
+            reverse=True,
+        )
         return page
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:

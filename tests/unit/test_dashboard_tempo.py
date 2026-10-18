@@ -173,6 +173,90 @@ class TestTempo:
         assert row["rootTraceName"] == "agent"
         assert row["spanSets"][0]["spans"][0]["name"] == "tool.read_file"
 
+    @staticmethod
+    def _tool_row(tid: str, root_s: int, tool_s: float, tool_ms: int, **span) -> dict:
+        """A Tempo row of a 4 s ``agent`` turn whose span set is its
+        ``tool.terminal`` span, ``tool_s`` seconds after epoch for ``tool_ms``."""
+        sp = {
+            "spanID": "aaaa000000000001",
+            "name": "tool.terminal",
+            "startTimeUnixNano": str(int(tool_s * NS)),
+            "durationNanos": str(tool_ms * 1_000_000),
+            "attributes": [{"key": "tool.name", "value": {"stringValue": "terminal"}}],
+        }
+        sp.update(span)
+        return {
+            "traceID": tid,
+            "rootServiceName": "hermes-agent",
+            "rootTraceName": "agent",
+            "startTimeUnixNano": str(root_s * NS),
+            "durationMs": 4029,
+            "spanSets": [{"spans": [{k: v for k, v in sp.items() if v is not None}]}],
+        }
+
+    def test_kind_card_is_timed_as_the_matched_span(self, monkeypatch):
+        # #598: a kind cards the matched span, its start and duration too, not
+        # the root's 4 s under the tool's name.
+        rows = [self._tool_row("ab", 1000, 1001.5, 1120)]
+        monkeypatch.setattr(
+            tempo, "http_get_json", lambda *a, **k: json.loads(json.dumps({"traces": rows}))
+        )
+        kind = StructuredFilter(name_prefix="tool.", roots_only=False)
+        row = self._adapter().search(kind, 0, 2000, 5)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
+        assert row["startTimeUnixNano"] == str(int(1001.5 * NS))
+        assert row["durationMs"] == 1120
+        # A tool filter without a kind keeps the root's name and timing (#558).
+        tool = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = self._adapter().search(tool, 0, 2000, 5)["traces"][0]
+        assert (row["rootTraceName"], row["startTimeUnixNano"], row["durationMs"]) == (
+            "agent",
+            str(1000 * NS),
+            4029,
+        )
+
+    def test_kind_card_keeps_the_traces_timing_when_the_span_has_none(self, monkeypatch):
+        # A build that leaves the span set's timing out: only the name moves.
+        rows = [self._tool_row("ab", 1000, 0, 0, startTimeUnixNano=None, durationNanos=None)]
+        monkeypatch.setattr(
+            tempo, "http_get_json", lambda *a, **k: json.loads(json.dumps({"traces": rows}))
+        )
+        kind = StructuredFilter(name_prefix="tool.", roots_only=False)
+        row = self._adapter().search(kind, 0, 2000, 5)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
+        assert (row["startTimeUnixNano"], row["durationMs"]) == (str(1000 * NS), 4029)
+        # A zero-length tool is timed as zero, not as the turn.
+        rows[:] = [self._tool_row("ab", 1000, 1001.5, 0)]
+        row = self._adapter().search(kind, 0, 2000, 5)["traces"][0]
+        assert row["durationMs"] == 0
+
+    def test_kind_pages_follow_the_matched_spans_start(self, monkeypatch):
+        # Trace turn-a began first but its tool ran last: the newest card is turn-a,
+        # the cursor its tool's start, and the next page holds turn-b only.
+        rows = [
+            self._tool_row("turn-a", 1000, 1003.0, 200),
+            self._tool_row("turn-b", 1001, 1001.5, 300),
+        ]
+        seen = []
+
+        def fake(url, headers=None, timeout=None):
+            seen.append(dict(_urlparse.parse_qsl(_urlparse.urlparse(url).query)))
+            return json.loads(json.dumps({"traces": rows}))
+
+        monkeypatch.setattr(tempo, "http_get_json", fake)
+        kind = StructuredFilter(name_prefix="tool.", roots_only=False)
+        first = self._adapter().search(kind, 0, 2000, 1)
+        assert [t["traceID"] for t in first["traces"]] == ["turn-a"]
+        assert first["has_more"] is True and first["next_before_ns"] == int(1003.0 * NS)
+        f2 = StructuredFilter(
+            name_prefix="tool.", roots_only=False, before_ns=first["next_before_ns"]
+        )
+        second = self._adapter().search(f2, 0, 2000, 1)
+        assert [t["traceID"] for t in second["traces"]] == ["turn-b"]
+        assert second["has_more"] is False
+        # The second query's window still reaches back over turn-a's root.
+        assert int(seen[1]["end"]) >= 1003
+
     def test_search_over_fetches_and_cuts_the_newest_rows(self, monkeypatch):
         # Tempo stops at ``limit`` matches in block order, not the newest
         # (Tempo 3.0.3, live): ask for ``search_fetch`` rows and cut here.

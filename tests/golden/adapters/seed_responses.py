@@ -493,8 +493,13 @@ def seed_zipkin() -> None:
     )
 
 
-def tempo_search_row(trace, root_id, t=T0, attrs=None, name="agent"):
+def tempo_search_row(
+    trace, root_id, t=T0, attrs=None, name="agent", span_start_ns=None, span_dur_ns=ROOT_DUR_NS
+):
+    """One Tempo search row; its span set is the root unless ``span_start_ns``
+    / ``span_dur_ns`` time a matched child (``span_start_ns`` at ``T0``)."""
     shift = (t - T0) * NS
+    span_start = (span_start_ns if span_start_ns is not None else T0 * NS) + shift
     return {
         "traceID": trace.lstrip("0") or "0",
         "rootServiceName": SERVICE,
@@ -508,8 +513,8 @@ def tempo_search_row(trace, root_id, t=T0, attrs=None, name="agent"):
                     {
                         "spanID": root_id,
                         "name": name,
-                        "startTimeUnixNano": str(T0 * NS + shift),
-                        "durationNanos": str(ROOT_DUR_NS),
+                        "startTimeUnixNano": str(span_start),
+                        "durationNanos": str(span_dur_ns),
                         "attributes": [
                             otlp_attr(k, v)
                             for k, v in (attrs if attrs is not None else ROOT_ATTRS).items()
@@ -520,6 +525,24 @@ def tempo_search_row(trace, root_id, t=T0, attrs=None, name="agent"):
             }
         ],
     }
+
+
+def tempo_tool_search():
+    """Tempo's answer to a widened tool search: each trace's matched
+    ``tool.terminal`` span (timed as the tool, inside the turn) as its span set."""
+    rows = [
+        tempo_search_row(
+            trace,
+            TOOL_ID,
+            t,
+            attrs={**TOOL_ATTRS, "name": "tool.terminal"},
+            name="tool.terminal",
+            span_start_ns=TOOL_START_NS,
+            span_dur_ns=TOOL_DUR_NS,
+        )
+        for trace, t in ((TRACE, T0), (OLDER, OLD_T))
+    ]
+    return {"traces": rows, "metrics": {"inspectedTraces": 2, "inspectedBytes": "120394"}}
 
 
 def seed_tempo() -> None:
@@ -537,25 +560,17 @@ def seed_tempo() -> None:
             {
                 "method": "GET",
                 "path": "/api/search",
-                "query_contains": "tool.",
-                "json": {
-                    "traces": [
-                        tempo_search_row(
-                            TRACE,
-                            TOOL_ID,
-                            attrs={**TOOL_ATTRS, "name": "tool.terminal"},
-                            name="tool.terminal",
-                        ),
-                        tempo_search_row(
-                            OLDER,
-                            TOOL_ID,
-                            OLD_T,
-                            attrs={**TOOL_ATTRS, "name": "tool.terminal"},
-                            name="tool.terminal",
-                        ),
-                    ],
-                    "metrics": {"inspectedTraces": 2, "inspectedBytes": "120394"},
-                },
+                # The kind predicate, not "tool.": every query's select() names
+                # ``.tool.name``, so "tool." answered every search with these rows.
+                "query_contains": 'name =~ "^tool',
+                "json": tempo_tool_search(),
+            },
+            {
+                "method": "GET",
+                "path": "/api/search",
+                # A tool filter without a kind: the same matched tool spans.
+                "query_contains": '.tool.name = "terminal"',
+                "json": tempo_tool_search(),
             },
             {
                 "method": "GET",

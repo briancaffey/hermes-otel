@@ -50,10 +50,10 @@
           }
          }
         ],
-        "durationNanos": "4029000000",
+        "durationNanos": "1120770000",
         "name": "tool.terminal",
         "spanID": "aaaa000000000001",
-        "startTimeUnixNano": "1791750000000000000"
+        "startTimeUnixNano": "1791750001500000000"
        }
       ]
      }
@@ -97,10 +97,10 @@
           }
          }
         ],
-        "durationNanos": "4029000000",
+        "durationNanos": "1120770000",
         "name": "tool.terminal",
         "spanID": "aaaa000000000001",
-        "startTimeUnixNano": "1791749400000000000"
+        "startTimeUnixNano": "1791749401500000000"
        }
       ]
      }
