@@ -17,6 +17,7 @@ from hermes_otel.dashboard.backends.shapes import (
     otlp_kind,
     otlp_span,
     otlp_status,
+    recard_roots,
     trace_detail,
 )
 
@@ -55,6 +56,14 @@ TRACE = [TOOL, READ, ROOT]  # not in start order: the root is found, not assumed
 
 def _card_name(card: Optional[Dict[str, Any]]) -> Optional[str]:
     return card["rootTraceName"] if card else None
+
+
+def _shown(card: Optional[Dict[str, Any]]) -> Optional[tuple]:
+    """The span the card's span set names: why the row matched."""
+    if not card:
+        return None
+    span = card["spanSets"][0]["spans"][0]
+    return span["spanID"], span["name"]
 
 
 class TestOtlpKind:
@@ -102,14 +111,30 @@ class TestCardFromTrace:
         # Nothing is re-checked: the root is the card as the detail shows it.
         assert _card_name(card) == "tool.terminal" and card["spanCount"] == 2
 
-    def test_widened_cards_the_first_prefixed_span_by_start_else_the_root(self):
+    def test_widened_by_a_kind_cards_the_first_prefixed_span_by_start(self):
         widened = StructuredFilter(name_prefix="tool.", roots_only=False)
         card = card_from_trace(widened, TRACE)
         assert _card_name(card) == "tool.terminal" and card["durationMs"] == 1000
-        assert _card_name(card_from_trace(StructuredFilter(roots_only=False), TRACE)) == "agent"
+        assert _shown(card) == ("c1", "tool.terminal")
         assert (
             card_from_trace(StructuredFilter(name_prefix="api.", roots_only=False), TRACE) is None
         )
+
+    def test_widened_without_a_kind_cards_the_root_with_the_matched_span_set(self):
+        # #558: a tool filter widens to any span, but the row stands for the trace.
+        f = StructuredFilter(attr_equals={"tool.name": "read_file"}, roots_only=False)
+        for kwargs in ({}, {"check_all": True}):
+            card = card_from_trace(f, TRACE, **kwargs)
+            assert _card_name(card) == "agent", kwargs
+            assert card["durationMs"] == 5000 and card["startTimeUnixNano"] == str(10 * NS)
+            assert card["spanCount"] == 3
+            assert _shown(card) == ("c2", "tool.read_file")
+            attrs = {a["key"]: a["value"] for a in card["spanSets"][0]["spans"][0]["attributes"]}
+            assert attrs["tool.name"] == {"stringValue": "read_file"}
+            assert attrs["status"] == {"stringValue": "error"}
+        assert _shown(card_from_trace(StructuredFilter(roots_only=False), TRACE)) == ("r", "agent")
+        f = StructuredFilter(attr_equals={"tool.name": "nope"}, roots_only=False)
+        assert card_from_trace(f, TRACE) is None
 
     def test_check_all_applies_status_and_free_text_the_backend_could_not(self):
         # Without it (Jaeger, Zipkin) status and text are the server's business.
@@ -117,14 +142,38 @@ class TestCardFromTrace:
         assert card_from_trace(StructuredFilter(status="error"), TRACE, check_all=True) is None
         assert _card_name(card_from_trace(StructuredFilter(free_text="HI"), TRACE, check_all=True))
         assert card_from_trace(StructuredFilter(free_text="nope"), TRACE, check_all=True) is None
-        # Widened, the card is the first span by start satisfying every predicate.
+        # Widened, the matched span is the first by start satisfying every predicate.
         f = StructuredFilter(status="error", roots_only=False)
+        assert _shown(card_from_trace(f, TRACE, check_all=True)) == ("c2", "tool.read_file")
+        f = StructuredFilter(status="error", name_prefix="tool.", roots_only=False)
         assert _card_name(card_from_trace(f, TRACE, check_all=True)) == "tool.read_file"
-        f = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
-        assert _card_name(card_from_trace(f, TRACE, check_all=True)) == "tool.terminal"
+        f = StructuredFilter(free_text="nope", roots_only=False)
+        assert card_from_trace(f, TRACE, check_all=True) is None
 
     def test_no_rows_no_card(self):
         assert card_from_trace(StructuredFilter(), []) is None
+
+
+class TestRecardRoots:
+    def test_rows_become_roots_with_the_match_and_the_cursor_stays(self):
+        # t2's match is the newest span, but its root started first.
+        root2 = SpanRow("t2", "r2", None, "agent", start_ns=5 * NS, end_ns=40 * NS, attrs={})
+        hit2 = SpanRow(
+            "t2", "c3", "r2", "tool.terminal", start_ns=30 * NS, end_ns=31 * NS, attrs={}
+        )
+        page = {"traces": [hit2.card(2), TOOL.card(3)], "next_before_ns": 11 * NS, "has_more": True}
+        recard_roots(page, {"t1": ROOT, "t2": root2})
+        assert [(t["traceID"], _card_name(t), _shown(t)) for t in page["traces"]] == [
+            ("t1", "agent", ("c1", "tool.terminal")),  # newest root first
+            ("t2", "agent", ("c3", "tool.terminal")),
+        ]
+        assert [t["spanCount"] for t in page["traces"]] == [3, 2]
+        assert page["next_before_ns"] == 11 * NS and page["has_more"] is True
+
+    def test_a_trace_without_a_known_root_keeps_its_matched_card(self):
+        page = {"traces": [TOOL.card(3)], "next_before_ns": None, "has_more": False}
+        recard_roots(page, {})
+        assert _card_name(page["traces"][0]) == "tool.terminal"
 
 
 class TestTraceDetail:

@@ -64,10 +64,23 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, otlp_status, trace_detail
+from .shapes import (
+    CARD_ATTRIBUTE_KEYS,
+    SpanRow,
+    card_row,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    trace_detail,
+)
 
 # Entries that switch the service pin on log queries off.
 _NO_PIN = ("", "off", "none", "any", "*")
+
+# A widened search's root lookup without a server-side root filter keeps the
+# roots from up to this many spans per trace (#558).
+_ROOT_ROWS_PER_TRACE = 50
+
 
 _DEFAULT_UPTRACE_HTTP_PORT = 14318
 _API = "/internal/v1"
@@ -448,7 +461,41 @@ class UptraceAdapter(BackendAdapter):
                 page["next_before_ns"] = min(
                     int(page["next_before_ns"] or 0) or min(oldest), *oldest
                 )
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            ids = [t["traceID"] for t in page["traces"]]
+            recard_roots(page, self._roots(ids, root_filter, start_s, end_s))
         return page
+
+    def _roots(
+        self, trace_ids: List[str], root_filter: str, start_s: int, end_s: int
+    ) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id: one span query on
+        ``_trace_id in (...)``, with the server's root filter on 2.1 and the
+        roots kept from ``parentId`` on 2.0. A root outside the window, or a
+        failed query, leaves its trace's matched card."""
+        if not trace_ids:
+            return {}
+        d = self._dialect()
+        ids = ", ".join(f'"{_esc(t)}"' for t in trace_ids)
+        parts = [root_filter] if root_filter else []
+        parts.append(f"where _trace_id in ({ids})")
+        params: List[Tuple[str, Any]] = [
+            *self._systems(d["span_systems"]),
+            ("query", " | ".join(parts)),
+            *d["sort"],
+            ("limit", len(trace_ids) * (1 if root_filter else _ROOT_ROWS_PER_TRACE)),
+        ]
+        try:
+            data = self._get(self._path("spans"), start_s, end_s, params)
+        except BackendError:
+            return {}
+        out: Dict[str, SpanRow] = {}
+        for sp in (data.get("spans") if isinstance(data, dict) else None) or []:
+            if isinstance(sp, dict) and sp.get("traceId") and not sp.get("parentId"):
+                out.setdefault(str(sp["traceId"]), _row(sp))
+        return out
 
     def get_trace(self, trace_id: str) -> Dict[str, Any]:
         url = self._api_url(self._path("trace", trace_id=trace_id), [])

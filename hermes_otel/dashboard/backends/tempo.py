@@ -266,10 +266,11 @@ class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
             traces = [t for t in traces if (t.get("rootTraceName") or "").startswith(f.name_prefix)]
 
         for t in traces:
-            if not f.roots_only:
-                # Widened to every span (the kind filter): the card is the
-                # matched span, named like the other backends name it, not the
-                # trace's root. ``name`` is in the select list.
+            if not f.roots_only and f.name_prefix:
+                # Widened by a kind: the card is the matched span, named like
+                # the other backends name it, not the trace's root. Widened by
+                # a tool filter alone the row stays the root, its span set the
+                # matched span (#558). ``name`` is in the select list.
                 sets = t.get("spanSets") or []
                 spans = (sets[0].get("spans") or []) if sets else []
                 if spans:

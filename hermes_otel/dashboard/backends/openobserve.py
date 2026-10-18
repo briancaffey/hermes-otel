@@ -43,7 +43,20 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, otlp_status, trace_detail
+from .shapes import (
+    CARD_ATTRIBUTE_KEYS,
+    SpanRow,
+    card_row,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    trace_detail,
+)
+
+# A widened search's root lookup without a server-side root filter keeps the
+# roots from up to this many spans per trace (#558).
+_ROOT_ROWS_PER_TRACE = 50
+
 
 _DEFAULT_OO_PORT = 5080
 # The trace detail asks for this many rows and says so when there are more.
@@ -287,8 +300,73 @@ class OpenObserveAdapter(BackendAdapter):
                 # The span count joins below, from one grouped query per page.
             )
         page = trace_page(strictly_older_traces(list(traces.values()), f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            recard_roots(page, self._roots([t["traceID"] for t in page["traces"]], start_s, end_s))
         self._attach_span_counts({t["traceID"]: t for t in page["traces"]}, start_s, end_s)
         return page
+
+    def _roots(self, trace_ids: List[str], start_s: int, end_s: int) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id: one query on the
+        ``trace_id IN`` list with the root predicate, each parent-column
+        spelling tried in turn only when the previous one was rejected (as in
+        ``search``), the last kept client-side from each row's parent fields.
+        The window is a day wider on both sides, like the span count's. A
+        failed query leaves the matched cards."""
+        if not trace_ids:
+            return {}
+        ids = ", ".join(f"'{_sql_escape(t)}'" for t in trace_ids)
+        url = f"{self.query_url}/api/{self.org}/_search?type=traces"
+
+        def rows_for(predicate: str, size: int) -> List[Dict[str, Any]]:
+            body = {
+                "query": {
+                    "sql": f"SELECT * FROM {self.stream} WHERE trace_id IN ({ids}){predicate} "
+                    f"ORDER BY _timestamp ASC LIMIT {size}",
+                    "start_time": max(0, int(start_s) - 86400) * 1_000_000,
+                    "end_time": (int(end_s) + 86400) * 1_000_000,
+                    "size": size,
+                }
+            }
+            data = http_post_json(url, body, headers=self._headers(), timeout=15.0)
+            hits = data.get("hits") if isinstance(data, dict) else None
+            return [h for h in (hits if isinstance(hits, list) else []) if isinstance(h, dict)]
+
+        n = len(trace_ids)
+        try:
+            rows = first_accepted(
+                lambda: rows_for(
+                    " AND (reference_parent_span_id IS NULL OR reference_parent_span_id = '')", n
+                ),
+                lambda: rows_for(" AND (reference IS NULL OR reference = '')", n),
+                lambda: rows_for("", n * _ROOT_ROWS_PER_TRACE),
+            )
+        except Exception:
+            return {}
+        out: Dict[str, SpanRow] = {}
+        for row in rows:
+            if not self._is_root_row(row):
+                continue
+            tid = row.get("trace_id") or row.get("traceId")
+            if not tid:
+                continue
+            start = int(row.get("start_time") or 0)
+            out.setdefault(
+                tid,
+                SpanRow(
+                    tid,
+                    row.get("span_id"),
+                    None,
+                    str(row.get("operation_name") or row.get("name") or ""),
+                    start_ns=start,
+                    # ``duration`` is in microseconds in the traces stream.
+                    end_ns=start + int(row.get("duration") or 0) * 1000,
+                    attrs={},
+                    service=str(row.get("service_name") or ""),
+                ),
+            )
+        return out
 
     def _attach_span_counts(
         self, traces: Dict[str, Dict[str, Any]], start_s: int, end_s: int

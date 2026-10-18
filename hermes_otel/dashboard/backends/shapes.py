@@ -13,7 +13,8 @@ to dotted keys, a tolerant integer, a span kind in any spelling.
 
 Between the two sits :class:`SpanRow` (#513): the facts an adapter decodes
 its native span into. :func:`card_from_trace` turns a trace's rows into its
-list row (the root or the matched span, the orphan and predicate re-checks),
+list row (the root, or the matched span of a kind filter, with the orphan
+and predicate re-checks),
 :func:`trace_detail` turns them into the batches; an adapter writes only the
 decoder.
 
@@ -499,15 +500,18 @@ def card_from_trace(
     on the root): the root is the card as the detail shows it, orphan or not,
     nothing re-checked.
 
-    Widened by the kind filter: the card is the first span by start carrying
-    the name prefix, as the other backends show it (the root without one).
+    Widened (a kind or tool filter matches non-root spans): the matched span
+    is the first by start satisfying the predicates; none, no card. With a
+    name prefix (a kind) the card is that span. Without one (a tool filter,
+    the kind "other") the card is the trace's ROOT, since a list row stands
+    for the whole trace, and the matched span is its span set: the reason the
+    row matched (#558).
 
     ``equals`` replaces ``f.attr_equals`` (an adapter that folded its raw
     tags into one dict). ``check_all`` is for a backend that applied no
     predicate (Aspire's API has no filters) or matched a span its answer does
-    not name (Gigapipe's span set): every predicate is checked here, status
-    and free text included, on the root (roots-only) or on every span by
-    start (widened) until one satisfies them all.
+    not name (Gigapipe's span set): status and free text are checked here
+    too, on the root (roots-only) or on every span by start (widened).
     """
     from .base import root_of, span_matches  # base imports this module's emitters
 
@@ -527,7 +531,6 @@ def card_from_trace(
             equals=equals,
         )
 
-    by_start = sorted(rows, key=lambda r: r.start_ns)
     if f.roots_only:
         if server_roots:
             card = root
@@ -535,13 +538,47 @@ def card_from_trace(
             return None
         else:
             card = root if ok(root) else None
-    elif check_all:
-        card = next((r for r in by_start if ok(r)), None)
-    elif f.name_prefix:
-        card = next((r for r in by_start if r.name.startswith(f.name_prefix)), None)
-    else:
-        card = root
-    return card.card(len(rows)) if card is not None else None
+        return card.card(len(rows)) if card is not None else None
+    matched = next((r for r in sorted(rows, key=lambda r: r.start_ns) if ok(r)), None)
+    if matched is None:
+        return None
+    if f.name_prefix:
+        return matched.card(len(rows))
+    return as_root_row(matched.card(len(rows)), root)
+
+
+def as_root_row(row: Dict[str, Any], root: SpanRow) -> Dict[str, Any]:
+    """A card row built from a matched span, carded as its trace's ``root``
+    (#558): the root's name, start, duration and service (the row's own when
+    the root names none); the span set, the span count and everything else
+    the row's own, the reason it matched."""
+    out = dict(row)
+    out.update(
+        {
+            "rootTraceName": root.name or "",
+            "startTimeUnixNano": str(root.start_ns) if root.start_ns else "0",
+            "durationMs": root.duration_ns // 1_000_000,
+            "rootServiceName": str(root.service or row.get("rootServiceName") or ""),
+        }
+    )
+    return out
+
+
+def recard_roots(page: Dict[str, Any], roots: Dict[str, SpanRow]) -> Dict[str, Any]:
+    """A widened page of a span-level search (each row a matched span)
+    re-carded as the traces' roots, for a filter without a kind (see
+    :func:`card_from_trace` and :func:`as_root_row`, #558). ``roots`` is by
+    trace id; a trace without a known root keeps its matched card. The page
+    was cut and its cursor taken on the matched spans, which is what the
+    next query bounds, so only the rows change; they are re-sorted newest
+    root first."""
+    rows = []
+    for t in page.get("traces") or []:
+        root = roots.get(str(t.get("traceID") or ""))
+        rows.append(t if root is None else as_root_row(t, root))
+    rows.sort(key=lambda t: int(t.get("startTimeUnixNano") or 0), reverse=True)
+    page["traces"] = rows
+    return page
 
 
 def trace_detail(rows: Sequence[SpanRow], *, truncated: bool = False) -> Dict[str, Any]:

@@ -48,7 +48,15 @@ from .paging import (
     trace_page,
     widened_fetch,
 )
-from .shapes import CARD_ATTRIBUTE_KEYS, SpanRow, card_row, otlp_kind, otlp_status, trace_detail
+from .shapes import (
+    CARD_ATTRIBUTE_KEYS,
+    SpanRow,
+    card_row,
+    otlp_kind,
+    otlp_status,
+    recard_roots,
+    trace_detail,
+)
 from .timeconv import ns_from_any
 
 _DEFAULT_SIGNOZ_PORT = 3301
@@ -388,7 +396,58 @@ class SigNozAdapter(BackendAdapter):
                     # not among the columns, so none is claimed.
                 )
             )
-        return trace_page(strictly_older_traces(traces, f), limit)
+        page = trace_page(strictly_older_traces(traces, f), limit)
+        if not f.roots_only and not f.name_prefix:
+            # A tool filter widens to any span, but the row stands for the
+            # trace: its root, the matched span its span set (#558).
+            ids = [t["traceID"] for t in page["traces"]]
+            recard_roots(page, self._roots(ids, f.service, start_s, end_s))
+        return page
+
+    def _roots(
+        self, trace_ids: List[str], service: Optional[str], start_s: int, end_s: int
+    ) -> Dict[str, SpanRow]:
+        """The root spans of these traces, by trace id (one list query: the
+        roots-only filter plus ``traceID IN``). A root outside the window, or
+        a failed query, leaves its trace's matched card."""
+        if not trace_ids:
+            return {}
+        body = self._build_query_body(StructuredFilter(service=service), start_s, end_s, 0)
+        query = body["compositeQuery"]["builderQueries"]["A"]
+        query["limit"] = len(trace_ids)
+        query["filters"]["items"].append(
+            {
+                "key": {"key": "traceID", "isColumn": True, "type": "tag", "dataType": "string"},
+                "op": "in",
+                "value": list(trace_ids),
+            }
+        )
+        try:
+            data = http_post_json(
+                f"{self.query_url}/api/v4/query_range", body, headers=self._headers(), timeout=15.0
+            )
+        except BackendError:
+            return {}
+        out: Dict[str, SpanRow] = {}
+        for row in _extract_v4_list_rows(data):
+            tid = row.get("traceID") or row.get("traceId")
+            if not tid or row.get("parentSpanID"):
+                continue
+            start = ns_from_any(row.get("timestamp")) or 0
+            out.setdefault(
+                tid,
+                SpanRow(
+                    tid,
+                    row.get("spanID") or row.get("spanId"),
+                    None,
+                    str(row.get("name") or ""),
+                    start_ns=start,
+                    end_ns=start + int(row.get("durationNano") or 0),
+                    attrs={},
+                    service=str(row.get("serviceName") or ""),
+                ),
+            )
+        return out
 
     def trace_url(self, trace_id: str) -> Optional[str]:
         """The trace in SigNoz's UI: ``ui_url`` on the entry when set, else the

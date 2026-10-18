@@ -220,7 +220,7 @@ class TestTraces:
         assert attrs["hermes.session_id"] == {"stringValue": "20261011_170751_bc8409"}
         assert "status" not in attrs
 
-    def test_widened_card_is_the_first_matching_span(self, monkeypatch):
+    def test_widened_card_is_the_kind_match_else_the_root(self, monkeypatch):
         _capture(monkeypatch, {"/api/search": {"traces": [SEARCH_ROW]}, "/api/traces/": DETAIL})
         rows = _adapter().search(
             StructuredFilter(name_prefix="tool.", roots_only=False), T0 - 60, T0 + 60, 10
@@ -231,9 +231,39 @@ class TestTraces:
         rows = _adapter().search(
             StructuredFilter(status="error", roots_only=False), T0 - 60, T0 + 60, 10
         )["traces"]
-        assert rows[0]["rootTraceName"] == "tool.read_file"
-        attrs = {x["key"]: x["value"] for x in rows[0]["spanSets"][0]["spans"][0]["attributes"]}
+        # No kind: the row is the root, the failed span the reason it matched (#558).
+        assert rows[0]["rootTraceName"] == "agent"
+        shown = rows[0]["spanSets"][0]["spans"][0]
+        assert shown["name"] == "tool.read_file" and shown["spanID"] == "aaaa000000000002"
+        attrs = {x["key"]: x["value"] for x in shown["attributes"]}
         assert attrs["status"] == {"stringValue": "error"}
+
+    def test_widened_fallback_to_the_named_span_still_cards_the_root(self, monkeypatch):
+        # No span satisfies the re-check (the text matched server-side only):
+        # the span the set named is the match, the root the row (#558).
+        row = copy.deepcopy(SEARCH_ROW)
+        row["spanSets"][0]["spans"][0]["spanID"] = "aaaa000000000001"
+        _capture(monkeypatch, {"/api/search": {"traces": [row]}, "/api/traces/": DETAIL})
+        f = StructuredFilter(free_text="only-the-server-saw-it", roots_only=False)
+        card = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert card["rootTraceName"] == "agent"
+        assert card["spanSets"][0]["spans"][0]["name"] == "tool.terminal"
+        f = StructuredFilter(
+            free_text="only-the-server-saw-it", name_prefix="tool.", roots_only=False
+        )
+        card = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert card["rootTraceName"] == "tool.terminal"
+
+    def test_missing_root_service_is_the_first_batch_service(self, monkeypatch):
+        row = copy.deepcopy(SEARCH_ROW)
+        row["rootServiceName"] = ""
+        other = copy.deepcopy(TOOL)
+        other["serviceName"] = "gateway"
+        detail = copy.deepcopy(DETAIL)
+        detail["resourceSpans"][0]["instrumentationLibrarySpans"][0]["spans"] = [ROOT, other]
+        _capture(monkeypatch, {"/api/search": {"traces": [row]}, "/api/traces/": detail})
+        card = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)["traces"][0]
+        assert card["rootServiceName"] == "hermes-agent"
 
     def test_detail_not_found(self, monkeypatch):
         _capture(monkeypatch, {"/api/traces/": BackendError(404, "", "not_found")})

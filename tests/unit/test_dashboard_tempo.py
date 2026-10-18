@@ -166,6 +166,12 @@ class TestTempo:
         trace["rootTraceName"] = "agent"
         page = self._adapter().search(StructuredFilter(name_prefix="agent"), 0, 10, 5)
         assert page["traces"][0]["rootTraceName"] == "agent"
+        # widened by a tool filter alone the row stays the root, the span set
+        # the matched span (#558)
+        f = StructuredFilter(attr_equals={"tool.name": "read_file"}, roots_only=False)
+        row = self._adapter().search(f, 0, 10, 5)["traces"][0]
+        assert row["rootTraceName"] == "agent"
+        assert row["spanSets"][0]["spans"][0]["name"] == "tool.read_file"
 
     def test_search_over_fetches_and_cuts_the_newest_rows(self, monkeypatch):
         # Tempo stops at ``limit`` matches in block order, not the newest
