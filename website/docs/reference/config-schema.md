@@ -92,16 +92,23 @@ Shared fields (all optional unless noted):
 |---|---|---|
 | `type` | string | **Required.** One of: `phoenix`, `langfuse`, `signoz`, `jaeger`, `zipkin`, `greptime`, `clickstack`, `victoria`, `aspire`, `gigapipe`, `agenta`, `tempo`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`, `weave`, `langsmith`, and the rest of the [backends](/backends/overview). |
 | `name` | string | Friendly name shown in logs (default: `type`) |
-| `endpoint` | string | Full OTLP traces endpoint URL. **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
+| `endpoint` | string | Full HTTP traces URL, or gRPC `host:port` / `https://host:port` origin (no signal path). **Required** for every type except `langfuse` (built from `base_url`), `honeycomb` (built from `region`) and `weave` (built from `base_url`) |
+| `protocol` | string | `http/protobuf` (default), or `grpc` for a generic `type: otlp` entry. Applies to traces, metrics and logs; `headers_helper` needs `http/protobuf` |
+| `insecure` | bool | gRPC only: `true` selects plaintext, `false` forces TLS. Unset: SDK INSECURE env vars, then the endpoint scheme (`http` is plaintext; HTTPS / bare targets are TLS). HTTPS cannot be combined with `true` |
+| `certificate_file` | string | PEM CA bundle for server verification; unset uses SDK CERTIFICATE env vars or system trust |
+| `client_certificate_file` | string | PEM client certificate chain for mTLS; gRPC requires `client_key_file` too |
+| `client_key_file` | string | PEM client private key for mTLS; requires `client_certificate_file` |
 | `ui_url` | string | Where the backend's web UI is, for the dashboard's Settings tab to link its card to. Optional: without it the tab derives the link from `endpoint` for the types whose UI is served on the OTLP origin (Phoenix, Langfuse, OpenObserve, Uptrace, Parseable), from `query_port` for Jaeger and SigNoz, and from a port-less endpoint host for the rest; it never guesses a port |
 | `traces` | bool | Override trace-export default (`true`). Set `false` for dashboard/query-only backends that should not receive span exports. `trace` is accepted as an alias. |
 | `metrics` | bool | Override metrics-export default for this backend |
 | `metrics_temporality` | string | `cumulative` or `delta` for this backend's metric reader; overrides the top-level default and the type preset (`signoz`, `uptrace` → `delta`) |
 | `root_usage` | bool | Send the turn's token roll-up (`gen_ai.usage.*` / `llm.token_count.*` on the `agent` / `cron` root) to this backend. Preset `false` for `opik` and `langwatch`, which sum usage over every span and would double the trace total ([#327](https://github.com/briancaffey/hermes-otel/issues/327)); `true` everywhere else. Only this entry's exporter is affected: the span is rebuilt without those keys on its way out, the `api.*` spans and `hermes.cost.*` stay |
 | `logs` | bool | Override logs-export default (on for `signoz`, `otlp`, `lgtm`, `uptrace`, `openobserve`, `parseable`, `honeycomb`; off elsewhere) |
-| `headers` | map | Per-backend HTTP headers (merged onto top-level `headers`) |
+| `headers` | map | Per-backend HTTP headers / gRPC metadata (merged onto top-level `headers`; gRPC names are lowercased) |
 | `headers_helper` | string | A command (argv string, no shell) whose stdout, a JSON object or `Name=value` lines, mints headers merged over `headers` and the type's own auth header on every signal of this entry; on a 401/403 it is re-run once and the batch retried once ([short-lived credentials](/configuration/short-lived-credentials), [#483](https://github.com/briancaffey/hermes-otel/issues/483)) |
 | `headers_helper_timeout_ms` | int | How long one helper run may take; default `5000` |
+
+TLS paths support `~` and `${VAR_NAME}`. Explicit paths override signal-specific SDK environment variables, then global variables. Invalid files or TLS credentials on a plaintext endpoint are rejected. See [gRPC and TLS](/backends/otlp#grpc-and-tls) for examples, environment variables and certificate rotation.
 
 ### Type-specific fields
 

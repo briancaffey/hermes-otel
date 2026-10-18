@@ -6,6 +6,9 @@
  "env_notices": [],
  "path": "env_only",
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "Parseable",
   "endpoint": "http://localhost:4318/v1/traces",
   "headers": {
@@ -13,6 +16,7 @@
    "X-P-Log-Source": "otel-traces",
    "X-P-Stream": "hermes-traces"
   },
+  "insecure": null,
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": {
@@ -27,6 +31,7 @@
    "X-P-Stream": "hermes-metrics"
   },
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": true,
   "supports_logs": true,

@@ -5,17 +5,22 @@
  "env_notices": [],
  "path": "env_only",
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "Agenta",
   "endpoint": "https://us.cloud.agenta.ai/api/otlp/v1/traces",
   "headers": {
    "Authorization": "ApiKey <secret>"
   },
+  "insecure": null,
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": null,
   "metrics_endpoint": null,
   "metrics_headers": null,
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": true,
   "supports_logs": false,

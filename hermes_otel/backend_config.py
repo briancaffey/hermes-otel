@@ -29,7 +29,7 @@ class BackendConfig:
 
     type: str  # phoenix | langfuse | signoz | jaeger | tempo | otlp | parseable | honeycomb | weave
     name: Optional[str] = None  # display name (defaults to type)
-    endpoint: Optional[str] = None  # OTLP HTTP traces URL
+    endpoint: Optional[str] = None  # HTTP traces URL, or gRPC host:port / origin
     # Where this backend's web UI lives, for the dashboard's Settings tab to
     # link to. Optional: when unset the tab derives it from ``endpoint`` for
     # the types whose UI shares the OTLP origin (Phoenix, Langfuse, ...).
@@ -118,6 +118,11 @@ class BackendConfig:
     # loader never silently drops a query-side setting (#402). Pairs, so the
     # frozen dataclass stays hashable.
     extra: Tuple[Tuple[str, Any], ...] = ()
+    protocol: str = "http/protobuf"  # http/protobuf | grpc (generic otlp backend)
+    insecure: Optional[bool] = None  # gRPC plaintext; unset = infer from endpoint
+    certificate_file: Optional[str] = None  # PEM CA bundle; unset = system trust
+    client_key_file: Optional[str] = None  # PEM client private key for mTLS
+    client_certificate_file: Optional[str] = None  # PEM client certificate chain for mTLS
 
 
 _BACKEND_ALLOWED_KEYS = {f.name for f in fields(BackendConfig)} - {"extra"}
@@ -150,6 +155,7 @@ def coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
             continue
         kwargs: Dict[str, Any] = {}
         extra: List[Tuple[str, Any]] = []
+        invalid = False
         for k, v in raw.items():
             if k == "trace":
                 # Friendly alias for users who naturally mirror the singular
@@ -192,17 +198,26 @@ def coerce_backends(value: Any) -> Optional[Tuple[BackendConfig, ...]]:
                 else:
                     kwargs[k] = parsed
                 continue
-            if k in ("traces", "metrics", "logs", "root_usage"):
-                if isinstance(v, (bool, str)):
-                    parsed = _parse_scalar("bool", v)
-                    if parsed is not None:
-                        kwargs[k] = parsed
+            if k in ("traces", "metrics", "logs", "root_usage", "insecure"):
+                parsed = _parse_scalar("bool", v) if isinstance(v, (bool, str)) else None
+                if parsed is not None:
+                    kwargs[k] = parsed
+                elif k == "insecure" and v is not None:
+                    # A typo must not fall back to inferring plaintext from
+                    # the endpoint: the entry is skipped instead.
+                    logger.warning(
+                        f"[hermes-otel] config.yaml backends[{idx}]: insecure must be a boolean; skipping"
+                    )
+                    invalid = True
+                    break
                 continue
             if v is None:
                 continue
             kwargs[k] = expand_env_refs(
                 str(v) if not isinstance(v, str) else v, where=f"backends[{idx}].{k}"
             )
+        if invalid:
+            continue
         try:
             out.append(BackendConfig(**kwargs, extra=tuple(extra)))
         except TypeError as e:

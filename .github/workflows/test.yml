@@ -97,7 +97,7 @@ jobs:
   test-otel-floor:
     # The declared OpenTelemetry floor (``>=1.35`` in pyproject.toml,
     # hermes_otel/requirements.txt and plugin.yaml) is a measured value, and
-    # this job is what keeps it true: a fresh venv with the three packages
+    # this job is what keeps it true: a fresh venv with the four packages
     # pinned to exactly the floor, then the full suite. Bump all four places
     # together when the plugin starts needing a newer SDK API (#257).
     name: Tests on the OpenTelemetry floor (1.35)
@@ -119,6 +119,7 @@ jobs:
           "opentelemetry-api==$OTEL_FLOOR"
           "opentelemetry-sdk==$OTEL_FLOOR"
           "opentelemetry-exporter-otlp-proto-http==$OTEL_FLOOR"
+          "opentelemetry-exporter-otlp-proto-grpc==$OTEL_FLOOR"
       - name: Confirm the floor is what runs
         run: >
           .venv-floor/bin/python -c

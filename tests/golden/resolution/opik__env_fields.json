@@ -20,6 +20,9 @@
  "path": "env_fields",
  "preset_temporality": null,
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "opik-entry",
   "endpoint": "https://www.comet.com/opik/api/v1/private/otel/v1/traces",
   "headers": {
@@ -27,12 +30,14 @@
    "Comet-Workspace": "<secret>",
    "projectName": "<secret>"
   },
+  "insecure": null,
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": null,
   "metrics_endpoint": null,
   "metrics_headers": null,
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": false,
   "supports_logs": false,

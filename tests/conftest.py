@@ -14,6 +14,14 @@ if str(PLUGIN_ROOT) not in sys.path:
     sys.path.insert(0, str(PLUGIN_ROOT))
 
 
+def pytest_collection_modifyitems(config, items):
+    """Run the ``grpc``-marked tests last. Once grpcio's native library is
+    loaded, a ``fork()`` child can die with SIGSEGV on macOS (grpcio >= 1.78.1,
+    in Network.framework's atfork handler, #469), and many tests fork
+    (``openssl``, ``git``, ``bash`` scripts)."""
+    items.sort(key=lambda item: item.get_closest_marker("grpc") is not None)
+
+
 @pytest.fixture(autouse=True)
 def _reset_otel_state(monkeypatch, tmp_path_factory):
     """Reset plugin singletons between tests (``hermes_otel.testing.reset_state``)

@@ -113,6 +113,11 @@ _PLAIN_BACKEND_FIELDS: Tuple[str, ...] = tuple(
     and f.name not in _ALL_CREDENTIAL_FIELDS
     and not f.name.endswith("_env")
 )
+# A field still at its default says nothing about the entry: ``protocol``
+# is the one whose default is not ``None`` (``http/protobuf``, #469).
+_BACKEND_FIELD_DEFAULTS: Dict[str, Any] = {
+    f.name: f.default for f in dataclasses.fields(BackendConfig) if f.name in _PLAIN_BACKEND_FIELDS
+}
 
 
 def _credential_report(
@@ -255,7 +260,11 @@ def _backend_summary(
 ) -> Dict[str, Any]:
     t = (bc.type or "").strip().lower()
     spec = spec_for(t)
-    fields = {f: getattr(bc, f) for f in _PLAIN_BACKEND_FIELDS if getattr(bc, f) is not None}
+    fields = {
+        f: getattr(bc, f)
+        for f in _PLAIN_BACKEND_FIELDS
+        if getattr(bc, f) not in (None, _BACKEND_FIELD_DEFAULTS[f])
+    }
     type_fallbacks = _TYPE_CREDENTIALS.get(spec.type if spec is not None else t, {})
     credentials = []
     for f in _ALL_CREDENTIAL_FIELDS:

@@ -173,6 +173,51 @@ class TestRun:
         assert kw["capture_output"] is True and kw["text"] is True
 
 
+class TestSpawn:
+    """The helper runs through ``posix_spawn`` on macOS: a ``fork()`` child can
+    SIGSEGV there once grpcio is loaded by a ``protocol: grpc`` backend (#469)."""
+
+    def test_a_bare_command_is_resolved_on_path(self, tmp_path, monkeypatch):
+        tool = tmp_path / "mint-token"
+        tool.write_text("#!/bin/sh\necho a=b\n")
+        tool.chmod(0o755)
+        monkeypatch.setenv("PATH", str(tmp_path))
+        calls = []
+
+        def runner(argv, **kw):
+            calls.append((argv, kw))
+            return subprocess.CompletedProcess(argv, 0, stdout="a=b\n", stderr="")
+
+        HeadersHelper("mint-token --x", runner=runner).headers()
+        assert calls[0][0] == [str(tool), "--x"]
+
+    def test_a_path_or_an_unknown_name_is_left_alone(self):
+        from hermes_otel.headers_helper import _spawnable
+
+        assert _spawnable(["./mint", "a"]) == ["./mint", "a"]
+        assert _spawnable(["no-such-helper-xyz"]) == ["no-such-helper-xyz"]
+
+    def test_macos_keeps_inherited_fds_for_posix_spawn(self):
+        # CPython's posix_spawn path on macOS needs close_fds=False.
+        calls = []
+
+        def runner(argv, **kw):
+            calls.append(kw)
+            return subprocess.CompletedProcess(argv, 0, stdout="a=b\n", stderr="")
+
+        HeadersHelper("mint", runner=runner).headers()
+        if sys.platform == "darwin":
+            assert calls[0]["close_fds"] is False
+        else:
+            assert "close_fds" not in calls[0]
+
+    def test_a_real_helper_still_runs(self, tmp_path):
+        script = tmp_path / "mint.py"
+        script.write_text("print('x-token=abc')\n")
+        helper = HeadersHelper(f"{sys.executable} {script}")
+        assert helper.headers() == {"x-token": "abc"}
+
+
 class TestCacheAndRefresh:
     def _counting_script(self, tmp_path: Path) -> str:
         # Each run prints a token read from a file the test rewrites, and a

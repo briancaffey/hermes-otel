@@ -55,10 +55,14 @@ class ProbeResult:
 def parse_host_port(endpoint: Any) -> Optional[Tuple[str, int]]:
     """``(host, port)`` from an OTLP endpoint URL, or None when it has no host.
 
-    The default port is 80 for ``http``, 443 for ``https``, else 4318.
+    The default port is 80 for ``http``, 443 for ``https``, else 4318. A
+    bare ``host:port`` (a gRPC target, #469) is read as that host and port.
     """
+    text = str(endpoint or "").strip()
     try:
-        parts = urlsplit(str(endpoint or "").strip())
+        parts = urlsplit(text if "://" in text else "//" + text)
+        if "://" not in text and parts.port is None:
+            return None
     except ValueError:
         return None
     if not parts.hostname:

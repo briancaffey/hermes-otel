@@ -138,6 +138,14 @@ class _ResolvedBackend:
     # The entry's ``headers_helper`` (#483), shared by the three signals'
     # exporters so one process mints for all and one cache serves them.
     headers_helper: Optional[HeadersHelper] = None
+    # The OTLP transport and its TLS settings (#469); ``grpc`` only on a
+    # generic ``type: otlp`` entry. :func:`otlp_transport.create_exporter`
+    # picks the exporter class and channel credentials from these.
+    protocol: str = "http/protobuf"
+    insecure: Optional[bool] = None
+    certificate_file: Optional[str] = None
+    client_key_file: Optional[str] = None
+    client_certificate_file: Optional[str] = None
 
     def target(self, signal: str, global_headers: Optional[Dict[str, str]] = None) -> SignalTarget:
         """The endpoint and headers to build ``signal``'s exporter with.
@@ -156,15 +164,18 @@ class _ResolvedBackend:
         the gap from the shell (#472).
 
         Endpoint: the per-signal URL when the backend names one (#366), else
-        ``/v1/<signal>`` next to the traces URL.
+        ``/v1/<signal>`` next to the traces URL; a gRPC backend serves every
+        signal on the one target (#469).
         """
         own = self.headers
         endpoint = self.endpoint
         if signal != "traces":
             per_signal = getattr(self, f"{signal}_headers")
             own = per_signal if per_signal is not None else own
-            endpoint = getattr(self, f"{signal}_endpoint") or derive_signal_endpoint(
-                self.endpoint, signal
+            endpoint = getattr(self, f"{signal}_endpoint") or (
+                self.endpoint
+                if self.protocol == "grpc"
+                else derive_signal_endpoint(self.endpoint, signal)
             )
         merged: Dict[str, str] = dict(global_headers or {})
         merged.update(own or {})
@@ -1066,6 +1077,14 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
     spec = spec_for(bc.type)
     if spec is None:
         raise ValueError(f"unknown backend type {bc.type!r}")
+    if bc.protocol not in ("http/protobuf", "grpc"):
+        raise ValueError(f"unsupported OTLP protocol {bc.protocol!r}; use http/protobuf or grpc")
+    if bc.protocol == "grpc" and spec.type != "otlp":
+        raise ValueError("protocol: grpc requires a generic type: otlp backend")
+    if bc.protocol == "grpc" and (bc.headers_helper or "").strip():
+        # The 401/403 re-mint rides the HTTP exporter's requests session;
+        # a gRPC channel has none, so a helper's token would silently expire.
+        raise ValueError("headers_helper needs protocol: http/protobuf; gRPC cannot refresh it")
     wire = _RESOLVERS.get(spec.type, _resolve_plain)(bc, spec)
     signals = _signals(bc, spec, wire)
     return _ResolvedBackend(
@@ -1085,6 +1104,11 @@ def resolve(bc: BackendConfig) -> _ResolvedBackend:
         metrics_temporality=_entry_temporality(bc)[0],
         root_usage=bc.root_usage if bc.root_usage is not None else spec.root_usage,
         headers_helper=headers_helper_for(bc),
+        protocol=bc.protocol,
+        insecure=bc.insecure,
+        certificate_file=bc.certificate_file,
+        client_key_file=bc.client_key_file,
+        client_certificate_file=bc.client_certificate_file,
     )
 
 

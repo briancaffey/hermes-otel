@@ -31,6 +31,7 @@ from .instruments import (
     metric_temporality_map,
     metric_views,
 )
+from .otlp_transport import create_exporter
 from .pipeline_env import (
     host_arch,
     is_usage_key,
@@ -575,7 +576,9 @@ def exporter_kwargs(target: SignalTarget, label: str) -> Dict[str, Any]:
 def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     """``b``'s exporter for ``signal``, wrapped the way the pipeline attaches
     it: a ``BatchSpanProcessor`` for traces, a ``PeriodicExportingMetricReader``
-    for metrics. Endpoint and headers come from :meth:`_ResolvedBackend.target`.
+    for metrics. Endpoint and headers come from :meth:`_ResolvedBackend.target`,
+    the exporter class (OTLP/HTTP, or gRPC with its TLS credentials, #469) from
+    :func:`otlp_transport.create_exporter`.
 
     Logs are built by :func:`log_handler.build_log_processors` from the same
     ``target`` rule, on the ``LoggerProvider`` :func:`init_logs_pipeline` makes.
@@ -583,7 +586,9 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
     target = b.target(signal, config.headers)
     if signal == "traces":
         with without_otlp_header_env():
-            inner: Any = OTLPSpanExporter(**exporter_kwargs(target, b.display_name))
+            inner: Any = create_exporter(
+                b, "traces", OTLPSpanExporter, **exporter_kwargs(target, b.display_name)
+            )
         if not b.root_usage:
             # This backend sums usage over every span (#327).
             inner = _RootUsageStrippingExporter(inner)
@@ -597,7 +602,10 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
         )
     temporality = b.metrics_temporality or config.metrics_temporality
     with without_otlp_header_env():
-        exporter = OTLPMetricExporter(
+        exporter = create_exporter(
+            b,
+            "metrics",
+            OTLPMetricExporter,
             **exporter_kwargs(target, f"{b.display_name} metrics"),
             preferred_temporality=metric_temporality_map(temporality),
             preferred_aggregation=metric_preferred_aggregation(config.metrics_histogram),

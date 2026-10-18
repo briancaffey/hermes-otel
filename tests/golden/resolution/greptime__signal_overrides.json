@@ -37,6 +37,9 @@
  "path": "signal_overrides",
  "preset_temporality": null,
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "greptime-entry",
   "endpoint": "http://localhost:4318/v1/otlp/v1/traces",
   "headers": {
@@ -44,6 +47,7 @@
    "X-Greptime-DB-Name": "<secret>",
    "X-Greptime-Pipeline-Name": "greptime_trace_v1"
   },
+  "insecure": null,
   "log_overrides": null,
   "logs_endpoint": null,
   "logs_headers": {
@@ -56,6 +60,7 @@
    "X-Greptime-DB-Name": "<secret>"
   },
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": true,
   "supports_logs": true,

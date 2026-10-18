@@ -41,11 +41,15 @@
  "path": "logs_block",
  "preset_temporality": null,
  "resolved": {
+  "certificate_file": null,
+  "client_certificate_file": null,
+  "client_key_file": null,
   "display_name": "victoria-entry",
   "endpoint": "http://localhost:4318/insert/opentelemetry/v1/traces",
   "headers": {
    "Authorization": "Basic <secret>"
   },
+  "insecure": null,
   "log_overrides": {
    "exclude_loggers": [
     "noisy"
@@ -62,6 +66,7 @@
    "Authorization": "Basic <secret>"
   },
   "metrics_temporality": null,
+  "protocol": "http/protobuf",
   "resource_attributes": null,
   "root_usage": true,
   "supports_logs": true,

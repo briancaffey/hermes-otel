@@ -585,6 +585,16 @@
 #     metrics: true
 #     logs: true       # override default (on for otlp/signoz/lgtm/uptrace/openobserve/parseable/honeycomb)
 
+# Generic OTLP over gRPC, optionally with a private CA and mTLS:
+#   - type: otlp
+#     name: secure-telemetry
+#     protocol: grpc
+#     endpoint: https://telemetry.example.com:443   # no /v1/traces path
+#     # certificate_file: ~/certs/telemetry-ca.pem  # omit for system trust
+#     # client_certificate_file: ~/certs/hermes-client.pem
+#     # client_key_file: ~/certs/hermes-client.key  # both client files for mTLS
+#     # insecure: false                           # TLS; true is plaintext, not skip-verify
+
 # ── LGTM quickstart ──────────────────────────────────────────────────────────
 #
 # Grafana's "all signals in one container" image (traces + metrics + logs).

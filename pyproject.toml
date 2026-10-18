@@ -53,6 +53,7 @@ dependencies = [
     "opentelemetry-api>=1.35,<2",
     "opentelemetry-sdk>=1.35,<2",
     "opentelemetry-exporter-otlp-proto-http>=1.35,<2",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.35,<2",
     # Reads hermes_otel.yaml. Hermes's own runtime ships ruamel.yaml, not
     # PyYAML, so the plugin must declare it (#251).
     "PyYAML>=6,<7",
@@ -108,6 +109,7 @@ markers = [
     "phoenix: requires Phoenix container",
     "langfuse: requires Langfuse containers",
     "smoke: full-stack tests requiring hermes-agent + observability backend running",
+    "grpc: loads grpcio's native library; run after every other test, since a fork() after that can SIGSEGV on macOS (#469)",
     "e2e_ci: credential-free end-to-end tier: the real hermes binary against a scripted provider and an in-process OTLP receiver (make ci-e2e)",
 ]
 addopts = "-m 'not e2e and not smoke and not e2e_ci' -v"
