@@ -9,6 +9,7 @@ import os
 import shlex
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 import pytest
@@ -37,6 +38,9 @@ def script(tmp_path: Path, body: str, name: str = "helper.py") -> str:
 
 PRINTS_KV = 'print("Authorization=Bearer first-token-value-0001")\nprint("x-tenant=acme")\n'
 PRINTS_JSON = 'import json\nprint(json.dumps({"Authorization": "Bearer t-1", "x-n": 7}))\n'
+# A real interpreter start can take seconds on a loaded runner; the default
+# 5000 ms would turn a test that spawns one into a timeout failure.
+SLOW_START_MS = 60_000
 
 
 class TestParse:
@@ -84,7 +88,7 @@ class TestParse:
 
 class TestRun:
     def test_kv_script(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV))
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), timeout_ms=SLOW_START_MS)
         assert helper.headers() == {
             "Authorization": "Bearer first-token-value-0001",
             "x-tenant": "acme",
@@ -92,7 +96,7 @@ class TestRun:
         assert helper.runs == 1
 
     def test_json_script(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_JSON))
+        helper = HeadersHelper(script(tmp_path, PRINTS_JSON), timeout_ms=SLOW_START_MS)
         assert helper.headers() == {"Authorization": "Bearer t-1", "x-n": "7"}
 
     def test_argv_is_split_with_shlex_not_a_shell(self, tmp_path):
@@ -100,7 +104,7 @@ class TestRun:
         # argument and is never interpreted: no shell is involved.
         body = "import sys\nprint('x-arg=' + sys.argv[1])\n"
         cmd = script(tmp_path, body) + " 'two words; echo pwned'"
-        helper = HeadersHelper(cmd)
+        helper = HeadersHelper(cmd, timeout_ms=SLOW_START_MS)
         assert helper.argv[-1] == "two words; echo pwned"
         assert helper.headers() == {"x-arg": "two words; echo pwned"}
 
@@ -116,7 +120,7 @@ class TestRun:
             "sys.stderr.write('refresh failed: token=sk-ant-abcdefghijklmnopqrstuvwxyz\\n')\n"
             "sys.exit(3)\n"
         )
-        helper = HeadersHelper(script(tmp_path, body))
+        helper = HeadersHelper(script(tmp_path, body), timeout_ms=SLOW_START_MS)
         with pytest.raises(HeadersHelperError) as exc:
             helper.headers()
         msg = str(exc.value)
@@ -137,14 +141,17 @@ class TestRun:
             helper.headers()
 
     def test_malformed_output_names_the_helper(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, "print('no equals sign here')\n"))
+        helper = HeadersHelper(
+            script(tmp_path, "print('no equals sign here')\n"), timeout_ms=SLOW_START_MS
+        )
         with pytest.raises(HeadersHelperError, match="line 1 is not Name=value"):
             helper.headers()
 
     def test_runs_with_the_plugin_environment(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HO_TEST_TOKEN", "from-env")
         body = "import os\nprint('x-token=' + os.environ['HO_TEST_TOKEN'])\n"
-        assert HeadersHelper(script(tmp_path, body)).headers() == {"x-token": "from-env"}
+        helper = HeadersHelper(script(tmp_path, body), timeout_ms=SLOW_START_MS)
+        assert helper.headers() == {"x-token": "from-env"}
 
     def test_default_timeout(self):
         assert HeadersHelper("helper").timeout_ms == hh.DEFAULT_TIMEOUT_MS
@@ -178,36 +185,256 @@ class TestCacheAndRefresh:
         )
         return script(tmp_path, body)
 
+    def _helper(self, tmp_path: Path) -> HeadersHelper:
+        return HeadersHelper(self._counting_script(tmp_path), timeout_ms=SLOW_START_MS)
+
     def test_headers_runs_once_and_caches(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         assert helper.headers()["Authorization"] == "Bearer first"
         (tmp_path / "token").write_text("second", encoding="utf-8")
         assert helper.headers()["Authorization"] == "Bearer first"  # cached
         assert helper.runs == 1
 
-    def test_refresh_reruns_and_replaces(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+    def test_refresh_after_reruns_and_replaces(self, tmp_path):
+        helper = self._helper(tmp_path)
         helper.headers()
         (tmp_path / "token").write_text("second", encoding="utf-8")
-        assert helper.refresh() == {"Authorization": "Bearer second"}
+        minted = helper.refresh_after(1)
+        assert minted.headers == {"Authorization": "Bearer second"} and minted.ran
         assert helper.headers() == {"Authorization": "Bearer second"}
         assert helper.runs == 2
 
     def test_failed_refresh_keeps_the_old_set(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         helper.headers()
-        (tmp_path / "token").write_text("", encoding="utf-8")  # prints "Authorization=Bearer "
-        # Still a valid line; make it fail outright instead.
-        (tmp_path / "helper.py").write_text("import sys\nsys.exit(9)\n", encoding="utf-8")
+        # Injected failure: a real failing interpreter is timing-dependent.
+        helper._runner = lambda argv, **kw: subprocess.CompletedProcess(argv, 9, "", "")
         with pytest.raises(HeadersHelperError, match="exited 9"):
-            helper.refresh()
+            helper.refresh_after(1)
         assert helper.headers() == {"Authorization": "Bearer first"}
 
     def test_returns_copies(self, tmp_path):
-        helper = HeadersHelper(self._counting_script(tmp_path))
+        helper = self._helper(tmp_path)
         first = helper.headers()
         first["Authorization"] = "tampered"
         assert helper.headers()["Authorization"] == "Bearer first"
+
+
+# ── one helper, several exporters' sessions (#584) ──────────────────────
+
+
+class FakeRunner:
+    """A ``subprocess.run`` stand-in: run N prints ``Bearer t<N>`` (and, while
+    ``extra`` is set, that header too); ``hold`` keeps a run in progress."""
+
+    def __init__(self) -> None:
+        self.calls = 0
+        self.extra: dict = {"x-old": "1"}
+        self.hold = None  # threading.Event to wait on inside a run
+        self.entered = threading.Event()
+
+    def __call__(self, argv, **kwargs):
+        self.entered.set()
+        if self.hold is not None:
+            self.hold.wait(5)
+        self.calls += 1
+        lines = [f"Authorization=Bearer t{self.calls}"]
+        lines += [f"{k}={v}" for k, v in self.extra.items()]
+        return subprocess.CompletedProcess(argv, 0, stdout="\n".join(lines), stderr="")
+
+
+def fake_helper() -> tuple:
+    runner = FakeRunner()
+    return HeadersHelper("mint", runner=runner), runner
+
+
+class TestGenerations:
+    def test_current_never_runs_and_snapshot_counts_from_one(self):
+        helper, runner = fake_helper()
+        assert helper.current() is None and runner.calls == 0
+        assert helper.snapshot()[0] == 1
+        assert helper.current()[0] == 1
+        helper.refresh_after(1)
+        assert helper.current() == (2, {"Authorization": "Bearer t2", "x-old": "1"})
+
+    def test_refresh_after_a_stale_generation_takes_the_newer_set(self):
+        helper, runner = fake_helper()
+        helper.headers()
+        first = helper.refresh_after(1)
+        assert (first.generation, first.ran) == (2, True)
+        # Refused with generation 1 too, but 2 already exists: no second run.
+        again = helper.refresh_after(1)
+        assert (again.generation, again.ran) == (2, False)
+        assert again.headers == first.headers
+        assert runner.calls == helper.runs == 2
+
+    def test_failed_refresh_after_keeps_the_generation(self):
+        helper, runner = fake_helper()
+        helper.headers()
+        helper._runner = lambda argv, **kw: subprocess.CompletedProcess(argv, 3, "", "")
+        with pytest.raises(HeadersHelperError, match="exited 3"):
+            helper.refresh_after(1)
+        assert helper.current()[0] == 1
+
+    def test_concurrent_refusals_with_one_generation_run_once(self):
+
+        helper, runner = fake_helper()
+        helper.headers()
+        runner.hold = threading.Event()
+        start = threading.Barrier(8)
+        answers = []
+
+        def refused() -> None:
+            start.wait(5)
+            answers.append(helper.refresh_after(1))
+
+        threads = [threading.Thread(target=refused) for _ in range(8)]
+        for t in threads:
+            t.start()
+        runner.hold.set()
+        for t in threads:
+            t.join(5)
+        assert runner.calls == 2  # the first mint + exactly one refresh
+        assert sorted(a.ran for a in answers) == [False] * 7 + [True]
+        assert {a.generation for a in answers} == {2}
+
+    def test_current_does_not_wait_on_a_run_in_progress(self):
+
+        helper, runner = fake_helper()
+        helper.headers()
+        runner.hold = threading.Event()
+        runner.entered.clear()
+        t = threading.Thread(target=helper.refresh_after, args=(1,))
+        t.start()
+        try:
+            assert runner.entered.wait(5)
+            assert helper.current()[0] == 1  # the run holds the lock; this returns
+        finally:
+            runner.hold.set()
+            t.join(5)
+        assert helper.current()[0] == 2
+
+
+requests = pytest.importorskip("requests")
+
+
+class FakeBackend(requests.adapters.BaseAdapter):
+    """Answers 200 to the accepted bearer token, 401 otherwise, and records
+    ``(session label, Authorization, x-old)`` per request. ``refusal_barrier``
+    holds every refused request until the other session is refused too."""
+
+    def __init__(self, accepted: str) -> None:
+        super().__init__()
+        self.accepted = accepted
+        self.seen: list = []
+        self.refusal_barrier = None
+
+    def send(self, request, **kwargs):
+        auth = request.headers.get("Authorization")
+        self.seen.append((request.headers.get("x-label"), auth, request.headers.get("x-old")))
+        response = requests.Response()
+        response.request = request
+        response.url = request.url
+        response._content = b""
+        response.status_code = 200 if auth == f"Bearer {self.accepted}" else 401
+        if response.status_code == 401 and self.refusal_barrier is not None:
+            self.refusal_barrier.wait(5)
+        return response
+
+    def close(self) -> None:
+        pass
+
+
+def session_on(helper, backend, label: str):
+    from hermes_otel.headers_helper import RefreshingSession
+
+    session = RefreshingSession(helper, label)
+    # What the exporter does with ``headers=`` at construction.
+    session.headers.update(helper.headers())
+    session.headers["x-label"] = label
+    session.mount("http://", backend)
+    return session
+
+
+def post(session):
+    req = requests.Request("POST", "http://backend.invalid/v1/x", data=b"batch")
+    return session.send(session.prepare_request(req))
+
+
+class TestSharedRefresh:
+    def test_a_refresh_by_one_session_reaches_the_others_before_they_send(self):
+        helper, runner = fake_helper()
+        backend = FakeBackend("t1")
+        traces, metrics, logs = (session_on(helper, backend, s) for s in ("t", "m", "l"))
+        assert post(traces).status_code == 200
+
+        backend.accepted = "t2"
+        runner.extra = {}  # the rotated set no longer carries x-old
+        assert post(traces).status_code == 200  # refused, re-minted, retried
+        assert post(metrics).status_code == 200
+        assert post(logs).status_code == 200
+
+        assert backend.seen[1:] == [
+            ("t", "Bearer t1", "1"),
+            ("t", "Bearer t2", None),
+            ("m", "Bearer t2", None),  # no 401: picked the new set up first
+            ("l", "Bearer t2", None),
+        ]
+        assert runner.calls == 2
+        assert (traces.refreshes, traces.adopted) == (1, 0)
+        assert (metrics.refreshes, metrics.adopted, metrics.retries) == (0, 1, 0)
+        assert "x-old" not in metrics.headers  # the session keeps the new set
+        # Steady state: nothing more to adopt.
+        assert post(metrics).status_code == 200
+        assert metrics.adopted == 1 and runner.calls == 2
+        for s in (traces, metrics, logs):
+            s.close()
+
+    def test_two_sessions_refused_together_share_one_run(self):
+
+        helper, runner = fake_helper()
+        backend = FakeBackend("t2")  # rotated before either sends
+        backend.refusal_barrier = threading.Barrier(2)
+        a, b = session_on(helper, backend, "a"), session_on(helper, backend, "b")
+        results = {}
+
+        def send(name, session) -> None:
+            results[name] = post(session).status_code
+
+        threads = [threading.Thread(target=send, args=(n, s)) for n, s in (("a", a), ("b", b))]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(5)
+
+        assert results == {"a": 200, "b": 200}
+        assert runner.calls == 2  # the first mint + one refresh for both
+        assert a.refreshes == b.refreshes == a.retries == b.retries == 1
+        refused = [s for s in backend.seen if s[1] == "Bearer t1"]
+        assert sorted(s[0] for s in refused) == ["a", "b"]
+        a.close()
+        b.close()
+
+    def test_debug_log_says_who_ran_the_helper(self, monkeypatch):
+
+        lines = []
+        monkeypatch.setattr(hh, "debug_log", lines.append)
+        helper, runner = fake_helper()
+        backend = FakeBackend("t2")
+        backend.refusal_barrier = threading.Barrier(2)
+        a, b = session_on(helper, backend, "a"), session_on(helper, backend, "b")
+        threads = [threading.Thread(target=post, args=(s,)) for s in (a, b)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(5)
+        refreshed = [line for line in lines if "401 from the backend" in line]
+        assert len(refreshed) == 2
+        assert sum("; re-ran the helper" in line for line in refreshed) == 1
+        assert sum("another exporter already re-ran the helper" in line for line in refreshed) == 1
+        assert all("t2" not in line for line in lines)  # values stay masked
+        a.close()
+        b.close()
 
 
 class TestRedaction:
@@ -236,7 +463,9 @@ class TestRedaction:
         monkeypatch.setattr(du, "_DEBUG_ENABLED", True)
         du.close_debug_log()
         try:
-            HeadersHelper(script(tmp_path, PRINTS_KV), label="oo").headers()
+            HeadersHelper(
+                script(tmp_path, PRINTS_KV), label="oo", timeout_ms=SLOW_START_MS
+            ).headers()
             du.close_debug_log()
             log = (tmp_path / "home" / "plugins" / "hermes_otel" / "debug.log").read_text()
         finally:
@@ -315,7 +544,7 @@ class TestResolveAndTarget:
         assert target.headers == {"x-g": "1"} and target.headers_helper is None
 
     def test_target_merges_minted_over_static_for_every_signal(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV), label="t")
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), label="t", timeout_ms=SLOW_START_MS)
         rb = _ResolvedBackend(
             type="otlp",
             endpoint="http://x/v1/traces",
@@ -341,6 +570,7 @@ class TestResolveAndTarget:
             user="root@example.com",
             password="initial",
             headers_helper=script(tmp_path, 'print("Authorization=Basic bmV3OnBhc3M=")\n'),
+            headers_helper_timeout_ms=SLOW_START_MS,
         )
         rb = resolve(bc)
         target = rb.target("logs")
@@ -356,6 +586,7 @@ class TestResolveAndTarget:
                 type="otlp",
                 endpoint="http://127.0.0.1:4318/v1/traces",
                 headers_helper=script(tmp_path, "import sys\nsys.exit(2)\n"),
+                headers_helper_timeout_ms=SLOW_START_MS,
             )
         )
         cfg = HermesOtelConfig(dashboard_live=False, probe_backends=False)
@@ -421,6 +652,7 @@ class TestHelperOnlyEntries:
             self._entry(
                 "openobserve",
                 headers_helper=script(tmp_path, 'print("Authorization=Basic bWludDpwdw==")\n'),
+                headers_helper_timeout_ms=SLOW_START_MS,
             )
         )
         target = rb.target("traces")
@@ -446,7 +678,7 @@ class TestExporterKwargs:
         from hermes_otel.headers_helper import RefreshingSession
         from hermes_otel.pipeline import exporter_kwargs
 
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV))
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), timeout_ms=SLOW_START_MS)
         kwargs = exporter_kwargs(SignalTarget("http://x", helper.headers(), helper), "L")
         session = kwargs["session"]
         assert isinstance(session, RefreshingSession)
@@ -464,6 +696,7 @@ class TestExporterKwargs:
                 type="otlp",
                 endpoint="http://127.0.0.1:4318/v1/traces",
                 headers_helper=helper_cmd,
+                headers_helper_timeout_ms=SLOW_START_MS,
                 metrics=True,
                 logs=True,
             )

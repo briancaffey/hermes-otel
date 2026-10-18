@@ -216,40 +216,112 @@ class TestRefreshOnce:
 
 
 class TestThroughThePipeline:
-    def test_batch_processor_and_log_exporter_share_the_helper(
-        self, receiver, token_file, helper_command
-    ):
-        """The real pipeline: spans through the BatchSpanProcessor and a log
-        record through the log exporter, both re-minting after a rotation."""
-        rb = _backend(receiver, helper_command, logs=True, metrics=False)
+    """The real pipeline: spans through the BatchSpanProcessor, a metric point
+    through the PeriodicExportingMetricReader and a log record through the log
+    exporter, three sessions on one helper (#584)."""
+
+    LOGGER = "hermes_otel_test_logger"
+    PATHS = ("/v1/traces", "/v1/metrics", "/v1/logs")
+
+    def _pipeline(self, receiver, helper_command):
+        rb = _backend(receiver, helper_command, logs=True, metrics=True)
         cfg = HermesOtelConfig(
             dashboard_live=False,
             probe_backends=False,
             capture_logs=True,
-            log_attach_logger="hermes_otel_test_logger",
+            log_attach_logger=self.LOGGER,
             span_batch_schedule_delay_ms=50,
         )
         pipeline = build_pipeline(cfg, [rb], "default")
         assert pipeline is not None
+        assert len(pipeline.span_processors) == len(pipeline.metric_readers) == 1
+        return rb, cfg, pipeline
+
+    def _emit(self, pipeline, n: int) -> None:
+        pipeline.tracer.start_span(f"span-{n}").end()
+        pipeline.meter.create_counter("hermes_otel_test_counter").add(1)
+        logging.getLogger(self.LOGGER).warning("record %d", n)
+
+    def _flushers(self, pipeline):
+        return {
+            "/v1/traces": lambda: pipeline.span_processors[0].force_flush(5000),
+            "/v1/metrics": lambda: pipeline.metric_readers[0].force_flush(5000),
+            "/v1/logs": lambda: pipeline.logger_provider.force_flush(5000),
+        }
+
+    def _warm(self, receiver, pipeline) -> int:
+        self._emit(pipeline, 0)
+        for flush in self._flushers(pipeline).values():
+            flush()
+        assert {r["path"] for r in receiver.requests} == set(self.PATHS)
+        assert all(r["ok"] for r in receiver.requests)
+        return len(receiver.requests)
+
+    @staticmethod
+    def _attempts(later, path):
+        return [(r["auth"], r["ok"]) for r in later if r["path"] == path]
+
+    def test_one_refresh_serves_the_signals_that_send_after_it(
+        self, receiver, token_file, helper_command
+    ):
+        rb, cfg, pipeline = self._pipeline(receiver, helper_command)
         try:
-            pipeline.tracer.start_span("warm").end()
-            pipeline.force_flush(timeout_millis=5000)
-            assert receiver.requests and all(r["ok"] for r in receiver.requests)
-            before = len(receiver.requests)
+            before = self._warm(receiver, pipeline)
+            assert rb.headers_helper.runs == 1
 
             _rotate(receiver, token_file, "second")
-            pipeline.tracer.start_span("after").end()
-            logging.getLogger("hermes_otel_test_logger").warning("rotated")
-            pipeline.force_flush(timeout_millis=5000)
+            self._emit(pipeline, 1)
+            flushers = self._flushers(pipeline)
+            for path in self.PATHS:
+                flushers[path]()
 
             later = receiver.requests[before:]
-            paths = {r["path"] for r in later}
-            assert paths == {"/v1/traces", "/v1/logs"}
-            for path in sorted(paths):
-                attempts = [(r["auth"], r["ok"]) for r in later if r["path"] == path]
-                assert attempts == [("Bearer first", False), ("Bearer second", True)], path
-            # One helper for both exporters: the first mint, then one refresh
-            # per exporter whose cached token was refused.
-            assert rb.headers_helper.runs == 3
+            # Traces met the rotation: refused once, re-minted, retried.
+            assert self._attempts(later, "/v1/traces") == [
+                ("Bearer first", False),
+                ("Bearer second", True),
+            ]
+            # Metrics and logs picked the new set up before sending: no 401.
+            for path in ("/v1/metrics", "/v1/logs"):
+                assert self._attempts(later, path) == [("Bearer second", True)], path
+            assert rb.headers_helper.runs == 2  # the first mint + one refresh
+        finally:
+            pipeline.shutdown(cfg.log_attach_logger)
+
+    def test_concurrent_refusals_run_the_helper_once(self, receiver, token_file, helper_command):
+        """All three exporters send at once after the rotation; however their
+        401s interleave, every one recovers and the helper runs once."""
+        rb, cfg, pipeline = self._pipeline(receiver, helper_command)
+        try:
+            before = self._warm(receiver, pipeline)
+            _rotate(receiver, token_file, "second")
+            self._emit(pipeline, 1)
+            start = threading.Barrier(len(self.PATHS))
+            errors: List[BaseException] = []
+
+            def run(flush) -> None:
+                try:
+                    start.wait(5)
+                    flush()
+                except BaseException as e:  # pragma: no cover - surfaced below
+                    errors.append(e)
+
+            threads = [
+                threading.Thread(target=run, args=(flush,))
+                for flush in self._flushers(pipeline).values()
+            ]
+            for t in threads:
+                t.start()
+            for t in threads:
+                t.join(10)
+            assert not errors
+
+            later = receiver.requests[before:]
+            for path in self.PATHS:
+                attempts = self._attempts(later, path)
+                # At most the one refusal, and the batch lands with the new token.
+                assert attempts[-1] == ("Bearer second", True), path
+                assert attempts[:-1] in ([], [("Bearer first", False)]), path
+            assert rb.headers_helper.runs == 2
         finally:
             pipeline.shutdown(cfg.log_attach_logger)
