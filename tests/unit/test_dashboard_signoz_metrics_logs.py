@@ -147,7 +147,7 @@ class TestCapabilities:
 
     def test_no_api_key_fails_closed(self):
         a = sz.SigNozAdapter({"type": "signoz", "endpoint": "http://localhost:4318/v1/traces"})
-        with pytest.raises(BackendError):
+        with pytest.raises(BackendError, match="signoz backend entry in hermes_otel.yaml"):
             a.metric_names(0, 1)
 
 

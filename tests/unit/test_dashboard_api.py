@@ -359,11 +359,14 @@ class TestLiveHardening:
 
     def test_status_names_the_real_reason(self, monkeypatch, tmp_path):
         monkeypatch.setattr(live_api, "_get_live_store", lambda: None)
+        real_plugin_module = live_api.plugin_module
+        monkeypatch.setattr(live_api, "plugin_module", lambda name: None)
         app = FastAPI()
         app.include_router(plugin_api.router)
         with TestClient(app) as c:
             r = c.get("/live/status").json()
             assert r["live"] is False and "could not be imported" in r["reason"]
+        monkeypatch.setattr(live_api, "plugin_module", real_plugin_module)
         bad = tmp_path / "bad.db"
         bad.write_bytes(b"junk" * 50)
         store = LiveStore(db_path=str(bad))
@@ -373,6 +376,30 @@ class TestLiveHardening:
             assert r["live"] is False and "could not be opened" in r["reason"]
             assert r["path"] == str(bad)
         store.close()
+
+    def test_status_names_a_store_that_could_not_be_created(self, tmp_path, monkeypatch):
+        """The module imported but creating the store raised: say so, not "import" (#616)."""
+        from hermes_otel import live_store_registry as ls
+
+        monkeypatch.setattr(ls, "_LIVE_STORE", None)
+        monkeypatch.setattr(ls, "_STORES_BY_PATH", {})
+        monkeypatch.setattr(ls, "_CREATE_ERRORS", {})
+        db = tmp_path / "nope.db"
+        monkeypatch.setenv("HERMES_OTEL_LIVE_DB", str(db))
+
+        def boom(**kwargs):
+            raise PermissionError("read-only home")
+
+        monkeypatch.setattr(ls, "LiveStore", boom)
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            r = c.get("/live/status").json()
+        assert r["live"] is False and "could not be imported" not in r["reason"]
+        assert r["reason"] == (
+            f"the live store {db} could not be created: PermissionError: read-only home"
+        )
+        assert r["path"] == str(db)
 
     def test_router_resolves_the_store_from_the_environment(self, tmp_path, monkeypatch):
         from hermes_otel import live_store_registry as ls

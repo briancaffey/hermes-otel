@@ -255,7 +255,7 @@ def status(
         return {**out, **adapter.status()}
     if cfg_path is None:
         looked = ", ".join(str(p) for p in candidate_config_paths())
-        out["reason"] = f"No config.yaml found. Looked at: {looked}"
+        out["reason"] = f"No hermes_otel.yaml found. Looked at: {looked}"
     elif not backends:
         out["reason"] = (
             f"No backends: configured in {cfg_path}. Add at least one "

@@ -222,7 +222,7 @@ class SigNozAdapter(BackendAdapter):
         key = require_credential(
             self.api_key,
             "SigNoz requires an api_key. Add api_key or api_key_env "
-            "to the signoz backend entry in config.yaml.",
+            "to the signoz backend entry in hermes_otel.yaml.",
         )
         # A personal access token is honoured as ``SIGNOZ-API-KEY``; a session
         # JWT (what ``/api/v2/sessions/email_password`` returns) only as a
