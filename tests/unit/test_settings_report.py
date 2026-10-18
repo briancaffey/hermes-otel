@@ -208,6 +208,12 @@ class TestEnvInventory:
             == "ls-secret"
         )
 
+    def test_otel_service_name_row_says_it_is_overridden(self):
+        row = {e["name"]: e for e in env_inventory()}["OTEL_SERVICE_NAME"]
+        assert row["description"].startswith("Overridden")
+        assert "resource_attributes" in row["description"]
+        assert "service_name_from_profile" in row["description"]
+
     def test_maps_and_backends_have_no_override_var(self):
         names = {e["maps_to"] for e in env_inventory() if e["group"] == "override"}
         assert "backends" not in names and "headers" not in names

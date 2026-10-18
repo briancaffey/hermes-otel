@@ -74,6 +74,26 @@ class TestResource:
         assert attrs["service.name"] == "bot"
         assert attrs["service.namespace"] == "team"
 
+    def test_resource_service_name_keeps_the_profile_namespace(self, inmemory_otel_setup):
+        _, plugin = inmemory_otel_setup
+        plugin.config = HermesOtelConfig(
+            service_name_from_profile=True, resource_attributes={"service.name": "bot"}
+        )
+        plugin.profile_name = "coder"
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
+        assert attrs["service.name"] == "bot"
+        assert attrs["service.namespace"] == "hermes-agent"
+
+    @pytest.mark.parametrize("from_profile", [False, True])
+    def test_otel_service_name_has_no_effect(self, inmemory_otel_setup, monkeypatch, from_profile):
+        """The plugin's own ``service.name`` beats the SDK's env detector (#609)."""
+        _, plugin = inmemory_otel_setup
+        monkeypatch.setenv("OTEL_SERVICE_NAME", "foo")
+        plugin.config = HermesOtelConfig(service_name_from_profile=from_profile)
+        plugin.profile_name = "coder"
+        attrs = build_resource(plugin.config, plugin.profile_name).attributes
+        assert attrs["service.name"] == ("coder" if from_profile else "hermes-agent")
+
 
 def _root(exporter, plugin, profile, **host_kwargs):
     plugin.profile_name = profile

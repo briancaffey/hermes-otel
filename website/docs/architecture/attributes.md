@@ -79,7 +79,7 @@ Set on the OTel `Resource` and therefore stamped on **every** span:
 
 | Attribute | Source |
 |---|---|
-| `service.name` | `hermes-agent` (override via `resource_attributes:`) |
+| `service.name` | `hermes-agent`, or the profile name with `service_name_from_profile` (override via `resource_attributes:`; `OTEL_SERVICE_NAME` has no effect) |
 | `service.instance.id` | A UUID per process, so two Hermes processes never share a metric series |
 | `service.version` | `hermes-otel` plugin version |
 | `process.pid` | Process id |
