@@ -254,6 +254,74 @@ class TestTraces:
         card = _adapter().search(f, T0 - 60, T0 + 60, 10)["traces"][0]
         assert card["rootTraceName"] == "tool.terminal"
 
+    def test_kind_card_is_timed_as_the_matched_span(self, monkeypatch):
+        # #598: the row was renamed to the tool but kept the turn's start and
+        # duration from Tempo's search row; the card's timing comes along now.
+        _capture(monkeypatch, {"/api/search": {"traces": [SEARCH_ROW]}, "/api/traces/": DETAIL})
+        kind = StructuredFilter(name_prefix="tool.", roots_only=False)
+        row = _adapter().search(kind, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert row["rootTraceName"] == "tool.terminal"
+        assert row["startTimeUnixNano"] == str(T0 * NS + 1_200_000_000)
+        assert row["durationMs"] == 900
+        # No kind (a tool filter): the root, timed as the root (#558).
+        tool = StructuredFilter(attr_equals={"tool.name": "terminal"}, roots_only=False)
+        row = _adapter().search(tool, T0 - 60, T0 + 60, 10)["traces"][0]
+        assert (row["rootTraceName"], row["startTimeUnixNano"], row["durationMs"]) == (
+            "agent",
+            str(T0 * NS),
+            3787,
+        )
+        # Roots-only: the root as the search answered it.
+        row = _adapter().search(StructuredFilter(), T0 - 60, T0 + 60, 10)["traces"][0]
+        assert (row["startTimeUnixNano"], row["durationMs"]) == (str(T0 * NS), 3787)
+
+    def test_kind_cards_are_ordered_by_the_matched_span(self, monkeypatch):
+        # Trace B began after A but its tool ran first: after re-timing, A's
+        # card (tool at +3 s) is the newer row and leads the page.
+        other = "0f" * 16
+
+        def detail(trace, root_s, tool_s):
+            spans = [
+                _raw_span("ee08c713fe6c52f0", "agent", root_s, 4_000_000_000),
+                _raw_span(
+                    "aaaa000000000001",
+                    "tool.terminal",
+                    tool_s,
+                    100_000_000,
+                    "ee08c713fe6c52f0",
+                    **{"tool.name": "terminal"},
+                ),
+            ]
+            for sp in spans:
+                sp["traceID"], sp["traceId"] = trace.upper(), trace
+            return {
+                "resourceSpans": [
+                    {"resource": {}, "instrumentationLibrarySpans": [{"spans": spans}]}
+                ]
+            }
+
+        def row(trace, root_s):
+            r = copy.deepcopy(SEARCH_ROW)
+            r["traceID"], r["startTimeUnixNano"] = trace, str(root_s)
+            return r
+
+        a_root, b_root = T0 * NS, T0 * NS + 1_000_000_000
+        _capture(
+            monkeypatch,
+            {
+                "/api/search": {"traces": [row(TRACE, a_root), row(other, b_root)]},
+                f"/api/traces/{TRACE}": detail(TRACE, a_root, a_root + 3_000_000_000),
+                f"/api/traces/{other}": detail(other, b_root, b_root + 500_000_000),
+            },
+        )
+        kind = StructuredFilter(name_prefix="tool.", roots_only=False)
+        rows = _adapter().search(kind, T0 - 60, T0 + 60, 10)["traces"]
+        assert [r["traceID"] for r in rows] == [TRACE, other]
+        assert [int(r["startTimeUnixNano"]) for r in rows] == [
+            a_root + 3_000_000_000,
+            b_root + 500_000_000,
+        ]
+
     def test_missing_root_service_is_the_first_batch_service(self, monkeypatch):
         row = copy.deepcopy(SEARCH_ROW)
         row["rootServiceName"] = ""

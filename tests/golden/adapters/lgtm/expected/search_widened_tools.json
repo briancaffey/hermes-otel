@@ -15,7 +15,7 @@
   "next_before_ns": null,
   "traces": [
    {
-    "durationMs": 4029,
+    "durationMs": 1120,
     "rootServiceName": "hermes-agent",
     "rootTraceName": "tool.terminal",
     "serviceStats": {
@@ -50,19 +50,19 @@
           }
          }
         ],
-        "durationNanos": "4029000000",
+        "durationNanos": "1120770000",
         "name": "tool.terminal",
         "spanID": "aaaa000000000001",
-        "startTimeUnixNano": "1791750000000000000"
+        "startTimeUnixNano": "1791750001500000000"
        }
       ]
      }
     ],
-    "startTimeUnixNano": "1791750000000000000",
+    "startTimeUnixNano": "1791750001500000000",
     "traceID": "ab43116e1d6d4a1a449db547c36ca808"
    },
    {
-    "durationMs": 4029,
+    "durationMs": 1120,
     "rootServiceName": "hermes-agent",
     "rootTraceName": "tool.terminal",
     "serviceStats": {
@@ -97,15 +97,15 @@
           }
          }
         ],
-        "durationNanos": "4029000000",
+        "durationNanos": "1120770000",
         "name": "tool.terminal",
         "spanID": "aaaa000000000001",
-        "startTimeUnixNano": "1791749400000000000"
+        "startTimeUnixNano": "1791749401500000000"
        }
       ]
      }
     ],
-    "startTimeUnixNano": "1791749400000000000",
+    "startTimeUnixNano": "1791749401500000000",
     "traceID": "5e0ef1f1f6ab4b5eb8c5c7e6a0d3c2b1"
    }
   ]

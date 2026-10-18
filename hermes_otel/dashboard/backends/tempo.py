@@ -37,7 +37,7 @@ from .base import (
     query_origin,
 )
 from .paging import strictly_older_traces, trace_end_bound, trace_page
-from .shapes import CARD_ATTRIBUTE_KEYS, dedupe_spans, span_count_of
+from .shapes import CARD_ATTRIBUTE_KEYS, dedupe_spans, span_count_of, to_int
 
 _SELECT_PIPELINE = re.compile(r"\|\s*select\s*\(")
 
@@ -75,6 +75,29 @@ def _esc(s: str) -> str:
 
 
 _DISABLED = ("off", "none", "disabled", "false")
+
+
+def card_matched_span(row: Dict[str, Any], span: Dict[str, Any]) -> None:
+    """Card a widened row as its span set's ``span`` (a kind filter, #558):
+    the span's name, start and duration replace the trace's, so the row does
+    not read as a tool that ran as long as the whole turn (#598). A field the
+    span lacks (``name`` is an attribute on older builds; a build may leave
+    the timing out) keeps the trace's value."""
+    name = span.get("name") or next(
+        (
+            (a.get("value") or {}).get("stringValue")
+            for a in span.get("attributes") or []
+            if a.get("key") == "name"
+        ),
+        None,
+    )
+    if name:
+        row["rootTraceName"] = name
+    start = to_int(span.get("startTimeUnixNano"))
+    if start:
+        row["startTimeUnixNano"] = str(start)
+    if span.get("durationNanos") is not None:
+        row["durationMs"] = to_int(span.get("durationNanos")) // 1_000_000
 
 
 def _sibling_url(explicit: Any, is_stack: bool, scheme: str, host: str, port: int) -> Optional[str]:
@@ -267,25 +290,14 @@ class TempoAdapter(PrometheusMetrics, LokiLogs, BackendAdapter):
 
         for t in traces:
             if not f.roots_only and f.name_prefix:
-                # Widened by a kind: the card is the matched span, named like
-                # the other backends name it, not the trace's root. Widened by
-                # a tool filter alone the row stays the root, its span set the
-                # matched span (#558). ``name`` is in the select list.
+                # Widened by a kind: the card is the matched span, named and
+                # timed like the other backends card it, not the trace's root
+                # (#598). Widened by a tool filter alone the row stays the
+                # root, its span set the matched span (#558).
                 sets = t.get("spanSets") or []
                 spans = (sets[0].get("spans") or []) if sets else []
                 if spans:
-                    # ``name`` is a top-level field of the span when selected,
-                    # an attribute on older builds.
-                    matched = spans[0].get("name") or next(
-                        (
-                            (a.get("value") or {}).get("stringValue")
-                            for a in spans[0].get("attributes") or []
-                            if a.get("key") == "name"
-                        ),
-                        None,
-                    )
-                    if matched:
-                        t["rootTraceName"] = matched
+                    card_matched_span(t, spans[0])
             # Tempo prints a trace id without its leading zeros; the live
             # store, Loki and the other backends carry all 32 hex digits, and
             # the Logs sub-tab correlates by the exact string (#296).
