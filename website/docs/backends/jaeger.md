@@ -52,8 +52,9 @@ backends:
     query_port: 16686          # dashboard read path: the UI / query port (16696 for the v2 stack)
 ```
 
-Set `query_port` whenever the dashboard should read this entry. Without it the adapter
-uses the port in `endpoint`, which is the OTLP port, not the query API.
+Without `query_port` the dashboard reads the query API on `16686`, the port the bundled v1
+stack and most Jaeger installs use. Set it when your query API is elsewhere (`16696` for the
+bundled v2 stack).
 
 ## What you'll see
 

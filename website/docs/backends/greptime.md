@@ -50,7 +50,7 @@ The three signals need **different headers**: GreptimeDB rejects a trace batch w
 | Field | Meaning |
 |---|---|
 | `endpoint` | **Required.** The GreptimeDB HTTP origin, e.g. `http://localhost:4398` (bundled stack) or `http://<host>:4000`. Also via `OTEL_GREPTIME_ENDPOINT`. |
-| `db` / `db_env` | Optional database for all three signals (`X-Greptime-DB-Name`; fallback `OTEL_GREPTIME_DB`). Unset means the server default, `public`. The dashboard adapter reads only an inline `db:`, so with `db_env` or `OTEL_GREPTIME_DB` it queries `public`. |
+| `db` / `db_env` | Optional database for all three signals (`X-Greptime-DB-Name`; fallback `OTEL_GREPTIME_DB`). Unset means the server default, `public`. The dashboard reads the same database. |
 | `user` / `user_env`, `password` / `password_env` | Optional Basic auth, for a server started with `--user-provider` (fallbacks `OTEL_GREPTIME_USER` / `OTEL_GREPTIME_PASSWORD`). Omitted when either is missing. |
 | `headers` | Extra headers on every signal, e.g. `x-greptime-hints: ttl=7d` to age data out. A `X-Greptime-Pipeline-Name` here replaces the default trace pipeline and goes on traces only. |
 | `metrics` / `logs` / `traces` | Per-signal toggles; all three default **on**. |

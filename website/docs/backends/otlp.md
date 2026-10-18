@@ -36,7 +36,7 @@ The `name` is only used in log output (`[hermes-otel] ✓ my-collector at http:/
 
 ## gRPC and TLS
 
-Set `protocol: grpc` on a generic `type: otlp` entry. All three signals use the same gRPC target (`host:port`, or an `http(s)://host:port` origin); `/v1/traces`, `/v1/metrics` and `/v1/logs` are HTTP paths, and a target with any path is rejected. Per-signal endpoints (`metrics_endpoint`, `logs_endpoint`) are read only by `type: victoria`; an `otlp` entry ignores them.
+Set `protocol: grpc` on a generic `type: otlp` entry. All three signals use the same gRPC target (`host:port`, or an `http(s)://host:port` origin); `/v1/traces`, `/v1/metrics` and `/v1/logs` are HTTP paths, and a target with any path is rejected. To send metrics or logs to a different target, set `metrics_endpoint` or `logs_endpoint` on the entry (a bare `host:port` or origin, like `endpoint`).
 
 ```yaml
 content_capture: off

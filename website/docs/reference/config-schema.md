@@ -464,7 +464,7 @@ headers:
 
 A missing env var logs a startup warning and the literal `${VAR}` is sent (which fails auth, but visibly so).
 
-Two limits: header *names* are not expanded, and the dashboard reads the file without expansion, so its read-path keys (`query_port`, `user_token`, `prometheus_url`, …) and any value it reuses from the entry (`api_key`, `password`) reach it as the literal `${VAR}` text. Use the `*_env` keys for dashboard credentials.
+Header *names* are not expanded. The dashboard expands `${VAR}` in each backend entry the same way before it queries the backend, so a credential written as `${VAR}` works for both exporting and reading back.
 
 ## Precedence
 
