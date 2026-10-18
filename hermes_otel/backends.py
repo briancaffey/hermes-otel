@@ -258,6 +258,13 @@ def _basic_auth(bc: BackendConfig, spec: BackendSpec) -> Optional[str]:
     return None
 
 
+def _has_helper(bc: BackendConfig) -> bool:
+    """Whether the entry names a ``headers_helper``: the helper mints the auth
+    header itself, so a resolver that requires a static credential accepts the
+    entry without one and leaves its header out (#583)."""
+    return bool((bc.headers_helper or "").strip())
+
+
 def _endpoint(bc: BackendConfig, spec: BackendSpec) -> str:
     """The entry's ``endpoint``, else ``spec.endpoint_env`` and the vendor
     fallbacks, else the host for ``region`` when the spec has several, else
@@ -288,7 +295,7 @@ def _required_endpoint(bc: BackendConfig, spec: BackendSpec) -> str:
 
 def _auth_header(bc: BackendConfig, spec: BackendSpec) -> Dict[str, str]:
     """The one header ``spec.auth`` describes, or ``{}`` when it is optional
-    and nothing resolves."""
+    and nothing resolves, or when the entry's ``headers_helper`` mints it."""
     auth = spec.auth
     if auth is None:
         return {}
@@ -300,7 +307,7 @@ def _auth_header(bc: BackendConfig, spec: BackendSpec) -> Dict[str, str]:
             value = f"{auth.scheme} {value}"
     if value:
         return {auth.name: value}
-    if auth.required:
+    if auth.required and not _has_helper(bc):
         names = " / ".join(_fallbacks(spec, auth.field))
         raise ValueError(
             f"{spec.type} requires {auth.field} / {auth.field}_env"
@@ -358,7 +365,7 @@ def langfuse_traces_url(endpoint: str) -> str:
 def _resolve_langfuse(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     pub = _secret(bc, spec, "public_key")
     sec = _secret(bc, spec, "secret_key")
-    if not (pub and sec):
+    if not (pub and sec) and not _has_helper(bc):
         raise ValueError("langfuse requires public_key and secret_key")
     ep = _endpoint(bc, spec)
     if not ep:
@@ -366,11 +373,10 @@ def _resolve_langfuse(bc: BackendConfig, spec: BackendSpec) -> _Wire:
         root = base if base else "https://cloud.langfuse.com"
         ep = f"{root}/api/public/otel/v1/traces"
     ep = langfuse_traces_url(ep)
-    auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
-    headers = {
-        "Authorization": f"Basic {auth}",
-        "x-langfuse-ingestion-version": "4",
-    }
+    headers = {"x-langfuse-ingestion-version": "4"}
+    if pub and sec:
+        auth = base64.b64encode(f"{pub}:{sec}".encode()).decode()
+        headers["Authorization"] = f"Basic {auth}"
     headers.update(bc.headers or {})
     return _Wire(ep, headers)
 
@@ -518,11 +524,11 @@ def _resolve_agenta(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     ep = re.sub(r"(/api)?(/otlp)?(/v1/traces)?/?$", "", _endpoint(bc, spec).rstrip("/"))
     ep = f"{ep}{_AGENTA_OTLP_PATH}"
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError(
             "agenta requires api_key / api_key_env (a project API key; or set OTEL_AGENTA_API_KEY)"
         )
-    headers: Dict[str, str] = {"Authorization": f"ApiKey {key}"}
+    headers: Dict[str, str] = {"Authorization": f"ApiKey {key}"} if key else {}
     headers.update(bc.headers or {})
     return _Wire(ep, headers)
 
@@ -550,14 +556,18 @@ def _resolve_openobserve(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     The endpoint URL embeds the org in its path, e.g.
     ``http://localhost:5080/api/default/v1/traces``; a bare origin is
     completed with ``org`` (``OTEL_OPENOBSERVE_ORG``, default ``default``).
+    An entry with a ``headers_helper`` needs no user/password: the helper
+    mints ``Authorization`` (#583).
     """
     org = (bc.org or os.getenv("OTEL_OPENOBSERVE_ORG", "") or "default").strip()
     ep = openobserve_traces_url(_required_endpoint(bc, spec), org)
     basic = _basic_auth(bc, spec)
-    if not basic:
+    if not basic and not _has_helper(bc):
         raise ValueError("openobserve requires user and password")
     stream = (bc.stream_name or os.getenv("OTEL_OPENOBSERVE_STREAM", "") or "default").strip()
-    headers: Dict[str, str] = {"Authorization": basic, "stream-name": stream}
+    headers: Dict[str, str] = {"stream-name": stream}
+    if basic:
+        headers["Authorization"] = basic
     headers.update(bc.headers or {})
     return _Wire(ep, headers)
 
@@ -566,7 +576,7 @@ def _resolve_parseable(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     """Resolve Parseable direct OTLP/HTTP ingest for all three signals."""
     ep = _required_endpoint(bc, spec)
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError("parseable requires api_key")
 
     traces_dataset = (
@@ -579,7 +589,7 @@ def _resolve_parseable(bc: BackendConfig, spec: BackendSpec) -> _Wire:
         bc.logs_dataset or os.getenv("PARSEABLE_LOGS_DATASET", "") or "hermes-logs"
     ).strip()
 
-    common = {"X-API-Key": key}
+    common = {"X-API-Key": key} if key else {}
     trace_headers = {**common, "X-P-Stream": traces_dataset, "X-P-Log-Source": "otel-traces"}
     metric_headers = {**common, "X-P-Stream": metrics_dataset, "X-P-Log-Source": "otel-metrics"}
     log_headers = {**common, "X-P-Stream": logs_dataset, "X-P-Log-Source": "otel-logs"}
@@ -609,12 +619,12 @@ def _resolve_honeycomb(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     modern keys; leave ``dataset`` unset on a modern key.
     """
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError(
             "honeycomb requires api_key (or set OTEL_HONEYCOMB_API_KEY / HONEYCOMB_API_KEY)"
         )
     ep = _endpoint(bc, spec)
-    headers: Dict[str, str] = {"x-honeycomb-team": key}
+    headers: Dict[str, str] = {"x-honeycomb-team": key} if key else {}
     dataset = (bc.dataset or "").strip()
     if dataset:
         headers["x-honeycomb-dataset"] = dataset
@@ -647,12 +657,12 @@ def _resolve_langsmith(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     default, ``eu``) picks the host when no endpoint is given.
     """
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError(
             "langsmith requires api_key (or set OTEL_LANGSMITH_API_KEY / LANGSMITH_API_KEY)"
         )
     ep = _langsmith_traces_url(_endpoint(bc, spec))
-    headers: Dict[str, str] = {"x-api-key": key}
+    headers: Dict[str, str] = {"x-api-key": key} if key else {}
     project = _secret(bc, spec, "project")
     if project:
         headers["Langsmith-Project"] = project
@@ -831,12 +841,12 @@ def _resolve_langwatch(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     logs}`` exist and store; verified against the compose stack).
     """
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError(
             "langwatch requires api_key (or set OTEL_LANGWATCH_API_KEY / LANGWATCH_API_KEY)"
         )
     ep = _langwatch_traces_url(_endpoint(bc, spec))
-    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"}
+    headers: Dict[str, str] = {"Authorization": f"Bearer {key}"} if key else {}
     project = _secret(bc, spec, "project")
     if project:
         headers["X-Project-Id"] = project
@@ -863,7 +873,7 @@ def _resolve_latitude(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     routes only).
     """
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError(
             "latitude requires api_key (or set OTEL_LATITUDE_API_KEY / LATITUDE_API_KEY)"
         )
@@ -874,10 +884,9 @@ def _resolve_latitude(bc: BackendConfig, spec: BackendSpec) -> _Wire:
             "or set LATITUDE_PROJECT)"
         )
     ep = traces_url(_endpoint(bc, spec))
-    headers: Dict[str, str] = {
-        "Authorization": f"Bearer {key}",
-        "X-Latitude-Project": project,
-    }
+    headers: Dict[str, str] = {"X-Latitude-Project": project}
+    if key:
+        headers["Authorization"] = f"Bearer {key}"
     headers.update(bc.headers or {})
     return _Wire(ep, headers)
 
@@ -909,14 +918,14 @@ def _resolve_weave(bc: BackendConfig, spec: BackendSpec) -> _Wire:
     (``entity`` / ``project``) or globally via ``resource_attributes``.
     """
     key = _secret(bc, spec, "api_key")
-    if not key:
+    if not key and not _has_helper(bc):
         raise ValueError("weave requires api_key (or set OTEL_WEAVE_API_KEY / WANDB_API_KEY)")
     ep = _endpoint(bc, spec)
     if not ep:
         ep = _weave_endpoint_from_base(
             bc.base_url or os.getenv("OTEL_WEAVE_BASE_URL", "") or os.getenv("WANDB_BASE_URL", "")
         )
-    headers: Dict[str, str] = {"wandb-api-key": key}
+    headers: Dict[str, str] = {"wandb-api-key": key} if key else {}
     headers.update(bc.headers or {})
 
     resource_attrs: Dict[str, str] = {}

@@ -101,12 +101,44 @@ _ENV_ONLY_EXTRA: Dict[str, Dict[str, str]] = {
     "mlflow": {"OTEL_MLFLOW_EXPERIMENT_ID": "exp-test"},
 }
 
+# The header a ``headers_helper`` mints in place of each type's required
+# static credential (#583); the helper is ``echo``, so the case runs anywhere.
+_HELPER_MINTS: Dict[str, str] = {
+    "agenta": "Authorization=ApiKey helper-test",
+    "clickstack": "authorization=helper-test",
+    "honeycomb": "x-honeycomb-team=helper-test",
+    "laminar": "Authorization=Bearer helper-test",
+    "langfuse": "Authorization=Basic helper-test",
+    "langsmith": "x-api-key=helper-test",
+    "langwatch": "Authorization=Bearer helper-test",
+    "latitude": "Authorization=Bearer helper-test",
+    "openobserve": "Authorization=Basic helper-test",
+    "parseable": "X-API-Key=helper-test",
+    "uptrace": "uptrace-dsn=helper-test",
+    "weave": "wandb-api-key=helper-test",
+}
+# The static credential fields a helper-only entry leaves out; fields that
+# are not the credential (``project``, ``entity`` ...) stay.
+_HELPER_DROPS: Dict[str, Tuple[str, ...]] = {
+    "langfuse": ("public_key", "secret_key"),
+    "langsmith": (),
+    "openobserve": ("user", "password"),
+    "uptrace": ("dsn",),
+}
+
 # Single-type cases beyond PATHS, ``(type, case) -> entry overrides`` on top
-# of the inline entry; recorded as ``<type>__<case>.json``.
+# of the inline entry (``None`` removes a field); recorded as
+# ``<type>__<case>.json``.
 CASES: Dict[Tuple[str, str], Dict[str, Any]] = {
     # A bare origin is completed to /api/<org>/v1/traces (#582).
     ("openobserve", "origin"): {"endpoint": "http://localhost:5080"},
 }
+# A helper-only entry resolves without the static credential (#583).
+for _type, _mints in _HELPER_MINTS.items():
+    CASES[(_type, "helper_only")] = {
+        **{field: None for field in _HELPER_DROPS.get(_type, ("api_key",))},
+        "headers_helper": f"echo {_mints}",
+    }
 
 PATHS = (
     "inline",
@@ -162,7 +194,11 @@ def entry_for(backend_type: str, path: str, monkeypatch) -> Dict[str, Any]:
         entry.update({"metrics_temporality": "delta", "root_usage": False})
     elif path == "logs_block":
         entry["logs"] = {"level": "ERROR", "exclude_loggers": ["noisy"]}
-    entry.update(CASES.get((canonical, path), {}))
+    for field, value in CASES.get((canonical, path), {}).items():
+        if value is None:
+            entry.pop(field, None)
+        else:
+            entry[field] = value
     return entry
 
 
@@ -186,7 +222,8 @@ def env_only_vars(backend_type: str) -> Dict[str, str]:
 # ── masking and normalisation ──────────────────────────────────────────
 
 _PLACEHOLDERS = sorted(
-    {v for creds in _CREDS.values() for v in creds.values()} | {"opt-in-test", "token-test"},
+    {v for creds in _CREDS.values() for v in creds.values()}
+    | {"opt-in-test", "token-test", "helper-test"},
     key=len,
     reverse=True,
 )

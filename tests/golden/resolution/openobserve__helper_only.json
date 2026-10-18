@@ -1,0 +1,115 @@
+{
+ "adapter": {
+  "class": "OpenObserveAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "OpenObserve",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers_helper": "echo Authorization=Basic <secret>",
+  "name": "openobserve-entry",
+  "type": "openobserve"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "Authorization": "Basic <secret>",
+     "stream-name": "default",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "openobserve",
+  "name": "openobserve-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "helper_only",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "openobserve-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": {
+   "stream-name": "default"
+  },
+  "headers_helper": "echo Authorization=Basic <secret>",
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "openobserve"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "OpenObserve",
+  "docs_path": "/backends/openobserve",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces",
+   "headers_helper": "echo Authorization=Basic <secret>"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "openobserve-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "openobserve",
+  "ui": {
+   "note": "derived from the endpoint: OpenObserve serves its UI on the OTLP origin",
+   "source": "derived",
+   "url": "http://localhost:4318"
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "openobserve-entry",
+    "queryable": true,
+    "type": "openobserve"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "openobserve"
+}

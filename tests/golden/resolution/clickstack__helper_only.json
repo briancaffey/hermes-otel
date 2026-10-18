@@ -1,0 +1,112 @@
+{
+ "adapter": {
+  "class": "ClickstackAdapter",
+  "supports_logs": true,
+  "supports_metrics": true
+ },
+ "display_name": "ClickStack",
+ "entry": {
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers_helper": "echo authorization=<secret>",
+  "name": "clickstack-entry",
+  "type": "clickstack"
+ },
+ "log_targets": {
+  "count": 1,
+  "exporters": [
+   {
+    "endpoint": "http://localhost:4318/v1/logs",
+    "headers": {
+     "authorization": "<secret>",
+     "x-global": "g"
+    }
+   }
+  ]
+ },
+ "mcp": {
+  "backend_type": "clickstack",
+  "name": "clickstack-entry",
+  "reason": "traces are not served over a Jaeger or Tempo query API"
+ },
+ "path": "helper_only",
+ "preset_temporality": null,
+ "resolved": {
+  "display_name": "clickstack-entry",
+  "endpoint": "http://localhost:4318/v1/traces",
+  "headers": null,
+  "headers_helper": "echo authorization=<secret>",
+  "log_overrides": null,
+  "logs_endpoint": null,
+  "logs_headers": null,
+  "metrics_endpoint": null,
+  "metrics_headers": null,
+  "metrics_temporality": null,
+  "resource_attributes": null,
+  "root_usage": true,
+  "supports_logs": true,
+  "supports_metrics": true,
+  "supports_traces": true,
+  "type": "clickstack"
+ },
+ "settings_card": {
+  "credentials": [],
+  "display_type": "ClickStack",
+  "docs_path": "/backends/clickstack",
+  "fields": {
+   "endpoint": "http://localhost:4318/v1/traces",
+   "headers_helper": "echo authorization=<secret>"
+  },
+  "headers": null,
+  "known_type": true,
+  "log_overrides": null,
+  "metrics_temporality": {
+   "source": "SDK default",
+   "value": "cumulative"
+  },
+  "name": "clickstack-entry",
+  "query_fields": {},
+  "signals": {
+   "logs": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "metrics": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   },
+   "traces": {
+    "configured": "auto",
+    "exported": true,
+    "supported": true
+   }
+  },
+  "type": "clickstack",
+  "ui": {
+   "note": "the ClickStack UI is on a different port than OTLP ingest; set ui_url on this entry to link the card to the UI",
+   "source": null,
+   "url": null
+  }
+ },
+ "signal_support": {
+  "logs": true,
+  "metrics": true,
+  "traces": true
+ },
+ "status": {
+  "backends": [
+   {
+    "endpoint": "http://localhost:4318/v1/traces",
+    "logs": true,
+    "metrics": true,
+    "name": "clickstack-entry",
+    "queryable": true,
+    "type": "clickstack"
+   }
+  ],
+  "error": null,
+  "rc": 0
+ },
+ "type": "clickstack"
+}
