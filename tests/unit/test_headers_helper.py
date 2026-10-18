@@ -38,6 +38,9 @@ def script(tmp_path: Path, body: str, name: str = "helper.py") -> str:
 
 PRINTS_KV = 'print("Authorization=Bearer first-token-value-0001")\nprint("x-tenant=acme")\n'
 PRINTS_JSON = 'import json\nprint(json.dumps({"Authorization": "Bearer t-1", "x-n": 7}))\n'
+# A real interpreter start can take seconds on a loaded runner; the default
+# 5000 ms would turn a test that spawns one into a timeout failure.
+SLOW_START_MS = 60_000
 
 
 class TestParse:
@@ -85,7 +88,7 @@ class TestParse:
 
 class TestRun:
     def test_kv_script(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_KV))
+        helper = HeadersHelper(script(tmp_path, PRINTS_KV), timeout_ms=SLOW_START_MS)
         assert helper.headers() == {
             "Authorization": "Bearer first-token-value-0001",
             "x-tenant": "acme",
@@ -93,7 +96,7 @@ class TestRun:
         assert helper.runs == 1
 
     def test_json_script(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, PRINTS_JSON))
+        helper = HeadersHelper(script(tmp_path, PRINTS_JSON), timeout_ms=SLOW_START_MS)
         assert helper.headers() == {"Authorization": "Bearer t-1", "x-n": "7"}
 
     def test_argv_is_split_with_shlex_not_a_shell(self, tmp_path):
@@ -101,7 +104,7 @@ class TestRun:
         # argument and is never interpreted: no shell is involved.
         body = "import sys\nprint('x-arg=' + sys.argv[1])\n"
         cmd = script(tmp_path, body) + " 'two words; echo pwned'"
-        helper = HeadersHelper(cmd)
+        helper = HeadersHelper(cmd, timeout_ms=SLOW_START_MS)
         assert helper.argv[-1] == "two words; echo pwned"
         assert helper.headers() == {"x-arg": "two words; echo pwned"}
 
@@ -117,7 +120,7 @@ class TestRun:
             "sys.stderr.write('refresh failed: token=sk-ant-abcdefghijklmnopqrstuvwxyz\\n')\n"
             "sys.exit(3)\n"
         )
-        helper = HeadersHelper(script(tmp_path, body))
+        helper = HeadersHelper(script(tmp_path, body), timeout_ms=SLOW_START_MS)
         with pytest.raises(HeadersHelperError) as exc:
             helper.headers()
         msg = str(exc.value)
@@ -138,14 +141,17 @@ class TestRun:
             helper.headers()
 
     def test_malformed_output_names_the_helper(self, tmp_path):
-        helper = HeadersHelper(script(tmp_path, "print('no equals sign here')\n"))
+        helper = HeadersHelper(
+            script(tmp_path, "print('no equals sign here')\n"), timeout_ms=SLOW_START_MS
+        )
         with pytest.raises(HeadersHelperError, match="line 1 is not Name=value"):
             helper.headers()
 
     def test_runs_with_the_plugin_environment(self, tmp_path, monkeypatch):
         monkeypatch.setenv("HO_TEST_TOKEN", "from-env")
         body = "import os\nprint('x-token=' + os.environ['HO_TEST_TOKEN'])\n"
-        assert HeadersHelper(script(tmp_path, body)).headers() == {"x-token": "from-env"}
+        helper = HeadersHelper(script(tmp_path, body), timeout_ms=SLOW_START_MS)
+        assert helper.headers() == {"x-token": "from-env"}
 
     def test_default_timeout(self):
         assert HeadersHelper("helper").timeout_ms == hh.DEFAULT_TIMEOUT_MS
@@ -180,9 +186,7 @@ class TestCacheAndRefresh:
         return script(tmp_path, body)
 
     def _helper(self, tmp_path: Path) -> HeadersHelper:
-        # A real interpreter start can take seconds on a loaded runner; the
-        # default 5000 ms would turn these into timeout failures.
-        return HeadersHelper(self._counting_script(tmp_path), timeout_ms=60_000)
+        return HeadersHelper(self._counting_script(tmp_path), timeout_ms=SLOW_START_MS)
 
     def test_headers_runs_once_and_caches(self, tmp_path):
         helper = self._helper(tmp_path)
