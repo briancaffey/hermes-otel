@@ -122,7 +122,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 
 | Route | Purpose |
 |---|---|
-| `GET /live/status` | Whether the store can be read (`live`, with a `reason` and the file `path` when not: the module failed to import, or the file could not be opened), how full it is, and `write_error` / `pending` while a commit is being retried |
+| `GET /live/status` | Whether the store can be read (`live`, with a `reason` and the file `path` when not: the module failed to import, the store could not be created, or the file could not be opened), how full it is, and `write_error` / `pending` while a commit is being retried |
 | `GET /live/spans`, `/live/metrics`, `/live/logs` (`since`, `limit`) | Raw rows after a cursor, for streaming |
 | `GET /live/traces` (`lookback_hours` or `start_s`/`end_s`, `session`, `status`, `name`, `kind`, `text`, `trace_id`, `model`, `tool`, `min_duration_ms`, `limit`, `before_ns`, `offset`) | One row per trace, newest start first, with totals counted once: `{traces, total, has_more, next_before_ns}`. Pages are keyset-paged like logs: pass `next_before_ns` (the start of the oldest row shown) back as `before_ns` for the next (older) page, so a turn landing meanwhile never shifts it; `offset` still works. `total` ignores the cursor. A row carries `partial: true` while its root span is missing, and `subagents: {count, tokens, calls, cost}` when the turn delegated (else `null`). `kind` accepts every kind the tab shows, including `other`. A window with `start_s` after `end_s` is a `422` |
 | `GET /live/traces/{trace_id}` | The trace's spans and its summary row (`partial` included) |
@@ -141,7 +141,7 @@ All routes are under `/api/plugins/hermes_otel/`. The streaming views poll the c
 
 ## Troubleshooting
 
-**The Live tab says "Live mode is off".** The dashboard could not import the plugin's `live_store_registry` module, or the file could not be opened (corrupt, or not readable by the dashboard's user); `GET /live/status` names the reason and the path. An empty Live tab with `live: true` and zero rows means nothing is being written: `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files (compare `path` with the gateway's home).
+**The Live tab says "Live mode is off".** The dashboard could not import the plugin's `live_store_registry` module, the store could not be created, or the file could not be opened (corrupt, or not readable by the dashboard's user); `GET /live/status` names the reason and the path. An empty Live tab with `live: true` and zero rows means nothing is being written: `dashboard_live` is `false`, or the gateway and the dashboard resolve different `HERMES_HOME` values and therefore different files (compare `path` with the gateway's home).
 
 **Backend source says "Not configured".** No entry under `backends:` has a type with an adapter. The message lists the types that do.
 

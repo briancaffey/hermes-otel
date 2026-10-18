@@ -174,3 +174,11 @@ class TestOpenObserve:
         assert self._adapter().metric_names(0, 1) == [
             {"name": "hermes_token_usage", "count": 9, "count_scope": "stream"}
         ]
+
+
+def test_missing_credentials_name_hermes_otel_yaml():
+    a = openobserve.OpenObserveAdapter(
+        {"type": "openobserve", "endpoint": "http://localhost:5080/api/default/v1/traces"}
+    )
+    with pytest.raises(BackendError, match="backend entry in hermes_otel.yaml"):
+        a._headers()

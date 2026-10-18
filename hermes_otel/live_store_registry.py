@@ -11,7 +11,7 @@ from __future__ import annotations
 
 import os
 import threading
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, Tuple
 
 from . import live_store as _ls
 from .live_store import LiveStore
@@ -26,6 +26,9 @@ _STORES_BY_PATH: Dict[str, LiveStore] = {}
 # Readers kept at most, beyond the one being asked for: a dashboard that has
 # served many profiles does not hold a connection per profile forever (#290).
 MAX_READERS = 16
+# Why the last attempt to open a home's reader raised, by file, so the
+# dashboard can tell a store that failed to open from a missing module (#616).
+_CREATE_ERRORS: Dict[str, str] = {}
 
 
 def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
@@ -35,11 +38,10 @@ def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
     the Live source must open that profile's file rather than the one the
     process opened first. The process singleton is reused when it already
     points at the same file; other files get one reader each, kept for the
-    life of the process. ``None`` when the file cannot be opened.
+    life of the process. ``None`` when the store cannot be created
+    (:func:`create_error_for_home` says why).
     """
-    # Looked up on the module so the test suite's redirect of the default
-    # path (``conftest``) reaches this reader too.
-    path = os.environ.get("HERMES_OTEL_LIVE_DB") or _ls._default_db_path()
+    path = _home_db_path()
     current = _LIVE_STORE
     if current is not None and str(getattr(current, "db_path", "")) == path:
         return current
@@ -49,11 +51,27 @@ def get_live_store_for_home(create: bool = True) -> Optional[LiveStore]:
         if store is None and create:
             try:
                 store = LiveStore(db_path=path, **_configured_limits())
-            except Exception:  # pragma: no cover
+            except Exception as exc:
+                _CREATE_ERRORS[path] = f"{type(exc).__name__}: {exc}"
                 return None
+            _CREATE_ERRORS.pop(path, None)
             _STORES_BY_PATH[path] = store
             _evict_stale_readers(keep=path)
     return store
+
+
+def _home_db_path() -> str:
+    """The live store file of the Hermes home in force for the caller."""
+    # Looked up on the module so the test suite's redirect of the default
+    # path (``conftest``) reaches this reader too.
+    return os.environ.get("HERMES_OTEL_LIVE_DB") or _ls._default_db_path()
+
+
+def create_error_for_home() -> Optional[Tuple[str, str]]:
+    """``(path, error)`` when creating the caller's home store last raised, else None."""
+    path = _home_db_path()
+    error = _CREATE_ERRORS.get(path)
+    return (path, error) if error else None
 
 
 def _evict_stale_readers(keep: str) -> None:

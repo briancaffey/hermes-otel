@@ -23,8 +23,9 @@ def _get_live_store():
     The dashboard runs in a SEPARATE process from the gateway: it opens the
     shared SQLite file itself (``create=True``) and reads what the gateway
     writes. The store follows the profile of the request (#70): a dashboard
-    serving several profiles reads each one's own file. ``None`` only when the
-    plugin's live store (``hermes_otel.live_store_registry``) cannot be imported.
+    serving several profiles reads each one's own file. ``None`` when the
+    plugin's live store (``hermes_otel.live_store_registry``) cannot be
+    imported or the store cannot be created (:func:`_no_store_reason` says which).
     """
     mod = plugin_module("live_store_registry")
     if mod is None:
@@ -32,22 +33,34 @@ def _get_live_store():
     return mod.get_live_store_for_home(create=True)
 
 
+def _no_store_reason() -> Dict[str, Any]:
+    """Why :func:`_get_live_store` returned ``None``: the module did not
+    import, or it did and creating the store raised (#616)."""
+    mod = plugin_module("live_store_registry")
+    if mod is None:
+        return {
+            "reason": "the hermes_otel.live_store_registry module could not be imported by the dashboard"
+        }
+    failure = mod.create_error_for_home()
+    if failure is None:
+        return {"reason": "the live store could not be created"}
+    path, error = failure
+    return {"reason": f"the live store {path} could not be created: {error}", "path": path}
+
+
 @router.get("/live/status")
 def live_status() -> Dict[str, Any]:
     """Whether the live store can be read, and its current fill.
 
     ``live: false`` names the real cause: the ``hermes_otel.live_store_registry``
-    module could not be imported, or the file could not be opened or initialised
-    (``open_error``). An empty but healthy store is ``live: true`` with zero
+    module could not be imported, creating the store raised, or the file could
+    not be opened or initialised (``open_error``). An empty but healthy store is ``live: true`` with zero
     rows; ``dashboard_live: false`` on the gateway shows up as a store that
     never fills, which the Settings tab reports.
     """
     store = _get_live_store()
     if store is None:
-        return {
-            "live": False,
-            "reason": "the hermes_otel.live_store_registry module could not be imported by the dashboard",
-        }
+        return {"live": False, **_no_store_reason()}
     stats = store.stats()
     if stats.get("open_error"):
         return {

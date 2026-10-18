@@ -144,6 +144,16 @@ class TestStatusAndRoutes:
         assert st["filters"]["roots_only"] == "server" and st["filters"]["status_error"] == "server"
         assert filter_support_of(langfuse.LangfuseAdapter)["roots_only"] == "none"
 
+    def test_status_without_a_config_names_hermes_otel_yaml(self, monkeypatch):
+        monkeypatch.setattr(backends, "load_config", lambda: (None, [], None))
+        app = FastAPI()
+        app.include_router(plugin_api.router)
+        with TestClient(app) as c:
+            st = c.get("/status").json()
+        assert st["configured"] is False
+        assert st["reason"].startswith("No hermes_otel.yaml found. Looked at: ")
+        assert "config.yaml found" not in st["reason"]
+
     def test_status_for_a_chosen_backend(self, client):
         st = client.get("/status", params={"backend": "phx"}).json()
         assert st["active"] == "phx" and st["type"] == "phoenix" and st["metrics"] is False

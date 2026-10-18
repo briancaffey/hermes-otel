@@ -154,7 +154,7 @@ class OpenObserveAdapter(BackendAdapter):
             self.user and self.password,
             "OpenObserve requires basic auth credentials. Set "
             "user + password (or *_env) on the openobserve "
-            "backend entry in config.yaml.",
+            "backend entry in hermes_otel.yaml.",
         )
         return basic_auth(self.user, self.password)
 
