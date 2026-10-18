@@ -234,8 +234,7 @@ def on_subagent_stop(
             "hermes.subagent.child_session_id": truncate_string(child_session_id, _ID_MAX),
         },
         severity="ERROR" if status == "error" else "INFO",
-        session_id=kwargs.get("parent_session_id")
-        or attributes.get("hermes.subagent.parent_session_id"),
+        session_id=parent_session_id or (record.get("parent_session_id") if record else None),
         span=child_span,
     )
     tracer.end_span(key, attributes=attributes, status=status, error_message=error_message)
