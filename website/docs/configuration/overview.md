@@ -62,7 +62,7 @@ Malformed YAML logs a single warning at startup and falls back to defaults — i
 Set exactly one of the backend env vars. First match wins. No `config.yaml` needed for the backend; optional `config.yaml` shapes telemetry.
 
 **Multi-backend (YAML-driven):**
-Set `backends:` in `config.yaml` with one or more entries. Env-var detection is **skipped**. See [Multi-backend fan-out](/backends/multi-backend).
+Set `backends:` in `config.yaml` with one or more entries. Env-var detection is **skipped**. An invalid entry is skipped with a warning; when every entry is invalid the plugin runs live-only (the in-process dashboard store, as with no backend configured) unless `dashboard_live` is off. See [Multi-backend fan-out](/backends/multi-backend).
 
 ## Quick config tour
 

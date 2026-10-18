@@ -245,9 +245,12 @@ class TestConfigBackendsRouting:
         assert len(plugin.pipeline.span_processors) == 1
 
     def test_all_backends_invalid_returns_false(self, monkeypatch):
+        # With the live store on this falls back to live-only (#610,
+        # test_invalid_backends_live_only.py); off, there is nothing to do.
         _clear_backend_env(monkeypatch)
         cfg = HermesOtelConfig(
             backends=(BackendConfig(type="phoenix"),),  # missing endpoint
+            dashboard_live=False,
         )
         plugin = HermesOTelPlugin(config=cfg)
         assert plugin.init() is False

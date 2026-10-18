@@ -244,7 +244,8 @@ class HermesOTelPlugin:
         nothing to do (OTel missing, disabled, no valid backend and no live store).
 
         Resolution order:
-          1. ``config.backends`` non-empty → every valid entry (fan-out).
+          1. ``config.backends`` non-empty → every valid entry (fan-out); with
+             none valid, live-only like step 3.
           2. Explicit ``endpoint`` arg → single Phoenix backend.
           3. Legacy env-var detection (single backend, first match wins, in
              the order of ``backend_specs.ENV_PRIORITY``); with none set and
@@ -271,7 +272,9 @@ class HermesOTelPlugin:
                     backends.append(rb)
             if not backends:
                 logger.warning("[hermes-otel] ✗ config.backends had no valid entries")
-                return None
+                # Same as an empty config (#610): the live store keeps the
+                # dashboard working, so one bad entry does not hide the turn.
+                return self._live_only_or_none()
             return backends
 
         # 2. Explicit endpoint arg → single Phoenix backend.
@@ -296,22 +299,30 @@ class HermesOTelPlugin:
             # switch to live-only mode is not silent (#259).
             for hint in _backends.env_opt_in_hints():
                 logger.info("[hermes-otel] %s", hint)
-            # No external backend — but the in-process live store still gives a
-            # working zero-config dashboard. Stand up a live-only pipeline.
-            if self.config.dashboard_live:
-                logger.info(
-                    "[hermes-otel] No OTLP backend configured — running in "
-                    "live-only mode (in-process dashboard store)."
+            live = self._live_only_or_none()
+            if live is None:
+                types = ", ".join(ENV_PRIORITY)
+                logger.warning(
+                    "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
+                    f"type's credentials for one of: {types}; or define 'backends:' in "
+                    "hermes_otel.yaml)"
                 )
-                return []
-            types = ", ".join(ENV_PRIORITY)
-            logger.warning(
-                "[hermes-otel] ✗ No backend configured (set OTEL_<TYPE>_ENDPOINT and the "
-                f"type's credentials for one of: {types}; or define 'backends:' in "
-                "hermes_otel.yaml)"
-            )
-            return None
+            return live
         return [rb]
+
+    def _live_only_or_none(self) -> Optional[List[_ResolvedBackend]]:
+        """``[]`` (a live-only pipeline) when the live store is on, else ``None``.
+
+        With no usable external backend the in-process live store still gives
+        a working dashboard, so the plugin stays enabled and its hooks register.
+        """
+        if not self.config.dashboard_live:
+            return None
+        logger.info(
+            "[hermes-otel] No OTLP backend configured — running in "
+            "live-only mode (in-process dashboard store)."
+        )
+        return []
 
     # ── Events ───────────────────────────────────────────────────────────
 

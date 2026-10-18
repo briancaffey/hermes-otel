@@ -84,6 +84,40 @@ class TestInitPhoenix:
                     ls._LIVE_STORE.close()
                 ls._LIVE_STORE = None  # don't leak the singleton into other tests
 
+    def test_all_invalid_backends_fall_back_to_live_only(self, monkeypatch, caplog):
+        """Every ``backends:`` entry invalid → live-only like an empty config,
+        with the warning kept (#610)."""
+        _clear_backend_env(monkeypatch)
+        import hermes_otel.live_store_registry as ls
+
+        bad = [BackendConfig(type="nope", endpoint="http://x"), BackendConfig(type="langfuse")]
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(backends=bad, dashboard_live=True))
+        with patch("hermes_otel.pipeline.trace.set_tracer_provider"):
+            try:
+                with caplog.at_level("INFO", logger="hermes_otel"):
+                    assert plugin.init() is True
+                assert plugin.is_enabled is True
+                assert plugin.pipeline.live_active is True
+            finally:
+                plugin.shutdown()
+                if ls._LIVE_STORE is not None:
+                    ls._LIVE_STORE.close()
+                ls._LIVE_STORE = None
+        messages = [r.getMessage() for r in caplog.records]
+        assert any("config.backends had no valid entries" in m for m in messages)
+        assert any("live-only mode" in m for m in messages)
+
+    def test_one_valid_backend_is_kept_beside_an_invalid_one(self, monkeypatch):
+        _clear_backend_env(monkeypatch)
+        entries = [
+            BackendConfig(type="nope", endpoint="http://x"),
+            BackendConfig(type="jaeger", endpoint="http://localhost:4318/v1/traces"),
+        ]
+        plugin = HermesOTelPlugin(config=HermesOtelConfig(backends=entries, dashboard_live=True))
+        with patch(_BUILD, return_value=Pipeline()) as mock_pipeline:
+            assert plugin.init() is True
+        assert [rb.type for rb in mock_pipeline.call_args[0][1]] == ["jaeger"]
+
     def test_init_with_explicit_endpoint_arg(self, monkeypatch):
         _clear_backend_env(monkeypatch)
 
