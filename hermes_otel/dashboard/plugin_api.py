@@ -30,23 +30,30 @@ _HERE = Path(__file__).resolve().parent
 def _ensure_plugin_package_importable() -> None:
     """Make ``hermes_otel`` importable, preferring the package THIS file lives in.
 
-    The plugins directory goes to the front of ``sys.path`` before the first
+    The plugins directory goes to the front of ``sys.path`` for the first
     import, so a stale copy in site-packages (or a sibling checkout) cannot
-    win over the package the API file ships with (#290). A package that is
-    already imported is left alone: re-importing would give the router a
-    second copy of the live-store singleton.
+    win over the package the API file ships with (#290). It comes off again
+    right after (#638): left there, every sibling plugin directory would
+    shadow the installed package of the same name for the life of the
+    dashboard process (the honcho memory plugin's ``honcho/`` hid the
+    ``honcho-ai`` SDK). Once imported, ``hermes_otel`` finds its submodules
+    through ``hermes_otel.__path__``. A package that is already imported is
+    left alone: re-importing would give the router a second copy of the
+    live-store singleton.
     """
     if "hermes_otel" in sys.modules:
         return
     pkg_parent = str(_HERE.parent.parent)
-    if (_HERE.parent.parent / "hermes_otel" / "__init__.py").exists():
-        if pkg_parent in sys.path:
-            sys.path.remove(pkg_parent)
+    inserted = (_HERE.parent.parent / "hermes_otel" / "__init__.py").exists()
+    if inserted:
         sys.path.insert(0, pkg_parent)
     try:
         import hermes_otel  # noqa: F401
     except ImportError:
         pass
+    finally:
+        if inserted and pkg_parent in sys.path:
+            sys.path.remove(pkg_parent)  # the first occurrence: the one inserted above
 
 
 _ensure_plugin_package_importable()
