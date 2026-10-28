@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.32.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.2...hermes-otel-v1.32.3) (2026-10-28)
+
+
+### Bug Fixes
+
+* classify gateway-run chat -q turns as oneshot and keep the e2e tier green on hermes-agent main ([#637](https://github.com/briancaffey/hermes-otel/issues/637)) ([#641](https://github.com/briancaffey/hermes-otel/issues/641)) ([0dc1f14](https://github.com/briancaffey/hermes-otel/commit/0dc1f14233f4d089af5898c7e34dd7e12cf8bde5))
+* **dashboard:** take the plugins dir off sys.path after importing hermes_otel ([#638](https://github.com/briancaffey/hermes-otel/issues/638)) ([#640](https://github.com/briancaffey/hermes-otel/issues/640)) ([ac17f25](https://github.com/briancaffey/hermes-otel/commit/ac17f252761313dbb3f979627c3843bcd7022971))
+
 ## [1.32.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.1...hermes-otel-v1.32.2) (2026-10-18)
 
 
