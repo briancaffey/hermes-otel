@@ -4,35 +4,25 @@ query windows and the bucket-count guard (#403)."""
 
 from __future__ import annotations
 
-import sys
 import time
-from pathlib import Path
 from typing import Optional, Tuple
 
 from fastapi import HTTPException
 
-_HERE = Path(__file__).resolve().parent
-
 
 def plugin_module(name: str):
-    """Import ``hermes_otel.<name>``, adding the plugins dir to sys.path if needed.
+    """Import ``hermes_otel.<name>``; None when the import fails.
 
-    The Hermes plugin loader imports this API file by path, so ``hermes_otel``
-    may not be importable yet; the package's parent (…/plugins) is added
-    defensively. Returns None when the import fails either way.
+    This module is itself part of ``hermes_otel``, so the package is already
+    imported and its submodules resolve through ``hermes_otel.__path__``; the
+    plugins directory never needs to go on ``sys.path`` (#638).
     """
     import importlib
 
     try:
         return importlib.import_module(f"hermes_otel.{name}")
     except Exception:
-        pkg_parent = _HERE.parent.parent
-        if str(pkg_parent) not in sys.path:
-            sys.path.insert(0, str(pkg_parent))
-        try:
-            return importlib.import_module(f"hermes_otel.{name}")
-        except Exception:
-            return None
+        return None
 
 
 # At most this many buckets per metrics query: ``bucket_s=1`` over a year
