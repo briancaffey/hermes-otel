@@ -170,12 +170,17 @@ _PLATFORM_TRIGGERS = {
 
 
 def turn_trigger(
-    platform: Any, *, is_subagent: bool = False, env: Callable[[str], str] = lambda _n: ""
+    platform: Any,
+    *,
+    is_subagent: bool = False,
+    env: Callable[[str], str] = lambda _n: "",
+    finite: bool = False,
 ) -> str:
     """Classify what started a turn into one of :data:`TURN_TRIGGERS`.
 
     ``env(name)`` reads a Hermes session variable (context var first, then the
-    process environment). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
+    process environment). ``finite`` is whether Hermes admitted the turn as a
+    single-query one (see :func:`finite_turn`). ``/loop``, ``/heartbeat`` and ``/goal`` re-entries
     and bot-to-bot DMs are not observable as such at turn start (only as a
     message prefix), so they classify as the turn they ride on.
     """
@@ -190,15 +195,32 @@ def turn_trigger(
         return _PLATFORM_TRIGGERS[p]
     if env("HERMES_SESSION_SOURCE").strip().lower() == "a2a":
         return "a2a"
-    if env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
+    if finite or env("HERMES_SINGLE_QUERY_SESSION").strip() in ("1", "true"):
         return "oneshot"
     return "user"
+
+
+def finite_turn() -> bool:
+    """Whether Hermes admitted the current turn as a single-query one
+    (``chat -q``, ``-z``). Newer Hermes runs those turns in its gateway, whose
+    environment has no HERMES_SINGLE_QUERY_SESSION; the turn's admission
+    carries the fact instead (#637). False on a Hermes without it."""
+    try:
+        from gateway.session_finite import finite_turn_required  # type: ignore[import-not-found]
+
+        return finite_turn_required() is True
+    except Exception:
+        return False
 
 
 def turn_trigger_attributes(platform: Any, is_subagent: bool = False) -> Dict[str, str]:
     """``hermes.turn.trigger``: what started the turn (#394), see
     :func:`turn_trigger`."""
-    return {"hermes.turn.trigger": turn_trigger(platform, is_subagent=is_subagent, env=session_env)}
+    return {
+        "hermes.turn.trigger": turn_trigger(
+            platform, is_subagent=is_subagent, env=session_env, finite=finite_turn()
+        )
+    }
 
 
 def configured_default_model() -> str:

@@ -38,6 +38,39 @@ def test_classification(platform, env, expected):
     assert expected in TURN_TRIGGERS
 
 
+@pytest.mark.parametrize(
+    "platform, env, expected",
+    [
+        # Newer Hermes runs a `chat -q` turn in its gateway: no env marker,
+        # the turn's admission says it is finite (#637)
+        ("cli", {}, "oneshot"),
+        ("cli", {"HERMES_KANBAN_TASK": "t_1"}, "kanban"),
+        ("cron", {}, "cron"),
+        ("api_server", {}, "api"),
+    ],
+)
+def test_finite_admission(platform, env, expected):
+    assert turn_trigger(platform, env=_env(**env), finite=True) == expected
+
+
+def test_finite_turn_reads_the_gateway_admission(monkeypatch):
+    import sys
+    import types
+
+    from hermes_otel.hooks import attributes
+
+    finite = types.ModuleType("gateway.session_finite")
+    gateway = types.ModuleType("gateway")
+    gateway.session_finite = finite
+    monkeypatch.setitem(sys.modules, "gateway", gateway)
+    monkeypatch.setitem(sys.modules, "gateway.session_finite", finite)
+    for value, expected in ((True, True), (None, False), (False, False)):
+        finite.finite_turn_required = lambda value=value: value
+        assert attributes.finite_turn() is expected
+    del finite.finite_turn_required  # an older Hermes
+    assert attributes.finite_turn() is False
+
+
 def test_registry_rejoin_wins():
     assert turn_trigger("cli", is_subagent=True) == "subagent"
 

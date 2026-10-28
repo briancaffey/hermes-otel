@@ -36,6 +36,9 @@ jobs:
           python-version: "3.14"
       - name: Install Hermes Agent from main
         id: hermes
+        # A failed install is a break too (#637): it files the issue below
+        # instead of ending the job before any step that reports it.
+        continue-on-error: true
         run: |
           set -euo pipefail
           git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
@@ -44,10 +47,12 @@ jobs:
           echo "sha=$sha" >> "$GITHUB_OUTPUT"
           # A pip-installed Hermes manages no plugin venv, so the plugin's own
           # dependencies go into the same interpreter (hermes_otel/requirements.txt).
-          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt
+          scripts/install_hermes_checkout.sh "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt 2>&1 \
+            | tee "$RUNNER_TEMP/e2e.log"
           hermes --version
       - name: Run the e2e tier (make ci-e2e)
         id: e2e
+        if: steps.hermes.outcome == 'success'
         continue-on-error: true
         env:
           HERMES_E2E_HOME: ${{ runner.temp }}/hermes-e2e-home
@@ -55,16 +60,21 @@ jobs:
           set -o pipefail
           make ci-e2e 2>&1 | tee "$RUNNER_TEMP/e2e.log"
       - name: Open or update the tracking issue
-        if: steps.e2e.outcome == 'failure'
+        if: steps.hermes.outcome == 'failure' || steps.e2e.outcome == 'failure'
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
           HERMES_SHA: ${{ steps.hermes.outputs.sha }}
+          HERMES_OUTCOME: ${{ steps.hermes.outcome }}
         run: |
           set -euo pipefail
           {
-            echo "\`make ci-e2e\` (tests/e2e_ci) failed against hermes-agent main @ \`$HERMES_SHA\`."
+            if [ "$HERMES_OUTCOME" = failure ]; then
+              echo "Installing hermes-agent main @ \`${HERMES_SHA:-unknown}\` failed, so the e2e tier (tests/e2e_ci) did not run."
+            else
+              echo "\`make ci-e2e\` (tests/e2e_ci) failed against hermes-agent main @ \`$HERMES_SHA\`."
+            fi
             echo
             echo "Run: $RUN_URL"
             echo
@@ -98,7 +108,7 @@ jobs:
             gh issue close "$number" --comment "Green again against hermes-agent main @ \`$HERMES_SHA\`: $RUN_URL"
           fi
       - name: Report the verdict
-        if: steps.e2e.outcome == 'failure'
+        if: steps.hermes.outcome == 'failure' || steps.e2e.outcome == 'failure'
         run: |
-          echo "the e2e tier failed against hermes-agent main; see the tracking issue"
+          echo "hermes-agent main failed to install or failed the e2e tier; see the tracking issue"
           exit 1

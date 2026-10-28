@@ -204,5 +204,8 @@ def test_resumed_turn_is_turn_two(hermes):
     assert llm.attributes["hermes.turn.number"] == 2
     (start,) = _events(receiver, "hermes.turn.start", first_session)
     assert start.body == "turn 2 started"
+    # What this session added: on Hermes main one gateway runs every `hermes
+    # chat` process's turns, so the cumulative histogram spans sessions (#637).
     turns = [p for p in receiver.points if p.name == "hermes.session.turns"]
-    assert turns and {p.value["sum"] for p in turns} == {2.0}, turns
+    added = [a for a in map(receiver.increase, turns) if a["count"]]
+    assert added == [{"count": 1, "sum": 2.0}], turns
