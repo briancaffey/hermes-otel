@@ -282,6 +282,7 @@ class MetricPoint:
     attributes: Dict[str, Any]
     value: Any  # a number for sums and gauges, {"count", "sum"} for histograms
     kind: str  # sum | gauge | histogram
+    start_ns: int = 0  # startTimeUnixNano: one cumulative series per process and attribute set
 
 
 @dataclass
@@ -376,7 +377,15 @@ def _points_of(request: Dict[str, Any]) -> List[MetricPoint]:
                             }
                         else:
                             value = _number(dp)
-                        out.append(MetricPoint(name=name, attributes=attrs, value=value, kind=kind))
+                        out.append(
+                            MetricPoint(
+                                name=name,
+                                attributes=attrs,
+                                value=value,
+                                kind=kind,
+                                start_ns=int(dp.get("startTimeUnixNano", 0)),
+                            )
+                        )
     return out
 
 
@@ -419,6 +428,9 @@ class OtlpReceiver:
         self._lock = threading.Lock()
         self.spans: List[Span] = []
         self.points: List[MetricPoint] = []
+        # Every point since the receiver started; ``clear`` keeps it, so
+        # ``increase`` can find a series' previous point from an earlier turn.
+        self.history: List[MetricPoint] = []
         self.logs: List[LogRecord] = []
         self.requests: List[str] = []
         self.bad_requests: List[str] = []
@@ -472,9 +484,32 @@ class OtlpReceiver:
             if path == "/v1/traces":
                 self.spans.extend(_spans_of(request))
             elif path == "/v1/metrics":
-                self.points.extend(_points_of(request))
+                points = _points_of(request)
+                self.points.extend(points)
+                self.history.extend(points)
             else:
                 self.logs.extend(_logs_of(request))
+
+    def increase(self, point: MetricPoint) -> Any:
+        """What a cumulative sum or histogram ``point`` added since the previous
+        point of its series (same name, attributes and start time), or since
+        the series started. A Hermes gateway serves several ``hermes chat``
+        processes, so its series span sessions (#637)."""
+        with self._lock:
+            earlier = self.history[: next(i for i, p in enumerate(self.history) if p is point)]
+        previous = next(
+            (
+                p
+                for p in reversed(earlier)
+                if (p.name, p.attributes, p.start_ns)
+                == (point.name, point.attributes, point.start_ns)
+            ),
+            None,
+        )
+        if point.kind == "histogram":
+            before = previous.value if previous else {"count": 0, "sum": 0.0}
+            return {k: point.value[k] - before[k] for k in ("count", "sum")}
+        return point.value - (previous.value if previous else 0)
 
     def clear(self) -> None:
         with self._lock:

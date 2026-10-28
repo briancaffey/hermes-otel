@@ -152,10 +152,6 @@ jobs:
           # (see catalog-admission.yml): older interpreters install a CLI
           # that fails at import.
           python-version: "3.14"
-      - uses: actions/cache@0400d5f644dc74513175e3cd8d07132dd4860809 # v4.2.4
-        with:
-          path: ~/.cache/pip
-          key: hermes-e2e-pip-${{ runner.os }}-${{ env.HERMES_VERSION }}
       - name: Install Hermes Agent ${{ env.HERMES_VERSION }}
         run: |
           set -euo pipefail
@@ -163,7 +159,8 @@ jobs:
           echo "hermes-agent $HERMES_VERSION @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
           # A pip-installed Hermes manages no plugin venv, so the plugin's own
           # dependencies go into the same interpreter (hermes_otel/requirements.txt).
-          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt
+          # Through uv with hermes-agent's own overrides, which pip ignores (#637).
+          scripts/install_hermes_checkout.sh "$RUNNER_TEMP/hermes-agent" -r hermes_otel/requirements.txt
           hermes --version
       - name: Run the e2e tier (make ci-e2e)
         # The `runner` context is a step-level thing; a job-level env cannot use it.

@@ -240,6 +240,24 @@ class HermesRunner:
         self.turns.append(turn)
         return turn
 
+    def stop_gateway(self) -> None:
+        """Stop the gateway Hermes main starts to run a ``hermes chat`` turn in
+        (#637). It outlives the chat process, and a later run against a kept
+        ``HERMES_E2E_HOME`` would reuse it, plugin and dead receiver port
+        included. A Hermes that started none says so and exits."""
+        try:
+            subprocess.run(
+                [self.binary, "gateway", "stop"],
+                env=self.env(),
+                cwd=str(self.cwd),
+                stdin=subprocess.DEVNULL,
+                capture_output=True,
+                timeout=TURN_TIMEOUT_S,
+                check=False,
+            )
+        except subprocess.TimeoutExpired:
+            pass
+
     def completed_session(self) -> Optional[str]:
         """The session id of an earlier successful fresh turn, if any."""
         for turn in self.turns:
@@ -255,6 +273,9 @@ def hermes(
     provider: ScriptedProvider,
     receiver: OtlpReceiver,
     tmp_path_factory: pytest.TempPathFactory,
-) -> HermesRunner:
+) -> Iterator[HermesRunner]:
     workdir = tmp_path_factory.mktemp("hermes-workdir")
-    return HermesRunner(hermes_bin, hermes_home, provider, receiver, workdir)
+    runner = HermesRunner(hermes_bin, hermes_home, provider, receiver, workdir)
+    runner.stop_gateway()  # one left from an earlier run against this home
+    yield runner
+    runner.stop_gateway()

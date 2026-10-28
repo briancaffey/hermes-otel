@@ -75,13 +75,15 @@ Useful for regression-testing attribute conventions — if you change a span att
 
 The one tier that runs the **real `hermes` binary**, in CI, with no secret. Three
 tests, each a separate `hermes chat -Q --yolo -q "<prompt>"` process in a throwaway
-`HERMES_HOME` whose plugin is this checkout's `hermes_otel/`:
+`HERMES_HOME` whose plugin is this checkout's `hermes_otel/`. Newer Hermes runs those
+turns in a gateway it starts for the home, which outlives each `hermes chat` process and
+loads the plugin once for all three; the fixture stops it at the end:
 
 | test | the turn | what the receiver must show |
 |---|---|---|
 | `test_one_turn_exports_spans_metrics_and_events` | one scripted answer | the `agent` root (`hermes.turn.number` 1, `hermes.turn.trigger` oneshot, usage 12/7), `llm.scripted-model` under it, `api.scripted-model` under that; `hermes.token.usage` sums by token type; `hermes.turn.start` / `hermes.turn.end` events |
 | `test_tool_call_turn_exports_a_tool_span` | a scripted `terminal` call (`echo e2e-marker`), then an answer | `tool.terminal` in the root's trace (`completed`), the tool output sent back to the model, `hermes.tool.call` event, `hermes.tool.duration` histogram, the root's roll-up (24 input tokens, `hermes.turn.tool_count` 1) |
-| `test_resumed_turn_is_turn_two` | `hermes chat -r <session>` in a new process | `hermes.turn.number` 2 on the new trace, the replayed conversation in the model request, `hermes.session.turns` 2 ([#466](https://github.com/briancaffey/hermes-otel/issues/466) regression) |
+| `test_resumed_turn_is_turn_two` | `hermes chat -r <session>` in a new process | `hermes.turn.number` 2 on the new trace, the replayed conversation in the model request, `hermes.session.turns` adds one session of 2 turns ([#466](https://github.com/briancaffey/hermes-otel/issues/466) regression; read as the increase over the series' previous point, since a gateway's histogram spans sessions) |
 
 Two loopback servers stand in for the world (`tests/e2e_ci/_servers.py`):
 
@@ -117,9 +119,11 @@ In CI, `.github/workflows/test.yml` (`e2e-hermes`) installs **a pinned Hermes**
 (`HERMES_VERSION`, the version the maintainer runs; bump it with `hermes --version`)
 together with the plugin's `hermes_otel/requirements.txt` (a pip-installed Hermes manages no
 plugin venv, so the dependencies go into the same interpreter) and runs `make ci-e2e` on
-every pull request. `.github/workflows/e2e-hermes-main.yml`
+every pull request. The install goes through `scripts/install_hermes_checkout.sh`, which hands
+uv the `[tool.uv] override-dependencies` from hermes-agent's `pyproject.toml`; a plain
+`pip install -e` ignores them and cannot resolve hermes-agent main. `.github/workflows/e2e-hermes-main.yml`
 runs the same tier weekly against **hermes-agent main** and is allowed to fail: a
-failure opens one issue (labels `bug`, `blocked: upstream`) or comments on the open
+failed install or test run opens one issue (labels `bug`, `blocked: upstream`) or comments on the open
 one with the run link and the log tail, and the next green run closes it. That is
 where a Hermes change to a hook payload or to session resumption surfaces first.
 

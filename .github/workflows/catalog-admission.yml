@@ -27,6 +27,7 @@ jobs:
       HERMES_HOME: ${{ github.workspace }}/.hermes-home
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
       - uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6.2.0
         with:
           # hermes-agent's PM toolchain locks CPython 3.14 (pm/lock.json) and,
@@ -35,14 +36,16 @@ jobs:
           # CLI without ruamel, rich, etc. and `hermes` fails at import.
           python-version: "3.14"
       - name: Install Hermes Agent from main (what the upstream catalog CI installs)
-        # Upstream runs `pip install -e .` on its own checkout, i.e. hermes-agent
-        # main, so the gate is main's validator (`--install-deps` is newer than
-        # the latest tag). The sha is logged for the record.
+        # Upstream prepares its own checkout, i.e. hermes-agent main, so the
+        # gate is main's validator (`--install-deps` is newer than the latest
+        # tag). Installed through uv with main's [tool.uv] overrides, which a
+        # plain `pip install -e` ignores and then fails to resolve (#637). The
+        # sha is logged for the record.
         run: |
           set -euo pipefail
           git clone --quiet --depth 1 --branch main https://github.com/NousResearch/hermes-agent "$RUNNER_TEMP/hermes-agent"
           echo "hermes-agent main @ $(git -C "$RUNNER_TEMP/hermes-agent" rev-parse --short HEAD)"
-          pip install --quiet -e "$RUNNER_TEMP/hermes-agent" pyyaml
+          scripts/install_hermes_checkout.sh "$RUNNER_TEMP/hermes-agent" pyyaml
           mkdir -p "$HERMES_HOME"
           hermes --version
       - name: hermes plugins validate --install-deps (the catalog gate)
