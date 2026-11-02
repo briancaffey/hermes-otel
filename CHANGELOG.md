@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.4](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.3...hermes-otel-v1.32.4) (2026-11-02)
+
+
+### Bug Fixes
+
+* register the plugin in Hermes's hermes_agent.plugins entry-point group ([#643](https://github.com/briancaffey/hermes-otel/issues/643)) ([#644](https://github.com/briancaffey/hermes-otel/issues/644)) ([4dbcb28](https://github.com/briancaffey/hermes-otel/commit/4dbcb28db77856def894e968f25c25208647e153))
+
 ## [1.32.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.2...hermes-otel-v1.32.3) (2026-10-28)
 
 
