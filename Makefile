@@ -143,3 +143,6 @@ ci-wheel:
 	for f in hermes_otel/plugin.yaml hermes_otel/dashboard/dist/index.js hermes_otel/skills/observability/SKILL.md hermes_otel/hooks/__init__.py hermes_otel/hooks/tools.py; do \
 	  echo "$$listing" | grep -q "$$f" || { echo "missing from wheel: $$f"; exit 1; }; \
 	done; echo "✓ wheel contains the plugin files"
+	@unzip -p dist/*.whl '*.dist-info/entry_points.txt' | grep -A1 -x '\[hermes_agent.plugins\]' | grep -qx 'hermes_otel = hermes_otel:register' \
+	  || { echo "wheel does not register hermes_otel in hermes_agent.plugins (#643)"; exit 1; }; \
+	echo "✓ wheel registers the hermes_agent.plugins entry point"

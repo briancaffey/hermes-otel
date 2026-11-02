@@ -116,6 +116,37 @@ To have Hermes load your working copy, point the plugin directory at the package
 ln -s ~/git/hermes-otel/hermes_otel ~/.hermes/plugins/hermes_otel
 ```
 
+## Installing with pip (container images) {#pip}
+
+Since 1.32.4 the package registers itself in Hermes's `hermes_agent.plugins` entry-point group, so
+installing it into Hermes's Python is enough for Hermes to find it. This suits images with a
+read-only root filesystem, where the plugin has to be baked in at build time. Earlier versions
+declared the wrong group and were never discovered this way (#643).
+
+The package is not on PyPI; install a release from its source archive. The official image has
+neither pip nor uv in its venv, so copy uv in:
+
+```dockerfile
+FROM nousresearch/hermes-agent:v0.22.5
+COPY --from=ghcr.io/astral-sh/uv:0.9.5 /uv /usr/local/bin/uv
+RUN uv pip install --no-cache --python /opt/hermes/.venv/bin/python \
+      https://github.com/briancaffey/hermes-otel/archive/refs/tags/hermes-otel-v1.32.4.tar.gz
+```
+
+Then list `hermes_otel` under `plugins.enabled` in the `config.yaml` of the Hermes home (or run
+`hermes plugins enable hermes_otel` once). `hermes plugins list` shows it with source
+`entrypoint`. The OpenTelemetry packages and PyYAML come in as the package's own dependencies.
+
+Differences from a directory install:
+
+- **No dashboard tab.** Hermes's dashboard reads plugin tabs from plugin directories only.
+  Traces, metrics and logs are unaffected.
+- **A directory install wins.** If `plugins/hermes_otel/` also exists in the Hermes home, Hermes
+  loads that copy and ignores the entry point.
+- **Nothing is written next to the code.** The config file, the live store and the debug log all
+  live under the Hermes home (`$HERMES_HOME`), so site-packages can stay read-only.
+- **Upgrades are a rebuild.** Change the release in the archive URL and rebuild the image.
+
 ## Optional extras
 
 PyYAML, which reads [`hermes_otel.yaml`](/configuration/yaml), is a declared dependency and is installed with the plugin. Without it only env vars and defaults apply.
