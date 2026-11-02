@@ -95,7 +95,7 @@ e2e = [
     "openai",
 ]
 
-[project.entry-points."hermes.plugin"]
+[project.entry-points."hermes_agent.plugins"]
 hermes_otel = "hermes_otel:register"
 
 [tool.pytest.ini_options]
@@ -193,9 +193,11 @@ packages = ["hermes_otel", "hermes_otel.hooks"]
 hermes_otel = [
     "plugin.yaml",
     "LICENSE",
+    "after-install.md",
+    "requirements.txt",
     "skills/**/*",
     "dashboard/manifest.json",
-    "dashboard/plugin_api.py",
+    "dashboard/*.py",
     "dashboard/backends/*.py",
     "dashboard/dist/*",
 ]
