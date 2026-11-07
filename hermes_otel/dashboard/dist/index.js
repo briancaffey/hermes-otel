@@ -1361,6 +1361,10 @@
       for (const p of c) {
         if (typeof p === "string") out.push({ type: "text", text: p });
         else if (p && typeof p === "object" && typeof p.text === "string") out.push({ type: "text", text: p.text });
+        else if (p && typeof p === "object" && (p.type === "text" || p.type === "reasoning") && typeof p.content === "string")
+          out.push({ type: "text", text: p.content });
+        else if (p && typeof p === "object" && p.type === "tool_call_response")
+          out.push({ type: "text", text: typeof p.response === "string" ? p.response : JSON.stringify(p.response) });
         else if (p && typeof p === "object" && (p.type === "tool_use" || p.type === "tool_call")) {
           const tc = toolCallOf(p);
           if (tc) out.push({ type: "tool_call", ...tc });
@@ -1371,7 +1375,7 @@
     return [{ type: "other", label: "content", value: c }];
   }
   function parseChat(raw) {
-    var _a, _b, _c;
+    var _a, _b, _c, _d;
     const v = parseJsonish(raw);
     const list = Array.isArray(v) ? v : v && typeof v === "object" && (v.role || v["message.role"]) ? [v] : null;
     if (!list || !list.length) return null;
@@ -1380,8 +1384,9 @@
       if (!m || typeof m !== "object") return null;
       const role = (_a = m.role) != null ? _a : m["message.role"];
       if (typeof role !== "string") return null;
-      const parts2 = partsOfContent((_b = m.content) != null ? _b : m["message.content"]);
-      const tcs = (_c = m.tool_calls) != null ? _c : m["message.tool_calls"];
+      const parts2 = partsOfContent((_c = (_b = m.content) != null ? _b : m["message.content"]) != null ? _c : m.parts);
+      const response = Array.isArray(m.parts) ? m.parts.find((p) => p && p.type === "tool_call_response") : null;
+      const tcs = (_d = m.tool_calls) != null ? _d : m["message.tool_calls"];
       if (Array.isArray(tcs)) {
         for (const tc of tcs) {
           const call = toolCallOf(tc);
@@ -1391,7 +1396,7 @@
       out.push({
         role,
         parts: parts2,
-        toolCallId: m.tool_call_id != null ? String(m.tool_call_id) : null,
+        toolCallId: m.tool_call_id != null ? String(m.tool_call_id) : response && response.id != null ? String(response.id) : null,
         name: typeof m.name === "string" ? m.name : null
       });
     }
@@ -1449,6 +1454,12 @@
     if (!sep) return null;
     return value.split(sep).map((s) => s.trim()).filter(Boolean);
   }
+  function textParts(raw) {
+    const v = parseJsonish(raw);
+    if (!Array.isArray(v) || !v.length) return null;
+    if (!v.every((p) => p && typeof p === "object" && p.type === "text" && typeof p.content === "string")) return null;
+    return v.map((p) => p.content).join("\n\n");
+  }
   function classify(key, raw) {
     if (raw == null || raw === "") return { kind: "empty", value: raw, text: "" };
     const text = typeof raw === "string" ? raw : JSON.stringify(raw);
@@ -1469,6 +1480,8 @@
       if (/duration_s$/.test(k)) return { kind: "duration", value: num * 1e3, text };
       return { kind: "count", value: num, text };
     }
+    const instructions = textParts(raw);
+    if (instructions != null) return { kind: "markdown", value: instructions, text };
     const chat = parseChat(raw);
     if (chat) return { kind: "messages", value: chat, text };
     const calls = parseToolCalls(raw);

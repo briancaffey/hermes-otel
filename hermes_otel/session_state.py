@@ -148,6 +148,10 @@ class PerSession:
     # (``response_model`` on post_api_request). Empty when none was reported;
     # never defaulted to the request model (#155).
     response_model: str = ""
+    # The finish reason of the last main-loop API attempt that reported one
+    # (``finish_reason`` on post_api_request). post_llm_call carries none, and
+    # the llm.* span's gen_ai.output.messages entry requires one.
+    finish_reason: str = ""
     # The model the turn started on (``on_session_start`` / the lazy root),
     # kept so a delegated child can say whether it inherited it (#391).
     model: str = ""
@@ -211,6 +215,7 @@ class PerSession:
         *,
         provider: str,
         response_model: str,
+        finish_reason: str = "",
     ) -> None:
         """Account one completed main-loop API attempt.
 
@@ -219,6 +224,8 @@ class PerSession:
         reported response model roll onto the turn for ``on_session_end``.
         """
         self.last_api_failed = False
+        if finish_reason:
+            self.finish_reason = truncate_string(str(finish_reason), 64)
         if totals is None:
             return
         for key in USAGE_FIELDS:
