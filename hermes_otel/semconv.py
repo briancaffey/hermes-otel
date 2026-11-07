@@ -496,7 +496,7 @@ ROWS: Tuple[Row, ...] = (
         "llm.*",
         "content",
         "string (JSON)",
-        "Same content in the gen_ai message shape",
+        "Same content in the [OTel GenAI parts schema](#gen-ai-message-schema)",
     ),
     Row(
         ("output.value", "output.mime_type"),
@@ -518,7 +518,11 @@ ROWS: Tuple[Row, ...] = (
         "Set only when the preview was clipped: `true` and the value's original length (optional)",
     ),
     Row(
-        ("gen_ai.output.messages",), "llm.*", "content", "string (JSON)", "Same in the gen_ai shape"
+        ("gen_ai.output.messages",),
+        "llm.*",
+        "content",
+        "string (JSON)",
+        "Same content in the [OTel GenAI parts schema](#gen-ai-message-schema)",
     ),
     Row(
         ("gen_ai.response.model",),
@@ -609,14 +613,18 @@ ROWS: Tuple[Row, ...] = (
         "api.*: start",
         "content",
         "string (JSON)",
-        "**Full** request messages, one copy per convention — `content_capture: full` (the default)",
+        "**Full** request messages, one copy per convention: `input.value` as sent to the provider, "
+        "`gen_ai.input.messages` in the [OTel GenAI parts schema](#gen-ai-message-schema) — `content_capture: full` (the default)",
     ),
     Row(
         ("gen_ai.system_instructions",),
         "api.*: start",
         "content",
-        "string",
-        "**Full** system prompt: the leading system message, or the Responses API `instructions` — `content_capture: full`",
+        "string (JSON)",
+        '**Full** system prompt as a list of text parts (`[{"type": "text", "content": ...}]`), '
+        "set only when it travels apart from the message list (an explicit `system_prompt`, the "
+        "Responses API `instructions`); a system message in the list stays in "
+        "`gen_ai.input.messages` — `content_capture: full`",
     ),
     Row(
         ("hermes.content.input_chars",),
@@ -710,7 +718,8 @@ ROWS: Tuple[Row, ...] = (
         "api.*: end",
         "content",
         "string (JSON)",
-        "**Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default)",
+        "**Full** response: the text and, inside the one assistant message, its tool calls "
+        "(`tool_call` parts in `gen_ai.output.messages`) — `content_capture: full` (the default)",
     ),
     Row(
         ("hermes.content.output_chars",),

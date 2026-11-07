@@ -53,5 +53,6 @@
   "hermes_otel/testing.py": 92,
   "hermes_otel/tracer.py": 91,
   "hermes_otel/headers_helper.py": 97,
-  "hermes_otel/otlp_transport.py": 100
+  "hermes_otel/otlp_transport.py": 100,
+  "hermes_otel/genai_messages.py": 100
 }

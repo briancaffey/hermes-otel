@@ -7,6 +7,7 @@ from typing import Any, Dict, Optional
 from .. import log_events as EV
 from ..coerce import coerce_bool, to_optional_int
 from ..debug_utils import debug_log
+from ..genai_messages import output_message_json, to_genai_messages
 from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import (
@@ -183,7 +184,15 @@ def on_pre_llm_call(
     if full is not None:
         attributes["input.value"] = full
         attributes["input.mime_type"] = "application/json"
-        attributes["gen_ai.input.messages"] = full
+        # gen_ai.input.messages follows the GenAI parts schema; input.value
+        # keeps Hermes's own message shape.
+        attributes["gen_ai.input.messages"] = (
+            _serialize_conversation_history(
+                to_genai_messages(conversation_history),
+                tracer.config.conversation_history_max_chars,
+            )
+            or full
+        )
         attributes["hermes.conversation.message_count"] = len(conversation_history)
     else:
         attributes.update(_llm_input_attributes(tracer, user_message))
@@ -244,7 +253,9 @@ def on_post_llm_call(
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:
         attributes["output.value"] = preview
-        messages = _message_json("assistant", preview)
+        # post_llm_call carries the turn's final answer, which the model ended
+        # on its own (no further tool round): finish reason "stop".
+        messages = output_message_json(preview, finish_reason="stop")
         if messages is not None:
             attributes["gen_ai.output.messages"] = messages
         _mark_truncated(attributes, "output", original)
@@ -400,7 +411,7 @@ def on_post_api_request(
         tracer, api_duration, genai_metric_dims(model, provider, response_model)
     )
     record_first_chunk(tracer, attributes, payload, _metric_model_labels(model, provider))
-    attributes.update(full_response_attributes(tracer, payload))
+    attributes.update(full_response_attributes(tracer, payload, finish_reason))
 
     # The GenAI semconv inference event (#267): request attributes from the api
     # span's start, response attributes from this hook, content gated by

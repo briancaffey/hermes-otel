@@ -421,8 +421,8 @@ class TestEventCatalogue:
         assert a["gen_ai.response.finish_reasons"] == ["stop"] or list(
             a["gen_ai.response.finish_reasons"]
         ) == ["stop"]
-        assert json.loads(a["gen_ai.input.messages"])[0]["content"] == "hi there"
-        assert json.loads(a["gen_ai.output.messages"])[0]["content"] == "hello"
+        assert json.loads(a["gen_ai.input.messages"])[0]["parts"][0]["content"] == "hi there"
+        assert json.loads(a["gen_ai.output.messages"])[0]["parts"][0]["content"] == "hello"
         assert "llm.response.duration_ms" not in a  # OpenInference-only names stay on the span
 
 
