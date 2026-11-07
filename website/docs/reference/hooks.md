@@ -38,7 +38,7 @@ Fires when the tool returns (success, error, timeout, block, or cancel).
 Fires before the logical LLM turn starts (before any HTTP round-trips).
 
 - **Span op:** opens `llm.{model}` under the turn root. Hermes fires `on_session_start` only for a session's first turn, so on later turns this hook opens the `agent` / `cron` root first
-- **Attributes set on start:** `llm.model_name`, `llm.provider`, `gen_ai.request.model`, the latest user message as `input.value` and `gen_ai.input.messages`; with `capture_conversation_history: true`, the whole conversation as JSON instead (`input.mime_type=application/json`) plus `hermes.conversation.message_count`
+- **Attributes set on start:** `llm.model_name`, `llm.provider`, `gen_ai.request.model`, the latest user message as `input.value` and `gen_ai.input.messages`; with `capture_conversation_history: true`, the whole conversation as JSON instead (`input.mime_type=application/json`) plus `hermes.conversation.message_count` (and `hermes.conversation.dropped_messages` when the oldest messages were left out to fit the cap)
 - **Side effects:** numbers the turn (`hermes.turn.number`) and emits the `hermes.turn.start` event; pushes the `llm.*` span as the parent of the `api.*` and `tool.*` spans that follow
 
 ### `post_llm_call`

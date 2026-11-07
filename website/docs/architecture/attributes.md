@@ -31,7 +31,7 @@ Cache read/write are only populated when the provider reports them (Anthropic's 
 | Assistant response | `gen_ai.output.messages` (GenAI parts JSON) | `output.value` |
 | Content type | *(not set)* | `input.mime_type`, `output.mime_type` |
 
-When [conversation capture](/configuration/conversation-capture) is on, `input.value` and `gen_ai.input.messages` become JSON of the full message list (`gen_ai.input.messages` in the [GenAI parts schema](/reference/span-attributes#gen-ai-message-schema)), `input.mime_type` becomes `application/json`, and `hermes.conversation.message_count` records how many messages were passed.
+When [conversation capture](/configuration/conversation-capture) is on, `input.value` and `gen_ai.input.messages` become JSON of the full message list (`gen_ai.input.messages` in the [GenAI parts schema](/reference/span-attributes#gen-ai-message-schema)), `input.mime_type` becomes `application/json`, and `hermes.conversation.message_count` records how many messages were passed. Over `conversation_history_max_chars` the oldest whole messages are left out behind one placeholder message and `hermes.conversation.dropped_messages` says how many.
 
 ## Model / request metadata
 

@@ -8,10 +8,10 @@ identity keys) cannot drift between hooks (#104).
 from __future__ import annotations
 
 import json
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Callable, Dict, NamedTuple, Optional, Tuple
 
 from ..coerce import optional_number
-from ..genai_messages import single_message_json
+from ..genai_messages import single_message_json, to_genai_message
 from ..helpers import (
     DEFAULT_SERVICE_NAME,
     clip_joined,
@@ -490,26 +490,129 @@ def _message_json(role: str, content: Any) -> Optional[str]:
     return single_message_json(role, str(content))
 
 
-def _serialize_conversation_history(history: Any, max_chars: int) -> Optional[str]:
-    """Render ``conversation_history`` as a JSON string, clipped to ``max_chars``.
+class FittedHistory(NamedTuple):
+    """``conversation_history`` rendered for one ``llm.*`` span."""
 
-    Returns None when the history is empty or cannot be serialised so the
-    caller can fall back to the simple ``user_message`` input.
+    input_value: str  # Hermes's own message shape, for ``input.value``
+    genai_messages: str  # GenAI parts schema, for ``gen_ai.input.messages``
+    dropped: int  # messages left out (replaced by one placeholder message)
+    original_chars: Optional[int]  # full ``input_value`` length when anything was cut
+
+
+def _dumps(value: Any) -> str:
+    return json.dumps(value, ensure_ascii=False, default=str)
+
+
+def _dropped_placeholders(dropped: int) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    """The message standing in for ``dropped`` older messages, in both shapes."""
+    text = f"[{dropped} earlier message{'s' if dropped != 1 else ''} dropped by hermes-otel]"
+    return (
+        {"role": "system", "content": text},
+        {"role": "system", "parts": [{"type": "text", "content": text}]},
+    )
+
+
+def _clip_strings(value: Any, cap: int) -> Any:
+    """``value`` with every string longer than ``cap`` clipped (dict keys kept)."""
+    if isinstance(value, str):
+        if len(value) <= cap:
+            return value
+        return value[: cap - 3] + "..." if cap > 3 else value[:cap]
+    if isinstance(value, dict):
+        return {k: _clip_strings(v, cap) for k, v in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_clip_strings(v, cap) for v in value]
+    return value
+
+
+def _clip_to_fit(hermes: Any, genai: Any, max_chars: int) -> Optional[Tuple[str, str]]:
+    """Both payloads with their strings clipped to the largest common cap that
+    keeps each serialisation within ``max_chars`` — still valid JSON — or None
+    when not even empty strings fit."""
+    best = None
+    lo, hi = 0, max(len(_dumps(hermes)), len(_dumps(genai)))
+    while lo <= hi:
+        cap = (lo + hi) // 2
+        h, g = _dumps(_clip_strings(hermes, cap)), _dumps(_clip_strings(genai, cap))
+        if len(h) <= max_chars and len(g) <= max_chars:
+            best, lo = (h, g), cap + 1
+        else:
+            hi = cap - 1
+    return best
+
+
+def _json_list(parts: list) -> str:
+    """Pre-serialised items joined exactly as ``json.dumps`` joins a list."""
+    return "[" + ", ".join(parts) + "]"
+
+
+def _fit_conversation_history(history: Any, max_chars: int) -> Optional[FittedHistory]:
+    """Render ``conversation_history`` for ``input.value`` and
+    ``gen_ai.input.messages``, each within ``max_chars`` and valid JSON.
+
+    Over the cap, the oldest whole messages go first (leading system messages
+    are kept while they fit) and one placeholder message says how many were
+    left out; both attributes drop the same messages. Only when the newest
+    message alone is still too big are string values clipped. Returns None
+    when the history is empty or nothing fits, so the caller falls back to the
+    plain ``user_message`` input.
     """
     if not history:
         return None
-    try:
-        text = json.dumps(history, ensure_ascii=False, default=str)
-    except (TypeError, ValueError):
-        try:
-            text = str(history)
-        except Exception:
-            return None
-    if len(text) <= max_chars:
-        return text
-    if max_chars <= 3:
-        return "." * max_chars
-    return text[: max_chars - 3] + "..."
+    if not isinstance(history, list):
+        history = [history]
+    n = len(history)
+    h_parts = [_dumps(m) for m in history]
+    g_msgs = [to_genai_message(m) for m in history]
+    g_parts = [_dumps(m) if m is not None else "" for m in g_msgs]
+    full_h, full_g = _json_list(h_parts), _json_list([p for p in g_parts if p])
+    if len(full_h) <= max_chars and len(full_g) <= max_chars:
+        return FittedHistory(full_h, full_g, 0, None)
+    original_chars = len(full_h)
+
+    head = 0
+    while (
+        head < n - 1 and isinstance(history[head], dict) and history[head].get("role") == "system"
+    ):
+        head += 1
+
+    # Suffix totals: chars and item counts of messages i..n-1 in each shape.
+    h_suf, g_suf, g_cnt = [0] * (n + 1), [0] * (n + 1), [0] * (n + 1)
+    for i in range(n - 1, -1, -1):
+        h_suf[i] = h_suf[i + 1] + len(h_parts[i])
+        g_suf[i] = g_suf[i + 1] + len(g_parts[i])
+        g_cnt[i] = g_cnt[i + 1] + (1 if g_parts[i] else 0)
+
+    def fits(chars: int, count: int) -> bool:
+        return 2 + chars + 2 * max(count - 1, 0) <= max_chars
+
+    # Kept head + the newest messages from k on; then, if that never fits,
+    # the newest messages alone.
+    candidates = [(head, k) for k in range(head + 1, n)]
+    candidates += [(0, k) for k in range(1, n)] if head else []
+    for kept, k in candidates:
+        dropped = k - kept
+        ph, pg = (_dumps(m) for m in _dropped_placeholders(dropped))
+        h_chars = len(ph) + (h_suf[0] - h_suf[kept]) + h_suf[k]
+        g_head = g_cnt[0] - g_cnt[kept]
+        g_chars = len(pg) + (g_suf[0] - g_suf[kept]) + g_suf[k]
+        if fits(h_chars, 1 + kept + n - k) and fits(g_chars, 1 + g_head + g_cnt[k]):
+            hs = h_parts[:kept] + [ph] + h_parts[k:]
+            gs = [p for p in g_parts[:kept] if p] + [pg] + [p for p in g_parts[k:] if p]
+            return FittedHistory(_json_list(hs), _json_list(gs), dropped, original_chars)
+
+    # The newest message alone is too big: clip its strings.
+    dropped = n - 1
+    hermes_last = [history[-1]]
+    genai_last = [m for m in g_msgs[-1:] if m is not None]
+    if dropped:
+        ph, pg = _dropped_placeholders(dropped)
+        hermes_last.insert(0, ph)
+        genai_last.insert(0, pg)
+    clipped = _clip_to_fit(hermes_last, genai_last, max_chars)
+    if clipped is None:
+        return None
+    return FittedHistory(clipped[0], clipped[1], dropped, original_chars)
 
 
 def _gen_ai_request_param_attributes(kwargs: dict) -> Dict[str, Any]:

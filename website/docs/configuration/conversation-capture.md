@@ -49,7 +49,7 @@ Outside `api.*` spans, content is a preview: ANSI stripped, whitespace collapsed
 
 ## The turn on the `llm.*` span
 
-`capture_conversation_history: true` additionally attaches the conversation as Hermes held it at the start of the turn to the `llm.*` span (`input.value` as JSON, capped at `conversation_history_max_chars`, 20,000 by default). It predates `content_capture: full` and is mostly redundant with it; keep it for backends where you look at the turn span rather than the per-call spans.
+`capture_conversation_history: true` additionally attaches the conversation as Hermes held it at the start of the turn to the `llm.*` span (`input.value` as JSON, capped at `conversation_history_max_chars`, 20,000 by default; `gen_ai.input.messages` carries the same messages in the GenAI parts schema). Over the cap, the oldest whole messages are left out (a leading system message is kept while it fits) and one `system` placeholder message, `[N earlier messages dropped by hermes-otel]`, stands in for them, so both attributes stay valid JSON; the span records `hermes.conversation.dropped_messages: N` and `hermes.preview.input.truncated` / `original_chars`. Only when the newest message alone is over the cap are its strings clipped. It predates `content_capture: full` and is mostly redundant with it; keep it for backends where you look at the turn span rather than the per-call spans.
 
 ```yaml
 capture_conversation_history: true

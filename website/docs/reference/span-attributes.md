@@ -138,6 +138,7 @@ One per `run_conversation` call (span kind `LLM`).
 | `gen_ai.output.messages` | gen_ai | string (JSON) | Same content in the [OTel GenAI parts schema](#gen-ai-message-schema) |
 | `gen_ai.response.model` | gen_ai | string | The response model a provider reported on this turn's API calls; absent when none was reported (never the request model) |
 | `hermes.conversation.message_count` | hermes | int | Message count when conversation capture is on (optional) |
+| `hermes.conversation.dropped_messages` | hermes | int | How many of the oldest messages were left out to fit `conversation_history_max_chars`; one placeholder message stands in for them in `input.value` and `gen_ai.input.messages` (set only when some were) |
 
 [//]: # (generated:llm:end)
 
