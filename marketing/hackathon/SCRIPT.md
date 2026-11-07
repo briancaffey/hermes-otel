@@ -1,60 +1,67 @@
-# SCRIPT.md — narration, draft 1
+# SCRIPT.md — narration, draft 2
 
 The voice is the clock: scene lengths follow the synthesised audio (`tools/synth_voice.py` writes
 `cues.json`). One sentence per line under each scene heading. Lines starting with `>` are on-screen
 text only (kicker / caption), never spoken. Edit a line and re-run the synth; only changed sentences
 are re-synthesised.
 
-Target: under 90 s (the hackathon limit), aiming for 82–86 s. About 175 spoken words, ~140 wpm with
-the pauses. Tone: Nous house voice — confident, terse, a little mythic, no hype words.
+Target: under 90 s (the hackathon limit). Draft 1 measured 2.43 spoken words/s and ~14 s of scene
+lead-ins and tails, so the budget is about 180 spoken words. This draft is 178. Tone: plain and
+direct, say what it does, no hype words.
 
-Spelling for the voice lives in `tools/pronounce.json` (Hermes O-Tel, O-T-L-P, A-P-I, SigNoz,
-Langfuse, Jaeger); write the words normally here.
+Spelling for the voice lives in `tools/pronounce.json` (Hermes O-Tel, O-T-L-P, SigNoz, Langfuse,
+Jaeger); write the words normally here.
 
-## S01 — hook: the myth (cobalt engraving world)
+Changes from draft 1: opens by saying what it is (the cattle myth is gone; "Follow the messenger"
+stays only as the end-card line), four scenes on the dashboard tab instead of one, and the fan-out
+says what is sent, where, and why it is safe.
 
-> THE MYTH
-The day he was born, Hermes stole Apollo's cattle and walked them home backwards, so nobody could follow the tracks.
+## S01 — what it is
 
-## S02 — tension: agents still hide them
-
-> THE PROBLEM
-Agents still cover their tracks.
-A turn runs, an answer appears, and everything in between is gone.
-
-## S03 — reveal
-
-> HERMES OTEL
+> HERMES OTEL · A HERMES AGENT PLUGIN
 Hermes OTel is OpenTelemetry for Hermes Agent.
-Every turn leaves a trace.
+Every turn your agent takes becomes a trace.
 
-## S04 — the trace (real waterfall)
+## S02 — one turn, one trace (waterfall)
 
-> ONE TURN, ONE TRACE
+> ONE TURN · ONE TRACE
 The turn is the root.
-Each model call, API request, tool, skill and sub-agent nests inside it, carrying its tokens, timing, arguments and outcome.
+Every model call, tool, skill and sub-agent nests inside it, timed, with its inputs and outputs.
 
-## S05 — the dashboard tab (real dashboard)
+## S03 — the dashboard tab: Live
 
-> BUILT INTO HERMES
-A tab in the Hermes dashboard shows turns as they land, totals tokens and tool time, and puts the agent's own logs beside the span that wrote them.
+> BUILT INTO THE HERMES DASHBOARD
+It adds an OTel tab to the Hermes dashboard, and it needs no backend.
+Turns appear live, with their tokens and cost.
 
-## S06 — the payoff: every thread, every backend (real backend UIs)
+## S04 — inside a turn: trace detail, spans expanded
 
-> TRACES · METRICS · LOGS
-Traces, metrics and logs go out over OTLP, to the tools you already run.
+> INSIDE A TURN
+Open one and expand any span: the model's conversation, the tool's command and output, and the logs it wrote.
+
+## S05 — search, metrics, logs, settings
+
+> SEARCH · METRICS · LOGS · SETTINGS
+Search by tool, model or status, chart tokens and cost, and filter the agent's logs.
+Settings shows every option, where each value came from, and what each backend receives.
+
+## S06 — fan-out to backends
+
+> ONE TRACE · EVERY BACKEND · AT ONCE
+Then fan out.
+Every backend you list receives the same trace at once, plus whatever metrics and logs it can store.
+Each one sends on its own queue, so a slow backend never stalls the agent.
 Grafana. SigNoz. OpenObserve. Uptrace. Jaeger. Phoenix. Langfuse.
-Twenty-seven backend types, several at once.
+Twenty-seven backend types.
 
-## S07 — Hermes reads its own tracks (real terminal recording)
+## S07 — Hermes reads its own traces (terminal recording)
 
 > ASK THE AGENT
-And Hermes can read its own tracks.
-Ask what the last turn did, and it draws the trace right in the chat.
+Hermes can read its own traces too: ask about the last turn, and it draws the tree in the chat.
 
-## S08 — claim and end card
+## S08 — close
 
 > PRIVATE BY DEFAULT
-With no backend configured, nothing leaves your machine.
+With no backend, nothing leaves your machine.
 Open source, and in the Hermes plugin catalog.
 Hermes OTel. Follow the messenger.
