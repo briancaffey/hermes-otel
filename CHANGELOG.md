@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.32.5](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.4...hermes-otel-v1.32.5) (2026-11-07)
+
+
+### Bug Fixes
+
+* **semconv:** carry Anthropic and Responses tool rounds and the turn's finish reason into the GenAI parts schema ([314769e](https://github.com/briancaffey/hermes-otel/commit/314769eff3799a7730f4d1e7e1e8c3488335c855)), closes [#647](https://github.com/briancaffey/hermes-otel/issues/647)
+* **semconv:** emit gen_ai.*.messages and gen_ai.system_instructions in the GenAI parts schema ([4a6fbf7](https://github.com/briancaffey/hermes-otel/commit/4a6fbf73c11252bc3bc41ca86028019cf2eb3843))
+
 ## [1.32.4](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.3...hermes-otel-v1.32.4) (2026-11-02)
 
 
