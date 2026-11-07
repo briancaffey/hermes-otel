@@ -67,6 +67,12 @@ def _content_parts(content: Any) -> List[Dict[str, Any]]:
             text = _get(item, "thinking") or _get(item, "text") or _get(item, "content")
             if text:
                 parts.append({"type": "reasoning", "content": str(text)})
+        elif kind == "tool_use":
+            # Anthropic Messages: the assistant's tool call as a content block.
+            parts.extend(_tool_call_parts([item]))
+        elif kind == "tool_result":
+            # Anthropic Messages: the tool's answer, inside a user message.
+            parts.append(_tool_response_part(_get(item, "tool_use_id"), _get(item, "content")))
         elif kind:
             # Unknown part types are allowed by the schema (GenericPart).
             parts.append(
@@ -91,35 +97,74 @@ def _tool_call_parts(tool_calls: Any) -> List[Dict[str, Any]]:
         if call_id:
             part["id"] = str(call_id)
         arguments = _get(function, "arguments") if function is not None else _get(call, "arguments")
+        if arguments in (None, ""):
+            arguments = _get(call, "input")  # Anthropic tool_use
         if arguments not in (None, ""):
             part["arguments"] = _maybe_json(arguments)
         parts.append(part)
     return parts
 
 
+def _tool_response_part(call_id: Any, content: Any) -> Dict[str, Any]:
+    """A ``tool_call_response`` part; list content is flattened to its text."""
+    response: Any = content
+    if isinstance(content, list):
+        response = " ".join(
+            p["content"] for p in _content_parts(content) if p.get("type") == "text"
+        )
+    part: Dict[str, Any] = {
+        "type": "tool_call_response",
+        "response": response if response is not None else "",
+    }
+    if call_id:
+        part["id"] = str(call_id)
+    return part
+
+
+def _responses_item(item: Any) -> Optional[Dict[str, Any]]:
+    """A Responses API input item that is not a role message (``function_call``,
+    ``function_call_output``, ``reasoning``) as a ``ChatMessage``. None for any
+    other item: it is converted as a message instead."""
+    kind = _get(item, "type")
+    if kind == "function_call":
+        part: Dict[str, Any] = {"type": "tool_call", "name": str(_get(item, "name") or "")}
+        call_id = _get(item, "call_id") or _get(item, "id")
+        if call_id:
+            part["id"] = str(call_id)
+        arguments = _get(item, "arguments")
+        if arguments not in (None, ""):
+            part["arguments"] = _maybe_json(arguments)
+        return {"role": "assistant", "parts": [part]} if part["name"] else None
+    if kind == "function_call_output":
+        return {
+            "role": "tool",
+            "parts": [_tool_response_part(_get(item, "call_id"), _get(item, "output"))],
+        }
+    if kind == "reasoning":
+        summary = _get(item, "summary")
+        texts = [str(_get(x, "text")) for x in summary or [] if _get(x, "text")]
+        if texts:
+            return {
+                "role": "assistant",
+                "parts": [{"type": "reasoning", "content": "\n".join(texts)}],
+            }
+    return None
+
+
 def to_genai_message(message: Any) -> Optional[Dict[str, Any]]:
-    """One OpenAI-style message as a schema ``ChatMessage``, or None if empty."""
+    """One message as a schema ``ChatMessage``, or None if empty. Accepts
+    OpenAI Chat Completions messages, Anthropic Messages content blocks and
+    Responses API input items."""
     role = _get(message, "role")
+    if not role and _get(message, "type") in ("function_call", "function_call_output", "reasoning"):
+        return _responses_item(message)
     role = "system" if role == "developer" else (str(role) if role else "user")
     parts: List[Dict[str, Any]] = []
     reasoning = _get(message, "reasoning_content") or _get(message, "reasoning")
     if isinstance(reasoning, str) and reasoning:
         parts.append({"type": "reasoning", "content": reasoning})
     if role == "tool":
-        content = _get(message, "content")
-        response: Any = content
-        if isinstance(content, list):
-            response = " ".join(
-                p["content"] for p in _content_parts(content) if p.get("type") == "text"
-            )
-        part: Dict[str, Any] = {
-            "type": "tool_call_response",
-            "response": response if response is not None else "",
-        }
-        call_id = _get(message, "tool_call_id")
-        if call_id:
-            part["id"] = str(call_id)
-        parts.append(part)
+        parts.append(_tool_response_part(_get(message, "tool_call_id"), _get(message, "content")))
     else:
         parts.extend(_content_parts(_get(message, "content")))
         parts.extend(_tool_call_parts(_get(message, "tool_calls")))

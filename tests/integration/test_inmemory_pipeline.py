@@ -1,6 +1,7 @@
 """Integration tests using InMemorySpanExporter to verify the full
 hook -> span -> export pipeline without any network I/O."""
 
+import json
 from dataclasses import replace
 
 from hermes_otel.hooks import (
@@ -128,6 +129,63 @@ class TestLlmSpanExport:
             '[{"role": "assistant", "parts": [{"type": "text", "content": "hi there"}],'
             ' "finish_reason": "stop"}]'
         )
+
+    def test_llm_output_message_carries_the_last_api_finish_reason(self, inmemory_otel_setup):
+        """post_llm_call has no finish_reason; the llm.* span's output message
+        takes the one the turn's last API attempt reported (#647)."""
+        exporter, plugin = inmemory_otel_setup
+        common = dict(task_id="t1", session_id="s1", platform="cli", model="gpt-4")
+        on_pre_llm_call(
+            session_id="s1",
+            user_message="write a long essay",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="cli",
+        )
+        on_pre_api_request(
+            **common,
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=0,
+            approx_input_tokens=10,
+            request_char_count=40,
+            max_tokens=16,
+        )
+        on_post_api_request(
+            **common,
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            api_duration=0.5,
+            finish_reason="length",
+            message_count=1,
+            response_model="gpt-4",
+            usage={"prompt_tokens": 10, "output_tokens": 16, "total_tokens": 26},
+            assistant_content_chars=9,
+            assistant_tool_call_count=0,
+        )
+        on_post_llm_call(
+            session_id="s1",
+            user_message="write a long essay",
+            assistant_response="Once upon",
+            conversation_history=[],
+            model="gpt-4",
+            platform="cli",
+        )
+        llm = next(s for s in exporter.get_finished_spans() if s.name == "llm.gpt-4")
+        out = json.loads(llm.attributes["gen_ai.output.messages"])
+        assert out == [
+            {
+                "role": "assistant",
+                "parts": [{"type": "text", "content": "Once upon"}],
+                "finish_reason": "length",
+            }
+        ]
 
 
 class TestApiSpanExport:

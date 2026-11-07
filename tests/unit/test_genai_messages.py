@@ -244,3 +244,96 @@ def test_unserialisable_payloads_give_none():
     call = {"function": {"name": "f", "arguments": circular}}
     assert genai_messages_json([{"role": "assistant", "tool_calls": [call]}]) is None
     assert output_message_json(None, [call]) is None
+
+
+def test_anthropic_tool_use_and_tool_result_blocks():
+    """api_mode anthropic_messages: tool calls and results are content blocks."""
+    out = to_genai_messages(
+        [
+            {
+                "role": "assistant",
+                "content": [
+                    {"type": "text", "text": "Listing."},
+                    {
+                        "type": "tool_use",
+                        "id": "tu1",
+                        "name": "terminal",
+                        "input": {"command": "ls"},
+                    },
+                ],
+            },
+            {
+                "role": "user",
+                "content": [
+                    {
+                        "type": "tool_result",
+                        "tool_use_id": "tu1",
+                        "content": [{"type": "text", "text": "a.txt"}],
+                    }
+                ],
+            },
+        ]
+    )
+    assert out == [
+        {
+            "role": "assistant",
+            "parts": [
+                {"type": "text", "content": "Listing."},
+                {
+                    "type": "tool_call",
+                    "name": "terminal",
+                    "id": "tu1",
+                    "arguments": {"command": "ls"},
+                },
+            ],
+        },
+        {
+            "role": "user",
+            "parts": [{"type": "tool_call_response", "response": "a.txt", "id": "tu1"}],
+        },
+    ]
+
+
+def test_responses_api_input_items():
+    """api_mode codex_responses: request_messages is the Responses ``input``
+    list, where tool rounds are items without a role."""
+    out = to_genai_messages(
+        [
+            {"role": "user", "content": [{"type": "input_text", "text": "list files"}]},
+            {"type": "reasoning", "summary": [{"type": "summary_text", "text": "use ls"}]},
+            {"type": "reasoning", "summary": [], "encrypted_content": "opaque"},
+            {
+                "type": "function_call",
+                "call_id": "c1",
+                "name": "terminal",
+                "arguments": '{"command": "ls"}',
+            },
+            {"type": "function_call", "call_id": "c2", "name": ""},
+            {"type": "function_call_output", "call_id": "c1", "output": "a.txt"},
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": "One file."}],
+            },
+        ]
+    )
+    assert out == [
+        {"role": "user", "parts": [{"type": "text", "content": "list files"}]},
+        {"role": "assistant", "parts": [{"type": "reasoning", "content": "use ls"}]},
+        {
+            "role": "assistant",
+            "parts": [
+                {
+                    "type": "tool_call",
+                    "name": "terminal",
+                    "id": "c1",
+                    "arguments": {"command": "ls"},
+                }
+            ],
+        },
+        {
+            "role": "tool",
+            "parts": [{"type": "tool_call_response", "response": "a.txt", "id": "c1"}],
+        },
+        {"role": "assistant", "parts": [{"type": "text", "content": "One file."}]},
+    ]

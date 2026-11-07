@@ -14,6 +14,29 @@ const MESSAGES = JSON.stringify([
 ]);
 
 describe("parseChat", () => {
+  it("reads the OTel GenAI parts schema (#647)", () => {
+    const msgs = parseChat(
+      JSON.stringify([
+        { role: "user", parts: [{ type: "text", content: "list files" }] },
+        { role: "assistant", parts: [{ type: "tool_call", id: "c1", name: "terminal", arguments: { command: "ls" } }] },
+        { role: "tool", parts: [{ type: "tool_call_response", id: "c1", response: "a.txt" }] },
+        { role: "assistant", parts: [{ type: "text", content: "One file." }], finish_reason: "stop" },
+      ])
+    )!;
+    expect(msgs.map((m) => m.role)).toEqual(["user", "assistant", "tool", "assistant"]);
+    expect(msgs[0].parts).toEqual([{ type: "text", text: "list files" }]);
+    expect(msgs[1].parts).toEqual([{ type: "tool_call", id: "c1", name: "terminal", args: { command: "ls" } }]);
+    expect(msgs[2].parts).toEqual([{ type: "text", text: "a.txt" }]);
+    expect(msgs[2].toolCallId).toBe("c1");
+    expect(msgs[3].parts).toEqual([{ type: "text", text: "One file." }]);
+  });
+
+  it("renders gen_ai.system_instructions text parts as prose", () => {
+    const c = classify("gen_ai.system_instructions", JSON.stringify([{ type: "text", content: "You are Hermes." }]));
+    expect(c.kind).toBe("markdown");
+    expect(c.value).toBe("You are Hermes.");
+  });
+
   it("reads OpenAI-style messages with tool calls and tool results", () => {
     const msgs = parseChat(MESSAGES)!;
     expect(msgs.map((m) => m.role)).toEqual(["system", "user", "assistant", "tool"]);

@@ -253,9 +253,11 @@ def on_post_llm_call(
     attributes.update(correlation_attributes(tracer, session_id, kwargs))
     if preview is not None:
         attributes["output.value"] = preview
-        # post_llm_call carries the turn's final answer, which the model ended
-        # on its own (no further tool round): finish reason "stop".
-        messages = output_message_json(preview, finish_reason="stop")
+        # post_llm_call carries the turn's final answer but no finish reason;
+        # the turn's last API attempt has one. "stop" only when none reported
+        # one: the answer ended the turn, and the schema requires the field.
+        last_finish = ps.finish_reason if ps is not None else ""
+        messages = output_message_json(preview, finish_reason=last_finish or "stop")
         if messages is not None:
             attributes["gen_ai.output.messages"] = messages
         _mark_truncated(attributes, "output", original)
@@ -397,7 +399,13 @@ def on_post_api_request(
         if ps is None and totals is not None:
             ps = tracer.sessions.get_or_create(session_id)
         if ps is not None:
-            ps.record_attempt(totals, cost, provider=provider, response_model=response_model)
+            ps.record_attempt(
+                totals,
+                cost,
+                provider=provider,
+                response_model=response_model,
+                finish_reason=finish_reason,
+            )
 
     attributes.update(
         response_attributes(
