@@ -9,6 +9,8 @@ the main turn it runs under (empty for turn-less callers).
 
 from __future__ import annotations
 
+import json
+
 import pytest
 from _helpers import parent_span_id as _parent_span_id
 from _helpers import span_by_name as _span_by_name
@@ -244,8 +246,10 @@ class TestSpanShape:
         _close_turn()
         a = _span_by_name(exporter.get_finished_spans(), "api.gpt-4o-mini").attributes
         assert "name this chat" in a["gen_ai.input.messages"]
-        assert a["input.value"] == a["gen_ai.input.messages"]
-        assert a["gen_ai.system_instructions"] == "You name chats."
+        assert "name this chat" in a["input.value"]
+        assert json.loads(a["gen_ai.system_instructions"]) == [
+            {"type": "text", "content": "You name chats."}
+        ]
         assert a["output.value"] == "Chat title"
         assert "Chat title" in a["gen_ai.output.messages"]
 

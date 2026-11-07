@@ -29,8 +29,8 @@ On every `api.*` span, once per attribute convention so both Phoenix (OpenInfere
 
 | Attribute | Content |
 |---|---|
-| `gen_ai.input.messages`, `input.value` (`input.mime_type: application/json`) | The message list exactly as sent: system prompt first, then the history, tool calls and tool results |
-| `gen_ai.system_instructions` | The system prompt on its own: the leading `system` message, or the Responses API `instructions` |
+| `gen_ai.input.messages`, `input.value` (`input.mime_type: application/json`) | The message list: system prompt first, then the history, tool calls and tool results. `input.value` is exactly as sent; `gen_ai.input.messages` is the same list in the [GenAI parts schema](/reference/span-attributes#gen-ai-message-schema) |
+| `gen_ai.system_instructions` | The system prompt on its own, as a list of text parts, when it is sent apart from the message list (an explicit system parameter, the Responses API `instructions`). A `system` message inside the list stays in `gen_ai.input.messages` only, so backends do not show it twice |
 | `gen_ai.output.messages`, `output.value` | The assistant's reply: its text (`text/plain`) and, inside the one assistant message, the tool calls it made; tool calls alone become the JSON `output.value` |
 | `hermes.content.input_chars`, `hermes.content.output_chars` | Sizes, so a backend can chart payload growth without parsing the payload |
 

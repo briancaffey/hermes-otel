@@ -11,6 +11,7 @@ import json
 from typing import Any, Callable, Dict, Optional, Tuple
 
 from ..coerce import optional_number
+from ..genai_messages import single_message_json
 from ..helpers import (
     DEFAULT_SERVICE_NAME,
     clip_joined,
@@ -482,13 +483,11 @@ def _tool_host_utilization_attributes(tracer, started_at: float, ended_at: float
 
 
 def _message_json(role: str, content: Any) -> Optional[str]:
-    """One-message ``gen_ai.*.messages`` payload, or None for empty content."""
+    """One-message ``gen_ai.*.messages`` payload in the GenAI ``parts`` schema,
+    or None for empty content."""
     if content is None or content == "":
         return None
-    try:
-        return json.dumps([{"role": role, "content": str(content)}], ensure_ascii=False)
-    except (TypeError, ValueError):
-        return None
+    return single_message_json(role, str(content))
 
 
 def _serialize_conversation_history(history: Any, max_chars: int) -> Optional[str]:

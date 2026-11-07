@@ -445,9 +445,9 @@
   {
    "attributes": {
     "gen_ai.conversation.id": "old",
-    "gen_ai.input.messages": "[{\"role\": \"user\", \"content\": \"hello\"}]",
+    "gen_ai.input.messages": "[{\"role\": \"user\", \"parts\": [{\"type\": \"text\", \"content\": \"hello\"}]}]",
     "gen_ai.operation.name": "chat",
-    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"content\": \"hi\"}]",
+    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"parts\": [{\"type\": \"text\", \"content\": \"hi\"}], \"finish_reason\": \"stop\"}]",
     "gen_ai.provider.name": "openai",
     "gen_ai.request.model": "gpt-4",
     "gen_ai.response.model": "gpt-4",
@@ -580,9 +580,9 @@
   {
    "attributes": {
     "gen_ai.conversation.id": "new",
-    "gen_ai.input.messages": "[{\"role\": \"user\", \"content\": \"hello\"}]",
+    "gen_ai.input.messages": "[{\"role\": \"user\", \"parts\": [{\"type\": \"text\", \"content\": \"hello\"}]}]",
     "gen_ai.operation.name": "chat",
-    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"content\": \"hi\"}]",
+    "gen_ai.output.messages": "[{\"role\": \"assistant\", \"parts\": [{\"type\": \"text\", \"content\": \"hi\"}], \"finish_reason\": \"stop\"}]",
     "gen_ai.provider.name": "openai",
     "gen_ai.request.model": "gpt-4",
     "gen_ai.response.model": "gpt-4",

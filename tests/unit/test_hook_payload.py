@@ -53,7 +53,9 @@ class TestFullResponseAttributes:
             {"response": {"assistant_message": {"role": "assistant", "content": "Chat title"}}}
         )
         assert full_response_attributes(self._tracer("full"), payload) == {
-            "gen_ai.output.messages": '[{"role": "assistant", "content": "Chat title"}]',
+            "gen_ai.output.messages": (
+                '[{"role": "assistant", "parts": [{"type": "text", "content": "Chat title"}]}]'
+            ),
             "output.value": "Chat title",
             "output.mime_type": "text/plain",
             "hermes.content.output_chars": 10,
@@ -67,7 +69,10 @@ class TestFullResponseAttributes:
         assert attrs["output.mime_type"] == "application/json"
         assert json.loads(attrs["output.value"]) == [TOOL_CALL]
         assert json.loads(attrs["gen_ai.output.messages"]) == [
-            {"role": "assistant", "tool_calls": [TOOL_CALL]}
+            {
+                "role": "assistant",
+                "parts": [{"type": "tool_call", "name": "ls", "id": "call_1", "arguments": {}}],
+            }
         ]
         assert attrs["hermes.content.output_chars"] == len(attrs["output.value"])
 

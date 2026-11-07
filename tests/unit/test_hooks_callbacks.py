@@ -1141,9 +1141,15 @@ class TestFullCaptureFlags:
             **self._pre_kwargs(request_messages=messages, system_prompt="the-system-prompt")
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["gen_ai.system_instructions"] == "the-system-prompt"
+        # The list already carries a system message, so it is not repeated
+        # in gen_ai.system_instructions (backends would show it twice).
+        assert "gen_ai.system_instructions" not in attrs
         assert attrs["input.mime_type"] == "application/json"
-        assert _json.loads(attrs["gen_ai.input.messages"]) == messages
+        # gen_ai.* uses the GenAI parts schema; input.value keeps the raw list.
+        assert _json.loads(attrs["gen_ai.input.messages"]) == [
+            {"role": "system", "parts": [{"type": "text", "content": "sys"}]},
+            {"role": "user", "parts": [{"type": "text", "content": huge}]},
+        ]
         assert _json.loads(attrs["input.value"]) == messages
         assert attrs["hermes.content.input_chars"] == len(attrs["input.value"])
         assert "llm.input_messages" not in attrs
@@ -1177,20 +1183,46 @@ class TestFullCaptureFlags:
             )
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert _json.loads(attrs["gen_ai.input.messages"]) == raw
+        assert _json.loads(attrs["input.value"]) == raw
         assert "[truncated" not in attrs["input.value"]
+        assert "[truncated" not in attrs["gen_ai.input.messages"]
 
-    def test_pre_derives_system_prompt_from_messages(self, mock_tracer):
-        """Hermes does not send a system_prompt kwarg; the leading system message is it."""
+    def test_pre_leading_system_message_is_not_repeated(self, mock_tracer):
+        """Hermes sends the system prompt as the leading message: it stays in
+        gen_ai.input.messages and is not duplicated into gen_ai.system_instructions."""
+        import json as _json
+
         messages = [
             {"role": "system", "content": "You are Hermes."},
             {"role": "user", "content": "hello"},
         ]
         on_pre_api_request(**self._pre_kwargs(request_messages=messages))
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["gen_ai.system_instructions"] == "You are Hermes."
+        assert "gen_ai.system_instructions" not in attrs
+        assert _json.loads(attrs["gen_ai.input.messages"])[0] == {
+            "role": "system",
+            "parts": [{"type": "text", "content": "You are Hermes."}],
+        }
+
+    def test_pre_explicit_system_prompt_without_system_message(self, mock_tracer):
+        """An explicit system_prompt sent apart from the history is the
+        gen_ai.system_instructions value."""
+        import json as _json
+
+        on_pre_api_request(
+            **self._pre_kwargs(
+                request_messages=[{"role": "user", "content": "hi"}],
+                system_prompt="You are Hermes.",
+            )
+        )
+        attrs = mock_tracer.start_span.call_args[1]["attributes"]
+        assert _json.loads(attrs["gen_ai.system_instructions"]) == [
+            {"type": "text", "content": "You are Hermes."}
+        ]
 
     def test_pre_derives_system_prompt_from_responses_api_instructions(self, mock_tracer):
+        import json as _json
+
         on_pre_api_request(
             **self._pre_kwargs(
                 request={"method": "POST", "body": {"instructions": "Be brief.", "input": []}},
@@ -1198,7 +1230,9 @@ class TestFullCaptureFlags:
             )
         )
         attrs = mock_tracer.start_span.call_args[1]["attributes"]
-        assert attrs["gen_ai.system_instructions"] == "Be brief."
+        assert _json.loads(attrs["gen_ai.system_instructions"]) == [
+            {"type": "text", "content": "Be brief."}
+        ]
 
     def test_pre_falls_back_to_sanitised_body_when_raw_absent(self, mock_tracer):
         import json as _json
@@ -1227,9 +1261,21 @@ class TestFullCaptureFlags:
         assert attrs["output.value"] == "here is my answer"
         assert attrs["output.mime_type"] == "text/plain"
         msgs = _json.loads(attrs["gen_ai.output.messages"])
-        assert msgs[0]["role"] == "assistant" and msgs[0]["content"] == "here is my answer"
-        assert msgs[0]["tool_calls"][0]["id"] == "call_1"
-        assert msgs[0]["tool_calls"][0]["function"]["name"] == "tool_search"
+        assert msgs == [
+            {
+                "role": "assistant",
+                "parts": [
+                    {"type": "text", "content": "here is my answer"},
+                    {
+                        "type": "tool_call",
+                        "name": "tool_search",
+                        "id": "call_1",
+                        "arguments": {"query": "x"},
+                    },
+                ],
+                "finish_reason": "stop",
+            }
+        ]
         assert attrs["hermes.content.output_chars"] == len("here is my answer")
         assert "llm.output.content" not in attrs and "llm.output.tool_calls" not in attrs
 
@@ -1264,7 +1310,8 @@ class TestFullCaptureFlags:
         assert attrs["output.mime_type"] == "application/json"
         assert _json.loads(attrs["output.value"])[0]["function"]["name"] == "web_search"
         msgs = _json.loads(attrs["gen_ai.output.messages"])
-        assert "content" not in msgs[0] and msgs[0]["tool_calls"][0]["id"] == "call_1"
+        assert [p["type"] for p in msgs[0]["parts"]] == ["tool_call"]
+        assert msgs[0]["parts"][0]["id"] == "call_1"
 
     def test_flags_independent(self, mock_tracer):
         """Prompts full with responses explicitly off keeps responses as previews."""

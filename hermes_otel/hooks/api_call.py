@@ -15,6 +15,11 @@ import contextlib
 import json
 from typing import Any, Dict, Mapping, Optional, Tuple
 
+from ..genai_messages import (
+    genai_messages_json,
+    output_message_json,
+    system_instructions_json,
+)
 from ..helpers import serialize_full
 from ..semconv import QUERY_SOURCE_MAIN, QUERY_SOURCE_SUBAGENT
 from ._common import as_dict
@@ -90,26 +95,24 @@ class HookPayload:
             return None, None
         return _field(message, "content"), _field(message, "tool_calls")
 
-    def system_prompt(self, messages: Any) -> Optional[str]:
-        """The system prompt: an explicit kwarg, else the leading system message,
-        else the Responses API ``instructions`` field."""
+    def system_prompt(self) -> Optional[str]:
+        """The system prompt sent apart from the message list: an explicit
+        kwarg, else the Responses API ``instructions`` (or ``system``) field.
+        A system message inside the list is not this: it already travels in
+        ``gen_ai.input.messages``."""
         explicit = self.kwargs.get("system_prompt")
         if explicit:
             return str(explicit)
-        if isinstance(messages, list):
-            for m in messages:
-                if isinstance(m, dict) and m.get("role") in ("system", "developer"):
-                    content = m.get("content")
-                    if isinstance(content, list):
-                        content = " ".join(
-                            str(part.get("text", "")) if isinstance(part, dict) else str(part)
-                            for part in content
-                        )
-                    return str(content) if content else None
-                break
         body = self.body
         instructions = body.get("instructions") or body.get("system")
         return str(instructions) if instructions else None
+
+
+def _has_system_message(messages: Any) -> bool:
+    """Whether the message list carries a system (or developer) message."""
+    return isinstance(messages, list) and any(
+        _field(m, "role") in ("system", "developer") for m in messages if m is not None
+    )
 
 
 def _field(message: Any, name: str) -> Any:
@@ -168,15 +171,21 @@ def full_prompt_attributes(tracer, payload: HookPayload) -> Dict[str, Any]:
     messages = payload.messages
     serialized = serialize_full(messages)
     if serialized is not None:
-        # One copy per convention: gen_ai.input.messages for the OTel GenAI
-        # readers, input.value for OpenInference (Phoenix).
-        attributes["gen_ai.input.messages"] = serialized
+        # One copy per convention: gen_ai.input.messages in the OTel GenAI
+        # parts schema, input.value in the provider's own shape (OpenInference).
+        attributes["gen_ai.input.messages"] = genai_messages_json(messages) or serialized
         attributes["input.value"] = serialized
         attributes["input.mime_type"] = "application/json"
         attributes["hermes.content.input_chars"] = len(serialized)
-    system_prompt = payload.system_prompt(messages)
+    # gen_ai.system_instructions is for instructions sent apart from the chat
+    # history (an explicit system parameter, the Responses API instructions).
+    # A system message inside the list is already in gen_ai.input.messages;
+    # repeating it makes backends show the prompt twice.
+    system_prompt = None if _has_system_message(messages) else payload.system_prompt()
     if system_prompt:
-        attributes["gen_ai.system_instructions"] = system_prompt
+        instructions = system_instructions_json(system_prompt)
+        if instructions is not None:
+            attributes["gen_ai.system_instructions"] = instructions
     return attributes
 
 
@@ -267,26 +276,31 @@ def response_attributes(
     return attributes
 
 
-def full_response_attributes(tracer, payload: HookPayload) -> Dict[str, Any]:
+def full_response_attributes(
+    tracer, payload: HookPayload, finish_reason: Any = None
+) -> Dict[str, Any]:
     """The complete response in both conventions (#74), only in full capture:
-    one assistant message carrying the text and the tool calls it made."""
+    one assistant message carrying the text and the tool calls it made, with
+    the call's finish reason (backends such as Phoenix require it on every
+    ``gen_ai.output.messages`` entry)."""
     if not tracer.config.captures_full_responses():
         return {}
     content, tool_calls = payload.assistant_message
-    message: Dict[str, Any] = {"role": "assistant"}
-    if content:
-        message["content"] = str(content)
     tool_calls_serialized = serialize_full(tool_calls)
+    tool_calls_plain: Any = None
     if tool_calls_serialized is not None:
         try:
-            message["tool_calls"] = json.loads(tool_calls_serialized)
+            tool_calls_plain = json.loads(tool_calls_serialized)
         except Exception:
-            message["tool_calls"] = tool_calls_serialized
-    if len(message) == 1:
+            tool_calls_plain = None
+    output_messages = output_message_json(
+        str(content) if content else None, tool_calls_plain, finish_reason
+    )
+    if output_messages is None and not content and tool_calls_serialized is None:
         return {}
-    attributes: Dict[str, Any] = {
-        "gen_ai.output.messages": json.dumps([message], ensure_ascii=False)
-    }
+    attributes: Dict[str, Any] = {}
+    if output_messages is not None:
+        attributes["gen_ai.output.messages"] = output_messages
     if content:
         attributes["output.value"] = str(content)
         attributes["output.mime_type"] = "text/plain"

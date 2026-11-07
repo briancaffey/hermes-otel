@@ -121,8 +121,13 @@ class TestLlmSpanExport:
         assert attrs["openinference.span.kind"] == "LLM"
         assert attrs["input.value"] == "hello"
         assert attrs["output.value"] == "hi there"
-        assert attrs["gen_ai.input.messages"] == '[{"role": "user", "content": "hello"}]'
-        assert attrs["gen_ai.output.messages"] == '[{"role": "assistant", "content": "hi there"}]'
+        assert attrs["gen_ai.input.messages"] == (
+            '[{"role": "user", "parts": [{"type": "text", "content": "hello"}]}]'
+        )
+        assert attrs["gen_ai.output.messages"] == (
+            '[{"role": "assistant", "parts": [{"type": "text", "content": "hi there"}],'
+            ' "finish_reason": "stop"}]'
+        )
 
 
 class TestApiSpanExport:

@@ -268,7 +268,7 @@ def on_post_auxiliary_call(
     )
     if streaming:
         attributes["gen_ai.request.stream"] = True
-    attributes.update(full_response_attributes(tracer, HookPayload(kwargs)))
+    attributes.update(full_response_attributes(tracer, HookPayload(kwargs), finish_reason))
 
     tracer.record_metric(
         "auxiliary_count",

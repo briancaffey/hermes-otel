@@ -132,10 +132,10 @@ One per `run_conversation` call (span kind `LLM`).
 | `gen_ai.request.model` | gen_ai | string | Model name |
 | `gen_ai.operation.name` | gen_ai | string | `chat` |
 | `input.value`, `input.mime_type` | OpenInference | string | User message (`text/plain`) or, with `capture_conversation_history`, the conversation JSON (`application/json`) |
-| `gen_ai.input.messages` | gen_ai | string (JSON) | Same content in the gen_ai message shape |
+| `gen_ai.input.messages` | gen_ai | string (JSON) | Same content in the [OTel GenAI parts schema](#gen-ai-message-schema) |
 | `output.value`, `output.mime_type` | OpenInference | string | Final assistant response |
 | `hermes.preview.input.truncated`, `hermes.preview.input.original_chars`, `hermes.preview.output.truncated`, `hermes.preview.output.original_chars` | hermes | bool, int | Set only when the preview was clipped: `true` and the value's original length (optional) |
-| `gen_ai.output.messages` | gen_ai | string (JSON) | Same in the gen_ai shape |
+| `gen_ai.output.messages` | gen_ai | string (JSON) | Same content in the [OTel GenAI parts schema](#gen-ai-message-schema) |
 | `gen_ai.response.model` | gen_ai | string | The response model a provider reported on this turn's API calls; absent when none was reported (never the request model) |
 | `hermes.conversation.message_count` | hermes | int | Message count when conversation capture is on (optional) |
 
@@ -159,8 +159,8 @@ One per HTTP round-trip to the provider (span kind `LLM`). Set at **start**:
 | `llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens` | hermes | int | Request shape as Hermes reports it |
 | `llm.request.tool_count` | hermes | int | Tools offered on an auxiliary call, when any (optional; auxiliary spans only) |
 | `gen_ai.request.max_tokens`, `gen_ai.request.temperature`, `gen_ai.request.top_p`, `gen_ai.request.top_k`, `gen_ai.request.frequency_penalty`, `gen_ai.request.presence_penalty`, `gen_ai.request.stream`, `gen_ai.request.reasoning.level`, `gen_ai.request.stop_sequences`, `gen_ai.request.choice.count` | gen_ai | mixed | Request parameters, each only when Hermes passes it (optional) |
-| `input.value`, `input.mime_type`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages, one copy per convention — `content_capture: full` (the default) |
-| `gen_ai.system_instructions` | gen_ai | string | **Full** system prompt: the leading system message, or the Responses API `instructions` — `content_capture: full` |
+| `input.value`, `input.mime_type`, `gen_ai.input.messages` | both | string (JSON) | **Full** request messages, one copy per convention: `input.value` as sent to the provider, `gen_ai.input.messages` in the [OTel GenAI parts schema](#gen-ai-message-schema) — `content_capture: full` (the default) |
+| `gen_ai.system_instructions` | gen_ai | string (JSON) | **Full** system prompt as a list of text parts (`[{"type": "text", "content": ...}]`), set only when it travels apart from the message list (an explicit `system_prompt`, the Responses API `instructions`); a system message in the list stays in `gen_ai.input.messages` — `content_capture: full` |
 | `hermes.content.input_chars` | hermes | int | Size of the captured request JSON — `content_capture: full` |
 
 [//]: # (generated:api-start:end)
@@ -184,7 +184,7 @@ Set at **end** (success):
 | `llm.response.duration_ms` | hermes | float | Wall-clock of the request |
 | `hermes.api.ttfc_ms` | hermes | float | Streaming calls: milliseconds from the call's start (retries included) to the first response chunk, from Hermes's `started_at` / `first_chunk_at`; absent for a non-streamed call |
 | `llm.response.output_chars`, `llm.response.tool_calls` | hermes | int | Assistant content length / tool-call count (optional) |
-| `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls — `content_capture: full` (the default) |
+| `output.value`, `output.mime_type`, `gen_ai.output.messages` | both | string (JSON) | **Full** response: the text and, inside the one assistant message, its tool calls (`tool_call` parts in `gen_ai.output.messages`) — `content_capture: full` (the default) |
 | `hermes.content.output_chars` | hermes | int | Size of the captured response — `content_capture: full` |
 | `hermes.cost.status` | hermes | string | How Hermes priced this call (`estimate_usage_cost`, the function behind `state.db` and `/usage`): `actual` (provider-reported) · `estimated` (price table or models API) · `included` (subscription route: no charge to report) · `unknown` (no price for the model). Absent on Hermes builds without the pricing module |
 | `hermes.cost.source` | hermes | string | Where the price came from, as Hermes reports it (`official_docs_snapshot`, `provider_models_api`, `none`, …) (optional) |
@@ -340,3 +340,26 @@ One per delegated child agent (span kind `AGENT`); the child's own root nests be
 ## Metrics
 
 Metrics are documented on their own page: [Metrics reference](/reference/metrics).
+
+## GenAI message schema {#gen-ai-message-schema}
+
+`gen_ai.input.messages`, `gen_ai.output.messages` and `gen_ai.system_instructions` follow the
+[OTel GenAI semantic conventions](https://github.com/open-telemetry/semantic-conventions-genai)
+(`model/gen-ai/gen-ai-{input,output}-messages.json`): every message is a role plus a list of parts.
+
+```json
+[
+  {"role": "system", "parts": [{"type": "text", "content": "You are Hermes."}]},
+  {"role": "user", "parts": [{"type": "text", "content": "Weather tomorrow?"}]},
+  {"role": "assistant", "parts": [
+    {"type": "tool_call", "id": "call_1", "name": "web_search", "arguments": {"q": "weather"}}
+  ]},
+  {"role": "tool", "parts": [{"type": "tool_call_response", "id": "call_1", "response": "sunny"}]}
+]
+```
+
+Hermes's own message shape (`{"role", "content", "tool_calls"}`) is converted: text and content-part
+lists become `text` parts, images `uri` parts, reasoning `reasoning` parts, assistant tool calls
+`tool_call` parts (arguments parsed from JSON when they parse) and `role: tool` messages
+`tool_call_response` parts; a `developer` role becomes `system`. `input.value` and `output.value`
+keep the message list exactly as sent to the provider.
