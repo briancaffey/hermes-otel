@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.32.6](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.5...hermes-otel-v1.32.6) (2026-11-07)
+
+
+### Bug Fixes
+
+* **llm:** keep conversation-history JSON valid over conversation_history_max_chars ([#651](https://github.com/briancaffey/hermes-otel/issues/651)) ([ffb6708](https://github.com/briancaffey/hermes-otel/commit/ffb6708d17201600abdfc3f55efef2280ca5f7d2)), closes [#650](https://github.com/briancaffey/hermes-otel/issues/650)
+
 ## [1.32.5](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.4...hermes-otel-v1.32.5) (2026-11-07)
 
 
