@@ -1,0 +1,81 @@
+<template>
+  <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Mondwest"; src: url("assets/fonts/Mondwest-Regular.woff2") format("woff2"); }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    #s08-paper { position: absolute; inset: 0; background: #f2f2f2; clip-path: inset(100% 0 0 0); }
+    .s08-rules { font-family: "Rules Compressed"; font-weight: 500; line-height: 0.84; letter-spacing: -0.01em; text-transform: uppercase; color: #0000f2; }
+    .s08-mono { font-family: "JetBrains Mono"; font-weight: 700; letter-spacing: 0.18em; color: #0000f2; }
+    /* beat 1: local by default */
+    #s08-b1 { position: absolute; inset: 0; }
+    #s08-local { position: absolute; left: 104px; top: 168px; font-size: 520px; }
+    #s08-local-k { position: absolute; left: 120px; top: 96px; font-size: 28px; }
+    #s08-local-l { position: absolute; left: 120px; top: 660px; font-size: 32px; line-height: 1.7; letter-spacing: 0.06em; }
+    /* beat 2: the catalog commands */
+    #s08-b2 { position: absolute; inset: 0; opacity: 0; }
+    #s08-src-k { position: absolute; left: 120px; top: 380px; font-size: 28px; }
+    #s08-cmd { position: absolute; left: 120px; top: 440px; width: 1680px; padding: 48px 56px; background: #0000f2;
+      font-family: "JetBrains Mono"; font-weight: 700; font-size: 60px; line-height: 1.6; color: #f2f2f2; }
+    #s08-cmd .p { color: #8f8fff; }
+    #s08-cmd .ln { display: block; white-space: pre; overflow: hidden; }
+    /* beat 3: the mark */
+    #s08-b3 { position: absolute; inset: 0; }
+    #s08-cad { position: absolute; left: 430px; top: 230px; width: 250px; height: 560px; overflow: hidden; }
+    #s08-cad img { position: absolute; left: -1076px; top: -600px; width: 1578px; height: 2600px; }
+    #s08-title { position: absolute; left: 720px; top: 300px; font-size: 330px; white-space: nowrap; }
+    #s08-follow { position: absolute; left: 728px; top: 610px; font-family: "Mondwest"; font-size: 76px; color: #0000f2; }
+    #s08-url { position: absolute; left: 0; width: 1920px; top: 880px; font-size: 28px; text-align: center; }
+    #s08-hack { position: absolute; left: 0; width: 1920px; top: 930px; font-size: 28px; text-align: center; color: #6e6eff; }
+  </style>
+  <div id="root" data-composition-id="s08" data-width="1920" data-height="1080">
+    <div id="s08-paper"></div>
+    <div id="s08-b1">
+      <div id="s08-local-k" class="s08-mono">PRIVATE BY DEFAULT</div>
+      <div id="s08-local" class="s08-rules">Local.</div>
+      <div id="s08-local-l" class="s08-mono">NO BACKEND CONFIGURED → A SQLITE STORE UNDER $HERMES_HOME<br />FOR THE DASHBOARD. NOTHING IS SENT.</div>
+    </div>
+    <div id="s08-b2">
+      <div id="s08-src-k" class="s08-mono">OPEN SOURCE · APACHE-2.0 · IN THE HERMES PLUGIN CATALOG</div>
+      <div id="s08-cmd">
+        <span class="ln" id="s08-c1"><span class="p">$ </span>hermes plugins install hermes_otel</span>
+        <span class="ln" id="s08-c2"><span class="p">$ </span>hermes plugins enable hermes_otel</span>
+      </div>
+    </div>
+    <div id="s08-b3">
+      <div id="s08-cad"><img src="assets/art/mercury-blue.jpg" alt="The caduceus, cut from Goltzius's Mercurius (1592)" /></div>
+      <div id="s08-title" class="s08-rules"><span class="s08-l">H</span><span class="s08-l">E</span><span class="s08-l">R</span><span class="s08-l">M</span><span class="s08-l">E</span><span class="s08-l">S</span> <span class="s08-l">O</span><span class="s08-l">T</span><span class="s08-l">E</span><span class="s08-l">L</span></div>
+      <div id="s08-follow">Follow the messenger.</div>
+      <div id="s08-url" class="s08-mono">GITHUB.COM/BRIANCAFFEY/HERMES-OTEL</div>
+      <div id="s08-hack" class="s08-mono">HERMES AGENT PLUGIN HACKATHON · @NOUSRESEARCH</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 13.31, "lead": 0.45, "sents": [[0.45, 3.923], [4.273, 7.453], [7.803, 10.41]], "a": {"nothing": 2.64, "open": 4.31, "catalog": 7.24, "hermes": 7.83, "follow": 8.94, "messenger": 9.8}, "ev": {"flood": 0.0, "nothing": 2.64, "typing": 4.41, "mark": 7.73, "follow": 8.94}}/*END*/;
+      const E = C.ev || {}, A = C.a || {}, S = C.sents || [[0.45, 3.9], [4.27, 7.45], [7.8, 10.4]];
+      const tl = gsap.timeline({ paused: true });
+      // the paper comes back: ink world → print world, rising from the bottom edge
+      tl.fromTo("#s08-paper", { clipPath: "inset(100% 0% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: 0.5, ease: "power2.inOut" }, 0);
+      // beat 1
+      tl.fromTo("#s08-local-k", { opacity: 0 }, { opacity: 1, duration: 0.25 }, 0.45);
+      tl.fromTo("#s08-local", { opacity: 0, filter: "blur(10px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2, ease: "power2.out" }, 0.55);
+      tl.fromTo("#s08-local-l", { opacity: 0 }, { opacity: 1, duration: 0.3 }, (E.nothing ?? 2.6) - 0.3);
+      tl.to("#s08-b1", { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, S[1][0] - 0.3);
+      // beat 2: the two real catalog commands type out
+      tl.fromTo("#s08-b2", { opacity: 0 }, { opacity: 1, duration: 0.2 }, S[1][0] - 0.1);
+      const ty = E.typing ?? S[1][0] + 0.1;
+      tl.fromTo("#s08-c1", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 1.0, ease: "steps(36)" }, ty);
+      tl.fromTo("#s08-c2", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 1.0, ease: "steps(35)" }, ty + 1.2);
+      tl.to("#s08-b2", { opacity: 0, filter: "blur(8px)", duration: 0.18, ease: "power2.in" }, (E.mark ?? 7.7) - 0.3);
+      // beat 3: the caduceus rises out of the plate, the name wipes in beside it
+      const m = E.mark ?? 7.7;
+      tl.fromTo("#s08-cad", { clipPath: "inset(100% 0 0 0)" }, { clipPath: "inset(0% 0 0 0)", duration: 0.55, ease: "power3.out" }, m - 0.1);
+      tl.fromTo("#s08-cad img", { y: 80 }, { y: 0, duration: 0.7, ease: "power3.out" }, m - 0.1);
+      tl.fromTo(".s08-l", { opacity: 0, filter: "blur(8px)" },
+        { opacity: 1, filter: "blur(0px)", duration: 0.14, stagger: 0.04, ease: "power2.out" }, m + 0.05);
+      tl.fromTo("#s08-follow", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, (E.follow ?? 8.9) - 0.1);
+      tl.fromTo(["#s08-url", "#s08-hack"], { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.15 }, (E.follow ?? 8.9) + 0.9);
+      window.__timelines["s08"] = tl;
+    })();
+  </script>
+</template>

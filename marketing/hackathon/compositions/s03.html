@@ -1,0 +1,76 @@
+<template>
+  <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    #s03-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
+    #s03-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    #s03-cam img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #s03-erase { position: absolute; left: 60px; top: 676px; width: 1440px; height: 78px; background: #0d1015; }
+    /* the waterfall: 9 rows, real proportions from the 14-span hero trace (lgtm-detail-hero) */
+    #s03-glyph { position: absolute; left: 120px; top: 378px; width: 360px; height: 300px; transform-origin: 0 0; }
+    .s03-bar { position: absolute; height: 26px; border-radius: 3px; transform-origin: 0 50%; }
+    #s03-kicker { position: absolute; left: 548px; top: 310px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #6e6eff; }
+    #s03-title { position: absolute; left: 538px; top: 350px; font-family: "Rules Compressed"; font-weight: 500; font-size: 390px;
+      line-height: 0.86; letter-spacing: -0.01em; color: #ffe6cb; white-space: nowrap; }
+    #s03-title .acc { color: #ffbd38; }
+    #s03-sub { position: absolute; left: 548px; top: 742px; font-family: "Collapse"; font-weight: 700; font-size: 60px; color: #ffe6cb; }
+    #s03-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; }
+    #s03-band .k { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #6e6eff; }
+    #s03-band .l { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s03-thread { position: absolute; left: 480px; top: 712px; width: 1440px; height: 3px; background: #ffe6cb; transform-origin: 0 50%; }
+  </style>
+  <div id="root" data-composition-id="s03" data-width="1920" data-height="1080">
+    <div id="s03-view">
+      <div id="s03-cam">
+        <img src="assets/clips/terminal-answer.jpg" alt="" />
+        <div id="s03-erase"></div>
+      </div>
+    </div>
+    <!-- S02's caption, carried across the cut and blurred away -->
+    <div id="s03-band"><div class="k">THE BLACK BOX</div><div class="l">Question in. Answer out. Nothing in between.</div></div>
+    <div id="s03-glyph">
+      <div class="s03-bar" id="s03-b0" style="left:0%;   width:100%; top:0px;   background:#35d29b"></div>
+      <div class="s03-bar" id="s03-b1" style="left:0%;   width:100%; top:34px;  background:#39bef9"></div>
+      <div class="s03-bar" id="s03-b2" style="left:0%;   width:16%;  top:68px;  background:#39bef9"></div>
+      <div class="s03-bar" id="s03-b3" style="left:16%;  width:3%;   top:102px; background:#fbbe25"></div>
+      <div class="s03-bar" id="s03-b4" style="left:17%;  width:19%;  top:136px; background:#39bef9"></div>
+      <div class="s03-bar" id="s03-b5" style="left:37%;  width:6%;   top:170px; background:#fbbe25"></div>
+      <div class="s03-bar" id="s03-b6" style="left:43%;  width:5%;   top:204px; background:#39bef9"></div>
+      <div class="s03-bar" id="s03-b7" style="left:48%;  width:2%;   top:238px; background:#fbbe25"></div>
+      <div class="s03-bar" id="s03-b8" style="left:55%;  width:45%;  top:272px; background:#39bef9"></div>
+    </div>
+    <div id="s03-kicker">A HERMES AGENT PLUGIN</div>
+    <div id="s03-title"><span class="s03-l">H</span><span class="s03-l">E</span><span class="s03-l">R</span><span class="s03-l">M</span><span class="s03-l">E</span><span class="s03-l">S</span> <span class="acc"><span class="s03-l">O</span><span class="s03-l">T</span><span class="s03-l">E</span><span class="s03-l">L</span></span></div>
+    <div id="s03-sub"><span class="s03-w">OpenTelemetry</span> <span class="s03-w">for</span> <span class="s03-w">Hermes</span> <span class="s03-w">Agent</span></div>
+    <div id="s03-thread"></div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 7.391, "lead": 0.45, "sents": [[0.45, 4.285], [4.635, 6.491]], "a": {"hermes": 0.47, "otel": 1.07, "agent": 4.1, "trace": 6.17}, "ev": {"bars": 0.15, "title": 0.52, "sub": 3.5, "kicker": 6.17}}/*END*/;
+      const E = C.ev || {}, A = C.a || {};
+      const tl = gsap.timeline({ paused: true });
+      // S02's last frame, exactly: same camera, the gap empty
+      gsap.set("#s03-cam", { x: -230, y: -520, scale: 1.5 });
+      // the glyph starts stretched over the gap (screen x -68..1890, y 519..625) and draws in there
+      tl.fromTo("#s03-glyph", { x: -260, y: 116, scaleX: 6.0, scaleY: 0.39 },
+        { x: -260, y: 116, scaleX: 6.0, scaleY: 0.39, duration: 0.01 }, 0);
+      tl.fromTo(".s03-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.24, stagger: 0.04, ease: "power3.out" }, E.bars ?? 0.15);
+      tl.fromTo("#s03-view", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(8px)", duration: 0.25, ease: "power2.in" }, 0.5);
+      tl.fromTo("#s03-band", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in" }, 0.3);
+      // the bars collapse into the mark
+      tl.to("#s03-glyph", { x: 0, y: 0, scaleX: 1, scaleY: 1, duration: 0.6, ease: "power3.inOut" }, 0.52);
+      const t0 = (E.title ?? 0.5) + 0.35;
+      tl.fromTo(".s03-l", { opacity: 0.0, filter: "blur(8px)" },
+        { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.045, ease: "power2.out" }, t0);
+      tl.fromTo("#s03-kicker", { opacity: 0 }, { opacity: 1, duration: 0.25 }, t0 + 0.4);
+      tl.fromTo(".s03-w", { opacity: 0, filter: "blur(6px)" },
+        { opacity: 1, filter: "blur(0px)", duration: 0.14, stagger: 0.09, ease: "power2.out" }, E.sub ?? 3.4);
+      // "every turn leaves a trace": one thread pulls out of the agent row toward the next shot
+      tl.fromTo("#s03-thread", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power3.in" }, (E.kicker ?? 6.1) - 0.1);
+      window.__timelines["s03"] = tl;
+    })();
+  </script>
+</template>

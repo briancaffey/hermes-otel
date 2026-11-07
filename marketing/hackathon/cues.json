@@ -1,0 +1,144 @@
+{
+ "provider": "kokoro",
+ "voice": "bm_george",
+ "speed": 1.0,
+ "gap": 0.35,
+ "scenes": {
+  "S01": {
+   "title": "hook: the myth (cobalt engraving world)",
+   "kicker": "THE MYTH",
+   "duration": 6.966,
+   "sentences": [
+    {
+     "text": "The day he was born, Hermes stole Apollo's cattle and walked them home backwards, so nobody could follow the tracks.",
+     "start": 0.0,
+     "end": 6.966
+    }
+   ]
+  },
+  "S02": {
+   "title": "tension: agents still hide them",
+   "kicker": "THE PROBLEM",
+   "duration": 6.913,
+   "sentences": [
+    {
+     "text": "Agents still cover their tracks.",
+     "start": 0.0,
+     "end": 2.009
+    },
+    {
+     "text": "A turn runs, an answer appears, and everything in between is gone.",
+     "start": 2.359,
+     "end": 6.914
+    }
+   ]
+  },
+  "S03": {
+   "title": "reveal",
+   "kicker": "HERMES OTEL",
+   "duration": 6.041,
+   "sentences": [
+    {
+     "text": "Hermes OTel is OpenTelemetry for Hermes Agent.",
+     "start": 0.0,
+     "end": 3.835
+    },
+    {
+     "text": "Every turn leaves a trace.",
+     "start": 4.185,
+     "end": 6.041
+    }
+   ]
+  },
+  "S04": {
+   "title": "the trace (real waterfall)",
+   "kicker": "ONE TURN, ONE TRACE",
+   "duration": 11.191,
+   "sentences": [
+    {
+     "text": "The turn is the root.",
+     "start": 0.0,
+     "end": 1.646
+    },
+    {
+     "text": "Each model call, API request, tool, skill and sub-agent nests inside it, carrying its tokens, timing, arguments and outcome.",
+     "start": 1.996,
+     "end": 11.191
+    }
+   ]
+  },
+  "S05": {
+   "title": "the dashboard tab (real dashboard)",
+   "kicker": "BUILT INTO HERMES",
+   "duration": 9.849,
+   "sentences": [
+    {
+     "text": "A tab in the Hermes dashboard shows turns as they land, totals tokens and tool time, and puts the agent's own logs beside the span that wrote them.",
+     "start": 0.0,
+     "end": 9.849
+    }
+   ]
+  },
+  "S06": {
+   "title": "the payoff: every thread, every backend (real backend UIs)",
+   "kicker": "TRACES \u00b7 METRICS \u00b7 LOGS",
+   "duration": 15.319,
+   "sentences": [
+    {
+     "text": "Traces, metrics and logs go out over OTLP, to the tools you already run.",
+     "start": 0.0,
+     "end": 6.003
+    },
+    {
+     "text": "Grafana. SigNoz. OpenObserve. Uptrace. Jaeger. Phoenix. Langfuse.",
+     "start": 6.353,
+     "end": 11.766
+    },
+    {
+     "text": "Twenty-seven backend types, several at once.",
+     "start": 12.116,
+     "end": 15.319
+    }
+   ]
+  },
+  "S07": {
+   "title": "Hermes reads its own tracks (real terminal recording)",
+   "kicker": "ASK THE AGENT",
+   "duration": 6.952,
+   "sentences": [
+    {
+     "text": "And Hermes can read its own tracks.",
+     "start": 0.0,
+     "end": 2.395
+    },
+    {
+     "text": "Ask what the last turn did, and it draws the trace right in the chat.",
+     "start": 2.745,
+     "end": 6.952
+    }
+   ]
+  },
+  "S08": {
+   "title": "claim and end card",
+   "kicker": "PRIVATE BY DEFAULT",
+   "duration": 9.96,
+   "sentences": [
+    {
+     "text": "With no backend configured, nothing leaves your machine.",
+     "start": 0.0,
+     "end": 3.473
+    },
+    {
+     "text": "Open source, and in the Hermes plugin catalog.",
+     "start": 3.823,
+     "end": 7.003
+    },
+    {
+     "text": "Hermes OTel. Follow the messenger.",
+     "start": 7.353,
+     "end": 9.96
+    }
+   ]
+  }
+ }
+}

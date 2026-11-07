@@ -1,0 +1,17 @@
+# Only sources are committed: the narration text, the plan, the HTML and the tools.
+# Every binary (fonts, art, screenshots, voice, music, sfx, renders) is staged by tools/.
+assets/
+renders/
+snapshots/
+beats/
+.media/
+node_modules/
+.DS_Store
+*.mp3
+*.wav
+*.mp4
+*.png
+*.jpg
+*.woff2
+.hyperframes/
+.waveform-cache/

@@ -1,0 +1,67 @@
+<template>
+  <style>
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    #s04-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #031d1c;
+      clip-path: inset(712px 0px 145px 0px); }
+    #s04-cam { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
+    #s04-cam img { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; }
+    /* hides the rows that have not "arrived" yet; slides down row by row */
+    #s04-mask { position: absolute; left: 540px; top: 905px; width: 2620px; height: 1095px; background: #031d1c; transform-origin: 50% 100%; }
+    #s04-thread { position: absolute; left: 0; top: 712px; width: 1920px; height: 3px; background: #ffe6cb; }
+    #s04-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
+    #s04-kicker { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #6e6eff; }
+    #s04-line { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s04-line .acc { color: #ffbd38; }
+  </style>
+  <div id="root" data-composition-id="s04" data-width="1920" data-height="1080">
+    <div id="s04-view">
+      <div id="s04-cam">
+        <img src="assets/shots/lgtm-detail-hero.jpg" alt="The plugin's dashboard tab: one turn's trace waterfall, 14 spans, 16.98 s" />
+        <div id="s04-mask"></div>
+      </div>
+    </div>
+    <div id="s04-thread"></div>
+    <div id="s04-band">
+      <div id="s04-kicker">ONE TURN · ONE TRACE</div>
+      <div id="s04-line"><span class="s04-w">14 spans.</span> <span class="s04-w">16.98 s.</span> <span class="s04-w acc">52.2k tokens.</span></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 12.241, "lead": 0.45, "sents": [[0.45, 2.096], [2.446, 11.641]], "a": {"model": 2.89, "nests": 7.33, "tokens": 9.29, "outcome": 11.16}, "ev": {"rows": 2.89, "push": 8.84}}/*END*/;
+      const E = C.ev || {}, A = C.a || {};
+      const D = C.dur || 12;
+      // camera: put image rect (x, y, w, h) into the 1920 x 860 view
+      const VW = 1920, VH = 860;
+      const frame = (x, y, w, h) => {
+        const s = Math.min(VW / w, VH / h);
+        return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
+      };
+      const top = frame(540, 740, 1800, 840);          // agent + llm rows, legible (~1x)
+      const low = frame(540, 1150, 1800, 840);         // the deeper api / tool rows
+      const stats = frame(540, 455, 1250, 110);        // DURATION · MODEL · TOKENS
+      const out = frame(1650, 455, 1500, 110);         // COST · TOOLS · OUTCOME · SESSION
+      const tl = gsap.timeline({ paused: true });
+      // the thread from S03 opens like a slit into the trace
+      tl.fromTo("#s04-view", { clipPath: "inset(712px 0px 145px 0px)" },
+        { clipPath: "inset(0px 0px 0px 0px)", duration: 0.6, ease: "power3.inOut" }, 0.05);
+      tl.to("#s04-thread", { opacity: 0, duration: 0.15 }, 0.35);
+      tl.fromTo("#s04-cam", top, { ...top, duration: 0.01 }, 0);
+      // rows arrive one by one as the narration names the span kinds (11 rows under the agent row);
+      // the camera tilts down with them
+      const r0 = (A.model ?? 2.9) - 0.6, r1 = (A.nests ?? 7.3);
+      for (let i = 0; i < 11; i++) {
+        tl.to("#s04-mask", { y: 94 * (i + 1), duration: 0.18, ease: "power3.out" }, r0 + (i * (r1 - r0)) / 11);
+      }
+      tl.to("#s04-cam", { ...low, duration: r1 - r0, ease: "power2.inOut" }, r0 + 0.3);
+      tl.to("#s04-cam", { ...stats, duration: 0.9, ease: "power2.inOut" }, E.push ?? 8.8);
+      tl.to("#s04-cam", { ...out, duration: 0.8, ease: "power2.inOut" }, (A.outcome ?? 11.1) - 0.9);
+      tl.fromTo("#s04-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.6);
+      tl.fromTo(".s04-w", { opacity: 0, filter: "blur(6px)" },
+        { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.35, ease: "power2.out" }, (E.push ?? 8.8) + 0.5);
+      window.__timelines["s04"] = tl;
+    })();
+  </script>
+</template>

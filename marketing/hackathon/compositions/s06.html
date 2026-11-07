@@ -1,0 +1,182 @@
+<template>
+  <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    .s06-rules { font-family: "Rules Compressed"; font-weight: 500; line-height: 0.84; letter-spacing: -0.01em; text-transform: uppercase; }
+    .s06-mono { font-family: "JetBrains Mono"; font-weight: 700; letter-spacing: 0.18em; }
+    /* phase A: three signals, then the threads */
+    #s06-a { position: absolute; inset: 0; }
+    #s06-kicker { position: absolute; left: 120px; top: 96px; font-size: 28px; color: #6e6eff; }
+    .s06-sig { position: absolute; left: 112px; font-size: 230px; }
+    #s06-sig0 { top: 150px; color: #39bef9; }
+    #s06-sig1 { top: 360px; color: #35d29b; }
+    #s06-sig2 { top: 570px; color: #fbbe25; }
+    #s06-otlp { position: absolute; left: 120px; top: 830px; font-size: 34px; color: #ffe6cb; }
+    #s06-mark { position: absolute; left: 860px; top: 470px; width: 180px; height: 150px; }
+    #s06-mark div { position: absolute; height: 13px; border-radius: 2px; }
+    #s06-threads { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    .s06-end { position: absolute; left: 1420px; font-size: 30px; color: #ffe6cb; }
+    /* phase B: one backend at a time */
+    .s06-pane { position: absolute; inset: 0; opacity: 0; }
+    .s06-shot { position: absolute; left: 652px; top: 0; width: 1268px; height: 1080px; overflow: hidden; }
+    .s06-shot img { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
+    .s06-name { position: absolute; left: 112px; top: 300px; font-size: 200px; color: #ffe6cb; width: 520px; }
+    .s06-chips { position: absolute; left: 120px; top: 760px; font-size: 28px; line-height: 1.7; }
+    .s06-on { color: #ffe6cb; }
+    .s06-off { color: #6f8f8a; text-decoration: line-through; }
+    .s06-idx { position: absolute; left: 120px; top: 230px; font-size: 28px; color: #6e6eff; }
+    /* phase C: the wall */
+    #s06-c { position: absolute; inset: 0; opacity: 0; }
+    #s06-27 { position: absolute; left: 104px; top: 170px; font-size: 520px; color: #ffbd38; }
+    #s06-27l { position: absolute; left: 120px; top: 640px; font-family: "Collapse"; font-weight: 700; font-size: 60px; color: #ffe6cb; line-height: 1.15; }
+    .s06-tile { position: absolute; width: 262px; height: 320px; overflow: hidden; background: #0d1015; }
+    .s06-tile img { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
+  </style>
+  <div id="root" data-composition-id="s06" data-width="1920" data-height="1080" data-layout-allow-overflow>
+    <div id="s06-a">
+      <div id="s06-kicker" class="s06-mono">THREE SIGNALS · ONE WIRE</div>
+      <div class="s06-sig s06-rules" id="s06-sig0">Traces</div>
+      <div class="s06-sig s06-rules" id="s06-sig1">Metrics</div>
+      <div class="s06-sig s06-rules" id="s06-sig2">Logs</div>
+      <div id="s06-otlp" class="s06-mono">OTLP · HTTP OR gRPC</div>
+      <svg id="s06-threads" viewBox="0 0 1920 1080">
+        <g stroke="#ffe6cb" stroke-width="2.5" fill="none">
+          <path class="s06-th" d="M1040 545 L1400 150" />
+          <path class="s06-th" d="M1040 545 L1400 280" />
+          <path class="s06-th" d="M1040 545 L1400 410" />
+          <path class="s06-th" d="M1040 545 L1400 545" />
+          <path class="s06-th" d="M1040 545 L1400 680" />
+          <path class="s06-th" d="M1040 545 L1400 810" />
+          <path class="s06-th" d="M1040 545 L1400 940" />
+        </g>
+      </svg>
+      <div id="s06-mark">
+        <div style="left:0; width:180px; top:0; background:#35d29b"></div>
+        <div style="left:0; width:180px; top:17px; background:#39bef9"></div>
+        <div style="left:0; width:29px; top:34px; background:#39bef9"></div>
+        <div style="left:29px; width:6px; top:51px; background:#fbbe25"></div>
+        <div style="left:31px; width:34px; top:68px; background:#39bef9"></div>
+        <div style="left:67px; width:11px; top:85px; background:#fbbe25"></div>
+        <div style="left:77px; width:9px; top:102px; background:#39bef9"></div>
+        <div style="left:86px; width:4px; top:119px; background:#fbbe25"></div>
+        <div style="left:99px; width:81px; top:136px; background:#39bef9"></div>
+      </div>
+      <div class="s06-end s06-mono" id="s06-e0" style="top:132px">GRAFANA</div>
+      <div class="s06-end s06-mono" id="s06-e1" style="top:262px">SIGNOZ</div>
+      <div class="s06-end s06-mono" id="s06-e2" style="top:392px">OPENOBSERVE</div>
+      <div class="s06-end s06-mono" id="s06-e3" style="top:527px">UPTRACE</div>
+      <div class="s06-end s06-mono" id="s06-e4" style="top:662px">JAEGER</div>
+      <div class="s06-end s06-mono" id="s06-e5" style="top:792px">PHOENIX</div>
+      <div class="s06-end s06-mono" id="s06-e6" style="top:922px">LANGFUSE</div>
+    </div>
+
+    <!-- one pane per backend: its real UI showing the same kind of turn, read back from that backend -->
+    <div class="s06-pane" id="s06-p0">
+      <div class="s06-shot"><img src="assets/shots/lgtm-ui-trace.jpg" alt="Grafana Explore, Tempo: the turn's trace" /></div>
+      <div class="s06-idx s06-mono">01 / 07</div>
+      <div class="s06-name s06-rules">Grafana</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-on">METRICS</span><br /><span class="s06-on">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p1">
+      <div class="s06-shot"><img src="assets/shots/signoz-ui-trace.jpg" alt="SigNoz: the turn's flamegraph and spans" /></div>
+      <div class="s06-idx s06-mono">02 / 07</div>
+      <div class="s06-name s06-rules">SigNoz</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-on">METRICS</span><br /><span class="s06-on">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p2">
+      <div class="s06-shot"><img src="assets/shots/openobserve-ui-trace.jpg" alt="OpenObserve: the turn's waterfall" /></div>
+      <div class="s06-idx s06-mono">03 / 07</div>
+      <div class="s06-name s06-rules">OpenObserve</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-on">METRICS</span><br /><span class="s06-on">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p3">
+      <div class="s06-shot"><img src="assets/shots/uptrace-ui-trace.jpg" alt="Uptrace: the turn's spans and timeline" /></div>
+      <div class="s06-idx s06-mono">04 / 07</div>
+      <div class="s06-name s06-rules">Uptrace</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-on">METRICS</span><br /><span class="s06-on">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p4">
+      <div class="s06-shot"><img src="assets/shots/jaeger-ui-trace.jpg" alt="Jaeger: the turn's trace timeline" /></div>
+      <div class="s06-idx s06-mono">05 / 07</div>
+      <div class="s06-name s06-rules">Jaeger</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-off">METRICS</span><br /><span class="s06-off">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p5">
+      <div class="s06-shot"><img src="assets/shots/phoenix-ui-trace.jpg" alt="Phoenix: the turn's span tree with input and output" /></div>
+      <div class="s06-idx s06-mono">06 / 07</div>
+      <div class="s06-name s06-rules">Phoenix</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-off">METRICS</span><br /><span class="s06-off">LOGS</span></div>
+    </div>
+    <div class="s06-pane" id="s06-p6">
+      <div class="s06-shot"><img src="assets/shots/langfuse-ui-trace.jpg" alt="Langfuse: the turn's trace with token counts" /></div>
+      <div class="s06-idx s06-mono">07 / 07</div>
+      <div class="s06-name s06-rules">Langfuse</div>
+      <div class="s06-chips s06-mono"><span class="s06-on">TRACES</span><br /><span class="s06-off">METRICS</span><br /><span class="s06-off">LOGS</span></div>
+    </div>
+
+    <div id="s06-c">
+      <div id="s06-27" class="s06-rules">27</div>
+      <div id="s06-27l">backend types.<br />Several at once.</div>
+      <div class="s06-tile" id="s06-t0" style="left:640px; top:200px"><img src="assets/shots/lgtm-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t1" style="left:922px; top:200px"><img src="assets/shots/signoz-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t2" style="left:1204px; top:200px"><img src="assets/shots/openobserve-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t3" style="left:1486px; top:200px"><img src="assets/shots/uptrace-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t4" style="left:781px; top:560px"><img src="assets/shots/jaeger-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t5" style="left:1063px; top:560px"><img src="assets/shots/phoenix-ui-trace.jpg" alt="" /></div>
+      <div class="s06-tile" id="s06-t6" style="left:1345px; top:560px"><img src="assets/shots/langfuse-ui-trace.jpg" alt="" /></div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 16.319, "lead": 0.45, "sents": [[0.45, 6.453], [6.803, 12.216], [12.566, 15.769]], "a": {"traces": 0.46, "metrics": 1.03, "logs": 1.85, "otlp": 2.49, "grafana": 6.83, "openobserve": 8.36, "uptrace": 9.57, "jaeger": 10.34, "phoenix": 10.92, "langfuse": 11.65, "twentyseven": 12.61, "several": 14.79}, "ev": {"sig_t": 0.46, "sig_m": 1.03, "sig_l": 1.85, "b0": 6.77, "b1": 7.67, "b2": 8.3, "b3": 9.51, "b4": 10.28, "b5": 10.86, "b6": 11.59, "wall": 12.51, "riser_at": 3.77}}/*END*/;
+      const E = C.ev || {};
+      // crop centre (image px) and scale for each backend's waterfall, in pane and in tile
+      const CROP = [[2200, 1330, 0.75], [1300, 900, 0.7], [2100, 900, 0.6], [1500, 1150, 0.7],
+                    [2140, 1000, 0.6], [1600, 1000, 0.62], [1100, 1000, 0.62]];
+      const place = (sel, w, h, cx, cy, s) => gsap.set(sel, { x: w / 2 - cx * s, y: h / 2 - cy * s, scale: s });
+      const tl = gsap.timeline({ paused: true });
+      // phase A
+      tl.fromTo("#s06-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.1);
+      ["sig_t", "sig_m", "sig_l"].forEach((k, i) =>
+        tl.fromTo("#s06-sig" + i, { opacity: 0, filter: "blur(10px)" },
+          { opacity: 1, filter: "blur(0px)", duration: 0.18, ease: "power2.out" }, (E[k] ?? 0.5 + i * 0.6) - 0.05));
+      tl.fromTo("#s06-otlp", { opacity: 0 }, { opacity: 1, duration: 0.25 }, 2.4);
+      tl.fromTo("#s06-mark div", { scaleX: 0, transformOrigin: "0 50%" },
+        { scaleX: 1, duration: 0.24, stagger: 0.04, ease: "power3.out" }, 2.2);
+      const paths = document.querySelectorAll(".s06-th");
+      paths.forEach((p, i) => {
+        const L = p.getTotalLength();
+        tl.fromTo(p, { strokeDasharray: L, strokeDashoffset: L }, { strokeDashoffset: 0, duration: 0.45, ease: "power3.out" }, 2.7 + i * 0.09);
+        tl.fromTo("#s06-e" + i, { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.3, ease: "expo.out" }, 3.0 + i * 0.09);
+      });
+      // phase B: cut to each backend on its name; the shot whips in, the name blurs in
+      for (let i = 0; i < 7; i++) {
+        const at = E["b" + i] ?? 6.8 + i * 0.8;
+        const [cx, cy, s] = CROP[i];
+        place("#s06-p" + i + " .s06-shot img", 1268, 1080, cx, cy, s);
+        tl.fromTo("#s06-p" + i, { opacity: 0 }, { opacity: 1, duration: 0.01 }, at);
+        tl.fromTo("#s06-p" + i + " .s06-shot", { x: 160, filter: "blur(14px)" },
+          { x: 0, filter: "blur(0px)", duration: 0.28, ease: "expo.out" }, at);
+        tl.fromTo("#s06-p" + i + " .s06-name", { opacity: 0, filter: "blur(8px)" },
+          { opacity: 1, filter: "blur(0px)", duration: 0.15, ease: "power2.out" }, at + 0.03);
+        tl.fromTo("#s06-p" + i + " .s06-shot img", { scale: s }, { scale: s * 1.06, duration: 1.2, ease: "power1.out" }, at);
+        if (i === 0) tl.to("#s06-a", { opacity: 0, duration: 0.01 }, at);
+        if (i > 0) tl.to("#s06-p" + (i - 1), { opacity: 0, duration: 0.01 }, at + 0.01);
+      }
+      // phase C: the wall and the number
+      const w = E.wall ?? 12.5;
+      tl.to("#s06-p6", { opacity: 0, duration: 0.01 }, w + 0.01);
+      tl.fromTo("#s06-c", { opacity: 0 }, { opacity: 1, duration: 0.01 }, w);
+      for (let i = 0; i < 7; i++) {
+        const [cx, cy, s] = CROP[i];
+        place("#s06-t" + i + " img", 262, 320, cx, cy, s * 0.42);
+      }
+      tl.fromTo(".s06-tile", { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.35, stagger: 0.05, ease: "expo.out" }, w);
+      tl.fromTo("#s06-27", { opacity: 0, scale: 1.12, transformOrigin: "0% 50%" },
+        { opacity: 1, scale: 1, duration: 0.3, ease: "expo.out" }, w + 0.05);
+      tl.fromTo("#s06-27l", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, w + 0.6);
+      window.__timelines["s06"] = tl;
+    })();
+  </script>
+</template>

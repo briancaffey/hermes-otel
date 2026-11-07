@@ -1,0 +1,48 @@
+<template>
+  <style>
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    #s07-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
+    #s07-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    #s07-still, #s07-vid { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #s07-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
+    #s07-kicker { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #6e6eff; }
+    #s07-line { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s07-line code { font-family: "JetBrains Mono"; font-weight: 700; font-size: 48px; color: #ffbd38; }
+  </style>
+  <div id="root" data-composition-id="s07" data-width="1920" data-height="1080">
+    <div id="s07-view">
+      <div id="s07-cam">
+        <img id="s07-still" src="assets/clips/terminal-tree.jpg" alt="The span tree the agent drew for its previous turn" />
+        <video id="s07-vid" class="clip" src="assets/clips/span-tree.mp4" muted playsinline
+               data-start="0" data-duration="7.15" data-track-index="2"></video>
+      </div>
+    </div>
+    <div id="s07-band">
+      <div id="s07-kicker">ASK THE AGENT</div>
+      <div id="s07-line">The <code>observability</code> skill ships with the plugin.</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 8.002, "lead": 0.45, "sents": [[0.45, 2.845], [3.195, 7.402]], "a": {"read": 1.62, "tracks": 2.67, "ask": 3.23, "draws": 5.61, "chat": 7.08}, "ev": {"clip": 0.0, "push": 5.31}}/*END*/;
+      const E = C.ev || {}, A = C.a || {};
+      const VW = 1920, VH = 860;
+      const frame = (x, y, w, h) => {
+        const s = Math.min(VW / w, VH / h);
+        return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
+      };
+      const chat = frame(40, 600, 1400, 420);        // the second question and the skill running
+      const tree = frame(100, 120, 1720, 640);       // the span tree, once it renders (~4.8 s into the clip)
+      const tl = gsap.timeline({ paused: true });
+      // whip in from the right; it lands slightly blurred and sharpens
+      tl.fromTo("#s07-view", { x: 1920, filter: "blur(18px)" }, { x: 0, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, 0);
+      tl.fromTo("#s07-cam", chat, { ...chat, duration: 0.01 }, 0);
+      tl.to("#s07-cam", { ...tree, duration: 0.7, ease: "power2.inOut" }, E.push ?? 5.3);
+      tl.fromTo("#s07-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.4);
+      tl.fromTo("#s07-line", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, (A.ask ?? 3.2) - 0.2);
+      window.__timelines["s07"] = tl;
+    })();
+  </script>
+</template>
