@@ -1,5 +1,6 @@
 """Integration tests verifying parent-child span nesting via InMemorySpanExporter."""
 
+import json
 import threading
 
 import pytest
@@ -421,7 +422,30 @@ class TestCaptureConversationHistory:
         llm = _span_by_name(exporter.get_finished_spans(), "llm.gpt-4")
         attrs = dict(llm.attributes)
         assert len(attrs["input.value"]) <= 200
-        assert attrs["input.value"].endswith("...")
+        # Still valid JSON (#650): the message's content is clipped, not the string.
+        assert json.loads(attrs["input.value"])[0]["content"].endswith("...")
+        assert json.loads(attrs["gen_ai.input.messages"])[0]["role"] == "user"
+        assert attrs["hermes.preview.input.truncated"] is True
+
+    def test_long_history_drops_oldest_messages_and_stays_valid_json(self, inmemory_otel_setup):
+        exporter, plugin = inmemory_otel_setup
+        from hermes_otel.plugin_config import HermesOtelConfig
+
+        plugin.config = HermesOtelConfig(
+            capture_conversation_history=True,
+            conversation_history_max_chars=2_000,
+        )
+        history = [{"role": "user", "content": f"turn {i} " + "x" * 200} for i in range(40)]
+        self._drive_llm_call("s5", history)
+
+        attrs = dict(_span_by_name(exporter.get_finished_spans(), "llm.gpt-4").attributes)
+        hermes = json.loads(attrs["input.value"])
+        genai = json.loads(attrs["gen_ai.input.messages"])
+        dropped = attrs["hermes.conversation.dropped_messages"]
+        assert dropped > 0 and len(hermes) == len(genai) == 40 - dropped + 1
+        assert hermes[-1] == history[-1]
+        assert attrs["hermes.conversation.message_count"] == 40
+        assert attrs["hermes.preview.input.original_chars"] == len(json.dumps(history))
 
     def test_empty_history_falls_back_to_user_message(self, inmemory_otel_setup):
         exporter, plugin = inmemory_otel_setup

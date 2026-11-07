@@ -341,6 +341,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "hermes.preview.output.original_chars",
   "gen_ai.output.messages",
   "hermes.conversation.message_count",
+  "hermes.conversation.dropped_messages",
   "hermes.query_source",
   "hermes.auxiliary.task",
   "hermes.span.after_turn",

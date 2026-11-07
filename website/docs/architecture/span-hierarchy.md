@@ -87,6 +87,7 @@ One per logical model turn. Name is `llm.{model}` (e.g. `llm.claude-sonnet-4-6`)
 | `gen_ai.input.messages` | gen_ai | User message (or the conversation history) as GenAI message JSON |
 | `gen_ai.output.messages` | gen_ai | Assistant response as GenAI message JSON |
 | `hermes.conversation.message_count` | hermes-specific | When `capture_conversation_history: true` |
+| `hermes.conversation.dropped_messages` | hermes-specific | When the conversation was over `conversation_history_max_chars` and the oldest messages were left out |
 
 By default `input.value` is the latest user turn only. To see the full message list the model saw, enable [conversation capture](/configuration/conversation-capture).
 

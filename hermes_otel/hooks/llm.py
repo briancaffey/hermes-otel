@@ -7,7 +7,7 @@ from typing import Any, Dict, Optional
 from .. import log_events as EV
 from ..coerce import coerce_bool, to_optional_int
 from ..debug_utils import debug_log
-from ..genai_messages import output_message_json, to_genai_messages
+from ..genai_messages import output_message_json
 from ..helpers import truncate_string
 from ..instruments import COMPAT_SESSION_LABEL
 from ._common import (
@@ -34,6 +34,7 @@ from .api_call import (
 )
 from .attributes import (
     _ID_MAX,
+    _fit_conversation_history,
     _gen_ai_attributes,
     _message_json,
     _metric_model_labels,
@@ -41,7 +42,6 @@ from .attributes import (
     _provider_attributes,
     _response_model_attributes,
     _sender_attributes,
-    _serialize_conversation_history,
     _session_identity_attributes,
     _turn_attributes,
     correlation_attributes,
@@ -176,24 +176,24 @@ def on_pre_llm_call(
     # Opt-in: put the entire conversation the model is about to see on
     # input.value. Falls back to just the latest user_message otherwise —
     # that's the historical default and what small backends handle best.
-    full = None
+    fitted = None
     if tracer.config.capture_conversation_history and tracer.config.captures_content():
-        full = _serialize_conversation_history(
-            conversation_history, tracer.config.conversation_history_max_chars
-        )
-    if full is not None:
-        attributes["input.value"] = full
+        try:
+            fitted = _fit_conversation_history(
+                conversation_history, tracer.config.conversation_history_max_chars
+            )
+        except (TypeError, ValueError):  # unserialisable history: plain input
+            fitted = None
+    if fitted is not None:
+        attributes["input.value"] = fitted.input_value
         attributes["input.mime_type"] = "application/json"
         # gen_ai.input.messages follows the GenAI parts schema; input.value
         # keeps Hermes's own message shape.
-        attributes["gen_ai.input.messages"] = (
-            _serialize_conversation_history(
-                to_genai_messages(conversation_history),
-                tracer.config.conversation_history_max_chars,
-            )
-            or full
-        )
+        attributes["gen_ai.input.messages"] = fitted.genai_messages
         attributes["hermes.conversation.message_count"] = len(conversation_history)
+        if fitted.dropped:
+            attributes["hermes.conversation.dropped_messages"] = fitted.dropped
+        _mark_truncated(attributes, "input", fitted.original_chars)
     else:
         attributes.update(_llm_input_attributes(tracer, user_message))
 

@@ -538,6 +538,13 @@ ROWS: Tuple[Row, ...] = (
         "int",
         "Message count when conversation capture is on (optional)",
     ),
+    Row(
+        ("hermes.conversation.dropped_messages",),
+        "llm.*",
+        "turn",
+        "int",
+        "How many of the oldest messages were left out to fit `conversation_history_max_chars`; one placeholder message stands in for them in `input.value` and `gen_ai.input.messages` (set only when some were)",
+    ),
     # ── api.*: start ──
     Row(("llm.model_name", "llm.provider"), "api.*: start", "model", "string", "Model / provider"),
     Row(
