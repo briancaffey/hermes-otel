@@ -1,0 +1,190 @@
+{
+ "_comment": "Every generated asset of the film. tools/gen_media.py renders these on club.lan into assets/gen/ (gitignored).",
+ "items": [
+  {
+   "id": "a01-cattle",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Hermes wears a winged petasos helmet and winged sandals and has no wings on his back. Scene: the young god Hermes at night drives a herd of cattle across a dusty plain, the cattle walking backwards, their hoofprints in the dust pointing the wrong way, a crescent moon. Wide composition; the left third is open plain and sky."
+  },
+  {
+   "id": "a02-cave",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: the dusty ground at the mouth of a dark cave at night, close view; a trail of cloven hoofprints leads into the cave, every print pointing outward, the wrong way. The cave interior is solid black ink. The upper left third is plain rock and sky."
+  },
+  {
+   "id": "a03-telescope",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Hermes wears a winged petasos helmet and winged sandals and has no wings on his back. Scene: Hermes stands on a stone rooftop at night looking through a large brass refracting telescope on a tripod toward the starry sky; the stars are joined by thin straight lines into a branching tree. Hermes and the telescope fill the right half; the left half is open night sky."
+  },
+  {
+   "id": "a04-chart",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: an antique celestial chart. One bright star at the top; below it nested arcs and horizontal bars of different lengths hang in rows like a cascade, each bar a little to the right of the one above; compass rose, ornate border."
+  },
+  {
+   "id": "a05-cabinet",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: a small wooden card-catalogue cabinet with many little drawers on a scholar's writing desk under an oil lamp, one drawer open showing index cards; quiet and intimate. The left third is plain wall."
+  },
+  {
+   "id": "a06-codex",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Hermes wears a winged petasos helmet and winged sandals and has no wings on his back. Scene: Hermes seated at a lectern reading a large open star atlas whose pages show constellations and tables; candles; library shelves behind him."
+  },
+  {
+   "id": "a07-arms",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Hermes wears a winged petasos helmet and winged sandals and has no wings on his back. Scene: Hermes with many arms, standing on a hilltop at night, each hand holding a taut thread that runs to a distant signal fire on a different hilltop; seven beacon fires across the horizon."
+  },
+  {
+   "id": "a08-rosetta",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: a large carved stone tablet with two columns of different ancient scripts side by side, the same text written twice; two scholars holding lamps compare them."
+  },
+  {
+   "id": "a09-runners",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: two ancient Greek messengers run in step side by side along a stone road, each carrying an identical sealed scroll, matching stride, a milestone beside the road, hills behind."
+  },
+  {
+   "id": "a10-mirror",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x864",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Hermes wears a winged petasos helmet and winged sandals and has no wings on his back. Scene: Hermes holds up a round bronze mirror and studies it; in the mirror a branching tree of stars is reflected. Half-length figure on the right; the left half is plain night sky."
+  },
+  {
+   "id": "a11-emblem",
+   "kind": "edit",
+   "refs": [
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1024x1024",
+   "seed": 7,
+   "prompt": "A new copper-plate line engraving in exactly the style of image 1: electric blue ink on warm off-white paper, fine crosshatching and line shading, no gradients, no colour other than the blue ink, no text or lettering. Scene: a heraldic emblem centred on the page: a winged caduceus crossed with a small brass telescope inside a laurel wreath, with a wide blank paper margin all around."
+  },
+  {
+   "id": "x01-waterfall",
+   "kind": "edit",
+   "refs": [
+    "assets/shots/lgtm-detail-hero.jpg",
+    "assets/art/mercury-blue.jpg"
+   ],
+   "size": "1536x960",
+   "seed": 7,
+   "prompt": "Redraw image 1, a software trace waterfall (rows of names on the left with horizontal timing bars on the right), as a copper-plate line engraving in the style of image 2: electric blue ink on warm off-white paper, crosshatched bars, fine lines. Keep the exact layout of the rows and bars. No colour other than the blue ink."
+  },
+  {
+   "id": "p01-telescope",
+   "kind": "gen",
+   "size": "1024x1024",
+   "seed": 11,
+   "prompt": "A polished brass antique refracting telescope on a dark wooden tripod, product photograph, the whole object centred and fully visible, plain white background, soft even studio light."
+  },
+  {
+   "id": "p02-caduceus",
+   "kind": "gen",
+   "size": "1024x1024",
+   "seed": 11,
+   "prompt": "A gilded bronze caduceus sculpture, a short winged staff with two snakes coiled around it, product photograph, the whole object centred and fully visible, plain white background, soft even studio light."
+  },
+  {
+   "id": "m01-telescope",
+   "kind": "mesh",
+   "image": "gen:p01-telescope"
+  },
+  {
+   "id": "m02-caduceus",
+   "kind": "mesh",
+   "image": "gen:p02-caduceus"
+  },
+  {
+   "id": "v01-cattle",
+   "kind": "video",
+   "image": "gen:a01-cattle",
+   "duration": 5,
+   "seed": 7,
+   "prompt": "The engraved cattle walk slowly across the moonlit plain and Hermes strides with them, dust drifting; slow camera pan to the right. The copper-plate engraving line style and blue ink stay intact in every frame."
+  },
+  {
+   "id": "v03-telescope",
+   "kind": "video",
+   "image": "gen:a03-telescope",
+   "duration": 5,
+   "seed": 7,
+   "prompt": "Slow push-in toward Hermes at the telescope; stars twinkle and thin lines draw between them into a branching tree. The copper-plate engraving line style and blue ink stay intact in every frame."
+  },
+  {
+   "id": "v07-arms",
+   "kind": "video",
+   "image": "gen:a07-arms",
+   "duration": 5,
+   "seed": 7,
+   "prompt": "The beacon fires flicker and the threads tremble in the night wind; slow push-in. The copper-plate engraving line style and blue ink stay intact in every frame."
+  },
+  {
+   "id": "bgm-a",
+   "kind": "music",
+   "duration": 100,
+   "bpm": 100,
+   "seed": 101,
+   "prompt": "cinematic modern electronic instrumental for a technology film, mythic and warm: steady pulsing synth bass, soft analog arpeggio, airy choir pad, light taiko and handclap percussion, builds gradually to a bright confident lift, clean resolved ending, no vocals"
+  },
+  {
+   "id": "bgm-b",
+   "kind": "music",
+   "duration": 100,
+   "bpm": 100,
+   "seed": 202,
+   "prompt": "cinematic modern electronic instrumental for a technology film, mythic and warm: steady pulsing synth bass, soft analog arpeggio, airy choir pad, light taiko and handclap percussion, builds gradually to a bright confident lift, clean resolved ending, no vocals"
+  }
+ ]
+}

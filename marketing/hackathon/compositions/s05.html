@@ -1,61 +1,87 @@
 <template>
   <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
     @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
-    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #f2f2f2; overflow: hidden; }
+    /* phase A (print): a small card cabinet on the desk = the local SQLite file */
+    #s05-a { position: absolute; inset: 0; }
+    #s05-plate { position: absolute; left: 0; top: 0; width: 1100px; height: 1080px; overflow: hidden; }
+    #s05-plate img { position: absolute; left: -330px; top: 0; width: 1920px; height: 1080px; }
+    #s05-kick { position: absolute; left: 1180px; top: 150px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #0000f2; }
+    #s05-big { position: absolute; left: 1172px; top: 210px; font-family: "Rules Compressed"; font-weight: 500; font-size: 200px;
+      line-height: 0.84; color: #0000f2; }
+    #s05-file { position: absolute; left: 1180px; top: 470px; font-family: "JB Mono"; font-weight: 700; font-size: 30px;
+      color: #f2f2f2; background: #0000f2; padding: 12px 18px; }
+    .s05-drawer { position: absolute; left: 1180px; width: 560px; height: 92px; border: 3px solid #0000f2;
+      font-family: "Rules Compressed"; font-weight: 500; font-size: 76px; line-height: 92px; padding-left: 22px; color: #0000f2; }
+    #s05-d0 { top: 580px; } #s05-d1 { top: 690px; } #s05-d2 { top: 800px; }
+    .s05-drawer i { position: absolute; right: 22px; top: 36px; width: 46px; height: 14px; border-radius: 7px; background: #0000f2; }
+    #s05-note { position: absolute; left: 1180px; top: 930px; font-family: "Collapse"; font-weight: 700; font-size: 40px; color: #0000f2; }
+    /* phase B (product): the dashboard tab */
+    #s05-b { position: absolute; inset: 0; background: #041c1c; opacity: 0; }
     #s05-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #031d1c; }
     #s05-cam { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
     .s05-shot { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; }
-    #s05-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
-    #s05-kicker { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+    #s05-kicker { position: absolute; left: 120px; top: 900px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
       letter-spacing: 0.22em; color: #6e6eff; }
-    #s05-line { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s05-line { position: absolute; left: 120px; top: 950px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
     .s05-t { color: #3d5a57; }
   </style>
   <div id="root" data-composition-id="s05" data-width="1920" data-height="1080">
-    <div id="s05-view">
-      <div id="s05-cam">
-        <img class="s05-shot" id="s05-live" src="assets/shots/lgtm-live.jpg" alt="The dashboard tab's Live view: turns as they land" />
-        <img class="s05-shot" id="s05-metrics" src="assets/shots/lgtm-metrics.jpg" alt="Metrics: tokens by type, calls by model, tool duration" />
-        <img class="s05-shot" id="s05-logs" src="assets/shots/lgtm-logs-trace.jpg" alt="Logs for one trace, each line tagged with its trace id" />
-      </div>
+    <div id="s05-a">
+      <div id="s05-plate"><img src="assets/gen/a05-cabinet.png" alt="Engraving: a small card-catalogue cabinet on a desk under an oil lamp" /></div>
+      <div id="s05-kick">NO BACKEND NEEDED</div>
+      <div id="s05-big">LOCAL SQLITE</div>
+      <div id="s05-file">$HERMES_HOME/hermes_otel_live.db</div>
+      <div class="s05-drawer" id="s05-d0">TRACES<i></i></div>
+      <div class="s05-drawer" id="s05-d1">METRICS<i></i></div>
+      <div class="s05-drawer" id="s05-d2">LOGS<i></i></div>
+      <div id="s05-note">On your machine. Nothing sent.</div>
     </div>
-    <div id="s05-band">
-      <div id="s05-kicker">BUILT INTO HERMES</div>
-      <div id="s05-line"><span class="s05-t" id="s05-t0">Live.</span> <span class="s05-t" id="s05-t1">Metrics.</span> <span class="s05-t" id="s05-t2">Logs.</span> <span class="s05-t" id="s05-t3">No backend required.</span></div>
+    <div id="s05-b">
+      <div id="s05-view">
+        <div id="s05-cam">
+          <img class="s05-shot" id="s05-live" src="assets/shots/lgtm-live.jpg" alt="The dashboard tab's Live view: turns as they land" />
+          <img class="s05-shot" id="s05-metrics" src="assets/shots/lgtm-metrics.jpg" alt="Metrics: tokens by type, calls by model, tool duration" />
+          <img class="s05-shot" id="s05-logs" src="assets/shots/lgtm-logs-trace.jpg" alt="Logs for one trace, each line tagged with its trace id" />
+        </div>
+      </div>
+      <div id="s05-kicker">THE OTEL TAB · HERMES DASHBOARD</div>
+      <div id="s05-line"><span class="s05-t" id="s05-t0">Turns.</span> <span class="s05-t" id="s05-t1">Charts.</span> <span class="s05-t" id="s05-t2">Logs.</span></div>
     </div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 10.899, "lead": 0.45, "sents": [[0.45, 10.299]], "a": {"tab": 0.55, "land": 3.51, "totals": 4.11, "logs": 8.15, "span": 9.2}, "ev": {"tab1": 3.91, "tab2": 7.7, "punch1": 4.46, "punch2": 8.25}}/*END*/;
-      const E = C.ev || {}, A = C.a || {};
+      const C = /*CUES*/{"dur": 9.529, "lead": 0.4, "sents": [[0.4, 4.3], [4.38, 9.079]], "w": [{"t": "with", "s": 0.46, "e": 0.54}, {"t": "no", "s": 0.7, "e": 0.78}, {"t": "backend", "s": 1.02, "e": 1.34}, {"t": "at", "s": 1.42, "e": 1.5}, {"t": "all", "s": 1.5, "e": 1.98}, {"t": "a", "s": 2.06, "e": 2.14}, {"t": "local", "s": 2.22, "e": 2.38}, {"t": "sqlite", "s": 2.62, "e": 3.26}, {"t": "file", "s": 3.26, "e": 3.42}, {"t": "keeps", "s": 3.42, "e": 3.58}, {"t": "all", "s": 3.66, "e": 3.74}, {"t": "three", "s": 3.9, "e": 3.98}, {"t": "on", "s": 4.14, "e": 4.22}, {"t": "your", "s": 4.22, "e": 4.3}, {"t": "machine", "s": 4.38, "e": 4.796}, {"t": "a", "s": 5.172, "e": 5.252}, {"t": "new", "s": 5.412, "e": 5.492}, {"t": "tab", "s": 5.732, "e": 5.812}, {"t": "in", "s": 6.052, "e": 6.132}, {"t": "the", "s": 6.212, "e": 6.292}, {"t": "hermes", "s": 6.452, "e": 6.852}, {"t": "dashboard", "s": 7.012, "e": 7.332}, {"t": "shows", "s": 7.332, "e": 7.572}, {"t": "every", "s": 7.652, "e": 7.892}, {"t": "turn", "s": 8.052, "e": 8.212}, {"t": "chart", "s": 8.772, "e": 9.012}, {"t": "and", "s": 8.932, "e": 9.012}]}/*END*/;
+      const W = C.w || [], D = C.dur || 11;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const VW = 1920, VH = 860;
       const frame = (x, y, w, h) => {
         const s = Math.min(VW / w, VH / h);
         return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
       };
-      const tabs = frame(520, 140, 1800, 800);       // the tab bar, stat cards and the first turns
-      const turns = frame(520, 440, 1900, 640);      // recent turns: model, spans, seconds, tokens
-      const tokens = frame(528, 930, 1290, 650);     // Tokens by type + Tool duration
-      const logline = frame(520, 330, 1700, 640);    // the trace-id filter and the log lines it selects
-      const t1 = E.tab1 ?? 3.9, t2 = E.tab2 ?? 7.7;
+      const s2 = (C.sents[1] || [5.4])[0];
       const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#s05-plate img", { scale: 1.0, x: 0 }, { scale: 1.16, x: -40, duration: s2, ease: "none" }, 0);
+      tl.fromTo("#s05-file", { opacity: 0, x: -20 }, { opacity: 1, x: 0, duration: 0.4, ease: "expo.out" }, at(/s|q|lite|sql/, 0, 1.2));
+      ["#s05-d0", "#s05-d1", "#s05-d2"].forEach((el, i) =>
+        tl.fromTo(el, { opacity: 0, x: 60 }, { opacity: 1, x: 0, duration: 0.35, ease: "expo.out" }, at(/three|all/, 0, 2.6) + i * 0.18));
+      tl.fromTo("#s05-note", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/machine/, 0, 3.8));
+      // into the product: the tab, turn -> chart -> log on their words
+      tl.fromTo("#s05-b", { opacity: 0 }, { opacity: 1, duration: 0.25, ease: "power2.out" }, s2 - 0.25);
+      const tabs = frame(520, 140, 1800, 800), turns = frame(520, 440, 1900, 640);
+      const tokens = frame(528, 930, 1290, 650), logline = frame(520, 330, 1700, 640);
+      const t0 = at(/turn/, 0, s2 + 1.6), t1 = at(/chart/, 0, t0 + 0.6), t2 = at(/logs?/, 0, t1 + 0.6);
       tl.fromTo("#s05-cam", tabs, { ...tabs, duration: 0.01 }, 0);
-      tl.to("#s05-cam", { ...turns, duration: 1.2, ease: "power2.inOut" }, (A.land ?? 3.5) - 1.6);
-      // one stage that rebuilds: each swap is a blur swap; the ground never cuts
-      tl.fromTo("#s05-metrics", { opacity: 0 }, { opacity: 0, duration: 0.01 }, 0);
-      tl.fromTo("#s05-logs", { opacity: 0 }, { opacity: 0, duration: 0.01 }, 0);
-      tl.to("#s05-cam", { ...tabs, duration: 0.45, ease: "power2.inOut" }, t1 - 0.45);
-      tl.to("#s05-live", { opacity: 0, filter: "blur(8px)", duration: 0.16, ease: "power2.in" }, t1);
-      tl.fromTo("#s05-metrics", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.16, ease: "power2.out" }, t1 + 0.1);
-      tl.to("#s05-cam", { ...tokens, duration: 0.7, ease: "power2.inOut" }, E.punch1 ?? t1 + 0.55);
-      tl.to("#s05-cam", { ...tabs, duration: 0.45, ease: "power2.inOut" }, t2 - 0.45);
-      tl.to("#s05-metrics", { opacity: 0, filter: "blur(8px)", duration: 0.16, ease: "power2.in" }, t2);
-      tl.fromTo("#s05-logs", { opacity: 0, filter: "blur(8px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.16, ease: "power2.out" }, t2 + 0.1);
-      tl.to("#s05-cam", { ...logline, duration: 0.7, ease: "power2.inOut" }, E.punch2 ?? t2 + 0.55);
-      tl.fromTo("#s05-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.2);
-      // the caption words go from dim to cream as each view arrives
-      [[0, 0.5], [1, t1 + 0.1], [2, t2 + 0.1], [3, (A.span ?? 9.2) - 0.3]].forEach(([i, at]) =>
-        tl.fromTo("#s05-t" + i, { color: "#3d5a57" }, { color: "#ffe6cb", duration: 0.12 }, at));
+      tl.to("#s05-cam", { ...turns, duration: 0.8, ease: "power2.inOut" }, t0 - 0.5);
+      tl.fromTo("#s05-metrics", { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power2.out" }, t1);
+      tl.to("#s05-cam", { ...tokens, duration: 0.6, ease: "power2.inOut" }, t1);
+      tl.fromTo("#s05-logs", { opacity: 0 }, { opacity: 1, duration: 0.16, ease: "power2.out" }, t2);
+      tl.to("#s05-cam", { ...logline, duration: 0.6, ease: "power2.inOut" }, t2);
+      [[0, t0], [1, t1], [2, t2]].forEach(([i, t]) =>
+        tl.fromTo("#s05-t" + i, { color: "#3d5a57" }, { color: "#ffe6cb", duration: 0.12 }, t));
       window.__timelines["s05"] = tl;
     })();
   </script>

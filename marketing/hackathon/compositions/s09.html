@@ -1,0 +1,64 @@
+<template>
+  <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    /* two messengers in step: Hermes reporting in Claude Code's own terms */
+    #s09-plate { position: absolute; inset: 0; overflow: hidden; z-index: 3; }
+    #s09-plate img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #s09-view { position: absolute; left: 0; top: 0; width: 1180px; height: 1080px; overflow: hidden; background: #111217; }
+    .s09-dash { position: absolute; left: 0; top: 0; width: 1180px; }
+    #s09-side { position: absolute; left: 1240px; top: 0; width: 620px; height: 1080px; }
+    #s09-kick { position: absolute; left: 0; top: 110px; font-family: "JB Mono"; font-weight: 700; font-size: 28px; letter-spacing: 0.22em; color: #6e6eff; }
+    #s09-switch { position: absolute; left: 0; top: 170px; font-family: "JB Mono"; font-weight: 700; font-size: 29px; color: #041c1c;
+      background: #ffbd38; padding: 12px 18px; }
+    #s09-names { position: absolute; left: 0; top: 290px; font-family: "JB Mono"; font-weight: 700; font-size: 29px; line-height: 1.75; color: #ffe6cb; }
+    #s09-names .d { color: #6f8f8a; }
+    #s09-line { position: absolute; left: 0; top: 560px; width: 600px; font-family: "Collapse"; font-weight: 700; font-size: 50px; line-height: 1.15; color: #ffe6cb; }
+    #s09-src { position: absolute; left: 0; top: 930px; width: 600px; font-family: "JB Mono"; font-weight: 700; font-size: 28px; line-height: 1.4;
+      letter-spacing: 0.04em; color: #8fb0aa; }
+  </style>
+  <div id="root" data-composition-id="s09" data-width="1920" data-height="1080" data-layout-allow-overflow>
+    <div id="s09-view">
+      <img class="s09-dash" id="s09-cc" src="assets/shots/claude-code-dashboard.jpg" alt="The community Claude Code Metrics dashboard (grafana.com 25255) showing Hermes" />
+      <img class="s09-dash" id="s09-ag" src="assets/shots/agents-dashboard.jpg" alt="Agents dashboard: Hermes and Claude Code side by side" />
+    </div>
+    <div id="s09-side">
+      <div id="s09-kick">CLAUDE CODE DASHBOARDS</div>
+      <div id="s09-switch">metric_name_compat: claude_code</div>
+      <div id="s09-names">
+        <div class="s09-n"><span class="d">claude_code.</span>session.count</div>
+        <div class="s09-n"><span class="d">claude_code.</span>token.usage</div>
+        <div class="s09-n"><span class="d">claude_code.</span>cost.usage</div>
+        <div class="s09-n"><span class="d">claude_code.</span>active_time.total</div>
+      </div>
+      <div id="s09-line">Hermes, on your Claude Code dashboards.</div>
+      <div id="s09-src">GRAFANA.COM DASHBOARD 25255, UNCHANGED</div>
+    </div>
+    <div id="s09-plate"><img src="assets/gen/a09-runners.png" alt="Engraving: two messengers run in step, each with the same sealed scroll" /></div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 9.209, "lead": 0.4, "sents": [[0.4, 8.759]], "w": [{"t": "flip", "s": 0.46, "e": 0.78}, {"t": "one", "s": 0.94, "e": 1.02}, {"t": "switch", "s": 1.18, "e": 1.5}, {"t": "and", "s": 1.9, "e": 1.98}, {"t": "sessions", "s": 2.06, "e": 2.62}, {"t": "tokens", "s": 2.62, "e": 2.94}, {"t": "and", "s": 3.02, "e": 3.1}, {"t": "cost", "s": 3.26, "e": 3.42}, {"t": "use", "s": 3.66, "e": 3.9}, {"t": "claud", "s": 4.06, "e": 4.3}, {"t": "codes", "s": 4.3, "e": 4.62}, {"t": "own", "s": 4.62, "e": 4.78}, {"t": "metric", "s": 4.86, "e": 5.1}, {"t": "names", "s": 5.1, "e": 5.34}, {"t": "so", "s": 5.74, "e": 5.82}, {"t": "your", "s": 5.82, "e": 5.9}, {"t": "claud", "s": 5.98, "e": 6.22}, {"t": "code", "s": 6.22, "e": 6.46}, {"t": "dashboards", "s": 6.54, "e": 7.1}, {"t": "show", "s": 7.1, "e": 7.34}, {"t": "hermese", "s": 7.58, "e": 8.06}, {"t": "too", "s": 8.097, "e": 8.759}]}/*END*/;
+      const W = C.w || [], D = C.dur || 12.5;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
+      const sw = at(/switch/, 0, 1.3);
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#s09-plate img", { scale: 1.0, x: 0 }, { scale: 1.08, x: -40, duration: sw + 0.5, ease: "none" }, 0);
+      tl.to("#s09-plate", { clipPath: "inset(0 0 0 100%)", duration: 0.5, ease: "power3.inOut" }, sw + 0.15);
+      tl.fromTo("#s09-switch", { opacity: 0, scale: 1.15 }, { opacity: 1, scale: 1, duration: 0.3, ease: "expo.out" }, sw + 0.35);
+      const names = [/sessions?/, /tokens?/, /cost/, /claude|cloud|names?/];
+      document.querySelectorAll(".s09-n").forEach((el, i) =>
+        tl.fromTo(el, { opacity: 0, x: -14 }, { opacity: 1, x: 0, duration: 0.22, ease: "expo.out" }, at(names[i], 0, sw + 1 + i * 0.5)));
+      // the community dashboard scrolls (1180 x 1891 shown), then the side-by-side agents view
+      const ag = at(/dashboards?/, 0, D - 4);
+      tl.fromTo("#s09-cc", { y: 0 }, { y: -790, duration: ag - sw, ease: "power1.inOut" }, sw + 0.3);
+      tl.fromTo("#s09-ag", { opacity: 0 }, { opacity: 1, duration: 0.25 }, ag);
+      tl.fromTo("#s09-ag", { y: 0 }, { y: -120, duration: D - ag, ease: "power1.out" }, ag);
+      tl.fromTo("#s09-line", { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, ag);
+      tl.fromTo("#s09-src", { opacity: 0 }, { opacity: 1, duration: 0.3 }, sw + 1);
+      window.__timelines["s09"] = tl;
+    })();
+  </script>
+</template>

@@ -1,53 +1,49 @@
-# REVIEW.md — first cut, 2026-11-04
+# REVIEW.md — draft 3, 2026-11-08
 
-## Creative calls
+## What changed from draft 1/2
 
-- Storyline A, "The Tracks" (see `STORYLINES.md`): the Homeric Hymn's cattle theft as the hook,
-  two worlds (engraving print world in the hermes-agent site's `#0000f2` / `#f2f2f2`, Hermes Teal
-  product world from the dashboard), the many-armed-Hermes thread motif for the backend fan-out,
-  the caduceus cut from a 1592 Goltzius engraving (CC0, NGA) as the mark. Not built: B "one
-  continuous take" (endless zoom through one trace) and C "type carries the argument" (beat-cut
-  condensed caps, almost no narration).
-- Caption grammar taken from the official Hermes Desktop film: tracked mono kicker + one short
-  line, never the spoken sentence.
-- Fonts are Hermes Agent's own design-system files (Rules Compressed, Collapse, Mondwest), copied
-  from a hermes-agent checkout at build time; not committed. No Nous logo or seal anywhere.
-- Narration accuracy: "one command to install" was changed to "in the Hermes plugin catalog",
-  because a catalog install needs `install` then `enable`; both commands are shown on screen.
+- **Story**: the myth is back and leads into *why OpenTelemetry*: the cattle walked backwards
+  (S01) → the prints vanish into a cave, agents still cover their tracks (S02) → Hermes at the
+  telescope, OpenTelemetry's own mark (S03). Then: one turn = one trace (S04), local SQLite file +
+  the dashboard tab (S05), the tab reading any backend (S06), any OTLP backend + async fan-out +
+  18 rapid cuts + a 16-backend wall (S07), GenAI + OpenInference (S08), Claude Code metric names
+  (S09), Hermes reading its own trace (S10), close (S11).
+- **Voice**: Dia 1.6B cloning one designed narrator, cleaned by StudioVoice, ASR-graded, auto-retaken
+  and trimmed on club.lan (was Kokoro `bm_george`). Autopilot retook S05, S09 (×2) and S10, S11 (×3).
+- **Music**: one ACE-Step track (was a MusicGen placeholder). SFX: clicks and short whooshes only;
+  impacts, riser, glitch and the cinematic whoosh are gone.
+- **Art**: 11 generated engravings in the Goltzius plate's style, one screen-to-engraving style
+  transfer (S04 dissolves from the engraving into the real capture).
+- **Backends**: 17 backends' own UIs (was 7), each with its logo; the dashboard tab shown reading 7.
 
 ## Measured vs looked at
 
-- `check`: ok (0 errors). Total 84.39 s (< 90 s limit). Every cut in S03/S04/S05/S06/S08 is
-  anchored to a Whisper word timestamp of the synthesised voice (`cues.words.json`).
-- Looked at: snapshots of every scene, every seam (±0.15 s), the review beat and phone sheets.
-- Not checked by ear: the voice is Kokoro `bm_george` (placeholder); pronunciation was checked only by
-  transcribing it back ("Hermes O-tel" transcribes as "Hermes Hotel"; it should *sound* right but
-  needs a human listen). Music is a MusicGen placeholder. The mix was measured, not heard.
+- `check`: 0 errors. Total 87.45 s (< 89.9 s).
+- Render: 1920×1080, 30 fps, H.264 + AAC. Mix −14.5 LUFS integrated, peak −2.5 dBFS (target −16…−14).
+- Looked at: snapshots of every scene (3 per scene), every scene changed after review, and 9 frames
+  pulled from the rendered MP4.
+- Not heard: the voice, the music and the mix were measured, not listened to. Every narration take
+  was checked only by transcribing it back (Nemotron ASR, score ≥ 9.0 on all 11). "Hermes OTel"
+  transcribes as "Hermes Hotel" (lexicon says "Oh-tel"); it needs a human listen.
 
-## Audio (measured on renders/hermes-otel-hackathon-draft1.mp4, not heard)
+## Fixed during review
 
-- Mix: −16.1 LUFS integrated, true peak −2.7 dBTP, no clipping (target −16 to −14 LUFS, ≤ −1 dBTP).
-- Music bed (MusicGen-small placeholder, volume 0.34): residual vs the no-music render is about
-  −34 dB mean over 10–50 s and −40 dB over 66–84 s, i.e. 18–24 dB under the voice. A produced
-  track should be loudness-normalised (`npx hyperframes normalize-audio`) and the volume re-set.
-- SFX: bundled CC0 library; stamps on the hoofprints, whooshes on cuts, a riser into the backend
-  roll, impacts on the title and the mark.
+- S03 title/subtitle sat on the telescope → split layout (type on paper, plate right); subtitle
+  wrapped into the OTel chip → one line at 40 px.
+- S07 kicker wrapped ("gRPC" on its own line) → shortened; the OTLP anchor regex matched any word
+  with an "o" → anchored; queue lanes were empty → continuous flow, slow lane backs up visibly;
+  the "27" wall was on screen 0.37 s → ~1.8 s.
+- S11 emblem read as a pasted square → round medallion.
+- Voice: S03 had 3.85 s of trailing silence (streaming ASR stretched the last word) → fixed in
+  club.lan's trimmer (waveform silence pass); voice total 71.0 s → 62.1 s.
 
-## Weakest shots / next changes
+## Open / next
 
-- P1 · t=8.3–16.2 s · S02 terminal text is ~20 px; fine at 1080p, small on a phone → a tighter
-  final push (1.8x on the question/answer rows only) once the narration is locked.
-- P1 · t=46.8–47.2 s · S06 opens on a near-empty teal frame before "Traces" lands → start the signal
-  words 0.15 s earlier or carry the S05 log line across.
-- P1 · S06 backend roll cuts every 0.6–1.2 s (on the spoken names); chips read only as a pattern
-  (`line_unread` kept on purpose: the montage is the point, S06's "27" wall holds).
-- P2 · S01 hoofprints are created by script (12 identical nodes) rather than written in HTML; fine
-  for render, less editable in Studio.
-- P2 · S04 opens on just the root row for ~2 s ("The turn is the root") — deliberate, but a "ROOT"
-  label on the row would make it read faster.
-
-## Warnings kept on purpose
-
-- `line_unread` on the S06 signal chips (montage) and S05's dimmed caption words (they light up in turn).
-- `container_overflow` / `panel_out_of_canvas` info on camera wrappers (3200 px screenshots inside
-  1920 px views — the crop is the intent).
+- P1 · 3D (TRELLIS-2) and LTX-2.5 clips are in `media.json` but were not generated: the trellis2 pod
+  reports "CUDA device busy or unavailable" (needs a pod restart) and `ltx25-server` on a2 is
+  inactive. Once up: `python3 tools/gen_media.py --only m01-telescope,m02-caduceus,v01-cattle,v03-telescope,v07-arms`
+  and slot them into S01/S03/S07/S11.
+- P2 · S06 flips seven backends in ~4.4 s; the names are a montage (`line_unread` kept on purpose).
+- P2 · S09 pans the community dashboard past its "No data" panels (Claude Code-only metrics such as
+  tool decisions); start lower if it reads as a negative.
+- P2 · Plates a04-chart and a06-codex were generated but are unused.

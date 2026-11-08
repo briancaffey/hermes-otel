@@ -2,74 +2,49 @@
   <style>
     @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
     @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
-    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
-    #s03-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
-    #s03-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
-    #s03-cam img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
-    #s03-erase { position: absolute; left: 60px; top: 676px; width: 1440px; height: 78px; background: #0d1015; }
-    /* the waterfall: 9 rows, real proportions from the 14-span hero trace (lgtm-detail-hero) */
-    #s03-glyph { position: absolute; left: 120px; top: 378px; width: 360px; height: 300px; transform-origin: 0 0; }
-    .s03-bar { position: absolute; height: 26px; border-radius: 3px; transform-origin: 0 50%; }
-    #s03-kicker { position: absolute; left: 548px; top: 310px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
-      letter-spacing: 0.22em; color: #6e6eff; }
-    #s03-title { position: absolute; left: 538px; top: 350px; font-family: "Rules Compressed"; font-weight: 500; font-size: 390px;
-      line-height: 0.86; letter-spacing: -0.01em; color: #ffe6cb; white-space: nowrap; }
-    #s03-title .acc { color: #ffbd38; }
-    #s03-sub { position: absolute; left: 548px; top: 742px; font-family: "Collapse"; font-weight: 700; font-size: 60px; color: #ffe6cb; }
-    #s03-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; }
-    #s03-band .k { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
-      letter-spacing: 0.22em; color: #6e6eff; }
-    #s03-band .l { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
-    #s03-thread { position: absolute; left: 480px; top: 712px; width: 1440px; height: 3px; background: #ffe6cb; transform-origin: 0 50%; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #f2f2f2; overflow: hidden; }
+    /* Hermes at the telescope (OpenTelemetry's mark is a telescope); the stars join into a tree */
+    #s03-plate { position: absolute; left: 800px; top: 0; width: 1120px; height: 1080px; overflow: hidden; }
+    #s03-plate img { position: absolute; left: -420px; top: 0; width: 1920px; height: 1080px; transform-origin: 1300px 420px; }
+    #s03-kick { position: absolute; left: 120px; top: 96px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #0000f2; }
+    #s03-title { position: absolute; left: 112px; top: 150px; font-family: "Rules Compressed"; font-weight: 500;
+      font-size: 250px; line-height: 0.84; color: #0000f2; letter-spacing: -0.01em; }
+    #s03-sub { position: absolute; left: 120px; top: 596px; width: 660px; white-space: nowrap; font-family: "Collapse"; font-weight: 700; font-size: 40px; color: #0000f2; }
+    #s03-otel { position: absolute; left: 120px; top: 680px; display: flex; align-items: center; gap: 18px;
+      background: #0000f2; padding: 10px 22px 10px 12px; }
+    #s03-otel img { width: 56px; height: 56px; border-radius: 8px; background: #f2f2f2; }
+    #s03-otel span { font-family: "JB Mono"; font-weight: 700; font-size: 28px; letter-spacing: 0.16em; color: #f2f2f2; }
+    .s03-sig { position: absolute; top: 800px; font-family: "Rules Compressed"; font-weight: 500; font-size: 96px; line-height: 0.9; }
+    #s03-t { left: 120px; color: #0a7fc0; }
+    #s03-m { left: 368px; color: #0f9466; }
+    #s03-l { left: 650px; color: #b87800; }
   </style>
-  <div id="root" data-composition-id="s03" data-width="1920" data-height="1080">
-    <div id="s03-view">
-      <div id="s03-cam">
-        <img src="assets/clips/terminal-answer.jpg" alt="" />
-        <div id="s03-erase"></div>
-      </div>
-    </div>
-    <!-- S02's caption, carried across the cut and blurred away -->
-    <div id="s03-band"><div class="k">THE BLACK BOX</div><div class="l">Question in. Answer out. Nothing in between.</div></div>
-    <div id="s03-glyph">
-      <div class="s03-bar" id="s03-b0" style="left:0%;   width:100%; top:0px;   background:#35d29b"></div>
-      <div class="s03-bar" id="s03-b1" style="left:0%;   width:100%; top:34px;  background:#39bef9"></div>
-      <div class="s03-bar" id="s03-b2" style="left:0%;   width:16%;  top:68px;  background:#39bef9"></div>
-      <div class="s03-bar" id="s03-b3" style="left:16%;  width:3%;   top:102px; background:#fbbe25"></div>
-      <div class="s03-bar" id="s03-b4" style="left:17%;  width:19%;  top:136px; background:#39bef9"></div>
-      <div class="s03-bar" id="s03-b5" style="left:37%;  width:6%;   top:170px; background:#fbbe25"></div>
-      <div class="s03-bar" id="s03-b6" style="left:43%;  width:5%;   top:204px; background:#39bef9"></div>
-      <div class="s03-bar" id="s03-b7" style="left:48%;  width:2%;   top:238px; background:#fbbe25"></div>
-      <div class="s03-bar" id="s03-b8" style="left:55%;  width:45%;  top:272px; background:#39bef9"></div>
-    </div>
-    <div id="s03-kicker">A HERMES AGENT PLUGIN</div>
-    <div id="s03-title"><span class="s03-l">H</span><span class="s03-l">E</span><span class="s03-l">R</span><span class="s03-l">M</span><span class="s03-l">E</span><span class="s03-l">S</span> <span class="acc"><span class="s03-l">O</span><span class="s03-l">T</span><span class="s03-l">E</span><span class="s03-l">L</span></span></div>
-    <div id="s03-sub"><span class="s03-w">OpenTelemetry</span> <span class="s03-w">for</span> <span class="s03-w">Hermes</span> <span class="s03-w">Agent</span></div>
-    <div id="s03-thread"></div>
+  <div id="root" data-composition-id="s03" data-width="1920" data-height="1080" data-layout-allow-overflow>
+    <div id="s03-plate"><img src="assets/gen/a03-telescope.png" alt="Engraving: Hermes on a rooftop looks through a brass telescope; the stars join into a branching tree" /></div>
+    <div id="s03-kick">THE TELESCOPE</div>
+    <div id="s03-title">HERMES<br />OTEL</div>
+    <div id="s03-sub">OpenTelemetry for Hermes Agent</div>
+    <div id="s03-otel"><img src="assets/logos/otel-gh.png" alt="OpenTelemetry" /><span>THE OPEN STANDARD</span></div>
+    <div class="s03-sig" id="s03-t">TRACES</div>
+    <div class="s03-sig" id="s03-m">METRICS</div>
+    <div class="s03-sig" id="s03-l">LOGS</div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 7.391, "lead": 0.45, "sents": [[0.45, 4.285], [4.635, 6.491]], "a": {"hermes": 0.47, "otel": 1.07, "agent": 4.1, "trace": 6.17}, "ev": {"bars": 0.15, "title": 0.52, "sub": 3.5, "kicker": 6.17}}/*END*/;
-      const E = C.ev || {}, A = C.a || {};
+      const C = /*CUES*/{"dur": 7.825, "lead": 0.4, "sents": [[0.4, 6.625]], "w": [{"t": "hermes", "s": 0.46, "e": 0.94}, {"t": "hotel", "s": 1.1, "e": 1.34}, {"t": "brings", "s": 1.42, "e": 1.58}, {"t": "the", "s": 1.58, "e": 1.66}, {"t": "tracks", "s": 1.74, "e": 2.06}, {"t": "back", "s": 2.14, "e": 2.22}, {"t": "with", "s": 2.54, "e": 2.62}, {"t": "open", "s": 2.78, "e": 3.02}, {"t": "telemetry", "s": 3.18, "e": 3.66}, {"t": "the", "s": 3.98, "e": 4.06}, {"t": "open", "s": 4.14, "e": 4.38}, {"t": "standard", "s": 4.7, "e": 4.86}, {"t": "for", "s": 4.94, "e": 5.02}, {"t": "traces", "s": 5.26, "e": 5.98}, {"t": "metrics", "s": 5.98, "e": 6.38}, {"t": "and", "s": 6.3, "e": 6.38}, {"t": "logs", "s": 6.46, "e": 6.625}]}/*END*/;
+      const W = C.w || [], D = C.dur || 8;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const tl = gsap.timeline({ paused: true });
-      // S02's last frame, exactly: same camera, the gap empty
-      gsap.set("#s03-cam", { x: -230, y: -520, scale: 1.5 });
-      // the glyph starts stretched over the gap (screen x -68..1890, y 519..625) and draws in there
-      tl.fromTo("#s03-glyph", { x: -260, y: 116, scaleX: 6.0, scaleY: 0.39 },
-        { x: -260, y: 116, scaleX: 6.0, scaleY: 0.39, duration: 0.01 }, 0);
-      tl.fromTo(".s03-bar", { scaleX: 0 }, { scaleX: 1, duration: 0.24, stagger: 0.04, ease: "power3.out" }, E.bars ?? 0.15);
-      tl.fromTo("#s03-view", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(8px)", duration: 0.25, ease: "power2.in" }, 0.5);
-      tl.fromTo("#s03-band", { opacity: 1, filter: "blur(0px)" }, { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in" }, 0.3);
-      // the bars collapse into the mark
-      tl.to("#s03-glyph", { x: 0, y: 0, scaleX: 1, scaleY: 1, duration: 0.6, ease: "power3.inOut" }, 0.52);
-      const t0 = (E.title ?? 0.5) + 0.35;
-      tl.fromTo(".s03-l", { opacity: 0.0, filter: "blur(8px)" },
-        { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.045, ease: "power2.out" }, t0);
-      tl.fromTo("#s03-kicker", { opacity: 0 }, { opacity: 1, duration: 0.25 }, t0 + 0.4);
-      tl.fromTo(".s03-w", { opacity: 0, filter: "blur(6px)" },
-        { opacity: 1, filter: "blur(0px)", duration: 0.14, stagger: 0.09, ease: "power2.out" }, E.sub ?? 3.4);
-      // "every turn leaves a trace": one thread pulls out of the agent row toward the next shot
-      tl.fromTo("#s03-thread", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power3.in" }, (E.kicker ?? 6.1) - 0.1);
+      tl.fromTo("#s03-plate img", { scale: 1.0, x: 0 }, { scale: 1.14, x: 60, duration: D, ease: "power1.inOut" }, 0);
+      const h = at(/hermes/, 0, 0.5);
+      tl.fromTo("#s03-title", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.6, ease: "expo.out" }, h - 0.1);
+      tl.fromTo("#s03-sub", { opacity: 0, y: 20 }, { opacity: 1, y: 0, duration: 0.5, ease: "expo.out" }, at(/open|telemetry/, 0, h + 1.4) - 0.1);
+      tl.fromTo("#s03-otel", { opacity: 0, x: -30 }, { opacity: 1, x: 0, duration: 0.5, ease: "expo.out" }, at(/standard/, 0, h + 3) - 0.2);
+      [["#s03-t", /traces?/], ["#s03-m", /metrics?/], ["#s03-l", /logs?/]].forEach(([el, re], i) => {
+        tl.fromTo(el, { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.35, ease: "expo.out" }, at(re, 0, h + 4 + i * 0.6) - 0.05);
+      });
       window.__timelines["s03"] = tl;
     })();
   </script>

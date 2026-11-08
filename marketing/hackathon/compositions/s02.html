@@ -1,62 +1,69 @@
 <template>
   <style>
     @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
     #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
-    #s02-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015;
-      clip-path: circle(0px at 935px 802px); }
+    /* phase A: the prints lead into the cave; the camera dives into its black mouth */
+    #s02-cave { position: absolute; inset: 0; overflow: hidden; background: #000010; }
+    #s02-cave img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 1240px 250px; }
+    /* phase B: a real Hermes turn in the terminal, its middle erased */
+    #s02-b { position: absolute; inset: 0; opacity: 0; }
+    #s02-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
     #s02-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
     #s02-cam img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
     .s02-mark { position: absolute; height: 4px; background: #ffe6cb; transform-origin: 0 50%; }
     #s02-erase { position: absolute; left: 60px; top: 676px; width: 1440px; height: 78px; background: #0d1015; transform-origin: 0 50%; }
     #s02-edge { position: absolute; left: 60px; top: 668px; width: 6px; height: 94px; background: #ffe6cb; }
     #s02-gap { position: absolute; left: 60px; top: 676px; width: 1440px; height: 78px; border: 3px dashed #ffbd38;
-      font-family: "JetBrains Mono"; font-weight: 700; font-size: 26px; letter-spacing: 0.18em; color: #ffbd38;
+      font-family: "JB Mono"; font-weight: 700; font-size: 26px; letter-spacing: 0.18em; color: #ffbd38;
       display: flex; align-items: center; justify-content: center; }
     #s02-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
-    #s02-kicker { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
+    #s02-kicker { position: absolute; left: 120px; top: 900px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
       letter-spacing: 0.22em; color: #6e6eff; }
-    #s02-line { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s02-line { position: absolute; left: 120px; top: 950px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    .s02-w { display: inline-block; }
   </style>
   <div id="root" data-composition-id="s02" data-width="1920" data-height="1080">
-    <div id="s02-view">
-      <div id="s02-cam">
-        <img src="assets/clips/terminal-answer.jpg" alt="A real Hermes turn in the terminal: the question, two tool calls, the answer" />
-        <div class="s02-mark" id="s02-mq" style="left:92px; top:598px; width:1080px"></div>
-        <div class="s02-mark" id="s02-ma" style="left:110px; top:843px; width:930px"></div>
-        <div id="s02-erase"></div>
-        <div id="s02-edge"></div>
-        <div id="s02-gap">NOTHING RECORDED</div>
+    <div id="s02-cave"><img src="assets/gen/a02-cave.png" alt="Engraving: hoofprints lead into a dark cave, all pointing the wrong way" /></div>
+    <div id="s02-b">
+      <div id="s02-view">
+        <div id="s02-cam">
+          <img src="assets/clips/terminal-answer.jpg" alt="A real Hermes turn in the terminal: the question, two tool calls, the answer" />
+          <div class="s02-mark" id="s02-mq" style="left:92px; top:598px; width:1080px"></div>
+          <div class="s02-mark" id="s02-ma" style="left:110px; top:843px; width:930px"></div>
+          <div id="s02-erase"></div>
+          <div id="s02-edge"></div>
+          <div id="s02-gap">NOTHING RECORDED</div>
+        </div>
       </div>
-    </div>
-    <div id="s02-band">
+      <div id="s02-band"></div>
       <div id="s02-kicker">THE BLACK BOX</div>
       <div id="s02-line"><span class="s02-w">Question in.</span> <span class="s02-w">Answer out.</span> <span class="s02-w">Nothing in between.</span></div>
     </div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 7.963, "lead": 0.45, "sents": [[0.45, 2.459], [2.809, 7.364]], "a": {"cover": 1.41, "runs": 3.45, "answer": 4.3, "gone": 7.08}, "ev": {"wipe": 4.45, "gap": 7.08}}/*END*/;
-      const E = C.ev || {}, A = C.a || {};
-      const D = C.dur || 8;
+      const C = /*CUES*/{"dur": 5.126, "lead": 0.4, "sents": [[0.4, 1.885], [2.583, 4.676]], "w": [{"t": "agents", "s": 0.46, "e": 0.86}, {"t": "still", "s": 0.94, "e": 1.02}, {"t": "cover", "s": 1.02, "e": 1.18}, {"t": "their", "s": 1.26, "e": 1.34}, {"t": "tracks", "s": 1.42, "e": 1.885}, {"t": "question", "s": 2.583, "e": 2.823}, {"t": "in", "s": 2.903, "e": 3.303}, {"t": "answer", "s": 3.303, "e": 3.463}, {"t": "out", "s": 3.543, "e": 3.943}, {"t": "and", "s": 3.863, "e": 3.943}, {"t": "nothing", "s": 4.103, "e": 4.263}, {"t": "in", "s": 4.343, "e": 4.423}, {"t": "between", "s": 4.503, "e": 4.676}]}/*END*/;
+      const W = C.w || [], D = C.dur || 6;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
+      const s2 = (C.sents[1] || [2.4])[0];
       const tl = gsap.timeline({ paused: true });
-      // the S01 flood ends on teal; the terminal opens out of the same point
-      tl.fromTo("#s02-view", { clipPath: "circle(0px at 935px 802px)" },
-        { clipPath: "circle(2200px at 935px 802px)", duration: 0.55, ease: "power2.inOut" }, 0);
-      // camera: frame the turn (question → answer), then a slow push toward the middle
+      // follow the prints into the cave mouth until it is all black ink
+      tl.fromTo("#s02-cave img", { scale: 1.02 }, { scale: 1.35, duration: s2 - 0.45, ease: "power1.in" }, 0);
+      tl.to("#s02-cave img", { scale: 7, duration: 0.45, ease: "power3.in" }, s2 - 0.45);
+      tl.to("#s02-cave", { opacity: 0, duration: 0.12 }, s2 - 0.05);
+      tl.fromTo("#s02-b", { opacity: 0 }, { opacity: 1, duration: 0.18, ease: "power2.out" }, s2 - 0.05);
       tl.fromTo("#s02-cam", { x: -50, y: -290, scale: 1.263 },
-        { x: -230, y: -520, scale: 1.5, duration: D, ease: "power2.inOut" }, 0);
-      tl.fromTo("#s02-mq", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "expo.out" }, (A.runs ?? 3.4) - 0.6);
-      tl.fromTo("#s02-ma", { scaleX: 0 }, { scaleX: 1, duration: 0.45, ease: "expo.out" }, (A.answer ?? 4.3) - 0.1);
-      // everything in between is erased by one sweep
-      const w = E.wipe ?? 4.45;
-      tl.fromTo("#s02-erase", { scaleX: 0 }, { scaleX: 1, duration: 0.7, ease: "power3.inOut" }, w);
-      tl.fromTo("#s02-edge", { x: 0, opacity: 1 }, { x: 1434, duration: 0.7, ease: "power3.inOut" }, w);
-      tl.to("#s02-edge", { opacity: 0, duration: 0.12 }, w + 0.7);
-      tl.fromTo("#s02-gap", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out" }, (E.gap ?? 7) - 0.5);
-      tl.to("#s02-gap", { opacity: 0, filter: "blur(8px)", duration: 0.2, ease: "power2.in" }, D - 0.3);
-      tl.fromTo("#s02-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.45);
-      tl.fromTo(".s02-w", { opacity: 0, filter: "blur(6px)" },
-        { opacity: 1, filter: "blur(0px)", duration: 0.16, stagger: 0.5, ease: "power2.out" }, (A.runs ?? 3.4) - 0.4);
+        { x: -200, y: -480, scale: 1.45, duration: D - s2, ease: "power2.inOut" }, s2);
+      const q = at(/question/, 0, s2 + 0.1), a = at(/answer/, 0, s2 + 0.9), n = at(/nothing/, 0, s2 + 1.8);
+      tl.fromTo("#s02-mq", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "expo.out" }, q);
+      tl.fromTo("#s02-ma", { scaleX: 0 }, { scaleX: 1, duration: 0.4, ease: "expo.out" }, a);
+      tl.fromTo("#s02-erase", { scaleX: 0 }, { scaleX: 1, duration: 0.6, ease: "power3.inOut" }, n - 0.2);
+      tl.fromTo("#s02-edge", { x: 0, opacity: 1 }, { x: 1434, duration: 0.6, ease: "power3.inOut" }, n - 0.2);
+      tl.to("#s02-edge", { opacity: 0, duration: 0.1 }, n + 0.4);
+      tl.fromTo("#s02-gap", { opacity: 0 }, { opacity: 1, duration: 0.2, ease: "power2.out" }, n + 0.45);
+      const ws = document.querySelectorAll(".s02-w");
+      [q, a, n].forEach((t, i) => tl.fromTo(ws[i], { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.25, ease: "expo.out" }, t - 0.05));
       window.__timelines["s02"] = tl;
     })();
   </script>

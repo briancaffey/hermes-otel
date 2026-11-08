@@ -1,67 +1,80 @@
-# SCRIPT.md — narration, draft 2
+# SCRIPT.md — narration, draft 3
 
-The voice is the clock: scene lengths follow the synthesised audio (`tools/synth_voice.py` writes
-`cues.json`). One sentence per line under each scene heading. Lines starting with `>` are on-screen
-text only (kicker / caption), never spoken. Edit a line and re-run the synth; only changed sentences
-are re-synthesised.
+The voice is the clock: scene lengths follow the narration. One sentence per line under each scene
+heading. Lines starting with `>` are on-screen text only (kicker / caption), never spoken. Edit a line
+and re-run `tools/narrate.py`: it re-produces only the scenes whose lines changed.
 
-Target: under 90 s (the hackathon limit). Draft 1 measured 2.43 spoken words/s and ~14 s of scene
-lead-ins and tails, so the budget is about 180 spoken words. This draft is 178. Tone: plain and
-direct, say what it does, no hype words.
+Voice: Dia 1.6B cloning one designed "Narrator" sample, produced on club.lan's Narration Studio
+(autopilot: take → StudioVoice clean → ASR → trim → −16 LUFS → grade → retake). Spoken spellings
+live in the episode lexicon (`tools/narrate.py`, LEXICON), not here: write the words normally.
 
-Spelling for the voice lives in `tools/pronounce.json` (Hermes O-Tel, O-T-L-P, SigNoz, Langfuse,
-Jaeger); write the words normally here.
+Target: under 90 s (hackathon rule). Budget ≈ 165 spoken words at Dia's ~2.5 words/s plus ~1 s of
+lead/tail per scene. Tone: plain, a little mythic at the top, then say what it does. No hype words.
 
-Changes from draft 1: opens by saying what it is (the cattle myth is gone; "Follow the messenger"
-stays only as the end-card line), four scenes on the dashboard tab instead of one, and the fan-out
-says what is sent, where, and why it is safe.
+Fact notes (from the repo, v1.32.6): the local store is a SQLite *file* under `$HERMES_HOME`
+(owner-only), not in-memory; it holds spans and metrics always, logs when log capture is on. The
+dashboard tab reads it or any of 15 backend types with a read adapter. Claude Code compat
+(`metric_name_compat`) emits four of Claude Code's eight metrics (session count, token usage, cost
+usage, active time) under Claude Code's names, units and labels — so never "the same metrics".
+Conventions: OpenTelemetry GenAI (`gen_ai.*`) and OpenInference (`llm.*`, `input.value`) on every
+span. Fan-out: one batch processor, thread and queue per backend.
 
-## S01 — what it is
+## S01 — the myth (print world)
 
-> HERMES OTEL · A HERMES AGENT PLUGIN
-Hermes OTel is OpenTelemetry for Hermes Agent.
-Every turn your agent takes becomes a trace.
+> THE MYTH
+The day he was born, Hermes stole Apollo's cattle and walked them backwards, so no one could follow the tracks.
 
-## S02 — one turn, one trace (waterfall)
+## S02 — agents still cover their tracks
+
+> THE BLACK BOX
+Agents still cover their tracks.
+Question in, answer out, and nothing in between.
+
+## S03 — the telescope: why OpenTelemetry
+
+> OPENTELEMETRY FOR HERMES AGENT
+Hermes OTel brings the tracks back with OpenTelemetry, the open standard for traces, metrics and logs.
+
+## S04 — one turn, one trace
 
 > ONE TURN · ONE TRACE
-The turn is the root.
-Every model call, tool, skill and sub-agent nests inside it, timed, with its inputs and outputs.
+Each turn becomes one trace.
+Every model call, tool and sub-agent nests inside it, with tokens, cost and timing.
 
-## S03 — the dashboard tab: Live
+## S05 — start local: SQLite + the dashboard tab
 
-> BUILT INTO THE HERMES DASHBOARD
-It adds an OTel tab to the Hermes dashboard, and it needs no backend.
-Turns appear live, with their tokens and cost.
+> NO BACKEND NEEDED
+With no backend at all, a local SQLite file keeps all three on your machine.
+A new tab in the Hermes dashboard shows every turn, chart and log.
 
-## S04 — inside a turn: trace detail, spans expanded
+## S06 — the tab reads every backend
 
-> INSIDE A TURN
-Open one and expand any span: the model's conversation, the tool's command and output, and the logs it wrote.
+> ONE TAB · ANY BACKEND
+Connect a backend, and the same tab reads it back.
 
-## S05 — search, metrics, logs, settings
+## S07 — any OTLP backend, async fan-out (tile wall + rapid cuts)
 
-> SEARCH · METRICS · LOGS · SETTINGS
-Search by tool, model or status, chart tokens and cost, and filter the agent's logs.
-Settings shows every option, where each value came from, and what each backend receives.
+> ANY OTLP BACKEND · ALL AT ONCE
+Send it anywhere that speaks OTLP.
+List several, and each gets the same data on its own async queue, so a slow one never stalls the agent.
 
-## S06 — fan-out to backends
+## S08 — two conventions
 
-> ONE TRACE · EVERY BACKEND · AT ONCE
-Then fan out.
-Every backend you list receives the same trace at once, plus whatever metrics and logs it can store.
-Each one sends on its own queue, so a slow backend never stalls the agent.
-Grafana. SigNoz. OpenObserve. Uptrace. Jaeger. Phoenix. Langfuse.
-Twenty-seven backend types.
+> GEN_AI · OPENINFERENCE
+Every span speaks both conventions: OpenTelemetry GenAI and OpenInference.
 
-## S07 — Hermes reads its own traces (terminal recording)
+## S09 — Claude Code metrics
+
+> CLAUDE CODE DASHBOARDS
+Flip one switch, and sessions, tokens and cost use Claude Code's own metric names, so your Claude Code dashboards show Hermes too.
+
+## S10 — Hermes reads its own traces
 
 > ASK THE AGENT
-Hermes can read its own traces too: ask about the last turn, and it draws the tree in the chat.
+And Hermes can read its own traces.
 
-## S08 — close
+## S11 — close
 
-> PRIVATE BY DEFAULT
-With no backend, nothing leaves your machine.
+> FOLLOW THE MESSENGER
 Open source, and in the Hermes plugin catalog.
 Hermes OTel. Follow the messenger.

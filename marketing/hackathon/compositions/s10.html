@@ -1,0 +1,53 @@
+<template>
+  <style>
+    @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    /* Hermes studies his own tracks in a bronze mirror */
+    #s10-plate { position: absolute; inset: 0; overflow: hidden; z-index: 3; }
+    #s10-plate img { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 760px 330px; }
+    #s10-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
+    #s10-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
+    #s10-still, #s10-vid { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
+    #s10-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
+    #s10-kicker { position: absolute; left: 120px; top: 900px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #6e6eff; }
+    #s10-line { position: absolute; left: 120px; top: 950px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
+    #s10-line code { font-family: "JB Mono"; font-weight: 700; font-size: 48px; color: #ffbd38; }
+  </style>
+  <div id="root" data-composition-id="s10" data-width="1920" data-height="1080">
+    <div id="s10-view">
+      <div id="s10-cam">
+        <img id="s10-still" src="assets/clips/terminal-tree.jpg" alt="The span tree the agent drew for its previous turn" />
+        <video id="s10-vid" class="clip" src="assets/clips/span-tree.mp4" muted playsinline
+               data-start="0" data-duration="5.5" data-track-index="2"></video>
+      </div>
+    </div>
+    <div id="s10-band"></div>
+    <div id="s10-kicker">ASK THE AGENT</div>
+    <div id="s10-line">The <code>observability</code> skill draws the turn in the chat.</div>
+    <div id="s10-plate"><img src="assets/gen/a10-mirror.png" alt="Engraving: Hermes holds a bronze mirror that shows a tree of stars" /></div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 5.815, "lead": 0.4, "sents": [[0.4, 2.165]], "w": [{"t": "and", "s": 0.46, "e": 0.54}, {"t": "hermes", "s": 0.54, "e": 0.94}, {"t": "can", "s": 1.02, "e": 1.1}, {"t": "read", "s": 1.1, "e": 1.26}, {"t": "its", "s": 1.26, "e": 1.42}, {"t": "own", "s": 1.42, "e": 1.5}, {"t": "traces", "s": 1.74, "e": 2.165}]}/*END*/;
+      const W = C.w || [], D = C.dur || 5.8;
+      const VW = 1920, VH = 860;
+      const frame = (x, y, w, h) => {
+        const s = Math.min(VW / w, VH / h);
+        return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
+      };
+      const chat = frame(40, 600, 1400, 420), tree = frame(100, 120, 1720, 640);
+      const out = (C.sents[0] || [0.4, 2.2])[1];
+      const tl = gsap.timeline({ paused: true });
+      // into the mirror: the reflected tree becomes the agent's real span tree
+      tl.fromTo("#s10-plate img", { scale: 1.0 }, { scale: 1.25, duration: out, ease: "power1.in" }, 0);
+      tl.to("#s10-plate img", { scale: 4.5, duration: 0.4, ease: "power3.in" }, out);
+      tl.to("#s10-plate", { opacity: 0, duration: 0.15 }, out + 0.3);
+      tl.fromTo("#s10-cam", chat, { ...chat, duration: 0.01 }, 0);
+      tl.to("#s10-cam", { ...tree, duration: 0.7, ease: "power2.inOut" }, 3.5);
+      tl.fromTo("#s10-line", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, out + 0.4);
+      window.__timelines["s10"] = tl;
+    })();
+  </script>
+</template>

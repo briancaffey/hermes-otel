@@ -1,142 +1,1139 @@
 {
- "provider": "kokoro",
- "voice": "bm_george",
+ "provider": "club.lan narration studio (Dia 1.6B + Maxine StudioVoice + Nemotron ASR)",
+ "voice": "Hermes OTel Narrator (voice sample 1)",
  "speed": 1.0,
- "gap": 0.35,
+ "gap": 0.0,
+ "episode": 2,
  "scenes": {
   "S01": {
-   "title": "hook: the myth (cobalt engraving world)",
+   "title": "the myth (print world)",
    "kicker": "THE MYTH",
-   "duration": 6.966,
+   "duration": 5.883,
    "sentences": [
     {
-     "text": "The day he was born, Hermes stole Apollo's cattle and walked them home backwards, so nobody could follow the tracks.",
+     "text": "The day he was born, Hermes stole Apollo's cattle and walked them backwards, so no one could follow the tracks.",
      "start": 0.0,
-     "end": 6.966
+     "end": 5.883
+    }
+   ],
+   "seed": 193724088,
+   "take_score": null,
+   "transcript": "The day he was born, Hermes stole Apollo's cattle and walked them backwards so no one could follow the tracks.",
+   "words": [
+    {
+     "t": "The",
+     "s": 0.06,
+     "e": 0.14
+    },
+    {
+     "t": "day",
+     "s": 0.38,
+     "e": 0.46
+    },
+    {
+     "t": "he",
+     "s": 0.54,
+     "e": 0.62
+    },
+    {
+     "t": "was",
+     "s": 0.7,
+     "e": 0.78
+    },
+    {
+     "t": "born,",
+     "s": 0.78,
+     "e": 1.58
+    },
+    {
+     "t": "Hermes",
+     "s": 1.82,
+     "e": 2.14
+    },
+    {
+     "t": "stole",
+     "s": 2.3,
+     "e": 2.54
+    },
+    {
+     "t": "Apollo's",
+     "s": 2.62,
+     "e": 3.1
+    },
+    {
+     "t": "cattle",
+     "s": 3.18,
+     "e": 3.34
+    },
+    {
+     "t": "and",
+     "s": 3.5,
+     "e": 3.58
+    },
+    {
+     "t": "walked",
+     "s": 3.66,
+     "e": 3.82
+    },
+    {
+     "t": "them",
+     "s": 3.98,
+     "e": 4.06
+    },
+    {
+     "t": "backwards",
+     "s": 4.14,
+     "e": 4.54
+    },
+    {
+     "t": "so",
+     "s": 4.7,
+     "e": 4.78
+    },
+    {
+     "t": "no",
+     "s": 4.86,
+     "e": 4.94
+    },
+    {
+     "t": "one",
+     "s": 4.94,
+     "e": 5.02
+    },
+    {
+     "t": "could",
+     "s": 5.1,
+     "e": 5.18
+    },
+    {
+     "t": "follow",
+     "s": 5.34,
+     "e": 5.5
+    },
+    {
+     "t": "the",
+     "s": 5.5,
+     "e": 5.58
+    },
+    {
+     "t": "tracks.",
+     "s": 5.66,
+     "e": 5.883
     }
    ]
   },
   "S02": {
-   "title": "tension: agents still hide them",
-   "kicker": "THE PROBLEM",
-   "duration": 6.913,
+   "title": "agents still cover their tracks",
+   "kicker": "THE BLACK BOX",
+   "duration": 4.276,
    "sentences": [
     {
      "text": "Agents still cover their tracks.",
      "start": 0.0,
-     "end": 2.009
+     "end": 1.485
     },
     {
-     "text": "A turn runs, an answer appears, and everything in between is gone.",
-     "start": 2.359,
-     "end": 6.914
+     "text": "Question in, answer out, and nothing in between.",
+     "start": 2.183,
+     "end": 4.276
+    }
+   ],
+   "seed": 46056301,
+   "take_score": null,
+   "transcript": "Agents still cover their tracks. Question in, answer out, and nothing in between.",
+   "words": [
+    {
+     "t": "Agents",
+     "s": 0.06,
+     "e": 0.46
+    },
+    {
+     "t": "still",
+     "s": 0.54,
+     "e": 0.62
+    },
+    {
+     "t": "cover",
+     "s": 0.62,
+     "e": 0.78
+    },
+    {
+     "t": "their",
+     "s": 0.86,
+     "e": 0.94
+    },
+    {
+     "t": "tracks.",
+     "s": 1.02,
+     "e": 1.485
+    },
+    {
+     "t": "Question",
+     "s": 2.183,
+     "e": 2.423
+    },
+    {
+     "t": "in,",
+     "s": 2.503,
+     "e": 2.903
+    },
+    {
+     "t": "answer",
+     "s": 2.903,
+     "e": 3.063
+    },
+    {
+     "t": "out,",
+     "s": 3.143,
+     "e": 3.543
+    },
+    {
+     "t": "and",
+     "s": 3.463,
+     "e": 3.543
+    },
+    {
+     "t": "nothing",
+     "s": 3.703,
+     "e": 3.863
+    },
+    {
+     "t": "in",
+     "s": 3.943,
+     "e": 4.023
+    },
+    {
+     "t": "between.",
+     "s": 4.103,
+     "e": 4.276
     }
    ]
   },
   "S03": {
-   "title": "reveal",
-   "kicker": "HERMES OTEL",
-   "duration": 6.041,
+   "title": "the telescope: why OpenTelemetry",
+   "kicker": "OPENTELEMETRY FOR HERMES AGENT",
+   "duration": 6.225,
    "sentences": [
     {
-     "text": "Hermes OTel is OpenTelemetry for Hermes Agent.",
+     "text": "Hermes OTel brings the tracks back with OpenTelemetry, the open standard for traces, metrics and logs.",
      "start": 0.0,
-     "end": 3.835
+     "end": 6.225
+    }
+   ],
+   "seed": 445351552,
+   "take_score": null,
+   "transcript": "Hermes Hotel brings the tracks back with open telemetry the open standard for traces, metrics, and logs.",
+   "words": [
+    {
+     "t": "Hermes",
+     "s": 0.06,
+     "e": 0.54
     },
     {
-     "text": "Every turn leaves a trace.",
-     "start": 4.185,
-     "end": 6.041
+     "t": "Hotel",
+     "s": 0.7,
+     "e": 0.94
+    },
+    {
+     "t": "brings",
+     "s": 1.02,
+     "e": 1.18
+    },
+    {
+     "t": "the",
+     "s": 1.18,
+     "e": 1.26
+    },
+    {
+     "t": "tracks",
+     "s": 1.34,
+     "e": 1.66
+    },
+    {
+     "t": "back",
+     "s": 1.74,
+     "e": 1.82
+    },
+    {
+     "t": "with",
+     "s": 2.14,
+     "e": 2.22
+    },
+    {
+     "t": "open",
+     "s": 2.38,
+     "e": 2.62
+    },
+    {
+     "t": "telemetry",
+     "s": 2.78,
+     "e": 3.26
+    },
+    {
+     "t": "the",
+     "s": 3.58,
+     "e": 3.66
+    },
+    {
+     "t": "open",
+     "s": 3.74,
+     "e": 3.98
+    },
+    {
+     "t": "standard",
+     "s": 4.3,
+     "e": 4.46
+    },
+    {
+     "t": "for",
+     "s": 4.54,
+     "e": 4.62
+    },
+    {
+     "t": "traces,",
+     "s": 4.86,
+     "e": 5.58
+    },
+    {
+     "t": "metrics,",
+     "s": 5.58,
+     "e": 5.98
+    },
+    {
+     "t": "and",
+     "s": 5.9,
+     "e": 5.98
+    },
+    {
+     "t": "logs.",
+     "s": 6.06,
+     "e": 6.225
     }
    ]
   },
   "S04": {
-   "title": "the trace (real waterfall)",
-   "kicker": "ONE TURN, ONE TRACE",
-   "duration": 11.191,
+   "title": "one turn, one trace",
+   "kicker": "ONE TURN \u00b7 ONE TRACE",
+   "duration": 6.646,
    "sentences": [
     {
-     "text": "The turn is the root.",
+     "text": "Each turn becomes one trace.",
      "start": 0.0,
-     "end": 1.646
+     "end": 2.38
     },
     {
-     "text": "Each model call, API request, tool, skill and sub-agent nests inside it, carrying its tokens, timing, arguments and outcome.",
-     "start": 1.996,
-     "end": 11.191
+     "text": "Every model call, tool and sub-agent nests inside it, with tokens, cost and timing.",
+     "start": 2.38,
+     "end": 6.646
+    }
+   ],
+   "seed": 91482029,
+   "take_score": null,
+   "transcript": "Each turn becomes one trace. Every model call, tool, and subagent nests inside it with tokens cost and timing.",
+   "words": [
+    {
+     "t": "Each",
+     "s": 0.06,
+     "e": 0.14
+    },
+    {
+     "t": "turn",
+     "s": 0.38,
+     "e": 0.62
+    },
+    {
+     "t": "becomes",
+     "s": 0.78,
+     "e": 0.94
+    },
+    {
+     "t": "one",
+     "s": 1.42,
+     "e": 1.5
+    },
+    {
+     "t": "trace.",
+     "s": 1.74,
+     "e": 2.38
+    },
+    {
+     "t": "Every",
+     "s": 2.38,
+     "e": 2.54
+    },
+    {
+     "t": "model",
+     "s": 2.54,
+     "e": 2.78
+    },
+    {
+     "t": "call,",
+     "s": 2.94,
+     "e": 3.66
+    },
+    {
+     "t": "tool,",
+     "s": 3.58,
+     "e": 3.98
+    },
+    {
+     "t": "and",
+     "s": 3.9,
+     "e": 3.98
+    },
+    {
+     "t": "subagent",
+     "s": 3.98,
+     "e": 4.54
+    },
+    {
+     "t": "nests",
+     "s": 4.62,
+     "e": 4.94
+    },
+    {
+     "t": "inside",
+     "s": 4.94,
+     "e": 5.1
+    },
+    {
+     "t": "it",
+     "s": 5.26,
+     "e": 5.34
+    },
+    {
+     "t": "with",
+     "s": 5.5,
+     "e": 5.58
+    },
+    {
+     "t": "tokens",
+     "s": 5.58,
+     "e": 5.9
+    },
+    {
+     "t": "cost",
+     "s": 6.22,
+     "e": 6.38
+    },
+    {
+     "t": "and",
+     "s": 6.46,
+     "e": 6.54
+    },
+    {
+     "t": "timing.",
+     "s": 6.62,
+     "e": 6.646
     }
    ]
   },
   "S05": {
-   "title": "the dashboard tab (real dashboard)",
-   "kicker": "BUILT INTO HERMES",
-   "duration": 9.849,
+   "title": "start local: SQLite + the dashboard tab",
+   "kicker": "NO BACKEND NEEDED",
+   "duration": 8.679,
    "sentences": [
     {
-     "text": "A tab in the Hermes dashboard shows turns as they land, totals tokens and tool time, and puts the agent's own logs beside the span that wrote them.",
+     "text": "With no backend at all, a local SQLite file keeps all three on your machine.",
      "start": 0.0,
-     "end": 9.849
+     "end": 3.9
+    },
+    {
+     "text": "A new tab in the Hermes dashboard shows every turn, chart and log.",
+     "start": 3.98,
+     "end": 8.679
+    }
+   ],
+   "seed": 2103679178,
+   "take_score": null,
+   "transcript": "With no backend at all, a local SQLite file keeps all three on your machine. A new tab in the Hermes dashboard shows every turn chart and log.",
+   "words": [
+    {
+     "t": "With",
+     "s": 0.06,
+     "e": 0.14
+    },
+    {
+     "t": "no",
+     "s": 0.3,
+     "e": 0.38
+    },
+    {
+     "t": "backend",
+     "s": 0.62,
+     "e": 0.94
+    },
+    {
+     "t": "at",
+     "s": 1.02,
+     "e": 1.1
+    },
+    {
+     "t": "all,",
+     "s": 1.1,
+     "e": 1.58
+    },
+    {
+     "t": "a",
+     "s": 1.66,
+     "e": 1.74
+    },
+    {
+     "t": "local",
+     "s": 1.82,
+     "e": 1.98
+    },
+    {
+     "t": "SQLite",
+     "s": 2.22,
+     "e": 2.86
+    },
+    {
+     "t": "file",
+     "s": 2.86,
+     "e": 3.02
+    },
+    {
+     "t": "keeps",
+     "s": 3.02,
+     "e": 3.18
+    },
+    {
+     "t": "all",
+     "s": 3.26,
+     "e": 3.34
+    },
+    {
+     "t": "three",
+     "s": 3.5,
+     "e": 3.58
+    },
+    {
+     "t": "on",
+     "s": 3.74,
+     "e": 3.82
+    },
+    {
+     "t": "your",
+     "s": 3.82,
+     "e": 3.9
+    },
+    {
+     "t": "machine.",
+     "s": 3.98,
+     "e": 4.396
+    },
+    {
+     "t": "A",
+     "s": 4.772,
+     "e": 4.852
+    },
+    {
+     "t": "new",
+     "s": 5.012,
+     "e": 5.092
+    },
+    {
+     "t": "tab",
+     "s": 5.332,
+     "e": 5.412
+    },
+    {
+     "t": "in",
+     "s": 5.652,
+     "e": 5.732
+    },
+    {
+     "t": "the",
+     "s": 5.812,
+     "e": 5.892
+    },
+    {
+     "t": "Hermes",
+     "s": 6.052,
+     "e": 6.452
+    },
+    {
+     "t": "dashboard",
+     "s": 6.612,
+     "e": 6.932
+    },
+    {
+     "t": "shows",
+     "s": 6.932,
+     "e": 7.172
+    },
+    {
+     "t": "every",
+     "s": 7.252,
+     "e": 7.492
+    },
+    {
+     "t": "turn",
+     "s": 7.652,
+     "e": 7.812
+    },
+    {
+     "t": "chart",
+     "s": 8.372,
+     "e": 8.612
+    },
+    {
+     "t": "and",
+     "s": 8.532,
+     "e": 8.612
     }
    ]
   },
   "S06": {
-   "title": "the payoff: every thread, every backend (real backend UIs)",
-   "kicker": "TRACES \u00b7 METRICS \u00b7 LOGS",
-   "duration": 15.319,
+   "title": "the tab reads every backend",
+   "kicker": "ONE TAB \u00b7 ANY BACKEND",
+   "duration": 2.601,
    "sentences": [
     {
-     "text": "Traces, metrics and logs go out over OTLP, to the tools you already run.",
+     "text": "Connect a backend, and the same tab reads it back.",
      "start": 0.0,
-     "end": 6.003
+     "end": 2.601
+    }
+   ],
+   "seed": 492978366,
+   "take_score": null,
+   "transcript": "Connect to backend and the same tab reads it back.",
+   "words": [
+    {
+     "t": "Connect",
+     "s": 0.06,
+     "e": 0.3
     },
     {
-     "text": "Grafana. SigNoz. OpenObserve. Uptrace. Jaeger. Phoenix. Langfuse.",
-     "start": 6.353,
-     "end": 11.766
+     "t": "to",
+     "s": 0.38,
+     "e": 0.46
     },
     {
-     "text": "Twenty-seven backend types, several at once.",
-     "start": 12.116,
-     "end": 15.319
+     "t": "backend",
+     "s": 0.54,
+     "e": 0.86
+    },
+    {
+     "t": "and",
+     "s": 1.02,
+     "e": 1.1
+    },
+    {
+     "t": "the",
+     "s": 1.18,
+     "e": 1.26
+    },
+    {
+     "t": "same",
+     "s": 1.26,
+     "e": 1.34
+    },
+    {
+     "t": "tab",
+     "s": 1.66,
+     "e": 1.74
+    },
+    {
+     "t": "reads",
+     "s": 1.98,
+     "e": 2.22
+    },
+    {
+     "t": "it",
+     "s": 2.38,
+     "e": 2.46
     }
    ]
   },
   "S07": {
-   "title": "Hermes reads its own tracks (real terminal recording)",
-   "kicker": "ASK THE AGENT",
-   "duration": 6.952,
+   "title": "any OTLP backend, async fan-out (tile wall + rapid cuts)",
+   "kicker": "ANY OTLP BACKEND \u00b7 ALL AT ONCE",
+   "duration": 7.956,
    "sentences": [
     {
-     "text": "And Hermes can read its own tracks.",
+     "text": "Send it anywhere that speaks OTLP.",
      "start": 0.0,
-     "end": 2.395
+     "end": 2.86
     },
     {
-     "text": "Ask what the last turn did, and it draws the trace right in the chat.",
-     "start": 2.745,
-     "end": 6.952
+     "text": "List several, and each gets the same data on its own async queue, so a slow one never stalls the agent.",
+     "start": 2.86,
+     "end": 7.956
+    }
+   ],
+   "seed": 231653491,
+   "take_score": null,
+   "transcript": "Send it anywhere that speaks OTLP. List several and each gets the same data on its own asyncq. So a slow one never stalls the agent.",
+   "words": [
+    {
+     "t": "Send",
+     "s": 0.06,
+     "e": 0.14
+    },
+    {
+     "t": "it",
+     "s": 0.38,
+     "e": 0.46
+    },
+    {
+     "t": "anywhere",
+     "s": 0.54,
+     "e": 0.7
+    },
+    {
+     "t": "that",
+     "s": 0.78,
+     "e": 0.86
+    },
+    {
+     "t": "speaks",
+     "s": 0.94,
+     "e": 1.1
+    },
+    {
+     "t": "OTLP.",
+     "s": 1.5,
+     "e": 2.86
+    },
+    {
+     "t": "List",
+     "s": 2.86,
+     "e": 2.94
+    },
+    {
+     "t": "several",
+     "s": 3.1,
+     "e": 3.34
+    },
+    {
+     "t": "and",
+     "s": 3.82,
+     "e": 3.9
+    },
+    {
+     "t": "each",
+     "s": 4.06,
+     "e": 4.14
+    },
+    {
+     "t": "gets",
+     "s": 4.22,
+     "e": 4.38
+    },
+    {
+     "t": "the",
+     "s": 4.38,
+     "e": 4.46
+    },
+    {
+     "t": "same",
+     "s": 4.46,
+     "e": 4.54
+    },
+    {
+     "t": "data",
+     "s": 4.62,
+     "e": 4.78
+    },
+    {
+     "t": "on",
+     "s": 4.94,
+     "e": 5.02
+    },
+    {
+     "t": "its",
+     "s": 5.1,
+     "e": 5.18
+    },
+    {
+     "t": "own",
+     "s": 5.18,
+     "e": 5.26
+    },
+    {
+     "t": "asyncq.",
+     "s": 5.66,
+     "e": 6.38
+    },
+    {
+     "t": "So",
+     "s": 6.38,
+     "e": 6.46
+    },
+    {
+     "t": "a",
+     "s": 6.54,
+     "e": 6.62
+    },
+    {
+     "t": "slow",
+     "s": 6.7,
+     "e": 6.78
+    },
+    {
+     "t": "one",
+     "s": 6.86,
+     "e": 6.94
+    },
+    {
+     "t": "never",
+     "s": 7.18,
+     "e": 7.34
+    },
+    {
+     "t": "stalls",
+     "s": 7.34,
+     "e": 7.58
+    },
+    {
+     "t": "the",
+     "s": 7.58,
+     "e": 7.66
+    },
+    {
+     "t": "agent.",
+     "s": 7.66,
+     "e": 7.956
     }
    ]
   },
   "S08": {
-   "title": "claim and end card",
-   "kicker": "PRIVATE BY DEFAULT",
-   "duration": 9.96,
+   "title": "two conventions",
+   "kicker": "GEN_AI \u00b7 OPENINFERENCE",
+   "duration": 4.608,
    "sentences": [
     {
-     "text": "With no backend configured, nothing leaves your machine.",
+     "text": "Every span speaks both conventions: OpenTelemetry GenAI and OpenInference.",
      "start": 0.0,
-     "end": 3.473
+     "end": 4.608
+    }
+   ],
+   "seed": 1326661309,
+   "take_score": null,
+   "transcript": "Every span speaks both conventions open telemetry gen AI, and open inferent",
+   "words": [
+    {
+     "t": "Every",
+     "s": 0.06,
+     "e": 0.3
     },
     {
+     "t": "span",
+     "s": 0.54,
+     "e": 0.7
+    },
+    {
+     "t": "speaks",
+     "s": 0.86,
+     "e": 1.02
+    },
+    {
+     "t": "both",
+     "s": 1.02,
+     "e": 1.18
+    },
+    {
+     "t": "conventions",
+     "s": 1.34,
+     "e": 1.66
+    },
+    {
+     "t": "open",
+     "s": 2.14,
+     "e": 2.38
+    },
+    {
+     "t": "telemetry",
+     "s": 2.46,
+     "e": 2.86
+    },
+    {
+     "t": "gen",
+     "s": 3.02,
+     "e": 3.1
+    },
+    {
+     "t": "AI,",
+     "s": 3.42,
+     "e": 3.98
+    },
+    {
+     "t": "and",
+     "s": 3.9,
+     "e": 3.98
+    },
+    {
+     "t": "open",
+     "s": 4.22,
+     "e": 4.38
+    },
+    {
+     "t": "inferent",
+     "s": 4.54,
+     "e": 4.608
+    }
+   ]
+  },
+  "S09": {
+   "title": "Claude Code metrics",
+   "kicker": "CLAUDE CODE DASHBOARDS",
+   "duration": 8.359,
+   "sentences": [
+    {
+     "text": "Flip one switch, and sessions, tokens and cost use Claude Code's own metric names, so your Claude Code dashboards show Hermes too.",
+     "start": 0.0,
+     "end": 8.359
+    }
+   ],
+   "seed": 810596876,
+   "take_score": null,
+   "transcript": "Flip one switch and sessions, tokens and cost use claud code's own metric names so your claud code dashboards show Hermese too.",
+   "words": [
+    {
+     "t": "Flip",
+     "s": 0.06,
+     "e": 0.38
+    },
+    {
+     "t": "one",
+     "s": 0.54,
+     "e": 0.62
+    },
+    {
+     "t": "switch",
+     "s": 0.78,
+     "e": 1.1
+    },
+    {
+     "t": "and",
+     "s": 1.5,
+     "e": 1.58
+    },
+    {
+     "t": "sessions,",
+     "s": 1.66,
+     "e": 2.22
+    },
+    {
+     "t": "tokens",
+     "s": 2.22,
+     "e": 2.54
+    },
+    {
+     "t": "and",
+     "s": 2.62,
+     "e": 2.7
+    },
+    {
+     "t": "cost",
+     "s": 2.86,
+     "e": 3.02
+    },
+    {
+     "t": "use",
+     "s": 3.26,
+     "e": 3.5
+    },
+    {
+     "t": "claud",
+     "s": 3.66,
+     "e": 3.9
+    },
+    {
+     "t": "code's",
+     "s": 3.9,
+     "e": 4.22
+    },
+    {
+     "t": "own",
+     "s": 4.22,
+     "e": 4.38
+    },
+    {
+     "t": "metric",
+     "s": 4.46,
+     "e": 4.7
+    },
+    {
+     "t": "names",
+     "s": 4.7,
+     "e": 4.94
+    },
+    {
+     "t": "so",
+     "s": 5.34,
+     "e": 5.42
+    },
+    {
+     "t": "your",
+     "s": 5.42,
+     "e": 5.5
+    },
+    {
+     "t": "claud",
+     "s": 5.58,
+     "e": 5.82
+    },
+    {
+     "t": "code",
+     "s": 5.82,
+     "e": 6.06
+    },
+    {
+     "t": "dashboards",
+     "s": 6.14,
+     "e": 6.7
+    },
+    {
+     "t": "show",
+     "s": 6.7,
+     "e": 6.94
+    },
+    {
+     "t": "Hermese",
+     "s": 7.18,
+     "e": 7.66
+    },
+    {
+     "t": "too.",
+     "s": 7.697,
+     "e": 8.359
+    }
+   ]
+  },
+  "S10": {
+   "title": "Hermes reads its own traces",
+   "kicker": "ASK THE AGENT",
+   "duration": 1.765,
+   "sentences": [
+    {
+     "text": "And Hermes can read its own traces.",
+     "start": 0.0,
+     "end": 1.765
+    }
+   ],
+   "seed": 940942829,
+   "take_score": null,
+   "transcript": "And Hermes can read its own traces.",
+   "words": [
+    {
+     "t": "And",
+     "s": 0.06,
+     "e": 0.14
+    },
+    {
+     "t": "Hermes",
+     "s": 0.14,
+     "e": 0.54
+    },
+    {
+     "t": "can",
+     "s": 0.62,
+     "e": 0.7
+    },
+    {
+     "t": "read",
+     "s": 0.7,
+     "e": 0.86
+    },
+    {
+     "t": "its",
+     "s": 0.86,
+     "e": 1.02
+    },
+    {
+     "t": "own",
+     "s": 1.02,
+     "e": 1.1
+    },
+    {
+     "t": "traces.",
+     "s": 1.34,
+     "e": 1.765
+    }
+   ]
+  },
+  "S11": {
+   "title": "close",
+   "kicker": "FOLLOW THE MESSENGER",
+   "duration": 5.148,
+   "sentences": [
+    {
      "text": "Open source, and in the Hermes plugin catalog.",
-     "start": 3.823,
-     "end": 7.003
+     "start": 0.0,
+     "end": 2.46
     },
     {
      "text": "Hermes OTel. Follow the messenger.",
-     "start": 7.353,
-     "end": 9.96
+     "start": 2.62,
+     "end": 5.148
+    }
+   ],
+   "seed": 343271186,
+   "take_score": null,
+   "transcript": "Open source and in the Hermes plugin catalog Hermes Hotel follow the messenger.",
+   "words": [
+    {
+     "t": "Open",
+     "s": 0.06,
+     "e": 0.3
+    },
+    {
+     "t": "source",
+     "s": 0.38,
+     "e": 0.62
+    },
+    {
+     "t": "and",
+     "s": 1.1,
+     "e": 1.18
+    },
+    {
+     "t": "in",
+     "s": 1.26,
+     "e": 1.34
+    },
+    {
+     "t": "the",
+     "s": 1.34,
+     "e": 1.42
+    },
+    {
+     "t": "Hermes",
+     "s": 1.66,
+     "e": 2.06
+    },
+    {
+     "t": "plugin",
+     "s": 2.22,
+     "e": 2.46
+    },
+    {
+     "t": "catalog",
+     "s": 2.62,
+     "e": 3.02
+    },
+    {
+     "t": "Hermes",
+     "s": 3.58,
+     "e": 4.06
+    },
+    {
+     "t": "follow",
+     "s": 4.596,
+     "e": 4.756
+    },
+    {
+     "t": "the",
+     "s": 4.836,
+     "e": 4.916
+    },
+    {
+     "t": "messenger.",
+     "s": 5.076,
+     "e": 5.148
     }
    ]
   }

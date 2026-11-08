@@ -2,70 +2,60 @@
   <style>
     @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
     @font-face { font-family: "Mondwest"; src: url("assets/fonts/Mondwest-Regular.woff2") format("woff2"); }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
     #root { position: absolute; inset: 0; background: #f2f2f2; overflow: hidden; }
-    #s01-stage { position: absolute; inset: 0; }
-    #s01-plate { position: absolute; left: 1010px; top: -250px; width: 910px; height: 1500px; overflow: hidden; }
-    #s01-plate img { position: absolute; left: 0; top: 0; width: 910px; height: 1500px; object-fit: cover; transform-origin: 455px 1230px; }
-    #s01-word {
-      position: absolute; left: 104px; top: 150px; font-family: "Rules Compressed"; font-weight: 500;
-      font-size: 520px; line-height: 0.8; letter-spacing: -0.01em; color: #0000f2; text-transform: uppercase;
-    }
-    #s01-kicker {
-      position: absolute; left: 120px; top: 96px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
-      letter-spacing: 0.22em; color: #0000f2;
-    }
-    #s01-line { position: absolute; left: 120px; top: 900px; font-family: "Mondwest"; font-size: 60px; color: #0000f2; }
-    .s01-print { position: absolute; width: 66px; height: 115px; }
+    /* the generated engraving (club.lan, FLUX 3 klein in the style of the 1592 Goltzius plate) */
+    #s01-plate { position: absolute; left: 860px; top: 0; width: 1060px; height: 1080px; overflow: hidden; }
+    #s01-plate img { position: absolute; left: -560px; top: 0; width: 1920px; height: 1080px; object-fit: cover; }
+    #s01-word { position: absolute; left: 96px; top: 168px; font-family: "Rules Compressed"; font-weight: 500;
+      font-size: 470px; line-height: 0.8; letter-spacing: -0.01em; color: #0000f2; }
+    #s01-kicker { position: absolute; left: 120px; top: 96px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
+      letter-spacing: 0.22em; color: #0000f2; }
+    #s01-line { position: absolute; left: 120px; top: 900px; width: 700px; font-family: "Mondwest"; font-size: 58px; color: #0000f2; }
+    .s01-w { display: inline-block; }
+    .s01-print { position: absolute; width: 50px; height: 86px; }
     .s01-print svg { width: 100%; height: 100%; display: block; }
-    #s01-flood { position: absolute; inset: 0; background: #041c1c; clip-path: circle(0px at 1500px 760px); }
   </style>
   <div id="root" data-composition-id="s01" data-width="1920" data-height="1080" data-layout-allow-overflow>
-    <div id="s01-stage">
-      <div id="s01-plate"><img src="assets/art/mercury-blue.jpg" alt="Mercurius, Hendrick Goltzius after Polidoro da Caravaggio, 1592 (CC0, NGA)" /></div>
-      <div id="s01-kicker">THE MYTH</div>
-      <div id="s01-word">TRACKS</div>
-      <div id="s01-prints"></div>
-      <div id="s01-line"><span class="s01-w">Fifty</span> <span class="s01-w">cattle.</span> <span class="s01-w">No</span> <span class="s01-w">way</span> <span class="s01-w">to</span> <span class="s01-w">follow.</span></div>
+    <div id="s01-plate"><img src="assets/gen/a01-cattle.png" alt="Engraving: Hermes drives Apollo's cattle backwards across a moonlit plain" /></div>
+    <div id="s01-kicker">THE MYTH</div>
+    <div id="s01-word">TRACKS</div>
+    <div id="s01-prints">
+      <div class="s01-print" id="s01-p0" style="left:128px; top:700px"></div>
+      <div class="s01-print" id="s01-p1" style="left:186px; top:770px"></div>
+      <div class="s01-print" id="s01-p2" style="left:244px; top:700px"></div>
+      <div class="s01-print" id="s01-p3" style="left:302px; top:770px"></div>
+      <div class="s01-print" id="s01-p4" style="left:360px; top:700px"></div>
+      <div class="s01-print" id="s01-p5" style="left:418px; top:770px"></div>
+      <div class="s01-print" id="s01-p6" style="left:476px; top:700px"></div>
+      <div class="s01-print" id="s01-p7" style="left:534px; top:770px"></div>
+      <div class="s01-print" id="s01-p8" style="left:592px; top:700px"></div>
+      <div class="s01-print" id="s01-p9" style="left:650px; top:770px"></div>
     </div>
-    <div id="s01-flood"></div>
+    <div id="s01-line"><span class="s01-w">Fifty cattle.</span> <span class="s01-w">Walked backwards.</span></div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 8.266, "lead": 0.45, "sents": [[0.45, 7.416]], "a": {"born": 1.29, "cattle": 3.21, "backwards": 4.49, "tracks": 6.87}, "ev": {"stamp0": 0.35, "stamp1": 0.905, "stamp2": 1.461, "stamp3": 2.017, "stamp4": 2.572, "stamp5": 3.127, "stamp6": 3.683, "stamp7": 4.239, "stamp8": 4.794, "stamp9": 5.349, "stamp10": 5.905, "stamp11": 6.461, "flood": 7.766}}/*END*/;
-      const E = C.ev || {};
-      // Twelve cloven prints walking right, toward the god, each pointing LEFT: walked backwards.
-      // Positions and jitter are fixed numbers (no randomness): a gait of alternating pairs.
-      const host = document.getElementById("s01-prints");
-      const hoof =
-        '<svg viewBox="0 0 46 80"><path fill="#0000f2" d="M19 2 C11 10 4 26 4 41 C4 53 9 59 16 59 C20 59 21 55 21 49 L21 8 Z"/>' +
+      const C = /*CUES*/{"dur": 7.483, "lead": 0.4, "sents": [[0.4, 6.283]], "w": [{"t": "the", "s": 0.46, "e": 0.54}, {"t": "day", "s": 0.78, "e": 0.86}, {"t": "he", "s": 0.94, "e": 1.02}, {"t": "was", "s": 1.1, "e": 1.18}, {"t": "born", "s": 1.18, "e": 1.98}, {"t": "hermes", "s": 2.22, "e": 2.54}, {"t": "stole", "s": 2.7, "e": 2.94}, {"t": "apollos", "s": 3.02, "e": 3.5}, {"t": "cattle", "s": 3.58, "e": 3.74}, {"t": "and", "s": 3.9, "e": 3.98}, {"t": "walked", "s": 4.06, "e": 4.22}, {"t": "them", "s": 4.38, "e": 4.46}, {"t": "backwards", "s": 4.54, "e": 4.94}, {"t": "so", "s": 5.1, "e": 5.18}, {"t": "no", "s": 5.26, "e": 5.34}, {"t": "one", "s": 5.34, "e": 5.42}, {"t": "could", "s": 5.5, "e": 5.58}, {"t": "follow", "s": 5.74, "e": 5.9}, {"t": "the", "s": 5.9, "e": 5.98}, {"t": "tracks", "s": 6.06, "e": 6.283}]}/*END*/;
+      const W = C.w || [], D = C.dur || 8;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
+      // cloven prints walk right, toward the god, each pointing LEFT: the herd went backwards
+      const hoof = '<svg viewBox="0 0 46 80"><path fill="#0000f2" d="M19 2 C11 10 4 26 4 41 C4 53 9 59 16 59 C20 59 21 55 21 49 L21 8 Z"/>' +
         '<path fill="#0000f2" d="M27 2 C35 10 42 26 42 41 C42 53 37 59 30 59 C26 59 25 55 25 49 L25 8 Z"/>' +
         '<circle fill="#0000f2" cx="10" cy="73" r="4"/><circle fill="#0000f2" cx="36" cy="73" r="4"/></svg>';
-      const jit = [3, -4, 2, -2, 5, -3, 1, -5, 4, -1, 2, -3];
-      for (let i = 0; i < 12; i++) {
-        const d = document.createElement("div");
-        d.className = "s01-print";
-        d.id = "s01-p" + i;
-        d.style.left = 128 + i * 70 + "px";
-        d.style.top = (i % 2 ? 752 : 676) + "px";
-        d.innerHTML = hoof;
-        host.appendChild(d);
-      }
+      document.querySelectorAll(".s01-print").forEach((d) => { d.innerHTML = hoof; });
+      const jit = [3, -4, 2, -2, 5, -3, 1, -5, 4, -1];
       const tl = gsap.timeline({ paused: true });
-      // frame 0 is a finished poster: plate, kicker, word already set
-      tl.fromTo("#s01-plate img", { scale: 1 }, { scale: 1.16, duration: C.dur || 8, ease: "power2.inOut" }, 0);
-      for (let i = 0; i < 12; i++) {
-        const at = E["stamp" + i] ?? 0.35 + i * 0.5;
-        tl.fromTo("#s01-p" + i,
-          { opacity: 0, scale: 1.25, rotation: -90 + jit[i] },
-          { opacity: 1, scale: 1, rotation: -90 + jit[i], duration: 0.13, ease: "power4.out" }, at);
+      // frame 0 is a finished poster; the plate pans with the herd
+      tl.fromTo("#s01-plate img", { x: 0, scale: 1.04 }, { x: 260, scale: 1.12, duration: D, ease: "none" }, 0);
+      const end = (C.sents[0] || [0, D - 1])[1];
+      for (let i = 0; i < 10; i++) {
+        tl.fromTo("#s01-p" + i, { opacity: 0, scale: 1.25, rotation: -90 + jit[i] },
+          { opacity: 1, scale: 1, rotation: -90 + jit[i], duration: 0.12, ease: "power4.out" }, 0.35 + i * (end - 0.8) / 10);
       }
-      const lineAt = (C.a && C.a.cattle) || 3.2;
-      tl.fromTo(".s01-w", { opacity: 0, filter: "blur(6px)" },
-        { opacity: 1, filter: "blur(0px)", duration: 0.14, stagger: 0.07, ease: "power2.out" }, lineAt - 0.2);
-      // the last print's ink floods the frame into the agent world
-      const fl = E.flood ?? (C.dur || 8) - 0.5;
-      tl.fromTo("#s01-flood", { clipPath: "circle(0px at 935px 802px)" },
-        { clipPath: "circle(2300px at 935px 802px)", duration: 0.5, ease: "power2.inOut" }, fl);
+      const ws = document.querySelectorAll(".s01-w");
+      tl.fromTo(ws[0], { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/cattle/, 0, 3) - 0.15);
+      tl.fromTo(ws[1], { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/backward/, 0, 4.5) - 0.1);
       window.__timelines["s01"] = tl;
     })();
   </script>

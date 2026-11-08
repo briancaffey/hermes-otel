@@ -1,47 +1,200 @@
 <template>
   <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
     @font-face { font-family: "Collapse"; src: url("assets/fonts/Collapse-Bold.woff2") format("woff2"); font-weight: 700; }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
     #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
-    #s07-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #0d1015; }
-    #s07-cam { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; transform-origin: 0 0; }
-    #s07-still, #s07-vid { position: absolute; left: 0; top: 0; width: 1920px; height: 1080px; }
-    #s07-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
-    #s07-kicker { position: absolute; left: 120px; top: 38px; font-family: "JetBrains Mono"; font-weight: 700; font-size: 28px;
-      letter-spacing: 0.22em; color: #6e6eff; }
-    #s07-line { position: absolute; left: 120px; top: 88px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
-    #s07-line code { font-family: "JetBrains Mono"; font-weight: 700; font-size: 48px; color: #ffbd38; }
+    .s07-mono { font-family: "JB Mono"; font-weight: 700; }
+    .s07-rules { font-family: "Rules Compressed"; font-weight: 500; line-height: 0.86; }
+    /* A (print): the many-armed Hermes holds a thread to every beacon */
+    #s07-a { position: absolute; inset: 0; background: #f2f2f2; }
+    #s07-plate { position: absolute; left: 0; top: 0; width: 1150px; height: 1080px; overflow: hidden; }
+    #s07-plate img { position: absolute; left: -330px; top: 0; width: 1920px; height: 1080px; }
+    #s07-akick { position: absolute; left: 1220px; top: 130px; font-size: 28px; letter-spacing: 0.22em; color: #0000f2; }
+    #s07-otlp { position: absolute; left: 1210px; top: 175px; font-size: 300px; color: #0000f2; }
+    #s07-yaml { position: absolute; left: 1220px; top: 470px; width: 600px; background: #0000f2; color: #f2f2f2; padding: 26px 30px;
+      font-size: 27px; line-height: 1.5; white-space: pre; }
+    #s07-yaml b { color: #ffbd38; }
+    /* B (product): one queue and one thread per backend */
+    #s07-b { position: absolute; inset: 0; opacity: 0; }
+    #s07-bkick { position: absolute; left: 120px; top: 90px; font-size: 28px; letter-spacing: 0.22em; color: #6e6eff; }
+    #s07-src { position: absolute; left: 120px; top: 380px; width: 260px; height: 300px; }
+    #s07-src div { position: absolute; height: 22px; border-radius: 3px; }
+    #s07-srcl { position: absolute; left: 120px; top: 700px; font-size: 28px; letter-spacing: 0.16em; color: #ffe6cb; }
+    .s07-lane { position: absolute; left: 470px; width: 1000px; height: 4px; background: #1d3f3c; }
+    .s07-dot { position: absolute; width: 34px; height: 22px; border-radius: 4px; background: #39bef9; }
+    .s07-end { position: absolute; left: 1500px; height: 80px; display: flex; align-items: center; gap: 18px; }
+    .s07-end img { width: 64px; height: 64px; border-radius: 10px; background: #f2f2f2; object-fit: contain; }
+    .s07-end span { font-size: 30px; color: #ffe6cb; letter-spacing: 0.08em; }
+    #s07-slow { position: absolute; left: 1000px; top: 640px; font-size: 28px; color: #ffbd38; letter-spacing: 0.12em; }
+    #s07-bline { position: absolute; left: 120px; top: 930px; font-family: "Collapse"; font-weight: 700; font-size: 54px; color: #ffe6cb; }
+    /* C: rapid cuts, every backend's own UI */
+    .s07-cut { position: absolute; inset: 0; opacity: 0; background: #0d1015; }
+    .s07-cut img.ui { position: absolute; left: 0; top: 0; width: 1920px; height: 1200px; object-fit: cover; object-position: 0 0; }
+    .s07-tag { position: absolute; left: 0; bottom: 0; height: 170px; padding: 0 60px 0 120px; display: flex; align-items: center; gap: 26px;
+      background: #041c1c; }
+    .s07-tag img { width: 96px; height: 96px; border-radius: 14px; background: #f2f2f2; object-fit: contain; }
+    .s07-tag span { font-family: "Rules Compressed"; font-weight: 500; font-size: 130px; color: #ffe6cb; line-height: 1; }
+    /* D: the wall */
+    #s07-d { position: absolute; inset: 0; opacity: 0; background: #041c1c; }
+    .s07-tile { position: absolute; width: 300px; height: 188px; overflow: hidden; border-radius: 6px; }
+    .s07-tile img { width: 300px; height: 188px; object-fit: cover; object-position: 0 0; }
+    #s07-27 { position: absolute; left: 1430px; top: 110px; font-size: 470px; color: #ffbd38; }
+    #s07-27l { position: absolute; left: 1440px; top: 540px; width: 400px; font-family: "Collapse"; font-weight: 700; font-size: 52px;
+      line-height: 1.15; color: #ffe6cb; }
+    #s07-logos { position: absolute; left: 1440px; top: 760px; width: 400px; display: flex; flex-wrap: wrap; gap: 12px; }
+    #s07-logos img { width: 54px; height: 54px; border-radius: 9px; background: #f2f2f2; object-fit: contain; }
   </style>
-  <div id="root" data-composition-id="s07" data-width="1920" data-height="1080">
-    <div id="s07-view">
-      <div id="s07-cam">
-        <img id="s07-still" src="assets/clips/terminal-tree.jpg" alt="The span tree the agent drew for its previous turn" />
-        <video id="s07-vid" class="clip" src="assets/clips/span-tree.mp4" muted playsinline
-               data-start="0" data-duration="7.15" data-track-index="2"></video>
-      </div>
+  <div id="root" data-composition-id="s07" data-width="1920" data-height="1080" data-layout-allow-overflow data-layout-allow-overlap>
+    <div id="s07-a">
+      <div id="s07-plate"><img src="assets/gen/a07-arms.png" alt="Engraving: many-armed Hermes holds a thread to each of seven beacon fires" /></div>
+      <div id="s07-akick" class="s07-mono">ANY OTLP BACKEND</div>
+      <div id="s07-otlp" class="s07-rules">OTLP</div>
+      <div id="s07-yaml" class="s07-mono"># ~/.hermes/hermes_otel.yaml
+# HTTP or gRPC, any OTLP endpoint
+backends:
+  - type: <b>lgtm</b>
+  - type: <b>phoenix</b>
+  - type: <b>langfuse</b>
+  - type: <b>otlp</b>
+    protocol: grpc
+    endpoint: collector:4317</div>
     </div>
-    <div id="s07-band">
-      <div id="s07-kicker">ASK THE AGENT</div>
-      <div id="s07-line">The <code>observability</code> skill ships with the plugin.</div>
+
+    <div id="s07-b">
+      <div id="s07-bkick" class="s07-mono">ONE QUEUE · ONE THREAD · PER BACKEND</div>
+      <div id="s07-src">
+        <div style="left:0; width:260px; top:0; background:#35d29b"></div>
+        <div style="left:0; width:260px; top:34px; background:#39bef9"></div>
+        <div style="left:0; width:60px; top:68px; background:#39bef9"></div>
+        <div style="left:60px; width:14px; top:102px; background:#fbbe25"></div>
+        <div style="left:70px; width:70px; top:136px; background:#39bef9"></div>
+        <div style="left:140px; width:24px; top:170px; background:#fbbe25"></div>
+        <div style="left:164px; width:96px; top:204px; background:#39bef9"></div>
+      </div>
+      <div id="s07-srcl" class="s07-mono">HERMES TURN</div>
+      <div class="s07-lane" style="top:250px"></div>
+      <div class="s07-lane" style="top:420px"></div>
+      <div class="s07-lane" style="top:590px"></div>
+      <div class="s07-lane" style="top:760px"></div>
+      <div id="s07-dots"></div>
+      <div class="s07-end" style="top:212px"><img src="assets/logos/grafana.svg" alt="" /><span class="s07-mono">GRAFANA</span></div>
+      <div class="s07-end" style="top:382px"><img src="assets/logos/phoenix.png" alt="" /><span class="s07-mono">PHOENIX</span></div>
+      <div class="s07-end" style="top:552px"><img src="assets/logos/langfuse.png" alt="" /><span class="s07-mono">LANGFUSE</span></div>
+      <div class="s07-end" style="top:722px"><img src="assets/logos/otel-gh.png" alt="" /><span class="s07-mono">ANY OTLP</span></div>
+      <div id="s07-slow" class="s07-mono">SLOW? ONLY ITS OWN QUEUE WAITS</div>
+      <div id="s07-bline">The agent never waits.</div>
+    </div>
+
+    <!-- every backend's own UI, the same scripted workload; edit the list to add more captures -->
+    <div class="s07-cut" id="s07-c0"><img class="ui" src="assets/shots/lgtm-ui-trace.jpg" alt="Grafana: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/grafana.svg" alt="" /><span>Grafana</span></div></div>
+    <div class="s07-cut" id="s07-c1"><img class="ui" src="assets/shots/signoz-ui-trace.jpg" alt="SigNoz: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/signoz.png" alt="" /><span>SigNoz</span></div></div>
+    <div class="s07-cut" id="s07-c2"><img class="ui" src="assets/shots/openobserve-ui-trace.jpg" alt="OpenObserve: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/openobserve.png" alt="" /><span>OpenObserve</span></div></div>
+    <div class="s07-cut" id="s07-c3"><img class="ui" src="assets/shots/uptrace-ui-trace.jpg" alt="Uptrace: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/uptrace.png" alt="" /><span>Uptrace</span></div></div>
+    <div class="s07-cut" id="s07-c4"><img class="ui" src="assets/shots/jaeger-ui-trace.jpg" alt="Jaeger: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/jaeger.svg" alt="" /><span>Jaeger</span></div></div>
+    <div class="s07-cut" id="s07-c5"><img class="ui" src="assets/shots/phoenix-ui-trace.jpg" alt="Phoenix: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/phoenix.png" alt="" /><span>Phoenix</span></div></div>
+    <div class="s07-cut" id="s07-c6"><img class="ui" src="assets/shots/langfuse-ui-trace.jpg" alt="Langfuse: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/langfuse.png" alt="" /><span>Langfuse</span></div></div>
+    <div class="s07-cut" id="s07-c7"><img class="ui" src="assets/shots/kibana-ui-dashboard.jpg" alt="Elastic · Kibana: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/kibana.svg" alt="" /><span>Elastic · Kibana</span></div></div>
+    <div class="s07-cut" id="s07-c8"><img class="ui" src="assets/shots/aspire-ui-trace.jpg" alt=".NET Aspire: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/dotnet.svg" alt="" /><span>.NET Aspire</span></div></div>
+    <div class="s07-cut" id="s07-c9"><img class="ui" src="assets/shots/zipkin-ui-trace.jpg" alt="Zipkin: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/zipkin.png" alt="" /><span>Zipkin</span></div></div>
+    <div class="s07-cut" id="s07-c10"><img class="ui" src="assets/shots/clickstack-ui-trace.jpg" alt="ClickStack: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/clickstack.png" alt="" /><span>ClickStack</span></div></div>
+    <div class="s07-cut" id="s07-c11"><img class="ui" src="assets/shots/greptime-ui-trace.jpg" alt="GreptimeDB: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/greptime.png" alt="" /><span>GreptimeDB</span></div></div>
+    <div class="s07-cut" id="s07-c12"><img class="ui" src="assets/shots/victoria-ui-trace.jpg" alt="VictoriaTraces: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/victoria.png" alt="" /><span>VictoriaTraces</span></div></div>
+    <div class="s07-cut" id="s07-c13"><img class="ui" src="assets/shots/openlit-ui-trace.jpg" alt="OpenLIT: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/openlit.png" alt="" /><span>OpenLIT</span></div></div>
+    <div class="s07-cut" id="s07-c14"><img class="ui" src="assets/shots/mlflow-ui-trace.jpg" alt="MLflow: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/mlflow.svg" alt="" /><span>MLflow</span></div></div>
+    <div class="s07-cut" id="s07-c15"><img class="ui" src="assets/shots/tempo-ui-trace.jpg" alt="Tempo: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/grafana.svg" alt="" /><span>Tempo</span></div></div>
+    <div class="s07-cut" id="s07-c16"><img class="ui" src="assets/shots/otel-desktop-viewer-ui-traces.jpg" alt="otel-desktop-viewer: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/otel-gh.png" alt="" /><span>otel-desktop-viewer</span></div></div>
+    <div class="s07-cut" id="s07-c17"><img class="ui" src="assets/shots/parseable-ui-trace.jpg" alt="Parseable: the turn in its own UI" /><div class="s07-tag"><img src="assets/logos/parseable.png" alt="" /><span>Parseable</span></div></div>
+
+    <div id="s07-d">
+      <div class="s07-tile" style="left:60px; top:110px"><img src="assets/shots/lgtm-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:390px; top:110px"><img src="assets/shots/signoz-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:720px; top:110px"><img src="assets/shots/openobserve-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:1050px; top:110px"><img src="assets/shots/uptrace-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:60px; top:328px"><img src="assets/shots/jaeger-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:390px; top:328px"><img src="assets/shots/phoenix-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:720px; top:328px"><img src="assets/shots/langfuse-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:1050px; top:328px"><img src="assets/shots/kibana-ui-dashboard.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:60px; top:546px"><img src="assets/shots/aspire-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:390px; top:546px"><img src="assets/shots/zipkin-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:720px; top:546px"><img src="assets/shots/clickstack-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:1050px; top:546px"><img src="assets/shots/greptime-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:60px; top:764px"><img src="assets/shots/victoria-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:390px; top:764px"><img src="assets/shots/openlit-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:720px; top:764px"><img src="assets/shots/mlflow-ui-trace.jpg" alt="" /></div>
+      <div class="s07-tile" style="left:1050px; top:764px"><img src="assets/shots/otel-desktop-viewer-ui-traces.jpg" alt="" /></div>
+      <div id="s07-27" class="s07-rules">27</div>
+      <div id="s07-27l">backend types, several at once.</div>
+      <div id="s07-logos">
+        <img src="assets/logos/grafana.svg" alt="Grafana" /><img src="assets/logos/signoz.png" alt="SigNoz" />
+        <img src="assets/logos/openobserve.png" alt="OpenObserve" /><img src="assets/logos/uptrace.png" alt="Uptrace" />
+        <img src="assets/logos/jaeger.svg" alt="Jaeger" /><img src="assets/logos/phoenix.png" alt="Phoenix" />
+        <img src="assets/logos/langfuse.png" alt="Langfuse" /><img src="assets/logos/elastic.svg" alt="Elastic" />
+        <img src="assets/logos/zipkin.png" alt="Zipkin" /><img src="assets/logos/dotnet.svg" alt=".NET Aspire" />
+        <img src="assets/logos/greptime.png" alt="GreptimeDB" /><img src="assets/logos/clickstack.png" alt="ClickStack" />
+        <img src="assets/logos/victoria.png" alt="VictoriaMetrics" /><img src="assets/logos/honeycomb.png" alt="Honeycomb" />
+        <img src="assets/logos/mlflow.svg" alt="MLflow" /><img src="assets/logos/opik.png" alt="Opik" />
+        <img src="assets/logos/openlit.png" alt="OpenLIT" /><img src="assets/logos/laminar.png" alt="Laminar" />
+        <img src="assets/logos/langwatch.png" alt="LangWatch" /><img src="assets/logos/latitude.png" alt="Latitude" />
+        <img src="assets/logos/parseable.png" alt="Parseable" /><img src="assets/logos/agenta.png" alt="Agenta" />
+        <img src="assets/logos/gigapipe.png" alt="Gigapipe" /><img src="assets/logos/weave.png" alt="W&amp;B Weave" />
+        <img src="assets/logos/langsmith.png" alt="LangSmith" /><img src="assets/logos/otel-gh.png" alt="any OTLP" />
+      </div>
     </div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 8.002, "lead": 0.45, "sents": [[0.45, 2.845], [3.195, 7.402]], "a": {"read": 1.62, "tracks": 2.67, "ask": 3.23, "draws": 5.61, "chat": 7.08}, "ev": {"clip": 0.0, "push": 5.31}}/*END*/;
-      const E = C.ev || {}, A = C.a || {};
-      const VW = 1920, VH = 860;
-      const frame = (x, y, w, h) => {
-        const s = Math.min(VW / w, VH / h);
-        return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
-      };
-      const chat = frame(40, 600, 1400, 420);        // the second question and the skill running
-      const tree = frame(100, 120, 1720, 640);       // the span tree, once it renders (~4.8 s into the clip)
+      const C = /*CUES*/{"dur": 16.506, "lead": 0.4, "sents": [[0.4, 3.26], [3.26, 8.356]], "w": [{"t": "send", "s": 0.46, "e": 0.54}, {"t": "it", "s": 0.78, "e": 0.86}, {"t": "anywhere", "s": 0.94, "e": 1.1}, {"t": "that", "s": 1.18, "e": 1.26}, {"t": "speaks", "s": 1.34, "e": 1.5}, {"t": "otlp", "s": 1.9, "e": 3.26}, {"t": "list", "s": 3.26, "e": 3.34}, {"t": "several", "s": 3.5, "e": 3.74}, {"t": "and", "s": 4.22, "e": 4.3}, {"t": "each", "s": 4.46, "e": 4.54}, {"t": "gets", "s": 4.62, "e": 4.78}, {"t": "the", "s": 4.78, "e": 4.86}, {"t": "same", "s": 4.86, "e": 4.94}, {"t": "data", "s": 5.02, "e": 5.18}, {"t": "on", "s": 5.34, "e": 5.42}, {"t": "its", "s": 5.5, "e": 5.58}, {"t": "own", "s": 5.58, "e": 5.66}, {"t": "asyncq", "s": 6.06, "e": 6.78}, {"t": "so", "s": 6.78, "e": 6.86}, {"t": "a", "s": 6.94, "e": 7.02}, {"t": "slow", "s": 7.1, "e": 7.18}, {"t": "one", "s": 7.26, "e": 7.34}, {"t": "never", "s": 7.58, "e": 7.74}, {"t": "stalls", "s": 7.74, "e": 7.98}, {"t": "the", "s": 7.98, "e": 8.06}, {"t": "agent", "s": 8.06, "e": 8.356}]}/*END*/;
+      const W = C.w || [], D = C.dur || 16;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
+      const s2 = (C.sents[1] || [2.6])[0];
+      const vEnd = C.sents[C.sents.length - 1][1];
+      const CUT = 0.34, NCUT = 18, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
+      // queue blocks: 4 lanes. Fast lanes stream for the whole sentence; lane 2 (the slow
+      // backend) takes blocks in at the same rate but drains slowly, so only its queue backs up.
+      const dots = document.getElementById("s07-dots");
+      const lanes = [250, 420, 590, 760];
+      const span0 = Math.max(1.5, vEnd - s2);
+      const NB = Math.min(16, Math.floor((span0 - 0.9) / 0.3) + 1);
+      for (let l = 0; l < 4; l++) for (let k = 0; k < NB; k++) {
+        const d = document.createElement("div");
+        d.className = "s07-dot"; d.id = `s07-d${l}-${k}`;
+        d.style.top = lanes[l] - 9 + "px"; d.style.left = "470px";
+        d.style.background = ["#39bef9", "#35d29b", "#fbbe25"][k % 3];
+        dots.appendChild(d);
+      }
       const tl = gsap.timeline({ paused: true });
-      // whip in from the right; it lands slightly blurred and sharpens
-      tl.fromTo("#s07-view", { x: 1920, filter: "blur(18px)" }, { x: 0, filter: "blur(0px)", duration: 0.3, ease: "expo.out" }, 0);
-      tl.fromTo("#s07-cam", chat, { ...chat, duration: 0.01 }, 0);
-      tl.to("#s07-cam", { ...tree, duration: 0.7, ease: "power2.inOut" }, E.push ?? 5.3);
-      tl.fromTo("#s07-kicker", { opacity: 0 }, { opacity: 1, duration: 0.3 }, 0.4);
-      tl.fromTo("#s07-line", { opacity: 0, filter: "blur(6px)" }, { opacity: 1, filter: "blur(0px)", duration: 0.2 }, (A.ask ?? 3.2) - 0.2);
+      // A
+      tl.fromTo("#s07-plate img", { scale: 1.0 }, { scale: 1.1, duration: s2, ease: "none" }, 0);
+      tl.fromTo("#s07-otlp", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "expo.out" }, at(/^(o?tlp|otl|o)$/, 0, 1.0) - 0.1);
+      tl.fromTo("#s07-yaml", { clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", duration: 0.9, ease: "power2.out" }, 0.9);
+      // B
+      tl.to("#s07-a", { opacity: 0, duration: 0.2 }, s2 - 0.1);
+      tl.fromTo("#s07-b", { opacity: 0 }, { opacity: 1, duration: 0.2 }, s2 - 0.1);
+      for (let l = 0; l < 4; l++) for (let k = 0; k < NB; k++) {
+        const start = s2 + 0.2 + k * 0.3;
+        if (l !== 2) {
+          tl.fromTo(`#s07-d${l}-${k}`, { x: 0, opacity: 0 }, { x: 990, opacity: 1, duration: 0.9, ease: "none" }, start);
+          tl.to(`#s07-d${l}-${k}`, { opacity: 0, duration: 0.06 }, start + 0.9);
+        } else {
+          // stacks up against the slow backend, one block-width further back each time
+          tl.fromTo(`#s07-d${l}-${k}`, { x: 0, opacity: 0 }, { x: Math.max(0, 960 - k * 40), opacity: 1, duration: 0.6, ease: "power2.out" }, start);
+        }
+      }
+      tl.fromTo("#s07-slow", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/slow/, 0, s2 + 3));
+      tl.fromTo("#s07-bline", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/stalls?/, 0, vEnd - 0.8));
+      // C: rapid cuts on a steady pulse
+      for (let i = 0; i < NCUT; i++) {
+        tl.fromTo("#s07-c" + i, { opacity: 0 }, { opacity: 1, duration: 0.01 }, c0 + i * CUT);
+        tl.fromTo(`#s07-c${i} img.ui`, { scale: 1.06 }, { scale: 1.0, duration: CUT, ease: "power2.out" }, c0 + i * CUT);
+      }
+      // D: the wall
+      const w0 = c0 + NCUT * CUT;
+      tl.fromTo("#s07-d", { opacity: 0 }, { opacity: 1, duration: 0.01 }, w0);
+      tl.fromTo(".s07-tile", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.25, stagger: 0.025, ease: "expo.out" }, w0);
+      tl.fromTo("#s07-27", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, w0 + 0.15);
+      tl.fromTo("#s07-27l", { opacity: 0 }, { opacity: 1, duration: 0.3 }, w0 + 0.3);
+      tl.fromTo("#s07-logos img", { opacity: 0, scale: 0.6 }, { opacity: 1, scale: 1, duration: 0.2, stagger: 0.02, ease: "back.out(2)" }, w0 + 0.3);
       window.__timelines["s07"] = tl;
     })();
   </script>

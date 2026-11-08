@@ -1,0 +1,66 @@
+<template>
+  <style>
+    @font-face { font-family: "Rules Compressed"; src: url("assets/fonts/RulesCompressed-Medium.woff2") format("woff2"); font-weight: 500; }
+    @font-face { font-family: "Mondwest"; src: url("assets/fonts/Mondwest-Regular.woff2") format("woff2"); }
+    @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
+    #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
+    #s11-paper { position: absolute; inset: 0; background: #f2f2f2; }
+    .s11-mono { font-family: "JB Mono"; font-weight: 700; letter-spacing: 0.18em; color: #0000f2; }
+    /* beat 1: the catalog commands */
+    #s11-b1 { position: absolute; inset: 0; }
+    #s11-k1 { position: absolute; left: 120px; top: 360px; font-size: 28px; }
+    #s11-cmd { position: absolute; left: 120px; top: 420px; width: 1680px; padding: 48px 56px; background: #0000f2;
+      font-family: "JB Mono"; font-weight: 700; font-size: 60px; line-height: 1.6; color: #f2f2f2; }
+    #s11-cmd .p { color: #8f8fff; }
+    #s11-cmd .ln { display: block; white-space: pre; overflow: hidden; }
+    /* beat 2: the emblem (caduceus x telescope, engraved on club.lan) and the name */
+    #s11-b2 { position: absolute; inset: 0; opacity: 0; }
+    #s11-emblem { position: absolute; left: 150px; top: 150px; width: 640px; height: 640px; overflow: hidden; }
+    #s11-emblem img { width: 640px; height: 640px; }
+    #s11-title { position: absolute; left: 830px; top: 250px; font-family: "Rules Compressed"; font-weight: 500; font-size: 300px;
+      line-height: 0.84; color: #0000f2; white-space: nowrap; }
+    .s11-l { display: inline-block; }
+    #s11-follow { position: absolute; left: 838px; top: 540px; font-family: "Mondwest"; font-size: 76px; color: #0000f2; }
+    #s11-url { position: absolute; left: 0; width: 1920px; top: 880px; font-size: 28px; text-align: center; }
+    #s11-hack { position: absolute; left: 0; width: 1920px; top: 930px; font-size: 28px; text-align: center; color: #6e6eff; }
+  </style>
+  <div id="root" data-composition-id="s11" data-width="1920" data-height="1080">
+    <div id="s11-paper"></div>
+    <div id="s11-b1">
+      <div id="s11-k1" class="s11-mono">OPEN SOURCE · IN THE HERMES PLUGIN CATALOG</div>
+      <div id="s11-cmd">
+        <span class="ln" id="s11-c1"><span class="p">$ </span>hermes plugins install hermes_otel</span>
+        <span class="ln" id="s11-c2"><span class="p">$ </span>hermes plugins enable hermes_otel</span>
+      </div>
+    </div>
+    <div id="s11-b2">
+      <div id="s11-emblem"><img src="assets/gen/a11-emblem.png" alt="Engraved emblem: a winged caduceus crossed with a telescope in a laurel wreath" /></div>
+      <div id="s11-title"><span class="s11-l">H</span><span class="s11-l">E</span><span class="s11-l">R</span><span class="s11-l">M</span><span class="s11-l">E</span><span class="s11-l">S</span> <span class="s11-l">O</span><span class="s11-l">T</span><span class="s11-l">E</span><span class="s11-l">L</span></div>
+      <div id="s11-follow">Follow the messenger.</div>
+      <div id="s11-url" class="s11-mono">GITHUB.COM/BRIANCAFFEY/HERMES-OTEL</div>
+      <div id="s11-hack" class="s11-mono">HERMES AGENT PLUGIN HACKATHON · @NOUSRESEARCH</div>
+    </div>
+  </div>
+  <script>
+    (function () {
+      const C = /*CUES*/{"dur": 8.548, "lead": 0.4, "sents": [[0.4, 2.86], [3.02, 5.548]], "w": [{"t": "open", "s": 0.46, "e": 0.7}, {"t": "source", "s": 0.78, "e": 1.02}, {"t": "and", "s": 1.5, "e": 1.58}, {"t": "in", "s": 1.66, "e": 1.74}, {"t": "the", "s": 1.74, "e": 1.82}, {"t": "hermes", "s": 2.06, "e": 2.46}, {"t": "plugin", "s": 2.62, "e": 2.86}, {"t": "catalog", "s": 3.02, "e": 3.42}, {"t": "hermes", "s": 3.98, "e": 4.46}, {"t": "follow", "s": 4.996, "e": 5.156}, {"t": "the", "s": 5.236, "e": 5.316}, {"t": "messenger", "s": 5.476, "e": 5.548}]}/*END*/;
+      const W = C.w || [], D = C.dur || 8.5;
+      const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
+      const s2 = (C.sents[1] || [3.2])[0];
+      const tl = gsap.timeline({ paused: true });
+      tl.fromTo("#s11-paper", { clipPath: "inset(100% 0% 0% 0%)" }, { clipPath: "inset(0% 0% 0% 0%)", duration: 0.45, ease: "power2.inOut" }, 0);
+      tl.fromTo("#s11-k1", { opacity: 0 }, { opacity: 1, duration: 0.25 }, 0.35);
+      tl.fromTo("#s11-c1", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.9, ease: "steps(36)" }, 0.5);
+      tl.fromTo("#s11-c2", { clipPath: "inset(0 100% 0 0)" }, { clipPath: "inset(0 0% 0 0)", duration: 0.9, ease: "steps(35)" }, 1.5);
+      tl.to("#s11-b1", { opacity: 0, duration: 0.18, ease: "power2.in" }, s2 - 0.25);
+      tl.fromTo("#s11-b2", { opacity: 0 }, { opacity: 1, duration: 0.01 }, s2 - 0.08);
+      tl.fromTo("#s11-emblem", { clipPath: "circle(0px at 320px 320px)" }, { clipPath: "circle(300px at 320px 320px)", duration: 0.7, ease: "power3.out" }, s2 - 0.08);
+      tl.fromTo("#s11-emblem img", { scale: 1.12 }, { scale: 1.0, duration: D - s2, ease: "power2.out" }, s2 - 0.08);
+      tl.fromTo(".s11-l", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.2, stagger: 0.04, ease: "expo.out" }, s2);
+      const f = at(/follow/, 0, s2 + 1.4);
+      tl.fromTo("#s11-follow", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, f - 0.1);
+      tl.fromTo(["#s11-url", "#s11-hack"], { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.15 }, f + 0.8);
+      window.__timelines["s11"] = tl;
+    })();
+  </script>
+</template>
