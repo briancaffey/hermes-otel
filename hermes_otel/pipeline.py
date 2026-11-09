@@ -126,9 +126,7 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
         "end_time_unix_nano": end,
         "duration_ms": round((end - start) / 1e6, 3) if (end and start) else None,
         "status": status,
-        "attributes": {
-            k: _attr_value(_redact_content_value(k, v)) for k, v in (span.attributes or {}).items()
-        },
+        "attributes": {k: _attr_value(v) for k, v in (span.attributes or {}).items()},
     }
 
 
