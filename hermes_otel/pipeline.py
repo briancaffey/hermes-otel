@@ -13,6 +13,7 @@ patch ``hermes_otel.pipeline``.
 from __future__ import annotations
 
 import contextlib
+import json
 import os
 import threading
 import time
@@ -40,6 +41,7 @@ from .pipeline_env import (
     without_usage_keys,
 )
 from .plugin_config import content_mode, effective_export_batch_size
+from .redaction import redact_text
 from .severity import python_level
 
 try:
@@ -124,8 +126,86 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
         "end_time_unix_nano": end,
         "duration_ms": round((end - start) / 1e6, 3) if (end and start) else None,
         "status": status,
-        "attributes": {k: _attr_value(v) for k, v in (span.attributes or {}).items()},
+        "attributes": {
+            k: _attr_value(_redact_content_value(k, v)) for k, v in (span.attributes or {}).items()
+        },
     }
+
+
+_CONTENT_KEYS = {
+    "input.value",
+    "output.value",
+    "gen_ai.input.messages",
+    "gen_ai.output.messages",
+    "gen_ai.system_instructions",
+    "gen_ai.tool.call.arguments",
+    "gen_ai.tool.call.result",
+    "hermes.approval.command",
+    "hermes.subagent.goal",
+    "hermes.subagent.summary",
+    "mcp.tool.arguments",
+    "mcp.tool.result",
+}
+
+
+def _redact_content_value(key: str, value: Any) -> Any:
+    if key not in _CONTENT_KEYS:
+        return value
+    if isinstance(value, str):
+        if key in {
+            "input.value",
+            "gen_ai.input.messages",
+            "gen_ai.output.messages",
+            "gen_ai.tool.call.arguments",
+            "gen_ai.tool.call.result",
+            "mcp.tool.arguments",
+            "mcp.tool.result",
+        }:
+            try:
+                parsed = json.loads(value)
+                return json.dumps(
+                    _redact_content_value(key, parsed),
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                )
+            except (TypeError, ValueError):
+                pass
+        return redact_text(value)
+    if isinstance(value, list):
+        return [_redact_content_value(key, item) for item in value]
+    if isinstance(value, tuple):
+        return tuple(_redact_content_value(key, item) for item in value)
+    if isinstance(value, dict):
+        return {k: _redact_content_value(key, v) for k, v in value.items()}
+    return value
+
+
+def redact_span(span: Any) -> Any:
+    """Return a span copy with only content-bearing attributes redacted."""
+    attrs = {
+        key: _redact_content_value(key, value)
+        for key, value in (getattr(span, "attributes", None) or {}).items()
+    }
+    if attrs == dict(getattr(span, "attributes", None) or {}):
+        return span
+    # Keep the helper importable in environments where the optional OTel
+    # exporters are unavailable; the concrete type is only needed on change.
+    from opentelemetry.sdk.trace import ReadableSpan as _ReadableSpan
+
+    return _ReadableSpan(
+        name=span.name,
+        context=span.get_span_context(),
+        parent=span.parent,
+        resource=span.resource,
+        attributes=attrs,
+        events=span.events,
+        links=span.links,
+        kind=span.kind,
+        status=span.status,
+        start_time=span.start_time,
+        end_time=span.end_time,
+        instrumentation_scope=getattr(span, "instrumentation_scope", None),
+    )
 
 
 def _is_usage_rollup_span(span: Any) -> bool:
@@ -232,6 +312,12 @@ class _LoggingExporter(_DelegatingExporter):
 
 if _OTEL_AVAILABLE:
 
+    class _ContentRedactingExporter(_DelegatingExporter, SpanExporter):
+        """Redact prompt/tool content immediately before export."""
+
+        def export(self, spans: Any) -> Any:
+            return self._inner.export([redact_span(span) for span in spans])
+
     class _RootUsageStrippingExporter(_DelegatingExporter, SpanExporter):
         """Delegating exporter that drops the token roll-up from agent-kind spans.
 
@@ -260,7 +346,7 @@ if _OTEL_AVAILABLE:
 
         def on_end(self, span: Any) -> None:
             try:
-                self._store.add_span(_serialize_span(span))
+                self._store.add_span(_serialize_span(redact_span(span)))
                 if getattr(span, "parent", None) is None:
                     # A root span ending is the end of a turn. Commit now rather
                     # than on the writer thread's next tick: a one-shot process
@@ -589,6 +675,7 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
             inner: Any = create_exporter(
                 b, "traces", OTLPSpanExporter, **exporter_kwargs(target, b.display_name)
             )
+        inner = _ContentRedactingExporter(inner)
         if not b.root_usage:
             # This backend sums usage over every span (#327).
             inner = _RootUsageStrippingExporter(inner)
