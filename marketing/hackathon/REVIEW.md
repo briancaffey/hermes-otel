@@ -1,4 +1,4 @@
-# REVIEW.md — draft 3, 2026-11-08
+# REVIEW.md — draft 3.1, 2026-11-08
 
 ## What changed from draft 1/2
 
@@ -18,13 +18,22 @@
 
 ## Measured vs looked at
 
-- `check`: 0 errors. Total 87.45 s (< 89.9 s).
+- `check`: 0 errors. Total 92.49 s: over the 90 s rule on purpose (Brian: complete narration beats the limit).
 - Render: 1920×1080, 30 fps, H.264 + AAC. Mix −14.5 LUFS integrated, peak −2.5 dBFS (target −16…−14).
 - Looked at: snapshots of every scene (3 per scene), every scene changed after review, and 9 frames
   pulled from the rendered MP4.
 - Not heard: the voice, the music and the mix were measured, not listened to. Every narration take
   was checked only by transcribing it back (Nemotron ASR, score ≥ 9.0 on all 11). "Hermes OTel"
   transcribes as "Hermes Hotel" (lexicon says "Oh-tel"); it needs a human listen.
+
+## Draft 3.1: clipped first words
+
+Brian heard the first words of every scene cut off. Cause: Nemotron's streaming ASR reports word
+times ~0.6 s late and club.lan's trimmer cut the head at the ASR's first word. Fixed on the site
+(inference.club cd389fe: cut only measured silence, align words to the onset), every take
+re-processed (same takes, no regeneration), then verified two ways: Whisper on every exported clip
+(first and last words present) and Whisper on the first 2.6 s of each scene in the rendered MP4
+(all 11 open on their first word). Voice total 62.1 s -> 69.9 s.
 
 ## Fixed during review
 

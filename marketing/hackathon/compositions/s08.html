@@ -40,7 +40,7 @@
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 5.458, "lead": 0.4, "sents": [[0.4, 5.008]], "w": [{"t": "every", "s": 0.46, "e": 0.7}, {"t": "span", "s": 0.94, "e": 1.1}, {"t": "speaks", "s": 1.26, "e": 1.42}, {"t": "both", "s": 1.42, "e": 1.58}, {"t": "conventions", "s": 1.74, "e": 2.06}, {"t": "open", "s": 2.54, "e": 2.78}, {"t": "telemetry", "s": 2.86, "e": 3.26}, {"t": "gen", "s": 3.42, "e": 3.5}, {"t": "ai", "s": 3.82, "e": 4.38}, {"t": "and", "s": 4.3, "e": 4.38}, {"t": "open", "s": 4.62, "e": 4.78}, {"t": "inferent", "s": 4.94, "e": 5.008}]}/*END*/;
+      const C = /*CUES*/{"dur": 5.861, "lead": 0.4, "sents": [[0.4, 5.411]], "w": [{"t": "every", "s": 0.72, "e": 0.96}, {"t": "span", "s": 1.2, "e": 1.36}, {"t": "speaks", "s": 1.52, "e": 1.68}, {"t": "both", "s": 1.68, "e": 1.84}, {"t": "conventions", "s": 2.0, "e": 2.32}, {"t": "open", "s": 2.8, "e": 3.04}, {"t": "telemetry", "s": 3.12, "e": 3.52}, {"t": "gen", "s": 3.68, "e": 3.76}, {"t": "ai", "s": 4.08, "e": 4.64}, {"t": "and", "s": 4.56, "e": 4.64}, {"t": "open", "s": 4.88, "e": 5.04}, {"t": "inferent", "s": 5.2, "e": 5.411}]}/*END*/;
       const W = C.w || [], D = C.dur || 5.5;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const tl = gsap.timeline({ paused: true });

@@ -144,12 +144,12 @@ backends:
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 16.506, "lead": 0.4, "sents": [[0.4, 3.26], [3.26, 8.356]], "w": [{"t": "send", "s": 0.46, "e": 0.54}, {"t": "it", "s": 0.78, "e": 0.86}, {"t": "anywhere", "s": 0.94, "e": 1.1}, {"t": "that", "s": 1.18, "e": 1.26}, {"t": "speaks", "s": 1.34, "e": 1.5}, {"t": "otlp", "s": 1.9, "e": 3.26}, {"t": "list", "s": 3.26, "e": 3.34}, {"t": "several", "s": 3.5, "e": 3.74}, {"t": "and", "s": 4.22, "e": 4.3}, {"t": "each", "s": 4.46, "e": 4.54}, {"t": "gets", "s": 4.62, "e": 4.78}, {"t": "the", "s": 4.78, "e": 4.86}, {"t": "same", "s": 4.86, "e": 4.94}, {"t": "data", "s": 5.02, "e": 5.18}, {"t": "on", "s": 5.34, "e": 5.42}, {"t": "its", "s": 5.5, "e": 5.58}, {"t": "own", "s": 5.58, "e": 5.66}, {"t": "asyncq", "s": 6.06, "e": 6.78}, {"t": "so", "s": 6.78, "e": 6.86}, {"t": "a", "s": 6.94, "e": 7.02}, {"t": "slow", "s": 7.1, "e": 7.18}, {"t": "one", "s": 7.26, "e": 7.34}, {"t": "never", "s": 7.58, "e": 7.74}, {"t": "stalls", "s": 7.74, "e": 7.98}, {"t": "the", "s": 7.98, "e": 8.06}, {"t": "agent", "s": 8.06, "e": 8.356}]}/*END*/;
+      const C = /*CUES*/{"dur": 16.496, "lead": 0.4, "sents": [[0.4, 4.0], [4.0, 9.096]], "w": [{"t": "send", "s": 1.2, "e": 1.28}, {"t": "it", "s": 1.52, "e": 1.6}, {"t": "anywhere", "s": 1.68, "e": 1.84}, {"t": "that", "s": 1.92, "e": 2.0}, {"t": "speaks", "s": 2.08, "e": 2.24}, {"t": "otlp", "s": 2.64, "e": 4.0}, {"t": "list", "s": 4.0, "e": 4.08}, {"t": "several", "s": 4.24, "e": 4.48}, {"t": "and", "s": 4.96, "e": 5.04}, {"t": "each", "s": 5.2, "e": 5.28}, {"t": "gets", "s": 5.36, "e": 5.52}, {"t": "the", "s": 5.52, "e": 5.6}, {"t": "same", "s": 5.6, "e": 5.68}, {"t": "data", "s": 5.76, "e": 5.92}, {"t": "on", "s": 6.08, "e": 6.16}, {"t": "its", "s": 6.24, "e": 6.32}, {"t": "own", "s": 6.32, "e": 6.4}, {"t": "asyncq", "s": 6.8, "e": 7.52}, {"t": "so", "s": 7.52, "e": 7.6}, {"t": "a", "s": 7.68, "e": 7.76}, {"t": "slow", "s": 7.84, "e": 7.92}, {"t": "one", "s": 8.0, "e": 8.08}, {"t": "never", "s": 8.32, "e": 8.48}, {"t": "stalls", "s": 8.48, "e": 8.72}, {"t": "the", "s": 8.72, "e": 8.8}, {"t": "agent", "s": 8.8, "e": 9.096}]}/*END*/;
       const W = C.w || [], D = C.dur || 16;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const s2 = (C.sents[1] || [2.6])[0];
       const vEnd = C.sents[C.sents.length - 1][1];
-      const CUT = 0.34, NCUT = 18, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
+      const CUT = 0.30, NCUT = 18, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
       // queue blocks: 4 lanes. Fast lanes stream for the whole sentence; lane 2 (the slow
       // backend) takes blocks in at the same rate but drains slowly, so only its queue backs up.
       const dots = document.getElementById("s07-dots");

@@ -19,9 +19,9 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEAD = 0.4
-TAIL = {"S01": 1.2, "S03": 1.2, "S07": 0.3, "S11": 3.0}
+TAIL = {"S01": 0.8, "S03": 0.8, "S07": 0.3, "S11": 2.4}
 DEFAULT_TAIL = 0.45
-EXTRA = {"S06": 1.0, "S07": 7.85, "S10": 3.2}  # S07: rapid backend cuts + wall after the voice; S10: the tree draws
+EXTRA = {"S06": 1.0, "S07": 7.1, "S10": 2.6}  # S07: rapid backend cuts + wall after the voice; S10: the tree draws
 MUSIC_VOL = 0.2               # under the voice; the ACE-Step bed is normalised to -16 LUFS first
 LIMIT = 89.9
 
@@ -42,7 +42,7 @@ SFX = [
     ("S11", r"catalog", 0.1, "typing.mp3", 0.35),
 ]
 # S07's rapid cuts: one backend UI every CUT seconds once the voice ends (mirrors s07.html).
-CUT = 0.34
+CUT = 0.30
 
 
 def probe(p: Path) -> float:

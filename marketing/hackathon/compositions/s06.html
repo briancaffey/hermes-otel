@@ -42,7 +42,7 @@
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 4.451, "lead": 0.4, "sents": [[0.4, 3.001]], "w": [{"t": "connect", "s": 0.46, "e": 0.7}, {"t": "to", "s": 0.78, "e": 0.86}, {"t": "backend", "s": 0.94, "e": 1.26}, {"t": "and", "s": 1.42, "e": 1.5}, {"t": "the", "s": 1.58, "e": 1.66}, {"t": "same", "s": 1.66, "e": 1.74}, {"t": "tab", "s": 2.06, "e": 2.14}, {"t": "reads", "s": 2.38, "e": 2.62}, {"t": "it", "s": 2.78, "e": 2.86}]}/*END*/;
+      const C = /*CUES*/{"dur": 5.031, "lead": 0.4, "sents": [[0.4, 3.581]], "w": [{"t": "connect", "s": 1.04, "e": 1.28}, {"t": "to", "s": 1.36, "e": 1.44}, {"t": "backend", "s": 1.52, "e": 1.84}, {"t": "and", "s": 2.0, "e": 2.08}, {"t": "the", "s": 2.16, "e": 2.24}, {"t": "same", "s": 2.24, "e": 2.32}, {"t": "tab", "s": 2.64, "e": 2.72}, {"t": "reads", "s": 2.96, "e": 3.2}, {"t": "it", "s": 3.36, "e": 3.44}]}/*END*/;
       const W = C.w || [], D = C.dur || 4.5;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const VW = 1920, VH = 860;

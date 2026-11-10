@@ -1,16 +1,16 @@
 {
- "total": 87.446,
+ "total": 92.491,
  "scenes": [
   {
    "id": "s01",
    "sid": "S01",
    "start": 0.0,
-   "dur": 7.483,
-   "voice": 5.883,
+   "dur": 7.262,
+   "voice": 6.062,
    "sents": [
     [
      0.4,
-     6.283
+     6.462
     ]
    ],
    "kicker": "THE MYTH"
@@ -18,17 +18,17 @@
   {
    "id": "s02",
    "sid": "S02",
-   "start": 7.483,
-   "dur": 5.126,
-   "voice": 4.276,
+   "start": 7.262,
+   "dur": 5.737,
+   "voice": 4.887,
    "sents": [
     [
      0.4,
-     1.885
+     2.496
     ],
     [
-     2.583,
-     4.676
+     2.694,
+     5.287
     ]
    ],
    "kicker": "THE BLACK BOX"
@@ -36,13 +36,13 @@
   {
    "id": "s03",
    "sid": "S03",
-   "start": 12.609,
-   "dur": 7.825,
-   "voice": 6.225,
+   "start": 12.999,
+   "dur": 7.966,
+   "voice": 6.766,
    "sents": [
     [
      0.4,
-     6.625
+     7.166
     ]
    ],
    "kicker": "OPENTELEMETRY FOR HERMES AGENT"
@@ -50,17 +50,17 @@
   {
    "id": "s04",
    "sid": "S04",
-   "start": 20.434,
-   "dur": 7.496,
-   "voice": 6.646,
+   "start": 20.965,
+   "dur": 7.943,
+   "voice": 7.093,
    "sents": [
     [
      0.4,
-     2.78
+     2.87
     ],
     [
-     2.78,
-     7.046
+     2.87,
+     7.493
     ]
    ],
    "kicker": "ONE TURN \u00b7 ONE TRACE"
@@ -68,17 +68,17 @@
   {
    "id": "s05",
    "sid": "S05",
-   "start": 27.93,
-   "dur": 9.529,
-   "voice": 8.679,
+   "start": 28.908,
+   "dur": 9.956,
+   "voice": 9.106,
    "sents": [
     [
      0.4,
-     4.3
+     4.72
     ],
     [
-     4.38,
-     9.079
+     4.8,
+     9.506
     ]
    ],
    "kicker": "NO BACKEND NEEDED"
@@ -86,13 +86,13 @@
   {
    "id": "s06",
    "sid": "S06",
-   "start": 37.459,
-   "dur": 4.451,
-   "voice": 2.601,
+   "start": 38.864,
+   "dur": 5.031,
+   "voice": 3.181,
    "sents": [
     [
      0.4,
-     3.001
+     3.581
     ]
    ],
    "kicker": "ONE TAB \u00b7 ANY BACKEND"
@@ -100,17 +100,17 @@
   {
    "id": "s07",
    "sid": "S07",
-   "start": 41.91,
-   "dur": 16.506,
-   "voice": 7.956,
+   "start": 43.895,
+   "dur": 16.496,
+   "voice": 8.696,
    "sents": [
     [
      0.4,
-     3.26
+     4.0
     ],
     [
-     3.26,
-     8.356
+     4.0,
+     9.096
     ]
    ],
    "kicker": "ANY OTLP BACKEND \u00b7 ALL AT ONCE"
@@ -118,13 +118,13 @@
   {
    "id": "s08",
    "sid": "S08",
-   "start": 58.416,
-   "dur": 5.458,
-   "voice": 4.608,
+   "start": 60.391,
+   "dur": 5.861,
+   "voice": 5.011,
    "sents": [
     [
      0.4,
-     5.008
+     5.411
     ]
    ],
    "kicker": "GEN_AI \u00b7 OPENINFERENCE"
@@ -132,13 +132,13 @@
   {
    "id": "s09",
    "sid": "S09",
-   "start": 63.874,
-   "dur": 9.209,
-   "voice": 8.359,
+   "start": 66.252,
+   "dur": 11.688,
+   "voice": 10.838,
    "sents": [
     [
      0.4,
-     8.759
+     11.238
     ]
    ],
    "kicker": "CLAUDE CODE DASHBOARDS"
@@ -146,13 +146,13 @@
   {
    "id": "s10",
    "sid": "S10",
-   "start": 73.083,
-   "dur": 5.815,
-   "voice": 1.765,
+   "start": 77.94,
+   "dur": 5.795,
+   "voice": 2.345,
    "sents": [
     [
      0.4,
-     2.165
+     2.745
     ]
    ],
    "kicker": "ASK THE AGENT"
@@ -160,17 +160,17 @@
   {
    "id": "s11",
    "sid": "S11",
-   "start": 78.898,
-   "dur": 8.548,
-   "voice": 5.148,
+   "start": 83.735,
+   "dur": 8.756,
+   "voice": 5.956,
    "sents": [
     [
      0.4,
-     2.86
+     3.51
     ],
     [
-     3.02,
-     5.548
+     4.07,
+     6.356
     ]
    ],
    "kicker": "FOLLOW THE MESSENGER"
