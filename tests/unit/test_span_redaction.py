@@ -224,6 +224,24 @@ class TestRedactContent:
         assert _leaked(r.redact_content("[not json " + TOOL_RESULT)) == []
         assert r.redact_content("nothing here") == "nothing here"
 
+    def test_a_redactor_that_breaks_the_key_pair_falls_back_to_the_bare_value(self, monkeypatch):
+        greedy = re.compile(r"([A-Z_]*KEY)=\S+")
+        monkeypatch.setattr(r, "_hermes_redactor", lambda t: greedy.sub(r"\1=***", t))
+        doc = json.dumps({"api_key": "API_KEY=" + "abc123456789", "n": 1})
+        out = json.loads(r.redact_content(doc))
+        assert out == {"api_key": "API_KEY=***", "n": 1}
+
+    def test_values_that_are_not_text_pass_through(self):
+        assert r.redact_content(None) is None
+        assert r.redact_content("") == ""
+        assert r.redact_value(7) == 7
+        nums = (1, 2)
+        assert r.redact_value(nums) is nums
+        clean = ("a", 1)
+        assert r.redact_value(clean) is clean
+        out = r.redact_value((TOOL_RESULT, 1))
+        assert isinstance(out, tuple) and out[1] == 1 and _leaked(out[0]) == []
+
     def test_log_attributes_keep_json_valid_too(self, monkeypatch):
         greedy = re.compile(r"([A-Z_]*KEY)=\S+")
         monkeypatch.setattr(r, "_hermes_redactor", lambda t: greedy.sub(r"\1=***", t))

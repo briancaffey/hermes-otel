@@ -152,11 +152,9 @@ def _redact_json_leaf(key: Optional[str], value: str) -> str:
     """
     if key is not None and _JSON_SECRET_KEY.search(key):
         try:
-            pair = json.loads(redact_text(json.dumps({key: value}, ensure_ascii=False)))
-            if isinstance(pair, dict) and len(pair) == 1:
-                out = next(iter(pair.values()))
-                if isinstance(out, str):
-                    return out
+            # A one-entry object stays one entry; a quoted value stays a string.
+            (out,) = json.loads(redact_text(json.dumps({key: value}, ensure_ascii=False))).values()
+            return out
         except ValueError:
             pass
     return redact_text(value)
@@ -195,12 +193,9 @@ def redact_content(text: Any) -> Any:
         except ValueError:
             parsed = _NOT_JSON
         if parsed is not _NOT_JSON:
-            try:
-                changed = [False]
-                out = _redact_json_tree(parsed, None, changed)
-                return json.dumps(out, ensure_ascii=False) if changed[0] else text
-            except Exception:
-                return text
+            changed = [False]
+            out = _redact_json_tree(parsed, None, changed)
+            return json.dumps(out, ensure_ascii=False) if changed[0] else text
     return redact_text(text)
 
 
