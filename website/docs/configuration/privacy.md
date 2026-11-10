@@ -69,7 +69,19 @@ If you ever see tool args or user messages in the backend UI that you didn't exp
 
 Note that `hermes.tool.command` (the shell command passed to `bash`-family tools) and `hermes.tool.target` (the file path passed to `read_file`, `edit_file`, etc.) are **not** suppressed by privacy mode. They're structured metadata, not free-form user content.
 
-They are clipped to 500 characters. If even command and target are too sensitive for your deployment, [file an issue](https://github.com/briancaffey/hermes-otel/issues) asking for a stricter mode.
+They are clipped to 500 characters and pass through secret redaction like the content attributes (see below), so `curl -H 'Authorization: Bearer …'` or `export GITHUB_TOKEN=…` leaves the machine masked. If even command and target are too sensitive for your deployment, [file an issue](https://github.com/briancaffey/hermes-otel/issues) asking for a stricter mode.
+
+## Secrets in span content
+
+Whatever `content_capture` lets through is redacted before it leaves the process: on every span, for every backend, and in the dashboard's live store. The redactor is Hermes' own `agent.redact` (the one behind `agent.log`) when the plugin runs inside Hermes, and the plugin's built-in set otherwise (provider key prefixes such as `sk-…`, `ghp_…`, `AKIA…`; `Bearer` / `Basic` credentials; `Authorization`, `x-api-key`, `password=` style assignments; the password in `scheme://user:password@host`). `security.redact_secrets: false` or `HERMES_REDACT_SECRETS=false` turns it off, the same switch Hermes uses for its own logs.
+
+**What is redacted.** The free-text attributes listed in `SENSITIVE_ATTRIBUTES` in `hermes_otel/semconv.py`: `input.value` / `output.value`, `gen_ai.input.messages` / `gen_ai.output.messages` / `gen_ai.system_instructions`, `gen_ai.tool.call.arguments` / `.result`, `hermes.tool.command` / `.target`, `hermes.turn.tool_commands` / `.tool_targets`, the approval, human-input, subagent and kanban text, `error.message`, and the `exception.message` / `exception.stacktrace` of span events. Ids, model names, counts and enums are never touched.
+
+**JSON stays JSON.** A JSON value (a message list, tool arguments, a tool result) is parsed and redacted string by string, then serialised again only if something was masked, so a backend that renders JSON still can. A value under a credential-shaped key (`{"api_key": "…"}`, `{"password": "…"}`) is redacted with its key in view, so an opaque value without a known prefix is still caught.
+
+**What is not.** Redaction is pattern-based: personal data, internal hostnames and secrets with no recognisable shape still flow. `content_capture: off` is the only guarantee that prompt and tool text never leaves the machine.
+
+**Cost.** The pass runs once per finished span, shared by the live store and every backend: on the thread that ends the span when the live store is on (the default), otherwise on the export thread. Measured with Hermes' redactor on an `api.*` span carrying both conventions: about 6 ms at 30 KB of content, 23 ms at 120 KB and 180 ms at 0.9 MB (a long `capture_conversation_history`). A span with no content attributes costs nothing.
 
 ## Interaction with `preview_max_chars`
 
@@ -81,7 +93,7 @@ The logs signal is off by default on both of its switches. When on:
 
 - **Forwarded log records** (`logs.capture`) are not filtered by privacy mode: a body is whatever Hermes or a library logged. Secrets are redacted before export with Hermes' own `agent.redact` (the redactor behind `agent.log`) or the plugin's built-in set, and Hermes' host-internal record attributes (`hermes_home`, `session_tag`) never leave. Other sensitive text flows unless the logging application redacts it; narrow with `logs.exclude_loggers`, `logs.logger_levels` or `logs.only_in_turn`.
 - **Events** (`logs.events.enabled`) follow privacy mode: `logs.events.content: inherit` means `content_capture: off` puts no prompt, response or tool content on any event, `preview` clips it, `full` sends what the span has. A backend entry's `logs: {events: {content: off}}` removes content for that backend alone, so a SaaS log sink can stay content-free while a local one keeps everything.
-- The dashboard's live store holds the same records as the backends, redacted the same way, in a file created owner-only.
+- The dashboard's live store holds the same records as the backends, redacted the same way, in a file created owner-only. Spans in the live store are redacted too (see [Secrets in span content](#secrets-in-span-content)).
 
 See [Logs and events](/configuration/logs#what-never-leaves-the-machine) for the measured redaction cost and the attribution rules.
 
