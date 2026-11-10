@@ -13,11 +13,11 @@ patch ``hermes_otel.pipeline``.
 from __future__ import annotations
 
 import contextlib
-import json
 import os
 import threading
 import time
 import uuid
+import weakref
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
 
@@ -41,7 +41,8 @@ from .pipeline_env import (
     without_usage_keys,
 )
 from .plugin_config import content_mode, effective_export_batch_size
-from .redaction import redact_text
+from .redaction import redact_value
+from .semconv import SENSITIVE_ATTRIBUTES
 from .severity import python_level
 
 try:
@@ -51,7 +52,7 @@ try:
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import PeriodicExportingMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import ReadableSpan, SpanProcessor, TracerProvider
+    from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
 
     _OTEL_AVAILABLE = True
@@ -130,73 +131,48 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
     }
 
 
-_CONTENT_KEYS = {
-    "input.value",
-    "output.value",
-    "gen_ai.input.messages",
-    "gen_ai.output.messages",
-    "gen_ai.system_instructions",
-    "gen_ai.tool.call.arguments",
-    "gen_ai.tool.call.result",
-    "hermes.approval.command",
-    "hermes.subagent.goal",
-    "hermes.subagent.summary",
-    "mcp.tool.arguments",
-    "mcp.tool.result",
-}
+_redacted_lock = threading.Lock()
+# span -> its redacted copy. The live processor and every backend's exporter see
+# the same span object, so the redactor runs once per span however many
+# backends there are; weak keys drop an entry when the SDK lets the span go.
+_redacted: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
+# Cached for a span with nothing to mask. Caching the span itself would make the
+# value hold its own weak key alive, and the entry would never be dropped.
+_UNCHANGED = object()
 
 
-def _redact_content_value(key: str, value: Any) -> Any:
-    if key not in _CONTENT_KEYS:
-        return value
-    if isinstance(value, str):
-        if key in {
-            "input.value",
-            "gen_ai.input.messages",
-            "gen_ai.output.messages",
-            "gen_ai.tool.call.arguments",
-            "gen_ai.tool.call.result",
-            "mcp.tool.arguments",
-            "mcp.tool.result",
-        }:
-            try:
-                parsed = json.loads(value)
-                return json.dumps(
-                    _redact_content_value(key, parsed),
-                    ensure_ascii=False,
-                    separators=(",", ":"),
-                )
-            except (TypeError, ValueError):
-                pass
-        return redact_text(value)
-    if isinstance(value, list):
-        return [_redact_content_value(key, item) for item in value]
-    if isinstance(value, tuple):
-        return tuple(_redact_content_value(key, item) for item in value)
-    if isinstance(value, dict):
-        return {k: _redact_content_value(key, v) for k, v in value.items()}
-    return value
+def _redact_attrs(attrs: Any) -> Optional[Dict[str, Any]]:
+    """*attrs* with :data:`SENSITIVE_ATTRIBUTES` redacted, or None when nothing changed."""
+    out: Optional[Dict[str, Any]] = None
+    for key, value in (attrs or {}).items():
+        if key not in SENSITIVE_ATTRIBUTES:
+            continue
+        redacted = redact_value(value)
+        if redacted is not value and redacted != value:
+            if out is None:
+                out = dict(attrs)
+            out[key] = redacted
+    return out
 
 
-def redact_span(span: Any) -> Any:
-    """Return a span copy with only content-bearing attributes redacted."""
-    attrs = {
-        key: _redact_content_value(key, value)
-        for key, value in (getattr(span, "attributes", None) or {}).items()
-    }
-    if attrs == dict(getattr(span, "attributes", None) or {}):
+def _redact_span_uncached(span: Any) -> Any:
+    attrs = _redact_attrs(getattr(span, "attributes", None))
+    events = list(getattr(span, "events", None) or ())
+    events_changed = False
+    for i, ev in enumerate(events):
+        ev_attrs = _redact_attrs(getattr(ev, "attributes", None))
+        if ev_attrs is not None:
+            events[i] = Event(ev.name, ev_attrs, ev.timestamp)
+            events_changed = True
+    if attrs is None and not events_changed:
         return span
-    # Keep the helper importable in environments where the optional OTel
-    # exporters are unavailable; the concrete type is only needed on change.
-    from opentelemetry.sdk.trace import ReadableSpan as _ReadableSpan
-
-    return _ReadableSpan(
+    return ReadableSpan(
         name=span.name,
         context=span.get_span_context(),
         parent=span.parent,
         resource=span.resource,
-        attributes=attrs,
-        events=span.events,
+        attributes=attrs if attrs is not None else span.attributes,
+        events=events,
         links=span.links,
         kind=span.kind,
         status=span.status,
@@ -204,6 +180,30 @@ def redact_span(span: Any) -> Any:
         end_time=span.end_time,
         instrumentation_scope=getattr(span, "instrumentation_scope", None),
     )
+
+
+def redact_span(span: Any) -> Any:
+    """The span with secrets masked in its content attributes and event attributes.
+
+    Only :data:`semconv.SENSITIVE_ATTRIBUTES` are touched; ids, model names
+    and numbers pass through. A span with nothing to mask is returned as the
+    same object. The result is cached per span, so the live store and every
+    backend share one redaction pass. Never raises: on failure the span goes
+    out as it was, the same fail-open choice the log formatter makes.
+    """
+    if not _OTEL_AVAILABLE:
+        return span
+    try:
+        with _redacted_lock:
+            cached = _redacted.get(span)
+        if cached is not None:
+            return span if cached is _UNCHANGED else cached
+        out = _redact_span_uncached(span)
+        with _redacted_lock:
+            _redacted[span] = _UNCHANGED if out is span else out
+        return out
+    except Exception:
+        return span
 
 
 def _is_usage_rollup_span(span: Any) -> bool:
@@ -311,7 +311,7 @@ class _LoggingExporter(_DelegatingExporter):
 if _OTEL_AVAILABLE:
 
     class _ContentRedactingExporter(_DelegatingExporter, SpanExporter):
-        """Redact prompt/tool content immediately before export."""
+        """Redact content attributes before export; :func:`redact_span` caches the result per span, so this pass is shared with the live store and every other backend."""
 
         def export(self, spans: Any) -> Any:
             return self._inner.export([redact_span(span) for span in spans])
