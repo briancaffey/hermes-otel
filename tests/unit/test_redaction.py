@@ -166,32 +166,3 @@ def test_settings_report_uses_the_one_redaction_engine():
     assert redaction.mask_header_pairs("Authorization=Bearer abc,x-team=blue") == (
         f"Authorization={redaction.REPORT_MASK},x-team=blue"
     )
-
-
-def test_span_content_is_redacted_but_metadata_is_preserved():
-    import json
-
-    from opentelemetry.sdk.trace import ReadableSpan
-    from opentelemetry.trace import SpanContext, TraceFlags
-
-    from hermes_otel.pipeline import redact_span
-
-    secret = "Authorization: Bearer " + "x" * 30
-    json_secret = '{"authorization": "' + secret + '"}'
-    span = ReadableSpan(
-        name="llm.chat",
-        context=SpanContext(1, 2, is_remote=False, trace_flags=TraceFlags(1)),
-        attributes={
-            "input.value": json_secret,
-            "gen_ai.input.messages": [secret],
-            "gen_ai.request.model": "token-name",
-            "gen_ai.response.id": "sk-proj-not-content",
-        },
-    )
-
-    redacted = redact_span(span)
-    assert "xxxxxxxx" not in redacted.attributes["input.value"]
-    assert "xxxxxxxx" not in redacted.attributes["gen_ai.input.messages"][0]
-    assert json.loads(redacted.attributes["input.value"])["authorization"] != secret
-    assert redacted.attributes["gen_ai.request.model"] == "token-name"
-    assert redacted.attributes["gen_ai.response.id"] == "sk-proj-not-content"

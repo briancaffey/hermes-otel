@@ -1379,6 +1379,35 @@ OUTPUT_CONTENT_KEYS: Tuple[str, ...] = (
     "gen_ai.output.messages",
     "gen_ai.tool.call.result",
 )
+# Attributes that carry free text the agent, the user or a tool wrote, so a
+# credential can appear in them: the pipeline runs secret redaction over these
+# (and only these) on every span and span event before export and before the
+# live store (#653). Ids, model names, counts and enums are never touched.
+# ``tests/unit/test_semconv.py`` fails when a string row in the ``content``
+# group is missing here.
+SENSITIVE_ATTRIBUTES: frozenset = frozenset(
+    {
+        *INPUT_CONTENT_KEYS,
+        *OUTPUT_CONTENT_KEYS,
+        "gen_ai.system_instructions",
+        "hermes.tool.command",
+        "hermes.tool.target",
+        "hermes.turn.tool_commands",
+        "hermes.turn.tool_targets",
+        "hermes.approval.command",
+        "hermes.approval.description",
+        "hermes.human_input.prompt",
+        "hermes.subagent.goal",
+        "hermes.subagent.summary",
+        "hermes.kanban.summary",
+        "hermes.kanban.reason",
+        "hermes.commit.subject",
+        "hermes.api.error",
+        "error.message",
+        "exception.message",
+        "exception.stacktrace",
+    }
+)
 COST_KEYS: Tuple[str, ...] = ("hermes.cost.usage",)
 COST_KEY = COST_KEYS[0]
 COST_STATUS_KEY = "hermes.cost.status"
