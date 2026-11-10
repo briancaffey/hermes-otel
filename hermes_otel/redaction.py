@@ -25,6 +25,7 @@ place that decides what counts as a credential.
 
 from __future__ import annotations
 
+import json
 import os
 import re
 import threading
@@ -134,6 +135,86 @@ def redact_text(text: Any) -> Any:
         return text
 
 
+# JSON keys whose value is a secret because of the key (``{"password": "…"}``).
+# Only a candidate filter: the redactor still decides, with the key in view.
+_JSON_SECRET_KEY = re.compile(
+    r"(key|secret|token|pass|pwd|\bpw\b|auth|credential|cookie|dsn|signature|session)", re.I
+)
+_NOT_JSON = object()
+
+
+def _redact_json_leaf(key: Optional[str], value: str) -> str:
+    """One string of a parsed JSON document, redacted.
+
+    A value under a credential-shaped key is redacted as a one-entry object so
+    key-based rules see the key; if that object no longer parses, or the key is
+    an ordinary one, the bare value is redacted.
+    """
+    if key is not None and _JSON_SECRET_KEY.search(key):
+        try:
+            pair = json.loads(redact_text(json.dumps({key: value}, ensure_ascii=False)))
+            if isinstance(pair, dict) and len(pair) == 1:
+                out = next(iter(pair.values()))
+                if isinstance(out, str):
+                    return out
+        except ValueError:
+            pass
+    return redact_text(value)
+
+
+def _redact_json_tree(node: Any, key: Optional[str], changed: list) -> Any:
+    if isinstance(node, str):
+        out = _redact_json_leaf(key, node)
+        if out != node:
+            changed[0] = True
+        return out
+    if isinstance(node, list):
+        return [_redact_json_tree(item, key, changed) for item in node]
+    if isinstance(node, dict):
+        return {k: _redact_json_tree(v, k, changed) for k, v in node.items()}
+    return node
+
+
+def redact_content(text: Any) -> Any:
+    """:func:`redact_text` that keeps a JSON document valid JSON.
+
+    Content attributes are often JSON (``input.value`` with
+    ``application/json``, ``gen_ai.*.messages``, a tool result). Redacting the
+    serialised text can break it: Hermes's ``KEY=\\S+`` rule runs through an
+    escaped newline and the closing quote. A JSON object or array is therefore
+    parsed and redacted string by string, then serialised again, and only when
+    a string changed, so a document with nothing to mask comes back as the
+    same text. Values under credential-shaped keys keep their key in view.
+    Anything else is redacted as text. Never raises.
+    """
+    if not isinstance(text, str) or not text:
+        return text
+    if text.lstrip()[:1] in ("{", "["):
+        try:
+            parsed = json.loads(text)
+        except ValueError:
+            parsed = _NOT_JSON
+        if parsed is not _NOT_JSON:
+            try:
+                changed = [False]
+                out = _redact_json_tree(parsed, None, changed)
+                return json.dumps(out, ensure_ascii=False) if changed[0] else text
+            except Exception:
+                return text
+    return redact_text(text)
+
+
+def redact_value(value: Any) -> Any:
+    """:func:`redact_content` for an OTel attribute value: a string or a sequence of them."""
+    if isinstance(value, str):
+        return redact_content(value)
+    if isinstance(value, (list, tuple)) and any(isinstance(v, str) for v in value):
+        out = [redact_content(v) if isinstance(v, str) else v for v in value]
+        if out != list(value):
+            return tuple(out) if isinstance(value, tuple) else out
+    return value
+
+
 def redact_attributes(attrs: Optional[MutableMapping[str, Any]]) -> None:
     """Redact every string value in *attrs* in place; other value types are left alone."""
     if not attrs:
@@ -142,7 +223,7 @@ def redact_attributes(attrs: Optional[MutableMapping[str, Any]]) -> None:
         for key in list(attrs.keys()):
             value = attrs[key]
             if isinstance(value, str) and value:
-                redacted = redact_text(value)
+                redacted = redact_content(value)
                 if redacted != value:
                     attrs[key] = redacted
     except Exception:
