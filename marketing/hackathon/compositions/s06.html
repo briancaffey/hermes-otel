@@ -30,7 +30,7 @@
         <div id="s06-ring"></div>
       </div>
     </div>
-    <div id="s06-kicker">ONE TAB · ANY BACKEND</div>
+    <div id="s06-kicker">ONE TAB · FIFTEEN BACKENDS</div>
     <div class="s06-src" id="s06-b0"><img src="assets/logos/grafana.svg" alt="" /><span>Grafana LGTM</span></div>
     <div class="s06-src" id="s06-b1"><img src="assets/logos/signoz.png" alt="" /><span>SigNoz</span></div>
     <div class="s06-src" id="s06-b2"><img src="assets/logos/openobserve.png" alt="" /><span>OpenObserve</span></div>
@@ -38,11 +38,11 @@
     <div class="s06-src" id="s06-b4"><img src="assets/logos/jaeger.svg" alt="" /><span>Jaeger</span></div>
     <div class="s06-src" id="s06-b5"><img src="assets/logos/phoenix.png" alt="" /><span>Phoenix</span></div>
     <div class="s06-src" id="s06-b6"><img src="assets/logos/langfuse.png" alt="" /><span>Langfuse</span></div>
-    <div id="s06-n">15 BACKEND TYPES READ BACK</div>
+    <div id="s06-n">THEIR APIS · CUSTOM ADAPTERS</div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 5.031, "lead": 0.4, "sents": [[0.4, 3.581]], "w": [{"t": "connect", "s": 1.04, "e": 1.28}, {"t": "to", "s": 1.36, "e": 1.44}, {"t": "backend", "s": 1.52, "e": 1.84}, {"t": "and", "s": 2.0, "e": 2.08}, {"t": "the", "s": 2.16, "e": 2.24}, {"t": "same", "s": 2.24, "e": 2.32}, {"t": "tab", "s": 2.64, "e": 2.72}, {"t": "reads", "s": 2.96, "e": 3.2}, {"t": "it", "s": 3.36, "e": 3.44}]}/*END*/;
+      const C = /*CUES*/{"dur": 6.0, "lead": 0.35, "sents": [[0.35, 5.7]], "w": [{"t": "the", "s": 0.5, "e": 0.58}, {"t": "dashboard", "s": 0.66, "e": 0.98}, {"t": "also", "s": 1.14, "e": 1.22}, {"t": "displays", "s": 1.22, "e": 1.54}, {"t": "data", "s": 1.54, "e": 1.7}, {"t": "from", "s": 1.78, "e": 1.86}, {"t": "fifteen", "s": 2.1, "e": 2.26}, {"t": "hotel", "s": 2.58, "e": 2.74}, {"t": "backends", "s": 2.82, "e": 3.3}, {"t": "using", "s": 3.54, "e": 3.7}, {"t": "their", "s": 3.7, "e": 3.78}, {"t": "apis", "s": 4.02, "e": 4.5}, {"t": "and", "s": 4.66, "e": 4.74}, {"t": "custom", "s": 4.82, "e": 5.06}, {"t": "adapters", "s": 5.06, "e": 5.46}]}/*END*/;
       const W = C.w || [], D = C.dur || 4.5;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const VW = 1920, VH = 860;
@@ -53,7 +53,7 @@
       const wide = frame(500, 200, 2700, 1300), close = frame(480, 180, 2000, 900);
       const tl = gsap.timeline({ paused: true });
       tl.fromTo("#s06-cam", wide, { ...close, duration: D, ease: "power1.inOut" }, 0);
-      tl.fromTo("#s06-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "expo.out" }, at(/connect/, 0, 0.6));
+      tl.fromTo("#s06-ring", { opacity: 0, scale: 1.2 }, { opacity: 1, scale: 1, duration: 0.3, ease: "expo.out" }, at(/^dashboard/, 0, 0.6));
       // flip the source through seven backends: same tab, each backend's own data
       const n = 7, t0 = 0.05, step = (D - 0.35 - t0) / n;
       for (let i = 0; i < n; i++) {
@@ -62,7 +62,7 @@
         tl.fromTo("#s06-b" + i, { opacity: 0, y: 14 }, { opacity: 1, y: 0, duration: 0.18, ease: "expo.out" }, t);
         if (i < n - 1) tl.to("#s06-b" + i, { opacity: 0, duration: 0.06 }, t + step - 0.06);
       }
-      tl.fromTo("#s06-n", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/back/, 0, 2.2));
+      tl.fromTo("#s06-n", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/^using$|^apis?$/, 0, D - 2.4));
       window.__timelines["s06"] = tl;
     })();
   </script>

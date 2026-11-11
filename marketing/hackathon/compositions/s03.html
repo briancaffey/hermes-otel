@@ -33,7 +33,7 @@
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 7.966, "lead": 0.4, "sents": [[0.4, 7.166]], "w": [{"t": "hermes", "s": 0.55, "e": 1.03}, {"t": "hotel", "s": 1.19, "e": 1.43}, {"t": "brings", "s": 1.51, "e": 1.67}, {"t": "the", "s": 1.67, "e": 1.75}, {"t": "tracks", "s": 1.83, "e": 2.15}, {"t": "back", "s": 2.23, "e": 2.31}, {"t": "with", "s": 2.63, "e": 2.71}, {"t": "open", "s": 2.87, "e": 3.11}, {"t": "telemetry", "s": 3.27, "e": 3.75}, {"t": "the", "s": 4.07, "e": 4.15}, {"t": "open", "s": 4.23, "e": 4.47}, {"t": "standard", "s": 4.79, "e": 4.95}, {"t": "for", "s": 5.03, "e": 5.11}, {"t": "traces", "s": 5.35, "e": 6.07}, {"t": "metrics", "s": 6.07, "e": 6.47}, {"t": "and", "s": 6.39, "e": 6.47}, {"t": "logs", "s": 6.55, "e": 7.166}]}/*END*/;
+      const C = /*CUES*/{"dur": 7.043, "lead": 0.35, "sents": [[0.35, 6.543]], "w": [{"t": "hermes", "s": 0.5, "e": 0.98}, {"t": "hotel", "s": 1.14, "e": 1.38}, {"t": "brings", "s": 1.46, "e": 1.62}, {"t": "the", "s": 1.62, "e": 1.7}, {"t": "tracks", "s": 1.78, "e": 2.1}, {"t": "back", "s": 2.18, "e": 2.26}, {"t": "with", "s": 2.42, "e": 2.5}, {"t": "open", "s": 2.74, "e": 2.9}, {"t": "telemetry", "s": 2.98, "e": 3.78}, {"t": "the", "s": 3.78, "e": 3.86}, {"t": "open", "s": 4.02, "e": 4.18}, {"t": "standard", "s": 4.26, "e": 4.5}, {"t": "for", "s": 4.58, "e": 4.66}, {"t": "traces", "s": 4.74, "e": 5.7}, {"t": "metrics", "s": 5.7, "e": 6.02}, {"t": "and", "s": 5.94, "e": 6.02}, {"t": "logs", "s": 6.1, "e": 6.42}]}/*END*/;
       const W = C.w || [], D = C.dur || 8;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const tl = gsap.timeline({ paused: true });

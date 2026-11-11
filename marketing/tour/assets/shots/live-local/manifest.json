@@ -1,0 +1,8 @@
+{
+ "source": "live",
+ "note": "The plugin's dashboard tab reading the local SQLite live store (no backend): one scripted hero-research turn, collapsed, with its first api.* span opened, and with that span's ALL ATTRIBUTES list opened.",
+ "traces": {"hero-research": "62a9cf36bf3e85fbcf4ed0fffdd58eec"},
+ "model": "nvidia/nemotron-3.5-lightning-30b-a3b",
+ "captured_at": "2026-11-11T12:40:00",
+ "hermes": "v0.23.1"
+}

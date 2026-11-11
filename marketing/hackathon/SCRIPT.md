@@ -1,4 +1,4 @@
-# SCRIPT.md — narration, draft 3
+# SCRIPT.md — narration, draft 4
 
 The voice is the clock: scene lengths follow the narration. One sentence per line under each scene
 heading. Lines starting with `>` are on-screen text only (kicker / caption), never spoken. Edit a line
@@ -9,7 +9,8 @@ Voice: Dia 1.6B cloning one designed "Narrator" sample, produced on club.lan's N
 live in the episode lexicon (`tools/narrate.py`, LEXICON), not here: write the words normally.
 
 Target: under 90 s (hackathon rule). Budget ≈ 165 spoken words at Dia's ~2.5 words/s plus ~1 s of
-lead/tail per scene. Tone: plain, a little mythic at the top, then say what it does. No hype words.
+lead/tail per scene. Draft 4 is 213 words (draft 3 was 184 and ran 92.5 s): over the limit
+until scenes are tightened or lines cut. Tone: plain, a little mythic at the top, then say what it does. No hype words.
 
 Fact notes (from the repo, v1.32.6): the local store is a SQLite *file* under `$HERMES_HOME`
 (owner-only), not in-memory; it holds spans and metrics always, logs when log capture is on. The
@@ -21,7 +22,7 @@ span. Fan-out: one batch processor, thread and queue per backend.
 
 ## S01 — the myth (print world)
 
-> THE MYTH
+> A PLUGIN FOR HERMES AGENT
 The day he was born, Hermes stole Apollo's cattle and walked them backwards, so no one could follow the tracks.
 
 ## S02 — agents still cover their tracks
@@ -43,35 +44,36 @@ Every model call, tool and sub-agent nests inside it, with tokens, cost and timi
 
 ## S05 — start local: SQLite + the dashboard tab
 
-> NO BACKEND NEEDED
-With no backend at all, a local SQLite file keeps all three on your machine.
-A new tab in the Hermes dashboard shows every turn, chart and log.
+> LOCAL BY DEFAULT
+Out of the box, Hermes OTel captures OpenTelemetry data locally, in a SQLite file on your machine.
+The plugin adds a tab to the Hermes dashboard.
+There you can browse every trace, chart your metrics and search your logs.
 
-## S06 — the tab reads every backend
+## S06 — the tab reads the backends too
 
-> ONE TAB · ANY BACKEND
-Connect a backend, and the same tab reads it back.
+> ONE TAB · FIFTEEN BACKENDS
+The dashboard also displays data from fifteen OTel backends, using their APIs and custom adapters.
 
 ## S07 — any OTLP backend, async fan-out (tile wall + rapid cuts)
 
 > ANY OTLP BACKEND · ALL AT ONCE
-Send it anywhere that speaks OTLP.
-List several, and each gets the same data on its own async queue, so a slow one never stalls the agent.
+The plugin does asynchronous fan-out to any number of configured backends, so a slow backend doesn't slow your agent.
 
 ## S08 — two conventions
 
 > GEN_AI · OPENINFERENCE
-Every span speaks both conventions: OpenTelemetry GenAI and OpenInference.
+There are two popular conventions for annotating agent data: OpenTelemetry GenAI and OpenInference.
+Hermes OTel supports both.
 
 ## S09 — Claude Code metrics
 
 > CLAUDE CODE DASHBOARDS
-Flip one switch, and sessions, tokens and cost use Claude Code's own metric names, so your Claude Code dashboards show Hermes too.
+Hermes OTel implements four of Claude Code's usage metrics: sessions, tokens, cost and active time, so your Claude Code dashboards show Hermes too.
 
-## S10 — Hermes reads its own traces
+## S10 — the skill: traces in chat
 
 > ASK THE AGENT
-And Hermes can read its own traces.
+Hermes OTel ships with a skill that lets your agent read and display traces right in its chat responses.
 
 ## S11 — close
 

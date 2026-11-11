@@ -4,31 +4,43 @@
     @font-face { font-family: "JB Mono"; src: url("assets/fonts/JetBrainsMono-Bold.woff2") format("woff2"); font-weight: 700; }
     #root { position: absolute; inset: 0; background: #041c1c; overflow: hidden; }
     #s04-view { position: absolute; left: 0; top: 0; width: 1920px; height: 860px; overflow: hidden; background: #031d1c; }
-    #s04-cam { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
-    #s04-cam img { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; }
+    .s04-cam { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; transform-origin: 0 0; }
+    .s04-cam img { position: absolute; left: 0; top: 0; width: 3200px; height: 2000px; }
+    #s04-cam2, #s04-cam3 { opacity: 0; }
     /* the same screen redrawn as a copper engraving (club.lan style transfer), laid exactly over it */
-    #s04-print { z-index: 2; }
+    #s04-print { z-index: 4; }
+    /* the row that gets opened (the first api.* span), ringed for a beat */
+    #s04-ring { position: absolute; left: 556px; top: 1016px; width: 2548px; height: 84px; border: 6px solid #ffbd38; z-index: 5; opacity: 0; }
     #s04-band { position: absolute; left: 0; top: 860px; width: 1920px; height: 220px; background: #041c1c; }
     #s04-kicker { position: absolute; left: 120px; top: 900px; font-family: "JB Mono"; font-weight: 700; font-size: 28px;
       letter-spacing: 0.22em; color: #6e6eff; }
     #s04-line { position: absolute; left: 120px; top: 950px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; }
-    #s04-line .acc { color: #ffbd38; }
+    #s04-line .acc, #s04-line2 .acc { color: #ffbd38; }
+    #s04-line2 { position: absolute; left: 120px; top: 950px; font-family: "Collapse"; font-weight: 700; font-size: 58px; color: #ffe6cb; opacity: 0; }
     .s04-w { display: inline-block; }
   </style>
   <div id="root" data-composition-id="s04" data-width="1920" data-height="1080">
     <div id="s04-view">
-      <div id="s04-cam">
-        <img id="s04-real" src="assets/shots/lgtm-detail-hero.jpg" alt="The plugin's dashboard tab: one turn's trace waterfall, 14 spans, 16.98 s" />
+      <div id="s04-cam" class="s04-cam">
+        <img id="s04-real" src="assets/shots/live-detail-hero.jpg" alt="The plugin's dashboard tab: one turn's trace waterfall, 14 spans, 24.26 s" />
         <img id="s04-print" src="assets/gen/x01-waterfall.png" alt="The same waterfall redrawn as an engraving" />
+        <div id="s04-ring"></div>
+      </div>
+      <div id="s04-cam2" class="s04-cam">
+        <img id="s04-open" src="assets/shots/live-detail-span.jpg" alt="The same trace with its first model call opened: model, tokens, latency, prompt and response" />
+      </div>
+      <div id="s04-cam3" class="s04-cam">
+        <img id="s04-attrs" src="assets/shots/live-detail-attrs.jpg" alt="That span's attributes: hermes.*, gen_ai.*, llm.* and openinference.*" />
       </div>
     </div>
     <div id="s04-band"></div>
     <div id="s04-kicker">ONE TURN · ONE TRACE</div>
-    <div id="s04-line"><span class="s04-w">14 spans.</span> <span class="s04-w">16.98 s.</span> <span class="s04-w acc">52.2k tokens.</span></div>
+    <div id="s04-line"><span class="s04-w">14 spans.</span> <span class="s04-w">24.26 s.</span> <span class="s04-w acc">53.9k tokens.</span></div>
+    <div id="s04-line2">Open any span: prompt, response, <span class="acc">every attribute.</span></div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 7.943, "lead": 0.4, "sents": [[0.4, 2.87], [2.87, 7.493]], "w": [{"t": "each", "s": 0.55, "e": 0.63}, {"t": "turn", "s": 0.87, "e": 1.11}, {"t": "becomes", "s": 1.27, "e": 1.43}, {"t": "one", "s": 1.91, "e": 1.99}, {"t": "trace", "s": 2.23, "e": 2.87}, {"t": "every", "s": 2.87, "e": 3.03}, {"t": "model", "s": 3.03, "e": 3.27}, {"t": "call", "s": 3.43, "e": 4.15}, {"t": "tool", "s": 4.07, "e": 4.47}, {"t": "and", "s": 4.39, "e": 4.47}, {"t": "subagent", "s": 4.47, "e": 5.03}, {"t": "nests", "s": 5.11, "e": 5.43}, {"t": "inside", "s": 5.43, "e": 5.59}, {"t": "it", "s": 5.75, "e": 5.83}, {"t": "with", "s": 5.99, "e": 6.07}, {"t": "tokens", "s": 6.07, "e": 6.39}, {"t": "cost", "s": 6.71, "e": 6.87}, {"t": "and", "s": 6.95, "e": 7.03}, {"t": "timing", "s": 7.11, "e": 7.27}]}/*END*/;
+      const C = /*CUES*/{"dur": 10.039, "lead": 0.35, "sents": [[0.35, 2.99], [3.07, 7.339]], "w": [{"t": "each", "s": 0.75, "e": 0.83}, {"t": "turn", "s": 1.15, "e": 1.31}, {"t": "becomes", "s": 1.39, "e": 1.55}, {"t": "one", "s": 1.95, "e": 2.03}, {"t": "trace", "s": 2.27, "e": 2.99}, {"t": "every", "s": 3.07, "e": 3.23}, {"t": "model", "s": 3.31, "e": 3.47}, {"t": "call", "s": 3.71, "e": 4.27}, {"t": "tool", "s": 4.27, "e": 4.59}, {"t": "and", "s": 4.51, "e": 4.59}, {"t": "subagent", "s": 4.75, "e": 5.23}, {"t": "nests", "s": 5.31, "e": 5.55}, {"t": "inside", "s": 5.71, "e": 5.95}, {"t": "it", "s": 5.95, "e": 6.03}, {"t": "with", "s": 6.19, "e": 6.27}, {"t": "tokens", "s": 6.43, "e": 6.91}, {"t": "cost", "s": 7.07, "e": 7.31}, {"t": "and", "s": 7.23, "e": 7.31}]}/*END*/;
       const W = C.w || [], D = C.dur || 8;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const VW = 1920, VH = 860;
@@ -36,17 +48,39 @@
         const s = Math.min(VW / w, VH / h);
         return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
       };
-      const all = frame(500, 380, 2700, 1500);        // the whole trace: header + waterfall
+      const all = frame(500, 380, 2700, 1210);        // the whole trace: header + waterfall
       const rows = frame(540, 740, 1800, 840);        // agent + llm + tool rows, legible
-      const stats = frame(540, 455, 1250, 110);       // DURATION · MODEL · TOKENS
+      // the opened span: its summary line (model · tokens · finish · latency), panned left to right
+      const open0 = frame(540, 980, 1300, 300), open1 = frame(1500, 980, 1300, 300);
+      // its attribute list, top (hermes.*, gen_ai.*) to bottom (llm.*, openinference.*)
+      const attr0 = frame(540, 150, 1500, 660), attr1 = frame(540, 1170, 1500, 660);
+      // One camera per shot, each set once and moved by ONE tween, so a seek to any time (in any
+      // order) lands on the same frame: no tween ever starts from another tween's leftovers.
+      gsap.set("#s04-cam", { ...all });
+      gsap.set("#s04-cam2", { ...rows });
+      gsap.set("#s04-cam3", { ...attr0 });
       const tl = gsap.timeline({ paused: true });
-      tl.fromTo("#s04-cam", all, { ...all, duration: 0.01 }, 0);
       // the engraving dissolves into the real screen as "trace" is said
       const tr = at(/trace/, 0, 1.0);
       tl.fromTo("#s04-print", { opacity: 1 }, { opacity: 0, duration: 0.7, ease: "power2.inOut" }, tr);
       const nest = at(/nests?/, 0, 4), tok = at(/tokens?/, 0, 5.5);
       tl.to("#s04-cam", { ...rows, duration: 1.1, ease: "power2.inOut" }, at(/model/, 0, 2.6) - 0.3);
-      tl.to("#s04-cam", { ...stats, duration: 0.8, ease: "power2.inOut" }, tok - 0.6);
+      // "with tokens, cost and timing": the first model call is clicked open, then its summary
+      // line (model · tokens · finish · latency) is read left to right
+      const vEnd = C.sents[C.sents.length - 1][1], op = tok - 0.7;
+      tl.fromTo("#s04-ring", { opacity: 0, scale: 1.03 }, { opacity: 1, scale: 1, duration: 0.2, ease: "expo.out" }, op - 0.35);
+      tl.to("#s04-ring", { opacity: 0, duration: 0.15 }, op + 0.1);
+      tl.to("#s04-cam2", { opacity: 1, duration: 0.15, ease: "power2.out" }, op);
+      tl.to("#s04-cam2", { keyframes: [
+        { ...open0, duration: 0.8, ease: "power2.inOut" },
+        { ...open1, duration: Math.max(0.8, vEnd - op - 0.9), ease: "power1.inOut", delay: 0.1 },
+      ] }, op + 0.001);
+      // after the voice: every attribute on that span, scrolled top to bottom
+      const a0 = vEnd + 0.15;
+      tl.to("#s04-cam3", { opacity: 1, duration: 0.2, ease: "power2.out" }, a0);
+      tl.to("#s04-cam3", { ...attr1, duration: D - a0 - 0.25, ease: "power1.inOut" }, a0 + 0.001);
+      tl.to("#s04-line", { opacity: 0, duration: 0.15 }, a0 - 0.1);
+      tl.fromTo("#s04-line2", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, a0 + 0.05);
       const ws = document.querySelectorAll(".s04-w");
       [nest, tok, tok + 0.5].forEach((t, i) => tl.fromTo(ws[i], { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.25, ease: "expo.out" }, t));
       window.__timelines["s04"] = tl;

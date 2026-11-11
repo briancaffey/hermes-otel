@@ -144,12 +144,13 @@ backends:
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 16.496, "lead": 0.4, "sents": [[0.4, 4.0], [4.0, 9.096]], "w": [{"t": "send", "s": 1.2, "e": 1.28}, {"t": "it", "s": 1.52, "e": 1.6}, {"t": "anywhere", "s": 1.68, "e": 1.84}, {"t": "that", "s": 1.92, "e": 2.0}, {"t": "speaks", "s": 2.08, "e": 2.24}, {"t": "otlp", "s": 2.64, "e": 4.0}, {"t": "list", "s": 4.0, "e": 4.08}, {"t": "several", "s": 4.24, "e": 4.48}, {"t": "and", "s": 4.96, "e": 5.04}, {"t": "each", "s": 5.2, "e": 5.28}, {"t": "gets", "s": 5.36, "e": 5.52}, {"t": "the", "s": 5.52, "e": 5.6}, {"t": "same", "s": 5.6, "e": 5.68}, {"t": "data", "s": 5.76, "e": 5.92}, {"t": "on", "s": 6.08, "e": 6.16}, {"t": "its", "s": 6.24, "e": 6.32}, {"t": "own", "s": 6.32, "e": 6.4}, {"t": "asyncq", "s": 6.8, "e": 7.52}, {"t": "so", "s": 7.52, "e": 7.6}, {"t": "a", "s": 7.68, "e": 7.76}, {"t": "slow", "s": 7.84, "e": 7.92}, {"t": "one", "s": 8.0, "e": 8.08}, {"t": "never", "s": 8.32, "e": 8.48}, {"t": "stalls", "s": 8.48, "e": 8.72}, {"t": "the", "s": 8.72, "e": 8.8}, {"t": "agent", "s": 8.8, "e": 9.096}]}/*END*/;
+      const C = /*CUES*/{"dur": 10.616, "lead": 0.35, "sents": [[0.35, 6.516]], "w": [{"t": "the", "s": 0.5, "e": 0.58}, {"t": "plugin", "s": 0.66, "e": 0.98}, {"t": "does", "s": 1.06, "e": 1.14}, {"t": "asynchronous", "s": 1.3, "e": 1.94}, {"t": "fan", "s": 2.1, "e": 2.18}, {"t": "out", "s": 2.26, "e": 2.34}, {"t": "to", "s": 2.5, "e": 2.58}, {"t": "any", "s": 2.66, "e": 2.74}, {"t": "number", "s": 2.82, "e": 2.9}, {"t": "of", "s": 2.98, "e": 3.06}, {"t": "configured", "s": 3.38, "e": 3.7}, {"t": "backends", "s": 3.78, "e": 4.5}, {"t": "so", "s": 4.42, "e": 4.5}, {"t": "a", "s": 4.66, "e": 4.74}, {"t": "slow", "s": 4.74, "e": 4.82}, {"t": "backend", "s": 4.98, "e": 5.22}, {"t": "doesnt", "s": 5.38, "e": 5.54}, {"t": "slow", "s": 5.62, "e": 5.7}, {"t": "your", "s": 5.86, "e": 5.94}, {"t": "agent", "s": 6.02, "e": 6.516}]}/*END*/;
       const W = C.w || [], D = C.dur || 16;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
-      const s2 = (C.sents[1] || [2.6])[0];
+      // one sentence: A (the config) under "does asynchronous fan-out", B (the queues) from "to any number of ..."
+      const s2 = at(/^any$/, 0, at(/^number$/, 0, 2.8)) - 0.15;
       const vEnd = C.sents[C.sents.length - 1][1];
-      const CUT = 0.30, NCUT = 18, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
+      const CUT = 0.30, NCUT = 7, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
       // queue blocks: 4 lanes. Fast lanes stream for the whole sentence; lane 2 (the slow
       // backend) takes blocks in at the same rate but drains slowly, so only its queue backs up.
       const dots = document.getElementById("s07-dots");
@@ -166,8 +167,8 @@ backends:
       const tl = gsap.timeline({ paused: true });
       // A
       tl.fromTo("#s07-plate img", { scale: 1.0 }, { scale: 1.1, duration: s2, ease: "none" }, 0);
-      tl.fromTo("#s07-otlp", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "expo.out" }, at(/^(o?tlp|otl|o)$/, 0, 1.0) - 0.1);
-      tl.fromTo("#s07-yaml", { clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", duration: 0.9, ease: "power2.out" }, 0.9);
+      tl.fromTo("#s07-otlp", { opacity: 0, y: 30 }, { opacity: 1, y: 0, duration: 0.45, ease: "expo.out" }, 0.45);
+      tl.fromTo("#s07-yaml", { clipPath: "inset(0 0 100% 0)" }, { clipPath: "inset(0 0 0% 0)", duration: 0.9, ease: "power2.out" }, 0.7);
       // B
       tl.to("#s07-a", { opacity: 0, duration: 0.2 }, s2 - 0.1);
       tl.fromTo("#s07-b", { opacity: 0 }, { opacity: 1, duration: 0.2 }, s2 - 0.1);
@@ -181,8 +182,8 @@ backends:
           tl.fromTo(`#s07-d${l}-${k}`, { x: 0, opacity: 0 }, { x: Math.max(0, 960 - k * 40), opacity: 1, duration: 0.6, ease: "power2.out" }, start);
         }
       }
-      tl.fromTo("#s07-slow", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/slow/, 0, s2 + 3));
-      tl.fromTo("#s07-bline", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/stalls?/, 0, vEnd - 0.8));
+      tl.fromTo("#s07-slow", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/^slow$/, 0, s2 + 2));
+      tl.fromTo("#s07-bline", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/^agent/, 0, vEnd - 0.5) - 0.3);
       // C: rapid cuts on a steady pulse
       for (let i = 0; i < NCUT; i++) {
         tl.fromTo("#s07-c" + i, { opacity: 0 }, { opacity: 1, duration: 0.01 }, c0 + i * CUT);

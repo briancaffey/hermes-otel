@@ -3,6 +3,7 @@
     python3 marketing/hackathon/tools/narrate.py            # sync SCRIPT.md, produce, export
     python3 marketing/hackathon/tools/narrate.py --design   # (re)design the narrator voice first
     python3 marketing/hackathon/tools/narrate.py --redo S03 # force new takes for some scenes
+    python3 marketing/hackathon/tools/narrate.py --redo all # new takes for every scene (after voices.py use)
 
 What happens on the site (inference.club, PRD 12 Narration Studio):
   1. --design: a "voice design" episode auditions the reference line on DESIGN_TAKES Dia seeds; each
@@ -167,7 +168,7 @@ def export(eid: int, st: dict, scenes: list[dict]) -> None:
     vdir = ROOT / "assets" / "voice"
     vdir.mkdir(parents=True, exist_ok=True)
     cues = {"provider": "club.lan narration studio (Dia 1.6B + Maxine StudioVoice + Nemotron ASR)",
-            "voice": f"{SPEAKER} (voice sample {st.get('voice_sample')})", "speed": 1.0, "gap": 0.0,
+            "voice": f"{st.get('voice_name', SPEAKER)} (voice sample {st.get('voice_sample')})", "speed": 1.0, "gap": 0.0,
             "episode": eid, "scenes": {}}
     for sc in scenes:
         m = by_seg.get(st["segments"][sc["sid"]])
@@ -208,13 +209,14 @@ def main() -> None:
     scenes = parse_script()
     if (a.design or not st.get("voice_sample")) and not (a.reprocess or a.export_only):
         design_voice(st)
-    eid = sync_film(st, scenes, {x for x in a.redo.split(",") if x})
+    redo = {x for x in a.redo.split(",") if x}
+    eid = sync_film(st, scenes, redo - {"all"})
     if a.reprocess:
         for segid in st["segments"].values():
             api("POST", f"/v1/segments/{segid}/process", {})
         wait_episode(eid, "reprocess")
     elif not a.export_only:
-        api("POST", f"/v1/episodes/{eid}/produce", {})
+        api("POST", f"/v1/episodes/{eid}/produce", {"force": "all" in redo})
         ep = wait_episode(eid, "film")
         bad = [s for s in ep["segments"] if s["status"] != "ready"]
         if bad:

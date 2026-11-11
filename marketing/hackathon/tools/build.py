@@ -18,10 +18,10 @@ import subprocess
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-LEAD = 0.4
-TAIL = {"S01": 0.8, "S03": 0.8, "S07": 0.3, "S11": 2.4}
-DEFAULT_TAIL = 0.45
-EXTRA = {"S06": 1.0, "S07": 7.1, "S10": 2.6}  # S07: rapid backend cuts + wall after the voice; S10: the tree draws
+LEAD = 0.35
+TAIL = {"S01": 0.5, "S03": 0.5, "S07": 0.3, "S11": 1.8}
+DEFAULT_TAIL = 0.3
+EXTRA = {"S04": 2.4, "S07": 3.8}  # S04: the opened span's attributes scroll; S07: rapid backend cuts + wall
 MUSIC_VOL = 0.2               # under the voice; the ACE-Step bed is normalised to -16 LUFS first
 LIMIT = 89.9
 
@@ -31,13 +31,15 @@ LIMIT = 89.9
 SFX = [
     ("S02", ("end", 0.5), 0.0, "whoosh-short.mp3", 0.35),
     ("S04", r"nests?", 0.0, "whoosh-short.mp3", 0.3),
+    ("S04", r"tokens?", -0.7, "click-soft.mp3", 0.5),
+    ("S04", ("end", 2.55), 0.0, "click-soft.mp3", 0.45),
     ("S05", r"tab", -0.1, "click-soft.mp3", 0.5),
     ("S05", r"chart", -0.1, "click-soft.mp3", 0.45),
-    ("S05", r"log", -0.1, "click-soft.mp3", 0.45),
-    ("S06", r"connect", 0.0, "click-soft.mp3", 0.5),
+    ("S05", r"logs?$", -0.1, "click-soft.mp3", 0.45),
+    ("S06", r"dashboard", 0.0, "click-soft.mp3", 0.5),
     *[("S07", ("cut", i), 0.0, ["whoosh-short.mp3", "whoosh.mp3", "click-soft.mp3"][i % 3], 0.22)
-      for i in range(18)],
-    ("S09", r"switch", -0.05, "click-soft.mp3", 0.6),
+      for i in range(7)],
+    ("S09", r"implement", -0.05, "click-soft.mp3", 0.6),
     ("S10", ("end", 0.3), 0.0, "whoosh-short.mp3", 0.3),
     ("S11", r"catalog", 0.1, "typing.mp3", 0.35),
 ]

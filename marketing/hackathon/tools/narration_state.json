@@ -1,6 +1,6 @@
 {
   "design_episode": 1,
-  "voice_sample": 1,
+  "voice_sample": 4,
   "film_episode": 2,
   "segments": {
     "S01": 2,
@@ -14,5 +14,6 @@
     "S09": 10,
     "S10": 11,
     "S11": 12
-  }
+  },
+  "voice_name": "Narrator Vega"
 }

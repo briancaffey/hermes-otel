@@ -1,0 +1,103 @@
+{
+ "voices": [
+  {
+   "name": "Lyra",
+   "sample": 2,
+   "variant": 24,
+   "seed": 781459165,
+   "score": 10.0,
+   "wps": 2.93,
+   "segments": [
+    14,
+    15
+   ]
+  },
+  {
+   "name": "Orion",
+   "sample": 3,
+   "variant": 25,
+   "seed": 403713134,
+   "score": 9.89,
+   "wps": 2.54,
+   "segments": [
+    16,
+    17
+   ]
+  },
+  {
+   "name": "Vega",
+   "sample": 4,
+   "variant": 26,
+   "seed": 211317556,
+   "score": 9.89,
+   "wps": 2.87,
+   "segments": [
+    18,
+    19
+   ]
+  },
+  {
+   "name": "Altair",
+   "sample": 5,
+   "variant": 27,
+   "seed": 1299179898,
+   "score": 9.71,
+   "wps": 2.03,
+   "segments": [
+    20,
+    21
+   ]
+  },
+  {
+   "name": "Corvus",
+   "sample": 6,
+   "variant": 28,
+   "seed": 278913344,
+   "score": 10.0,
+   "wps": 2.6,
+   "segments": [
+    22,
+    23
+   ]
+  },
+  {
+   "name": "Cygnus",
+   "sample": 7,
+   "variant": 29,
+   "seed": 1341702782,
+   "score": 10.0,
+   "wps": 2.45,
+   "segments": [
+    24,
+    25
+   ]
+  },
+  {
+   "name": "Draco",
+   "sample": 8,
+   "variant": 30,
+   "seed": 24825114,
+   "score": 10.0,
+   "wps": 2.81,
+   "segments": [
+    26,
+    27
+   ]
+  },
+  {
+   "name": "Auriga",
+   "sample": 9,
+   "variant": 31,
+   "seed": 1059456857,
+   "score": 10.0,
+   "wps": 2.8,
+   "segments": [
+    28,
+    29
+   ]
+  }
+ ],
+ "design_episode": 3,
+ "design_segment": 13,
+ "audition_episode": 4
+}

@@ -30,15 +30,17 @@
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 5.795, "lead": 0.4, "sents": [[0.4, 2.745]], "w": [{"t": "and", "s": 1.04, "e": 1.12}, {"t": "hermes", "s": 1.12, "e": 1.52}, {"t": "can", "s": 1.6, "e": 1.68}, {"t": "read", "s": 1.68, "e": 1.84}, {"t": "its", "s": 1.84, "e": 2.0}, {"t": "own", "s": 2.0, "e": 2.08}, {"t": "traces", "s": 2.32, "e": 2.745}]}/*END*/;
-      const W = C.w || [], D = C.dur || 5.8;
+      const C = /*CUES*/{"dur": 7.739, "lead": 0.35, "sents": [[0.35, 7.439]], "w": [{"t": "hermes", "s": 0.5, "e": 1.06}, {"t": "hotel", "s": 1.22, "e": 1.38}, {"t": "ships", "s": 1.46, "e": 1.7}, {"t": "with", "s": 1.78, "e": 1.86}, {"t": "a", "s": 1.86, "e": 1.94}, {"t": "skill", "s": 2.02, "e": 2.1}, {"t": "that", "s": 2.18, "e": 2.26}, {"t": "lets", "s": 2.34, "e": 2.5}, {"t": "your", "s": 2.58, "e": 2.66}, {"t": "agent", "s": 2.74, "e": 2.98}, {"t": "read", "s": 3.14, "e": 3.38}, {"t": "and", "s": 3.46, "e": 3.54}, {"t": "display", "s": 3.62, "e": 3.86}, {"t": "traces", "s": 3.94, "e": 4.26}, {"t": "right", "s": 4.58, "e": 4.66}, {"t": "in", "s": 4.74, "e": 4.82}, {"t": "its", "s": 4.82, "e": 4.9}, {"t": "chat", "s": 4.98, "e": 5.06}, {"t": "responses", "s": 5.22, "e": 7.439}]}/*END*/;
+      const D = C.dur || 5.8;
       const VW = 1920, VH = 860;
       const frame = (x, y, w, h) => {
         const s = Math.min(VW / w, VH / h);
         return { x: (VW - w * s) / 2 - x * s, y: (VH - h * s) / 2 - y * s, scale: s };
       };
       const chat = frame(40, 600, 1400, 420), tree = frame(100, 120, 1720, 640);
-      const out = (C.sents[0] || [0.4, 2.2])[1];
+      const W = C.w || [];
+      const skill = W.find((w) => /^skill/.test(w.t));
+      const out = skill ? skill.e + 0.1 : 2.4;   // the mirror opens on "ships with a skill"
       const tl = gsap.timeline({ paused: true });
       // into the mirror: the reflected tree becomes the agent's real span tree
       tl.fromTo("#s10-plate img", { scale: 1.0 }, { scale: 1.25, duration: out, ease: "power1.in" }, 0);
