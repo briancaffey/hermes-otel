@@ -1,5 +1,25 @@
 # Changelog
 
+## [1.33.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.6...hermes-otel-v1.33.0) (2026-11-11)
+
+
+### Features
+
+* **privacy:** settings to leave tool commands, targets and error text out ([#670](https://github.com/briancaffey/hermes-otel/issues/670)) ([cd1ae01](https://github.com/briancaffey/hermes-otel/commit/cd1ae01614121a57c08782d59ba97cbd3253a1df))
+
+
+### Bug Fixes
+
+* avoid applying span redaction twice in live store ([051431f](https://github.com/briancaffey/hermes-otel/commit/051431feb55413a29b1eb1e58a730c175dce4cb8))
+* **pipeline:** redact commands, targets, errors and span events, once per span ([0a06bca](https://github.com/briancaffey/hermes-otel/commit/0a06bcaa04b4b7216ee9254843202e163b281456)), closes [#653](https://github.com/briancaffey/hermes-otel/issues/653)
+* redact sensitive span content before export ([e809166](https://github.com/briancaffey/hermes-otel/commit/e809166ff8d300fe6fd835a654418380234d6bee))
+* **redaction:** keep JSON content valid and redact values with their key in view ([d53c574](https://github.com/briancaffey/hermes-otel/commit/d53c5744617e36fe12ce738d1351c7eba235125f))
+
+
+### Documentation
+
+* **privacy:** say what span redaction masks, what it does not, and its cost ([809e096](https://github.com/briancaffey/hermes-otel/commit/809e09682da5f26466c50d16574a6daf05d04353))
+
 ## [1.32.6](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.5...hermes-otel-v1.32.6) (2026-11-07)
 
 
