@@ -151,7 +151,9 @@ def _emit_event(
     content: bool = True,
 ) -> None:
     """Emit a structured event (#267) with the content attributes gated by
-    ``logs.events.content`` (``inherit`` follows ``content_capture``).
+    ``logs.events.content`` (``inherit`` follows ``content_capture``) and
+    without the attributes the config omits (``capture_tool_command`` /
+    ``capture_tool_target`` / ``capture_error_message``, #669).
 
     *content=False* drops the content attributes outright (turn-level
     events never repeat prompts). Cheap no-op when events are off.
@@ -168,6 +170,9 @@ def _emit_event(
             else resolve_content_mode(tracer.config.log_events_content, content_mode(tracer.config))
         )
         attrs = apply_content_mode(attributes, mode, tracer.config.preview_max_chars)
+        omit = tracer.config.omitted_attributes()
+        if omit:
+            attrs = {k: v for k, v in attrs.items() if k not in omit}
         tracer.emit_event(name, body, attrs, severity=severity, session_id=session_id, span=span)
     except Exception as exc:  # never into the agent loop
         debug_log(f"event {name} skipped: {type(exc).__name__}: {exc}")

@@ -46,7 +46,8 @@ Everything that isn't user-originated content:
 
 - Span tree (parent/child relationships)
 - Span timings (start / end / duration)
-- Tool names, commands, targets, outcomes (`tool.name`, `hermes.tool.command`, `hermes.tool.target`, `hermes.tool.outcome`)
+- Tool names and outcomes (`tool.name`, `hermes.tool.outcome`)
+- Tool commands, tool targets and error text, unless you [switch them off](#tool-commands-targets-and-error-text)
 - Token counts (`gen_ai.usage.*`, `llm.token_count.*`)
 - Model name, provider, finish reason
 - Per-turn summary (tool count, skill count, API call count, final status)
@@ -65,21 +66,47 @@ When privacy mode is active, the plugin prints a one-line banner so it's not a s
 
 If you ever see tool args or user messages in the backend UI that you didn't expect, double-check the banner is present.
 
-## Tool commands and targets
+## Tool commands, targets and error text {#tool-commands-targets-and-error-text}
 
-Note that `hermes.tool.command` (the shell command passed to `bash`-family tools) and `hermes.tool.target` (the file path passed to `read_file`, `edit_file`, etc.) are **not** suppressed by privacy mode. They're structured metadata, not free-form user content.
+`hermes.tool.command` (the shell command passed to `bash`-family tools), `hermes.tool.target` (the file path or URL passed to `read_file`, `web_extract`, etc.) and the text of an error are **not** suppressed by `content_capture: off`. They are what makes a trace debuggable, they are clipped to 500 characters, and they pass through secret redaction like the content attributes (see below), so `curl -H 'Authorization: Bearer …'` or `export GITHUB_TOKEN=…` leaves the machine masked.
 
-They are clipped to 500 characters and pass through secret redaction like the content attributes (see below), so `curl -H 'Authorization: Bearer …'` or `export GITHUB_TOKEN=…` leaves the machine masked. If even command and target are too sensitive for your deployment, [file an issue](https://github.com/briancaffey/hermes-otel/issues) asking for a stricter mode.
+A command line, a path, a URL or an error message can still name a customer or quote their data. Three settings leave that text out, each on its own and in any `content_capture` mode:
+
+```yaml
+content_capture: "off"
+capture_tool_command: false    # HERMES_OTEL_CAPTURE_TOOL_COMMAND
+capture_tool_target: false     # HERMES_OTEL_CAPTURE_TOOL_TARGET
+capture_error_message: false   # HERMES_OTEL_CAPTURE_ERROR_MESSAGE
+```
+
+| Setting (default `true`) | `false` leaves out |
+|---|---|
+| `capture_tool_command` | `hermes.tool.command` on tool spans, `hermes.turn.tool_commands` on the turn root |
+| `capture_tool_target` | `hermes.tool.target` on tool spans, `hermes.turn.tool_targets` on the turn root |
+| `capture_error_message` | `error.message`, `exception.message` and `exception.stacktrace` (span attributes and the `exception` span event), the span status description, and the error text in the `hermes.api.error` event body |
+
+What stays: tool names, `hermes.tool.outcome`, `error.type`, `exception.type`, the HTTP status code, the `ERROR` span status itself, tokens, cost, timings, model and session identity.
+
+The text is removed in the plugin's export pipeline, in the one pass every finished span goes through before the dashboard's live store and before each backend's exporter, and from [events](/configuration/logs) before they are emitted. Nothing downstream sees it: not a backend, not the live store file, not the `observability` skill. If that pass fails for a span while something is switched off, the span is dropped instead of exported with the text.
+
+With all three `false` and `content_capture: "off"`, no command line, path, URL, prompt, response, tool argument, tool result or error text is on any span or event. The startup log says so:
+
+```text
+[hermes-otel] ⚠ content_capture=off — prompts, tool I/O and responses are not recorded
+[hermes-otel] ⚠ not recorded: tool commands, tool targets, error messages
+```
+
+`disable_spans: [tool]` is not a substitute: it drops the tool spans but the turn root keeps the roll-ups.
 
 ## Secrets in span content
 
 Whatever `content_capture` lets through is redacted before it leaves the process: on every span, for every backend, and in the dashboard's live store. The redactor is Hermes' own `agent.redact` (the one behind `agent.log`) when the plugin runs inside Hermes, and the plugin's built-in set otherwise (provider key prefixes such as `sk-…`, `ghp_…`, `AKIA…`; `Bearer` / `Basic` credentials; `Authorization`, `x-api-key`, `password=` style assignments; the password in `scheme://user:password@host`). `security.redact_secrets: false` or `HERMES_REDACT_SECRETS=false` turns it off, the same switch Hermes uses for its own logs.
 
-**What is redacted.** The free-text attributes listed in `SENSITIVE_ATTRIBUTES` in `hermes_otel/semconv.py`: `input.value` / `output.value`, `gen_ai.input.messages` / `gen_ai.output.messages` / `gen_ai.system_instructions`, `gen_ai.tool.call.arguments` / `.result`, `hermes.tool.command` / `.target`, `hermes.turn.tool_commands` / `.tool_targets`, the approval, human-input, subagent and kanban text, `error.message`, and the `exception.message` / `exception.stacktrace` of span events. Ids, model names, counts and enums are never touched.
+**What is redacted.** The free-text attributes listed in `SENSITIVE_ATTRIBUTES` in `hermes_otel/semconv.py`: `input.value` / `output.value`, `gen_ai.input.messages` / `gen_ai.output.messages` / `gen_ai.system_instructions`, `gen_ai.tool.call.arguments` / `.result`, `hermes.tool.command` / `.target`, `hermes.turn.tool_commands` / `.tool_targets`, the approval, human-input, subagent and kanban text, `error.message`, the `exception.message` / `exception.stacktrace` of span events, and the span status description. Ids, model names, counts and enums are never touched.
 
 **JSON stays JSON.** A JSON value (a message list, tool arguments, a tool result) is parsed and redacted string by string, then serialised again only if something was masked, so a backend that renders JSON still can. A value under a credential-shaped key (`{"api_key": "…"}`, `{"password": "…"}`) is redacted with its key in view, so an opaque value without a known prefix is still caught.
 
-**What is not.** Redaction is pattern-based: personal data, internal hostnames and secrets with no recognisable shape still flow. `content_capture: off` is the only guarantee that prompt and tool text never leaves the machine.
+**What is not.** Redaction is pattern-based: personal data, internal hostnames and secrets with no recognisable shape still flow. `content_capture: off` is the only guarantee that prompt and tool text never leaves the machine, and the [three settings above](#tool-commands-targets-and-error-text) the only guarantee for commands, targets and error text.
 
 **Cost.** The pass runs once per finished span, shared by the live store and every backend: on the thread that ends the span when the live store is on (the default), otherwise on the export thread. Measured with Hermes' redactor on an `api.*` span carrying both conventions: about 6 ms at 30 KB of content, 23 ms at 120 KB and 180 ms at 0.9 MB (a long `capture_conversation_history`). A span with no content attributes costs nothing.
 

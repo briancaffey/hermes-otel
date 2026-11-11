@@ -530,7 +530,7 @@ def on_api_request_error(
         EV.API_ERROR,
         f"api error {error_type or 'unknown'}"
         + (f" ({status_class})" if status_class else "")
-        + (f": {error_message}" if error_message else ""),
+        + (f": {error_message}" if error_message and tracer.config.capture_error_message else ""),
         {
             **attributes,
             "exception.type": error_type or None,

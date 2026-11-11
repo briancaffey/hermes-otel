@@ -221,7 +221,10 @@ def on_subagent_stop(
 
     error_message = None
     if status == "error":
-        error_message = truncate_string(child_summary or child_status, 500)
+        # The summary is content: with content_capture off the status
+        # description carries the child's status word only.
+        summary_text = child_summary if tracer.config.captures_content() else None
+        error_message = truncate_string(summary_text or child_status, 500)
 
     child_span = tracer.spans.get_span(key)
     _emit_event(

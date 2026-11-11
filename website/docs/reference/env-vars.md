@@ -152,6 +152,9 @@ Every scalar or list field of the config file can be overridden by `HERMES_OTEL_
 | `HERMES_OTEL_CAPTURE_FULL_PROMPTS` | `capture_full_prompts` | bool | `true` |
 | `HERMES_OTEL_CAPTURE_FULL_RESPONSES` | `capture_full_responses` | bool | `true` |
 | `HERMES_OTEL_CAPTURE_SENDER_ID` | `capture_sender_id` | bool | `false` |
+| `HERMES_OTEL_CAPTURE_TOOL_COMMAND` | `capture_tool_command` | bool | `true` |
+| `HERMES_OTEL_CAPTURE_TOOL_TARGET` | `capture_tool_target` | bool | `true` |
+| `HERMES_OTEL_CAPTURE_ERROR_MESSAGE` | `capture_error_message` | bool | `true` |
 | `HERMES_OTEL_CAPTURE_LOGS` | `capture_logs` | bool | `false` |
 | `HERMES_OTEL_LOG_LEVEL` | `log_level` | string | `"INFO"` |
 | `HERMES_OTEL_LOG_ATTACH_LOGGER` | `log_attach_logger` | string | *(unset)* |

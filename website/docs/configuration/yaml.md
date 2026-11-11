@@ -127,6 +127,14 @@ conversation_history_max_chars: 20000
 # Gateway sessions add hermes.sender.id and user.id (`platform:sender`).
 # Can identify people, so it is opt-in. Env: HERMES_OTEL_CAPTURE_SENDER_ID
 capture_sender_id: false
+
+# Tool commands, tool targets (paths, URLs) and error text are recorded in
+# every content_capture mode. false leaves that text out of every span and
+# event; names, outcomes, error.type, tokens and timings stay.
+# Env: HERMES_OTEL_CAPTURE_TOOL_COMMAND, _TOOL_TARGET, _ERROR_MESSAGE
+capture_tool_command: true
+capture_tool_target: true
+capture_error_message: true
 ```
 
 `capture_previews`, `capture_full_prompts` and `capture_full_responses` are the pre-1.11 spellings of `content_capture`. They still work (`capture_previews: false` means `off`) and log a deprecation warning. See [Conversation capture](/configuration/conversation-capture) for what each mode writes, and [Privacy mode](/configuration/privacy) for `off`.

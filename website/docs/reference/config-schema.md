@@ -47,6 +47,9 @@ A numeric field's **Bounds** are checked at load (#487). A value outside them, i
 | `capture_full_prompts` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps prompts as previews in `full` mode |
 | `capture_full_responses` | bool | `true` | Deprecated: derived from `content_capture`; `false` keeps responses as previews in `full` mode |
 | `capture_sender_id` | bool | `false` | Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`) |
+| `capture_tool_command` | bool | `true` | `false` leaves the shell command out: `hermes.tool.command` on tool spans and events, `hermes.turn.tool_commands` on the turn root; see [Privacy mode](/configuration/privacy#tool-commands-targets-and-error-text) |
+| `capture_tool_target` | bool | `true` | `false` leaves the file path or URL out: `hermes.tool.target` on tool spans and events, `hermes.turn.tool_targets` on the turn root |
+| `capture_error_message` | bool | `true` | `false` leaves error text out: `error.message`, `exception.message` / `exception.stacktrace`, the span status description and the text in the `hermes.api.error` event body; `error.type` and the status code stay |
 | `capture_logs` | bool | `false` | Attach an OTel LoggingHandler to Python logging; see [OTel logs](/configuration/logs) |
 | `log_level` | string | `"INFO"` | Handler level: `DEBUG` / `INFO` / `WARNING` / `ERROR` / `CRITICAL` |
 | `log_attach_logger` | string \| null | *(unset)* | Logger to attach to; `null` = root, `hermes_otel` = the plugin only |

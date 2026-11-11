@@ -34,6 +34,10 @@ NOT_REGISTERED: Dict[str, str] = {
     "post_gateway_admission": "candidate for the gateway ingest root (#32)",
     "gateway_platform_event": "platform reactions / edits; low value for tracing (#400)",
     "on_room_member_activity": "bot-to-bot surfaces need a decision (#393)",
+    "on_session_open": "a client created or reopened a session before any turn; on_session_start already opens the session's telemetry at its first turn",
+    "on_session_delete": "a stored session was deleted or archived; housekeeping after the fact, no turn or span to attach it to",
+    "post_compaction": "candidate for a compaction counter and event (kind, reason, tokens before and after); not recorded yet",
+    "post_curator_run": "a curator pass wrote its report; background maintenance outside any turn, not agent telemetry",
 }
 
 

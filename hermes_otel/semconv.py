@@ -400,7 +400,7 @@ ROWS: Tuple[Row, ...] = (
         "agent / cron: end",
         "turn",
         "string",
-        "`|`-joined distinct paths/URLs and shell commands",
+        "`|`-joined distinct paths/URLs and shell commands; left out with `capture_tool_target: false` / `capture_tool_command: false`",
     ),
     Row(
         ("hermes.turn.tool_outcomes",),
@@ -854,14 +854,14 @@ ROWS: Tuple[Row, ...] = (
         "tool.*",
         "tool",
         "string",
-        "First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional)",
+        "First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional); left out with `capture_tool_target: false`",
     ),
     Row(
         ("hermes.tool.command",),
         "tool.*",
         "tool",
         "string",
-        "First non-empty `command` / `cmd` arg (optional)",
+        "First non-empty `command` / `cmd` arg (optional); left out with `capture_tool_command: false`",
     ),
     Row(
         ("hermes.tool.outcome",),
@@ -896,7 +896,7 @@ ROWS: Tuple[Row, ...] = (
         "tool.*",
         "error",
         "string",
-        "Result `error` text when the outcome is `error` (optional)",
+        "Result `error` text when the outcome is `error` (optional); left out with `capture_error_message: false`",
     ),
     Row(
         ("hermes.skill.name", "hermes.skill.source"),
@@ -1408,6 +1408,14 @@ SENSITIVE_ATTRIBUTES: frozenset = frozenset(
         "exception.stacktrace",
     }
 )
+# Text a tool call or a failure leaves on spans and events in every
+# ``content_capture`` mode, each group behind its own switch (#669):
+# ``capture_tool_command`` / ``capture_tool_target`` / ``capture_error_message``.
+# A switched-off group is removed by the pipeline before the live store and
+# every exporter, and from events before they are emitted.
+TOOL_COMMAND_KEYS: Tuple[str, ...] = ("hermes.tool.command", "hermes.turn.tool_commands")
+TOOL_TARGET_KEYS: Tuple[str, ...] = ("hermes.tool.target", "hermes.turn.tool_targets")
+ERROR_TEXT_KEYS: Tuple[str, ...] = ("error.message", "exception.message", "exception.stacktrace")
 COST_KEYS: Tuple[str, ...] = ("hermes.cost.usage",)
 COST_KEY = COST_KEYS[0]
 COST_STATUS_KEY = "hermes.cost.status"

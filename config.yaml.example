@@ -121,6 +121,24 @@
 # so keep it opt-in. CLI sessions usually leave it empty.
 # capture_sender_id: false
 
+# Tool commands, tool targets and error text are recorded in every
+# content_capture mode, `off` included. Set one to false to leave that text
+# out of every span and event, for every backend and the dashboard's store:
+#   capture_tool_command   hermes.tool.command, hermes.turn.tool_commands
+#   capture_tool_target    hermes.tool.target (file path or URL),
+#                          hermes.turn.tool_targets
+#   capture_error_message  error.message, exception.message / .stacktrace,
+#                          the span status description, the text in the
+#                          hermes.api.error event body
+# Tool names, outcomes, error.type, status codes, tokens and timings stay.
+# All three false with content_capture: "off" leaves no command line, path,
+# URL or error text on any span.
+# Env: HERMES_OTEL_CAPTURE_TOOL_COMMAND, HERMES_OTEL_CAPTURE_TOOL_TARGET,
+# HERMES_OTEL_CAPTURE_ERROR_MESSAGE
+# capture_tool_command: true
+# capture_tool_target: true
+# capture_error_message: true
+
 # Put the entire conversation_history the model is about to see on the
 # llm.* span's input.value. The api.* spans don't carry message-level
 # detail, so flipping this on is the easiest way to see what the model saw.
