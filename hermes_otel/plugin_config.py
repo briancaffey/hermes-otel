@@ -509,6 +509,24 @@ class HermesOtelConfig:
         "Gateway sessions add `hermes.sender.id` and `user.id` (`platform:sender`)",
         "Content capture",
     )
+    # ── Tool and error text (#669) ──────────────────────────────────────
+    # Independent of ``content_capture``: these are recorded in every mode
+    # unless switched off here. See ``omitted_attributes`` below.
+    capture_tool_command: bool = _field(
+        True,
+        "`false` leaves the shell command out: `hermes.tool.command` on tool spans and events, `hermes.turn.tool_commands` on the turn root; see [Privacy mode](/configuration/privacy#tool-commands-targets-and-error-text)",
+        "Content capture",
+    )
+    capture_tool_target: bool = _field(
+        True,
+        "`false` leaves the file path or URL out: `hermes.tool.target` on tool spans and events, `hermes.turn.tool_targets` on the turn root",
+        "Content capture",
+    )
+    capture_error_message: bool = _field(
+        True,
+        "`false` leaves error text out: `error.message`, `exception.message` / `exception.stacktrace`, the span status description and the text in the `hermes.api.error` event body; `error.type` and the status code stay",
+        "Content capture",
+    )
     # ── OTel logs signal ────────────────────────────────────────────────
     # Off by default because attaching to the root logger is invasive:
     # third-party libraries' logs are also exported.
@@ -744,6 +762,24 @@ class HermesOtelConfig:
     def captures_content(self) -> bool:
         """Whether any prompt, tool or response content is recorded (mode is not ``off``)."""
         return self.content_mode() != "off"
+
+    def omitted_attributes(self) -> frozenset:
+        """Attribute names the pipeline removes from every span and event (#669).
+
+        Empty by default. ``capture_tool_command`` / ``capture_tool_target`` /
+        ``capture_error_message`` set to false each add their group, in any
+        ``content_capture`` mode.
+        """
+        from .semconv import ERROR_TEXT_KEYS, TOOL_COMMAND_KEYS, TOOL_TARGET_KEYS
+
+        omitted: set = set()
+        if not self.capture_tool_command:
+            omitted.update(TOOL_COMMAND_KEYS)
+        if not self.capture_tool_target:
+            omitted.update(TOOL_TARGET_KEYS)
+        if not self.capture_error_message:
+            omitted.update(ERROR_TEXT_KEYS)
+        return frozenset(omitted)
 
     def captures_full_prompts(self) -> bool:
         """Whether api spans carry the complete prompt instead of a preview."""

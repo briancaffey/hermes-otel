@@ -332,7 +332,7 @@
    "span": "S3",
    "status": {
     "code": "ERROR",
-    "description": "exploded"
+    "description": "failed"
    },
    "trace": "T1"
   },

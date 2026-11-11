@@ -102,7 +102,7 @@ Set at **end** (turn summary; empty/zero aggregators are omitted):
 | `hermes.session.failed` | hermes | bool | Hermes' `failed` flag on `on_session_end` |
 | `hermes.turn.exit_reason` | hermes | string | Hermes' `turn_exit_reason` (`interrupted_by_user`, `guardrail_halt`, `context_compression_timeout`, `max_iterations_reached(n/m)` …), when reported |
 | `hermes.turn.tool_count`, `hermes.turn.tools` | hermes | int / string | Distinct tool names (sorted CSV, ≤500 chars) |
-| `hermes.turn.tool_targets`, `hermes.turn.tool_commands` | hermes | string | `\|`-joined distinct paths/URLs and shell commands |
+| `hermes.turn.tool_targets`, `hermes.turn.tool_commands` | hermes | string | `\|`-joined distinct paths/URLs and shell commands; left out with `capture_tool_target: false` / `capture_tool_command: false` |
 | `hermes.turn.tool_outcomes` | hermes | string | Sorted CSV of distinct outcomes |
 | `hermes.turn.skill_count`, `hermes.turn.skills` | hermes | int / string | Skills that loaded successfully this turn |
 | `hermes.turn.api_call_count` | hermes | int | `pre_api_request` hooks fired |
@@ -228,13 +228,13 @@ One per tool call (span kind `TOOL`), keyed by Hermes' `tool_call_id` so paralle
 | `hermes.tool.result.chars` | hermes | int | Size of the result string the model receives, every tool |
 | `hermes.terminal.output.chars`, `hermes.terminal.returncode`, `hermes.terminal.env_type` | hermes | int, int, string | Terminal tool only: the output size as the terminal tool handed it to Hermes' transform stage (after the capture window, before the head+tail limit, whitespace strip and redaction), the exit code and the environment type, observed on `transform_terminal_output` ([hooks](/reference/hooks#transform_terminal_output)) |
 | `hermes.terminal.output.truncated`, `hermes.terminal.output.dropped_chars` | hermes | bool, int | Terminal tool only: whether Hermes' output limit cut the output before the model saw it, and by how many characters (`dropped_chars` only when `true`). Read from Hermes' own record of the cut (the `output_total_chars` field of a capture-window spill, or the `[OUTPUT TRUNCATED - N chars omitted …]` notice of the head+tail limit), never from a size comparison, so whitespace stripping, ANSI removal and redaction are not mistaken for truncation |
-| `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional) |
-| `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional) |
+| `hermes.tool.target` | hermes | string | First non-empty `path` / `file_path` / `target` / `url` / `uri` arg (optional); left out with `capture_tool_target: false` |
+| `hermes.tool.command` | hermes | string | First non-empty `command` / `cmd` arg (optional); left out with `capture_tool_command: false` |
 | `hermes.tool.outcome` | hermes | string | `error` · `timeout` · `blocked` · `cancelled` from Hermes' hook status or the tool's own result status; `completed` means the tool returned and nothing reported a failure |
 | `hermes.tool.blocked_by` | hermes | string | Which governance floor blocked the call — `deny_rule` · `hardline` · `stdin_password_guard` (optional; only when positively classified, `outcome=blocked`) |
 | `hermes.tool.decided_by` | hermes | string | `hard_floor` on the tool span when a floor (not a human) blocked the call; see also `hermes.approval.decided_by` on `approval.*` spans (optional) |
 | `hermes.tool.git_commit` | hermes | bool | `true` when a terminal command was a `git commit` (matched as a word, so `git commit-tree` is not one) that exited 0: the call the commit counter ([metrics](/reference/metrics)) and the `commit` [event](/reference/log-events#commit) came from (optional) |
-| `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional) |
+| `error.message` | OTel | string | Result `error` text when the outcome is `error` (optional); left out with `capture_error_message: false` |
 | `hermes.skill.name`, `hermes.skill.source` | hermes | string | Bare skill name and `skill_view` / `path_match` when the call loaded a skill (optional) |
 | `hermes.tool.cpu.utilization.avg`, `hermes.tool.cpu.utilization.peak` | hermes | float | Process-tree CPU (0..1) during the call — `host_metrics` only |
 | `hermes.tool.gpu.utilization.avg`, `hermes.tool.gpu.utilization.peak` | hermes | float | Host GPU busy ratio (0..1) during the call — `host_metrics` + GPU only |

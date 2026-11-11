@@ -188,7 +188,7 @@ The first form is `logs.capture` (with `events on` when both switches are set), 
 
 ## Privacy
 
-[Privacy mode](/configuration/privacy) (`content_capture: off`) suppresses **span** content and, through `logs.events.content: inherit`, the content attributes on events. It does **not** filter forwarded log records: a record's body is whatever Hermes or a library passed to `logger.info(...)`. Secrets in it are redacted (see [What never leaves the machine](#what-never-leaves-the-machine)); other sensitive text flows unless the logging application redacts it first. If a chatty logger logs user text at INFO, exclude it with `exclude_loggers`, raise its floor with `logger_levels`, or ship only turn-attributed lines with `only_in_turn: true`.
+[Privacy mode](/configuration/privacy) (`content_capture: off`) suppresses **span** content and, through `logs.events.content: inherit`, the content attributes on events. `capture_tool_command`, `capture_tool_target` and `capture_error_message: false` take [their attributes](/configuration/privacy#tool-commands-targets-and-error-text) off events too, and the error text out of the `hermes.api.error` body. None of this filters forwarded log records: a record's body is whatever Hermes or a library passed to `logger.info(...)`. Secrets in it are redacted (see [What never leaves the machine](#what-never-leaves-the-machine)); other sensitive text flows unless the logging application redacts it first. If a chatty logger logs user text at INFO, exclude it with `exclude_loggers`, raise its floor with `logger_levels`, or ship only turn-attributed lines with `only_in_turn: true`.
 
 ## Interaction with other signals
 

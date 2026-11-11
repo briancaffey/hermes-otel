@@ -54,6 +54,7 @@ try:
     from opentelemetry.sdk.resources import Resource
     from opentelemetry.sdk.trace import Event, ReadableSpan, SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import BatchSpanProcessor, SpanExporter, SpanExportResult
+    from opentelemetry.trace import Status
 
     _OTEL_AVAILABLE = True
 except ImportError as e:  # pragma: no cover — plugin is unusable without OTel
@@ -132,7 +133,7 @@ def _serialize_span(span: Any) -> Dict[str, Any]:
 
 
 _redacted_lock = threading.Lock()
-# span -> its redacted copy. The live processor and every backend's exporter see
+# span -> (omit, its redacted copy). The live processor and every backend's exporter see
 # the same span object, so the redactor runs once per span however many
 # backends there are; weak keys drop an entry when the SDK lets the span go.
 _redacted: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
@@ -141,10 +142,16 @@ _redacted: "weakref.WeakKeyDictionary[Any, Any]" = weakref.WeakKeyDictionary()
 _UNCHANGED = object()
 
 
-def _redact_attrs(attrs: Any) -> Optional[Dict[str, Any]]:
-    """*attrs* with :data:`SENSITIVE_ATTRIBUTES` redacted, or None when nothing changed."""
+def _redact_attrs(attrs: Any, omit: frozenset = frozenset()) -> Optional[Dict[str, Any]]:
+    """*attrs* without the *omit* names and with :data:`SENSITIVE_ATTRIBUTES`
+    redacted, or None when nothing changed."""
     out: Optional[Dict[str, Any]] = None
     for key, value in (attrs or {}).items():
+        if key in omit:
+            if out is None:
+                out = dict(attrs)
+            del out[key]
+            continue
         if key not in SENSITIVE_ATTRIBUTES:
             continue
         redacted = redact_value(value)
@@ -155,16 +162,29 @@ def _redact_attrs(attrs: Any) -> Optional[Dict[str, Any]]:
     return out
 
 
-def _redact_span_uncached(span: Any) -> Any:
-    attrs = _redact_attrs(getattr(span, "attributes", None))
+def _redact_status(status: Any, omit: frozenset) -> Any:
+    """*status* with its description redacted, or emptied when error text is
+    omitted (the description is the same text as ``error.message``)."""
+    description = getattr(status, "description", None)
+    if not description:
+        return status
+    kept = "" if "error.message" in omit else redact_value(description)
+    if kept == description:
+        return status
+    return Status(status_code=status.status_code, description=kept)
+
+
+def _redact_span_uncached(span: Any, omit: frozenset = frozenset()) -> Any:
+    attrs = _redact_attrs(getattr(span, "attributes", None), omit)
     events = list(getattr(span, "events", None) or ())
     events_changed = False
     for i, ev in enumerate(events):
-        ev_attrs = _redact_attrs(getattr(ev, "attributes", None))
+        ev_attrs = _redact_attrs(getattr(ev, "attributes", None), omit)
         if ev_attrs is not None:
             events[i] = Event(ev.name, ev_attrs, ev.timestamp)
             events_changed = True
-    if attrs is None and not events_changed:
+    status = _redact_status(span.status, omit)
+    if attrs is None and not events_changed and status is span.status:
         return span
     return ReadableSpan(
         name=span.name,
@@ -175,35 +195,43 @@ def _redact_span_uncached(span: Any) -> Any:
         events=events,
         links=span.links,
         kind=span.kind,
-        status=span.status,
+        status=status,
         start_time=span.start_time,
         end_time=span.end_time,
         instrumentation_scope=getattr(span, "instrumentation_scope", None),
     )
 
 
-def redact_span(span: Any) -> Any:
-    """The span with secrets masked in its content attributes and event attributes.
+def redact_span(span: Any, omit: frozenset = frozenset()) -> Any:
+    """The span with secrets masked in its content attributes, event
+    attributes and status description, and without the *omit* attributes.
 
-    Only :data:`semconv.SENSITIVE_ATTRIBUTES` are touched; ids, model names
-    and numbers pass through. A span with nothing to mask is returned as the
-    same object. The result is cached per span, so the live store and every
-    backend share one redaction pass. Never raises: on failure the span goes
-    out as it was, the same fail-open choice the log formatter makes.
+    Only :data:`semconv.SENSITIVE_ATTRIBUTES` are masked; ids, model names
+    and numbers pass through. *omit* is ``HermesOtelConfig.omitted_attributes()``:
+    those names are removed from the span and its events, and the status
+    description is emptied with ``error.message`` (#669). A span with nothing
+    to change is returned as the same object. The result is cached per span
+    (*omit* is fixed for the life of a pipeline), so the live store and every
+    backend share one pass. Masking fails open, like the log formatter: on
+    failure the span goes out unmasked. Omission does not: a span that cannot
+    be rebuilt while something is omitted is dropped rather than exported with
+    the text an operator switched off.
     """
     if not _OTEL_AVAILABLE:
         return span
     try:
         with _redacted_lock:
             cached = _redacted.get(span)
-        if cached is not None:
-            return span if cached is _UNCHANGED else cached
-        out = _redact_span_uncached(span)
+        # A cached result counts only for the same *omit*: a pass that omitted
+        # nothing must never stand in for one that omits something.
+        if cached is not None and cached[0] == omit:
+            return span if cached[1] is _UNCHANGED else cached[1]
+        out = _redact_span_uncached(span, omit)
         with _redacted_lock:
-            _redacted[span] = _UNCHANGED if out is span else out
+            _redacted[span] = (omit, _UNCHANGED if out is span else out)
         return out
     except Exception:
-        return span
+        return None if omit else span
 
 
 def _is_usage_rollup_span(span: Any) -> bool:
@@ -311,10 +339,15 @@ class _LoggingExporter(_DelegatingExporter):
 if _OTEL_AVAILABLE:
 
     class _ContentRedactingExporter(_DelegatingExporter, SpanExporter):
-        """Redact content attributes before export; :func:`redact_span` caches the result per span, so this pass is shared with the live store and every other backend."""
+        """Redact content attributes and drop the omitted ones before export; :func:`redact_span` caches the result per span, so this pass is shared with the live store and every other backend."""
+
+        def __init__(self, inner: Any, omit: frozenset = frozenset()) -> None:
+            super().__init__(inner)
+            self._omit = omit
 
         def export(self, spans: Any) -> Any:
-            return self._inner.export([redact_span(span) for span in spans])
+            out = [redact_span(span, self._omit) for span in spans]
+            return self._inner.export([span for span in out if span is not None])
 
     class _RootUsageStrippingExporter(_DelegatingExporter, SpanExporter):
         """Delegating exporter that drops the token roll-up from agent-kind spans.
@@ -336,15 +369,18 @@ if _OTEL_AVAILABLE:
     class _LiveSpanProcessor(SpanProcessor):
         """SpanProcessor that mirrors finished spans into the in-process LiveStore."""
 
-        def __init__(self, store: Any) -> None:
+        def __init__(self, store: Any, omit: frozenset = frozenset()) -> None:
             self._store = store
+            self._omit = omit
 
         def on_start(self, span: Any, parent_context: Any = None) -> None:  # noqa: D401
             pass
 
         def on_end(self, span: Any) -> None:
             try:
-                self._store.add_span(_serialize_span(redact_span(span)))
+                redacted = redact_span(span, self._omit)
+                if redacted is not None:
+                    self._store.add_span(_serialize_span(redacted))
                 if getattr(span, "parent", None) is None:
                     # A root span ending is the end of a turn. Commit now rather
                     # than on the writer thread's next tick: a one-shot process
@@ -673,7 +709,7 @@ def _build_exporter(signal: str, b: _ResolvedBackend, config: Any) -> Any:
             inner: Any = create_exporter(
                 b, "traces", OTLPSpanExporter, **exporter_kwargs(target, b.display_name)
             )
-        inner = _ContentRedactingExporter(inner)
+        inner = _ContentRedactingExporter(inner, config.omitted_attributes())
         if not b.root_usage:
             # This backend sums usage over every span (#327).
             inner = _RootUsageStrippingExporter(inner)
@@ -763,7 +799,7 @@ def build_pipeline(
             retention_hours=config.dashboard_live_retention_hours,
         )
         if store is not None:
-            _attach(_LiveSpanProcessor(store))
+            _attach(_LiveSpanProcessor(store, config.omitted_attributes()))
             pipeline.live_active = True
             # The live Logs tab is wired in init_logs_pipeline (same provider
             # as the OTLP exporters, #265).
@@ -836,6 +872,17 @@ def build_pipeline(
             "[hermes-otel] ✓ content_capture=full — complete prompts and responses on every "
             "api.* span (set content_capture: preview or off to reduce)"
         )
+    left_out = [
+        label
+        for label, captured in (
+            ("tool commands", config.capture_tool_command),
+            ("tool targets", config.capture_tool_target),
+            ("error messages", config.capture_error_message),
+        )
+        if not captured
+    ]
+    if left_out:
+        logger.warning("[hermes-otel] ⚠ not recorded: %s", ", ".join(left_out))
     if len(pipeline.span_processors) > 1:
         logger.info(
             f"[hermes-otel] ✓ Multi-backend fan-out active "
