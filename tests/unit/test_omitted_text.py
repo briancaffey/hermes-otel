@@ -93,11 +93,11 @@ class TestRedactSpan:
         attrs = {
             "tool.name": "terminal",
             "hermes.tool.outcome": "error",
-            "hermes.tool.command": "cat /srv/acme/secrets.env",
-            "hermes.tool.target": "/srv/acme/secrets.env",
-            "hermes.turn.tool_commands": "cat /srv/acme/secrets.env|ls",
-            "hermes.turn.tool_targets": "/srv/acme/secrets.env",
-            "error.message": "no such file: /srv/acme/secrets.env",
+            "hermes.tool.command": "grep -r ledger /srv/acme/reports",
+            "hermes.tool.target": "/srv/acme/reports/ledger.csv",
+            "hermes.turn.tool_commands": "grep -r ledger /srv/acme/reports|ls",
+            "hermes.turn.tool_targets": "/srv/acme/reports/ledger.csv",
+            "error.message": "no such file: /srv/acme/reports/ledger.csv",
         }
         out = redact_span(_span(attrs), self.OMIT)
         assert dict(out.attributes) == {"tool.name": "terminal", "hermes.tool.outcome": "error"}
