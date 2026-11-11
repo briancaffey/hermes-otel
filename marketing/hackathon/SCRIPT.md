@@ -58,6 +58,7 @@ The dashboard also displays data from fifteen OTel backends, using their APIs an
 
 > ANY OTLP BACKEND · ALL AT ONCE
 The plugin does asynchronous fan-out to any number of configured backends, so a slow backend doesn't slow your agent.
+Hermes OTel supports virtually every OpenTelemetry compatible backend.
 
 ## S08 — two conventions
 

@@ -19,9 +19,16 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 LEAD = 0.35
-TAIL = {"S01": 0.5, "S03": 0.5, "S07": 0.3, "S11": 1.8}
+TAIL = {"S01": 0.5, "S03": 0.5, "S07": 0.3, "S11": 2.0}
 DEFAULT_TAIL = 0.3
-EXTRA = {"S04": 2.4, "S07": 3.8}  # S04: the opened span's attributes scroll; S07: rapid backend cuts + wall
+EXTRA = {"S04": 2.4, "S07": 1.0}  # S07: the wall holds after the voice; S04: the opened span's attributes scroll (S07's cuts + wall now run under its second line)
+# S07's rapid cuts ride the music: the bed is 120 bpm with its beats at BEAT_PHASE + n * 0.5 s of film
+# time (measured from assets/bgm/bed.wav), so one backend UI per eighth note (CUT), each cut snapped
+# to a video frame. The cut times go to s07.html in its CUES line (cuts, wall).
+CUT, NCUT, BEAT_PHASE, FPS = 0.25, 10, 0.06, 30
+# Voice clips cut short by hand in the Studio (seconds played from the clip's start), kept across rebuilds.
+# S10: Brian trimmed a sound artifact off the end on 2026-11-11.
+VOICE_PLAY = {"S10": 5.51}
 MUSIC_VOL = 0.2               # under the voice; the ACE-Step bed is normalised to -16 LUFS first
 LIMIT = 89.9
 
@@ -37,14 +44,11 @@ SFX = [
     ("S05", r"chart", -0.1, "click-soft.mp3", 0.45),
     ("S05", r"logs?$", -0.1, "click-soft.mp3", 0.45),
     ("S06", r"dashboard", 0.0, "click-soft.mp3", 0.5),
-    *[("S07", ("cut", i), 0.0, ["whoosh-short.mp3", "whoosh.mp3", "click-soft.mp3"][i % 3], 0.22)
-      for i in range(7)],
+    *[("S07", ("cut", i), 0.0, "click-soft.mp3", 0.2) for i in range(NCUT)],
     ("S09", r"implement", -0.05, "click-soft.mp3", 0.6),
     ("S10", ("end", 0.3), 0.0, "whoosh-short.mp3", 0.3),
     ("S11", r"catalog", 0.1, "typing.mp3", 0.35),
 ]
-# S07's rapid cuts: one backend UI every CUT seconds once the voice ends (mirrors s07.html).
-CUT = 0.30
 
 
 def probe(p: Path) -> float:
@@ -72,11 +76,24 @@ def main() -> int:
     total = round(t, 3)
 
     for p in plan:
+        if p["sid"] != "S07":
+            continue
+        # first cut: the eighth note nearest the start of the second line
+        raw = p["start"] + (p["sents"][1][0] - 0.05 if len(p["sents"]) > 1 else LEAD + p["voice"] + 0.1)
+        g0 = BEAT_PHASE + round((raw - BEAT_PHASE) / CUT) * CUT
+        # 2 ms early, so the frame sampled exactly on the cut already shows the new shot
+        snap = lambda a: round(round(a * FPS) / FPS - p["start"] - 0.002, 3)  # noqa: E731
+        p["cuts"] = [snap(g0 + i * CUT) for i in range(NCUT)]
+        p["wall"] = snap(g0 + NCUT * CUT)
+
+    for p in plan:
         f = ROOT / "compositions" / f"{p['id']}.html"
         if not f.exists():
             print(f"  (no {f.name} yet)")
             continue
         cue = {"dur": p["dur"], "lead": LEAD, "sents": p["sents"], "w": p["words"]}
+        if "cuts" in p:
+            cue.update(cuts=p["cuts"], wall=p["wall"])
         src = f.read_text()
         f.write_text(re.sub(r"/\*CUES\*/.*?/\*END\*/", lambda _m: "/*CUES*/" + json.dumps(cue) + "/*END*/",
                             src, flags=re.S))
@@ -94,7 +111,7 @@ def main() -> int:
             hits = [x for x in words if re.match(w[1], x["t"])]
             return hits[w[2]]["s"] if len(hits) > w[2] else None
         if w[0] == "cut":
-            return LEAD + p["voice"] + 0.1 + w[1] * CUT
+            return p["cuts"][w[1]]
         return None
 
     hosts, voice, sfx = [], [], []
@@ -104,7 +121,7 @@ def main() -> int:
             f'           class="clip" data-start="{p["start"]}" data-duration="{p["dur"]}" data-track-index="1"\n'
             f'           data-track-kind="graphics" data-width="1920" data-height="1080"></div>')
         voice.append(f'      <audio id="vo-{p["id"]}" class="clip" src="assets/voice/{p["sid"]}.wav" '
-                     f'data-start="{round(p["start"] + LEAD, 3)}" data-duration="{p["voice"]}" data-track-index="10" '
+                     f'data-start="{round(p["start"] + LEAD, 3)}" data-duration="{VOICE_PLAY.get(p["sid"], p["voice"])}" data-track-index="10" '
                      f'data-volume="1"></audio>')
     by_sid = {p["sid"]: p for p in plan}
     for n, (sid, w, off, file, vol) in enumerate(SFX):

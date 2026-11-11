@@ -144,13 +144,17 @@ backends:
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 10.616, "lead": 0.35, "sents": [[0.35, 6.516]], "w": [{"t": "the", "s": 0.5, "e": 0.58}, {"t": "plugin", "s": 0.66, "e": 0.98}, {"t": "does", "s": 1.06, "e": 1.14}, {"t": "asynchronous", "s": 1.3, "e": 1.94}, {"t": "fan", "s": 2.1, "e": 2.18}, {"t": "out", "s": 2.26, "e": 2.34}, {"t": "to", "s": 2.5, "e": 2.58}, {"t": "any", "s": 2.66, "e": 2.74}, {"t": "number", "s": 2.82, "e": 2.9}, {"t": "of", "s": 2.98, "e": 3.06}, {"t": "configured", "s": 3.38, "e": 3.7}, {"t": "backends", "s": 3.78, "e": 4.5}, {"t": "so", "s": 4.42, "e": 4.5}, {"t": "a", "s": 4.66, "e": 4.74}, {"t": "slow", "s": 4.74, "e": 4.82}, {"t": "backend", "s": 4.98, "e": 5.22}, {"t": "doesnt", "s": 5.38, "e": 5.54}, {"t": "slow", "s": 5.62, "e": 5.7}, {"t": "your", "s": 5.86, "e": 5.94}, {"t": "agent", "s": 6.02, "e": 6.516}]}/*END*/;
+      const C = /*CUES*/{"dur": 10.091, "lead": 0.35, "sents": [[0.35, 5.62], [5.7, 8.791]], "w": [{"t": "the", "s": 0.5, "e": 0.58}, {"t": "plugin", "s": 0.66, "e": 0.98}, {"t": "does", "s": 1.06, "e": 1.14}, {"t": "asynchronous", "s": 1.22, "e": 1.86}, {"t": "fan", "s": 1.86, "e": 1.94}, {"t": "out", "s": 2.1, "e": 2.18}, {"t": "to", "s": 2.26, "e": 2.34}, {"t": "any", "s": 2.34, "e": 2.42}, {"t": "number", "s": 2.42, "e": 2.5}, {"t": "of", "s": 2.5, "e": 2.58}, {"t": "configured", "s": 2.74, "e": 3.06}, {"t": "backends", "s": 3.14, "e": 3.78}, {"t": "so", "s": 3.7, "e": 3.78}, {"t": "a", "s": 3.86, "e": 3.94}, {"t": "slow", "s": 3.94, "e": 4.1}, {"t": "backend", "s": 4.18, "e": 4.5}, {"t": "doesnt", "s": 4.58, "e": 4.74}, {"t": "slow", "s": 4.82, "e": 4.9}, {"t": "your", "s": 4.98, "e": 5.06}, {"t": "agent", "s": 5.14, "e": 5.62}, {"t": "hermes", "s": 5.7, "e": 6.02}, {"t": "hotel", "s": 6.18, "e": 6.34}, {"t": "supports", "s": 6.42, "e": 6.66}, {"t": "virtually", "s": 6.66, "e": 6.9}, {"t": "every", "s": 7.14, "e": 7.3}, {"t": "opentelemetry", "s": 7.54, "e": 8.1}, {"t": "compatible", "s": 8.18, "e": 8.5}, {"t": "backend", "s": 8.5, "e": 8.66}], "cuts": [5.564, 5.831, 6.064, 6.331, 6.564, 6.831, 7.064, 7.331, 7.564, 7.831], "wall": 8.064}/*END*/;
       const W = C.w || [], D = C.dur || 16;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       // one sentence: A (the config) under "does asynchronous fan-out", B (the queues) from "to any number of ..."
       const s2 = at(/^any$/, 0, at(/^number$/, 0, 2.8)) - 0.15;
-      const vEnd = C.sents[C.sents.length - 1][1];
-      const CUT = 0.30, NCUT = 7, c0 = vEnd + 0.1;   // must match tools/build.py (sfx on each cut)
+      // sentence 1 = the fan-out (A, then B); sentence 2 ("supports virtually every ... backend")
+      // is spoken over the rapid cuts and the wall
+      const vEnd = C.sents[0][1];
+      // the cut times come from tools/build.py: eighth notes of the music bed, snapped to video frames
+      const cuts = C.cuts || Array.from({ length: 10 }, (_, i) => vEnd + 0.1 + i * 0.25);
+      const w0 = C.wall || cuts[cuts.length - 1] + 0.25;
       // queue blocks: 4 lanes. Fast lanes stream for the whole sentence; lane 2 (the slow
       // backend) takes blocks in at the same rate but drains slowly, so only its queue backs up.
       const dots = document.getElementById("s07-dots");
@@ -185,13 +189,12 @@ backends:
       tl.fromTo("#s07-slow", { opacity: 0 }, { opacity: 1, duration: 0.3 }, at(/^slow$/, 0, s2 + 2));
       tl.fromTo("#s07-bline", { opacity: 0, y: 12 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, at(/^agent/, 0, vEnd - 0.5) - 0.3);
       // C: rapid cuts on a steady pulse
-      for (let i = 0; i < NCUT; i++) {
-        tl.fromTo("#s07-c" + i, { opacity: 0 }, { opacity: 1, duration: 0.01 }, c0 + i * CUT);
-        tl.fromTo(`#s07-c${i} img.ui`, { scale: 1.06 }, { scale: 1.0, duration: CUT, ease: "power2.out" }, c0 + i * CUT);
-      }
+      // hard cuts: each shot is simply on from its cut time, with no fade and no settle
+      cuts.forEach((t, i) => tl.set("#s07-c" + i, { opacity: 1 }, t));
+      tl.set("#s07-b", { opacity: 0 }, cuts[0]);   // the queue blocks must not show through the first shot
       // D: the wall
-      const w0 = c0 + NCUT * CUT;
-      tl.fromTo("#s07-d", { opacity: 0 }, { opacity: 1, duration: 0.01 }, w0);
+      tl.set(".s07-cut", { opacity: 0 }, w0);      // hard cut to the wall: the last shot does not linger under it
+      tl.set("#s07-d", { opacity: 1 }, w0);
       tl.fromTo(".s07-tile", { opacity: 0, scale: 0.9 }, { opacity: 1, scale: 1, duration: 0.25, stagger: 0.025, ease: "expo.out" }, w0);
       tl.fromTo("#s07-27", { opacity: 0, y: 40 }, { opacity: 1, y: 0, duration: 0.4, ease: "expo.out" }, w0 + 0.15);
       tl.fromTo("#s07-27l", { opacity: 0 }, { opacity: 1, duration: 0.3 }, w0 + 0.3);

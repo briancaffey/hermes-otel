@@ -19,10 +19,17 @@
     #s11-emblem img { width: 640px; height: 640px; }
     #s11-title { position: absolute; left: 830px; top: 250px; font-family: "Rules Compressed"; font-weight: 500; font-size: 300px;
       line-height: 0.84; color: #0000f2; white-space: nowrap; }
+    /* whole words, not letters, and a margin instead of a space character: the gap cannot land mid-word */
     .s11-l { display: inline-block; }
+    .s11-l2 { margin-left: 0.2em; }
     #s11-follow { position: absolute; left: 838px; top: 540px; font-family: "Mondwest"; font-size: 76px; color: #0000f2; }
-    #s11-url { position: absolute; left: 0; width: 1920px; top: 880px; font-size: 28px; text-align: center; }
-    #s11-hack { position: absolute; left: 0; width: 1920px; top: 930px; font-size: 28px; text-align: center; color: #6e6eff; }
+    /* the repo's numbers on 2026-11-11 (gh repo view / contributors API / git rev-list --count origin/main) */
+    #s11-stats { position: absolute; left: 838px; top: 650px; display: flex; gap: 64px; }
+    .s11-stat b { display: block; font-family: "Rules Compressed"; font-weight: 500; font-size: 104px; line-height: 0.9; color: #0000f2; }
+    .s11-stat span { display: block; margin-top: 6px; font-family: "JB Mono"; font-weight: 700; font-size: 24px; letter-spacing: 0.18em; color: #6e6eff; }
+    #s11-welcome { position: absolute; left: 838px; top: 800px; font-family: "Mondwest"; font-size: 50px; color: #0000f2; }
+    #s11-url { position: absolute; left: 0; width: 1920px; top: 920px; font-size: 28px; text-align: center; }
+    #s11-hack { position: absolute; left: 0; width: 1920px; top: 966px; font-size: 28px; text-align: center; color: #6e6eff; }
   </style>
   <div id="root" data-composition-id="s11" data-width="1920" data-height="1080">
     <div id="s11-paper"></div>
@@ -35,15 +42,21 @@
     </div>
     <div id="s11-b2">
       <div id="s11-emblem"><img src="assets/gen/a11-emblem.png" alt="Engraved emblem: a winged caduceus crossed with a telescope in a laurel wreath" /></div>
-      <div id="s11-title"><span class="s11-l">H</span><span class="s11-l">E</span><span class="s11-l">R</span><span class="s11-l">M</span><span class="s11-l">E</span><span class="s11-l">S</span> <span class="s11-l">O</span><span class="s11-l">T</span><span class="s11-l">E</span><span class="s11-l">L</span></div>
+      <div id="s11-title"><span class="s11-l">HERMES</span><span class="s11-l s11-l2">OTEL</span></div>
       <div id="s11-follow">Follow the messenger.</div>
+      <div id="s11-stats">
+        <div class="s11-stat"><b>82</b><span>STARS</span></div>
+        <div class="s11-stat"><b>18</b><span>CONTRIBUTORS</span></div>
+        <div class="s11-stat"><b>464</b><span>COMMITS</span></div>
+      </div>
+      <div id="s11-welcome">Contributions welcome.</div>
       <div id="s11-url" class="s11-mono">GITHUB.COM/BRIANCAFFEY/HERMES-OTEL</div>
       <div id="s11-hack" class="s11-mono">HERMES AGENT PLUGIN HACKATHON · @NOUSRESEARCH</div>
     </div>
   </div>
   <script>
     (function () {
-      const C = /*CUES*/{"dur": 7.307, "lead": 0.35, "sents": [[0.35, 3.71], [3.79, 5.507]], "w": [{"t": "open", "s": 0.99, "e": 1.23}, {"t": "source", "s": 1.23, "e": 1.47}, {"t": "and", "s": 2.03, "e": 2.11}, {"t": "in", "s": 2.19, "e": 2.27}, {"t": "the", "s": 2.27, "e": 2.35}, {"t": "hermes", "s": 2.35, "e": 2.75}, {"t": "plug", "s": 2.83, "e": 2.99}, {"t": "in", "s": 3.07, "e": 3.15}, {"t": "catalog", "s": 3.15, "e": 3.71}, {"t": "hermes", "s": 3.79, "e": 4.19}, {"t": "hotel", "s": 4.43, "e": 4.67}, {"t": "follow", "s": 4.99, "e": 5.15}, {"t": "the", "s": 5.15, "e": 5.23}, {"t": "messenger", "s": 5.23, "e": 5.507}]}/*END*/;
+      const C = /*CUES*/{"dur": 7.507, "lead": 0.35, "sents": [[0.35, 3.71], [3.79, 5.507]], "w": [{"t": "open", "s": 0.99, "e": 1.23}, {"t": "source", "s": 1.23, "e": 1.47}, {"t": "and", "s": 2.03, "e": 2.11}, {"t": "in", "s": 2.19, "e": 2.27}, {"t": "the", "s": 2.27, "e": 2.35}, {"t": "hermes", "s": 2.35, "e": 2.75}, {"t": "plug", "s": 2.83, "e": 2.99}, {"t": "in", "s": 3.07, "e": 3.15}, {"t": "catalog", "s": 3.15, "e": 3.71}, {"t": "hermes", "s": 3.79, "e": 4.19}, {"t": "hotel", "s": 4.43, "e": 4.67}, {"t": "follow", "s": 4.99, "e": 5.15}, {"t": "the", "s": 5.15, "e": 5.23}, {"t": "messenger", "s": 5.23, "e": 5.507}]}/*END*/;
       const W = C.w || [], D = C.dur || 8.5;
       const at = (re, n, fb) => { const h = W.filter((w) => re.test(w.t)); return h.length > (n || 0) ? h[n || 0].s : fb; };
       const s2 = (C.sents[1] || [3.2])[0];
@@ -56,10 +69,12 @@
       tl.fromTo("#s11-b2", { opacity: 0 }, { opacity: 1, duration: 0.01 }, s2 - 0.08);
       tl.fromTo("#s11-emblem", { clipPath: "circle(0px at 320px 320px)" }, { clipPath: "circle(300px at 320px 320px)", duration: 0.7, ease: "power3.out" }, s2 - 0.08);
       tl.fromTo("#s11-emblem img", { scale: 1.12 }, { scale: 1.0, duration: D - s2, ease: "power2.out" }, s2 - 0.08);
-      tl.fromTo(".s11-l", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.2, stagger: 0.04, ease: "expo.out" }, s2);
+      tl.fromTo(".s11-l", { opacity: 0, y: 24 }, { opacity: 1, y: 0, duration: 0.3, stagger: 0.15, ease: "expo.out" }, s2);
       const f = at(/follow/, 0, s2 + 1.4);
       tl.fromTo("#s11-follow", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, f - 0.1);
-      tl.fromTo(["#s11-url", "#s11-hack"], { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.15 }, f + 0.8);
+      tl.fromTo(".s11-stat", { opacity: 0, y: 16 }, { opacity: 1, y: 0, duration: 0.3, stagger: 0.12, ease: "expo.out" }, s2 + 0.5);
+      tl.fromTo("#s11-welcome", { opacity: 0, y: 10 }, { opacity: 1, y: 0, duration: 0.3, ease: "expo.out" }, f + 0.45);
+      tl.fromTo(["#s11-url", "#s11-hack"], { opacity: 0 }, { opacity: 1, duration: 0.3, stagger: 0.15 }, f + 0.65);
       window.__timelines["s11"] = tl;
     })();
   </script>
