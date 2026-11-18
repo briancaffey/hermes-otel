@@ -392,7 +392,9 @@ if _OTEL_AVAILABLE:
 
         def shutdown(self) -> None:
             try:
-                self._store.flush()
+                from .live_store_registry import release_live_store
+
+                release_live_store(self._store)
             except Exception:  # pragma: no cover
                 pass
 

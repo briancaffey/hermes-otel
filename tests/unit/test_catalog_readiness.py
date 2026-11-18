@@ -93,9 +93,13 @@ class TestManifestV2:
 class _Ctx:
     def __init__(self):
         self.hooks = []
+        self.unload_callbacks = []
 
     def register_hook(self, name, callback):
         self.hooks.append(name)
+
+    def on_unload(self, callback):
+        self.unload_callbacks.append(callback)
 
     def register_skill(self, name, path, description=""):
         pass
@@ -113,7 +117,12 @@ def enabled_tracer(monkeypatch):
         def init(self):
             return True
 
-    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: _T())
+        def shutdown(self):
+            pass
+
+    tracer = _T()
+    monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: tracer)
+    return tracer
 
 
 def _fake_hermes_cli(monkeypatch, valid_hooks):
@@ -129,6 +138,11 @@ def _fake_hermes_cli(monkeypatch, valid_hooks):
 
 
 class TestRegisteredHooksMatchManifest:
+    def test_registers_tracer_shutdown_for_plugin_unload(self, enabled_tracer):
+        ctx = _Ctx()
+        hermes_otel.register(ctx)
+        assert ctx.unload_callbacks == [enabled_tracer.shutdown]
+
     def test_registry_not_importable_registers_exactly_the_declared_hooks(
         self, monkeypatch, enabled_tracer
     ):

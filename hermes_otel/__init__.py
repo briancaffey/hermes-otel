@@ -23,6 +23,9 @@ def register(ctx):
 
     tracer = get_tracer()
     tracer.init()
+    on_unload = getattr(ctx, "on_unload", None)
+    if callable(on_unload):
+        on_unload(tracer.shutdown)
 
     if not tracer.is_enabled:
         return
