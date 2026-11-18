@@ -47,6 +47,30 @@ def live_plugin(tmp_path):
 
 
 class TestLivePipeline:
+    def test_span_processor_shutdown_releases_the_store_for_reload(self, monkeypatch):
+        import hermes_otel.live_store_registry as registry
+        from hermes_otel.pipeline import _LiveSpanProcessor
+
+        class Store:
+            closed = False
+            flushed = False
+
+            def close(self):
+                self.closed = True
+
+            def flush(self):
+                self.flushed = True
+
+        store = Store()
+        monkeypatch.setattr(registry, "_LIVE_STORE", store)
+        monkeypatch.setattr(registry, "_STORES_BY_PATH", {"live.db": store})
+        _LiveSpanProcessor(store).shutdown()
+
+        assert store.closed is True
+        assert store.flushed is False
+        assert registry._LIVE_STORE is None
+        assert registry._STORES_BY_PATH == {}
+
     def test_full_turn_lands_in_store(self, live_plugin):
         store, _ = live_plugin
         hooks.on_session_start(session_id="s1", model="gpt-4", platform="telegram")

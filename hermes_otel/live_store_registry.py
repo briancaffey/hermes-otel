@@ -96,6 +96,19 @@ def _close_reader(store: Any) -> None:
             pass
 
 
+def release_live_store(store: Any) -> None:
+    """Forget and close ``store`` so a later plugin load creates a fresh one."""
+    global _LIVE_STORE
+    with _LIVE_LOCK:
+        if _LIVE_STORE is store:
+            _LIVE_STORE = None
+        for path, reader in list(_STORES_BY_PATH.items()):
+            if reader is store:
+                _STORES_BY_PATH.pop(path, None)
+                _CREATE_ERRORS.pop(path, None)
+    _close_reader(store)
+
+
 def _configured_limits() -> Dict[str, Any]:
     """The row cap and retention of this home's config, so a reader that trims
     on open never trims harder than the gateway that writes the file."""
