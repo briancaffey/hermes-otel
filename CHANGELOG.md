@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.0...hermes-otel-v1.33.1) (2026-11-21)
+
+
+### Bug Fixes
+
+* **lifecycle:** close live store on plugin unload ([390bcc9](https://github.com/briancaffey/hermes-otel/commit/390bcc98c5561b6fae4da9cb359936a1ff22669b))
+
 ## [1.33.0](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.32.6...hermes-otel-v1.33.0) (2026-11-11)
 
 
