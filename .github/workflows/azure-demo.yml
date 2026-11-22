@@ -4,8 +4,6 @@ name: Azure demo
 # Application Insights (deploy/azure). Run by hand: it creates billed
 # resources in the subscription behind the `azure-demo` environment.
 on:
-  push:
-    branches: [chore/azure-demo] # temporary: prove the pipeline before merging
   workflow_dispatch:
     inputs:
       action:
