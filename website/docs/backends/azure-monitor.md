@@ -16,9 +16,33 @@ Monitor Agent, the AKS add-on, or an OpenTelemetry Collector. So there is no
 [`otlp`](/backends/otlp) type ([#228](https://github.com/briancaffey/hermes-otel/issues/228)).
 
 **Signals:** traces + metrics + logs (through the Collector). **Deployment:**
-Azure subscription plus one local container. **Status:** documented, not
-verified; this page was written against Microsoft's and the exporter's docs on
-2026-10-11 without an Application Insights resource to send to.
+Azure subscription plus one local container. **Status:** the Collector route
+on this page is documented, not verified: it was written against Microsoft's
+and the exporter's docs on 2026-10-11 without an Application Insights resource
+to send to. The Container Apps route below was verified on 2026-11-22.
+
+## On Azure Container Apps (verified)
+
+When Hermes itself runs on Azure Container Apps, no Collector is needed for
+traces and logs. The environment's managed OpenTelemetry agent sets
+`OTEL_EXPORTER_OTLP_ENDPOINT` in the container and forwards to Application
+Insights; point a generic `otlp` entry at it over gRPC:
+
+```yaml
+backends:
+  - type: otlp
+    name: azure-monitor
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    protocol: grpc     # the managed agent accepts gRPC only
+    metrics: false     # it does not forward metrics to Application Insights
+```
+
+Observed with one Hermes turn (a model call and a terminal tool call): six
+spans in `dependencies` (`agent`, `llm.*`, three `api.*`, `tool.terminal`)
+under one `operation_Id`, log records in `traces`, `cloud_RoleName` of
+`<environment name>.hermes-agent`, and every span attribute in
+`customDimensions`. [Hermes on Azure](/guides/hermes-on-azure) is the full
+deployable demo. Metrics still need the Collector route.
 
 ## Quick start
 
