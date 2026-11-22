@@ -39,7 +39,7 @@ jobs:
         run: >
           az deployment group create
           --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
-          --name registry
+          --name demo
           --template-file deploy/azure/bicep/main.bicep
           --query properties.outputs.registryName.value --output tsv
 
