@@ -1,0 +1,17 @@
+# hermes-otel on Azure Container Apps.
+#
+# The environment's managed OpenTelemetry agent sets OTEL_EXPORTER_OTLP_ENDPOINT
+# in every container and accepts OTLP over gRPC only. It forwards traces and
+# logs to Application Insights and drops metrics, so metrics stay off here.
+project_name: hermes-azure-demo
+
+logs:
+  capture: true
+  level: INFO
+
+backends:
+  - type: otlp
+    name: azure-monitor
+    endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
+    protocol: grpc
+    metrics: false

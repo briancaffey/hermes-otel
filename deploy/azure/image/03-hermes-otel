@@ -1,0 +1,33 @@
+#!/command/with-contenv sh
+# shellcheck shell=sh
+# Boot step for the Azure demo image. Runs as root after the Hermes image has
+# prepared the data volume (/opt/data) and before its services start.
+#
+# The data volume outlives the image, so the plugin and its config are
+# installed from the image on every boot: the image is the source of truth.
+set -eu
+
+HERMES_HOME="${HERMES_HOME:-/opt/data}"
+as_hermes() { s6-setuidgid hermes env HOME="$HERMES_HOME" "$@"; }
+
+echo "[hermes-otel] installing the plugin into $HERMES_HOME/plugins"
+as_hermes mkdir -p "$HERMES_HOME/plugins"
+as_hermes rm -rf "$HERMES_HOME/plugins/hermes_otel"
+as_hermes cp -R /opt/hermes-otel/plugin "$HERMES_HOME/plugins/hermes_otel"
+as_hermes cp /opt/hermes-otel/hermes_otel.yaml "$HERMES_HOME/hermes_otel.yaml"
+
+as_hermes /opt/hermes/.venv/bin/hermes plugins enable hermes_otel
+
+# The model the demo talks to; the key arrives as a container secret.
+if [ -n "${HERMES_DEMO_MODEL:-}" ]; then
+    as_hermes /opt/hermes/.venv/bin/hermes config set model.default "$HERMES_DEMO_MODEL"
+fi
+if [ -n "${HERMES_DEMO_PROVIDER:-}" ]; then
+    as_hermes /opt/hermes/.venv/bin/hermes config set model.provider "$HERMES_DEMO_PROVIDER"
+fi
+# The public address, so the dashboard's sign-in cookies and links are right
+# behind the HTTPS proxy.
+if [ -n "${HERMES_DEMO_PUBLIC_URL:-}" ]; then
+    as_hermes /opt/hermes/.venv/bin/hermes config set dashboard.public_url "$HERMES_DEMO_PUBLIC_URL"
+fi
+echo "[hermes-otel] ready"
