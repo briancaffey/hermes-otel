@@ -508,7 +508,10 @@ def record(scenario: str, config: str) -> Dict[str, Any]:
         SCENARIOS[scenario](p)
         p.plugin.spans.end_all()
         return normalize(
-            p.spans.get_finished_spans(), p.metrics.get_metrics_data(), p.logs.get_finished_logs()
+            p.spans.get_finished_spans(),
+            p.metrics.get_metrics_data(),
+            p.logs.get_finished_logs(),
+            p.start_order,
         )
 
 

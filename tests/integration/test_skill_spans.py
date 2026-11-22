@@ -251,4 +251,4 @@ class TestSkillPathFromEvidence:
         self._end("s1")
         attrs = dict(_one(exporter.get_finished_spans(), "skill.observability").attributes)
         assert attrs["hermes.skill.source"] == "path_match"
-        assert attrs["hermes.skill.path"] == str(skill_dir)
+        assert attrs["hermes.skill.path"] == skill_dir.as_posix()

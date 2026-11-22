@@ -19,6 +19,10 @@ import time
 
 import pytest
 
+pytestmark = pytest.mark.skipif(
+    os.name == "nt", reason="scripts/import_elastic_dashboard.sh is a bash script"
+)
+
 REPO = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SCRIPT = os.path.join(REPO, "scripts", "import_elastic_dashboard.sh")
 
