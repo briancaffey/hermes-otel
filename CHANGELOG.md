@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.33.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.1...hermes-otel-v1.33.2) (2026-11-22)
+
+
+### Bug Fixes
+
+* **livestore:** keep rows admitted during close, account post-close refusals ([cd0695c](https://github.com/briancaffey/hermes-otel/commit/cd0695c11f61b4cc5442ef3eabb7f5f9000302a6))
+* **livestore:** make close atomic, retryable and deadlock-free ([2f87283](https://github.com/briancaffey/hermes-otel/commit/2f87283b503002e604a97eb1cb8a5e1aca9a76e5))
+* **livestore:** make shutdown retryable and preserve final records ([367fbf9](https://github.com/briancaffey/hermes-otel/commit/367fbf9ef20b9f6c03bd9fd3a2b3379a93ca3d7e))
+* **livestore:** retry a failed store release after the pipeline drains ([efafbac](https://github.com/briancaffey/hermes-otel/commit/efafbac83edd5419d962db4e211829191ae26aa8))
+
 ## [1.33.1](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.0...hermes-otel-v1.33.1) (2026-11-21)
 
 
