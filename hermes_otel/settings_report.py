@@ -600,9 +600,9 @@ def redact_yaml_text(text: str) -> str:
 
 def _yaml_dump(value: Any) -> str:
     try:
-        import yaml  # type: ignore
+        from . import yaml_compat
 
-        return yaml.safe_dump(value, sort_keys=False, default_flow_style=False, allow_unicode=True)
+        return yaml_compat.safe_dump(value)
     except Exception:
         import json
 

@@ -985,26 +985,26 @@ def _parse_scalar(
 
 
 def load_yaml(path: Path) -> Dict[str, Any]:
-    """Load config.yaml if present and pyyaml is available.
+    """Load config.yaml if present and a YAML library is available
+    (:mod:`yaml_compat`: PyYAML, or the ruamel.yaml Hermes itself ships).
 
-    Missing file → empty dict (silent). Missing pyyaml → warn + empty dict.
+    Missing file → empty dict (silent). No YAML library → warn + empty dict.
     Malformed yaml → warn + empty dict (explicit, not silent).
     """
     if not path.exists():
         return {}
 
-    try:
-        import yaml  # type: ignore
-    except ImportError:
+    from . import yaml_compat
+
+    if not yaml_compat.available():
         logger.warning(
-            f"[hermes-otel] {path} exists but PyYAML is not installed in the Hermes venv; "
-            "the file is ignored (pip install pyyaml)"
+            f"[hermes-otel] {path} exists but neither PyYAML nor ruamel.yaml is installed in "
+            "the Hermes venv; the file is ignored (pip install pyyaml)"
         )
         return {}
 
     try:
-        with path.open("r", encoding="utf-8") as f:
-            data = yaml.safe_load(f)
+        data = yaml_compat.safe_load(path.read_text(encoding="utf-8"))
     except Exception as e:
         logger.warning(f"[hermes-otel] config.yaml malformed, using defaults: {e}")
         return {}

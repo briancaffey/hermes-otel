@@ -576,27 +576,26 @@ class TestBackendsYaml:
         assert cfg.backends is None
 
 
-class TestMissingPyYaml:
-    def test_missing_pyyaml_warns_and_falls_back(self, tmp_path, monkeypatch, caplog):
-        """When pyyaml isn't importable, loading a real yaml file is skipped silently."""
+class TestMissingYamlLibrary:
+    def test_no_yaml_library_warns_and_falls_back(self, tmp_path, monkeypatch, caplog):
+        """With neither PyYAML nor ruamel.yaml importable, the file is ignored with a warning."""
         path = tmp_path / "config.yaml"
         path.write_text("sample_rate: 0.5\n")
+        monkeypatch.setitem(sys.modules, "yaml", None)
+        monkeypatch.setitem(sys.modules, "ruamel.yaml", None)
 
-        # Hide yaml by stubbing sys.modules
-        original_yaml = sys.modules.get("yaml")
-        if "yaml" in sys.modules:
-            monkeypatch.delitem(sys.modules, "yaml", raising=False)
+        with caplog.at_level("WARNING", logger="hermes_otel"):
+            cfg = load_config(path=path)
+        assert "pyyaml" in caplog.text.lower()
+        assert cfg == HermesOtelConfig()
+
+    def test_ruamel_alone_reads_the_file(self, tmp_path, monkeypatch):
+        """The Hermes container image has ruamel.yaml and no PyYAML."""
+        path = tmp_path / "config.yaml"
+        path.write_text("sample_rate: 0.5\n")
         monkeypatch.setitem(sys.modules, "yaml", None)
 
-        try:
-            with caplog.at_level("WARNING", logger="hermes_otel"):
-                cfg = load_config(path=path)
-            # Must NOT warn about missing pyyaml
-            assert "pyyaml" in caplog.text.lower()
-            assert cfg == HermesOtelConfig()
-        finally:
-            if original_yaml is not None:
-                sys.modules["yaml"] = original_yaml
+        assert load_config(path=path).sample_rate == 0.5
 
 
 class TestHostMetricsConfig:

@@ -73,6 +73,8 @@ dev = [
     "pytest>=8.0",
     "pytest-cov",
     "pyyaml",
+    # What Hermes Agent ships in place of PyYAML; yaml_compat falls back to it.
+    "ruamel.yaml",
     "black",
     "ruff",
     # (opentelemetry-* come from [project] dependencies with their <2 pins —
