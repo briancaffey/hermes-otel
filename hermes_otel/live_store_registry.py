@@ -79,34 +79,48 @@ def _evict_stale_readers(keep: str) -> None:
     ``MAX_READERS``; ``keep`` is never dropped. Caller holds ``_LIVE_LOCK``."""
     for p in list(_STORES_BY_PATH):
         if p != keep and not os.path.exists(p):
-            _close_reader(_STORES_BY_PATH.pop(p))
+            store = _STORES_BY_PATH[p]
+            if _close_reader(store):
+                _STORES_BY_PATH.pop(p, None)
     while len(_STORES_BY_PATH) > MAX_READERS:
         oldest = next((p for p in _STORES_BY_PATH if p != keep), None)
         if oldest is None:
             break
-        _close_reader(_STORES_BY_PATH.pop(oldest))
+        store = _STORES_BY_PATH[oldest]
+        if _close_reader(store):
+            _STORES_BY_PATH.pop(oldest, None)
+        else:
+            break
 
 
-def _close_reader(store: Any) -> None:
+def _close_reader(store: Any) -> bool:
     close = getattr(store, "close", None)
-    if callable(close):
-        try:
-            close()
-        except Exception:  # pragma: no cover
-            pass
+    if not callable(close):
+        return True
+    try:
+        return close() is not False
+    except Exception:  # pragma: no cover
+        return False
 
 
-def release_live_store(store: Any) -> None:
+def release_live_store(store: Any) -> bool:
     """Forget and close ``store`` so a later plugin load creates a fresh one."""
     global _LIVE_STORE
     with _LIVE_LOCK:
+        matches = _LIVE_STORE is store or any(
+            reader is store for reader in _STORES_BY_PATH.values()
+        )
+        if not matches:
+            return _close_reader(store)
+        if not _close_reader(store):
+            return False
         if _LIVE_STORE is store:
             _LIVE_STORE = None
         for path, reader in list(_STORES_BY_PATH.items()):
             if reader is store:
                 _STORES_BY_PATH.pop(path, None)
                 _CREATE_ERRORS.pop(path, None)
-    _close_reader(store)
+    return True
 
 
 def _configured_limits() -> Dict[str, Any]:

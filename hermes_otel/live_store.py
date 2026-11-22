@@ -111,6 +111,11 @@ def _default_db_path() -> str:
 class LiveStore:
     """Bounded, cross-process telemetry store backed by SQLite (WAL)."""
 
+    # How long close() waits for a public flush or the writer to release
+    # _flush_lock before declaring the close unproven. Class attribute so
+    # tests can shrink it without sleeping for the real budget.
+    close_lock_timeout_s = 5.0
+
     def __init__(
         self,
         db_path: Optional[str] = None,
@@ -132,48 +137,140 @@ class LiveStore:
         self.batch_rows = 64
         self._pending: List[tuple] = []
         self._pending_lock = threading.Lock()
-        self._flush_lock = threading.Lock()
+        # Re-entrant because close() drains through the same helper as the
+        # writer and public readers while holding this lock. The terminal
+        # drain never runs concurrently with another terminal drain.
+        self._flush_lock = threading.RLock()
         self._wake = threading.Event()
         self._stop = threading.Event()
+        self._close_lock = threading.Lock()
+        self._closing = False
+        self._closed = False
         self._writer: Optional[threading.Thread] = None
         # Why the file could not be opened or initialised, if it could not;
         # ``stats()`` reports it so the dashboard can say "corrupt file" rather
         # than "no telemetry yet" (#291).
         self.open_error: Optional[str] = None
         self.last_write_error: Optional[str] = None
+        # Rows refused after the store closed. Counted, not silent: a drop
+        # that no one can observe is a data loss nobody can attribute (#671).
+        self.dropped_after_close = 0
         self._last_error_log = 0.0
         self._init_db()
 
     # ── connection / schema ───────────────────────────────────────────────
-    def close(self) -> None:
-        """Flush pending rows, stop the writer and close every connection (idempotent)."""
-        self._stop.set()
-        self._wake.set()
-        writer = self._writer
-        if writer is not None and writer.is_alive() and writer is not threading.current_thread():
-            writer.join(timeout=2.0)
-        self._writer = None
-        self.flush()
-        with self._conns_lock:
-            conns, self._conns = self._conns, []
-        for _owner, c in conns:
-            try:
-                c.close()
-            except Exception:  # pragma: no cover: never raise on shutdown
-                pass
-        self._local.conn = None
+    def close(self) -> bool:
+        """Flush pending rows and close every connection when the flush succeeds.
 
-    def _conn(self) -> sqlite3.Connection:
+        Returns ``False`` when the terminal flush failed. In that case the
+        store remains usable with its pending rows and connections intact so a
+        later call can retry instead of silently stranding telemetry (#291).
+        """
+        with self._close_lock:
+            if self._closed:
+                return True
+            self._closing = True
+            self._stop.set()
+            self._wake.set()
+            writer = self._writer
+            # The writer may be inside flush() and holding _flush_lock when
+            # close() takes _close_lock. Join it here, outside _flush_lock,
+            # so it can finish that turn without waiting on this close.
+            if (
+                writer is not None
+                and writer.is_alive()
+                and writer is not threading.current_thread()
+            ):
+                writer.join(timeout=2.0)
+            # A timed-out join leaves the old writer alive. Keep tracking it
+            # so a retry cannot start a second writer before the first exits.
+            if writer is None or not writer.is_alive():
+                self._writer = None
+
+            terminal_drained = True
+            if self._flush_lock.acquire(timeout=self.close_lock_timeout_s):
+                try:
+                    # One unconditional terminal drain. A row admitted before
+                    # the first empty check must be written, and this is the
+                    # point where a close that starts with an empty queue still
+                    # performs its contract flush.
+                    self._flush_pending(allow_closed=True)
+                    # Drain until a pass sees an empty queue. Admission and
+                    # the empty check are both under _pending_lock, so a row
+                    # cannot slip into the queue between those two points.
+                    # Rows that arrive during a pass get another pass, up to
+                    # a bound. A pass that failed to write is not repeated:
+                    # it already waited SQLite's busy timeout, its rows stay
+                    # pending, and close() reports False so a later call can
+                    # retry without stretching this shutdown.
+                    attempts = 0
+                    while self.last_write_error is None:
+                        self._flush_pending(allow_closed=True)
+                        with self._pending_lock:
+                            if not self._pending:
+                                break
+                        attempts += 1
+                        if attempts >= 3:
+                            break
+                finally:
+                    self._flush_lock.release()
+            else:
+                terminal_drained = False
+
+            with self._pending_lock:
+                pending = bool(self._pending)
+                if pending or not terminal_drained:
+                    # ``terminal_drained`` is False when another thread held
+                    # _flush_lock past the timeout: it may still own a batch
+                    # it removed from _pending, and a failed commit would
+                    # requeue that batch. Treat it as an unproven close.
+                    self._closing = False
+                    self._stop.clear()
+                    return False
+                # The final empty check and the closed transition happen under
+                # the same lock that _insert uses. A producer either wins the
+                # lock first and is drained above, or sees _closed below and is
+                # counted rather than stranded.
+                self._closed = True
+
+            with self._conns_lock:
+                conns, self._conns = self._conns, []
+            for _owner, c in conns:
+                try:
+                    c.close()
+                except Exception:  # pragma: no cover: never raise on shutdown
+                    pass
+            self._local.conn = None
+            self._closing = False
+            return True
+
+    def _conn(self, *, allow_closed: bool = False) -> sqlite3.Connection:
+        if (self._closed or self._closing) and not allow_closed:
+            raise RuntimeError("LiveStore is closed")
         c = getattr(self._local, "conn", None)
         if c is None:
             c = sqlite3.connect(self.db_path, timeout=5.0, check_same_thread=False)
-            _restrict_to_owner(self.db_path)  # before WAL: sidecars inherit this mode
-            c.execute("PRAGMA journal_mode=WAL")
-            c.execute("PRAGMA busy_timeout=3000")
-            c.execute("PRAGMA synchronous=NORMAL")
+            try:
+                _restrict_to_owner(self.db_path)  # before WAL: sidecars inherit this mode
+                c.execute("PRAGMA journal_mode=WAL")
+                c.execute("PRAGMA busy_timeout=3000")
+                c.execute("PRAGMA synchronous=NORMAL")
+            except Exception:
+                try:
+                    c.close()
+                except Exception:  # pragma: no cover
+                    pass
+                raise
             self._local.conn = c
             me = threading.current_thread()
             with self._conns_lock:
+                if (self._closed or self._closing) and not allow_closed:
+                    self._local.conn = None
+                    try:
+                        c.close()
+                    except Exception:  # pragma: no cover
+                        pass
+                    raise RuntimeError("LiveStore is closed")
                 # A thread-local connection outlives its thread (sqlite3
                 # connections can't be weakref'd, and _conns keeps them
                 # alive). Close the ones whose owner thread has exited, or a
@@ -310,7 +407,17 @@ class LiveStore:
     def _insert(
         self, kind: str, data: Dict[str, Any], ts: Optional[int] = None, **cols: Any
     ) -> None:
-        """Queue one row; the writer thread commits it with its batch."""
+        """Queue one row; the writer thread commits it with its batch.
+
+        A row queued while a close is in flight is kept, not dropped: the
+        terminal flush in ``close()`` drains the buffer, and when that flush
+        fails the row stays pending so a retry can still write it (#671).
+        After the store is closed there is nowhere to keep the row, so it is
+        refused and counted in ``dropped_after_close``.
+        """
+        if self._closed:
+            self.dropped_after_close += 1
+            return
         try:
             row = (
                 kind,
@@ -322,6 +429,9 @@ class LiveStore:
         except Exception:  # pragma: no cover
             return
         with self._pending_lock:
+            if self._closed:
+                self.dropped_after_close += 1
+                return
             self._pending.append(row)
             n = len(self._pending)
         self._ensure_writer()
@@ -329,6 +439,8 @@ class LiveStore:
             self._wake.set()
 
     def _ensure_writer(self) -> None:
+        if self._closed or self._closing:
+            return
         if self._writer is not None and self._writer.is_alive():
             return
         if self._stop.is_set():
@@ -344,6 +456,10 @@ class LiveStore:
             self.flush()
 
     def flush(self) -> int:
+        """Commit pending rows unless this store has been closed."""
+        return self._flush_pending()
+
+    def _flush_pending(self, *, allow_closed: bool = False) -> int:
         """Commit every pending row in one transaction. Returns rows written.
 
         Serialised with the writer thread: a caller that flushes before a read
@@ -351,13 +467,20 @@ class LiveStore:
         the read that follows sees every row queued before it.
         """
         written = 0
+        if (self._closed or self._closing) and not allow_closed:
+            # A public flush cannot wait behind close and then requeue its
+            # batch into a closed store. Refuse it; the terminal drain owns
+            # the queue from this point on.
+            return 0
         with self._flush_lock:
+            if (self._closed or self._closing) and not allow_closed:
+                return 0
             with self._pending_lock:
                 rows, self._pending = self._pending, []
             if not rows:
                 return 0
             try:
-                c = self._conn()
+                c = self._conn(allow_closed=allow_closed)
                 kinds = set()
                 for kind, ts, data, names, values in rows:
                     cols = ["kind", "ts", "data"] + list(names)
@@ -513,6 +636,8 @@ class LiveStore:
             out["open_error"] = self.open_error
         if self.last_write_error:
             out["write_error"] = self.last_write_error
+        if self.dropped_after_close:
+            out["dropped_after_close"] = self.dropped_after_close
         with self._pending_lock:
             if self._pending:
                 out["pending"] = len(self._pending)

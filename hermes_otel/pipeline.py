@@ -391,12 +391,9 @@ if _OTEL_AVAILABLE:
                 pass
 
         def shutdown(self) -> None:
-            try:
-                from .live_store_registry import release_live_store
-
-                release_live_store(self._store)
-            except Exception:  # pragma: no cover
-                pass
+            # Pipeline.shutdown owns the shared store and releases it after
+            # the logger provider has drained its final records (#671).
+            return None
 
         def force_flush(self, timeout_millis: int = 30000) -> bool:
             try:
@@ -588,7 +585,8 @@ class Pipeline:
     which can only be set once per process; see :func:`build_pipeline`).
     ``span_processors`` and ``metric_readers`` are the OTLP fan-out, one per
     backend; ``instruments`` the metric table on ``meter``; ``live_active``
-    whether the in-process live store is attached. A test may build one
+    whether the in-process live store is attached and ``live_store`` the exact
+    store owned by this pipeline. A test may build one
     from stand-ins (``hermes_otel.testing.attach_pipeline``): with no
     ``tracer_provider`` the processors and readers are shut down one by one.
     """
@@ -604,6 +602,7 @@ class Pipeline:
     logger_provider: Any = None
     log_processors: List[Any] = field(default_factory=list)
     live_active: bool = False
+    live_store: Any = None
     # Reachability probe (#481): the thread and its results, filled shortly
     # after init; [] until then or when the probe is off.
     probe_thread: Any = None
@@ -658,7 +657,7 @@ class Pipeline:
             with contextlib.suppress(Exception):
                 self.logger_provider.force_flush(timeout_millis=timeout_millis)
 
-    def shutdown(self, attach_logger: Optional[str] = None) -> None:
+    def shutdown(self, attach_logger: Optional[str] = None) -> bool:
         """Stop every worker thread and detach the log handler. Never raises.
 
         Shutting a provider down shuts every attached processor down (the
@@ -679,6 +678,22 @@ class Pipeline:
                 from . import log_handler
 
                 log_handler.uninstall_handler(attach_logger)
+        return self.release_live_store()
+
+    def release_live_store(self) -> bool:
+        """Release the shared live store, retaining the handle on failure."""
+        if not self.live_active or self.live_store is None:
+            return True
+        try:
+            from .live_store_registry import release_live_store
+
+            if not release_live_store(self.live_store):
+                return False
+        except Exception:
+            return False
+        self.live_store = None
+        self.live_active = False
+        return True
 
 
 # ── traces + metrics ───────────────────────────────────────────────────
@@ -803,6 +818,7 @@ def build_pipeline(
         if store is not None:
             _attach(_LiveSpanProcessor(store, config.omitted_attributes()))
             pipeline.live_active = True
+            pipeline.live_store = store
             # The live Logs tab is wired in init_logs_pipeline (same provider
             # as the OTLP exporters, #265).
 
