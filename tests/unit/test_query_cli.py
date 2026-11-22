@@ -956,6 +956,7 @@ class TestBackendSource:
 
     def test_yaml_is_required_for_backends(self, monkeypatch, db):
         monkeypatch.setitem(sys.modules, "yaml", None)
+        monkeypatch.setitem(sys.modules, "ruamel.yaml", None)
         code, _, err = run("traces", "--source", "phoenix", db=db)
         assert code == 1 and "pyyaml" in err
         code, out, _ = run("status", db=db)

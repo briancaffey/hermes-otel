@@ -185,9 +185,9 @@ def existing_server_names(hermes_home: Path) -> List[str]:
     """Names under ``mcp_servers:`` in ``<home>/config.yaml`` (empty when unreadable)."""
     path = Path(hermes_home) / "config.yaml"
     try:
-        import yaml
+        from . import yaml_compat
 
-        data = yaml.safe_load(path.read_text()) or {}
+        data = yaml_compat.safe_load(path.read_text()) or {}
     except Exception:
         return []
     servers = data.get("mcp_servers") if isinstance(data, dict) else None

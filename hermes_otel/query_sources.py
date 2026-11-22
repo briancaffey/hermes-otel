@@ -175,11 +175,11 @@ def _import_backends():
     The tests replace this function on this module to inject fake adapters;
     ``query_cli`` calls it through the module for that reason.
     """
-    try:
-        import yaml  # noqa: F401  (the adapters read the config file with it)
-    except ImportError:
+    from . import yaml_compat
+
+    if not yaml_compat.available():
         raise CliError(
-            "backend queries read the config file with pyyaml, which this interpreter lacks. "
+            "backend queries read the config file with a YAML library, which this interpreter lacks. "
             "Run the script with the interpreter Hermes uses (`hermes --version` prints the "
             "install directory; use its venv/bin/python) or `pip install pyyaml`."
         )
