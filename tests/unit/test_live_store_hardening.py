@@ -401,3 +401,166 @@ class TestCloseWindow:
         assert s.close() is True
         s.add_span({"name": "too-late"})
         assert s.dropped_after_close == 1
+
+    def test_final_empty_check_and_closed_transition_are_atomic(self, tmp_path):
+        """A row cannot slip between the final queue check and ``_closed``."""
+        s = LiveStore(db_path=str(tmp_path / "atomic-finalize.db"))
+        original_lock = s._pending_lock
+        final_check_released = threading.Event()
+        inserted = threading.Event()
+
+        class GateLock:
+            def __init__(self):
+                self.close_releases = 0
+
+            def __enter__(self):
+                original_lock.acquire()
+                return self
+
+            def __exit__(self, *_exc):
+                original_lock.release()
+                if threading.current_thread().name == "atomic-closer":
+                    self.close_releases += 1
+                    if self.close_releases == 2:
+                        final_check_released.set()
+                        assert inserted.wait(timeout=5.0)
+
+        s._pending_lock = GateLock()
+        close_result = []
+        closer = threading.Thread(
+            target=lambda: close_result.append(s.close()), name="atomic-closer"
+        )
+        closer.start()
+        assert final_check_released.wait(timeout=5.0)
+        s.add_span({"name": "at-finalize"})
+        inserted.set()
+        closer.join(timeout=5.0)
+
+        assert not closer.is_alive()
+        assert close_result == [True]
+        assert s._pending == []
+        assert s.dropped_after_close == 0
+
+    def test_public_flush_cannot_race_terminal_finalization(self, tmp_path):
+        """A public flush cannot requeue rows after close reports success."""
+        s = LiveStore(db_path=str(tmp_path / "flush-finalize.db"))
+        terminal_drained = threading.Event()
+        allow_close = threading.Event()
+        public_flush_in_conn = threading.Event()
+        release_public_flush = threading.Event()
+        close_done = threading.Event()
+        real_flush = s._flush_pending
+        real_conn = s._conn
+
+        def gated_flush(*args, **kwargs):
+            result = real_flush(*args, **kwargs)
+            if threading.current_thread().name == "terminal-closer":
+                terminal_drained.set()
+                assert allow_close.wait(timeout=5.0)
+            return result
+
+        def gated_conn(*args, **kwargs):
+            if threading.current_thread().name == "public-flush":
+                public_flush_in_conn.set()
+                assert release_public_flush.wait(timeout=5.0)
+            return real_conn(*args, **kwargs)
+
+        s._flush_pending = gated_flush
+        s._conn = gated_conn
+        close_result = []
+
+        def close_store():
+            close_result.append(s.close())
+            close_done.set()
+
+        closer = threading.Thread(target=close_store, name="terminal-closer")
+        closer.start()
+        assert terminal_drained.wait(timeout=5.0)
+        s.add_span({"name": "between-terminal-flush-and-finalize"})
+        public = threading.Thread(target=s.flush, name="public-flush")
+        public.start()
+
+        raced = public_flush_in_conn.wait(timeout=0.2)
+        allow_close.set()
+        if raced:
+            assert close_done.wait(timeout=5.0)
+            release_public_flush.set()
+        closer.join(timeout=5.0)
+        public.join(timeout=5.0)
+
+        assert not closer.is_alive() and not public.is_alive()
+        assert close_result == [True]
+        assert s._pending == []
+
+    def test_failed_close_retries_after_transient_error(self, tmp_path):
+        """A bounded failed close leaves the row for a later successful close."""
+        s = LiveStore(db_path=str(tmp_path / "retry.db"))
+        s.add_span({"name": "transient"})
+        original_flush = s._flush_pending
+        calls = {"n": 0}
+
+        def failing_once(*, allow_closed=False):
+            calls["n"] += 1
+            if calls["n"] > 1:
+                return 0
+            s.last_write_error = "sqlite3: simulated transient failure"
+            return 0
+
+        s._flush_pending = failing_once
+        assert s.close() is False
+        assert s._closed is False
+        assert s._pending
+        s._flush_pending = original_flush
+        assert s.close() is True
+        assert s._pending == []
+
+    def test_close_does_not_block_forever_on_another_threads_flush_lock(self, tmp_path):
+        """Cross-thread flush lock contention is visible, not an infinite wait."""
+        s = LiveStore(db_path=str(tmp_path / "held-flush.db"))
+        entered = threading.Event()
+        release = threading.Event()
+        real_flush = s._flush_pending
+
+        def held(*, allow_closed=False):
+            entered.set()
+            assert release.wait(timeout=5.0)
+            return real_flush(allow_closed=allow_closed)
+
+        s._flush_pending = held
+        flusher = threading.Thread(target=s.flush, name="foreign-flush")
+        flusher.start()
+        assert entered.wait(timeout=5.0)
+
+        closer = threading.Thread(target=s.close, name="held-closer")
+        closer.start()
+        assert closer.is_alive()
+        release.set()
+        flusher.join(timeout=5.0)
+        closer.join(timeout=5.0)
+
+        assert not flusher.is_alive() and not closer.is_alive()
+
+    def test_close_fails_when_terminal_flush_lock_times_out(self, tmp_path):
+        """A close that never got the flush lock must not report success.
+
+        The foreign holder may have already taken a batch out of ``_pending``;
+        closing successfully would let a failed commit requeue that batch into
+        a closed store, where it can never be written.
+        """
+        s = LiveStore(db_path=str(tmp_path / "lock-timeout.db"))
+        s.close_lock_timeout_s = 0.05
+        assert s._flush_lock.acquire()
+        try:
+            result = []
+            closer = threading.Thread(
+                target=lambda: result.append(s.close()), name="timeout-closer"
+            )
+            closer.start()
+            closer.join(timeout=10.0)
+        finally:
+            s._flush_lock.release()
+
+        assert not closer.is_alive()
+        assert result == [False]
+        assert s._closed is False
+        assert s.close() is True

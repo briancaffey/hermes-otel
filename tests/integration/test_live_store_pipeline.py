@@ -139,6 +139,35 @@ class TestLivePipeline:
         assert registry._LIVE_STORE is None
         assert registry._STORES_BY_PATH == {}
 
+    def test_plugin_retries_store_release_after_pipeline_is_forgotten(self, monkeypatch):
+        import hermes_otel.live_store_registry as registry
+        from hermes_otel.pipeline import Pipeline
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        class Store:
+            close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                return self.close_calls > 1
+
+        store = Store()
+        monkeypatch.setattr(registry, "_LIVE_STORE", store)
+        monkeypatch.setattr(registry, "_STORES_BY_PATH", {"live.db": store})
+        plugin = HermesOTelPlugin()
+        pipeline = Pipeline(live_active=True, live_store=store)
+        plugin.pipeline = pipeline
+
+        plugin.shutdown()
+        assert store.close_calls == 1
+        assert plugin.pipeline is None
+        assert registry._LIVE_STORE is store
+
+        plugin.shutdown()
+        assert store.close_calls == 2
+        assert registry._LIVE_STORE is None
+        assert registry._STORES_BY_PATH == {}
+
     def test_full_turn_lands_in_store(self, live_plugin):
         store, _ = live_plugin
         hooks.on_session_start(session_id="s1", model="gpt-4", platform="telegram")

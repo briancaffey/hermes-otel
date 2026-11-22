@@ -126,6 +126,10 @@ class HermesOTelPlugin:
         # built from (``HermesOtelConfig.fingerprint``; None without one).
         self.config: HermesOtelConfig = config if config is not None else load_config()
         self.config_fingerprint: Optional[str] = None
+        # Pipelines whose providers are shut down but whose shared live-store
+        # release failed. Keep them reachable so a later shutdown/atexit call
+        # can retry without treating a dead pipeline as active.
+        self._pending_live_store_releases: List[Pipeline] = []
         # The home and profile this instance serves. Captured here, while the
         # profile's scope is active (Hermes imports the plugin once per
         # profile, inside that profile's home override), so a multiplexed
@@ -219,6 +223,13 @@ class HermesOTelPlugin:
         # flush, then stop the workers.
         debug_log(f"shutdown: begin (flush pending={self.flusher.pending.is_set()})")
         pipeline = self.pipeline
+        pending_releases, self._pending_live_store_releases = (
+            self._pending_live_store_releases,
+            [],
+        )
+        for pending in pending_releases:
+            if not pending.release_live_store():
+                self._pending_live_store_releases.append(pending)
         with contextlib.suppress(Exception):
             self.spans.end_all(attributes=sweep_attributes("shutdown"))
         with contextlib.suppress(Exception):
@@ -230,7 +241,8 @@ class HermesOTelPlugin:
             self.host_metrics.stop()
             self.host_metrics = None
         if pipeline is not None:
-            pipeline.shutdown(self.config.log_attach_logger)
+            if not pipeline.shutdown(self.config.log_attach_logger):
+                self._pending_live_store_releases.append(pipeline)
         self.spans.end_all()
         self.spans.clear_turns()
         self.sessions.clear()

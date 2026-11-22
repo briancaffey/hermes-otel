@@ -657,7 +657,7 @@ class Pipeline:
             with contextlib.suppress(Exception):
                 self.logger_provider.force_flush(timeout_millis=timeout_millis)
 
-    def shutdown(self, attach_logger: Optional[str] = None) -> None:
+    def shutdown(self, attach_logger: Optional[str] = None) -> bool:
         """Stop every worker thread and detach the log handler. Never raises.
 
         Shutting a provider down shuts every attached processor down (the
@@ -678,14 +678,22 @@ class Pipeline:
                 from . import log_handler
 
                 log_handler.uninstall_handler(attach_logger)
-        if self.live_active:
-            with contextlib.suppress(Exception):
-                from .live_store_registry import release_live_store
+        return self.release_live_store()
 
-                store = self.live_store
-                if store is not None and release_live_store(store):
-                    self.live_store = None
-                    self.live_active = False
+    def release_live_store(self) -> bool:
+        """Release the shared live store, retaining the handle on failure."""
+        if not self.live_active or self.live_store is None:
+            return True
+        try:
+            from .live_store_registry import release_live_store
+
+            if not release_live_store(self.live_store):
+                return False
+        except Exception:
+            return False
+        self.live_store = None
+        self.live_active = False
+        return True
 
 
 # ── traces + metrics ───────────────────────────────────────────────────
