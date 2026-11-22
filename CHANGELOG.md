@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.33.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.2...hermes-otel-v1.33.3) (2026-11-22)
+
+
+### Bug Fixes
+
+* **headers-helper:** keep backslashes in a Windows helper command ([02f653e](https://github.com/briancaffey/hermes-otel/commit/02f653e3b953762606ea38e4f2047b1c54c34044))
+
 ## [1.33.2](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.1...hermes-otel-v1.33.2) (2026-11-22)
 
 
