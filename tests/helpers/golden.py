@@ -68,6 +68,8 @@ class Pipeline:
     spans: Any  # InMemorySpanExporter
     metrics: Any  # InMemoryMetricReader
     logs: Any  # InMemoryLogExporter
+    # span id -> the order the span was started in (see ``normalize``)
+    start_order: Dict[int, int] = dataclasses.field(default_factory=dict)
 
 
 @contextlib.contextmanager
@@ -79,13 +81,20 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
     from opentelemetry.sdk.metrics import MeterProvider
     from opentelemetry.sdk.metrics.export import InMemoryMetricReader
     from opentelemetry.sdk.resources import Resource
-    from opentelemetry.sdk.trace import TracerProvider
+    from opentelemetry.sdk.trace import SpanProcessor, TracerProvider
     from opentelemetry.sdk.trace.export import SimpleSpanProcessor
     from opentelemetry.sdk.trace.export.in_memory_span_exporter import InMemorySpanExporter
 
     resource = Resource.create({"service.name": "hermes-agent"})
     span_exporter = InMemorySpanExporter()
     provider = TracerProvider(resource=resource)
+    start_order: Dict[int, int] = {}
+
+    class _StartOrder(SpanProcessor):
+        def on_start(self, span: Any, parent_context: Any = None) -> None:
+            start_order.setdefault(span.get_span_context().span_id, len(start_order))
+
+    provider.add_span_processor(_StartOrder())
     provider.add_span_processor(SimpleSpanProcessor(span_exporter))
     plugin = HermesOTelPlugin(config=config)
     plugin.profile_name = "golden"
@@ -120,7 +129,7 @@ def three_signal_plugin(config: HermesOtelConfig) -> Iterator[Pipeline]:
 
     previous = install_singleton(plugin)
     try:
-        yield Pipeline(plugin, span_exporter, metric_reader, log_exporter)
+        yield Pipeline(plugin, span_exporter, metric_reader, log_exporter, start_order)
     finally:
         try:
             plugin.spans.end_all()
@@ -181,10 +190,25 @@ def _status(span: Any) -> Dict[str, Any]:
     return out
 
 
-def normalize(spans: List[Any], metrics_data: Any, logs: List[Any]) -> Dict[str, Any]:
-    """The exported telemetry as a JSON document with stable ids and times."""
+def normalize(
+    spans: List[Any],
+    metrics_data: Any,
+    logs: List[Any],
+    start_order: Optional[Dict[int, int]] = None,
+) -> Dict[str, Any]:
+    """The exported telemetry as a JSON document with stable ids and times.
+
+    Spans are ordered by start time. ``start_order`` (span id -> the order the
+    span was started in) breaks ties: a coarse clock (Windows before Python
+    3.13 ticks every ~15 ms) gives spans started back to back the same
+    timestamp, and without it they would fall back to name order.
+    """
     ids = _Ids()
-    ordered = sorted(spans, key=lambda s: (s.start_time or 0, s.name))
+    order = start_order or {}
+    ordered = sorted(
+        spans,
+        key=lambda s: (s.start_time or 0, order.get(s.get_span_context().span_id, 0), s.name),
+    )
     out_spans = []
     for s in ordered:
         ctx = s.get_span_context()

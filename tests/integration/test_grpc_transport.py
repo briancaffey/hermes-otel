@@ -32,9 +32,14 @@ from hermes_otel.otlp_transport import create_exporter
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.tracer import HermesOTelPlugin
 
-pytestmark = pytest.mark.grpc
-
 OPENSSL = shutil.which("openssl") or "openssl"
+
+pytestmark = [
+    pytest.mark.grpc,
+    # The certificates fixture mints its CA and leaf certificates with the
+    # openssl program; a stock Windows has none on PATH.
+    pytest.mark.skipif(shutil.which("openssl") is None, reason="needs the openssl program"),
+]
 
 
 @pytest.fixture(scope="module")

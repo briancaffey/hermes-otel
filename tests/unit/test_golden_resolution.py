@@ -248,6 +248,9 @@ def _mask_text(text: str) -> str:
     return text
 
 
+_HOME_PATH = re.compile(r"<HOME>[\\\w.\-]*")
+
+
 def normalise(value: Any, home: Optional[Path] = None) -> Any:
     if isinstance(value, dict):
         return {
@@ -260,6 +263,8 @@ def normalise(value: Any, home: Optional[Path] = None) -> Any:
     if isinstance(value, str):
         if home is not None:
             value = value.replace(str(home), "<HOME>")
+            # Windows: the goldens spell a path under the home with "/".
+            value = _HOME_PATH.sub(lambda m: m.group(0).replace("\\", "/"), value)
         value = _RESOLVED_AT.sub("# resolved <WHEN> from", value)
         return _mask_text(value)
     return value
@@ -281,6 +286,13 @@ def scratch_home(tmp_path, monkeypatch):
         monkeypatch.delenv(pc.ENV_PREFIX + key.upper(), raising=False)
     monkeypatch.setattr(pc, "DURABLE_CONFIG_PATH", home / "hermes_otel.yaml")
     monkeypatch.setattr(pc, "DEFAULT_CONFIG_PATH", home / "plugins" / "hermes_otel" / "config.yaml")
+    if os.name == "nt":
+        # The helper-only cases run ``echo``, a shell builtin on Windows with
+        # no program behind it; give them one for the test.
+        shim = tmp_path / "bin"
+        shim.mkdir()
+        (shim / "echo.cmd").write_text("@echo %*\n")
+        monkeypatch.setenv("PATH", str(shim) + os.pathsep + os.environ.get("PATH", ""))
     dash.clear_caches()
     yield home
     dash.clear_caches()

@@ -6,6 +6,7 @@ from __future__ import annotations
 
 import io
 import os
+import sys
 from pathlib import Path
 from unittest.mock import patch
 from urllib import error as _urlerror
@@ -514,6 +515,8 @@ class TestApiLeftovers:
             stores.append(ls.get_live_store_for_home(create=True))
         # three opened, the cap is two beyond the current: the oldest went
         assert paths[0] not in ls._STORES_BY_PATH and paths[2] in ls._STORES_BY_PATH
+        if sys.platform == "win32":
+            return  # Windows refuses to delete a database a reader has open
         # a file that disappeared is dropped on the next call for another path
         for name in ("hermes_otel_live.db", "hermes_otel_live.db-wal", "hermes_otel_live.db-shm"):
             f = Path(paths[1]).parent / name

@@ -153,6 +153,7 @@ def test_tls_file_precedence_and_home_expansion(
     backend, grpc_exporters, tmp_path, monkeypatch, signal
 ):
     monkeypatch.setenv("HOME", str(tmp_path))
+    monkeypatch.setenv("USERPROFILE", str(tmp_path))  # what ``~`` means on Windows
     for name in ("global", "signal", "explicit"):
         (tmp_path / name).write_bytes(name.encode())
     monkeypatch.setenv("OTEL_EXPORTER_OTLP_CERTIFICATE", str(tmp_path / "global"))

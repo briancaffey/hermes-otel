@@ -129,13 +129,13 @@ class TestResolveSkillDir:
         (skill_dir / "references").mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("---\nname: code-review\n---\n")
         ref = skill_dir / "references" / "checklist.md"
-        assert resolve_skill_dir({"path": str(ref)}) == str(skill_dir)
+        assert resolve_skill_dir({"path": str(ref)}) == skill_dir.as_posix()
 
     def test_plugin_bundled_skill_resolves_to_its_real_directory(self, tmp_path):
         skill_dir = tmp_path / "plugins" / "hermes_otel" / "skills" / "observability"
         skill_dir.mkdir(parents=True)
         (skill_dir / "SKILL.md").write_text("---\nname: observability\n---\n")
-        assert resolve_skill_dir({"path": str(skill_dir / "SKILL.md")}) == str(skill_dir)
+        assert resolve_skill_dir({"path": str(skill_dir / "SKILL.md")}) == skill_dir.as_posix()
 
     def test_unverifiable_paths_yield_none_not_a_guess(self):
         # A categorized path with no manifest on disk: the name is ambiguous and

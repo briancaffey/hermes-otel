@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import socket
+import sys
 import threading
 
 import pytest
@@ -83,7 +84,10 @@ class TestProbeTcp:
         assert ok and error == "" and ms >= 0
 
     def test_closed_port_is_refused(self, closed_port):
-        ok, _ms, error = probe_tcp("127.0.0.1", closed_port, 1.0)
+        # Windows retries a refused loopback connect for about two seconds
+        # before it reports the refusal.
+        timeout_s = 5.0 if sys.platform == "win32" else 1.0
+        ok, _ms, error = probe_tcp("127.0.0.1", closed_port, timeout_s)
         assert not ok and "refused" in error.lower()
 
     def test_unknown_host_does_not_resolve(self, monkeypatch):
