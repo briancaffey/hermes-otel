@@ -198,11 +198,13 @@ class LiveStore:
                     # Drain until a pass sees an empty queue. Admission and
                     # the empty check are both under _pending_lock, so a row
                     # cannot slip into the queue between those two points.
-                    # A transient write failure still requeues its row; a
-                    # bounded retry handles one such failure without turning
-                    # a persistently failing SQLite write into a hang.
+                    # Rows that arrive during a pass get another pass, up to
+                    # a bound. A pass that failed to write is not repeated:
+                    # it already waited SQLite's busy timeout, its rows stay
+                    # pending, and close() reports False so a later call can
+                    # retry without stretching this shutdown.
                     attempts = 0
-                    while True:
+                    while self.last_write_error is None:
                         self._flush_pending(allow_closed=True)
                         with self._pending_lock:
                             if not self._pending:
@@ -210,7 +212,6 @@ class LiveStore:
                         attempts += 1
                         if attempts >= 3:
                             break
-                        time.sleep(0.01)
                 finally:
                     self._flush_lock.release()
             else:
@@ -452,15 +453,6 @@ class LiveStore:
         while not self._stop.is_set():
             self._wake.wait(self.flush_interval_s)
             self._wake.clear()
-            self.flush()
-        # The stop signal can arrive while _wake was being cleared. A bounded
-        # final drain keeps a row admitted between the last interval wake and
-        # close() from being stranded when close() waits for this thread.
-        for _ in range(2):
-            if not self._stop.is_set():
-                break
-            if not self._pending:
-                break
             self.flush()
 
     def flush(self) -> int:

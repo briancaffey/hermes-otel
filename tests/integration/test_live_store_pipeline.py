@@ -139,6 +139,43 @@ class TestLivePipeline:
         assert registry._LIVE_STORE is None
         assert registry._STORES_BY_PATH == {}
 
+    def test_plugin_retries_store_release_after_the_current_pipeline_drains(self, monkeypatch):
+        """A pipeline built after a failed release shares that store, so the
+        retry must not close it before this pipeline's providers shut down."""
+        import hermes_otel.live_store_registry as registry
+        from hermes_otel.pipeline import Pipeline
+        from hermes_otel.tracer import HermesOTelPlugin
+
+        events = []
+
+        class Store:
+            close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                events.append("store.close")
+                return self.close_calls > 1
+
+        class Provider:
+            def shutdown(self):
+                events.append("logs.shutdown")
+
+        store = Store()
+        monkeypatch.setattr(registry, "_LIVE_STORE", store)
+        monkeypatch.setattr(registry, "_STORES_BY_PATH", {"live.db": store})
+        plugin = HermesOTelPlugin()
+        plugin.pipeline = Pipeline(live_active=True, live_store=store)
+        plugin.shutdown()  # the release fails; the old pipeline is retained
+        events.clear()
+
+        plugin.pipeline = Pipeline(logger_provider=Provider(), live_active=True, live_store=store)
+        plugin.shutdown()
+
+        assert events[0] == "logs.shutdown"
+        assert "store.close" in events[1:]
+        assert registry._LIVE_STORE is None
+        assert plugin._pending_live_store_releases == []
+
     def test_plugin_retries_store_release_after_pipeline_is_forgotten(self, monkeypatch):
         import hermes_otel.live_store_registry as registry
         from hermes_otel.pipeline import Pipeline

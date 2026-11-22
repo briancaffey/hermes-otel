@@ -223,13 +223,6 @@ class HermesOTelPlugin:
         # flush, then stop the workers.
         debug_log(f"shutdown: begin (flush pending={self.flusher.pending.is_set()})")
         pipeline = self.pipeline
-        pending_releases, self._pending_live_store_releases = (
-            self._pending_live_store_releases,
-            [],
-        )
-        for pending in pending_releases:
-            if not pending.release_live_store():
-                self._pending_live_store_releases.append(pending)
         with contextlib.suppress(Exception):
             self.spans.end_all(attributes=sweep_attributes("shutdown"))
         with contextlib.suppress(Exception):
@@ -240,9 +233,20 @@ class HermesOTelPlugin:
         if self.host_metrics is not None:
             self.host_metrics.stop()
             self.host_metrics = None
+        # Retry earlier failed releases only after the current pipeline has
+        # shut down: a pipeline built after a failed release shares that store
+        # (the registry kept it), so closing it first would refuse the final
+        # records this pipeline's providers emit while they drain.
+        pending_releases, self._pending_live_store_releases = (
+            self._pending_live_store_releases,
+            [],
+        )
         if pipeline is not None:
             if not pipeline.shutdown(self.config.log_attach_logger):
                 self._pending_live_store_releases.append(pipeline)
+        for pending in pending_releases:
+            if not pending.release_live_store():
+                self._pending_live_store_releases.append(pending)
         self.spans.end_all()
         self.spans.clear_turns()
         self.sessions.clear()

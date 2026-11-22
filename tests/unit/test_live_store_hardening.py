@@ -363,9 +363,8 @@ class TestCloseWindow:
     def test_row_arriving_during_close_reaches_the_terminal_flush(self, tmp_path):
         """A row queued while close() is in flight is drained, not dropped (#671).
 
-        The Lean witness showed the durability contract and the reading the
-        candidate first implemented diverge on `close; add row`. The fix keeps
-        the row so the terminal flush writes it.
+        Refusing every write once closing began lost this row; keeping it
+        lets the terminal flush write it.
         """
         db_path = str(tmp_path / "window.db")
         s = LiveStore(db_path=db_path)
