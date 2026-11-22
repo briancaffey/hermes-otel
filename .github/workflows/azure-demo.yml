@@ -1,0 +1,177 @@
+name: Azure demo
+
+# Hermes Agent on Azure Container Apps with hermes-otel sending telemetry to
+# Application Insights (deploy/azure). Run by hand: it creates billed
+# resources in the subscription behind the `azure-demo` environment.
+on:
+  push:
+    branches: [chore/azure-demo] # temporary: prove the pipeline before merging
+  workflow_dispatch:
+    inputs:
+      action:
+        description: Deploy the demo, or remove it
+        type: choice
+        options: [deploy, remove]
+        default: deploy
+
+permissions:
+  id-token: write # sign in to Azure with GitHub's OIDC token, no stored password
+  contents: read
+
+concurrency:
+  group: azure-demo
+  cancel-in-progress: false
+
+jobs:
+  registry:
+    name: Create registry
+    if: inputs.action != 'remove'
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Deploy the registry
+        run: >
+          az deployment group create
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --name registry
+          --template-file deploy/azure/bicep/main.bicep
+          --query properties.outputs.registryName.value --output tsv
+
+  image:
+    name: Build image
+    needs: registry
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Build Hermes with hermes-otel
+        run: |
+          registry=$(az acr list --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query "[0].name" --output tsv)
+          az acr build --registry "$registry" \
+            --image "hermes-otel-demo:${{ github.sha }}" \
+            --build-arg "HERMES_OTEL_REF=${{ github.sha }}" \
+            deploy/azure/image
+      - name: Copy the proxy image
+        run: |
+          registry=$(az acr list --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query "[0].name" --output tsv)
+          az acr import --name "$registry" --source docker.io/library/caddy:2 --image caddy:2 --force
+
+  preview:
+    name: Preview changes
+    needs: image
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Write parameters
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HERMES_API_SERVER_KEY: ${{ secrets.HERMES_API_SERVER_KEY }}
+          HERMES_DASHBOARD_PASSWORD: ${{ secrets.HERMES_DASHBOARD_PASSWORD }}
+          HERMES_DASHBOARD_SESSION_SECRET: ${{ secrets.HERMES_DASHBOARD_SESSION_SECRET }}
+        run: deploy/azure/parameters.sh "hermes-otel-demo:${{ github.sha }}" > parameters.json
+      - name: Show what would change
+        run: >
+          az deployment group what-if
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --template-file deploy/azure/bicep/main.bicep
+          --parameters @parameters.json
+
+  deploy:
+    name: Deploy Hermes
+    needs: preview
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    outputs:
+      url: ${{ steps.deploy.outputs.url }}
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Write parameters
+        env:
+          NVIDIA_API_KEY: ${{ secrets.NVIDIA_API_KEY }}
+          HERMES_API_SERVER_KEY: ${{ secrets.HERMES_API_SERVER_KEY }}
+          HERMES_DASHBOARD_PASSWORD: ${{ secrets.HERMES_DASHBOARD_PASSWORD }}
+          HERMES_DASHBOARD_SESSION_SECRET: ${{ secrets.HERMES_DASHBOARD_SESSION_SECRET }}
+        run: deploy/azure/parameters.sh "hermes-otel-demo:${{ github.sha }}" > parameters.json
+      - name: Deploy the stack
+        id: deploy
+        run: |
+          url=$(az deployment group create \
+            --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" \
+            --name demo \
+            --template-file deploy/azure/bicep/main.bicep \
+            --parameters @parameters.json \
+            --query properties.outputs.url.value --output tsv)
+          echo "url=$url" >> "$GITHUB_OUTPUT"
+          echo "Hermes is at $url (dashboard at /, API at /v1)" >> "$GITHUB_STEP_SUMMARY"
+
+  chat:
+    name: Send test chat
+    needs: deploy
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - name: Ask Hermes to run a command
+        env:
+          HERMES_URL: ${{ needs.deploy.outputs.url }}
+          HERMES_API_SERVER_KEY: ${{ secrets.HERMES_API_SERVER_KEY }}
+        run: deploy/azure/chat.sh "pipeline-${{ github.run_id }}-${{ github.run_attempt }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  trace:
+    name: Find trace in Azure Monitor
+    needs: chat
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Query Application Insights for the chat's trace
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+        run: deploy/azure/find-trace.sh "pipeline-${{ github.run_id }}-${{ github.run_attempt }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  remove:
+    name: Remove demo
+    if: inputs.action == 'remove'
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Delete every resource in the group
+        run: >
+          az deployment group create
+          --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}"
+          --name remove
+          --mode Complete
+          --template-file deploy/azure/bicep/empty.bicep
