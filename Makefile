@@ -81,7 +81,8 @@ ci-e2e:
 # skips the two npm builds when you did not touch dashboard-ui/ or website/.
 #
 # Not run by `make ci` (slow or environment-bound): the Python 3.9 / 3.11
-# matrix (this runs the current venv's interpreter only), `make ci-floor`
+# matrix (this runs the current venv's interpreter only), the suite on
+# Windows (test.yml, test-windows), `make ci-floor`
 # (the suite against the OpenTelemetry 1.35 floor, a fresh venv), `make
 # ci-e2e` (the real `hermes` binary through the plugin, below), and the
 # catalog-admission workflow (installs hermes-agent main; push to main,

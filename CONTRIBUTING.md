@@ -162,8 +162,10 @@ Before opening a PR:
       vocabulary check, tests with the 85% coverage gate and the per-module
       floors in `coverage-floors.json`, dashboard bundle up to date +
       tsc/eslint/prettier + vitest, docs build, wheel build), so a
-      green `make ci` is a green pipeline, with four exceptions it names in
-      its header: the Python version matrix, `make ci-floor` (the suite on
+      green `make ci` is a green pipeline, with five exceptions it names in
+      its header: the Python version matrix, the suite on Windows (a test
+      that needs a POSIX tool skips itself there with the reason),
+      `make ci-floor` (the suite on
       the OpenTelemetry 1.35 floor), `make ci-e2e` (the real `hermes`
       binary through the plugin; needs `hermes` on PATH, no keys) and the
       catalog-admission workflow.

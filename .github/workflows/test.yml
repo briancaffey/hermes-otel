@@ -95,6 +95,29 @@ jobs:
           path: coverage.xml
           if-no-files-found: warn
 
+  test-windows:
+    # The plugin runs wherever Hermes does, and Windows differs where it
+    # hurts: an open file cannot be deleted (#671), paths use backslashes,
+    # and before Python 3.13 the clock ticks every ~15 ms. The full suite,
+    # without the coverage gate (the Linux matrix owns that). 3.11 keeps the
+    # coarse clock under test; 3.13 is the newest.
+    name: Tests on Windows (${{ matrix.python-version }})
+    runs-on: windows-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.13"]
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: astral-sh/setup-uv@cec208311dfd045dd5311c1add060b2062131d57 # v8.0.0
+        with:
+          enable-cache: true
+      - name: Install Python ${{ matrix.python-version }}
+        run: uv python install ${{ matrix.python-version }}
+
+      - name: Run unit and integration tests
+        run: uv run --python ${{ matrix.python-version }} --extra dev pytest --tb=short -q
+
   test-otel-floor:
     # The declared OpenTelemetry floor (``>=1.35`` in pyproject.toml,
     # hermes_otel/requirements.txt and plugin.yaml) is a measured value, and
