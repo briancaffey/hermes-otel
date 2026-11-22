@@ -6,6 +6,7 @@ file, in-place migration, host-sample cap, trim on open.
 from __future__ import annotations
 
 import sqlite3
+import threading
 
 from helpers.live import NOW  # noqa: E402
 from helpers.live import span as _span  # noqa: E402
@@ -156,6 +157,33 @@ class TestBuckets:
 
 
 class TestDurability:
+    def test_terminal_close_keeps_failed_batch_retryable(self, tmp_path):
+        path = str(tmp_path / "terminal-lock.db")
+        store = LiveStore(db_path=path)
+        store._stop.set()  # keep the repro on this thread
+        store._conn().execute("PRAGMA busy_timeout=50")
+        other = sqlite3.connect(path)
+        other.execute("BEGIN EXCLUSIVE")
+        try:
+            store.add_span(_span("t", "agent", "r", None))
+
+            assert store.close() is False
+            assert store._closed is False
+            assert store.stats()["pending"] == 1
+
+            other.rollback()
+            other.close()
+            assert store.flush() == 1
+            assert store.stats()["spans"] == 1
+            assert store.close() is True
+        finally:
+            try:
+                other.rollback()
+            except sqlite3.Error:
+                pass
+            other.close()
+            store.close()
+
     def test_commit_failure_holds_the_batch(self, tmp_path):
         path = str(tmp_path / "locked.db")
         s = LiveStore(db_path=path)
@@ -218,7 +246,12 @@ class TestDurability:
         s = LiveStore(db_path=str(path))
         s.add_span(_span("t", "agent", "r", None))
         s.flush()
-        s.close()  # drops the connection, so the next read reopens the file
+        # Drop only the current connection: ``close()`` is terminal now, so
+        # corruption must be exercised through the reconnect path directly.
+        s._local.conn.close()
+        s._local.conn = None
+        with s._conns_lock:
+            s._conns.clear()
         path.write_bytes(b"this is not a sqlite file" * 100)
         assert s.query_traces() == {
             "traces": [],
@@ -229,6 +262,7 @@ class TestDurability:
         assert len(logged) == 1
         assert logged[0].startswith(f"live store: read from {path} failed (DatabaseError")
         assert s.spans() == [] and s.cursor() == 0  # the others answer empty too
+        s.close()
 
 
 class TestMigration:
@@ -323,3 +357,47 @@ class TestBounds:
         monkeypatch.setenv("HERMES_OTEL_DASHBOARD_LIVE_MAX_SPANS", "77")
         monkeypatch.setenv("HERMES_OTEL_DASHBOARD_LIVE_RETENTION_HOURS", "2")
         assert reg._configured_limits() == {"max_rows": 77, "retention_hours": 2.0}
+
+
+class TestCloseWindow:
+    def test_row_arriving_during_close_reaches_the_terminal_flush(self, tmp_path):
+        """A row queued while close() is in flight is drained, not dropped (#671).
+
+        The Lean witness showed the durability contract and the reading the
+        candidate first implemented diverge on `close; add row`. The fix keeps
+        the row so the terminal flush writes it.
+        """
+        db_path = str(tmp_path / "window.db")
+        s = LiveStore(db_path=db_path)
+        entered = threading.Event()
+        release = threading.Event()
+        real_flush = s._flush_pending
+
+        def slow_flush(*args, **kwargs):
+            entered.set()
+            assert release.wait(timeout=5.0)
+            return real_flush(*args, **kwargs)
+
+        s._flush_pending = slow_flush
+        closer = threading.Thread(target=s.close, name="close-window")
+        closer.start()
+        assert entered.wait(timeout=5.0)
+        s.add_span({"name": "during-close"})
+        assert len(s._pending) == 1
+        release.set()
+        closer.join(timeout=5.0)
+        assert not closer.is_alive()
+        conn = sqlite3.connect(db_path)
+        try:
+            rows = conn.execute("SELECT COUNT(*) FROM events").fetchone()[0]
+        finally:
+            conn.close()
+        assert rows == 1
+        assert s.dropped_after_close == 0
+
+    def test_row_after_close_is_refused_and_counted(self, tmp_path):
+        """Post-close rows cannot be kept; the drop is counted, not silent."""
+        s = LiveStore(db_path=str(tmp_path / "after.db"))
+        assert s.close() is True
+        s.add_span({"name": "too-late"})
+        assert s.dropped_after_close == 1

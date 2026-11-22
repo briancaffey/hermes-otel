@@ -47,27 +47,95 @@ def live_plugin(tmp_path):
 
 
 class TestLivePipeline:
-    def test_span_processor_shutdown_releases_the_store_for_reload(self, monkeypatch):
+    def test_span_processor_shutdown_leaves_store_for_other_signals(self, monkeypatch):
         import hermes_otel.live_store_registry as registry
         from hermes_otel.pipeline import _LiveSpanProcessor
 
         class Store:
             closed = False
-            flushed = False
 
             def close(self):
                 self.closed = True
-
-            def flush(self):
-                self.flushed = True
 
         store = Store()
         monkeypatch.setattr(registry, "_LIVE_STORE", store)
         monkeypatch.setattr(registry, "_STORES_BY_PATH", {"live.db": store})
         _LiveSpanProcessor(store).shutdown()
 
-        assert store.closed is True
-        assert store.flushed is False
+        # Pipeline.shutdown closes the shared store only after logs and metrics
+        # have shut down; a span processor must not tear it down early.
+        assert store.closed is False
+        assert registry._LIVE_STORE is store
+        assert registry._STORES_BY_PATH == {"live.db": store}
+
+    def test_pipeline_releases_store_after_logger_shutdown(self, monkeypatch, tmp_path):
+        import sqlite3
+
+        import hermes_otel.live_store_registry as registry
+        from hermes_otel.live_store import LiveStore
+        from hermes_otel.pipeline import Pipeline
+
+        store = LiveStore(db_path=str(tmp_path / "shutdown-order.db"))
+        other_store = LiveStore(db_path=str(tmp_path / "other.db"))
+        monkeypatch.setattr(registry, "_LIVE_STORE", store)
+        monkeypatch.setattr(registry, "_STORES_BY_PATH", {"other.db": other_store})
+        logger_state = {}
+
+        class Provider:
+            def __init__(self, name):
+                self.name = name
+
+            def shutdown(self):
+                if self.name == "logs" and not logger_state.get("logs_shutdown"):
+                    logger_state["logs_shutdown"] = True
+                    logger_state["store_was_open"] = store._closed is False
+                    store.add_log({"body": "last log", "level": "INFO", "logger": "test"})
+
+        pipeline = Pipeline(
+            tracer_provider=Provider("traces"),
+            logger_provider=Provider("logs"),
+            live_active=True,
+            live_store=store,
+        )
+        pipeline.shutdown()
+        pipeline.shutdown()
+
+        assert logger_state["store_was_open"] is True
+        assert store._closed is True
+        assert registry._LIVE_STORE is None
+        assert registry._STORES_BY_PATH == {"other.db": other_store}
+        with sqlite3.connect(store.db_path) as conn:
+            (body,) = conn.execute(
+                "SELECT json_extract(data, '$.body') FROM events WHERE kind='log'"
+            ).fetchone()
+        assert body == "last log"
+        other_store.close()
+
+    def test_pipeline_retries_failed_store_release_on_repeated_shutdown(self, monkeypatch):
+        import hermes_otel.live_store_registry as registry
+        from hermes_otel.pipeline import Pipeline
+
+        class Store:
+            close_calls = 0
+
+            def close(self):
+                self.close_calls += 1
+                return self.close_calls > 1
+
+        store = Store()
+        monkeypatch.setattr(registry, "_LIVE_STORE", store)
+        monkeypatch.setattr(registry, "_STORES_BY_PATH", {"live.db": store})
+        pipeline = Pipeline(live_active=True, live_store=store)
+
+        pipeline.shutdown()
+        assert store.close_calls == 1
+        assert pipeline.live_store is store
+        assert registry._LIVE_STORE is store
+
+        pipeline.shutdown()
+        assert store.close_calls == 2
+        assert pipeline.live_store is None
+        assert pipeline.live_active is False
         assert registry._LIVE_STORE is None
         assert registry._STORES_BY_PATH == {}
 
