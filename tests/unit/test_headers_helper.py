@@ -178,9 +178,14 @@ class TestSpawn:
     SIGSEGV there once grpcio is loaded by a ``protocol: grpc`` backend (#469)."""
 
     def test_a_bare_command_is_resolved_on_path(self, tmp_path, monkeypatch):
-        tool = tmp_path / "mint-token"
-        tool.write_text("#!/bin/sh\necho a=b\n")
-        tool.chmod(0o755)
+        if os.name == "nt":
+            # Windows finds a program by extension (PATHEXT), not a mode bit.
+            tool = tmp_path / "mint-token.cmd"
+            tool.write_text("@echo a=b\n")
+        else:
+            tool = tmp_path / "mint-token"
+            tool.write_text("#!/bin/sh\necho a=b\n")
+            tool.chmod(0o755)
         monkeypatch.setenv("PATH", str(tmp_path))
         calls = []
 
@@ -189,7 +194,32 @@ class TestSpawn:
             return subprocess.CompletedProcess(argv, 0, stdout="a=b\n", stderr="")
 
         HeadersHelper("mint-token --x", runner=runner).headers()
-        assert calls[0][0] == [str(tool), "--x"]
+        resolved, arg = calls[0][0]
+        assert os.path.normcase(resolved) == os.path.normcase(str(tool)) and arg == "--x"
+
+    @pytest.mark.parametrize(
+        "command,expected",
+        [
+            (r"C:\tools\mint.exe --aud x", [r"C:\tools\mint.exe", "--aud", "x"]),
+            (r'"C:\Program Files\mint.exe" --aud x', [r"C:\Program Files\mint.exe", "--aud", "x"]),
+            ("mint-token 'a b'", ["mint-token", "a b"]),
+        ],
+    )
+    def test_windows_commands_keep_their_backslashes(self, command, expected):
+        from hermes_otel.headers_helper import split_command
+
+        assert split_command(command, windows=True) == expected
+
+    def test_posix_commands_split_with_shlex_rules(self):
+        from hermes_otel.headers_helper import split_command
+
+        assert split_command('mint "a b" c\\ d', windows=False) == ["mint", "a b", "c d"]
+
+    def test_an_unbalanced_quote_is_refused_on_windows_too(self):
+        from hermes_otel.headers_helper import split_command
+
+        with pytest.raises(ValueError):
+            split_command('mint "a b', windows=True)
 
     def test_a_path_or_an_unknown_name_is_left_alone(self):
         from hermes_otel.headers_helper import _spawnable
@@ -512,7 +542,9 @@ class TestRedaction:
                 script(tmp_path, PRINTS_KV), label="oo", timeout_ms=SLOW_START_MS
             ).headers()
             du.close_debug_log()
-            log = (tmp_path / "home" / "plugins" / "hermes_otel" / "debug.log").read_text()
+            log = (tmp_path / "home" / "plugins" / "hermes_otel" / "debug.log").read_text(
+                encoding="utf-8"
+            )
         finally:
             du.close_debug_log()
         line = next(l for l in log.splitlines() if "headers_helper oo" in l)

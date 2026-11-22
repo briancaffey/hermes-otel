@@ -35,7 +35,7 @@ backends:
 
 | | |
 |---|---|
-| **Command** | An argv string, split with POSIX `shlex` rules (`"a b"` is one argument), run with **no shell**. Pipes, `$(...)` and redirections belong inside the script you name. `${VAR}` in the string is expanded when the config loads, like every other entry field. |
+| **Command** | An argv string, split with POSIX `shlex` rules (`"a b"` is one argument), run with **no shell**. On Windows a backslash is a path separator, not an escape, so `C:\tools\mint.exe --aud x` works as written; quote a path that contains spaces. Pipes, `$(...)` and redirections belong inside the script you name. `${VAR}` in the string is expanded when the config loads, like every other entry field. |
 | **Environment** | The plugin's own: whatever Hermes's process has, so `gcloud`, `aws`, `vault` and friends find their config. The helper runs as the user running Hermes. |
 | **Timeout** | `headers_helper_timeout_ms`, default 5000. A run that takes longer counts as failed. |
 | **stdout** | Either one JSON object (`{"Authorization": "Bearer …", "x-goog-user-project": "p"}`) or one `Name=value` per line. Blank lines and `#` comments are skipped. Values may contain `=`. |

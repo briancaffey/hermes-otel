@@ -141,10 +141,24 @@ def describe_headers(headers: Dict[str, str]) -> str:
 _SPAWN_KWARGS: Dict[str, Any] = {"close_fds": False} if sys.platform == "darwin" else {}
 
 
+def split_command(command: str, windows: Optional[bool] = None) -> List[str]:
+    """``command`` as an argument list.
+
+    POSIX :mod:`shlex` rules everywhere but Windows, where a backslash is a
+    path separator, not an escape: ``C:\\tools\\mint.exe --aud x`` must keep
+    its backslashes. There the non-POSIX rules apply and the quotes around a
+    quoted argument (``"C:\\Program Files\\mint.exe"``) are dropped.
+    """
+    if not (os.name == "nt" if windows is None else windows):
+        return shlex.split(command)
+    parts = shlex.split(command, posix=False)
+    return [p[1:-1] if len(p) >= 2 and p[0] == p[-1] and p[0] in "\"'" else p for p in parts]
+
+
 def _spawnable(argv: List[str]) -> List[str]:
     """``argv`` with a bare command name resolved on ``PATH``, as the exec
     would; a name ``PATH`` lacks is left for the run to report."""
-    if os.sep in argv[0]:
+    if os.sep in argv[0] or (os.altsep and os.altsep in argv[0]):
         return argv
     found = shutil.which(argv[0])
     return [found, *argv[1:]] if found else argv
@@ -154,8 +168,8 @@ class HeadersHelper:
     """One backend entry's ``headers_helper``: the command, its cached output,
     and :meth:`refresh_after` to run it again.
 
-    ``command`` is split with :mod:`shlex` (POSIX rules, so a quoted argument
-    stays one argument) and run with ``shell=False``; an empty or unbalanced
+    ``command`` is split by :func:`split_command` (a quoted argument stays
+    one argument) and run with ``shell=False``; an empty or unbalanced
     command is refused here, at config time. ``runner`` is ``subprocess.run``
     unless a test substitutes one.
 
@@ -173,7 +187,7 @@ class HeadersHelper:
         runner: Callable[..., Any] = subprocess.run,
     ) -> None:
         try:
-            argv = shlex.split(command or "")
+            argv = split_command(command or "")
         except ValueError as e:
             raise HeadersHelperError(f"headers_helper {command!r}: {e}") from None
         if not argv:
