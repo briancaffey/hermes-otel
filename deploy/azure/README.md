@@ -11,6 +11,8 @@ Enterprise, the product Nous Research offers with Microsoft.
 
 Verified on 2026-11-22 in Central US with Hermes Agent v0.23.3.
 
+![One Hermes turn in Application Insights: the agent, its model calls and its tool call on a timeline](screenshots/azure-trace-details.png)
+
 ## How it fits together
 
 ```
@@ -150,6 +152,21 @@ dependencies
 Every span attribute hermes-otel sets (`gen_ai.*`, `hermes.*`, `llm.*`,
 `input.value`, `output.value`) arrives in `customDimensions`.
 
+**Transaction search** lists the turns with their token totals; opening one
+shows the end-to-end view in the screenshot at the top of this page.
+
+![Trace search in Application Insights](screenshots/azure-trace-search.png)
+
+**The Agents view** (under Investigate) lists `hermes-agent` with its
+invocations, tool calls, model usage and token consumption. It works from the
+OpenTelemetry GenAI attributes the plugin already sets.
+
+![The Agents view: invocations](screenshots/azure-agents-invocations.png)
+
+![The Agents view: tool calls and model usage](screenshots/azure-agents-tools-models.png)
+
+![The Agents view: token consumption](screenshots/azure-agents-tokens.png)
+
 **Metrics in Azure Monitor.** Metrics are exported about once a minute to the
 Azure Monitor workspace, a Prometheus-compatible store. `./find-metrics.sh`
 lists the metric names and totals the tokens of the last hour:
@@ -172,6 +189,8 @@ sum by (token_type) (sum_over_time({__name__="hermes.token.usage"}[1h]))
 
 Reading metrics needs the **Monitoring Data Reader** role on the workspace;
 `find-metrics.sh` grants it to whoever is signed in.
+
+![Prometheus explorer in the Azure Monitor workspace](screenshots/azure-prometheus-explorer.png)
 
 **In the Hermes dashboard.** Sign in at `$HERMES_URL` and open **OTel**. The
 Live tab shows each turn as it happens, from the plugin's local store, with no

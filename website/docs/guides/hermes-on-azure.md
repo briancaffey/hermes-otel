@@ -17,6 +17,8 @@ dashboard.
 It is self-hosted Hermes Agent in your own subscription, not Hermes Enterprise.
 Verified on 2026-11-22 in Central US with Hermes Agent v0.23.3.
 
+![One Hermes turn in Application Insights: the agent, its model calls and its tool call on a timeline, with the generative AI properties of the selected call](/img/azure/azure-trace-details.png)
+
 ## What is in it
 
 | Piece | Where |
@@ -75,6 +77,33 @@ in `traces`; the role name is `<environment name>.hermes-agent`, and every span
 attribute arrives in `customDimensions`. See
 [Azure Monitor](/backends/azure-monitor) for the queries and for the Collector
 route, which also carries metrics.
+
+## What it looks like in Azure
+
+**A turn as a trace.** Application Insights reads the OpenTelemetry GenAI
+attributes hermes-otel sets, so a turn opens as `invoke_agent` → `chat` →
+`execute_tool`, with input and output tokens and the messages on the right.
+Nothing Azure-specific is emitted to get this.
+
+![Trace search in Application Insights: ten Hermes traces with their durations, item counts and token totals](/img/azure/azure-trace-search.png)
+
+**The Agents view.** Application Insights lists `hermes-agent` as an agent,
+with its invocations, tool calls, model usage and token consumption:
+
+![The Agents view: hermes-agent with eight invocations and no errors](/img/azure/azure-agents-invocations.png)
+
+![The Agents view: tool calls by tool and model usage by model](/img/azure/azure-agents-tools-models.png)
+
+![The Agents view: token consumption by model, input against output tokens, and the cache ratio](/img/azure/azure-agents-tokens.png)
+
+**Metrics.** The Azure Monitor workspace's Prometheus explorer, with the
+token query above:
+
+![Prometheus explorer in the Azure Monitor workspace: hermes.token.usage by token type](/img/azure/azure-prometheus-explorer.png)
+
+**The Hermes dashboard.** The same turns, live, from the plugin's local store:
+
+![The OTel tab of the Hermes dashboard running on Azure](/img/azure/hermes-dashboard-otel-tab.png)
 
 ## The pipeline
 
