@@ -46,7 +46,7 @@ from .attributes import (
     _turn_attributes,
     correlation_attributes,
 )
-from .session import _start_session_span
+from .session import _start_session_span, end_fork_turn, start_fork_root
 from .usage import genai_metric_dims
 
 
@@ -113,6 +113,7 @@ def on_pre_llm_call(
     # close it so this turn gets its own root instead of joining that trace.
     if session_id:
         tracer.close_failed_turn(session_id)
+        end_fork_turn(tracer, session_id, completed=False, exit_reason="fork_superseded")
         tracer.sessions.remember_turn_id(session_id, kwargs.get("turn_id"))
 
     # hermes fires on_session_start only on the very first turn, but
@@ -305,6 +306,7 @@ def on_pre_api_request(
     key = f"api:{task_id}"
 
     if session_id:
+        start_fork_root(tracer, session_id, kwargs.get("turn_id"), model, platform, kwargs)
         tracer.sessions.get_or_create(session_id).turn_summary.add_api_call()
 
     attributes = request_attributes(

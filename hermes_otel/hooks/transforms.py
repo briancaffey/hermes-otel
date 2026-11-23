@@ -33,6 +33,7 @@ from typing import Any, Optional
 from ..debug_utils import debug_log
 from ..helpers import truncate_string
 from ._common import _fail_open, get_tracer, set_span_attributes
+from .session import end_fork_turn
 from .tools import _tool_call_id, char_count
 
 # Hermes' environment-type strings are short identifiers (``local``,
@@ -103,4 +104,11 @@ def on_transform_llm_output(
     if root is None:
         root = tracer.spans.get_current_parent(sid or None)
     set_span_attributes(root, {"hermes.llm.output.chars": chars})
+    end_fork_turn(
+        tracer,
+        sid,
+        completed=True,
+        exit_reason="fork_final_reply",
+        turn_id=kwargs.get("turn_id", ""),
+    )
     return None

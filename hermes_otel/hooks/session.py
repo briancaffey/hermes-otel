@@ -246,7 +246,55 @@ def on_session_start(session_id: str, model: str, platform: str, **kwargs):
     if session_id:
         # A previous turn of this session that failed and never ended (#467).
         tracer.close_failed_turn(session_id)
+        end_fork_turn(tracer, session_id, completed=False, exit_reason="fork_superseded")
     _start_session_span(session_id, model, platform, kwargs, synthesized=False)
+
+
+def start_fork_root(
+    tracer, session_id: str, turn_id: Any, model: str, platform: str, kwargs: dict
+) -> None:
+    """Root a turn Hermes runs without ``pre_llm_call``, from its first ``pre_api_request``.
+
+    A persistence-disabled fork (the background memory and skill review) shares its
+    parent's session id and fires neither ``pre_llm_call`` nor ``on_session_end``. A
+    ``turn_id`` no ``pre_llm_call`` reported, with no live root, opens an ``agent``
+    root tagged ``hermes.turn.fork``; ``end_fork_turn`` closes it.
+    """
+    current = str(turn_id or "").strip()
+    if not session_id or not current or tracer.spans.has_span(f"session:{session_id}"):
+        return
+    if tracer.sessions.turn_seen(current):
+        return
+    tracer.sessions.remember_turn_id(session_id, current)
+    _start_session_span(session_id, model, platform, kwargs, synthesized=True)
+    tracer.sessions.get_or_create(session_id).fork_turn_id = current
+    set_span_attributes(tracer.spans.get_session_root(session_id), {"hermes.turn.fork": True})
+
+
+def end_fork_turn(
+    tracer, session_id: str, *, completed: bool, exit_reason: str, turn_id: Any = None
+) -> bool:
+    """End a root ``start_fork_root`` opened, the way ``on_session_end`` ends a turn.
+
+    Called from ``transform_llm_output`` with the fork's ``turn_id`` once Hermes
+    accepts its final text (``completed``), and when the session's next live turn
+    starts first (interrupted, any fork). Returns False when no fork root is open.
+    """
+    ps = tracer.sessions.peek(session_id)
+    if ps is None or not ps.fork_turn_id or not tracer.spans.has_span(f"session:{session_id}"):
+        return False
+    if turn_id is not None and str(turn_id).strip() != ps.fork_turn_id:
+        return False
+    on_session_end(
+        session_id,
+        completed=completed,
+        interrupted=not completed,
+        model=ps.model,
+        platform=ps.platform,
+        turn_exit_reason=exit_reason,
+    )
+    tracer.spans.drop_session(session_id)
+    return True
 
 
 def _turn_end_attributes(

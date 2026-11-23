@@ -16,6 +16,7 @@ from hermes_otel.hooks import (
     on_pre_tool_call,
     on_session_end,
     on_session_start,
+    on_transform_llm_output,
 )
 from hermes_otel.plugin_config import HermesOtelConfig
 from hermes_otel.testing import build_inmemory_plugin, install_singleton
@@ -787,3 +788,189 @@ class TestDisabledFamiliesReparent:
             "llm.gpt-4": "agent",
             "api.gpt-4": "llm.gpt-4",
         }
+
+
+def _api_call(session_id, task_id, turn_id, tool_calls, content_chars=1, finish_reason=None):
+    on_pre_api_request(
+        task_id=task_id,
+        turn_id=turn_id,
+        session_id=session_id,
+        platform="slack",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        message_count=1,
+        tool_count=1,
+        approx_input_tokens=10,
+        request_char_count=20,
+        max_tokens=100,
+    )
+    on_post_api_request(
+        task_id=task_id,
+        turn_id=turn_id,
+        session_id=session_id,
+        platform="slack",
+        model="gpt-4",
+        provider="openai",
+        base_url="",
+        api_mode="chat",
+        api_call_count=1,
+        api_duration=0.01,
+        finish_reason=finish_reason or ("tool_calls" if tool_calls else "stop"),
+        message_count=1,
+        response_model="gpt-4",
+        usage={"prompt_tokens": 1, "output_tokens": 1, "total_tokens": 2},
+        assistant_content_chars=content_chars,
+        assistant_tool_call_count=tool_calls,
+    )
+
+
+def _live_turn(session_id, turn_id):
+    on_pre_llm_call(
+        session_id=session_id,
+        turn_id=turn_id,
+        user_message="hello",
+        conversation_history=[],
+        is_first_turn=False,
+        model="gpt-4",
+        platform="slack",
+    )
+    _api_call(session_id, f"api-{turn_id}", turn_id, 0)
+    on_post_llm_call(
+        session_id=session_id,
+        turn_id=turn_id,
+        user_message="hello",
+        assistant_response="hi",
+        conversation_history=[],
+        model="gpt-4",
+        platform="slack",
+    )
+    on_session_end(
+        session_id=session_id, completed=True, interrupted=False, model="gpt-4", platform="slack"
+    )
+
+
+def _final_text(session_id, turn_id):
+    on_transform_llm_output(
+        response_text="done",
+        session_id=session_id,
+        model="gpt-4",
+        platform="slack",
+        turn_id=turn_id,
+    )
+
+
+class TestForkTurnGetsItsOwnRoot:
+    """A background review fork shares its parent's session id and fires no
+    pre_llm_call or on_session_end, only API and tool hooks."""
+
+    def test_fork_spans_share_one_root_closed_at_the_final_reply(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork", "t-live")
+        _api_call("s-fork", "api-r1", "t-review", 1)
+        on_pre_tool_call(
+            tool_name="skill_view",
+            args={},
+            task_id="api-r1",
+            tool_call_id="c1",
+            session_id="s-fork",
+        )
+        on_post_tool_call(
+            tool_name="skill_view",
+            args={},
+            result="{}",
+            task_id="api-r1",
+            tool_call_id="c1",
+            session_id="s-fork",
+        )
+        _api_call("s-fork", "api-r2", "t-review", 0)
+        assert not any(s.attributes.get("hermes.turn.fork") for s in exporter.get_finished_spans())
+        _final_text("s-fork", "t-review")
+
+        spans = exporter.get_finished_spans()
+        fork_root = next(s for s in spans if s.attributes.get("hermes.turn.fork"))
+        fork_spans = [s for s in spans if s.context.trace_id == fork_root.context.trace_id]
+        assert sorted(s.name for s in fork_spans) == [
+            "agent",
+            "api.gpt-4",
+            "api.gpt-4",
+            "tool.skill_view",
+        ]
+        assert all(
+            _parent_span_id(s) == fork_root.context.span_id for s in fork_spans if s != fork_root
+        )
+        assert fork_root.attributes["hermes.turn.exit_reason"] == "fork_final_reply"
+        assert fork_root.attributes["hermes.turn.final_status"] == "completed"
+        assert fork_root.attributes["gen_ai.usage.total_tokens"] == 4
+        assert len({s.context.trace_id for s in spans}) == 2
+
+    def test_next_live_turn_closes_an_open_fork_and_roots_itself(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork2", "t-1")
+        _api_call("s-fork2", "api-r1", "t-review", 1)
+        _live_turn("s-fork2", "t-2")
+
+        spans = exporter.get_finished_spans()
+        roots = [s for s in spans if _parent_span_id(s) is None]
+        assert [r.attributes.get("hermes.turn.fork") for r in roots] == [None, True, None]
+        assert roots[1].attributes["hermes.turn.final_status"] == "interrupted"
+        assert roots[1].attributes["hermes.turn.exit_reason"] == "fork_superseded"
+        assert len(spans) == 3 * 2 + 2
+
+    def test_only_the_forks_own_final_text_closes_its_root(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork3", "t-1")
+        _api_call("s-fork3", "api-r1", "t-review", 0, content_chars=0)
+        _api_call("s-fork3", "api-r2", "t-review", 0, content_chars=40, finish_reason="length")
+        _api_call("s-fork3", "api-r3", "t-review", 0)
+        _final_text("s-fork3", "t-other")
+        _final_text("s-fork3", "t-review")
+
+        spans = exporter.get_finished_spans()
+        fork_root = next(s for s in spans if s.attributes.get("hermes.turn.fork"))
+        fork_spans = [s for s in spans if s.context.trace_id == fork_root.context.trace_id]
+        assert sorted(s.name for s in fork_spans) == ["agent"] + ["api.gpt-4"] * 3
+        assert fork_root.attributes["hermes.turn.exit_reason"] == "fork_final_reply"
+
+    def test_turn_announced_under_another_session_is_not_a_fork(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        on_pre_llm_call(
+            session_id="s-before",
+            turn_id="t-rotated",
+            user_message="hello",
+            conversation_history=[],
+            is_first_turn=True,
+            model="gpt-4",
+            platform="slack",
+        )
+        _api_call("s-after", "api-x", "t-rotated", 0)
+
+        assert not any(s.attributes.get("hermes.turn.fork") for s in exporter.get_finished_spans())
+
+    def test_staff_turn_after_a_fork_cut_mid_request_roots_itself(self, inmemory_otel_setup):
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork4", "t-1")
+        on_pre_api_request(
+            task_id="api-r1",
+            turn_id="t-review",
+            session_id="s-fork4",
+            platform="slack",
+            model="gpt-4",
+            provider="openai",
+            base_url="",
+            api_mode="chat",
+            api_call_count=1,
+            message_count=1,
+            tool_count=1,
+            approx_input_tokens=10,
+            request_char_count=20,
+            max_tokens=100,
+        )
+        _live_turn("s-fork4", "t-2")
+
+        agents = [s for s in exporter.get_finished_spans() if s.name == "agent"]
+        assert [a.attributes.get("hermes.turn.fork") for a in agents] == [None, True, None]
+        assert _parent_span_id(agents[2]) is None
+        assert len({a.context.trace_id for a in agents}) == 3

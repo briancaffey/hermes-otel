@@ -175,6 +175,7 @@ class PerSession:
     # True when this session is a delegated child whose root rejoined the
     # parent's delegation span; its API calls report ``query_source=subagent``.
     is_subagent: bool = False
+    fork_turn_id: str = ""
     # Auxiliary LLM calls (#389): titling, compression, MoA references and
     # aggregator, vision, approval, the goal judge ... run under this turn.
     # Kept apart from ``usage`` / ``cost_usd``: the main loop's ``api.*`` span
@@ -405,6 +406,7 @@ class SessionState:
         # ``pre_llm_call``): tells an auxiliary call of the turn that just
         # ended from one of the next turn that has no root yet (#588).
         self._last_turn_id: "OrderedDict[str, str]" = OrderedDict()
+        self._seen_turns: "OrderedDict[str, bool]" = OrderedDict()
         # The session most recently finalized; a reset that names no old
         # session (the CLI) is taken to replace it.
         self.last_finalized: Optional[str] = None
@@ -554,6 +556,12 @@ class SessionState:
             return
         with self._lock:
             self._remember(self._last_turn_id, session_id, text)
+            self._remember(self._seen_turns, text, True)
+
+    def turn_seen(self, turn_id: Any) -> bool:
+        """True when ``remember_turn_id`` kept this ``turn_id`` for any session. Bounded."""
+        with self._lock:
+            return str(turn_id or "").strip() in self._seen_turns
 
     def last_turn_id(self, session_id: str) -> str:
         """The latest turn's Hermes ``turn_id``, or ``""`` when none was seen."""
@@ -608,4 +616,5 @@ class SessionState:
             self._last_root_context.clear()
             self._previous_session.clear()
             self._last_turn_id.clear()
+            self._seen_turns.clear()
             self.last_finalized = None
