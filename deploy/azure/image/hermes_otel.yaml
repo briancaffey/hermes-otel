@@ -1,17 +1,33 @@
 # hermes-otel on Azure Container Apps.
 #
-# The environment's managed OpenTelemetry agent sets OTEL_EXPORTER_OTLP_ENDPOINT
-# in every container and accepts OTLP over gRPC only. It forwards traces and
-# logs to Application Insights and drops metrics, so metrics stay off here.
+# Traces and logs go to the environment's managed OpenTelemetry agent, which
+# sets OTEL_EXPORTER_OTLP_ENDPOINT in every container, accepts OTLP over gRPC
+# only, and forwards to Application Insights. It drops metrics, so those go to
+# a Collector in the same replica instead.
 project_name: hermes-azure-demo
 
 logs:
   capture: true
   level: INFO
 
+# Azure Monitor's metric experiences expect delta temporality and exponential
+# histograms.
+metrics_histogram: exponential
+
 backends:
+  # Traces and logs: the environment's managed OpenTelemetry agent.
   - type: otlp
     name: azure-monitor
     endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
     protocol: grpc
     metrics: false
+
+  # Metrics: the Collector container in the same replica, which forwards to
+  # Azure Monitor's OTLP ingestion with the app's managed identity.
+  - type: otlp
+    name: azure-monitor-metrics
+    endpoint: http://localhost:4318/v1/traces   # /v1/metrics is derived
+    traces: false
+    logs: false
+    metrics: true
+    metrics_temporality: delta

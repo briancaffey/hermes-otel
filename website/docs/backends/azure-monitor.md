@@ -42,7 +42,10 @@ spans in `dependencies` (`agent`, `llm.*`, three `api.*`, `tool.terminal`)
 under one `operation_Id`, log records in `traces`, `cloud_RoleName` of
 `<environment name>.hermes-agent`, and every span attribute in
 `customDimensions`. [Hermes on Azure](/guides/hermes-on-azure) is the full
-deployable demo. Metrics still need the Collector route.
+deployable demo. Metrics take a Collector beside Hermes that posts to Azure
+Monitor's native OTLP ingestion with a managed identity; the guide shows the
+plugin config, and sixteen metric series were observed in the Azure Monitor
+workspace on 2026-11-22.
 
 ## Quick start
 

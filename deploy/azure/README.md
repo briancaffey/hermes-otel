@@ -2,7 +2,7 @@
 
 A working demo: open-source [Hermes Agent](https://hermes-agent.nousresearch.com/)
 in a container on Azure Container Apps, with hermes-otel sending its traces and
-logs to Azure Monitor / Application Insights. You chat with Hermes, and the
+logs to Application Insights and its metrics to an Azure Monitor workspace. You chat with Hermes, and the
 turn shows up as a trace in two places: Application Insights, and the OTel tab
 of the Hermes dashboard.
 
@@ -17,35 +17,55 @@ Verified on 2026-11-22 in Central US with Hermes Agent v0.23.3.
 you ── HTTPS ──▶ Container App
                  ├─ proxy          /v1/*, /health ─▶ Hermes API server
                  │                 everything else ─▶ Hermes dashboard
-                 └─ hermes         Hermes Agent + hermes-otel
-                                     │ OTLP over gRPC
-                                     ▼
-                 Container Apps environment: managed OpenTelemetry agent
-                                     │
-                                     ▼
-                 Application Insights (traces and logs)
+                 ├─ hermes         Hermes Agent + hermes-otel
+                 │                   │ traces, logs               │ metrics
+                 │                   │ OTLP over gRPC             │ OTLP over HTTP
+                 │                   ▼                            ▼
+                 │        managed OpenTelemetry agent    ┌─ collector
+                 │                   │                   │   signs in with the
+                 │                   ▼                   │   app's managed identity
+                 │        Application Insights           ▼
+                 └────────────────────────────  data collection rule
+                                                         │
+                                                         ▼
+                                              Azure Monitor workspace
 ```
 
 | Resource | Purpose |
 |---|---|
-| Container registry | Holds the image built from `image/` and a copy of the proxy image |
-| Managed identity | Lets the container app pull from the registry without a password |
+| Container registry | Holds the image built from `image/` and copies of the proxy and Collector images |
+| Managed identity | Lets the container app pull from the registry and write metrics, without passwords |
 | Log Analytics workspace | Storage behind Application Insights and the container logs |
 | Application Insights | Where traces and logs land |
 | Container Apps environment | Runs the managed OpenTelemetry agent |
-| Container app `hermesotel-agent` | Hermes Agent with hermes-otel, plus the proxy |
+| Azure Monitor workspace | Where metrics land (Prometheus-compatible) |
+| Data collection endpoint and rule | Azure Monitor's OTLP intake for the metrics |
+| Container app `hermesotel-agent` | Hermes Agent with hermes-otel, plus the proxy and an OpenTelemetry Collector |
 
-The plugin needs no Azure-specific backend. The environment sets
-`OTEL_EXPORTER_OTLP_ENDPOINT` in the container and the plugin's config
-(`image/hermes_otel.yaml`) is a generic OTLP entry that reads it:
+The plugin needs no Azure-specific backend: its config
+(`image/hermes_otel.yaml`) is two generic OTLP entries. Traces and logs go to
+the endpoint the environment sets in `OTEL_EXPORTER_OTLP_ENDPOINT`. The managed
+agent does not forward metrics to Application Insights, so metrics go to a
+Collector in the same replica, which posts them to Azure Monitor's OTLP intake
+with the app's managed identity:
 
 ```yaml
+metrics_histogram: exponential      # what Azure Monitor's metric views expect
+
 backends:
   - type: otlp
     name: azure-monitor
     endpoint: ${OTEL_EXPORTER_OTLP_ENDPOINT}
-    protocol: grpc     # the managed agent accepts gRPC only
-    metrics: false     # it does not forward metrics to Application Insights
+    protocol: grpc                  # the managed agent accepts gRPC only
+    metrics: false
+
+  - type: otlp
+    name: azure-monitor-metrics
+    endpoint: http://localhost:4318/v1/traces   # the Collector; /v1/metrics is derived
+    traces: false
+    logs: false
+    metrics: true
+    metrics_temporality: delta      # also what Azure Monitor expects
 ```
 
 ## Deploy it yourself
@@ -61,9 +81,11 @@ az group create --name hermes-otel-demo --location centralus
 az deployment group create -g hermes-otel-demo -n demo -f bicep/main.bicep
 registry=$(az acr list -g hermes-otel-demo --query "[0].name" -o tsv)
 
-# 2. The image: Hermes Agent plus hermes-otel, and a copy of the proxy
+# 2. The image: Hermes Agent plus hermes-otel, and copies of the proxy and Collector
 az acr build --registry "$registry" --image hermes-otel-demo:dev image
 az acr import --name "$registry" --source docker.io/library/caddy:2 --image caddy:2
+az acr import --name "$registry" --source docker.io/otel/opentelemetry-collector-contrib:0.162.0 \
+  --image opentelemetry-collector-contrib:0.162.0
 
 # 3. Everything else
 export NVIDIA_API_KEY=...                                   # your model key
@@ -128,6 +150,29 @@ dependencies
 Every span attribute hermes-otel sets (`gen_ai.*`, `hermes.*`, `llm.*`,
 `input.value`, `output.value`) arrives in `customDimensions`.
 
+**Metrics in Azure Monitor.** Metrics are exported about once a minute to the
+Azure Monitor workspace, a Prometheus-compatible store. `./find-metrics.sh`
+lists the metric names and totals the tokens of the last hour:
+
+```
+| token type | tokens, last hour |
+| cacheread | 29568 |
+| input | 42843 |
+| output | 312 |
+| reasoning | 187 |
+```
+
+In the portal, open the Azure Monitor workspace and use **Metrics** (or
+**Prometheus explorer**) with PromQL. Metric names keep their dots, so select
+them by name:
+
+```promql
+sum by (token_type) (sum_over_time({__name__="hermes.token.usage"}[1h]))
+```
+
+Reading metrics needs the **Monitoring Data Reader** role on the workspace;
+`find-metrics.sh` grants it to whoever is signed in.
+
 **In the Hermes dashboard.** Sign in at `$HERMES_URL` and open **OTel**. The
 Live tab shows each turn as it happens, from the plugin's local store, with no
 Azure query involved.
@@ -140,7 +185,7 @@ Azure query involved.
 Run it from the Actions tab (**Azure demo** → **Run workflow**), choosing
 `deploy` or `remove`.
 
-| Stage | What it does | Time in the first full run |
+| Stage | What it does | Time in a full run |
 |---|---|---|
 | Create registry | Deploys `main.bicep` without an image | 55 s |
 | Build image | Builds `image/` in the registry at the commit being run | 2 min 39 s |
@@ -148,6 +193,7 @@ Run it from the Actions tab (**Azure demo** → **Run workflow**), choosing
 | Deploy Hermes | Deploys `main.bicep` with the new image | 1 min 27 s |
 | Send test chat | `chat.sh`: asks Hermes to run a command | 10 s |
 | Find trace in Azure Monitor | `find-trace.sh`: the chat's spans, in the run summary | 24 s |
+| Find metrics in Azure Monitor | `find-metrics.sh`: metric names and token totals, in the run summary | 27 s |
 
 It signs in to Azure with GitHub's OIDC token, so no Azure password is stored.
 To use it in a fork, create an app registration with a federated credential
@@ -177,10 +223,10 @@ daily fee. Remove the demo when you are done.
   folder (Hermes keeps a local socket and builds Python environments there);
   durable storage on Azure Files NFS is tracked in the Azure demo milestone.
   Traces and logs in Application Insights are unaffected.
-- **Metrics are not sent.** The managed OpenTelemetry agent forwards traces
-  and logs to Application Insights, not metrics. The route for metrics is a
-  Collector with Azure Monitor's native OTLP ingestion, also tracked in the
-  milestone.
+- **Metrics live in a different place from traces.** Traces and logs are in
+  Application Insights; metrics are in the Azure Monitor workspace, queried
+  with PromQL. The data collection rule links the two, so Application Insights
+  knows which workspace holds this app's metrics.
 - **Pick the region with care.** A Container Apps environment in East US 2
   stayed in `Waiting` for 50 minutes, twice; Central US took two minutes. A
   new subscription allows one environment in total.
