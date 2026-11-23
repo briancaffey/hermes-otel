@@ -1,7 +1,8 @@
 name: Azure demo
 
-# Hermes Agent on Azure Container Apps with hermes-otel sending telemetry to
-# Application Insights (deploy/azure). Run by hand: it creates billed
+# Hermes Agent on Azure Container Apps with hermes-otel sending traces and
+# logs to Application Insights and metrics to an Azure Monitor workspace
+# (deploy/azure). Run by hand: it creates billed
 # resources in the subscription behind the `azure-demo` environment.
 on:
   workflow_dispatch:
@@ -60,10 +61,12 @@ jobs:
             --image "hermes-otel-demo:${{ github.sha }}" \
             --build-arg "HERMES_OTEL_REF=${{ github.sha }}" \
             deploy/azure/image
-      - name: Copy the proxy image
+      - name: Copy the proxy and Collector images
         run: |
           registry=$(az acr list --resource-group "${{ vars.AZURE_RESOURCE_GROUP }}" --query "[0].name" --output tsv)
           az acr import --name "$registry" --source docker.io/library/caddy:2 --image caddy:2 --force
+          az acr import --name "$registry" --source docker.io/otel/opentelemetry-collector-contrib:0.162.0 \
+            --image opentelemetry-collector-contrib:0.162.0 --force
 
   preview:
     name: Preview changes
@@ -153,6 +156,24 @@ jobs:
         env:
           RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
         run: deploy/azure/find-trace.sh "pipeline-${{ github.run_id }}-${{ github.run_attempt }}" | tee -a "$GITHUB_STEP_SUMMARY"
+
+  metrics:
+    name: Find metrics in Azure Monitor
+    needs: chat
+    runs-on: ubuntu-latest
+    environment: azure-demo
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+      - uses: azure/login@a641126d1b8aa4d1fa005f4f92df94a3a4c4c906 # v3.1.0
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+      - name: Query the Azure Monitor workspace for the plugin's metrics
+        env:
+          RESOURCE_GROUP: ${{ vars.AZURE_RESOURCE_GROUP }}
+          PRINCIPAL_TYPE: ServicePrincipal
+        run: deploy/azure/find-metrics.sh | tee -a "$GITHUB_STEP_SUMMARY"
 
   remove:
     name: Remove demo

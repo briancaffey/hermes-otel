@@ -39,3 +39,5 @@ resource pullRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
 output registryName string = registry.name
 output loginServer string = registry.properties.loginServer
 output pullIdentityId string = pullIdentity.id
+output pullIdentityPrincipalId string = pullIdentity.properties.principalId
+output pullIdentityClientId string = pullIdentity.properties.clientId

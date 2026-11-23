@@ -23,6 +23,9 @@ param image string = ''
 @description('Reverse proxy image, as repository:tag in this deployment\'s registry.')
 param proxyImage string = 'caddy:2'
 
+@description('OpenTelemetry Collector image, as repository:tag in this deployment\'s registry.')
+param collectorImage string = 'opentelemetry-collector-contrib:0.162.0'
+
 @description('Environment variables for the Hermes container that are not secret.')
 param environment object = {}
 
@@ -46,6 +49,9 @@ module stack 'stack.bicep' = if (!empty(image)) {
     image: '${registry.outputs.loginServer}/${image}'
     registryServer: registry.outputs.loginServer
     pullIdentityId: registry.outputs.pullIdentityId
+    identityPrincipalId: registry.outputs.pullIdentityPrincipalId
+    identityClientId: registry.outputs.pullIdentityClientId
+    collectorImage: collectorImage
     proxyImage: proxyImage
     environment: environment
     secretEnvironment: secretEnvironment
@@ -56,3 +62,5 @@ output registryName string = registry.outputs.registryName
 output applicationInsightsName string = stack.?outputs.applicationInsightsName ?? ''
 output containerAppName string = stack.?outputs.containerAppName ?? ''
 output url string = stack.?outputs.url ?? ''
+output metricsWorkspaceName string = stack.?outputs.metricsWorkspaceName ?? ''
+output prometheusQueryEndpoint string = stack.?outputs.prometheusQueryEndpoint ?? ''

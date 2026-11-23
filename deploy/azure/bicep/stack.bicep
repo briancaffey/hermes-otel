@@ -5,6 +5,11 @@ param namePrefix string
 param image string
 param registryServer string
 param pullIdentityId string
+param identityPrincipalId string
+param identityClientId string
+
+@description('OpenTelemetry Collector image, as repository:tag in the registry.')
+param collectorImage string
 param environment object
 @secure()
 param secretEnvironment object
@@ -85,6 +90,120 @@ resource containerEnvironment 'Microsoft.App/managedEnvironments@2026-07-01' = {
     }
   }
 }
+
+// ── Metrics ──────────────────────────────────────────────────────────────
+// The managed OpenTelemetry agent does not forward metrics to Application
+// Insights. Metrics take Azure Monitor's native OTLP ingestion instead: the
+// plugin sends them to a Collector in the same replica, which signs in with
+// the app's managed identity and posts to a data collection rule that stores
+// them in an Azure Monitor workspace (Prometheus-compatible).
+resource metricsWorkspace 'Microsoft.Monitor/accounts@2023-04-03' = {
+  name: '${namePrefix}-metrics-${suffix}'
+  location: location
+}
+
+resource collectionEndpoint 'Microsoft.Insights/dataCollectionEndpoints@2024-03-11' = {
+  name: '${namePrefix}-otlp-${suffix}'
+  location: location
+  properties: {
+    networkAcls: {
+      publicNetworkAccess: 'Enabled'
+    }
+  }
+}
+
+// Shape from Microsoft's OTLP template (AzureMonitorCommunity,
+// OTLP_DCE_DCR_ARM_Template), metrics part only.
+resource collectionRule 'Microsoft.Insights/dataCollectionRules@2024-03-11' = {
+  name: '${namePrefix}-otlp-${suffix}'
+  location: location
+  properties: {
+    dataCollectionEndpointId: collectionEndpoint.id
+    references: {
+      applicationInsights: [
+        {
+          resourceId: insights.id
+          name: 'applicationInsightsResource'
+        }
+      ]
+    }
+    directDataSources: {
+      otelMetrics: [
+        {
+          streams: [
+            'Custom-Metrics-Otel'
+          ]
+          enrichWithResourceAttributes: [
+            '*'
+          ]
+          enrichWithReference: 'applicationInsightsResource'
+          name: 'otelMetricsDirect'
+        }
+      ]
+    }
+    destinations: {
+      monitoringAccounts: [
+        {
+          accountResourceId: metricsWorkspace.id
+          name: 'metricsWorkspace'
+        }
+      ]
+    }
+    dataFlows: [
+      {
+        streams: [
+          'Custom-Metrics-Otel'
+        ]
+        destinations: [
+          'metricsWorkspace'
+        ]
+      }
+    ]
+  }
+}
+
+// Monitoring Metrics Publisher: lets the app's identity write to the rule.
+resource publishRole 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+  scope: collectionRule
+  name: guid(collectionRule.id, identityPrincipalId, 'metrics-publisher')
+  properties: {
+    principalId: identityPrincipalId
+    principalType: 'ServicePrincipal'
+    roleDefinitionId: subscriptionResourceId(
+      'Microsoft.Authorization/roleDefinitions',
+      '3913510d-42f4-4e42-8a64-420c390055eb'
+    )
+  }
+}
+
+var metricsEndpoint = '${collectionEndpoint.properties.metricsIngestion.endpoint}/datacollectionRules/${collectionRule.properties.immutableId}/streams/Custom-Metrics-Otel/otlp/v1/metrics'
+var collectorConfig = '''
+receivers:
+  otlp:
+    protocols:
+      http:
+        endpoint: 127.0.0.1:4318
+processors:
+  batch:
+extensions:
+  azure_auth:
+    managed_identity:
+      client_id: ${env:AZURE_CLIENT_ID}
+    scopes:
+      - https://monitor.azure.com/.default
+exporters:
+  otlphttp/azuremonitor:
+    metrics_endpoint: ${env:AZURE_MONITOR_METRICS_ENDPOINT}
+    auth:
+      authenticator: azure_auth
+service:
+  extensions: [azure_auth]
+  pipelines:
+    metrics:
+      receivers: [otlp]
+      processors: [batch]
+      exporters: [otlphttp/azuremonitor]
+'''
 
 var secretNames = [for name in objectKeys(secretEnvironment): toLower(replace(name, '_', '-'))]
 
@@ -179,6 +298,31 @@ resource hermes 'Microsoft.App/containerApps@2026-07-01' = {
           )
         }
         {
+          name: 'collector'
+          image: '${registryServer}/${collectorImage}'
+          args: [
+            '--config=env:COLLECTOR_CONFIG'
+          ]
+          env: [
+            {
+              name: 'COLLECTOR_CONFIG'
+              value: collectorConfig
+            }
+            {
+              name: 'AZURE_CLIENT_ID'
+              value: identityClientId
+            }
+            {
+              name: 'AZURE_MONITOR_METRICS_ENDPOINT'
+              value: metricsEndpoint
+            }
+          ]
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+        }
+        {
           name: 'proxy'
           image: '${registryServer}/${proxyImage}'
           command: [
@@ -218,3 +362,5 @@ resource hermes 'Microsoft.App/containerApps@2026-07-01' = {
 output applicationInsightsName string = insights.name
 output containerAppName string = hermes.name
 output url string = 'https://${hermes.properties.configuration.ingress.fqdn}'
+output metricsWorkspaceName string = metricsWorkspace.name
+output prometheusQueryEndpoint string = metricsWorkspace.properties.metrics.prometheusQueryEndpoint

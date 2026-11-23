@@ -9,7 +9,8 @@ description: "Run Hermes Agent on Azure Container Apps and send its traces and l
 The repo ships a deployable demo under
 [`deploy/azure/`](https://github.com/briancaffey/hermes-otel/tree/main/deploy/azure):
 Hermes Agent in a container on **Azure Container Apps**, with hermes-otel
-sending traces and logs to **Application Insights**. A chat with Hermes shows
+sending traces and logs to **Application Insights** and metrics to an **Azure
+Monitor workspace**. A chat with Hermes shows
 up as a trace in Application Insights and in the OTel tab of the Hermes
 dashboard.
 
@@ -44,6 +45,31 @@ backends:
     metrics: false     # it does not forward metrics to Application Insights
 ```
 
+Metrics take a second route. An OpenTelemetry Collector runs beside Hermes in
+the same replica, signs in with the app's managed identity, and posts to Azure
+Monitor's OTLP intake (a data collection rule), which stores them in an Azure
+Monitor workspace. The plugin sends metrics, and only metrics, to that
+Collector:
+
+```yaml
+metrics_histogram: exponential      # what Azure Monitor's metric views expect
+
+backends:
+  - type: otlp
+    name: azure-monitor-metrics
+    endpoint: http://localhost:4318/v1/traces   # the Collector; /v1/metrics is derived
+    traces: false
+    logs: false
+    metrics: true
+    metrics_temporality: delta
+```
+
+Query them with PromQL in the workspace; names keep their dots:
+
+```promql
+sum by (token_type) (sum_over_time({__name__="hermes.token.usage"}[1h]))
+```
+
 In Application Insights, spans are in the `dependencies` table and log records
 in `traces`; the role name is `<environment name>.hermes-agent`, and every span
 attribute arrives in `customDimensions`. See
@@ -52,7 +78,7 @@ route, which also carries metrics.
 
 ## The pipeline
 
-Six stages, about six minutes for a first full run:
+Seven stages, about six minutes for a first full run:
 
 1. **Create registry**
 2. **Build image**
@@ -60,15 +86,16 @@ Six stages, about six minutes for a first full run:
 4. **Deploy Hermes**
 5. **Send test chat**
 6. **Find trace in Azure Monitor**
+7. **Find metrics in Azure Monitor**
 
-The last stage prints the spans of the chat the pipeline sent, so a green run
-is proof that a turn on Azure reached Application Insights.
+The last two stages print the spans of the chat the pipeline sent and the
+metrics the plugin wrote, so a green run is proof that a turn on Azure reached
+Azure Monitor on all three signals.
 
 ## Limits of the demo
 
 - Hermes's data folder is ephemeral; a new deployment starts with empty
   sessions and an empty OTel tab. Telemetry already in Application Insights is
   not affected.
-- Metrics are not sent on this route.
 - The app is reachable from the internet, behind an API key and a dashboard
   password.
