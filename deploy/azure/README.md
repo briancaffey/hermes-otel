@@ -185,7 +185,7 @@ Azure query involved.
 Run it from the Actions tab (**Azure demo** → **Run workflow**), choosing
 `deploy` or `remove`.
 
-| Stage | What it does | Time in the first full run |
+| Stage | What it does | Time in a full run |
 |---|---|---|
 | Create registry | Deploys `main.bicep` without an image | 55 s |
 | Build image | Builds `image/` in the registry at the commit being run | 2 min 39 s |
@@ -193,7 +193,7 @@ Run it from the Actions tab (**Azure demo** → **Run workflow**), choosing
 | Deploy Hermes | Deploys `main.bicep` with the new image | 1 min 27 s |
 | Send test chat | `chat.sh`: asks Hermes to run a command | 10 s |
 | Find trace in Azure Monitor | `find-trace.sh`: the chat's spans, in the run summary | 24 s |
-| Find metrics in Azure Monitor | `find-metrics.sh`: metric names and token totals, in the run summary | added later |
+| Find metrics in Azure Monitor | `find-metrics.sh`: metric names and token totals, in the run summary | 27 s |
 
 It signs in to Azure with GitHub's OIDC token, so no Azure password is stored.
 To use it in a fork, create an app registration with a federated credential
