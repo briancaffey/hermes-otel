@@ -34,6 +34,7 @@ def tracer(monkeypatch):
     tr.config.tool_input_preview_max_chars = None
     tr.config.tool_output_preview_max_chars = None
     tr.spans.pop_started.return_value = 1.0
+    tr.sessions.peek.return_value.fork_turn_id = ""
     monkeypatch.setattr("hermes_otel.tracer.get_tracer", lambda: tr)
     return tr
 

@@ -305,6 +305,13 @@ ROWS: Tuple[Row, ...] = (
         "`true` on continuation turns: Hermes fires `on_session_start` only for a session's first turn, so later turns open their root lazily at the first hook of the turn (optional)",
     ),
     Row(
+        ("hermes.turn.fork",),
+        "agent / cron: start",
+        "session",
+        "bool",
+        "`true` on a turn Hermes ran without `pre_llm_call` or `on_session_end`, such as the background memory and skill review, which shares its parent's session id: the root opens at the fork's first API request and ends when Hermes accepts its final text at `transform_llm_output` (`hermes.turn.exit_reason` `fork_final_reply`) or, interrupted, when the session's next turn starts first (`fork_superseded`) (optional)",
+    ),
+    Row(
         ("hermes.session.previous_id",),
         "agent / cron: start",
         "session",

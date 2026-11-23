@@ -297,6 +297,7 @@ export const ATTRIBUTE_NAMES: readonly string[] = [
   "weave.agent.version",
   "hermes.trace.remote_parent",
   "hermes.session.synthesized",
+  "hermes.turn.fork",
   "hermes.session.previous_id",
   "hermes.session.finalize_reason",
   "hermes.session.reset_reason",
