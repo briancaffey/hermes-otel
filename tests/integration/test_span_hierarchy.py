@@ -949,7 +949,7 @@ class TestForkTurnGetsItsOwnRoot:
 
         assert not any(s.attributes.get("hermes.turn.fork") for s in exporter.get_finished_spans())
 
-    def test_staff_turn_after_a_fork_cut_mid_request_roots_itself(self, inmemory_otel_setup):
+    def test_next_turn_after_a_fork_cut_mid_request_roots_itself(self, inmemory_otel_setup):
         exporter, _ = inmemory_otel_setup
         _live_turn("s-fork4", "t-1")
         on_pre_api_request(
