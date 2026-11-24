@@ -14,6 +14,7 @@ from decimal import Decimal
 from typing import Any, Optional
 
 import pytest
+from helpers.config import install_config
 from helpers.turns import api_call
 
 from hermes_otel.hooks import (
@@ -35,6 +36,10 @@ class _CanonicalUsage:
     reasoning_tokens: int = 0
     request_count: int = 1
     raw_usage: Optional[dict] = None
+    # Hermes sends this as a tuple (``(("1h", 4096),)``; ``()`` = no tier named),
+    # and core pricing reads it with ``dict(...)``. The fake has to carry it for
+    # the tuple path to be exercised at all.
+    cache_write_by_ttl: tuple = ()
 
 
 @dataclass(frozen=True)
@@ -54,7 +59,13 @@ class _FakePricing:
 
     def estimate_usage_cost(self, model, usage, *, provider=None, base_url=None, api_key=None):
         self.calls.append(
-            {"model": model, "usage": usage, "provider": provider, "base_url": base_url}
+            {
+                "model": model,
+                "usage": usage,
+                "provider": provider,
+                "base_url": base_url,
+                "api_key": api_key,
+            }
         )
         result = self.results.pop(0)
         if isinstance(result, Exception):
@@ -94,13 +105,13 @@ _USAGE = {
 }
 
 
-def _api_call(task_id="t1", session_id="s1", usage=None):
+def _api_call(task_id="t1", session_id="s1", usage=None, base_url="https://openrouter.ai/api/v1"):
     api_call(
         session_id,
         task_id,
         model="openai/gpt-4o-mini",
         provider="openrouter",
-        base_url="https://openrouter.ai/api/v1",
+        base_url=base_url,
         api_mode="chat_completions",
         request={"request_char_count": 10, "max_tokens": None},
         response={
@@ -224,6 +235,87 @@ class TestApiSpanCost:
         on_session_start(session_id="s1", model="m", platform="cli")
         _api_call(usage={**_USAGE, "cost": 9.99})
         assert _cost_points(reader) == []
+
+
+class TestCacheWriteTuples:
+    """Hermes sends ``cache_write_by_ttl`` as a tuple and core pricing reads the field
+    with ``dict(...)``. Passing it through the int coercion yielded 0, core raised
+    ``TypeError`` on the int, and the estimate was lost — the span carried no cost. The
+    field must reach pricing as the dict core expects, in both shapes.
+    """
+
+    def test_empty_tuple_reaches_pricing_as_a_dict(self, inmemory_otel_with_metrics, pricing):
+        exporter, reader, _ = inmemory_otel_with_metrics
+        fake = pricing(_CostResult(Decimal("0.000123"), "estimated", "provider_models_api"))
+        on_session_start(session_id="s1", model="openai/gpt-4o-mini", platform="cli")
+        _api_call(usage={**_USAGE, "cache_write_by_ttl": ()})
+
+        (call,) = fake.calls
+        assert call["usage"].cache_write_by_ttl == {}
+        (api,) = _span(exporter, "api.")
+        assert api.attributes["hermes.cost.usage"] == pytest.approx(0.000123)
+        assert api.attributes["hermes.cost.status"] == "estimated"
+        assert [p[0] for p in _cost_points(reader)] == [pytest.approx(0.000123)]
+
+    def test_a_real_bucket_survives_the_shape(self, inmemory_otel_with_metrics, pricing):
+        exporter, reader, _ = inmemory_otel_with_metrics
+        fake = pricing(_CostResult(Decimal("0.0045268"), "estimated", "provider_models_api"))
+        on_session_start(session_id="s1", model="openai/gpt-4o-mini", platform="cli")
+        _api_call(usage={**_USAGE, "cache_write_by_ttl": (("1h", 4096),)})
+
+        (call,) = fake.calls
+        assert call["usage"].cache_write_by_ttl == {"1h": 4096}
+        (api,) = _span(exporter, "api.")
+        assert api.attributes["hermes.cost.usage"] == pytest.approx(0.0045268)
+
+
+class TestEndpointKey:
+    """A gateway's ``/v1/models`` price list answers only to an authenticated request.
+    The hook carries no key, so the endpoint's own key is recovered from the config
+    entry behind ``base_url``; without it the call prices as ``unknown``.
+    """
+
+    def test_the_config_key_behind_the_endpoint_reaches_pricing(
+        self, inmemory_otel_with_metrics, pricing, monkeypatch
+    ):
+        exporter, reader, _ = inmemory_otel_with_metrics
+        fake = pricing(_CostResult(Decimal("0.0031236"), "estimated", "provider_models_api"))
+        install_config(
+            monkeypatch,
+            {"bifrost": {"base_url": "https://bifrost.test/v1", "key_env": "BIFROST_VK"}},
+            {"BIFROST_VK": "vk-123"},
+        )
+        on_session_start(session_id="s1", model="Qwen-flash-next", platform="cli")
+        _api_call(base_url="https://bifrost.test/v1")
+
+        (call,) = fake.calls
+        assert call["api_key"] == "vk-123"
+        (api,) = _span(exporter, "api.")
+        assert api.attributes["hermes.cost.usage"] == pytest.approx(0.0031236)
+
+    def test_an_endpoint_with_no_config_entry_prices_without_a_key(
+        self, inmemory_otel_with_metrics, pricing, monkeypatch
+    ):
+        exporter, _, _ = inmemory_otel_with_metrics
+        fake = pricing(_CostResult(None, "unknown", "none", "n/a"))
+        install_config(
+            monkeypatch, {"other": {"base_url": "https://other.test/v1", "key_env": "K"}}
+        )
+        on_session_start(session_id="s1", model="m", platform="cli")
+        _api_call(base_url="https://bifrost.test/v1")
+
+        assert fake.calls[0]["api_key"] == ""
+
+    def test_no_config_modules_fail_open(self, inmemory_otel_with_metrics, pricing):
+        """The test suite has no Hermes config; pricing is called with an empty key, as before."""
+        exporter, _, _ = inmemory_otel_with_metrics
+        fake = pricing(_CostResult(Decimal("0.000123"), "estimated", "provider_models_api"))
+        on_session_start(session_id="s1", model="m", platform="cli")
+        _api_call()
+
+        assert fake.calls[0]["api_key"] == ""
+        (api,) = _span(exporter, "api.")
+        assert api.attributes["hermes.cost.usage"] == pytest.approx(0.000123)
 
 
 class TestTurnRollup:

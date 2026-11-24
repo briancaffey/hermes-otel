@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from typing import Any, Dict, Optional
 
 from ..coerce import to_int
@@ -105,6 +106,56 @@ def _record_usage_metrics(tracer, totals: Dict[str, int], base_attrs: Dict[str, 
             tracer.record_metric("claude_code.token.usage", v, {**base_attrs, "type": label})
 
 
+def _cache_write_dict(value: Any) -> Dict[str, int]:
+    """``cache_write_by_ttl`` as the dict core pricing reads it.
+
+    Hermes's ``asdict(CanonicalUsage)`` gives the tuple ``(("1h", 4096),)``, and
+    ``()`` when the response named no cache tier. Core pricing calls ``dict(...)``
+    on the field, so an int raises ``TypeError`` in ``_cache_write_buckets`` and the
+    whole estimate is lost — ``to_int`` on a tuple yields exactly that int, so this
+    field must never go through it. Normalize every shape to a dict; anything that is
+    not a bucket list is no tier.
+    """
+    if isinstance(value, dict):
+        return value
+    if isinstance(value, (tuple, list)):
+        try:
+            return dict(value)
+        except (TypeError, ValueError):
+            return {}
+    return {}
+
+
+def _endpoint_api_key(base_url: str) -> str:
+    """The config provider key behind this endpoint, for the endpoint's own price list.
+
+    ``post_api_request`` carries ``base_url`` and no key. A gateway's ``/v1/models``
+    price list answers only to an authenticated request, so with no key the endpoint's
+    published rates are invisible and the call prices as ``unknown`` even when Hermes
+    knows the price. Recover the config provider entry behind the endpoint by origin
+    (the same boundary a bearer secret is allowed to cross) and read its declared
+    ``key_env`` from the process environment. Empty on Hermes builds without these
+    modules, so pricing behaves exactly as before.
+    """
+    try:
+        from agent.models_dev import _cfg_get  # type: ignore[import-not-found]
+        from utils import base_url_origin  # type: ignore[import-not-found]
+
+        origin = base_url_origin((base_url or "").strip())
+        if not origin[1]:
+            return ""
+        entries = _cfg_get("providers", default=None)
+        if not isinstance(entries, dict):
+            return ""
+        for row in entries.values():
+            if isinstance(row, dict) and base_url_origin(str(row.get("base_url") or "")) == origin:
+                key_env = str(row.get("key_env") or row.get("api_key_env") or "").strip()
+                return os.environ.get(key_env, "").strip() if key_env else ""
+    except Exception:
+        return ""
+    return ""
+
+
 def _estimate_cost(
     model: str, provider: str, base_url: str, usage: Dict[str, Any]
 ) -> Optional[Dict[str, Any]]:
@@ -126,10 +177,22 @@ def _estimate_cost(
     try:
         names = {f.name for f in fields(CanonicalUsage) if f.name != "raw_usage"}
         canonical = CanonicalUsage(
-            **{k: to_int(v) for k, v in usage.items() if k in names and v is not None}
+            **{
+                k: (
+                    _cache_write_dict(v)
+                    if k == "cache_write_by_ttl"
+                    else (v if isinstance(v, (dict, list)) else to_int(v))
+                )
+                for k, v in usage.items()
+                if k in names and v is not None
+            }
         )
         result = estimate_usage_cost(
-            model or "", canonical, provider=provider or None, base_url=base_url or None, api_key=""
+            model or "",
+            canonical,
+            provider=provider or None,
+            base_url=base_url or None,
+            api_key=_endpoint_api_key(base_url),
         )
         status = str(getattr(result, "status", "") or "unknown")
         amount = getattr(result, "amount_usd", None)
