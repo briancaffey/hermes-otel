@@ -110,6 +110,10 @@ Whatever `content_capture` lets through is redacted before it leaves the process
 
 **Cost.** The pass runs once per finished span, shared by the live store and every backend: on the thread that ends the span when the live store is on (the default), otherwise on the export thread. Measured with Hermes' redactor on an `api.*` span carrying both conventions: about 6 ms at 30 KB of content, 23 ms at 120 KB and 180 ms at 0.9 MB (a long `capture_conversation_history`). A span with no content attributes costs nothing.
 
+## Provider keys {#provider-keys}
+
+The plugin exports no credential, and it reads one in a single place: pricing. To price a call to an endpoint whose model list needs authentication, it reads the key that Hermes's own config declares for that endpoint (the `key_env` of the `providers:` entry with the same scheme, host and port) from the process environment and hands it to Hermes's `estimate_usage_cost`. Hermes sends it as the bearer token of a `GET` to that endpoint's `/models`, the same request it makes for `state.db`. A different host, another port, or `http` where the entry says `https` gets no key. The key never becomes a span attribute, a metric label, a log record or a live-store row, and privacy mode does not change this lookup. See [cost limitations](/reference/limitations#cost-is-hermess-estimate-and-only-when-hermes-has-a-price).
+
 ## Interaction with `preview_max_chars`
 
 `preview_max_chars` (default: 1200) is a separate cap. It clips long previews and ends them with `...`. In `off` mode it does nothing, since there is nothing to clip. In `preview` and `full` mode a clipped preview carries `hermes.preview.<input|output>.truncated = true` and `.original_chars`, so a short-looking value can be told from a clipped one.
