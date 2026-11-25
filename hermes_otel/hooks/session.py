@@ -265,7 +265,9 @@ def start_fork_root(
         return
     if tracer.sessions.turn_seen(current):
         return
-    tracer.sessions.remember_turn_id(session_id, current)
+    # Seen, but not the session's latest turn: a late auxiliary call of the
+    # live turn still has to match ``last_turn_id`` to link to its root.
+    tracer.sessions.mark_turn_seen(current)
     _start_session_span(session_id, model, platform, kwargs, synthesized=True)
     tracer.sessions.get_or_create(session_id).fork_turn_id = current
     set_span_attributes(tracer.spans.get_session_root(session_id), {"hermes.turn.fork": True})
@@ -278,13 +280,25 @@ def end_fork_turn(
 
     Called from ``transform_llm_output`` with the fork's ``turn_id`` once Hermes
     accepts its final text (``completed``), and when the session's next live turn
-    starts first (interrupted, any fork). Returns False when no fork root is open.
+    starts first (any fork). Returns False when no fork root is open.
+
+    Hermes fires ``transform_llm_output`` only for a non-empty reply, so a fork
+    that finished without one is still open when the next turn starts. It is
+    told from an interrupted fork by what is in flight: a request or tool span
+    still open means Hermes cut the fork (``fork_superseded``, interrupted);
+    none means its loop had already stopped (``fork_no_reply``), and the root
+    ends at its last span's end so the idle wait is neither span time nor
+    active time.
     """
     ps = tracer.sessions.peek(session_id)
     if ps is None or not ps.fork_turn_id or not tracer.spans.has_span(f"session:{session_id}"):
         return False
     if turn_id is not None and str(turn_id).strip() != ps.fork_turn_id:
         return False
+    if not completed:
+        ps.fork_idle_at = tracer.spans.idle_since(session_id)
+        if ps.fork_idle_at is not None:
+            completed, exit_reason = True, "fork_no_reply"
     on_session_end(
         session_id,
         completed=completed,
@@ -394,8 +408,11 @@ def on_session_end(
         # A delegated child's turn counts toward its delegation span (#390).
         tracer.sessions.add_delegation_turn(session_id, ps)
 
+    # A fork the next turn found idle ended when its last span did (#695).
+    ended_perf, ended_ns = ps.fork_idle_at or (time.perf_counter(), None)
+
     # Skill windows close first, as children of the still-open root.
-    tracer.end_skill_spans(session_id, final_status)
+    tracer.end_skill_spans(session_id, final_status, end_time=ended_ns)
 
     root_span = tracer.spans.get_span(key)
     started_at = tracer.spans.turn_started_at(session_id)
@@ -403,7 +420,7 @@ def on_session_end(
         # The turn's wall-clock is the agent loop's active time: Claude
         # Code's ``active_time.total{type=cli}``; ``user`` (typing time) has
         # no Hermes signal and is never recorded (#485).
-        active_s = max(0.0, time.perf_counter() - started_at)
+        active_s = max(0.0, ended_perf - started_at)
         tracer.record_metric(
             "active_time", active_s, {"type": "cli", "platform": platform or "unknown"}
         )
@@ -423,7 +440,7 @@ def on_session_end(
                 if k.startswith(EV.TURN_END_PREFIXES) or k in EV.TURN_END_KEYS
             },
             EV.ATTR_TURN_DURATION_S: (
-                round(time.perf_counter() - started_at, 3) if started_at is not None else None
+                round(ended_perf - started_at, 3) if started_at is not None else None
             ),
         },
         severity=(
@@ -439,9 +456,12 @@ def on_session_end(
     # cut mid-stream, an approval that timed out) end here, marked, before
     # the root so the root still contains them (#477).
     tracer.end_leftover_children(session_id, "turn_end")
-    _remember_root(tracer, session_id)
+    if not ps.fork_turn_id:
+        # A fork's root is not the session's last turn: a late auxiliary call
+        # and a replacing session link to the live turn's root.
+        _remember_root(tracer, session_id)
     tracer.spans.pop_parent(session_id=session_id)
-    tracer.end_span(key, attributes=attributes, status=status)
+    tracer.end_span(key, attributes=attributes, status=status, end_time=ended_ns)
     tracer.unregister_turn(session_id)
 
     # End of a user-visible unit of work. Flush so the trace is visible in

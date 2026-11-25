@@ -599,14 +599,23 @@ class HermesOTelPlugin:
             return INVALID_SPAN
 
     def end_span(
-        self, key: str, attributes: dict = None, status: str = None, error_message: str = None
+        self,
+        key: str,
+        attributes: dict = None,
+        status: str = None,
+        error_message: str = None,
+        end_time: Optional[int] = None,
     ):
-        """End a tracked span by its key."""
+        """End a tracked span by its key (at ``end_time`` epoch ns when given)."""
         try:
             # Just enqueue: the BatchSpanProcessor exports asynchronously;
             # on_session_end / atexit flush when data needs to be visible.
             self.spans.end_span(
-                key, attributes=attributes, status=status, error_message=error_message
+                key,
+                attributes=attributes,
+                status=status,
+                error_message=error_message,
+                end_time=end_time,
             )
             self.spans.unlink_key(key)
             debug_log(f"end_span: key={key}")
@@ -696,7 +705,9 @@ class HermesOTelPlugin:
             debug_log(f"swept {swept} leftover span(s) of session={session_id}: {reason}")
         return swept
 
-    def end_skill_spans(self, session_id: str, result_status: str) -> None:
+    def end_skill_spans(
+        self, session_id: str, result_status: str, end_time: Optional[int] = None
+    ) -> None:
         """Close the ``skill.<name>`` windows opened this turn (``skill_spans``).
 
         Called before the root is ended so they close as its children;
@@ -708,7 +719,10 @@ class HermesOTelPlugin:
             return
         for _name, key in self.spans.pop_skill_spans(session_id).items():
             self.end_span(
-                key, attributes={"hermes.skill.result_status": result_status}, status="ok"
+                key,
+                attributes={"hermes.skill.result_status": result_status},
+                status="ok",
+                end_time=end_time,
             )
 
     def _finalize_orphan(self, session_id: str, reason: str = "ttl") -> None:

@@ -309,7 +309,7 @@ ROWS: Tuple[Row, ...] = (
         "agent / cron: start",
         "session",
         "bool",
-        "`true` on a turn Hermes ran without `pre_llm_call` or `on_session_end`, such as the background memory and skill review, which shares its parent's session id: the root opens at the fork's first API request and ends when Hermes accepts its final text at `transform_llm_output` (`hermes.turn.exit_reason` `fork_final_reply`) or, interrupted, when the session's next turn starts first (`fork_superseded`) (optional)",
+        "`true` on a turn Hermes ran without `pre_llm_call` or `on_session_end`, such as the background memory and skill review, which shares its parent's session id: the root opens at the fork's first API request and ends when Hermes accepts its final text at `transform_llm_output` (`hermes.turn.exit_reason` `fork_final_reply`), or when the session's next turn starts first: interrupted (`fork_superseded`) if a request or tool was still in flight, else completed at its last span's end (`fork_no_reply`) (optional)",
     ),
     Row(
         ("hermes.session.previous_id",),
@@ -379,7 +379,7 @@ ROWS: Tuple[Row, ...] = (
         "agent / cron: end",
         "turn",
         "string",
-        "`completed` · `interrupted` · `failed` · `incomplete` · `timed_out` · `finalized` · `reset` — from Hermes' `completed` / `interrupted` / `failed` flags (`timed_out` from the orphan sweep; `finalized` / `reset` when a session boundary closed the root; `failed` also when the turn's last API attempt failed and Hermes never ended it, #467)",
+        "`completed` · `interrupted` · `failed` · `incomplete` · `timed_out` · `finalized` · `reset` — from Hermes' `completed` / `interrupted` / `failed` flags (`timed_out` from the orphan sweep; `finalized` / `reset` when a session boundary closed the root; `failed` also when the turn's last API attempt failed and Hermes never ended it, #467). On a `hermes.turn.fork` root Hermes reports no outcome and the plugin infers it: `completed` or `interrupted`",
     ),
     Row(
         ("hermes.session.failed",),
@@ -393,7 +393,7 @@ ROWS: Tuple[Row, ...] = (
         "agent / cron: end",
         "turn",
         "string",
-        "Hermes' `turn_exit_reason` (`interrupted_by_user`, `guardrail_halt`, `context_compression_timeout`, `max_iterations_reached(n/m)` …), when reported",
+        "Hermes' `turn_exit_reason` (`interrupted_by_user`, `guardrail_halt`, `context_compression_timeout`, `max_iterations_reached(n/m)` …), when reported. On a `hermes.turn.fork` root, where Hermes reports none, the plugin's own `fork_final_reply` · `fork_no_reply` · `fork_superseded` (how the root was closed, not why the fork's loop stopped)",
     ),
     Row(
         ("hermes.turn.tool_count", "hermes.turn.tools"),

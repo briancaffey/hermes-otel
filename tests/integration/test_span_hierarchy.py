@@ -2,6 +2,7 @@
 
 import json
 import threading
+import time
 
 import pytest
 from _helpers import parent_span_id as _parent_span_id
@@ -9,9 +10,11 @@ from _helpers import span_by_name as _span_by_name
 
 from hermes_otel.hooks import (
     on_post_api_request,
+    on_post_auxiliary_call,
     on_post_llm_call,
     on_post_tool_call,
     on_pre_api_request,
+    on_pre_auxiliary_call,
     on_pre_llm_call,
     on_pre_tool_call,
     on_session_end,
@@ -915,8 +918,9 @@ class TestForkTurnGetsItsOwnRoot:
         spans = exporter.get_finished_spans()
         roots = [s for s in spans if _parent_span_id(s) is None]
         assert [r.attributes.get("hermes.turn.fork") for r in roots] == [None, True, None]
-        assert roots[1].attributes["hermes.turn.final_status"] == "interrupted"
-        assert roots[1].attributes["hermes.turn.exit_reason"] == "fork_superseded"
+        # Its one request had finished: the fork's loop had stopped, nothing was cut.
+        assert roots[1].attributes["hermes.turn.final_status"] == "completed"
+        assert roots[1].attributes["hermes.turn.exit_reason"] == "fork_no_reply"
         assert len(spans) == 3 * 2 + 2
 
     def test_only_the_forks_own_final_text_closes_its_root(self, inmemory_otel_setup):
@@ -974,3 +978,54 @@ class TestForkTurnGetsItsOwnRoot:
         assert [a.attributes.get("hermes.turn.fork") for a in agents] == [None, True, None]
         assert _parent_span_id(agents[2]) is None
         assert len({a.context.trace_id for a in agents}) == 3
+        # A request was in flight: Hermes cut the fork.
+        assert agents[1].attributes["hermes.turn.final_status"] == "interrupted"
+        assert agents[1].attributes["hermes.turn.exit_reason"] == "fork_superseded"
+
+    def test_fork_without_a_final_reply_ends_at_its_last_span(self, inmemory_otel_setup):
+        """Hermes fires transform_llm_output only for a non-empty reply. The root the
+        next turn finds idle ends where the fork's last span did, not after the wait."""
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork5", "t-1")
+        _api_call("s-fork5", "api-r1", "t-review", 0, content_chars=0)
+        time.sleep(0.3)
+        _live_turn("s-fork5", "t-2")
+
+        spans = exporter.get_finished_spans()
+        fork_root = next(s for s in spans if s.attributes.get("hermes.turn.fork"))
+        fork_api = next(
+            s
+            for s in spans
+            if s.name == "api.gpt-4" and s.context.trace_id == fork_root.context.trace_id
+        )
+        assert fork_root.attributes["hermes.turn.final_status"] == "completed"
+        assert fork_root.attributes["hermes.turn.exit_reason"] == "fork_no_reply"
+        assert fork_root.end_time >= fork_api.end_time
+        assert (fork_root.end_time - fork_root.start_time) / 1e9 < 0.25
+        assert fork_root.attributes["gen_ai.usage.total_tokens"] == 2
+
+    def test_late_auxiliary_call_still_links_to_the_live_turn(self, inmemory_otel_setup):
+        """A fork's turn id must not replace the session's latest: titling for the
+        live turn that starts after the fork ended links to the live root."""
+        exporter, _ = inmemory_otel_setup
+        _live_turn("s-fork6", "t-1")
+        _api_call("s-fork6", "api-r1", "t-review", 0)
+        _final_text("s-fork6", "t-review")
+        aux = dict(
+            aux_task="title",
+            session_id="s-fork6",
+            model="gpt-4o-mini",
+            provider="openai",
+            api_request_id="aux-1",
+            turn_id="t-1",
+        )
+        on_pre_auxiliary_call(**aux)
+        on_post_auxiliary_call(**aux, status="ok")
+
+        spans = exporter.get_finished_spans()
+        live_root = next(
+            s for s in spans if s.name == "agent" and not s.attributes.get("hermes.turn.fork")
+        )
+        aux_span = next(s for s in spans if s.name == "api.gpt-4o-mini")
+        assert [link.attributes["hermes.link"] for link in aux_span.links] == ["turn_root"]
+        assert aux_span.links[0].context.span_id == live_root.context.span_id
