@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.33.4](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.3...hermes-otel-v1.33.4) (2026-11-25)
+
+
+### Bug Fixes
+
+* **config:** read hermes_otel.yaml with ruamel.yaml when PyYAML is missing ([b846e1e](https://github.com/briancaffey/hermes-otel/commit/b846e1ed6cfcc4660ce3c4b680f3a7f9aa4c6fde))
+* **hooks:** end an idle fork root at its last span and keep late auxiliary links ([f1b311b](https://github.com/briancaffey/hermes-otel/commit/f1b311b0ea6f3fae625342dc53d95f91300f768d))
+* **hooks:** root the background review fork's spans in one agent trace ([e4c1087](https://github.com/briancaffey/hermes-otel/commit/e4c10878a35527eda2715ac77047fb68592f7fe9)), closes [#695](https://github.com/briancaffey/hermes-otel/issues/695)
+* **usage:** price calls whose cache-write buckets are tuples and resolve the endpoint key ([3165ea3](https://github.com/briancaffey/hermes-otel/commit/3165ea30b5b74ca41ce7c7a9b618a5e66065680a))
+
+
+### Documentation
+
+* **cost:** say that a keyed endpoint is priced with its own key ([ead5009](https://github.com/briancaffey/hermes-otel/commit/ead500947cffdfc8307ec55fb150d9fbc720e781))
+
 ## [1.33.3](https://github.com/briancaffey/hermes-otel/compare/hermes-otel-v1.33.2...hermes-otel-v1.33.3) (2026-11-22)
 
 
