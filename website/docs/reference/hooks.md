@@ -54,6 +54,7 @@ Fires after the logical LLM turn finishes (all round-trips done, final response 
 Fires before each HTTP request to the LLM provider. Can fire several times per `llm.*` span.
 
 - **Span op:** opens `api.{model}` under the `llm.*` span
+- **Fork turns:** Hermes runs the background memory and skill review as a fork that shares its parent's session id and fires no `pre_llm_call`, `on_session_start`, `post_llm_call` or `on_session_end`. When the session has no live root and no `pre_llm_call` announced the request's `turn_id`, this hook first opens an `agent` root tagged `hermes.turn.fork`, so the fork's `api.*`, `tool.*` and `skill.*` spans form one trace and its usage stays off the next user turn. The session's next `pre_llm_call` or `on_session_start` closes a fork root that is still open: `interrupted` (`fork_superseded`) when a request or tool was in flight, otherwise `completed` at its last span's end (`fork_no_reply`). A fork whose first request fires before its parent turn ends nests under the parent's root
 - **Attributes set on start:** `llm.model_name`, `llm.provider`, `gen_ai.request.model`, `llm.api_mode`, `hermes.query_source`, the request's sizes (`llm.request.message_count`, `llm.request.approx_input_tokens`, `llm.request.max_tokens`), each request parameter Hermes passes (`gen_ai.request.temperature`, `gen_ai.request.stream`, …), and the full request with `content_capture: full`
 - **Side effects:** increments `hermes.turn.api_call_count`
 
@@ -185,6 +186,7 @@ Fires inside the terminal tool with the output as the tool collected it, before 
 Fires in the turn finalizer with the final response text.
 
 - **Span op:** sets `hermes.llm.output.chars` on the turn root (`agent` / `cron`); the `llm.*` span is already closed by then
+- **Fork turns:** with a fork's `turn_id`, also ends the fork root opened by `pre_api_request` (`hermes.turn.final_status=completed`, `hermes.turn.exit_reason=fork_final_reply`). Hermes fires this hook after its empty-reply and `length` retries and only for a non-empty reply, so it is the one signal that a fork's final text was accepted
 - **Returns:** always `None`
 
 `transform_tool_result` is not subscribed: it fires after `post_tool_call` with the same result the plugin already saw there, so there is nothing new to observe and no reason to register a third behaviour-changing hook.
@@ -286,7 +288,7 @@ Hermes hook              OTel operation
 ──────────────────────   ─────────────────────────────────────
 on_session_start         open  agent/cron        (or rejoin a delegation span as a child)
 pre_llm_call             open  llm.{model}       (child of session)
-pre_api_request          open  api.{model}       (child of llm)
+pre_api_request          open  api.{model}       (child of llm; opens an agent root first for a fork turn)
 pre_tool_call            open  tool.{name}       (child of api or llm)
 subagent_start           open  subagent.{role}   (child of api or llm)
 transform_terminal_output  attrs tool.terminal   (raw output size, return code, env type; returns None)
@@ -296,7 +298,7 @@ api_request_error        close api.{model}        (ERROR + exception + retry att
 pre_auxiliary_call       open  api.{model}       (auxiliary: child of the turn's llm/api/root, or own root, linked to the ended root after the turn; not a parent)
 post_auxiliary_call      close api.{model}       (auxiliary: usage, cost, ERROR on failure; turn roll-up hermes.turn.auxiliary.*)
 post_llm_call            close llm.{model}
-transform_llm_output     attr  agent/cron        (final response size; returns None)
+transform_llm_output     attr  agent/cron        (final response size; closes a fork turn's root; returns None)
 kanban_task_claimed      open+close kanban.claim        (dispatcher; the run's root; sets TRACEPARENT for the worker)
 on_kanban_worker_spawned open+close kanban.spawn        (dispatcher; under the claim; clears TRACEPARENT)
 on_kanban_worker_exited  open+close kanban.worker_exit  (dispatcher; under the claim; ERROR on crash/kill)

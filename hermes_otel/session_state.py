@@ -175,7 +175,12 @@ class PerSession:
     # True when this session is a delegated child whose root rejoined the
     # parent's delegation span; its API calls report ``query_source=subagent``.
     is_subagent: bool = False
+    # The ``turn_id`` of the fork whose root ``start_fork_root`` opened (#695).
     fork_turn_id: str = ""
+    # ``(perf_counter, epoch ns)`` of a fork's last finished span, set when the
+    # next turn finds the fork open with nothing in flight: the root ends
+    # there, not at the next turn's start.
+    fork_idle_at: Optional[Tuple[float, int]] = None
     # Auxiliary LLM calls (#389): titling, compression, MoA references and
     # aggregator, vision, approval, the goal judge ... run under this turn.
     # Kept apart from ``usage`` / ``cost_usd``: the main loop's ``api.*`` span
@@ -558,8 +563,17 @@ class SessionState:
             self._remember(self._last_turn_id, session_id, text)
             self._remember(self._seen_turns, text, True)
 
+    def mark_turn_seen(self, turn_id: Any) -> None:
+        """Record a ``turn_id`` as seen without making it a session's latest turn:
+        a fork's id must not hide the live turn's from ``last_turn_id``. Bounded."""
+        text = str(turn_id or "").strip()
+        if not text:
+            return
+        with self._lock:
+            self._remember(self._seen_turns, text, True)
+
     def turn_seen(self, turn_id: Any) -> bool:
-        """True when ``remember_turn_id`` kept this ``turn_id`` for any session. Bounded."""
+        """True when ``remember_turn_id`` or ``mark_turn_seen`` kept this ``turn_id``. Bounded."""
         with self._lock:
             return str(turn_id or "").strip() in self._seen_turns
 

@@ -130,6 +130,9 @@ class SpanTracker:
         # sub-spans can be finalized before its root.
         self._turn_started_at: Dict[str, float] = {}
         self._session_keys: "OrderedDict[str, set]" = OrderedDict()
+        # session_id -> (perf_counter, epoch ns) of the last span that ended
+        # under the session's open turn; dropped with the turn's keys.
+        self._last_span_end: Dict[str, tuple] = {}
 
     # Per-session tables keyed by a session id Hermes may never close: the
     # same cap SessionState uses for its own.
@@ -417,20 +420,35 @@ class SpanTracker:
         """Forget ``key`` in every session's active-key set."""
         with self._lock:
             for sid, keys in list(self._session_keys.items()):
-                keys.discard(key)
+                if key in keys:
+                    keys.discard(key)
+                    self._last_span_end[sid] = (time.perf_counter(), time.time_ns())
                 if not keys:
                     self._session_keys.pop(sid, None)
+
+    def idle_since(self, session_id: str) -> Optional[tuple]:
+        """``(perf_counter, epoch ns)`` of the last span that ended under the
+        session's open turn, when nothing but the root and its skill windows is
+        still open; ``None`` while a request or tool is in flight, or when no
+        span of the turn has ended yet."""
+        with self._lock:
+            open_keys = self._session_keys.get(session_id) or ()
+            if any(not k.startswith(("session:", "skill:")) for k in open_keys):
+                return None
+            return self._last_span_end.get(session_id)
 
     def pop_session_keys(self, session_id: str) -> set:
         """Return and forget the active keys opened under ``session_id``."""
         with self._lock:
             self._turn_started_at.pop(session_id, None)
+            self._last_span_end.pop(session_id, None)
             return self._session_keys.pop(session_id, set())
 
     def clear_turns(self) -> None:
         with self._lock:
             self._turn_started_at.clear()
             self._session_keys.clear()
+            self._last_span_end.clear()
 
     # ── Ending spans ─────────────────────────────────────────────────────
 
@@ -440,6 +458,7 @@ class SpanTracker:
         attributes: Optional[dict] = None,
         status: Optional[str] = None,
         error_message: Optional[str] = None,
+        end_time: Optional[int] = None,
     ) -> None:
         """End and remove a tracked span.
 
@@ -448,6 +467,7 @@ class SpanTracker:
             attributes: Final attributes to set before ending.
             status: ``"ok"`` or ``"error"``. ``None`` skips status-setting.
             error_message: Description attached when ``status == "error"``.
+            end_time: Epoch nanoseconds to end the span at; ``None`` ends it now.
         """
         with self._lock:
             span = self._active_spans.pop(key, None)
@@ -464,7 +484,10 @@ class SpanTracker:
             # Set an explicit empty description so backends don't render "None".
             span.set_status(Status(status_code=StatusCode.OK, description=""))
 
-        span.end()
+        if end_time is None:
+            span.end()
+        else:
+            span.end(end_time=end_time)
 
     def end_all(self, attributes: Optional[dict] = None) -> None:
         """End every tracked span and drop all shared state (cleanup).
